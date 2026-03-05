@@ -322,6 +322,7 @@ describe('Readability Opportunities Handler', () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content-1',
           textContent: 'This is some long text content for testing purposes.',
           readabilityScore: 25,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -329,6 +330,7 @@ describe('Readability Opportunities Handler', () => {
         },
         {
           pageUrl: 'https://example.com/page2',
+          selector: 'p.content-2',
           textContent: 'Another text content block.',
           readabilityScore: 20,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -377,6 +379,7 @@ describe('Readability Opportunities Handler', () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
           textContent: 'Test content',
           readabilityScore: 25,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -476,6 +479,7 @@ describe('Readability Opportunities Handler', () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
           textContent: longText,
           readabilityScore: 25,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -521,6 +525,7 @@ describe('Readability Opportunities Handler', () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
           textContent: 'Test content',
           readabilityScore: 25,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -599,6 +604,7 @@ describe('Readability Opportunities Handler', () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content-1',
           textContent: 'Test content',
           readabilityScore: 25,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -606,6 +612,7 @@ describe('Readability Opportunities Handler', () => {
         },
         {
           pageUrl: 'https://example.com/page2',
+          selector: 'p.content-2',
           textContent: 'More content',
           readabilityScore: 22,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -651,6 +658,7 @@ describe('Readability Opportunities Handler', () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
           textContent: 'Short text preview content',
           readabilityScore: 25,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -691,14 +699,15 @@ describe('Readability Opportunities Handler', () => {
 
       // Test buildKey function
       const buildKey = syncCall.buildKey;
-      const testData = { pageUrl: 'https://test.com', textPreview: 'preview text' };
-      expect(buildKey(testData)).to.equal('https://test.com|preview text');
+      const testData = { pageUrl: 'https://test.com', selector: 'p.intro' };
+      expect(buildKey(testData)).to.equal('https://test.com-p.intro');
     });
 
     it('should call convertToOpportunity with correct parameters ', async () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
           textContent: 'Content',
           readabilityScore: 25,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -748,6 +757,7 @@ describe('Readability Opportunities Handler', () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
           textContent: 'Content',
           readabilityScore: 25,
           scrapedAt: new Date('2025-06-15T10:30:00.000Z'),
@@ -856,6 +866,7 @@ describe('Readability Opportunities Handler', () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
           textContent: 'Content',
           readabilityScore: 25,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -940,6 +951,7 @@ describe('Readability Opportunities Handler', () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
           textContent: 'Content',
           readabilityScore: 25,
           scrapedAt: '2025-01-01T00:00:00.000Z',

@@ -16,12 +16,33 @@ import { expect, use as chaiUse } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
+import { load as cheerioLoad } from 'cheerio';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
 
 import { generateSuggestions, slimTocAuditResult } from '../../src/toc/handler.js';
+import {
+  getHeadingLevel,
+  TOC_EXCLUDED_CONTAINER_SELECTORS,
+  TOC_EXCLUDED_HEADING_PHRASES,
+  normalizeHeadingTextForMatch,
+  isExcludedConsentHeadingText,
+  isHeadingInExcludedContainer,
+  extractTocData,
+  tocArrayToHast,
+  determineTocPlacement,
+  getScrapeJsonPath,
+} from '../../src/headings/utils.js';
+import { getHeadingSelector } from '../../src/headings/shared-utils.js';
 
 chaiUse(sinonChai);
+
+/** Stub that returns a simple selector for a heading (for extractTocData tests) */
+function stubGetHeadingSelector(h) {
+  const tag = h.name.toLowerCase();
+  const id = h.attribs?.id;
+  return id ? `${tag}#${id}` : tag;
+}
 
 describe('TOC (Table of Contents) Audit', () => {
   let log;
@@ -2110,6 +2131,208 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(logSpy.info).to.have.been.calledWith(
         sinon.match(/no issues, skipping opportunity creation/)
       );
+    });
+  });
+
+  describe('headings/utils (TOC extraction and exclusion)', () => {
+    describe('getHeadingLevel', () => {
+      it('returns 1 for h1', () => {
+        expect(getHeadingLevel('h1')).to.equal(1);
+        expect(getHeadingLevel('H1')).to.equal(1);
+      });
+      it('returns 2 for h2', () => {
+        expect(getHeadingLevel('h2')).to.equal(2);
+      });
+      it('returns 6 for h6', () => {
+        expect(getHeadingLevel('h6')).to.equal(6);
+      });
+    });
+
+    describe('TOC exclusion constants', () => {
+      it('TOC_EXCLUDED_CONTAINER_SELECTORS includes OneTrust and Cookiebot', () => {
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('#onetrust-consent-sdk');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('#CybotCookiebotDialog');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('.cookie-consent');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[id*="consent"]');
+      });
+      it('TOC_EXCLUDED_HEADING_PHRASES includes consent phrases', () => {
+        expect(TOC_EXCLUDED_HEADING_PHRASES).to.include('privacy preference center');
+        expect(TOC_EXCLUDED_HEADING_PHRASES).to.include('cookie settings');
+      });
+    });
+
+    describe('normalizeHeadingTextForMatch', () => {
+      it('trims and lowercases and collapses spaces', () => {
+        expect(normalizeHeadingTextForMatch('  Privacy   Preference   Center  ')).to.equal('privacy preference center');
+      });
+      it('returns empty string for non-string', () => {
+        expect(normalizeHeadingTextForMatch(null)).to.equal('');
+        expect(normalizeHeadingTextForMatch(undefined)).to.equal('');
+        expect(normalizeHeadingTextForMatch(123)).to.equal('');
+      });
+      it('returns empty string for empty string', () => {
+        expect(normalizeHeadingTextForMatch('')).to.equal('');
+        expect(normalizeHeadingTextForMatch('   ')).to.equal('');
+      });
+    });
+
+    describe('isExcludedConsentHeadingText', () => {
+      it('returns true for exact phrase match (case-insensitive)', () => {
+        expect(isExcludedConsentHeadingText('Privacy Preference Center')).to.equal(true);
+        expect(isExcludedConsentHeadingText('privacy preference center')).to.equal(true);
+        expect(isExcludedConsentHeadingText('Cookie Settings')).to.equal(true);
+      });
+      it('returns true when heading contains phrase', () => {
+        expect(isExcludedConsentHeadingText('Welcome to Privacy Preference Center')).to.equal(true);
+        expect(isExcludedConsentHeadingText('Manage your cookie settings here')).to.equal(true);
+      });
+      it('returns true when phrase contains heading (short match)', () => {
+        expect(isExcludedConsentHeadingText('privacy')).to.equal(true);
+      });
+      it('returns false for non-consent content', () => {
+        expect(isExcludedConsentHeadingText('Product details')).to.equal(false);
+        expect(isExcludedConsentHeadingText('Section 1')).to.equal(false);
+        expect(isExcludedConsentHeadingText('Compatible lighting components')).to.equal(false);
+      });
+      it('returns false for empty or whitespace', () => {
+        expect(isExcludedConsentHeadingText('')).to.equal(false);
+        expect(isExcludedConsentHeadingText('   ')).to.equal(false);
+      });
+    });
+
+    describe('isHeadingInExcludedContainer', () => {
+      it('returns false when heading or $ is missing', () => {
+        const $ = cheerioLoad('<h1>Title</h1>');
+        expect(isHeadingInExcludedContainer(null, $)).to.equal(false);
+        expect(isHeadingInExcludedContainer($('h1')[0], null)).to.equal(false);
+      });
+      it('returns true when heading is inside OneTrust container', () => {
+        const $ = cheerioLoad('<div id="onetrust-consent-sdk"><h1>Privacy Preference Center</h1></div>');
+        const h1 = $('h1')[0];
+        expect(isHeadingInExcludedContainer(h1, $)).to.equal(true);
+      });
+      it('returns true when heading is inside cookie-banner', () => {
+        const $ = cheerioLoad('<div id="cookie-banner"><h2>Cookie Settings</h2></div>');
+        const h2 = $('h2')[0];
+        expect(isHeadingInExcludedContainer(h2, $)).to.equal(true);
+      });
+      it('returns true when heading is inside element with class cookie-consent', () => {
+        const $ = cheerioLoad('<div class="cookie-consent"><h1>Accept Cookies</h1></div>');
+        const h1 = $('h1')[0];
+        expect(isHeadingInExcludedContainer(h1, $)).to.equal(true);
+      });
+      it('returns false when heading is not inside any excluded container', () => {
+        const $ = cheerioLoad('<main><h1>Product details</h1><h2>Section 1</h2></main>');
+        expect(isHeadingInExcludedContainer($('h1')[0], $)).to.equal(false);
+        expect(isHeadingInExcludedContainer($('h2')[0], $)).to.equal(false);
+      });
+    });
+
+    describe('extractTocData', () => {
+      it('returns all h1 and h2 when no main and no consent', () => {
+        const $ = cheerioLoad('<body><h1 id="title">Title</h1><h2 id="s1">Section 1</h2><h2 id="s2">Section 2</h2></body>');
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(3);
+        expect(result[0]).to.deep.include({ text: 'Title', level: 1 });
+        expect(result[1]).to.deep.include({ text: 'Section 1', level: 2 });
+        expect(result[2]).to.deep.include({ text: 'Section 2', level: 2 });
+      });
+      it('when main exists, only includes headings inside body > main', () => {
+        const $ = cheerioLoad(
+          '<body><h1 id="outside">Outside Main</h1><main><h1 id="inside">Inside Main</h1><h2 id="sec">Section</h2></main></body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Inside Main', 'Section']);
+      });
+      it('excludes headings inside consent container', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<div id="onetrust-consent-sdk"><h1>Privacy Preference Center</h1></div>'
+          + '<main><h1 id="product">Product details</h1><h2 id="sec">Section</h2></main>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Product details', 'Section']);
+      });
+      it('excludes headings by consent phrase even when not in consent container', () => {
+        const $ = cheerioLoad(
+          '<body><main><h1 id="a">Product details</h1><h2 id="b">Privacy Preference Center</h2><h2 id="c">Section 2</h2></main></body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Product details', 'Section 2']);
+      });
+      it('returns empty array when no headings', () => {
+        const $ = cheerioLoad('<body><p>No headings</p></body>');
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.deep.equal([]);
+      });
+      it('returns empty array when all headings are excluded', () => {
+        const $ = cheerioLoad('<body><div id="cookie-banner"><h1>Cookie Settings</h1><h2>Manage preferences</h2></div></body>');
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.deep.equal([]);
+      });
+      it('includes selector from getHeadingSelectorFn', () => {
+        const $ = cheerioLoad('<body><h1 id="main">Title</h1></body>');
+        const result = extractTocData($, getHeadingSelector);
+        expect(result[0].selector).to.equal('h1#main');
+      });
+    });
+
+    describe('tocArrayToHast', () => {
+      it('builds HAST with nav > ul > li > a for each item', () => {
+        const tocData = [
+          { text: 'Title', level: 1, selector: 'h1#main' },
+          { text: 'Section', level: 2, selector: 'h2#sec' },
+        ];
+        const hast = tocArrayToHast(tocData);
+        expect(hast.type).to.equal('root');
+        expect(hast.children[0].tagName).to.equal('nav');
+        expect(hast.children[0].properties.className).to.include('toc');
+        const ul = hast.children[0].children[0];
+        expect(ul.tagName).to.equal('ul');
+        expect(ul.children).to.have.lengthOf(2);
+        expect(ul.children[1].properties.className).to.include('toc-sub');
+        expect(ul.children[0].children[0].properties['data-selector']).to.equal('h1#main');
+        expect(ul.children[0].children[0].children[0].value).to.equal('Title');
+      });
+    });
+
+    describe('determineTocPlacement', () => {
+      it('returns insertAfter first h1 when h1 present', () => {
+        const $ = cheerioLoad('<body><h1 id="title">Title</h1><main><p>Content</p></main></body>');
+        const result = determineTocPlacement($, getHeadingSelector);
+        expect(result.action).to.equal('insertAfter');
+        expect(result.selector).to.include('h1');
+        expect(result.placement).to.equal('after-h1');
+      });
+      it('returns insertBefore main first-child when no h1 but main present', () => {
+        const $ = cheerioLoad('<body><main><p>Content</p></main></body>');
+        const result = determineTocPlacement($, getHeadingSelector);
+        expect(result.action).to.equal('insertBefore');
+        expect(result.selector).to.equal('body > main > :first-child');
+        expect(result.placement).to.equal('main-start');
+      });
+      it('returns insertBefore body first-child when no h1 and no main', () => {
+        const $ = cheerioLoad('<body><div>Content</div></body>');
+        const result = determineTocPlacement($, getHeadingSelector);
+        expect(result.action).to.equal('insertBefore');
+        expect(result.selector).to.equal('body > :first-child');
+        expect(result.placement).to.equal('body-start');
+      });
+    });
+
+    describe('getScrapeJsonPath', () => {
+      it('builds path with siteId and pathname', () => {
+        expect(getScrapeJsonPath('https://example.com/products/page', 'site-1'))
+          .to.equal('scrapes/site-1/products/page/scrape.json');
+      });
+      it('strips trailing slash from pathname', () => {
+        expect(getScrapeJsonPath('https://example.com/products/', 'site-1'))
+          .to.equal('scrapes/site-1/products/scrape.json');
+      });
     });
   });
 });

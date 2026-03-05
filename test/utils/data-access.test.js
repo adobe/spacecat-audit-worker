@@ -684,9 +684,9 @@ describe('data-access', () => {
       const existingSuggestions = [
         {
           id: '1',
-          data: { url: 'https://example.com/page1', key: 'page1', tokowakaDeployed: 1769607504287 },
+          data: { url: 'https://example.com/page1', key: 'page1', edgeDeployed: 1769607504287 },
           getId: sinon.stub().returns('1'),
-          getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1', tokowakaDeployed: 1769607504287 }),
+          getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1', edgeDeployed: 1769607504287 }),
           getStatus: sinon.stub().returns('NEW'),
         },
         {

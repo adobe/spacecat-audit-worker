@@ -12,6 +12,7 @@
 
 import { randomUUID } from 'crypto';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import { DATA_SOURCES } from '../common/constants.js';
 
 export const ESTIMATED_CPC = 0.8;
 
@@ -64,6 +65,7 @@ export function mapToOpportunity(siteId, url, audit, pageGuidance) {
       ctr: 0,
       bounceRate,
       pageType: 'unknown',
+      dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
     },
     status: 'NEW',
     tags: ['Engagement'],

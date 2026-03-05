@@ -34,6 +34,68 @@ import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const LOG_PREFIX = 'Prerender -';
+const AUDIT_ERROR_MESSAGE = 'Audit failed';
+
+// Domain-wide suggestion URL format (sync scrapedUrlsSet + prepareDomainWideAggregateSuggestion)
+const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`;
+
+const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
+
+/**
+ * Checks if a suggestion's data represents a domain-wide suggestion.
+ * @param {Object} data - The suggestion data object.
+ * @returns {boolean} True if this is a domain-wide suggestion.
+ */
+function isDomainWideSuggestionData(data) {
+  return !!data?.isDomainWide;
+}
+
+/**
+ * Checks if a domain-wide suggestion should be preserved (not replaced).
+ * A suggestion should be preserved if it's in an active state or has been deployed.
+ * @param {Object} suggestion - The suggestion object.
+ * @returns {boolean} True if the suggestion should be preserved.
+ */
+function shouldPreserveDomainWideSuggestion(suggestion) {
+  const status = suggestion.getStatus();
+  const data = suggestion.getData();
+
+  const ACTIVE_STATUSES = [
+    Suggestion.STATUSES.NEW,
+    Suggestion.STATUSES.FIXED,
+    Suggestion.STATUSES.PENDING_VALIDATION,
+    Suggestion.STATUSES.SKIPPED,
+  ];
+
+  return ACTIVE_STATUSES.includes(status) || !!data?.edgeDeployed;
+}
+
+/**
+ * Finds an existing domain-wide suggestion that should be preserved.
+ * @param {Object} opportunity - The opportunity object.
+ * @param {Object} log - Logger instance.
+ * @returns {Promise<Object|null>} The existing suggestion to preserve, or null if none found.
+ */
+async function findPreservableDomainWideSuggestion(opportunity, log) {
+  const existingSuggestions = await opportunity.getSuggestions();
+  const domainWideSuggestions = existingSuggestions.filter(
+    (s) => isDomainWideSuggestionData(s.getData()),
+  );
+
+  if (domainWideSuggestions.length === 0) {
+    return null;
+  }
+
+  const preservable = domainWideSuggestions.find(shouldPreserveDomainWideSuggestion);
+
+  if (preservable) {
+    const status = preservable.getStatus();
+    const data = preservable.getData();
+    log.info(`${LOG_PREFIX} Found existing domain-wide suggestion to preserve: status=${status}, edgeDeployed=${data?.edgeDeployed}`);
+  }
+
+  return preservable || null;
+}
 
 async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIMIT) {
   const { dataAccess, log, site } = context;
@@ -146,7 +208,7 @@ async function getScrapedHtmlFromS3(url, context) {
 
   try {
     const bucketName = env.S3_SCRAPER_BUCKET_NAME;
-    const { scrapeJobId: storageId } = auditContext;
+    const { scrapeJobId: storageId } = auditContext || {};
     const serverSideKey = getS3Path(url, storageId, 'server-side.html');
     const clientSideKey = getS3Path(url, storageId, 'client-side.html');
     const scrapeJsonKey = getS3Path(url, storageId, 'scrape.json');
@@ -704,7 +766,7 @@ async function prepareDomainWideAggregateSuggestion(
   // This applies to ALL URLs in the domain
   // Note: agenticTraffic is calculated in the UI from fresh CDN logs data
   const domainWideSuggestionData = {
-    url: `${baseUrl}/* (All Domain URLs)`,
+    url: getDomainWideSuggestionUrl(baseUrl),
     contentGainRatio: totalContentGainRatio > 0 ? Number(totalContentGainRatio.toFixed(2)) : 0,
     wordCountBefore: totalWordCountBefore,
     wordCountAfter: totalWordCountAfter,
@@ -714,9 +776,6 @@ async function prepareDomainWideAggregateSuggestion(
     allowedRegexPatterns,
     pathPattern: '/*',
   };
-
-  // Use a constant key to ensure only ONE domain-wide suggestion exists per opportunity
-  const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
 
   log.info(`Prerender - Prepared domain-wide aggregate suggestion for entire domain with allowedRegexPatterns: ${JSON.stringify(allowedRegexPatterns)}. Based on ${auditedUrlCount} audited URL(s).`);
 
@@ -745,7 +804,7 @@ export async function processOpportunityAndSuggestions(
 ) {
   const { log } = context;
 
-  const { auditResult } = auditData;
+  const { auditResult, scrapedUrlsSet } = auditData;
   const { urlsNeedingPrerender } = auditResult;
 
   /* c8 ignore next 4 */
@@ -774,12 +833,18 @@ export async function processOpportunityAndSuggestions(
     auditData, // Pass auditData as props so createOpportunityData receives it
   );
 
-  // Prepare domain-wide suggestion data first
-  const domainWideSuggestion = await prepareDomainWideAggregateSuggestion(
-    preRenderSuggestions,
-    auditUrl,
-    context,
-  );
+  const existingPreservable = await findPreservableDomainWideSuggestion(opportunity, log);
+
+  let domainWideSuggestion = null;
+  if (existingPreservable) {
+    log.info(`${LOG_PREFIX} Skipping domain-wide suggestion creation - existing one will be preserved. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
+  } else {
+    domainWideSuggestion = await prepareDomainWideAggregateSuggestion(
+      preRenderSuggestions,
+      auditUrl,
+      context,
+    );
+  }
 
   // Build key function that handles both individual and domain-wide suggestions
   /* c8 ignore next 7 */
@@ -811,7 +876,9 @@ export async function processOpportunityAndSuggestions(
     ),
   });
 
-  const allSuggestions = [...preRenderSuggestions, domainWideSuggestion];
+  const allSuggestions = domainWideSuggestion
+    ? [...preRenderSuggestions, domainWideSuggestion]
+    : [...preRenderSuggestions];
 
   await syncSuggestions({
     opportunity,
@@ -824,6 +891,7 @@ export async function processOpportunityAndSuggestions(
       rank: 0,
       data: suggestion.key ? suggestion.data : mapSuggestionData(suggestion),
     }),
+    scrapedUrlsSet,
     // Custom merge function: handle both types
     mergeDataFunction: (existingData, newDataItem) => {
       // Domain-wide suggestion: replace with new data
@@ -881,7 +949,11 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       lastUpdated: auditedAt || new Date().toISOString(),
       totalUrlsChecked: auditResult.totalUrlsChecked || 0,
       urlsNeedingPrerender: auditResult.urlsNeedingPrerender || 0,
+      urlsSubmittedForScraping: auditResult.urlsSubmittedForScraping ?? null,
+      urlsScrapedSuccessfully: auditResult.urlsScrapedSuccessfully ?? null,
+      scrapingErrorRate: auditResult.scrapingErrorRate ?? null,
       scrapeForbidden: auditResult.scrapeForbidden || false,
+      lastAuditSuccess: auditResult.lastAuditSuccess !== false,
       pages: auditResult.results?.map((result) => {
         const pageStatus = {
           url: result.url,
@@ -915,6 +987,27 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
   } catch (error) {
     log.error(`Prerender - Failed to upload status summary to S3: ${error.message}. baseUrl=${auditUrl}, siteId=${siteId}`, error);
     // Don't throw - this is a non-critical post-processing step
+  }
+}
+
+/**
+ * Fetches submitted URL count from ScrapeUrl table when scrape job exists.
+ * scrapeResultPaths only contains COMPLETE URLs, so urlsToCheck undercounts when some URLs failed.
+ * @param {string|null} scrapeJobId - Scrape job ID
+ * @param {number} urlsToCheckLength - Fallback count (from scrapeResultPaths or fallback list)
+ * @param {Object} dataAccess - Data access with ScrapeUrl
+ * @param {Object} log - Logger
+ * @returns {Promise<number>} - Submitted URL count
+ */
+async function getUrlsSubmittedForScrapingCount(scrapeJobId, urlsToCheckLength, dataAccess, log) {
+  if (!scrapeJobId || !dataAccess?.ScrapeUrl) return urlsToCheckLength;
+  try {
+    const allScrapeUrls = await dataAccess.ScrapeUrl.allByScrapeJobId(scrapeJobId);
+    log.debug(`Prerender - urlsSubmittedForScraping=${allScrapeUrls.length} from ScrapeUrl (scrapeJobId=${scrapeJobId}), urlsToCheck=${urlsToCheckLength}`);
+    return allScrapeUrls.length;
+  } catch (e) {
+    log.warn(`Prerender - Failed to fetch ScrapeUrl count for scrapeJobId=${scrapeJobId}, using urlsToCheck.length: ${e.message}`);
+    return urlsToCheckLength;
   }
 }
 
@@ -992,12 +1085,7 @@ export async function processContentAndGenerateOpportunities(context) {
     }
 
     const comparisonResults = await Promise.all(
-      urlsToCheck.map(async (url) => {
-        const result = await compareHtmlContent(url, context);
-        return {
-          ...result,
-        };
-      }),
+      urlsToCheck.map((url) => compareHtmlContent(url, context)),
     );
 
     const urlsNeedingPrerender = comparisonResults.filter((result) => result.needsPrerender);
@@ -1017,15 +1105,37 @@ export async function processContentAndGenerateOpportunities(context) {
     // eslint-disable-next-line
     const cleanResults = comparisonResults.map(({ hasScrapeMetadata, scrapeForbidden, ...result }) => result);
 
+    const urlsNotNeedingPrerender = successfulComparisons.length - urlsNeedingPrerender.length;
+
+    const { auditContext } = context;
+    const { scrapeJobId } = auditContext || {};
+    const urlsSubmittedForScraping = await getUrlsSubmittedForScrapingCount(
+      scrapeJobId,
+      urlsToCheck.length,
+      dataAccess,
+      log,
+    );
+    // Scraping error rate: % of submitted URLs that failed (base = urlsSubmittedForScraping)
+    const failedCount = urlsSubmittedForScraping - successfulComparisons.length;
+    const scrapingErrorRate = urlsSubmittedForScraping > 0
+      ? Math.round((failedCount / urlsSubmittedForScraping) * 100)
+      : 0;
+
+    const scrapedUrlsSet = new Set(successfulComparisons.map((r) => r.url));
+
     const auditResult = {
       totalUrlsChecked: comparisonResults.length,
       urlsNeedingPrerender: urlsNeedingPrerender.length,
+      urlsScrapedSuccessfully: successfulComparisons.length,
+      urlsSubmittedForScraping,
+      urlsNotNeedingPrerender,
+      scrapingErrorRate,
       results: cleanResults,
       scrapeForbidden,
+      lastAuditSuccess: true,
     };
 
-    const { auditContext } = context;
-    const { scrapeJobId } = auditContext;
+    log.info(`Prerender - Scraping metrics for baseUrl=${site.getBaseURL()}, siteId=${siteId}. urlsSubmittedForScraping=${urlsSubmittedForScraping}, urlsScrapedSuccessfully=${successfulComparisons.length}, scrapingErrorRate=${scrapingErrorRate}%`);
 
     let opportunityForGuidance = null;
 
@@ -1035,9 +1145,11 @@ export async function processContentAndGenerateOpportunities(context) {
         site.getBaseURL(),
         {
           siteId,
+          id: audit.getId(),
           auditId: audit.getId(),
           auditResult,
           scrapeJobId,
+          scrapedUrlsSet,
         },
         context,
         isPaid,
@@ -1048,26 +1160,29 @@ export async function processContentAndGenerateOpportunities(context) {
       // This allows the UI to display proper messaging without suggestions
       await createScrapeForbiddenOpportunity(site.getBaseURL(), {
         siteId,
+        id: audit.getId(),
         auditId: audit.getId(),
         auditResult,
         scrapeJobId,
       }, context, isPaid);
     } else {
-      // No opportunities found - check if there are existing suggestions to mark as outdated
       log.info(`Prerender - No opportunity found. baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbidden=${scrapeForbidden}, isPaidLLMOCustomer=${isPaid}`);
 
-      // syncSuggestions with empty array marks all existing suggestions as OUTDATED
       const { Opportunity } = dataAccess;
       const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
       const existingOpportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
 
       if (existingOpportunity) {
+        // Include domain-wide URL so aggregate suggestion can be marked outdated when appropriate
+        const scrapedUrlsForNoOppty = new Set(scrapedUrlsSet);
+        scrapedUrlsForNoOppty.add(getDomainWideSuggestionUrl(site.getBaseURL()));
         await syncSuggestions({
           opportunity: existingOpportunity,
-          newData: [], // Empty array = all existing suggestions become outdated
+          newData: [],
           context,
-          buildKey: (suggestion) => suggestion.url,
-          mapNewSuggestion: () => ({}), // Not used since newData is empty
+          buildKey: (suggestionData) => suggestionData.url,
+          mapNewSuggestion: () => ({}),
+          scrapedUrlsSet: scrapedUrlsForNoOppty,
         });
       }
     }
@@ -1100,28 +1215,6 @@ export async function processContentAndGenerateOpportunities(context) {
     // Upload status summary to S3 (post-processing)
     await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);
 
-    // Update LatestAudit with the detailed results from step 3
-    // LatestAudit is upsertable, unlike the immutable Audit records
-    try {
-      const { LatestAudit } = dataAccess;
-
-      await LatestAudit.create({
-        auditId: audit.getId(),
-        siteId,
-        auditType: AUDIT_TYPE,
-        auditResult,
-        fullAuditRef: audit.getFullAuditRef(),
-        auditedAt: audit.getAuditedAt(),
-        isLive: site.getIsLive(),
-        isError: false,
-        invocationId: audit.getInvocationId(),
-      });
-
-      log.info(`Prerender - Updated LatestAudit with detailed results. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
-    } catch (error) {
-      log.error(`Prerender - Failed to update LatestAudit: ${error.message}. baseUrl=${site.getBaseURL()}, siteId=${siteId}`, error);
-    }
-
     return {
       status: 'complete',
       auditResult,
@@ -1129,8 +1222,25 @@ export async function processContentAndGenerateOpportunities(context) {
   } catch (error) {
     log.error(`Prerender - Audit failed for baseUrl=${site.getBaseURL()}, siteId=${siteId}: ${error.message}`, error);
 
+    const errorAuditResult = {
+      error: AUDIT_ERROR_MESSAGE,
+      lastAuditSuccess: false,
+      results: [],
+    };
+
+    // Upload status.json on error so UI can show audit status via S3 fallback
+    const { auditContext } = context;
+    await uploadStatusSummaryToS3(site.getBaseURL(), {
+      siteId,
+      auditId: audit.getId(),
+      auditedAt: new Date().toISOString(),
+      auditType: AUDIT_TYPE,
+      auditResult: errorAuditResult,
+      scrapeJobId: auditContext?.scrapeJobId,
+    }, context);
+
     return {
-      error: error.message,
+      error: AUDIT_ERROR_MESSAGE,
       totalUrlsChecked: 0,
       urlsNeedingPrerender: 0,
       results: [],

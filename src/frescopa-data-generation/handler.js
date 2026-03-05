@@ -25,12 +25,12 @@ const FILE_CONFIGS = [
     filePrefix: 'agentictraffic',
   },
   {
-    type: 'agentic-traffic',
+    type: 'agentic-traffic-errors-404',
     destinationFolder: 'agentic-traffic',
     filePrefix: 'agentictraffic-errors-404',
   },
   {
-    type: 'agentic-traffic',
+    type: 'agentic-traffic-errors-5xx',
     destinationFolder: 'agentic-traffic',
     filePrefix: 'agentictraffic-errors-5xx',
   },
@@ -42,6 +42,11 @@ const FILE_CONFIGS = [
   {
     type: 'referral-traffic',
     destinationFolder: 'referral-traffic',
+    filePrefix: 'referral-traffic',
+  },
+  {
+    type: 'referral-traffic-aa',
+    destinationFolder: 'referral-traffic-aa',
     filePrefix: 'referral-traffic',
   },
 ];
@@ -157,19 +162,23 @@ function getTargetWeekIdentifier(date = new Date()) {
  * Gets the last N files for a given file prefix from the query index.
  * @param {Array<{ path: string, lastModified: string }>} files - Array of file entries
  * @param {string} filePrefix - The file prefix to match
+ * @param {string} destinationFolder - The folder to filter by (disambiguates same-prefix files)
  * @param {number} count - Number of most recent files to return
  * @param {object} log - Logger instance
  * @returns {Array<{ path: string, weekIdentifier: string }>} Array of most recent files
  */
-function getLastNFiles(files, filePrefix, count, log) {
+function getLastNFiles(files, filePrefix, destinationFolder, count, log) {
   // Append '-w' to filePrefix for more exact matching (e.g., 'agentictraffic-w')
   const matchPrefix = `${filePrefix}-w`;
+  const folderPath = `/${DATA_FOLDER}/${destinationFolder}/`;
 
-  // Filter files that match the prefix pattern
+  // Filter files that match the prefix and folder
   const matchingFiles = files
     .filter((file) => {
       const filename = file.path.split('/').pop();
-      return filename.startsWith(matchPrefix) && WEEK_PATTERN.test(filename);
+      return file.path.includes(folderPath)
+        && filename.startsWith(matchPrefix)
+        && WEEK_PATTERN.test(filename);
     })
     .map((file) => {
       const filename = file.path.split('/').pop();
@@ -272,12 +281,12 @@ async function unpublishFromAdminHlx(filename, folder, log) {
  * @returns {Promise<Array<{ fileName: string, operation: string, status: string }>>} Results
  */
 async function performSlidingWindow(sharepointClient, files, targetWeekId, config, log) {
-  const { destinationFolder, filePrefix } = config;
+  const { type, destinationFolder, filePrefix } = config;
   const operations = [];
 
   try {
     log.info(
-      `%s: Starting sliding window for ${filePrefix}, target week: ${targetWeekId}`,
+      `%s: Starting sliding window for ${type}, target week: ${targetWeekId}`,
       AUDIT_NAME,
     );
 
@@ -344,11 +353,11 @@ async function performSlidingWindow(sharepointClient, files, targetWeekId, confi
       status: 'success',
     });
 
-    log.info(`%s: Sliding window completed for ${filePrefix}`, AUDIT_NAME);
+    log.info(`%s: Sliding window completed for ${type}`, AUDIT_NAME);
     return operations;
   } catch (error) {
     log.error(
-      `%s: Error during sliding window for ${filePrefix}: ${error.message}`,
+      `%s: Error during sliding window for ${type}: ${error.message}`,
       AUDIT_NAME,
       error,
     );
@@ -398,25 +407,26 @@ async function run(message, context) {
 
     // Process each file configuration
     for (const config of FILE_CONFIGS) {
-      const { destinationFolder, filePrefix } = config;
+      const { type, destinationFolder, filePrefix } = config;
 
       try {
-        log.info(`%s: Processing report type: ${filePrefix}`, AUDIT_NAME);
+        log.info(`%s: Processing report type: ${type} (prefix: ${filePrefix})`, AUDIT_NAME);
 
         // Get the last 5 files for this type
         const last5Files = getLastNFiles(
           queryIndexFiles,
           filePrefix,
+          destinationFolder,
           REQUIRED_FILE_COUNT,
           log,
         );
 
         // Validate we have enough files
         if (last5Files.length < REQUIRED_FILE_COUNT) {
-          const errorMsg = `Insufficient files found for "${filePrefix}": `
+          const errorMsg = `Insufficient files found for "${type}": `
             + `found ${last5Files.length}, required ${REQUIRED_FILE_COUNT}`;
           log.error(`%s: ${errorMsg}`, AUDIT_NAME);
-          errors.push({ filePrefix, error: errorMsg });
+          errors.push({ type, filePrefix, error: errorMsg });
           // eslint-disable-next-line no-continue
           continue;
         }
@@ -425,14 +435,14 @@ async function run(message, context) {
         const newestWeek = last5Files[0].weekIdentifier;
         if (newestWeek === targetWeekIdentifier) {
           log.info(
-            `%s: Target week ${targetWeekIdentifier} already exists for ${filePrefix}. Re-running sliding window.`,
+            `%s: Target week ${targetWeekIdentifier} already exists for ${type}. Re-running sliding window.`,
             AUDIT_NAME,
           );
           // Continue with sliding window - it will replace existing files
         }
 
         log.info(
-          `%s: Found 5 files for ${filePrefix}. Newest: ${newestWeek}, Creating: ${targetWeekIdentifier}`,
+          `%s: Found ${REQUIRED_FILE_COUNT} files for ${type}. Newest: ${newestWeek}, Creating: ${targetWeekIdentifier}`,
           AUDIT_NAME,
         );
 
@@ -455,7 +465,7 @@ async function run(message, context) {
           last5Files[3].weekIdentifier,
         ];
 
-        log.info(`%s: Publishing ${weeksToPublish.length} files for ${filePrefix}`, AUDIT_NAME);
+        log.info(`%s: Publishing ${weeksToPublish.length} files for ${type}`, AUDIT_NAME);
 
         for (const weekId of weeksToPublish) {
           const fileName = `${filePrefix}-${weekId}.xlsx`;
@@ -476,6 +486,7 @@ async function run(message, context) {
         }
 
         results.push({
+          type,
           filePrefix,
           folder: destinationFolder,
           targetWeek: targetWeekIdentifier,
@@ -485,11 +496,11 @@ async function run(message, context) {
         });
       } catch (fileError) {
         log.error(
-          `%s: Error processing ${filePrefix}: ${fileError.message}`,
+          `%s: Error processing ${type}: ${fileError.message}`,
           AUDIT_NAME,
           fileError,
         );
-        errors.push({ filePrefix, error: fileError.message });
+        errors.push({ type, filePrefix, error: fileError.message });
       }
     }
 
