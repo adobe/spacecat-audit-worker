@@ -11,7 +11,6 @@
  */
 /* eslint-disable no-await-in-loop */
 
-import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
   getS3Config,
@@ -20,7 +19,10 @@ import {
   fetchRemotePatterns,
   getConfigCategories,
 } from './utils/report-utils.js';
-import { pathHasData } from '../utils/cdn-utils.js';
+import {
+  pathHasData,
+  getCdnAwsRuntime,
+} from '../utils/cdn-utils.js';
 import { runWeeklyReport } from './utils/report-runner.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 import { createLLMOSharepointClient, bulkPublishToAdminHlx } from '../utils/report-uploader.js';
@@ -29,6 +31,8 @@ import { generatePatternsWorkbook } from './patterns/patterns-uploader.js';
 
 async function runCdnLogsReport(url, context, site, auditContext) {
   const { log } = context;
+  const awsRuntime = getCdnAwsRuntime(site, context);
+  const { s3Client } = awsRuntime;
   const s3Config = await getS3Config(site, context);
   log.debug(`Starting CDN logs report audit for ${url}`);
 
@@ -36,10 +40,13 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     context,
     auditContext?.sharepointOptions,
   );
-  const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation(), {
-    pollIntervalMs: 3000,
-    maxPollAttempts: 250,
-  });
+  const athenaClient = awsRuntime.createAthenaClient(
+    s3Config.getAthenaTempLocation(),
+    {
+      pollIntervalMs: 3000,
+      maxPollAttempts: 250,
+    },
+  );
   const siteId = site.getId();
   const reportConfigs = getConfigs(s3Config.bucket, s3Config.customerDomain, siteId);
 
@@ -47,7 +54,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   const reportsToPublish = [];
   for (const reportConfig of reportConfigs) {
     // eslint-disable-next-line no-await-in-loop
-    if (!(await pathHasData(context.s3Client, reportConfig.aggregatedLocation))) {
+    if (!(await pathHasData(s3Client, reportConfig.aggregatedLocation))) {
       log.info(`No data found for ${reportConfig.name} report - skipping`);
       // eslint-disable-next-line no-continue
       continue;

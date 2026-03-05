@@ -67,6 +67,7 @@ describe('CDN Logs Report Utils', () => {
       expect(config).to.have.property('customerName', 'example');
       expect(config).to.have.property('customerDomain', 'example_com');
       expect(config).to.have.property('bucket', 'spacecat-test-cdn-logs-aggregates-us-east-1');
+      expect(config).to.have.property('region', 'us-east-1');
       expect(config).to.have.property('databaseName', 'cdn_logs_example_com');
     });
 
@@ -92,6 +93,22 @@ describe('CDN Logs Report Utils', () => {
       const tempLocation = config.getAthenaTempLocation();
 
       expect(tempLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/temp/athena-results/');
+    });
+
+    it('uses site cdn config region when provided', async () => {
+      const mockSite = {
+        getBaseURL: () => 'https://www.example.com',
+        getConfig: () => createSiteConfig({
+          getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket', region: 'eu-west-1' }),
+        }),
+      };
+
+      const config = await reportUtils.getS3Config(mockSite, mockContext);
+
+      expect(config).to.have.property('region', 'eu-west-1');
+      expect(config).to.have.property('bucket', 'spacecat-test-cdn-logs-aggregates-eu-west-1');
+      expect(config.getAthenaTempLocation())
+        .to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/temp/athena-results/');
     });
   });
   describe('generateReportingPeriods', () => {

@@ -17,7 +17,10 @@
 
 import ExcelJS from 'exceljs';
 import { generateReportingPeriods as genPeriods } from '../../cdn-logs-report/utils/report-utils.js';
-import { resolveConsolidatedBucketName, extractCustomerDomain } from '../../utils/cdn-utils.js';
+import {
+  extractCustomerDomain,
+  getCdnAwsRuntime,
+} from '../../utils/cdn-utils.js';
 import { createLLMOSharepointClient, readFromSharePoint } from '../../utils/report-uploader.js';
 import { downloadExistingCdnSheet } from '../../llm-error-pages/utils.js';
 
@@ -33,10 +36,11 @@ export async function getS3Config(site, context) {
   const customerDomain = extractCustomerDomain(site);
   const domainParts = customerDomain.split(/[._]/);
   const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const bucket = resolveConsolidatedBucketName(context);
+  const { region, bucket } = getCdnAwsRuntime(site, context);
 
   return {
     bucket,
+    region,
     customerName,
     customerDomain,
     databaseName: `cdn_logs_${customerDomain}`,

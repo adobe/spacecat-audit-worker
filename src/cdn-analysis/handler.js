@@ -12,7 +12,6 @@
 /* eslint-disable object-curly-newline */
 import { getStaticContent, isInteger, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
-import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
   resolveCdnBucketName,
@@ -23,7 +22,7 @@ import {
   mapServiceToCdnProvider,
   CDN_TYPES,
   SERVICE_PROVIDER_TYPES,
-  resolveConsolidatedBucketName,
+  getCdnAwsRuntime,
   pathHasData,
   shouldRecreateTable,
 } from '../utils/cdn-utils.js';
@@ -211,10 +210,15 @@ async function triggerSubAudits(context, site, detectedDays) {
 }
 
 export async function processCdnLogs(auditUrl, context, site, auditContext) {
-  const { log, s3Client, dataAccess } = context;
+  const { log, dataAccess } = context;
   const auditType = 'cdn-logs-analysis';
+  const awsRuntime = getCdnAwsRuntime(site, context);
+  const { s3Client } = awsRuntime;
 
-  const bucketName = await resolveCdnBucketName(site, context);
+  const bucketName = await resolveCdnBucketName(site, {
+    ...context,
+    s3Client,
+  });
   if (!bucketName) {
     return {
       auditResult: {
@@ -243,7 +247,7 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
   const { aggregatedTable, aggregatedReferralTable } = getAggregatedTableNames(
     customerDomain,
   );
-  const consolidatedBucket = resolveConsolidatedBucketName(context);
+  const consolidatedBucket = awsRuntime.bucket;
   const siteId = site.getId();
 
   // byocdn-other files arrive on unpredictable schedules, so the dispatcher-scheduled
@@ -322,7 +326,7 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
         siteId,
       );
       const rawTable = `raw_logs_${customerDomain}_${serviceProvider.replace(/-/g, '_')}`;
-      const athenaClient = AWSAthenaClient.fromContext(context, paths.tempLocation, {
+      const athenaClient = awsRuntime.createAthenaClient(paths.tempLocation, {
         maxPollAttempts: 500,
       });
 
@@ -382,7 +386,7 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
       })();
 
       // eslint-disable-next-line no-await-in-loop
-      const hasRawData = await pathHasData(context.s3Client, rawDataPath);
+      const hasRawData = await pathHasData(s3Client, rawDataPath);
 
       if (!hasRawData) {
         log.info(`${auditType} no raw logs found for siteId=${siteId}, siteUrl=${host}, serviceProvider=${serviceProvider}, cdnType=${cdnType} at path=${rawDataPath}`);

@@ -11,7 +11,6 @@
  */
 
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
-import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { subDays } from 'date-fns';
 import { wwwUrlResolver } from '../common/index.js';
@@ -20,7 +19,7 @@ import { getObjectFromKey } from '../utils/s3-utils.js';
 import { calculateCitabilityScore } from './analyzer.js';
 import {
   extractCustomerDomain,
-  resolveConsolidatedBucketName,
+  getCdnAwsRuntime,
   buildDateFilter,
   buildUserAgentFilter,
   buildSiteFilters,
@@ -40,10 +39,11 @@ export async function getS3Config(site, context) {
   const domainParts = customerDomain.split(/[._]/);
   /* c8 ignore next */
   const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const bucket = resolveConsolidatedBucketName(context);
+  const { region, bucket } = getCdnAwsRuntime(site, context);
 
   return {
     bucket,
+    region,
     customerName,
     customerDomain,
     databaseName: `cdn_logs_${customerDomain}`,
@@ -90,8 +90,9 @@ export async function extractUrls(context) {
     urlsToAnalyze = auditContext.urls.map((url) => ({ url }));
     skipJoinPath = true;
   } else {
+    const awsRuntime = getCdnAwsRuntime(site, context);
     const s3Config = await getS3Config(site, context);
-    const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
+    const athenaClient = awsRuntime.createAthenaClient(s3Config.getAthenaTempLocation());
     const filters = site.getConfig().getLlmoCdnlogsFilter();
 
     const variables = {

@@ -618,8 +618,11 @@ describe('LLM Error Pages Utils', () => {
 
       const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
         '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'resolved-bucket',
           extractCustomerDomain: () => 'example_com',
+          getCdnAwsRuntime: () => ({
+            region: 'us-east-1',
+            bucket: 'resolved-bucket',
+          }),
         },
       });
 
@@ -641,8 +644,11 @@ describe('LLM Error Pages Utils', () => {
 
       const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
         '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'resolved-bucket-name',
           extractCustomerDomain: () => 'example_com',
+          getCdnAwsRuntime: () => ({
+            region: 'us-east-1',
+            bucket: 'resolved-bucket-name',
+          }),
         },
       });
 
@@ -661,8 +667,11 @@ describe('LLM Error Pages Utils', () => {
 
       const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
         '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'custom-bucket',
           extractCustomerDomain: () => 'test_example_com',
+          getCdnAwsRuntime: () => ({
+            region: 'us-east-1',
+            bucket: 'custom-bucket',
+          }),
         },
       });
 
@@ -681,8 +690,8 @@ describe('LLM Error Pages Utils', () => {
 
       const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
         '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => { throw new Error('boom'); },
           extractCustomerDomain: () => 'example_com',
+          getCdnAwsRuntime: () => { throw new Error('boom'); },
         },
       });
 
@@ -703,8 +712,11 @@ describe('LLM Error Pages Utils', () => {
 
       const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
         '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'spacecat-test-cdn-logs-aggregates-us-east-1',
           extractCustomerDomain: () => 'example_com',
+          getCdnAwsRuntime: () => ({
+            region: 'us-east-1',
+            bucket: 'spacecat-test-cdn-logs-aggregates-us-east-1',
+          }),
         },
       });
 
@@ -721,8 +733,11 @@ describe('LLM Error Pages Utils', () => {
 
       const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
         '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'spacecat-test-cdn-logs-aggregates-us-east-1',
           extractCustomerDomain: () => 'example_com',
+          getCdnAwsRuntime: () => ({
+            region: 'us-east-1',
+            bucket: 'spacecat-test-cdn-logs-aggregates-us-east-1',
+          }),
         },
       });
 
@@ -739,8 +754,11 @@ describe('LLM Error Pages Utils', () => {
 
       const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
         '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'spacecat-test-cdn-logs-aggregates-us-east-1',
           extractCustomerDomain: () => 'example_com',
+          getCdnAwsRuntime: () => ({
+            region: 'us-east-1',
+            bucket: 'spacecat-test-cdn-logs-aggregates-us-east-1',
+          }),
         },
       });
 

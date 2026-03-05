@@ -12,8 +12,7 @@
 
 import { getStaticContent, isoCalendarWeek, llmoConfig } from '@adobe/spacecat-shared-utils';
 import {
-  extractCustomerDomain,
-  resolveConsolidatedBucketName,
+  extractCustomerDomain, getCdnAwsRuntime,
 } from '../../utils/cdn-utils.js';
 import { uploadToSharePoint } from '../../utils/report-uploader.js';
 
@@ -22,10 +21,11 @@ export async function getS3Config(site, context) {
   const domainParts = customerDomain.split(/[._]/);
   /* c8 ignore next */
   const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const bucket = resolveConsolidatedBucketName(context);
+  const { region, bucket } = getCdnAwsRuntime(site, context);
 
   return {
     bucket,
+    region,
     customerName,
     customerDomain,
     databaseName: `cdn_logs_${customerDomain}`,
