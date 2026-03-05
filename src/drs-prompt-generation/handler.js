@@ -20,7 +20,7 @@ const RUNBOOK_URL = 'https://github.com/adobe/spacecat-audit-worker/blob/main/do
  * Sends a Slack alert to the LLMO onboarding channel when prompt generation fails.
  */
 async function alertPromptGenerationFailure(context, siteId, drsJobId, reason) {
-  const channelId = process.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID;
+  const channelId = context.env?.SLACK_CHANNEL_LLMO_ONBOARDING_ID;
   if (!channelId) return;
 
   await postMessageSafe(context, channelId, '', {

@@ -47,7 +47,6 @@ describe('DRS Prompt Generation Handler', () => {
   beforeEach(async () => {
     mockPostMessageSafe = sandbox.stub().resolves({ success: true });
     mockWriteDrsPromptsToLlmoConfig = sandbox.stub().resolves({ success: true, version: 'v1' });
-    process.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID = 'C-TEST-CHANNEL';
 
     const handler = await esmock('../../src/drs-prompt-generation/handler.js', {
       '../../src/utils/slack-utils.js': { postMessageSafe: mockPostMessageSafe },
@@ -66,6 +65,7 @@ describe('DRS Prompt Generation Handler', () => {
     context.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
     context.s3Client = { send: sandbox.stub().resolves() };
     context.env.S3_IMPORTER_BUCKET_NAME = 'importer-bucket';
+    context.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID = 'C-TEST-CHANNEL';
 
     // Stub global fetch — presigned URL returns DRS prompts
     fetchStub = sandbox.stub(globalThis, 'fetch');
@@ -77,7 +77,6 @@ describe('DRS Prompt Generation Handler', () => {
 
   afterEach(() => {
     sandbox.restore();
-    delete process.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID;
   });
 
   it('returns ok and logs error when siteId is missing', async () => {
@@ -204,7 +203,7 @@ describe('DRS Prompt Generation Handler', () => {
   });
 
   it('skips Slack alert when channel env var is not set', async () => {
-    delete process.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID;
+    delete context.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID;
 
     const message = {
       siteId: 'site-123',
@@ -386,7 +385,6 @@ describe('DRS Prompt Generation Handler', () => {
       sandbox.restore();
 
       const localPostMessageSafe = sandbox.stub().resolves({ success: true });
-      process.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID = 'C-TEST-CHANNEL';
 
       // eslint-disable-next-line no-await-in-loop
       const handler = await esmock('../../src/drs-prompt-generation/handler.js', {
@@ -401,6 +399,7 @@ describe('DRS Prompt Generation Handler', () => {
       context.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
       context.s3Client = { send: sandbox.stub().resolves() };
       context.env.S3_IMPORTER_BUCKET_NAME = 'importer-bucket';
+      context.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID = 'C-TEST-CHANNEL';
 
       fetchStub = sandbox.stub(globalThis, 'fetch');
       fetchStub.resolves({
