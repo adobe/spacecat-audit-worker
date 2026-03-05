@@ -56,7 +56,7 @@ export default async function handler(message, context) {
   }
 
   // Skip if Mystique returned no actionable suggestions
-  if (!suggestions || suggestions.length === 0) {
+  if (!isNonEmptyArray(suggestions)) {
     paidLog.skipping('no suggestions from guidance engine', siteId, url, auditId);
     return ok();
   }
