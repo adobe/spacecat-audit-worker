@@ -10,8 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
-import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
-import { resolveConsolidatedBucketName, extractCustomerDomain } from './cdn-utils.js';
+import {
+  extractCustomerDomain,
+  getCdnAwsRuntime,
+} from './cdn-utils.js';
 import { generateReportingPeriods } from '../cdn-logs-report/utils/report-utils.js';
 import { weeklyBreakdownQueries } from '../cdn-logs-report/utils/query-builder.js';
 
@@ -50,10 +52,11 @@ async function getS3Config(site, context) {
   const customerDomain = extractCustomerDomain(site);
   const domainParts = customerDomain.split(/[._]/);
   const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const bucket = resolveConsolidatedBucketName(context);
+  const { region, bucket } = getCdnAwsRuntime(site, context);
 
   return {
     bucket,
+    region,
     customerName,
     customerDomain,
     databaseName: `cdn_logs_${customerDomain}`,
@@ -83,11 +86,12 @@ export async function getTopAgenticUrlsFromAthena(
     ? `https://${context.finalUrl}`
     : context.finalUrl || site.getBaseURL();
   try {
+    const awsRuntime = getCdnAwsRuntime(site, context);
     const s3Config = await getS3Config(site, context);
     const periods = generateReportingPeriods();
     const recentWeeks = periods.weeks;
     const oneWeekPeriods = { weeks: [recentWeeks[0]] };
-    const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
+    const athenaClient = awsRuntime.createAthenaClient(s3Config.getAthenaTempLocation());
     const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit({
       periods: oneWeekPeriods,
       databaseName: s3Config.databaseName,

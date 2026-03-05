@@ -227,6 +227,9 @@ describe('LLM Error Pages Handler', function () {
       },
       '../../../src/utils/cdn-utils.js': {
         buildSiteFilters: mockBuildSiteFilters,
+        getCdnAwsRuntime: () => ({
+          createAthenaClient: () => mockAthenaClient,
+        }),
       },
       '../../../src/utils/agentic-urls.js': {
         getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
@@ -521,6 +524,9 @@ describe('LLM Error Pages Handler', function () {
         },
         '../../../src/utils/cdn-utils.js': {
           buildSiteFilters: mockBuildSiteFilters,
+          getCdnAwsRuntime: () => ({
+            createAthenaClient: () => mockAthenaClient,
+          }),
         },
         exceljs: {
           default: {
@@ -883,6 +889,9 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
       },
       '../../../src/utils/cdn-utils.js': {
         buildSiteFilters: sandbox.stub().returns(''),
+        getCdnAwsRuntime: () => ({
+          createAthenaClient: () => mockAthenaClient,
+        }),
       },
       exceljs: {
         default: { Workbook: function Workbook() { return { addWorksheet: () => ({ addRow: sandbox.stub() }) }; } },
@@ -962,6 +971,9 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
       },
       '../../../src/utils/cdn-utils.js': {
         buildSiteFilters: sandbox.stub().returns(''),
+        getCdnAwsRuntime: () => ({
+          createAthenaClient: () => mockAthenaClient,
+        }),
       },
       exceljs: {
         default: { Workbook: function Workbook() { return { addWorksheet: () => ({ addRow: sandbox.stub() }) }; } },
@@ -1094,6 +1106,12 @@ describe('LLM Error Pages Handler (isolated)', function () {
       '../../../src/utils/report-uploader.js': {
         createLLMOSharepointClient: sandbox.stub().resolves({}),
         saveExcelReport: mockSaveExcelReport,
+      },
+      '../../../src/utils/cdn-utils.js': {
+        buildSiteFilters: mockBuildSiteFilters,
+        getCdnAwsRuntime: () => ({
+          createAthenaClient: () => mockAthenaClient,
+        }),
       },
       exceljs: {
         default: {

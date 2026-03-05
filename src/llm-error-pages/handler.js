@@ -12,7 +12,6 @@
 
 import ExcelJS from 'exceljs';
 import { Audit } from '@adobe/spacecat-shared-data-access';
-import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
   getS3Config,
@@ -30,7 +29,7 @@ import {
 import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
 import { validateCountryCode } from '../cdn-logs-report/utils/report-utils.js';
-import { buildSiteFilters } from '../utils/cdn-utils.js';
+import { buildSiteFilters, getCdnAwsRuntime } from '../utils/cdn-utils.js';
 import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -136,7 +135,8 @@ export async function runAuditAndSendToMystique(context) {
   log.info(`[LLM-ERROR-PAGES] Starting audit for ${url}`);
 
   try {
-    const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
+    const awsRuntime = getCdnAwsRuntime(site, context);
+    const athenaClient = awsRuntime.createAthenaClient(s3Config.getAthenaTempLocation());
 
     const week = generateReportingPeriods().weeks[0];
     const { startDate, endDate } = week;

@@ -380,6 +380,27 @@ describe('CDN Analysis Handler', () => {
       expect(resultInvalid.fullAuditRef).to.not.equal('s3://spacecat-dev-cdn-logs-aggregates-us-east-1/aggregated/test-site-id/2025/01/02/03/');
     });
 
+    it('uses site cdn config region for consolidated bucket when provided', async () => {
+      context.env.AWS_REGION = 'eu-west-1';
+      site.getConfig.returns({
+        getLlmoCdnBucketConfig: () => ({
+          bucketName: 'cdn-logs-adobe-dev',
+          region: 'eu-west-1',
+        }),
+      });
+
+      const auditContext = {
+        year: 2025,
+        month: 1,
+        day: 2,
+        hour: 3,
+      };
+
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext);
+
+      expect(result.fullAuditRef).to.equal('s3://spacecat-dev-cdn-logs-aggregates-eu-west-1/aggregated/test-site-id/2025/01/02/03/');
+    });
+
     it('handles both orgId and imsOrgId being empty', async () => {
       site.getConfig.returns({
         getLlmoCdnBucketConfig: () => ({ bucketName: 'cdn-logs-test', orgId: '' }),

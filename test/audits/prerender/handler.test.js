@@ -3765,6 +3765,7 @@ describe('Prerender Audit', () => {
         '../../../src/utils/cdn-utils.js': {
           resolveConsolidatedBucketName: () => 'bucket',
           extractCustomerDomain: () => 'acme_com',
+          resolveSiteCdnRegion: () => 'us-east-1',
         },
       });
 
@@ -3808,6 +3809,7 @@ describe('Prerender Audit', () => {
         '../../../src/utils/cdn-utils.js': {
           resolveConsolidatedBucketName: () => 'bucket',
           extractCustomerDomain: () => 'acme_com',
+          resolveSiteCdnRegion: () => 'us-east-1',
         },
       });
       const site = {
@@ -3826,6 +3828,7 @@ describe('Prerender Audit', () => {
           // Avoid depending on env; just return a deterministic bucket
           resolveConsolidatedBucketName: () => 'bucket',
           extractCustomerDomain: () => 'adobe_com',
+          resolveSiteCdnRegion: () => 'us-east-1',
         },
       });
       const cfg = await shared.getS3Config({ getBaseURL: () => 'https://www.adobe.com' }, { });
@@ -3842,6 +3845,7 @@ describe('Prerender Audit', () => {
         '../../../src/utils/cdn-utils.js': {
           resolveConsolidatedBucketName: () => 'bucket',
           extractCustomerDomain: () => 'www.adobe_com',
+          resolveSiteCdnRegion: () => 'us-east-1',
         },
       });
       const cfg = await shared.getS3Config({ }, { });

@@ -22,8 +22,8 @@ use(sinonChai);
 describe('agentic-urls', () => {
   let sandbox;
   let mockAthenaClient;
-  let mockResolveConsolidatedBucketName;
   let mockExtractCustomerDomain;
+  let mockGetCdnAwsRuntime;
   let mockGenerateReportingPeriods;
   let mockWeeklyBreakdownQueries;
   let getTopAgenticUrlsFromAthena;
@@ -35,8 +35,12 @@ describe('agentic-urls', () => {
       query: sandbox.stub(),
     };
 
-    mockResolveConsolidatedBucketName = sandbox.stub().returns('test-bucket');
     mockExtractCustomerDomain = sandbox.stub().returns('example_com');
+    mockGetCdnAwsRuntime = sandbox.stub().returns({
+      region: 'us-east-1',
+      bucket: 'test-bucket',
+      createAthenaClient: sandbox.stub().returns(mockAthenaClient),
+    });
 
     mockGenerateReportingPeriods = sandbox.stub().returns({
       weeks: [
@@ -54,14 +58,9 @@ describe('agentic-urls', () => {
     };
 
     const module = await esmock('../../src/utils/agentic-urls.js', {
-      '@adobe/spacecat-shared-athena-client': {
-        AWSAthenaClient: {
-          fromContext: sandbox.stub().returns(mockAthenaClient),
-        },
-      },
       '../../src/utils/cdn-utils.js': {
-        resolveConsolidatedBucketName: mockResolveConsolidatedBucketName,
         extractCustomerDomain: mockExtractCustomerDomain,
+        getCdnAwsRuntime: mockGetCdnAwsRuntime,
       },
       '../../src/cdn-logs-report/utils/report-utils.js': {
         generateReportingPeriods: mockGenerateReportingPeriods,
@@ -270,7 +269,7 @@ describe('agentic-urls', () => {
       await getTopAgenticUrlsFromAthena(site, context);
 
       expect(mockExtractCustomerDomain).to.have.been.calledWith(site);
-      expect(mockResolveConsolidatedBucketName).to.have.been.calledWith(context);
+      expect(mockGetCdnAwsRuntime).to.have.been.calledWith(site, context);
     });
 
     it('should handle www prefix in customer domain', async () => {

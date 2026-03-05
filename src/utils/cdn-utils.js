@@ -10,7 +10,13 @@
  * governing permissions and limitations under the License.
  */
 
-import { HeadBucketCommand, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  HeadBucketCommand,
+  ListObjectsV2Command,
+  GetObjectCommand,
+} from '@aws-sdk/client-s3';
+import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import zlib from 'zlib';
 import { hasText } from '@adobe/spacecat-shared-utils';
 import { PROVIDER_USER_AGENT_PATTERNS } from '../common/user-agent-classification.js';
@@ -315,11 +321,49 @@ export async function discoverCdnProviders(s3Client, bucketName, timeParts) {
   return [];
 }
 
-export function resolveConsolidatedBucketName(context) {
-  const { env } = context;
+export function resolveSiteCdnRegion(site, context) {
+  const configuredRegion = site?.getConfig?.()?.getLlmoCdnBucketConfig?.()?.region;
+  if (configuredRegion) {
+    return configuredRegion;
+  }
+
+  return context?.env?.AWS_REGION || 'us-east-1';
+}
+
+export function resolveConsolidatedBucketName(context, region) {
+  const { env = {} } = context;
   const { AWS_ENV, AWS_REGION = 'us-east-1' } = env;
+  const resolvedRegion = region || AWS_REGION;
   const environment = AWS_ENV || 'prod';
-  return `spacecat-${environment}-cdn-logs-aggregates-${AWS_REGION}`;
+  return `spacecat-${environment}-cdn-logs-aggregates-${resolvedRegion}`;
+}
+
+export function getCdnAwsRuntime(site, context) {
+  const region = resolveSiteCdnRegion(site, context);
+  const runtimeRegion = context?.env?.AWS_REGION || 'us-east-1';
+  const bucket = resolveConsolidatedBucketName(context, region);
+  const s3Client = region === runtimeRegion ? context.s3Client : new S3Client({ region });
+  const athenaContext = region === runtimeRegion
+    ? context
+    : {
+      ...context,
+      athenaClient: undefined,
+      env: {
+        ...context.env,
+        AWS_REGION: region,
+      },
+    };
+
+  return {
+    region,
+    bucket,
+    s3Client,
+    createAthenaClient: (tempLocation, opts = {}) => AWSAthenaClient.fromContext(
+      athenaContext,
+      tempLocation,
+      opts,
+    ),
+  };
 }
 
 /**

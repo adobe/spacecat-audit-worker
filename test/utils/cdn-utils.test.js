@@ -26,6 +26,8 @@ import {
   shouldRecreateTable,
   buildSiteFilters,
   mapServiceToCdnProvider,
+  resolveConsolidatedBucketName,
+  resolveSiteCdnRegion,
 } from '../../src/utils/cdn-utils.js';
 
 use(sinonChai);
@@ -284,6 +286,60 @@ describe('CDN Utils', () => {
       expect(isStandardAdobeCdnBucket('logs-test123')).to.be.false;
       expect(isStandardAdobeCdnBucket('')).to.be.false;
       expect(isStandardAdobeCdnBucket('cdn-logs-test@123')).to.be.false;
+    });
+  });
+
+  describe('resolveSiteCdnRegion', () => {
+    it('uses site cdn bucket config region when provided', () => {
+      const site = {
+        getConfig: () => ({
+          getLlmoCdnBucketConfig: () => ({ region: 'eu-west-1' }),
+        }),
+      };
+      const context = {
+        env: { AWS_REGION: 'us-east-1' },
+      };
+
+      expect(resolveSiteCdnRegion(site, context)).to.equal('eu-west-1');
+    });
+
+    it('falls back to runtime region when site region is missing', () => {
+      const site = {
+        getConfig: () => ({
+          getLlmoCdnBucketConfig: () => ({}),
+        }),
+      };
+      const context = {
+        env: { AWS_REGION: 'us-west-2' },
+      };
+
+      expect(resolveSiteCdnRegion(site, context)).to.equal('us-west-2');
+    });
+  });
+
+  describe('resolveConsolidatedBucketName', () => {
+    it('uses explicit region override when provided', () => {
+      const context = {
+        env: {
+          AWS_ENV: 'dev',
+          AWS_REGION: 'us-east-1',
+        },
+      };
+
+      expect(resolveConsolidatedBucketName(context, 'eu-west-1'))
+        .to.equal('spacecat-dev-cdn-logs-aggregates-eu-west-1');
+    });
+
+    it('falls back to runtime region when override is missing', () => {
+      const context = {
+        env: {
+          AWS_ENV: 'dev',
+          AWS_REGION: 'us-west-1',
+        },
+      };
+
+      expect(resolveConsolidatedBucketName(context))
+        .to.equal('spacecat-dev-cdn-logs-aggregates-us-west-1');
     });
   });
 

@@ -11,7 +11,10 @@
  */
 
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
-import { resolveConsolidatedBucketName, extractCustomerDomain } from '../utils/cdn-utils.js';
+import {
+  extractCustomerDomain,
+  getCdnAwsRuntime,
+} from '../utils/cdn-utils.js';
 import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL } from '../common/user-agent-classification.js';
 import { ELMO_LIVE_HOST } from '../common/constants.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
@@ -245,12 +248,13 @@ export async function getS3Config(site, context) {
   const domainParts = customerDomain.split(/[._]/);
   /* c8 ignore next */
   const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const bucket = resolveConsolidatedBucketName(context);
+  const { region, bucket } = getCdnAwsRuntime(site, context);
   const siteId = site.getId();
   const aggregatedLocation = `s3://${bucket}/aggregated/${siteId}/`;
 
   return {
     bucket,
+    region,
     customerName,
     customerDomain,
     aggregatedLocation,
