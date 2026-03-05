@@ -1,3 +1,10 @@
+# [1.342.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.341.0...v1.342.0) (2026-03-05)
+
+
+### Features
+
+* store dependency tree information on security-vulnerability suggestions  ([#2075](https://github.com/adobe/spacecat-audit-worker/issues/2075)) ([a3cc254](https://github.com/adobe/spacecat-audit-worker/commit/a3cc2542cabb79f63602b4f9d76b95dab1619e67))
+
 # [1.341.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.340.0...v1.341.0) (2026-03-04)
 
 
