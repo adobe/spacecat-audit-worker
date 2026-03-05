@@ -11,20 +11,68 @@
  */
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
-import { writeDrsPromptsToS3 } from './drs-parquet-writer.js';
 import writeDrsPromptsToLlmoConfig from './drs-config-writer.js';
+import { postMessageSafe } from '../utils/slack-utils.js';
+
+const RUNBOOK_URL = 'https://github.com/adobe/spacecat-audit-worker/blob/main/docs/runbooks/resubmit-drs-prompt-generation.md';
 
 /**
- * Downloads DRS result from presigned URL and writes JSON + parquet to SpaceCat S3.
- * Non-fatal — returns null keys on failure so the handler can continue.
+ * Sends a Slack alert to the LLMO onboarding channel when prompt generation fails.
+ */
+async function alertPromptGenerationFailure(context, siteId, drsJobId, reason) {
+  const channelId = context.env?.SLACK_CHANNEL_LLMO_ONBOARDING_ID;
+  if (!channelId) return;
+
+  await postMessageSafe(context, channelId, '', {
+    attachments: [{
+      color: '#CB3837',
+      blocks: [
+        {
+          type: 'header',
+          text: {
+            type: 'plain_text',
+            text: 'AI Prompt Generation Failed',
+            emoji: true,
+          },
+        },
+        {
+          type: 'section',
+          fields: [
+            { type: 'mrkdwn', text: `*Site ID:*\n\`${siteId}\`` },
+            { type: 'mrkdwn', text: `*DRS Job:*\n\`${drsJobId || 'N/A'}\`` },
+          ],
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `*Reason:* ${reason}`,
+          },
+        },
+        {
+          type: 'context',
+          elements: [{
+            type: 'mrkdwn',
+            text: `<${RUNBOOK_URL}|Runbook: Resubmit DRS Prompt Generation>`,
+          }],
+        },
+        { type: 'divider' },
+      ],
+    }],
+  });
+}
+
+/**
+ * Downloads DRS result and writes prompts to the LLMO config as aiTopics.
+ * Non-fatal — returns false on failure so the handler can continue.
  *
  * @param {string} resultLocation - Presigned URL to the DRS result JSON
  * @param {string} jobId - DRS job ID
  * @param {string} siteId - Site identifier
  * @param {object} context - Universal context (env, s3Client, log)
- * @returns {Promise<{drsJsonKey: string|null, drsParquetKey: string|null}>}
+ * @returns {Promise<boolean>} true if prompts were written successfully
  */
-async function convertDrsResult(resultLocation, jobId, siteId, context) {
+async function processDrsResult(resultLocation, jobId, siteId, context) {
   const { env, s3Client, log } = context;
 
   try {
@@ -41,33 +89,19 @@ async function convertDrsResult(resultLocation, jobId, siteId, context) {
 
     if (drsPrompts.length === 0) {
       log.warn(`DRS job ${jobId} returned no prompts for site ${siteId}`);
-      return { drsJsonKey: null, drsParquetKey: null };
+      return false;
     }
 
     const bucket = env.S3_IMPORTER_BUCKET_NAME;
-    const { jsonKey, parquetKey } = await writeDrsPromptsToS3({
-      drsPrompts,
-      siteId,
-      jobId,
-      bucket,
-      s3Client,
-      log,
+    await writeDrsPromptsToLlmoConfig({
+      drsPrompts, siteId, s3Client, s3Bucket: bucket, log,
     });
 
-    // Write prompts to LLMO config as aiTopics (non-fatal)
-    try {
-      await writeDrsPromptsToLlmoConfig({
-        drsPrompts, siteId, s3Client, s3Bucket: bucket, log,
-      });
-    } catch /* c8 ignore next */ (configError) {
-      log.error(`Failed to write DRS prompts to LLMO config for site ${siteId}: ${configError.message}`);
-    }
-
-    log.info(`DRS conversion complete for job ${jobId}: JSON=${jsonKey}, parquet=${parquetKey}`);
-    return { drsJsonKey: jsonKey, drsParquetKey: parquetKey };
+    log.info(`Wrote ${drsPrompts.length} DRS prompts to LLMO config for site ${siteId}`);
+    return true;
   } catch (error) {
-    log.error(`DRS conversion failed for job ${jobId}, site ${siteId}: ${error.message}`);
-    return { drsJsonKey: null, drsParquetKey: null };
+    log.error(`DRS result processing failed for job ${jobId}, site ${siteId}: ${error.message}`);
+    return false;
   }
 }
 
@@ -76,12 +110,11 @@ async function convertDrsResult(resultLocation, jobId, siteId, context) {
  * When a prompt_generation_base_url job completes in the Data Retrieval Service,
  * the SNS notification is routed to the audit-jobs SQS queue and dispatched here.
  *
- * On JOB_COMPLETED (all sources): downloads DRS result from the presigned URL in
- * resultLocation, writes JSON + parquet to SpaceCat S3.
+ * On JOB_COMPLETED: downloads DRS result, writes prompts to LLMO config as aiTopics.
  * On JOB_COMPLETED + source=onboarding: additionally triggers llmo-customer-analysis.
- * On JOB_FAILED: logs the failure (prompts can be generated manually later).
+ * On JOB_FAILED: logs the failure and sends a Slack alert.
  *
- * Conversion is non-fatal — if the download or conversion fails, the handler
+ * Processing is non-fatal — if the download or config write fails, the handler
  * still triggers the downstream audit.
  *
  * LLMO-1819: https://jira.corp.adobe.com/browse/LLMO-1819
@@ -104,6 +137,7 @@ export default async function drsPromptGenerationHandler(message, context) {
 
   if (drsEventType === 'JOB_FAILED') {
     log.error(`DRS prompt generation job ${drsJobId} failed for site ${siteId}. Prompts can be generated manually via DRS dashboard.`);
+    await alertPromptGenerationFailure(context, siteId, drsJobId, 'DRS job failed');
     return ok();
   }
 
@@ -114,10 +148,17 @@ export default async function drsPromptGenerationHandler(message, context) {
 
   log.info(`DRS prompt generation completed for site ${siteId}, job ${drsJobId}, result: ${resultLocation}`);
 
-  // Download DRS result and write JSON + parquet to SpaceCat S3 (non-fatal for all sources)
-  const {
-    drsJsonKey, drsParquetKey,
-  } = await convertDrsResult(resultLocation, drsJobId, siteId, context);
+  // Download DRS result and write prompts to LLMO config (non-fatal)
+  const success = await processDrsResult(resultLocation, drsJobId, siteId, context);
+
+  if (!success) {
+    await alertPromptGenerationFailure(
+      context,
+      siteId,
+      drsJobId,
+      'Failed to download or write prompts to LLMO config',
+    );
+  }
 
   if (source !== 'onboarding') {
     log.info(`DRS job ${drsJobId} was not triggered by onboarding (source: ${source}), skipping llmo-customer-analysis trigger`);
@@ -133,8 +174,6 @@ export default async function drsPromptGenerationHandler(message, context) {
     auditContext: {
       drsJobId,
       resultLocation,
-      ...(drsJsonKey && { drsJsonKey }),
-      ...(drsParquetKey && { drsParquetKey }),
     },
   });
 
