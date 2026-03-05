@@ -1,3 +1,59 @@
+## [1.343.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.343.1...v1.343.2) (2026-03-05)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2082](https://github.com/adobe/spacecat-audit-worker/issues/2082)) ([63b9035](https://github.com/adobe/spacecat-audit-worker/commit/63b90351af86a10a0e23989c09346e93cbfea927))
+
+## [1.343.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.343.0...v1.343.1) (2026-03-05)
+
+
+### Bug Fixes
+
+* skip opportunity creation when Mystique returns no suggestions ([#2077](https://github.com/adobe/spacecat-audit-worker/issues/2077)) ([fa25b6d](https://github.com/adobe/spacecat-audit-worker/commit/fa25b6dbf48cb182a49c8daf0ee873cb8f5e7ade))
+
+# [1.343.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.342.1...v1.343.0) (2026-03-05)
+
+
+### Features
+
+* batch processing for readability (oppty mode) ([#2003](https://github.com/adobe/spacecat-audit-worker/issues/2003)) ([cebf651](https://github.com/adobe/spacecat-audit-worker/commit/cebf651d956fe8a6ce959ec3ba4a1f4f75429261)), closes [#container-da1317a6d0](https://github.com/adobe/spacecat-audit-worker/issues/container-da1317a6d0)
+
+## [1.342.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.342.0...v1.342.1) (2026-03-05)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.8.0 ([#2079](https://github.com/adobe/spacecat-audit-worker/issues/2079)) ([fbff33a](https://github.com/adobe/spacecat-audit-worker/commit/fbff33a60b937ad9d9bcf7ba56023120dba9f901))
+
+# [1.342.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.341.0...v1.342.0) (2026-03-05)
+
+
+### Features
+
+* store dependency tree information on security-vulnerability suggestions  ([#2075](https://github.com/adobe/spacecat-audit-worker/issues/2075)) ([a3cc254](https://github.com/adobe/spacecat-audit-worker/commit/a3cc2542cabb79f63602b4f9d76b95dab1619e67))
+
+# [1.341.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.340.0...v1.341.0) (2026-03-04)
+
+
+### Features
+
+* add support for multiple referral traffic folders | LLMO-3437 ([#2073](https://github.com/adobe/spacecat-audit-worker/issues/2073)) ([a6751e9](https://github.com/adobe/spacecat-audit-worker/commit/a6751e99833ac9f3bb2ec1fdc966ea806d0cbba0))
+
+# [1.340.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.339.3...v1.340.0) (2026-03-04)
+
+
+### Features
+
+* add isSummitPlg flag to send to mystique for alt-text ([#2070](https://github.com/adobe/spacecat-audit-worker/issues/2070)) ([31d2022](https://github.com/adobe/spacecat-audit-worker/commit/31d2022bd6a1ac75096bb62ca12a47ef3b4964c8))
+
+## [1.339.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.339.2...v1.339.3) (2026-03-04)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.7.0 ([#2074](https://github.com/adobe/spacecat-audit-worker/issues/2074)) ([673f966](https://github.com/adobe/spacecat-audit-worker/commit/673f9668db8281f3fc2f520697e19cc9e27ea616))
+
 ## [1.339.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.339.1...v1.339.2) (2026-03-04)
 
 

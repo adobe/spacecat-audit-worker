@@ -14,10 +14,12 @@
 
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import esmock from 'esmock';
 
 use(sinonChai);
+use(chaiAsPromised);
 
 describe('Async Mystique Tests', () => {
   let sendReadabilityToMystique;
@@ -173,7 +175,7 @@ describe('Async Mystique Tests', () => {
       // Verify logging
       expect(log.debug).to.have.been.calledWithMatch('Sending 2 readability issues to Mystique');
       expect(log.debug).to.have.been.calledWithMatch('Stored readability metadata in job test-job');
-      expect(log.debug).to.have.been.calledWithMatch('Successfully sent 2 messages to Mystique');
+      expect(log.debug).to.have.been.calledWithMatch('Successfully sent 2 preflight messages to Mystique for processing');
 
       // Verify job metadata update
       expect(mockAsyncJob.findById).to.have.been.calledWith('test-job');
