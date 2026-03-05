@@ -1,3 +1,10 @@
+## [1.344.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.344.0...v1.344.1) (2026-03-05)
+
+
+### Bug Fixes
+
+* skip domain-wide suggestion creation if already active or deployed ([#1914](https://github.com/adobe/spacecat-audit-worker/issues/1914)) ([ae12fbf](https://github.com/adobe/spacecat-audit-worker/commit/ae12fbf39d76a0b2263297e524dfa4f1e75cac1b))
+
 # [1.344.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.343.2...v1.344.0) (2026-03-05)
 
 
