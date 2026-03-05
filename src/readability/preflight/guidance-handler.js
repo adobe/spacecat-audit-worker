@@ -315,6 +315,13 @@ export default async function handler(message, context) {
         // internal state causing getResult() to return the stale (empty) result
         freshAsyncJob.setResult(updatedResult);
 
+        // Clean up the suggestions buffer from metadata now that they're in the result
+        const freshMetadata = freshAsyncJob.getMetadata() || {};
+        if (freshMetadata.payload?.readabilityMetadata?.suggestions) {
+          delete freshMetadata.payload.readabilityMetadata.suggestions;
+          freshAsyncJob.setMetadata(freshMetadata);
+        }
+
         if (freshAsyncJob.getStatus() !== AsyncJob.Status.COMPLETED) {
           freshAsyncJob.setStatus(AsyncJob.Status.COMPLETED);
           freshAsyncJob.setEndedAt(new Date().toISOString());
