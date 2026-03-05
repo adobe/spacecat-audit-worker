@@ -201,9 +201,9 @@ export const handleOutdatedSuggestions = async ({
       SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
     ].includes(existing.getStatus()))
     .filter((existing) => {
-      // Preserve suggestions that have been deployed (edgeDeployed)
+      // Preserve suggestions that have been deployed (tokowakaDeployed or edgeDeployed)
       const data = existing.getData?.();
-      return !data?.edgeDeployed;
+      return !(data?.tokowakaDeployed || data?.edgeDeployed);
     })
     .filter((existing) => {
       // mark suggestions as outdated only if their URL was actually scraped
