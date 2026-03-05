@@ -1,3 +1,10 @@
+# [1.344.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.343.2...v1.344.0) (2026-03-05)
+
+
+### Features
+
+* replace Mystique brand presence triggers with DRS (LLMO-1819) ([#2061](https://github.com/adobe/spacecat-audit-worker/issues/2061)) ([211c000](https://github.com/adobe/spacecat-audit-worker/commit/211c00074e211ccb4170c85527a425c2088f4f16))
+
 ## [1.343.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.343.1...v1.343.2) (2026-03-05)
 
 
