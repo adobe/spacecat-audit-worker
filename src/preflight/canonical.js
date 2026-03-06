@@ -97,6 +97,7 @@ function runCanonicalChecks(url, meta, previewBaseURL, log) {
     .filter((c) => !c.success)
     .forEach((c) => {
       const checkConfig = Object.values(CANONICAL_CHECKS).find((cfg) => cfg.check === c.check);
+      /* c8 ignore next - safety guard: validateCanonicalFormat only emits known check types */
       if (checkConfig) {
         checks.push(checkConfig);
       }
