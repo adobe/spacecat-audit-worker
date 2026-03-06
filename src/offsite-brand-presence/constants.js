@@ -10,9 +10,44 @@
  * governing permissions and limitations under the License.
  */
 
+export const PROVIDERS = Object.freeze([
+  'ai-mode',
+  'all',
+  'chatgpt',
+  'copilot',
+  'gemini',
+  'google-ai-overview',
+  'perplexity',
+]);
+
+export const PROVIDERS_SET = new Set(PROVIDERS);
+export const BRAND_PRESENCE_REGEX = /brandpresence-(.+?)-w(\d{1,2})-(\d{4})-.*\.json$/;
+
+export const URL_STORE_STATUS = Object.freeze({
+  CREATED: 'created',
+  FAILED: 'failed',
+});
+
+export const OFFSITE_DOMAINS = Object.freeze({
+  'youtube.com': {
+    auditType: 'youtube-analysis',
+    datasetIds: ['youtube_videos', 'youtube_comments'],
+  },
+  'reddit.com': {
+    auditType: 'reddit-analysis',
+    datasetIds: ['reddit_posts', 'reddit_comments'],
+  },
+  'wikipedia.org': {
+    auditType: 'wikipedia-analysis',
+    datasetIds: ['wikipedia'],
+  },
+});
+
 export const DRS_TOP_URLS_LIMIT = 100;
 export const FETCH_PAGE_SIZE = 80000;
 export const FETCH_CONCURRENCY = 3;
 export const FETCH_TIMEOUT_MS = 60000;
 export const INCLUDE_COLUMNS = ['Sources', 'Region', 'answer_contains_brandname', 'Mentions', 'Citations', 'Prompt'].join(',');
 export const REDDIT_COMMENTS_DAYS_BACK = 30;
+export const TOP_CITED_URLS_LIMIT = 100;
+export const TOP_CITED_AUDIT_TYPE = 'top-cited-analysis';

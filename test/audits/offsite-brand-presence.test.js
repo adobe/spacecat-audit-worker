@@ -16,15 +16,17 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
-import {
+import { filterBrandPresenceFiles } from '../../src/offsite-brand-presence/handler.js';
+import * as handlerConstants from '../../src/offsite-brand-presence/constants.js';
+
+const {
   DRS_TOP_URLS_LIMIT,
   FETCH_PAGE_SIZE,
   INCLUDE_COLUMNS,
   PROVIDERS,
   REDDIT_COMMENTS_DAYS_BACK,
-  filterBrandPresenceFiles,
-} from '../../src/offsite-brand-presence/handler.js';
-import * as handlerConstants from '../../src/offsite-brand-presence/constants.js';
+  TOP_CITED_URLS_LIMIT,
+} = handlerConstants;
 
 use(sinonChai);
 
@@ -35,7 +37,6 @@ describe('Offsite Brand Presence Handler', () => {
   let sandbox;
   let mockFetch;
   let mockIsoCalendarWeek;
-  let mockGetImsOrgId;
   let offsiteBrandPresenceRunner;
   let handlerDefault;
 
@@ -48,23 +49,17 @@ describe('Offsite Brand Presence Handler', () => {
   const FINAL_URL = 'https://example.com';
   const SITE_ID = 'site-123';
   const BASE_URL = 'https://example.com';
-  const ORG_ID = 'org-456';
-  const IMS_ORG_ID = 'ims-org-789@AdobeOrg';
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
 
     mockFetch = sandbox.stub();
     mockIsoCalendarWeek = sandbox.stub().returns({ week: DEFAULT_WEEK, year: DEFAULT_YEAR });
-    mockGetImsOrgId = sandbox.stub().resolves(IMS_ORG_ID);
 
     const mod = await esmock('../../src/offsite-brand-presence/handler.js', {
       '@adobe/spacecat-shared-utils': {
         isoCalendarWeek: mockIsoCalendarWeek,
         tracingFetch: mockFetch,
-      },
-      '../../src/utils/data-access.js': {
-        getImsOrgId: mockGetImsOrgId,
       },
     });
 
@@ -86,11 +81,6 @@ describe('Offsite Brand Presence Handler', () => {
     };
 
     dataAccess = {
-      Organization: {
-        findById: sandbox.stub().resolves({
-          getImsOrgId: () => IMS_ORG_ID,
-        }),
-      },
       AuditUrl: {
         create: sandbox.stub().resolves({}),
       },
@@ -99,11 +89,6 @@ describe('Offsite Brand Presence Handler', () => {
     site = {
       getId: sandbox.stub().returns(SITE_ID),
       getBaseURL: sandbox.stub().returns(BASE_URL),
-      getOrganizationId: sandbox.stub().returns(ORG_ID),
-      getDeliveryType: sandbox.stub().returns('aem_edge'),
-      getConfig: sandbox.stub().returns({
-        getCompanyName: sandbox.stub().returns('Example Corp'),
-      }),
     };
 
     context = { dataAccess, env, log };
@@ -443,6 +428,7 @@ describe('Offsite Brand Presence Handler', () => {
 
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
+      expect(result.auditResult.urlCounts['wikipedia.org']).to.equal(0);
     });
 
   });
@@ -456,9 +442,6 @@ describe('Offsite Brand Presence Handler', () => {
         '@adobe/spacecat-shared-utils': {
           isoCalendarWeek: mockIsoCalendarWeek,
           tracingFetch: mockFetch,
-        },
-        '../../src/utils/data-access.js': {
-          getImsOrgId: mockGetImsOrgId,
         },
         '../../src/offsite-brand-presence/constants.js': {
           ...handlerConstants,
@@ -829,6 +812,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(0);
+      expect(result.auditResult.urlCounts['wikipedia.org']).to.equal(0);
       expect(result.fullAuditRef).to.equal(FINAL_URL);
       expect(log.info).to.have.been.calledWith(
         sinon.match(/No offsite URLs found/),
@@ -867,27 +851,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(createArg.audits).to.deep.equal(['youtube-analysis']);
     });
 
-    it('should treat duplicate create conflicts as failures', async () => {
-      dataAccess.AuditUrl.create.rejects(new Error('Conditional check failed'));
-
-      const providerResponses = setupWithYoutubeUrl();
-      const responses = buildHappyResponses({
-        providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-        ],
-      });
-      stubFetchSequence(responses);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(log.info).to.have.been.calledWith(
-        sinon.match(/0 created, 1 failed/),
-      );
-    });
-
-    it('should handle URL store create lookup-style failure gracefully', async () => {
+    it('should handle URL store create failure gracefully', async () => {
       dataAccess.AuditUrl.create.rejects(new Error('DynamoDB error'));
 
       const providerResponses = setupWithYoutubeUrl();
@@ -908,27 +872,6 @@ describe('Offsite Brand Presence Handler', () => {
       );
       expect(log.info).to.have.been.calledWith(
         sinon.match(/0 created, 1 failed/),
-      );
-    });
-
-    it('should handle URL store create failure gracefully', async () => {
-      dataAccess.AuditUrl.create.rejects(new Error('Lookup error'));
-
-      const providerResponses = setupWithYoutubeUrl();
-      const responses = buildHappyResponses({
-        providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-        ],
-      });
-      stubFetchSequence(responses);
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(log.warn).to.have.been.calledWith(
-        sinon.match(/Failed to add URL to store/),
       );
     });
 
@@ -958,6 +901,26 @@ describe('Offsite Brand Presence Handler', () => {
       expect(auditTypes).to.include('reddit-analysis');
     });
 
+    it('should add wikipedia URLs to URL store with wikipedia-analysis audit type', async () => {
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData(['https://en.wikipedia.org/wiki/Adobe']);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({
+        providerResponses,
+        drsResponses: [
+          okJsonResponse({ jobId: 'wiki-job' }),
+        ],
+      });
+      stubFetchSequence(responses);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      const wikiCalls = createCalls.filter((c) => c.args[0].audits[0] === 'wikipedia-analysis');
+      expect(wikiCalls).to.have.lengthOf(1);
+      expect(wikiCalls[0].args[0].url).to.include('wikipedia.org');
+    });
   });
 
   describe('Top URLs Per Domain', () => {
@@ -1039,6 +1002,71 @@ describe('Offsite Brand Presence Handler', () => {
     });
   });
 
+  describe('Top Cited URLs', () => {
+    it('should add non-offsite URLs to URL store with top-cited-analysis audit type', async () => {
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData(['https://example.com/page1;https://other.com/page2']);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(2);
+      for (const call of createCalls) {
+        expect(call.args[0].audits).to.deep.equal(['top-cited-analysis']);
+      }
+    });
+
+    it('should exclude offsite domain URLs from top-cited bucket', async () => {
+      const sources = 'https://youtube.com/watch?v=abc;https://reddit.com/r/test;https://en.wikipedia.org/wiki/Adobe;https://example.com/page';
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([sources]);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({
+        providerResponses,
+        drsResponses: [
+          okJsonResponse({ jobId: 'j1' }),
+          okJsonResponse({ jobId: 'j2' }),
+          okJsonResponse({ jobId: 'j3' }),
+          okJsonResponse({ jobId: 'j4' }),
+          okJsonResponse({ jobId: 'j5' }),
+        ],
+      });
+      stubFetchSequence(responses);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      const topCitedCalls = createCalls.filter((c) => c.args[0].audits[0] === 'top-cited-analysis');
+      expect(topCitedCalls).to.have.lengthOf(1);
+      expect(topCitedCalls[0].args[0].url).to.equal('https://example.com/page');
+    });
+
+    it('should respect TOP_CITED_URLS_LIMIT', async () => {
+      const urls = [];
+      const totalUrls = TOP_CITED_URLS_LIMIT + 10;
+      for (let i = 0; i < totalUrls; i += 1) {
+        urls.push(`https://example${i}.com/page`);
+      }
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([urls.join(';')]);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      const topCitedCalls = createCalls.filter((c) => c.args[0].audits[0] === 'top-cited-analysis');
+      expect(topCitedCalls).to.have.lengthOf(TOP_CITED_URLS_LIMIT);
+    });
+  });
+
   describe('DRS Scraping', () => {
     it('should trigger DRS jobs for youtube (2 datasets) and reddit (2 datasets)', async () => {
       const urls = 'https://youtube.com/shorts/v1;https://reddit.com/r/test';
@@ -1110,14 +1138,11 @@ describe('Offsite Brand Presence Handler', () => {
 
       const body = JSON.parse(options.body);
       expect(body.provider_id).to.equal('brightdata');
-      expect(body.priority).to.equal('LOW');
+      expect(body.priority).to.equal('HIGH');
       expect(body.parameters.dataset_id).to.equal('youtube_videos');
+      expect(body.parameters.site_id).to.equal(SITE_ID);
       expect(body.parameters.urls).to.deep.equal(['https://youtu.be/x']);
-      expect(body.parameters.metadata).to.deep.include({
-        imsOrgId: IMS_ORG_ID,
-        brand: BASE_URL,
-        site: 'youtube.com',
-      });
+      expect(body.parameters).to.not.have.property('metadata');
     });
 
     it('should include days_back parameter for reddit.com', async () => {
@@ -1157,7 +1182,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(postsBody.parameters).to.not.have.property('days_back');
     });
 
-    it('should include mode and siteBaseUrl parameters for wikipedia dataset', async () => {
+    it('should trigger DRS job with wikipedia dataset_id for wikipedia URLs', async () => {
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
         if (i === 0) return stubProviderData(['https://en.wikipedia.org/wiki/Adobe']);
         return okJsonResponse({});
@@ -1165,7 +1190,7 @@ describe('Offsite Brand Presence Handler', () => {
       const responses = buildHappyResponses({
         providerResponses,
         drsResponses: [
-          okJsonResponse({ jobId: 'wiki-job' }),
+          okJsonResponse({ job_id: 'wiki-job' }),
         ],
       });
       stubFetchSequence(responses);
@@ -1175,44 +1200,12 @@ describe('Offsite Brand Presence Handler', () => {
       const drsCalls = mockFetch.getCalls().filter(
         (call) => call.args[0].includes(`${env.DRS_API_URL}/jobs`),
       );
+      expect(drsCalls).to.have.lengthOf(1);
 
-      const wikipediaCall = drsCalls.find((c) => {
-        const body = JSON.parse(c.args[1].body);
-        return body.parameters.dataset_id === 'wikipedia';
-      });
-      expect(wikipediaCall).to.exist;
-
-      const body = JSON.parse(wikipediaCall.args[1].body);
-      expect(body.parameters.mode).to.equal('wikipedia');
-      expect(body.parameters.metadata.siteBaseUrl).to.equal(BASE_URL);
-    });
-
-    it('should NOT include days_back parameter for non-reddit domains', async () => {
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://youtube.com/shorts/v1']);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({
-        providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-        ],
-      });
-      stubFetchSequence(responses);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      const drsCalls = mockFetch.getCalls().filter(
-        (call) => call.args[0].includes(`${env.DRS_API_URL}/jobs`),
-      );
-
-      for (const call of drsCalls) {
-        const body = JSON.parse(call.args[1].body);
-        if (body.parameters.metadata.site === 'youtube.com') {
-          expect(body.parameters).to.not.have.property('days_back');
-        }
-      }
+      const body = JSON.parse(drsCalls[0].args[1].body);
+      expect(body.parameters.dataset_id).to.equal('wikipedia');
+      expect(body.parameters.site_id).to.equal(SITE_ID);
+      expect(body.parameters.urls[0]).to.include('wikipedia.org');
     });
 
     it('should handle DRS API returning error response', async () => {
@@ -1277,62 +1270,13 @@ describe('Offsite Brand Presence Handler', () => {
       );
     });
 
-    it('should use empty string for brand when baseURL is falsy', async () => {
-      site.getBaseURL.returns('');
-
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://youtube.com/shorts/v1']);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({
-        providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-        ],
-      });
-      stubFetchSequence(responses);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      const drsCalls = mockFetch.getCalls().filter(
-        (call) => call.args[0].includes(`${env.DRS_API_URL}/jobs`),
-      );
-      const body = JSON.parse(drsCalls[0].args[1].body);
-      expect(body.parameters.metadata.brand).to.equal('');
-    });
-
-    it('should use empty string for imsOrgId when getImsOrgId returns null', async () => {
-      mockGetImsOrgId.resolves(null);
-
-      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://youtube.com/shorts/v1']);
-        return okJsonResponse({});
-      });
-      const responses = buildHappyResponses({
-        providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-        ],
-      });
-      stubFetchSequence(responses);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      const drsCalls = mockFetch.getCalls().filter(
-        (call) => call.args[0].includes(`${env.DRS_API_URL}/jobs`),
-      );
-      const body = JSON.parse(drsCalls[0].args[1].body);
-      expect(body.parameters.metadata.imsOrgId).to.equal('');
-    });
   });
 
   describe('Full Integration Flow', () => {
     it('should complete full audit with URLs from multiple domains', async () => {
       const sources = [
         'https://www.youtube.com/watch?v=abc;https://reddit.com/r/adobe/post1',
-        'https://youtube.com/watch?v=def;https://example.com/unrelated',
+        'https://youtube.com/watch?v=def;https://example.com/unrelated;https://en.wikipedia.org/wiki/Adobe',
       ];
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
         if (i === 0) return stubProviderData(sources);
@@ -1345,6 +1289,7 @@ describe('Offsite Brand Presence Handler', () => {
           okJsonResponse({ jobId: 'yt-comm' }),
           okJsonResponse({ jobId: 'rd-post' }),
           okJsonResponse({ jobId: 'rd-comm' }),
+          okJsonResponse({ jobId: 'wiki' }),
         ],
       });
       stubFetchSequence(responses);
@@ -1354,10 +1299,14 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(2);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
-      expect(result.auditResult.drsJobs).to.have.lengthOf(4);
+      expect(result.auditResult.urlCounts['wikipedia.org']).to.equal(1);
+      expect(result.auditResult.drsJobs).to.have.lengthOf(5);
       expect(result.fullAuditRef).to.equal(FINAL_URL);
-      expect(mockGetImsOrgId).to.have.been.calledOnce;
-      expect(mockGetImsOrgId).to.have.been.calledWith(site, dataAccess, log);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      const topCitedCalls = createCalls.filter((c) => c.args[0].audits[0] === 'top-cited-analysis');
+      expect(topCitedCalls).to.have.lengthOf(1);
+      expect(topCitedCalls[0].args[0].url).to.equal('https://example.com/unrelated');
     });
 
     it('should include week (zero-padded) and year in the audit result', async () => {
@@ -1370,6 +1319,5 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.week).to.equal('05');
       expect(result.auditResult.year).to.equal(DEFAULT_YEAR);
     });
-
   });
 });

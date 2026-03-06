@@ -13,60 +13,25 @@
 import { isoCalendarWeek, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
-import { getImsOrgId } from '../utils/data-access.js';
 import {
+  BRAND_PRESENCE_REGEX,
   DRS_TOP_URLS_LIMIT,
   FETCH_CONCURRENCY,
   FETCH_PAGE_SIZE,
   FETCH_TIMEOUT_MS,
   INCLUDE_COLUMNS,
   REDDIT_COMMENTS_DAYS_BACK,
+  OFFSITE_DOMAINS,
+  PROVIDERS_SET,
+  TOP_CITED_AUDIT_TYPE,
+  TOP_CITED_URLS_LIMIT,
+  URL_STORE_STATUS,
 } from './constants.js';
-
-export {
-  DRS_TOP_URLS_LIMIT,
-  FETCH_PAGE_SIZE,
-  INCLUDE_COLUMNS,
-  REDDIT_COMMENTS_DAYS_BACK,
-};
 
 const LOG_PREFIX = '[OffsiteBrandPresence]';
 
-export const PROVIDERS = Object.freeze([
-  'ai-mode',
-  'all',
-  'chatgpt',
-  'copilot',
-  'gemini',
-  'google-ai-overview',
-  'perplexity',
-]);
-
-const PROVIDERS_SET = new Set(PROVIDERS);
-const BRAND_PRESENCE_REGEX = /brandpresence-(.+?)-w(\d{1,2})-(\d{4})-.*\.json$/;
-
-const URL_STORE_STATUS = Object.freeze({
-  CREATED: 'created',
-  FAILED: 'failed',
-});
-
 const DOMAIN_ALIASES = Object.freeze({
   'youtu.be': 'youtube.com',
-});
-
-const OFFSITE_DOMAINS = Object.freeze({
-  'youtube.com': {
-    auditType: 'youtube-analysis',
-    datasetIds: ['youtube_videos', 'youtube_comments'],
-  },
-  'reddit.com': {
-    auditType: 'reddit-analysis',
-    datasetIds: ['reddit_posts', 'reddit_comments'],
-  },
-  'wikipedia.org': {
-    auditType: 'wikipedia-analysis',
-    datasetIds: ['wikipedia'],
-  },
 });
 
 /**
@@ -250,7 +215,7 @@ function normalizeYoutubeUrl(parsed) {
  * and ensure consistent formatting.
  *
  * @param {URL} parsed - Parsed URL object
- * @param {string} domain - The matched domain (youtube.com, reddit.com, wikipedia.org)
+ * @param {string|null} domain - The matched offsite domain, or null for generic URLs
  * @returns {string} The normalized URL
  */
 function normalizeUrl(parsed, domain) {
@@ -273,17 +238,17 @@ function normalizeUrl(parsed, domain) {
 }
 
 /**
- * Classifies a single URL into its matching offsite domain, if any.
- * Normalizes the URL to remove unnecessary query parameters.
+ * Classifies a URL into its matching offsite domain (if any) and normalizes it.
+ * Returns domain info for all valid URLs — offsite domains get their matched key,
+ * other URLs get domain: null.
  *
- * @param {string} url - The URL to classify
- * @returns {{ domain: string, url: string } | null} The matched domain and normalized URL, or null
+ * @param {string} rawUrl - The raw URL string to classify and normalize
+ * @returns {{ url: string, domain: string|null } | null} Normalized URL with domain, or null
  */
-function classifyUrl(url) {
+function classifyAndNormalize(rawUrl) {
   let parsed;
   try {
-    parsed = new URL(url);
-    // Ensure https protocol
+    parsed = new URL(rawUrl);
     parsed.protocol = 'https:';
   } catch {
     return null;
@@ -292,92 +257,104 @@ function classifyUrl(url) {
   const { hostname } = parsed;
   for (const domain of Object.keys(OFFSITE_DOMAINS)) {
     if (hostname === domain || hostname.endsWith(`.${domain}`)) {
-      const normalizedUrl = normalizeUrl(parsed, domain);
-      return { domain, url: normalizedUrl };
+      return { url: normalizeUrl(parsed, domain), domain };
     }
   }
 
   const aliasedDomain = DOMAIN_ALIASES[hostname];
   if (aliasedDomain) {
-    const normalizedUrl = normalizeUrl(parsed, aliasedDomain);
-    return { domain: aliasedDomain, url: normalizedUrl };
+    return { url: normalizeUrl(parsed, aliasedDomain), domain: aliasedDomain };
   }
 
-  return null;
+  return { url: normalizeUrl(parsed, null), domain: null };
 }
 
 /**
- * Classifies all URLs from a semicolon-separated sources string
- * and increments the occurrence count for matching ones in the urlsByDomain map.
+ * Collects all URLs from a semicolon/newline-separated sources string
+ * into a unified map with citation counts and domain classification.
  *
  * @param {string} sources - Semicolon or newline separated URL string
- * @param {object} urlsByDomain - Map of domain to Map<url, count> (mutated in place)
+ * @param {Map<string, {count: number, domain: string|null}>} allUrls - Unified URL map (mutated)
  */
-function classifySources(sources, urlsByDomain) {
+function collectSourceUrls(sources, allUrls) {
   for (const raw of sources.split(/[;\n]/)) {
-    const url = raw.trim();
-    if (!url) {
+    const trimmed = raw.trim();
+    if (!trimmed) {
       // eslint-disable-next-line no-continue
       continue;
     }
-    const match = classifyUrl(url);
-    if (match) {
-      const domainMap = urlsByDomain[match.domain];
-      domainMap.set(match.url, (domainMap.get(match.url) || 0) + 1);
+    const result = classifyAndNormalize(trimmed);
+    if (!result) {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    const existing = allUrls.get(result.url);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      allUrls.set(result.url, { count: 1, domain: result.domain });
     }
   }
 }
 
 /**
- * Extracts URLs matching offsite domains from brand presence data.
- * Filters out URLs that are not in the US region or do not mention the brand.
- * Sources are semicolon/newline-separated URL lists.
- * Each URL's occurrence count is tracked across all rows.
+ * Extracts all source URLs from brand presence data rows into a unified map.
+ * Only processes rows with Region=US and Mentions=true.
  *
  * @param {object} data - Brand presence JSON data (expects a "data" array of rows)
  * @param {object} log - Logger instance
- * @returns {object} Map of domain to Map<url, count>
+ * @returns {Map<string, {count: number, domain: string|null}>} Unified URL map
  */
-function extractOffsiteUrls(data, log) {
-  const urlsByDomain = {};
-  for (const domain of Object.keys(OFFSITE_DOMAINS)) {
-    urlsByDomain[domain] = new Map();
-  }
-
+function extractAllUrls(data, log) {
+  const allUrls = new Map();
   const rows = data.data;
   for (const row of rows) {
     const sources = row.Sources?.trim();
-    // row.Mentions is true if the brand or its products are mentioned in the Sources
     if (sources && row.Region === 'US' && row.Mentions === 'true') {
-      classifySources(sources, urlsByDomain);
+      collectSourceUrls(sources, allUrls);
     }
   }
-
-  for (const [domain, urls] of Object.entries(urlsByDomain)) {
-    log.info(`${LOG_PREFIX} Found ${urls.size} unique ${domain} URLs`);
-  }
-
-  return urlsByDomain;
+  log.info(`${LOG_PREFIX} Found ${allUrls.size} unique source URLs`);
+  return allUrls;
 }
 
 /**
- * Adds offsite URLs to the URL store via dataAccess.
- * Each URL is tagged with the appropriate audit type based on its domain.
+ * Builds URL store entries for all per-domain and top-cited URL buckets.
+ *
+ * @param {Object<string, string[]>} topByDomain - Top URLs per offsite domain
+ * @param {string[]} topCited - Top cited URLs (non-offsite)
+ * @param {object} log - Logger instance
+ * @returns {Array<{url: string, audits: string[]}>}
+ */
+function buildUrlStoreEntries(topByDomain, topCited, log) {
+  const entries = [];
+
+  for (const [domain, config] of Object.entries(OFFSITE_DOMAINS)) {
+    const urls = topByDomain[domain];
+    for (const url of urls) {
+      entries.push({ url, audits: [config.auditType] });
+    }
+    log.info(`${LOG_PREFIX} Selected top ${urls.length} ${domain} URLs (limit ${DRS_TOP_URLS_LIMIT})`);
+  }
+
+  for (const url of topCited) {
+    entries.push({ url, audits: [TOP_CITED_AUDIT_TYPE] });
+  }
+  log.info(`${LOG_PREFIX} Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${TOP_CITED_URLS_LIMIT})`);
+
+  return entries;
+}
+
+/**
+ * Adds URLs to the URL store via dataAccess.
  *
  * @param {string} siteId - The site ID
- * @param {object} urlsByDomain - Map of domain to array of URL strings
+ * @param {Array<{url: string, audits: string[]}>} urlEntries - URL entries to add
  * @param {object} dataAccess - Data access layer from context
  * @param {object} log - Logger instance
  */
-async function addUrlsToUrlStore(siteId, urlsByDomain, dataAccess, log) {
+async function addUrlsToUrlStore(siteId, urlEntries, dataAccess, log) {
   const { AuditUrl } = dataAccess;
-  const urlEntries = [];
-  for (const [domain, urls] of Object.entries(urlsByDomain)) {
-    const { auditType } = OFFSITE_DOMAINS[domain];
-    for (const url of urls) {
-      urlEntries.push({ url, audits: [auditType] });
-    }
-  }
 
   log.info(`${LOG_PREFIX} Adding ${urlEntries.length} URLs to URL store`);
 
@@ -419,13 +396,12 @@ async function addUrlsToUrlStore(siteId, urlsByDomain, dataAccess, log) {
  * (e.g. YouTube gets youtube_videos + youtube_comments).
  *
  * @param {object} urlsByDomain - Map of domain to array of URL strings
- * @param {string} imsOrgId - The IMS org ID for metadata
- * @param {string} baseURL - The base URL of the site
+ * @param {string} siteId - The site ID
  * @param {object} env - Environment variables
  * @param {object} log - Logger instance
  * @returns {Promise<Array>} Results of DRS job creation
  */
-async function triggerDrsScraping(urlsByDomain, imsOrgId, baseURL, env, log) {
+async function triggerDrsScraping(urlsByDomain, siteId, env, log) {
   const { DRS_API_URL: drsApiUrl, DRS_API_KEY: drsApiKey } = env;
 
   if (!drsApiUrl || !drsApiKey) {
@@ -433,7 +409,6 @@ async function triggerDrsScraping(urlsByDomain, imsOrgId, baseURL, env, log) {
     return [];
   }
 
-  // Build all job payloads first
   const jobs = [];
   for (const [domain, urls] of Object.entries(urlsByDomain)) {
     const urlList = Array.from(urls);
@@ -448,21 +423,12 @@ async function triggerDrsScraping(urlsByDomain, imsOrgId, baseURL, env, log) {
     for (const datasetId of datasetIds) {
       const parameters = {
         dataset_id: datasetId,
+        site_id: siteId,
         urls: urlList,
-        metadata: {
-          imsOrgId: imsOrgId || '',
-          brand: baseURL || '',
-          site: domain,
-        },
       };
 
       if (datasetId === 'reddit_comments') {
         parameters.days_back = REDDIT_COMMENTS_DAYS_BACK;
-      }
-
-      if (datasetId === 'wikipedia') {
-        parameters.mode = datasetId;
-        parameters.metadata.siteBaseUrl = baseURL;
       }
 
       jobs.push({
@@ -470,7 +436,7 @@ async function triggerDrsScraping(urlsByDomain, imsOrgId, baseURL, env, log) {
         datasetId,
         payload: {
           provider_id: 'brightdata',
-          priority: 'LOW',
+          priority: 'HIGH',
           parameters,
         },
       });
@@ -521,21 +487,18 @@ async function triggerDrsScraping(urlsByDomain, imsOrgId, baseURL, env, log) {
 
 /**
  * Fetches matched brand presence files in batches and aggregates
- * the offsite URLs found across all files into a single map.
- * Tracks occurrence counts across all providers/files.
+ * all source URLs across files into a unified map.
+ * Tracks citation counts and domain classification across all providers.
  * Limits concurrency to avoid overwhelming the API with parallel requests.
  *
  * @param {string} siteId - The site ID
  * @param {string[]} matchedFiles - File paths to fetch
  * @param {object} env - Environment variables
  * @param {object} log - Logger instance
- * @returns {Promise<object>} Map of domain to Map<url, count>
+ * @returns {Promise<Map<string, {count: number, domain: string|null}>>} Unified URL map
  */
 async function fetchAndAggregateUrls(siteId, matchedFiles, env, log) {
-  const aggregatedUrls = {};
-  for (const domain of Object.keys(OFFSITE_DOMAINS)) {
-    aggregatedUrls[domain] = new Map();
-  }
+  const allUrls = new Map();
 
   for (let i = 0; i < matchedFiles.length; i += FETCH_CONCURRENCY) {
     const batch = matchedFiles.slice(i, i + FETCH_CONCURRENCY);
@@ -554,44 +517,52 @@ async function fetchAndAggregateUrls(siteId, matchedFiles, env, log) {
         // eslint-disable-next-line no-continue
         continue;
       }
-      const urlsByDomain = extractOffsiteUrls(entry.value, log);
-      for (const [domain, urlCounts] of Object.entries(urlsByDomain)) {
-        const target = aggregatedUrls[domain];
-        for (const [url, count] of urlCounts) {
-          target.set(url, (target.get(url) || 0) + count);
+      const fileUrls = extractAllUrls(entry.value, log);
+      for (const [url, info] of fileUrls) {
+        const existing = allUrls.get(url);
+        if (existing) {
+          existing.count += info.count;
+        } else {
+          allUrls.set(url, { ...info });
         }
       }
     }
   }
 
-  return aggregatedUrls;
+  return allUrls;
 }
 
 /**
- * Selects the top N most frequently occurring URLs per domain
- * and returns them grouped by domain as arrays.
+ * Sorts all URLs by citation count once, then partitions them into per-domain
+ * buckets and a top-cited bucket in a single pass.
  *
- * @param {object} aggregatedUrls - Map of domain to Map<url, count>
- * @param {number} limitPerDomain - Maximum number of URLs per domain
- * @param {object} log - Logger instance
- * @returns {object} Map of domain to array of top URL strings
+ * @param {Map<string, {count: number, domain: string|null}>} allUrls - Unified URL map
+ * @param {number} limitPerDomain - Max URLs to select per offsite domain
+ * @param {number} topCitedLimit - Max URLs for the top-cited bucket
+ * @param {string[]} excludedFromTopCited - Domains to exclude from top-cited results
+ * @returns {{ topByDomain: Object<string, string[]>, topCited: string[] }}
  */
-function getTopUrlsByDomain(aggregatedUrls, limitPerDomain, log) {
+function selectTopUrls(allUrls, limitPerDomain, topCitedLimit, excludedFromTopCited) {
+  const excluded = new Set(excludedFromTopCited);
+  const sorted = [...allUrls.entries()].sort((a, b) => b[1].count - a[1].count);
+
   const topByDomain = {};
+  for (const domain of Object.keys(OFFSITE_DOMAINS)) {
+    topByDomain[domain] = [];
+  }
+  const topCited = [];
 
-  for (const [domain, urlCounts] of Object.entries(aggregatedUrls)) {
-    const sorted = [...urlCounts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, limitPerDomain)
-      .map(([url]) => url);
-
-    topByDomain[domain] = sorted;
-    log.info(
-      `${LOG_PREFIX} Selected top ${topByDomain[domain].length} ${domain} URLs (limit ${limitPerDomain})`,
-    );
+  for (const [url, info] of sorted) {
+    const domainBucket = info.domain !== null ? topByDomain[info.domain] : undefined;
+    if (domainBucket !== undefined && domainBucket.length < limitPerDomain) {
+      domainBucket.push(url);
+    }
+    if (!excluded.has(info.domain) && topCited.length < topCitedLimit) {
+      topCited.push(url);
+    }
   }
 
-  return topByDomain;
+  return { topByDomain, topCited };
 }
 
 /**
@@ -600,9 +571,9 @@ function getTopUrlsByDomain(aggregatedUrls, limitPerDomain, log) {
  * Workflow:
  * 1. Fetches query-index.json from the Spacecat API
  * 2. Fetches brand presence data for each provider from the Spacecat API
- * 3. Extracts URLs matching offsite domains (e.g. youtube.com, reddit.com)
- * 4. Selects the top N most frequent URLs per domain
- * 5. Adds the top URLs to the URL store and triggers DRS scraping jobs
+ * 3. Collects all source URLs with citation counts into a unified map
+ * 4. Extracts top URLs per offsite domain and top cited URLs (excluding reddit/youtube)
+ * 5. Adds all top URLs to the URL store and triggers DRS scraping jobs
  *
  * @param {string} finalUrl - The resolved audit URL
  * @param {object} context - The execution context
@@ -613,7 +584,6 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
   const { dataAccess, env, log } = context;
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
-  const imsOrgId = await getImsOrgId(site, dataAccess, log);
 
   log.info(`${LOG_PREFIX} Starting audit for site: ${siteId} (${baseURL})`);
 
@@ -644,17 +614,22 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
   const matchedFiles = filterBrandPresenceFiles(queryIndex, week, year);
   log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for week w${weekIndex}`);
 
-  // Fetch all matched files in parallel and extract offsite URLs
-  const aggregatedUrls = await fetchAndAggregateUrls(siteId, matchedFiles, env, log);
+  // Fetch all matched files and collect all source URLs
+  const allUrls = await fetchAndAggregateUrls(siteId, matchedFiles, env, log);
+  log.info(`${LOG_PREFIX} Total unique source URLs found: ${allUrls.size}`);
 
-  const totalUrls = Object.values(aggregatedUrls).reduce((sum, urls) => sum + urls.size, 0);
-  log.info(`${LOG_PREFIX} Total unique offsite URLs found: ${totalUrls}`);
+  // Compute per-domain counts for audit result
+  const urlCounts = {};
+  for (const domain of Object.keys(OFFSITE_DOMAINS)) {
+    urlCounts[domain] = 0;
+  }
+  for (const [, info] of allUrls) {
+    if (info.domain !== null && urlCounts[info.domain] !== undefined) {
+      urlCounts[info.domain] += 1;
+    }
+  }
 
-  const urlCounts = Object.fromEntries(
-    Object.entries(aggregatedUrls).map(([d, u]) => [d, u.size]),
-  );
-
-  if (totalUrls === 0) {
+  if (allUrls.size === 0) {
     log.info(`${LOG_PREFIX} No offsite URLs found, audit complete`);
     return {
       auditResult: {
@@ -667,16 +642,21 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
     };
   }
 
-  // Select top URLs by frequency for DRS scraping
-  const topUrlsByDomain = getTopUrlsByDomain(aggregatedUrls, DRS_TOP_URLS_LIMIT, log);
+  // Sort once, partition into per-domain + top-cited buckets
+  const excludedFromTopCited = Object.keys(OFFSITE_DOMAINS);
+  const {
+    topByDomain, topCited,
+  } = selectTopUrls(allUrls, DRS_TOP_URLS_LIMIT, TOP_CITED_URLS_LIMIT, excludedFromTopCited);
 
-  // Send top URLs to both URL store and DRS for scraping
+  const urlStoreEntries = buildUrlStoreEntries(topByDomain, topCited, log);
+
+  // Send URLs to store and trigger DRS scraping for offsite domains
   const [, drsResults] = await Promise.all([
-    addUrlsToUrlStore(siteId, topUrlsByDomain, dataAccess, log),
-    triggerDrsScraping(topUrlsByDomain, imsOrgId, baseURL, env, log),
+    addUrlsToUrlStore(siteId, urlStoreEntries, dataAccess, log),
+    triggerDrsScraping(topByDomain, siteId, env, log),
   ]);
 
-  log.info(`${LOG_PREFIX} Audit complete for site ${siteId}: ${totalUrls} URLs processed, ${drsResults.length} DRS jobs triggered`);
+  log.info(`${LOG_PREFIX} Audit complete for site ${siteId}: ${allUrls.size} URLs processed, ${drsResults.length} DRS jobs triggered`);
 
   return {
     auditResult: {
