@@ -1,3 +1,10 @@
+# [1.346.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.345.0...v1.346.0) (2026-03-06)
+
+
+### Features
+
+* add traffic-analysis import steps before Athena query ([#2086](https://github.com/adobe/spacecat-audit-worker/issues/2086)) ([adde557](https://github.com/adobe/spacecat-audit-worker/commit/adde55708cbdf34c4622d395bf5f6c14fc9c86ec))
+
 # [1.345.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.344.2...v1.345.0) (2026-03-05)
 
 
