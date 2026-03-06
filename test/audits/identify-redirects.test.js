@@ -195,7 +195,7 @@ describe('identify-redirects handler', () => {
       slackContext: { channelId: 'C1', threadTs: '123.456', target: 'WORKSPACE_INTERNAL' },
     }, context);
 
-    expect(oneshotSearch.callCount).to.equal(4);
+    expect(oneshotSearch.callCount).to.equal(1);
     expect(postMessageSafe).to.have.been.calledTwice;
     expect(postMessageSafe.firstCall.args[2]).to.include(':hourglass: Started Splunk searches');
     const text = postMessageSafe.secondCall.args[2];
@@ -234,7 +234,7 @@ describe('identify-redirects handler', () => {
     expect(loaded.postMessageSafe.secondCall.args[2]).to.include('last 5m');
     expect(loaded.postMessageSafe.secondCall.args[2]).to.include('*Queries run*');
     expect(loaded.postMessageSafe.secondCall.args[2]).to.include('*Response preview');
-    expect(loaded.postMessageSafe.secondCall.args[2]).to.include('acsredirectmapmanager:');
+    expect(loaded.postMessageSafe.secondCall.args[2]).to.include('vanityurlmgr');
   });
 
   it('truncates response preview when it would exceed the slack limit', async () => {
@@ -243,9 +243,6 @@ describe('identify-redirects handler', () => {
 
     loaded.oneshotSearch
       .onCall(0).resolves({ results: [{ url: longUrl, count: '1' }] })
-      .onCall(1).resolves({ results: [{ url: longUrl, count: '1' }] })
-      .onCall(2).resolves({ results: [] })
-      .onCall(3).resolves({ results: [] });
 
     await loaded.identifyRedirects({
       baseURL: 'https://example.com',
@@ -257,7 +254,7 @@ describe('identify-redirects handler', () => {
     expect(loaded.postMessageSafe).to.have.been.calledTwice;
     const text = loaded.postMessageSafe.secondCall.args[2];
     expect(text).to.include('*Response preview');
-    expect(text).to.include('# acsredirectmanager');
+    expect(text).to.include('# vanityurlmgr');
     expect(text).to.not.include('# acsredirectmapmanager');
   });
 
@@ -340,9 +337,8 @@ describe('identify-redirects handler', () => {
 
     expect(loaded.oneshotSearch).to.have.been.called;
     const firstQuery = loaded.oneshotSearch.firstCall.args[0];
-    expect(firstQuery).to.include('env="e1"');
-    expect(firstQuery).to.include('prog="p1"');
-    expect(firstQuery).to.include('"/conf/"');
+    expect(firstQuery).to.include('aem_service="cm-pp1-ee1"');
+    expect(firstQuery).to.include('httpderror');
 
     expect(loaded.postMessageSafe).to.have.been.calledTwice;
     expect(loaded.postMessageSafe.firstCall.args[2]).to.include(':hourglass: Started Splunk searches');
@@ -351,19 +347,25 @@ describe('identify-redirects handler', () => {
     expect(text).to.not.include('*Top matched strings for winner');
   });
 
-  it('breaks ties by totalCount when scores are equal', async () => {
+  it('determine winner by most recent', async () => {
     const loaded = await loadHandler();
     loaded.oneshotSearch
-      .onCall(0).resolves({ results: [] })
-      .onCall(1).resolves({
-        // 18 * 0.95 = 17.1
-        results: Array.from({ length: 18 }, () => ({ url: '/etc/acs-commons/redirect-maps/a' })),
-      })
-      .onCall(2).resolves({
-        // 19 * 0.90 = 17.1 (exact tie in JS float math)
-        results: Array.from({ length: 19 }, () => ({ url: '/content/dam/something.redirectmap.txt' })),
-      })
-      .onCall(3).resolves({ results: [] });
+      .onCall(0).resolves({
+        results: [
+          {
+            redirectMethodUsed: 'acsredirectmanager',
+            fileName: '/etc/acs-commons/redirect-maps/a',
+            mostRecentEpoch: 1715328000,
+            totalLogHits: 10,
+          },
+          {
+            redirectMethodUsed: 'damredirectmgr',
+            fileName: '/content/dam/something.redirectmap.txt',
+            mostRecentEpoch: 1715328001,
+            totalLogHits: 11,
+          },
+        ],
+      });
 
     await loaded.identifyRedirects({
       baseURL: 'https://example.com',
@@ -375,7 +377,73 @@ describe('identify-redirects handler', () => {
     expect(loaded.postMessageSafe).to.have.been.calledTwice;
     expect(loaded.postMessageSafe.firstCall.args[2]).to.include(':hourglass: Started Splunk searches');
     const text = loaded.postMessageSafe.secondCall.args[2];
-    expect(text).to.include('*Winner*: `redirectmapTxt`');
+    expect(text).to.include('*Winner*: `damredirectmgr`');
+  });
+
+  it('determine winner by most loghits when most recent is tied', async () => {
+    const loaded = await loadHandler();
+    loaded.oneshotSearch
+      .onCall(0).resolves({
+        results: [
+          {
+            redirectMethodUsed: 'acsredirectmanager',
+            fileName: '/etc/acs-commons/redirect-maps/a',
+            mostRecentEpoch: 1715328000,
+            totalLogHits: 10,
+          },
+          {
+            redirectMethodUsed: 'damredirectmgr',
+            fileName: '/content/dam/something.redirectmap.txt',
+            mostRecentEpoch: 1715328000,
+            totalLogHits: 11,
+          },
+        ],
+      });
+
+    await loaded.identifyRedirects({
+      baseURL: 'https://example.com',
+      programId: 'p1',
+      environmentId: 'e1',
+      slackContext: { channelId: 'C1', threadTs: '123.456' },
+    }, context);
+
+    expect(loaded.postMessageSafe).to.have.been.calledTwice;
+    expect(loaded.postMessageSafe.firstCall.args[2]).to.include(':hourglass: Started Splunk searches');
+    const text = loaded.postMessageSafe.secondCall.args[2];
+    expect(text).to.include('*Winner*: `damredirectmgr`');
+  });
+
+  it('determine winner by array index when most recent and most loghits are tied', async () => {
+    const loaded = await loadHandler();
+    loaded.oneshotSearch
+      .onCall(0).resolves({
+        results: [
+          {
+            redirectMethodUsed: 'acsredirectmanager',
+            fileName: '/etc/acs-commons/redirect-maps/a',
+            mostRecentEpoch: 1715328000,
+            totalLogHits: 10,
+          },
+          {
+            redirectMethodUsed: 'damredirectmgr',
+            fileName: '/content/dam/something.redirectmap.txt',
+            mostRecentEpoch: 1715328000,
+            totalLogHits: 10,
+          },
+        ],
+      });
+
+    await loaded.identifyRedirects({
+      baseURL: 'https://example.com',
+      programId: 'p1',
+      environmentId: 'e1',
+      slackContext: { channelId: 'C1', threadTs: '123.456' },
+    }, context);
+
+    expect(loaded.postMessageSafe).to.have.been.calledTwice;
+    expect(loaded.postMessageSafe.firstCall.args[2]).to.include(':hourglass: Started Splunk searches');
+    const text = loaded.postMessageSafe.secondCall.args[2];
+    expect(text).to.include('*Winner*: `acsredirectmanager`');
   });
 
   it('falls back to compat oneshot search when oneshotSearch is missing', async () => {
@@ -588,17 +656,17 @@ describe('identify-redirects handler', () => {
 
     const text = loaded.postMessageSafe.secondCall.args[2];
     expect(text).to.include('*Queries run*');
-    expect(text).to.include('acsredirectmapmanager:');
+    expect(text).to.include('sourcetype=httpderror');
   });
 
   it('updates site delivery config and saves when updateRedirects is true and there is a winner', async () => {
     const loaded = await loadHandler();
     const examplePath = '/etc/acs-commons/redirect-maps/my-map';
+    const ExampleMode = 'acsredirectmanager';
     loaded.oneshotSearch
       .onCall(0).resolves({
         results: [
-          { matched_path: examplePath, url: examplePath },
-          { matched_path: '/etc/acs-commons/redirect-maps/other', url: '/etc/acs-commons/redirect-maps/other' },
+          { redirectMethodUsed: ExampleMode, fileName: examplePath },
         ],
       })
       .onCall(1).resolves({ results: [] })
