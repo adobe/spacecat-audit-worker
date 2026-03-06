@@ -16,12 +16,33 @@ import { expect, use as chaiUse } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
+import { load as cheerioLoad } from 'cheerio';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
 
-import { generateSuggestions } from '../../src/toc/handler.js';
+import { generateSuggestions, slimTocAuditResult } from '../../src/toc/handler.js';
+import {
+  getHeadingLevel,
+  TOC_EXCLUDED_CONTAINER_SELECTORS,
+  TOC_EXCLUDED_HEADING_PHRASES,
+  normalizeHeadingTextForMatch,
+  isExcludedConsentHeadingText,
+  isHeadingInExcludedContainer,
+  extractTocData,
+  tocArrayToHast,
+  determineTocPlacement,
+  getScrapeJsonPath,
+} from '../../src/headings/utils.js';
+import { getHeadingSelector } from '../../src/headings/shared-utils.js';
 
 chaiUse(sinonChai);
+
+/** Stub that returns a simple selector for a heading (for extractTocData tests) */
+function stubGetHeadingSelector(h) {
+  const tag = h.name.toLowerCase();
+  const id = h.attribs?.id;
+  return id ? `${tag}#${id}` : tag;
+}
 
 describe('TOC (Table of Contents) Audit', () => {
   let log;
@@ -701,6 +722,105 @@ describe('TOC (Table of Contents) Audit', () => {
     });
   });
 
+  describe('TOC custom persister (slimmed audit vs full post-processor data)', () => {
+    it('slimTocAuditResult strips transformRules from urls for persistence', () => {
+      const auditResult = {
+        toc: {
+          toc: {
+            success: false,
+            urls: [
+              {
+                url: 'https://example.com/page',
+                explanation: 'TOC missing',
+                transformRules: { action: 'insertAfter', selector: 'h1', value: [] },
+              },
+            ],
+          },
+        },
+      };
+      const slimmed = slimTocAuditResult(auditResult);
+      expect(slimmed.toc.toc.urls).to.have.lengthOf(1);
+      expect(slimmed.toc.toc.urls[0]).to.not.have.property('transformRules');
+      expect(slimmed.toc.toc.urls[0].url).to.equal('https://example.com/page');
+      expect(auditResult.toc.toc.urls[0]).to.have.property('transformRules');
+    });
+
+    it('tocPersister persists slimmed data and logs; post-processors receive full data', async () => {
+      const url = 'https://example.com/page';
+      const auditCreateStub = sinon.stub().resolves({ getId: () => 'audit-123' });
+      const syncSuggestionsStub = sinon.stub().resolves();
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'toc-opportunity-id',
+        getSiteId: () => 'site-1',
+      });
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      const fullAuditResult = {
+        toc: {
+          toc: {
+            success: false,
+            urls: [
+              {
+                url,
+                explanation: 'TOC missing',
+                suggestion: 'Add TOC',
+                transformRules: { action: 'insertAfter', selector: 'h1', value: [{ text: 'Title', level: 1 }] },
+              },
+            ],
+          },
+        },
+      };
+      const auditData = {
+        siteId: 'site-1',
+        isLive: true,
+        auditedAt: new Date().toISOString(),
+        auditType: 'toc',
+        auditResult: fullAuditResult,
+        fullAuditRef: url,
+      };
+      const testContext = {
+        log: logSpy,
+        dataAccess: { Audit: { create: auditCreateStub } },
+      };
+
+      const { tocPersister } = await import('../../src/toc/handler.js');
+      await tocPersister(auditData, testContext);
+
+      expect(auditCreateStub).to.have.been.calledOnce;
+      const persistedAuditData = auditCreateStub.firstCall.args[0];
+      expect(persistedAuditData.auditResult.toc.toc.urls[0]).to.not.have.property('transformRules');
+      expect(logSpy.debug.called).to.be.true;
+      const persisterLog = logSpy.debug.getCalls().find((c) => c.args[0] && c.args[0].includes('[TOC Persister]'));
+      expect(persisterLog).to.exist;
+      expect(persisterLog.args[0]).to.include('slimmed');
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+      });
+      const auditUrl = 'https://example.com';
+      const suggestionsAuditData = {
+        suggestions: {
+          headings: [],
+          toc: [
+            {
+              type: 'CODE_CHANGE',
+              checkType: 'toc',
+              url,
+              explanation: 'TOC missing',
+              recommendedAction: 'Add TOC',
+              transformRules: { action: 'insertAfter', selector: 'h1', value: [{ text: 'Title', level: 1 }] },
+            },
+          ],
+        },
+      };
+      await mockedHandler.opportunityAndSuggestions(auditUrl, suggestionsAuditData, context);
+      expect(syncSuggestionsStub).to.have.been.calledOnce;
+      const syncArgs = syncSuggestionsStub.firstCall.args[0];
+      expect(syncArgs.newData[0]).to.have.property('transformRules');
+      expect(syncArgs.newData[0].transformRules).to.include({ action: 'insertAfter' });
+    });
+  });
+
   describe('TOC Error Handling', () => {
     it('uses confidence score from AI response when valid (line 291 truthy branch)', async () => {
       const baseURL = 'https://example.com';
@@ -1228,7 +1348,7 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(opportunityData).to.be.an('object');
       expect(opportunityData).to.have.property('runbook', '');
       expect(opportunityData).to.have.property('origin', 'AUTOMATION');
-      expect(opportunityData).to.have.property('title', 'Add Table of Content');
+      expect(opportunityData).to.have.property('title', '[Beta] Add Table of Content');
       expect(opportunityData).to.have.property('description');
       expect(opportunityData.description).to.include('table of contents');
     });
@@ -1845,6 +1965,72 @@ describe('TOC (Table of Contents) Audit', () => {
         sinon.match(/has no issues or failed, skipping suggestions generation/)
       );
     });
+
+    it('covers lines 458-459: slimTocAuditResult early return when auditResult.toc is falsy', () => {
+      const auditResult = { fullAuditRef: 'https://example.com', toc: undefined };
+      const result = slimTocAuditResult(auditResult);
+      expect(result).to.deep.equal(auditResult);
+      expect(result.toc).to.equal(undefined);
+    });
+
+    it('covers lines 451-452: slimTocAuditResult returns as-is when auditResult is null or non-object', () => {
+      expect(slimTocAuditResult(null)).to.equal(null);
+      expect(slimTocAuditResult(undefined)).to.equal(undefined);
+      const str = 'not an object';
+      expect(slimTocAuditResult(str)).to.equal(str);
+    });
+
+    it('covers lines 453-455: slimTocAuditResult early return when auditResult.toc is empty object', () => {
+      const auditResult = { fullAuditRef: 'https://example.com', toc: {} };
+      const result = slimTocAuditResult(auditResult);
+      expect(result).to.deep.equal(auditResult);
+      expect(result.toc).to.deep.equal({});
+    });
+
+    it('covers line 463: slimTocAuditResult pass-through when checkResult has no urls array', () => {
+      const auditResult = {
+        toc: {
+          toc: { success: false },
+          otherKey: { urls: null },
+        },
+      };
+      const result = slimTocAuditResult(auditResult);
+      expect(result.toc.toc).to.deep.equal({ success: false });
+      expect(result.toc.otherKey).to.deep.equal({ urls: null });
+    });
+
+    it('covers line 488: tocPersister skips debug log when log or log.debug is not available', async () => {
+      const auditCreateStub = sinon.stub().resolves({ getId: () => 'audit-123' });
+      const auditData = {
+        siteId: 'site-1',
+        auditResult: { toc: { toc: { urls: [{ url: 'https://example.com' }] } } },
+        fullAuditRef: 'https://example.com',
+      };
+      const contextNoLog = { dataAccess: { Audit: { create: auditCreateStub } } };
+      const { tocPersister } = await import('../../src/toc/handler.js');
+      await tocPersister(auditData, contextNoLog);
+      expect(auditCreateStub).to.have.been.calledOnce;
+
+      auditCreateStub.resetHistory();
+      const contextLogNoDebug = { log: {}, dataAccess: { Audit: { create: auditCreateStub } } };
+      await tocPersister(auditData, contextLogNoDebug);
+      expect(auditCreateStub).to.have.been.calledOnce;
+
+      auditCreateStub.resetHistory();
+      const logSpy = { debug: sinon.spy() };
+      const auditDataNoUrls = {
+        siteId: 'site-1',
+        auditResult: { toc: { toc: {} } },
+        fullAuditRef: 'https://example.com',
+      };
+      await tocPersister(auditDataNoUrls, {
+        log: logSpy,
+        dataAccess: { Audit: { create: auditCreateStub } },
+      });
+      expect(auditCreateStub).to.have.been.calledOnce;
+      expect(logSpy.debug.called).to.be.true;
+      expect(logSpy.debug.firstCall.args[0]).to.match(/from 0 URLs/);
+    });
   });
 
   describe('Branch Coverage Tests', () => {
@@ -1945,6 +2131,208 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(logSpy.info).to.have.been.calledWith(
         sinon.match(/no issues, skipping opportunity creation/)
       );
+    });
+  });
+
+  describe('headings/utils (TOC extraction and exclusion)', () => {
+    describe('getHeadingLevel', () => {
+      it('returns 1 for h1', () => {
+        expect(getHeadingLevel('h1')).to.equal(1);
+        expect(getHeadingLevel('H1')).to.equal(1);
+      });
+      it('returns 2 for h2', () => {
+        expect(getHeadingLevel('h2')).to.equal(2);
+      });
+      it('returns 6 for h6', () => {
+        expect(getHeadingLevel('h6')).to.equal(6);
+      });
+    });
+
+    describe('TOC exclusion constants', () => {
+      it('TOC_EXCLUDED_CONTAINER_SELECTORS includes OneTrust and Cookiebot', () => {
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('#onetrust-consent-sdk');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('#CybotCookiebotDialog');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('.cookie-consent');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[id*="consent"]');
+      });
+      it('TOC_EXCLUDED_HEADING_PHRASES includes consent phrases', () => {
+        expect(TOC_EXCLUDED_HEADING_PHRASES).to.include('privacy preference center');
+        expect(TOC_EXCLUDED_HEADING_PHRASES).to.include('cookie settings');
+      });
+    });
+
+    describe('normalizeHeadingTextForMatch', () => {
+      it('trims and lowercases and collapses spaces', () => {
+        expect(normalizeHeadingTextForMatch('  Privacy   Preference   Center  ')).to.equal('privacy preference center');
+      });
+      it('returns empty string for non-string', () => {
+        expect(normalizeHeadingTextForMatch(null)).to.equal('');
+        expect(normalizeHeadingTextForMatch(undefined)).to.equal('');
+        expect(normalizeHeadingTextForMatch(123)).to.equal('');
+      });
+      it('returns empty string for empty string', () => {
+        expect(normalizeHeadingTextForMatch('')).to.equal('');
+        expect(normalizeHeadingTextForMatch('   ')).to.equal('');
+      });
+    });
+
+    describe('isExcludedConsentHeadingText', () => {
+      it('returns true for exact phrase match (case-insensitive)', () => {
+        expect(isExcludedConsentHeadingText('Privacy Preference Center')).to.equal(true);
+        expect(isExcludedConsentHeadingText('privacy preference center')).to.equal(true);
+        expect(isExcludedConsentHeadingText('Cookie Settings')).to.equal(true);
+      });
+      it('returns true when heading contains phrase', () => {
+        expect(isExcludedConsentHeadingText('Welcome to Privacy Preference Center')).to.equal(true);
+        expect(isExcludedConsentHeadingText('Manage your cookie settings here')).to.equal(true);
+      });
+      it('returns true when phrase contains heading (short match)', () => {
+        expect(isExcludedConsentHeadingText('privacy')).to.equal(true);
+      });
+      it('returns false for non-consent content', () => {
+        expect(isExcludedConsentHeadingText('Product details')).to.equal(false);
+        expect(isExcludedConsentHeadingText('Section 1')).to.equal(false);
+        expect(isExcludedConsentHeadingText('Compatible lighting components')).to.equal(false);
+      });
+      it('returns false for empty or whitespace', () => {
+        expect(isExcludedConsentHeadingText('')).to.equal(false);
+        expect(isExcludedConsentHeadingText('   ')).to.equal(false);
+      });
+    });
+
+    describe('isHeadingInExcludedContainer', () => {
+      it('returns false when heading or $ is missing', () => {
+        const $ = cheerioLoad('<h1>Title</h1>');
+        expect(isHeadingInExcludedContainer(null, $)).to.equal(false);
+        expect(isHeadingInExcludedContainer($('h1')[0], null)).to.equal(false);
+      });
+      it('returns true when heading is inside OneTrust container', () => {
+        const $ = cheerioLoad('<div id="onetrust-consent-sdk"><h1>Privacy Preference Center</h1></div>');
+        const h1 = $('h1')[0];
+        expect(isHeadingInExcludedContainer(h1, $)).to.equal(true);
+      });
+      it('returns true when heading is inside cookie-banner', () => {
+        const $ = cheerioLoad('<div id="cookie-banner"><h2>Cookie Settings</h2></div>');
+        const h2 = $('h2')[0];
+        expect(isHeadingInExcludedContainer(h2, $)).to.equal(true);
+      });
+      it('returns true when heading is inside element with class cookie-consent', () => {
+        const $ = cheerioLoad('<div class="cookie-consent"><h1>Accept Cookies</h1></div>');
+        const h1 = $('h1')[0];
+        expect(isHeadingInExcludedContainer(h1, $)).to.equal(true);
+      });
+      it('returns false when heading is not inside any excluded container', () => {
+        const $ = cheerioLoad('<main><h1>Product details</h1><h2>Section 1</h2></main>');
+        expect(isHeadingInExcludedContainer($('h1')[0], $)).to.equal(false);
+        expect(isHeadingInExcludedContainer($('h2')[0], $)).to.equal(false);
+      });
+    });
+
+    describe('extractTocData', () => {
+      it('returns all h1 and h2 when no main and no consent', () => {
+        const $ = cheerioLoad('<body><h1 id="title">Title</h1><h2 id="s1">Section 1</h2><h2 id="s2">Section 2</h2></body>');
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(3);
+        expect(result[0]).to.deep.include({ text: 'Title', level: 1 });
+        expect(result[1]).to.deep.include({ text: 'Section 1', level: 2 });
+        expect(result[2]).to.deep.include({ text: 'Section 2', level: 2 });
+      });
+      it('when main exists, only includes headings inside body > main', () => {
+        const $ = cheerioLoad(
+          '<body><h1 id="outside">Outside Main</h1><main><h1 id="inside">Inside Main</h1><h2 id="sec">Section</h2></main></body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Inside Main', 'Section']);
+      });
+      it('excludes headings inside consent container', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<div id="onetrust-consent-sdk"><h1>Privacy Preference Center</h1></div>'
+          + '<main><h1 id="product">Product details</h1><h2 id="sec">Section</h2></main>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Product details', 'Section']);
+      });
+      it('excludes headings by consent phrase even when not in consent container', () => {
+        const $ = cheerioLoad(
+          '<body><main><h1 id="a">Product details</h1><h2 id="b">Privacy Preference Center</h2><h2 id="c">Section 2</h2></main></body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Product details', 'Section 2']);
+      });
+      it('returns empty array when no headings', () => {
+        const $ = cheerioLoad('<body><p>No headings</p></body>');
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.deep.equal([]);
+      });
+      it('returns empty array when all headings are excluded', () => {
+        const $ = cheerioLoad('<body><div id="cookie-banner"><h1>Cookie Settings</h1><h2>Manage preferences</h2></div></body>');
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.deep.equal([]);
+      });
+      it('includes selector from getHeadingSelectorFn', () => {
+        const $ = cheerioLoad('<body><h1 id="main">Title</h1></body>');
+        const result = extractTocData($, getHeadingSelector);
+        expect(result[0].selector).to.equal('h1#main');
+      });
+    });
+
+    describe('tocArrayToHast', () => {
+      it('builds HAST with nav > ul > li > a for each item', () => {
+        const tocData = [
+          { text: 'Title', level: 1, selector: 'h1#main' },
+          { text: 'Section', level: 2, selector: 'h2#sec' },
+        ];
+        const hast = tocArrayToHast(tocData);
+        expect(hast.type).to.equal('root');
+        expect(hast.children[0].tagName).to.equal('nav');
+        expect(hast.children[0].properties.className).to.include('toc');
+        const ul = hast.children[0].children[0];
+        expect(ul.tagName).to.equal('ul');
+        expect(ul.children).to.have.lengthOf(2);
+        expect(ul.children[1].properties.className).to.include('toc-sub');
+        expect(ul.children[0].children[0].properties['data-selector']).to.equal('h1#main');
+        expect(ul.children[0].children[0].children[0].value).to.equal('Title');
+      });
+    });
+
+    describe('determineTocPlacement', () => {
+      it('returns insertAfter first h1 when h1 present', () => {
+        const $ = cheerioLoad('<body><h1 id="title">Title</h1><main><p>Content</p></main></body>');
+        const result = determineTocPlacement($, getHeadingSelector);
+        expect(result.action).to.equal('insertAfter');
+        expect(result.selector).to.include('h1');
+        expect(result.placement).to.equal('after-h1');
+      });
+      it('returns insertBefore main first-child when no h1 but main present', () => {
+        const $ = cheerioLoad('<body><main><p>Content</p></main></body>');
+        const result = determineTocPlacement($, getHeadingSelector);
+        expect(result.action).to.equal('insertBefore');
+        expect(result.selector).to.equal('body > main > :first-child');
+        expect(result.placement).to.equal('main-start');
+      });
+      it('returns insertBefore body first-child when no h1 and no main', () => {
+        const $ = cheerioLoad('<body><div>Content</div></body>');
+        const result = determineTocPlacement($, getHeadingSelector);
+        expect(result.action).to.equal('insertBefore');
+        expect(result.selector).to.equal('body > :first-child');
+        expect(result.placement).to.equal('body-start');
+      });
+    });
+
+    describe('getScrapeJsonPath', () => {
+      it('builds path with siteId and pathname', () => {
+        expect(getScrapeJsonPath('https://example.com/products/page', 'site-1'))
+          .to.equal('scrapes/site-1/products/page/scrape.json');
+      });
+      it('strips trailing slash from pathname', () => {
+        expect(getScrapeJsonPath('https://example.com/products/', 'site-1'))
+          .to.equal('scrapes/site-1/products/scrape.json');
+      });
     });
   });
 });

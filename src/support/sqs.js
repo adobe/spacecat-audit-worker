@@ -36,11 +36,15 @@ class SQS {
       body.traceId = this.context.traceId;
     }
 
+    // Auto-extract MessageGroupId from message for SQS fair queuing.
+    // Uses type (opptyType) as the group identifier to ensure per-audit-type fairness.
+    const resolvedGroupId = msgGroupId || body.type || undefined;
+
     const asJSON = JSON.stringify(body);
     const msgCommand = new SendMessageCommand({
       MessageBody: asJSON,
       QueueUrl: queueUrl,
-      MessageGroupId: msgGroupId, // Only needed for FIFO queues
+      MessageGroupId: resolvedGroupId,
       DelaySeconds: delaySeconds,
     });
 
@@ -48,7 +52,7 @@ class SQS {
       const data = await this.sqsClient.send(msgCommand);
       const queueName = queueUrl?.split('/').pop() || 'unknown';
       const messageType = body.type || 'unknown';
-      this.log.info(`Success, message sent. Queue: ${queueName}, Type: ${messageType}, MessageID: ${data.MessageId}${body.traceId ? `, TraceID: ${body.traceId}` : ''}`);
+      this.log.info(`Success, message sent. Queue: ${queueName}, Type: ${messageType}, MessageID: ${data.MessageId}${body.traceId ? `, TraceID: ${body.traceId}` : ''}${resolvedGroupId ? `, GroupID: ${resolvedGroupId}` : ''}`);
     } catch (e) {
       const { type, code, message: msg } = e;
       this.log.error(`Message send failed. Type: ${type}, Code: ${code}, Message: ${msg}`, e);

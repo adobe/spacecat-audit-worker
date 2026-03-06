@@ -14,16 +14,14 @@ import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { FORM_OPPORTUNITY_TYPES, formOpportunitiesMap } from '../constants.js';
 import { getSuccessCriteriaDetails } from '../utils.js';
-import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
 import {
   aggregateA11yIssuesByOppType,
   createIndividualOpportunitySuggestions,
+  findOrCreateAccessibilityOpportunity,
 } from '../../accessibility/utils/generate-individual-opportunities.js';
 import { aggregateAccessibilityData, sendRunImportMessage, sendCodeFixMessagesToMystique } from '../../accessibility/utils/data-processing.js';
 import { URL_SOURCE_SEPARATOR, A11Y_METRICS_AGGREGATOR_IMPORT_TYPE, WCAG_CRITERIA_COUNTS } from '../../accessibility/utils/constants.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
-
-const filterAccessibilityOpportunities = (opportunities) => opportunities.filter((opportunity) => opportunity.getTags()?.includes('Forms Accessibility'));
 
 /**
  * Extracts form accessibility data from Mystique a11y data
@@ -135,45 +133,31 @@ export async function createFormAccessibilitySuggestionsFromMystique(
   }
 }
 
-/**
- * Create a11y opportunity for the given siteId and auditId
- * @param {string} auditId - The auditId of the audit
- * @param {string} siteId - The siteId of the site
- * @param {object} context - The context object
- * @returns {Promise<void>}
- */
-async function createOpportunity(auditId, siteId, context) {
-  const {
-    dataAccess, log,
-  } = context;
-  const { Opportunity } = dataAccess;
-  let opportunity = null;
+export function createFormAccessibilityOpportunityInstance() {
+  return {
+    runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/Ebpoflp2gHFNl4w5-9C7dFEBBHHE4gTaRzHaofqSxJMuuQ?e=Ss6mep',
+    type: FORM_OPPORTUNITY_TYPES.FORM_A11Y,
+    origin: 'AUTOMATION',
+    title: 'Forms missing key accessibility attributes — enhancements prepared to support all users',
+    description: 'Improving accessibility for forms ensures assistive technologies can correctly interpret each input, helps users understand what\'s required, and makes form completion more intuitive for everyone.',
+    tags: [
+      'Forms Accessibility',
+    ],
+    status: 'NEW',
+    data: {
+      dataSources: ['axe-core'],
+    },
+  };
+}
 
-  try {
-    // change status to IGNORED for older opportunities
-    await updateStatusToIgnored(dataAccess, siteId, log, null, filterAccessibilityOpportunities);
-
-    const opportunityData = {
-      siteId,
-      auditId,
-      runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/Ebpoflp2gHFNl4w5-9C7dFEBBHHE4gTaRzHaofqSxJMuuQ?e=Ss6mep',
-      type: FORM_OPPORTUNITY_TYPES.FORM_A11Y,
-      origin: 'AUTOMATION',
-      title: 'Forms missing key accessibility attributes — enhancements prepared to support all users',
-      description: 'Improving accessibility for forms ensures assistive technologies can correctly interpret each input, helps users understand what\'s required, and makes form completion more intuitive for everyone.',
-      tags: [
-        'Forms Accessibility',
-      ],
-      data: {
-        dataSources: ['axe-core'],
-      },
-    };
-    opportunity = await Opportunity.create(opportunityData);
-    log.debug(`[Form Opportunity] [Site Id: ${siteId}] Created new a11y opportunity`);
-  } catch (e) {
-    log.error(`[Form Opportunity] [Site Id: ${siteId}] Failed to create a11y opportunity with error: ${e.message}`);
-    throw new Error(`[Form Opportunity] [Site Id: ${siteId}] Failed to create a11y opportunity with error: ${e.message}`);
-  }
+async function findOrCreateFormA11yOpportunity(auditId, siteId, context) {
+  const opportunityInstance = createFormAccessibilityOpportunityInstance();
+  const auditData = { siteId, auditId };
+  const { opportunity } = await findOrCreateAccessibilityOpportunity(
+    opportunityInstance,
+    auditData,
+    context,
+  );
   return opportunity;
 }
 
@@ -301,7 +285,7 @@ export async function createAccessibilityOpportunity(auditData, context) {
     // Create opportunity only if there are violations
     let opportunity = null;
     if (totalViolations > 0) {
-      opportunity = await createOpportunity(auditId, siteId, context);
+      opportunity = await findOrCreateFormA11yOpportunity(auditId, siteId, context);
 
       // Create individual suggestions for the opportunity (if opportunity was created/updated)
       if (opportunity) {
@@ -383,7 +367,7 @@ export default async function handler(message, context) {
         return ok();
       }
 
-      opportunity = await createOpportunity(auditId, siteId, context);
+      opportunity = await findOrCreateFormA11yOpportunity(auditId, siteId, context);
     }
     if (!opportunity) {
       log.info(`[Form Opportunity] [Site Id: ${siteId}] A11y opportunity not detected, skipping guidance`);

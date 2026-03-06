@@ -190,6 +190,64 @@ describe('createLowConversionOpportunities handler method', () => {
     expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] Successfully synced opportunity for high-form-views-low-conversions audit type.');
   });
 
+  it('should send to Mystique for guidance when existing opportunity has formDetails that are not should-ignore type', async () => {
+    dataAccessStub.Opportunity.allBySiteId.resolves([formsOppty]);
+    const { auditDataWithExistingOppty } = testData;
+    formsOppty.type = FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
+    formsOppty.getData = sinon.stub().returns({
+      form: 'https://www.surest.com/info/win-1',
+      screenshot: '',
+      trackedFormKPIName: 'Conversion Rate',
+      trackedFormKPIValue: 0.5,
+      formViews: 1000,
+      pageViews: 5000,
+      samples: 5000,
+      formDetails: {
+        is_lead_gen: true,
+        form_type: 'Quote Request Form',
+      },
+    });
+    await createLowConversionOpportunities(
+      auditUrl,
+      auditDataWithExistingOppty,
+      undefined,
+      context,
+    );
+    const [, message] = context.sqs.sendMessage.getCall(0).args;
+    expect(message.type).to.equal('guidance:high-form-views-low-conversions');
+  });
+
+  it('should send to Forms Quality Agent when existing opportunity has formDetails with should-ignore form type', async () => {
+    dataAccessStub.Opportunity.allBySiteId.resolves([formsOppty]);
+    const { auditDataWithExistingOppty } = testData;
+    formsOppty.getData = sinon.stub().returns({
+      form: 'https://www.surest.com/info/win-1',
+      screenshot: '',
+      trackedFormKPIName: 'Conversion Rate',
+      trackedFormKPIValue: 0.5,
+      formViews: 1000,
+      pageViews: 5000,
+      samples: 5000,
+      formDetails: {
+        is_lead_gen: false,
+        form_type: 'search form',
+      },
+    });
+    await createLowConversionOpportunities(
+      auditUrl,
+      auditDataWithExistingOppty,
+      undefined,
+      context,
+    );
+    const [, message] = context.sqs.sendMessage.getCall(0).args;
+    expect(message.type).to.equal('detect:form-details');
+    expect(message.data.form_details).to.have.lengthOf(1);
+    expect(message.data.form_details[0]).to.deep.include({
+      url: 'https://www.surest.com/info/win-1',
+      form_source: '',
+    });
+  });
+
   it('should throw error if fetching opportunity fails', async () => {
     dataAccessStub.Opportunity.allBySiteId.rejects(new Error('some-error'));
     try {
