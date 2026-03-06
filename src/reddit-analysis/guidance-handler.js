@@ -49,6 +49,11 @@ export default async function handler(message, context) {
 
   log.info(`[Reddit] Received Reddit analysis guidance for siteId: ${siteId}, auditId: ${auditId}`);
 
+  if (data?.error) {
+    log.error(`[Reddit] Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}: ${data.errorMessage}`);
+    return noContent();
+  }
+
   let analysisData;
   const { companyName, presignedUrl } = data || {};
 

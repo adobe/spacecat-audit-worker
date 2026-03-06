@@ -193,6 +193,25 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(convertToOpportunityStub).to.not.have.been.called;
     });
 
+    it('should return noContent and log error when Mystique returns an error', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          error: true,
+          errorMessage: 'HTTP error in content store /url-lookup (dataset=reddit_posts): 400 Bad Request',
+        },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(204);
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Mystique returned an error.*400 Bad Request/),
+      );
+      expect(convertToOpportunityStub).to.not.have.been.called;
+    });
+
     it('should return badRequest when no analysis data provided', async () => {
       const message = {
         siteId,
