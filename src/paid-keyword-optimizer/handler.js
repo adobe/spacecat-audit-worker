@@ -324,9 +324,9 @@ export async function paidKeywordOptimizerRunner(auditUrl, context, site) {
     `[ad-intent-mismatch] [Site: ${auditUrl}] Querying Athena metrics for low-performing paid pages (siteId: ${siteId})`,
   );
 
-  // Get temporal parameters (4 weeks back from current week)
+  // Get temporal parameters (5 weeks back from current week)
   const { week, year } = getWeekInfo();
-  const temporalCondition = getTemporalCondition({ week, year, numSeries: 4 });
+  const temporalCondition = getTemporalCondition({ week, year, numSeries: 5 });
 
   const athenaClient = AWSAthenaClient.fromContext(context, `${config.athenaTemp}/ad-intent-mismatch/${siteId}-${Date.now()}`);
 

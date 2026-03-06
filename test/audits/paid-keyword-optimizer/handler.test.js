@@ -918,6 +918,14 @@ describe('Paid Keyword Optimizer Audit', () => {
       // Should still work - paid = 90%
       expect(result.auditResult.predominantlyPaidCount).to.equal(1);
     });
+
+    it('should use 5-week temporal condition', async () => {
+      const result = await paidKeywordOptimizerRunner(auditUrl, context, site);
+
+      // The temporalCondition should contain at least 5 week clauses
+      const weekClauses = result.auditResult.temporalCondition.split(' OR ');
+      expect(weekClauses.length).to.be.at.least(5);
+    });
   });
 
   describe('sendToMystique (legacy)', () => {
