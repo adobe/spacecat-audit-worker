@@ -37,6 +37,8 @@ describe('Offsite Brand Presence Handler', () => {
   let sandbox;
   let mockFetch;
   let mockIsoCalendarWeek;
+  let mockSubmitScrapeJob;
+  let mockDrsIsConfigured;
   let offsiteBrandPresenceRunner;
   let handlerDefault;
 
@@ -45,6 +47,7 @@ describe('Offsite Brand Presence Handler', () => {
   let env;
   let log;
   let dataAccess;
+  let sharedMocks;
 
   const FINAL_URL = 'https://example.com';
   const SITE_ID = 'site-123';
@@ -55,13 +58,32 @@ describe('Offsite Brand Presence Handler', () => {
 
     mockFetch = sandbox.stub();
     mockIsoCalendarWeek = sandbox.stub().returns({ week: DEFAULT_WEEK, year: DEFAULT_YEAR });
+    mockSubmitScrapeJob = sandbox.stub().resolves({ job_id: 'mock-job' });
+    mockDrsIsConfigured = sandbox.stub().returns(true);
 
-    const mod = await esmock('../../src/offsite-brand-presence/handler.js', {
+    sharedMocks = {
       '@adobe/spacecat-shared-utils': {
         isoCalendarWeek: mockIsoCalendarWeek,
         tracingFetch: mockFetch,
       },
-    });
+      '@adobe/spacecat-shared-drs-client': {
+        default: {
+          createFrom: () => ({
+            isConfigured: mockDrsIsConfigured,
+            submitScrapeJob: mockSubmitScrapeJob,
+          }),
+        },
+        SCRAPE_DATASET_IDS: {
+          YOUTUBE_VIDEOS: 'youtube_videos',
+          YOUTUBE_COMMENTS: 'youtube_comments',
+          REDDIT_POSTS: 'reddit_posts',
+          REDDIT_COMMENTS: 'reddit_comments',
+          WIKIPEDIA: 'wikipedia',
+        },
+      },
+    };
+
+    const mod = await esmock('../../src/offsite-brand-presence/handler.js', sharedMocks);
 
     offsiteBrandPresenceRunner = mod.offsiteBrandPresenceRunner;
     handlerDefault = mod.default;
@@ -157,7 +179,6 @@ describe('Offsite Brand Presence Handler', () => {
   function buildHappyResponses({
     queryIndex = null,
     providerResponses = null,
-    drsResponses = [],
     week = DEFAULT_WEEK,
     year = DEFAULT_YEAR,
   } = {}) {
@@ -171,7 +192,6 @@ describe('Offsite Brand Presence Handler', () => {
         responses.push(okJsonResponse({}));
       }
     }
-    responses.push(...drsResponses);
     return responses;
   }
 
@@ -415,12 +435,6 @@ describe('Offsite Brand Presence Handler', () => {
       ];
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-          okJsonResponse({ jobId: 'j3' }),
-          okJsonResponse({ jobId: 'j4' }),
-        ],
       });
       stubFetchSequence(responses);
 
@@ -439,10 +453,7 @@ describe('Offsite Brand Presence Handler', () => {
 
     beforeEach(async () => {
       const mod = await esmock('../../src/offsite-brand-presence/handler.js', {
-        '@adobe/spacecat-shared-utils': {
-          isoCalendarWeek: mockIsoCalendarWeek,
-          tracingFetch: mockFetch,
-        },
+        ...sharedMocks,
         '../../src/offsite-brand-presence/constants.js': {
           ...handlerConstants,
           FETCH_PAGE_SIZE: TEST_PAGE_SIZE,
@@ -469,17 +480,13 @@ describe('Offsite Brand Presence Handler', () => {
       mockFetch.onCall(0).resolves(okJsonResponse(qi));
       mockFetch.onCall(1).resolves(page1Response);
       mockFetch.onCall(2).resolves(page2Response);
-      mockFetch.onCall(3).resolves(okJsonResponse({ jobId: 'j1' }));
-      mockFetch.onCall(4).resolves(okJsonResponse({ jobId: 'j2' }));
-      mockFetch.onCall(5).resolves(okJsonResponse({ jobId: 'j3' }));
-      mockFetch.onCall(6).resolves(okJsonResponse({ jobId: 'j4' }));
 
       const result = await paginationRunner(FINAL_URL, context, site);
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
-      expect(mockFetch.callCount).to.equal(7);
+      expect(mockFetch.callCount).to.equal(3);
     });
 
     it('should return partial data when a subsequent page fails during pagination', async () => {
@@ -494,8 +501,6 @@ describe('Offsite Brand Presence Handler', () => {
       mockFetch.onCall(0).resolves(okJsonResponse(qi));
       mockFetch.onCall(1).resolves(page1Response);
       mockFetch.onCall(2).resolves(failResponse(500, 'Internal Server Error'));
-      mockFetch.onCall(3).resolves(okJsonResponse({ jobId: 'j1' }));
-      mockFetch.onCall(4).resolves(okJsonResponse({ jobId: 'j2' }));
 
       const result = await paginationRunner(FINAL_URL, context, site);
 
@@ -517,12 +522,6 @@ describe('Offsite Brand Presence Handler', () => {
       });
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-          okJsonResponse({ jobId: 'j3' }),
-          okJsonResponse({ jobId: 'j4' }),
-        ],
       });
       stubFetchSequence(responses);
 
@@ -540,12 +539,6 @@ describe('Offsite Brand Presence Handler', () => {
       });
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-          okJsonResponse({ jobId: 'j3' }),
-          okJsonResponse({ jobId: 'j4' }),
-        ],
       });
       stubFetchSequence(responses);
 
@@ -563,10 +556,6 @@ describe('Offsite Brand Presence Handler', () => {
       });
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-        ],
       });
       stubFetchSequence(responses);
 
@@ -584,10 +573,6 @@ describe('Offsite Brand Presence Handler', () => {
       });
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-        ],
       });
       stubFetchSequence(responses);
 
@@ -614,10 +599,6 @@ describe('Offsite Brand Presence Handler', () => {
       });
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-        ],
       });
       stubFetchSequence(responses);
 
@@ -650,10 +631,6 @@ describe('Offsite Brand Presence Handler', () => {
       });
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-        ],
       });
       stubFetchSequence(responses);
 
@@ -701,26 +678,15 @@ describe('Offsite Brand Presence Handler', () => {
         if (i === 0) return stubProviderData(['https://www.youtube.com/watch?v=abc123']);
         return okJsonResponse({});
       });
-      const responses = buildHappyResponses({
-        providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-        ],
-      });
+      const responses = buildHappyResponses({ providerResponses });
       stubFetchSequence(responses);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      const drsCalls = mockFetch.getCalls().filter(
-        (call) => call.args[0].includes(`${env.DRS_API_URL}/jobs`),
+      const videosCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === 'youtube_videos',
       );
-      const videosCall = drsCalls.find((c) => {
-        const body = JSON.parse(c.args[1].body);
-        return body.parameters.dataset_id === 'youtube_videos';
-      });
-      const body = JSON.parse(videosCall.args[1].body);
-      expect(body.parameters.urls).to.deep.equal(['https://youtu.be/abc123']);
+      expect(videosCall.args[0].urls).to.deep.equal(['https://youtu.be/abc123']);
     });
 
     it('should keep youtube.com/shorts URLs as-is (strip query params only)', async () => {
@@ -728,26 +694,15 @@ describe('Offsite Brand Presence Handler', () => {
         if (i === 0) return stubProviderData(['https://www.youtube.com/shorts/xyz?feature=share']);
         return okJsonResponse({});
       });
-      const responses = buildHappyResponses({
-        providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-        ],
-      });
+      const responses = buildHappyResponses({ providerResponses });
       stubFetchSequence(responses);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      const drsCalls = mockFetch.getCalls().filter(
-        (call) => call.args[0].includes(`${env.DRS_API_URL}/jobs`),
+      const videosCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === 'youtube_videos',
       );
-      const videosCall = drsCalls.find((c) => {
-        const body = JSON.parse(c.args[1].body);
-        return body.parameters.dataset_id === 'youtube_videos';
-      });
-      const body = JSON.parse(videosCall.args[1].body);
-      expect(body.parameters.urls).to.deep.equal(['https://www.youtube.com/shorts/xyz']);
+      expect(videosCall.args[0].urls).to.deep.equal(['https://www.youtube.com/shorts/xyz']);
     });
 
     it('should normalize youtu.be short URLs via domain alias', async () => {
@@ -755,23 +710,13 @@ describe('Offsite Brand Presence Handler', () => {
         if (i === 0) return stubProviderData(['https://youtu.be/shortId']);
         return okJsonResponse({});
       });
-      const responses = buildHappyResponses({
-        providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-        ],
-      });
+      const responses = buildHappyResponses({ providerResponses });
       stubFetchSequence(responses);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
-
-      const drsCalls = mockFetch.getCalls().filter(
-        (call) => call.args[0].includes(`${env.DRS_API_URL}/jobs`),
-      );
-      expect(drsCalls.length).to.be.at.least(1);
+      expect(mockSubmitScrapeJob).to.have.been.called;
     });
 
     it('should strip trailing slash and query parameters from reddit URLs', async () => {
@@ -779,26 +724,15 @@ describe('Offsite Brand Presence Handler', () => {
         if (i === 0) return stubProviderData(['https://reddit.com/r/test/post/?utm_source=share']);
         return okJsonResponse({});
       });
-      const responses = buildHappyResponses({
-        providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-        ],
-      });
+      const responses = buildHappyResponses({ providerResponses });
       stubFetchSequence(responses);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      const drsCalls = mockFetch.getCalls().filter(
-        (call) => call.args[0].includes(`${env.DRS_API_URL}/jobs`),
+      const postsCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === 'reddit_posts',
       );
-      const postsCall = drsCalls.find((c) => {
-        const body = JSON.parse(c.args[1].body);
-        return body.parameters.dataset_id === 'reddit_posts';
-      });
-      const body = JSON.parse(postsCall.args[1].body);
-      expect(body.parameters.urls[0]).to.equal('https://reddit.com/r/test/post');
+      expect(postsCall.args[0].urls[0]).to.equal('https://reddit.com/r/test/post');
     });
   });
 
@@ -834,10 +768,6 @@ describe('Offsite Brand Presence Handler', () => {
       const providerResponses = setupWithYoutubeUrl();
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-        ],
       });
       stubFetchSequence(responses);
 
@@ -857,10 +787,6 @@ describe('Offsite Brand Presence Handler', () => {
       const providerResponses = setupWithYoutubeUrl();
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-        ],
       });
       stubFetchSequence(responses);
 
@@ -882,12 +808,6 @@ describe('Offsite Brand Presence Handler', () => {
       });
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-          okJsonResponse({ jobId: 'j3' }),
-          okJsonResponse({ jobId: 'j4' }),
-        ],
       });
       stubFetchSequence(responses);
 
@@ -908,9 +828,6 @@ describe('Offsite Brand Presence Handler', () => {
       });
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'wiki-job' }),
-        ],
       });
       stubFetchSequence(responses);
 
@@ -937,10 +854,6 @@ describe('Offsite Brand Presence Handler', () => {
       });
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-        ],
       });
       stubFetchSequence(responses);
 
@@ -948,15 +861,10 @@ describe('Offsite Brand Presence Handler', () => {
 
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(urlCount);
 
-      const drsCalls = mockFetch.getCalls().filter(
-        (call) => call.args[0].includes(`${env.DRS_API_URL}/jobs`),
+      const videosCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === 'youtube_videos',
       );
-      const videosCall = drsCalls.find((c) => {
-        const body = JSON.parse(c.args[1].body);
-        return body.parameters.dataset_id === 'youtube_videos';
-      });
-      const body = JSON.parse(videosCall.args[1].body);
-      expect(body.parameters.urls).to.have.lengthOf(DRS_TOP_URLS_LIMIT);
+      expect(videosCall.args[0].urls).to.have.lengthOf(DRS_TOP_URLS_LIMIT);
       expect(dataAccess.AuditUrl.create.callCount).to.equal(DRS_TOP_URLS_LIMIT);
     });
 
@@ -989,10 +897,6 @@ describe('Offsite Brand Presence Handler', () => {
       });
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-        ],
       });
       stubFetchSequence(responses);
 
@@ -1028,13 +932,6 @@ describe('Offsite Brand Presence Handler', () => {
       });
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-          okJsonResponse({ jobId: 'j3' }),
-          okJsonResponse({ jobId: 'j4' }),
-          okJsonResponse({ jobId: 'j5' }),
-        ],
       });
       stubFetchSequence(responses);
 
@@ -1076,12 +973,6 @@ describe('Offsite Brand Presence Handler', () => {
       });
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'yt-videos' }),
-          okJsonResponse({ jobId: 'yt-comments' }),
-          okJsonResponse({ jobId: 'rd-posts' }),
-          okJsonResponse({ jobId: 'rd-comments' }),
-        ],
       });
       stubFetchSequence(responses);
 
@@ -1110,115 +1001,84 @@ describe('Offsite Brand Presence Handler', () => {
       });
     });
 
-    it('should include correct payload structure in DRS requests', async () => {
+    it('should call submitScrapeJob with correct params', async () => {
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
         if (i === 0) return stubProviderData(['https://youtube.com/watch?v=x']);
         return okJsonResponse({});
       });
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-        ],
       });
       stubFetchSequence(responses);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      const drsCalls = mockFetch.getCalls().filter(
-        (call) => call.args[0].includes(`${env.DRS_API_URL}/jobs`),
+      const videosCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === 'youtube_videos',
       );
-      expect(drsCalls.length).to.be.at.least(1);
-
-      const [url, options] = drsCalls[0].args;
-      expect(url).to.equal(`${env.DRS_API_URL}/jobs`);
-      expect(options.method).to.equal('POST');
-      expect(options.headers['x-api-key']).to.equal(env.DRS_API_KEY);
-
-      const body = JSON.parse(options.body);
-      expect(body.provider_id).to.equal('brightdata');
-      expect(body.priority).to.equal('HIGH');
-      expect(body.parameters.dataset_id).to.equal('youtube_videos');
-      expect(body.parameters.site_id).to.equal(SITE_ID);
-      expect(body.parameters.urls).to.deep.equal(['https://youtu.be/x']);
-      expect(body.parameters).to.not.have.property('metadata');
+      expect(videosCall).to.exist;
+      expect(videosCall.args[0]).to.deep.include({
+        datasetId: 'youtube_videos',
+        siteId: SITE_ID,
+      });
+      expect(videosCall.args[0].urls).to.deep.equal(['https://youtu.be/x']);
+      expect(videosCall.args[0]).to.not.have.property('daysBack');
     });
 
-    it('should include days_back parameter for reddit.com', async () => {
+    it('should include daysBack for reddit_comments', async () => {
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
         if (i === 0) return stubProviderData(['https://reddit.com/r/adobe']);
         return okJsonResponse({});
       });
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'j1' }),
-          okJsonResponse({ jobId: 'j2' }),
-        ],
       });
       stubFetchSequence(responses);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      const drsCalls = mockFetch.getCalls().filter(
-        (call) => call.args[0].includes(`${env.DRS_API_URL}/jobs`),
+      const commentsCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === 'reddit_comments',
       );
-
-      const commentsCall = drsCalls.find((c) => {
-        const body = JSON.parse(c.args[1].body);
-        return body.parameters.dataset_id === 'reddit_comments';
-      });
       expect(commentsCall).to.exist;
-      const body = JSON.parse(commentsCall.args[1].body);
-      expect(body.parameters.days_back).to.equal(REDDIT_COMMENTS_DAYS_BACK);
+      expect(commentsCall.args[0].daysBack).to.equal(REDDIT_COMMENTS_DAYS_BACK);
 
-      const postsCall = drsCalls.find((c) => {
-        const b = JSON.parse(c.args[1].body);
-        return b.parameters.dataset_id === 'reddit_posts';
-      });
+      const postsCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === 'reddit_posts',
+      );
       expect(postsCall).to.exist;
-      const postsBody = JSON.parse(postsCall.args[1].body);
-      expect(postsBody.parameters).to.not.have.property('days_back');
+      expect(postsCall.args[0]).to.not.have.property('daysBack');
     });
 
-    it('should trigger DRS job with wikipedia dataset_id for wikipedia URLs', async () => {
+    it('should call submitScrapeJob with wikipedia dataset for wikipedia URLs', async () => {
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
         if (i === 0) return stubProviderData(['https://en.wikipedia.org/wiki/Adobe']);
         return okJsonResponse({});
       });
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          okJsonResponse({ job_id: 'wiki-job' }),
-        ],
       });
       stubFetchSequence(responses);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      const drsCalls = mockFetch.getCalls().filter(
-        (call) => call.args[0].includes(`${env.DRS_API_URL}/jobs`),
-      );
-      expect(drsCalls).to.have.lengthOf(1);
-
-      const body = JSON.parse(drsCalls[0].args[1].body);
-      expect(body.parameters.dataset_id).to.equal('wikipedia');
-      expect(body.parameters.site_id).to.equal(SITE_ID);
-      expect(body.parameters.urls[0]).to.include('wikipedia.org');
+      expect(mockSubmitScrapeJob).to.have.been.calledOnce;
+      expect(mockSubmitScrapeJob.firstCall.args[0]).to.deep.include({
+        datasetId: 'wikipedia',
+        siteId: SITE_ID,
+      });
+      expect(mockSubmitScrapeJob.firstCall.args[0].urls[0]).to.include('wikipedia.org');
     });
 
     it('should handle DRS API returning error response', async () => {
+      mockSubmitScrapeJob.rejects(new Error('DRS POST /jobs failed: 503 - Service Unavailable'));
+
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
         if (i === 0) return stubProviderData(['https://youtube.com/shorts/v1']);
         return okJsonResponse({});
       });
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          failResponse(503, 'Service Unavailable'),
-          failResponse(503, 'Service Unavailable'),
-        ],
       });
       stubFetchSequence(responses);
 
@@ -1227,21 +1087,23 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.drsJobs).to.have.lengthOf(2);
       expect(result.auditResult.drsJobs[0].status).to.equal('error');
-      expect(result.auditResult.drsJobs[0].statusCode).to.equal(503);
+      expect(result.auditResult.drsJobs[0].error).to.include('503');
       expect(log.error).to.have.been.calledWith(
         sinon.match(/DRS job failed/),
       );
     });
 
     it('should handle DRS network error gracefully', async () => {
-      mockFetch.onCall(0).resolves(okJsonResponse(makeQueryIndex()));
-      mockFetch.onCall(1).resolves(stubProviderData(['https://youtube.com/shorts/v1']));
-      for (let i = 2; i <= PROVIDERS.length; i += 1) {
-        mockFetch.onCall(i).resolves(okJsonResponse({}));
-      }
-      const drsStartIdx = 1 + PROVIDERS.length;
-      mockFetch.onCall(drsStartIdx).rejects(new Error('DNS resolution failed'));
-      mockFetch.onCall(drsStartIdx + 1).rejects(new Error('DNS resolution failed'));
+      mockSubmitScrapeJob.rejects(new Error('DNS resolution failed'));
+
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData(['https://youtube.com/shorts/v1']);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({
+        providerResponses,
+      });
+      stubFetchSequence(responses);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
@@ -1251,8 +1113,8 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.drsJobs[0].error).to.equal('DNS resolution failed');
     });
 
-    it('should skip DRS when DRS_API_URL or DRS_API_KEY is missing', async () => {
-      delete env.DRS_API_URL;
+    it('should skip DRS when not configured', async () => {
+      mockDrsIsConfigured.returns(false);
 
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
         if (i === 0) return stubProviderData(['https://youtube.com/shorts/v1']);
@@ -1265,6 +1127,7 @@ describe('Offsite Brand Presence Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.drsJobs).to.deep.equal([]);
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
       expect(log.error).to.have.been.calledWith(
         sinon.match(/DRS_API_URL or DRS_API_KEY not configured/),
       );
@@ -1284,13 +1147,6 @@ describe('Offsite Brand Presence Handler', () => {
       });
       const responses = buildHappyResponses({
         providerResponses,
-        drsResponses: [
-          okJsonResponse({ jobId: 'yt-vid' }),
-          okJsonResponse({ jobId: 'yt-comm' }),
-          okJsonResponse({ jobId: 'rd-post' }),
-          okJsonResponse({ jobId: 'rd-comm' }),
-          okJsonResponse({ jobId: 'wiki' }),
-        ],
       });
       stubFetchSequence(responses);
 

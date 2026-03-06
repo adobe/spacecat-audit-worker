@@ -11,6 +11,7 @@
  */
 
 import { isoCalendarWeek, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import DrsClient, { SCRAPE_DATASET_IDS } from '@adobe/spacecat-shared-drs-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import {
@@ -219,15 +220,9 @@ function normalizeYoutubeUrl(parsed) {
  * @returns {string} The normalized URL
  */
 function normalizeUrl(parsed, domain) {
-  let url;
-  switch (domain) {
-    case 'youtube.com':
-      url = normalizeYoutubeUrl(parsed);
-      break;
-    default:
-      url = `${parsed.origin}${parsed.pathname}`;
-      break;
-  }
+  let url = domain === 'youtube.com'
+    ? normalizeYoutubeUrl(parsed)
+    : `${parsed.origin}${parsed.pathname}`;
 
   // Remove trailing slash (unless it's just the domain)
   if (url.endsWith('/') && parsed.pathname !== '/') {
@@ -397,14 +392,14 @@ async function addUrlsToUrlStore(siteId, urlEntries, dataAccess, log) {
  *
  * @param {object} urlsByDomain - Map of domain to array of URL strings
  * @param {string} siteId - The site ID
- * @param {object} env - Environment variables
- * @param {object} log - Logger instance
+ * @param {object} context - Context with env and log
  * @returns {Promise<Array>} Results of DRS job creation
  */
-async function triggerDrsScraping(urlsByDomain, siteId, env, log) {
-  const { DRS_API_URL: drsApiUrl, DRS_API_KEY: drsApiKey } = env;
+async function triggerDrsScraping(urlsByDomain, siteId, context) {
+  const { log } = context;
+  const drsClient = DrsClient.createFrom(context);
 
-  if (!drsApiUrl || !drsApiKey) {
+  if (!drsClient.isConfigured()) {
     log.error(`${LOG_PREFIX} DRS_API_URL or DRS_API_KEY not configured, skipping DRS scraping`);
     return [];
   }
@@ -421,68 +416,34 @@ async function triggerDrsScraping(urlsByDomain, siteId, env, log) {
     const { datasetIds } = OFFSITE_DOMAINS[domain];
 
     for (const datasetId of datasetIds) {
-      const parameters = {
-        dataset_id: datasetId,
-        site_id: siteId,
-        urls: urlList,
-      };
-
-      if (datasetId === 'reddit_comments') {
-        parameters.days_back = REDDIT_COMMENTS_DAYS_BACK;
+      const params = { datasetId, siteId, urls: urlList };
+      if (datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS) {
+        params.daysBack = REDDIT_COMMENTS_DAYS_BACK;
       }
-
-      jobs.push({
-        domain,
-        datasetId,
-        payload: {
-          provider_id: 'brightdata',
-          priority: 'HIGH',
-          parameters,
-        },
-      });
+      jobs.push({ domain, datasetId, params });
     }
   }
 
   log.info(`${LOG_PREFIX} Submitting ${jobs.length} DRS jobs in parallel`);
 
-  // Submit all jobs in parallel
   const settled = await Promise.allSettled(
-    jobs.map(async ({ domain, datasetId, payload }) => {
-      const response = await fetch(`${drsApiUrl}/jobs`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': drsApiKey,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (response.ok) {
-        const result = await response.json();
+    jobs.map(async ({ domain, datasetId, params }) => {
+      try {
+        const result = await drsClient.submitScrapeJob(params);
         log.info(`${LOG_PREFIX} DRS job created for ${domain}/${datasetId}: jobId=${result.job_id}`);
         return {
           domain, datasetId, status: 'success', response: result,
         };
+      } catch (err) {
+        log.error(`${LOG_PREFIX} DRS job failed for ${domain}/${datasetId}: ${err.message}`);
+        return {
+          domain, datasetId, status: 'error', error: err.message,
+        };
       }
-
-      const text = await response.text();
-      log.error(`${LOG_PREFIX} DRS job failed for ${domain}/${datasetId}: ${response.status} - ${text}`);
-      return {
-        domain, datasetId, status: 'error', statusCode: response.status,
-      };
     }),
   );
 
-  return settled.map(({ status, value, reason }, index) => {
-    if (status === 'fulfilled') {
-      return value;
-    }
-    const { domain, datasetId } = jobs[index];
-    log.error(`${LOG_PREFIX} DRS request error for ${domain}/${datasetId}: ${reason.message}`);
-    return {
-      domain, datasetId, status: 'error', error: reason.message,
-    };
-  });
+  return settled.map(({ value }) => value);
 }
 
 /**
@@ -653,7 +614,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
   // Send URLs to store and trigger DRS scraping for offsite domains
   const [, drsResults] = await Promise.all([
     addUrlsToUrlStore(siteId, urlStoreEntries, dataAccess, log),
-    triggerDrsScraping(topByDomain, siteId, env, log),
+    triggerDrsScraping(topByDomain, siteId, context),
   ]);
 
   log.info(`${LOG_PREFIX} Audit complete for site ${siteId}: ${allUrls.size} URLs processed, ${drsResults.length} DRS jobs triggered`);

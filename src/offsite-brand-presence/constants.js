@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { SCRAPE_DATASET_IDS } from '@adobe/spacecat-shared-drs-client';
+
 export const PROVIDERS = Object.freeze([
   'ai-mode',
   'all',
@@ -31,15 +33,15 @@ export const URL_STORE_STATUS = Object.freeze({
 export const OFFSITE_DOMAINS = Object.freeze({
   'youtube.com': {
     auditType: 'youtube-analysis',
-    datasetIds: ['youtube_videos', 'youtube_comments'],
+    datasetIds: [SCRAPE_DATASET_IDS.YOUTUBE_VIDEOS, SCRAPE_DATASET_IDS.YOUTUBE_COMMENTS],
   },
   'reddit.com': {
     auditType: 'reddit-analysis',
-    datasetIds: ['reddit_posts', 'reddit_comments'],
+    datasetIds: [SCRAPE_DATASET_IDS.REDDIT_POSTS, SCRAPE_DATASET_IDS.REDDIT_COMMENTS],
   },
   'wikipedia.org': {
     auditType: 'wikipedia-analysis',
-    datasetIds: ['wikipedia'],
+    datasetIds: [SCRAPE_DATASET_IDS.WIKIPEDIA],
   },
 });
 
