@@ -1,3 +1,10 @@
+# [1.347.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.346.1...v1.347.0) (2026-03-06)
+
+
+### Features
+
+* LLMO-2845 Display meta-tags opportunity for LLMO customers ([#2076](https://github.com/adobe/spacecat-audit-worker/issues/2076)) ([47ad57d](https://github.com/adobe/spacecat-audit-worker/commit/47ad57d082ba9f76540bcec71d1daa6e9b5a87a6))
+
 ## [1.346.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.346.0...v1.346.1) (2026-03-06)
 
 
