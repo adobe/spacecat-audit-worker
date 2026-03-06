@@ -34,6 +34,7 @@ import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
+import altText from '../../src/preflight/alt-text.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -106,10 +107,7 @@ describe('Preflight Alt Text Audit', () => {
   });
 
   describe('altText handler', () => {
-    it('should create alt-text audit entries for all pages', async function () {
-      this.timeout(10000); // Allow more time for first dynamic import
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
+    it('should create alt-text audit entries for all pages', async () => {
       auditContext.scrapedObjects = [
         {
           data: {
@@ -145,8 +143,6 @@ describe('Preflight Alt Text Audit', () => {
     });
 
     it('should detect images with missing alt attribute', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       auditContext.scrapedObjects = [
         {
           data: {
@@ -175,8 +171,6 @@ describe('Preflight Alt Text Audit', () => {
     });
 
     it('should detect images with empty alt attribute', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       auditContext.scrapedObjects = [
         {
           data: {
@@ -205,8 +199,6 @@ describe('Preflight Alt Text Audit', () => {
     });
 
     it('should detect images with low-quality alt text', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       auditContext.scrapedObjects = [
         {
           data: {
@@ -236,8 +228,6 @@ describe('Preflight Alt Text Audit', () => {
     });
 
     it('should detect images with alt text that is too long', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       // Create alt text that exceeds 125 characters
       const longAltText = 'This is an extremely long alt text that goes well beyond the recommended 125 character limit for accessibility and SEO best practices and should be shortened';
 
@@ -270,8 +260,6 @@ describe('Preflight Alt Text Audit', () => {
     });
 
     it('should not flag images with valid alt text', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       auditContext.scrapedObjects = [
         {
           data: {
@@ -295,8 +283,6 @@ describe('Preflight Alt Text Audit', () => {
     });
 
     it('should skip images without src attribute', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       auditContext.scrapedObjects = [
         {
           data: {
@@ -317,8 +303,6 @@ describe('Preflight Alt Text Audit', () => {
     });
 
     it('should skip small data URI images', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       auditContext.scrapedObjects = [
         {
           data: {
@@ -339,8 +323,6 @@ describe('Preflight Alt Text Audit', () => {
     });
 
     it('should handle multiple issue types on the same page', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       const longAltText = 'This is an extremely long alt text that goes well beyond the recommended 125 character limit for accessibility and SEO best practices';
 
       auditContext.scrapedObjects = [
@@ -374,8 +356,6 @@ describe('Preflight Alt Text Audit', () => {
     });
 
     it('should add timing information to execution breakdown', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       auditContext.scrapedObjects = [
         {
           data: {
@@ -397,8 +377,6 @@ describe('Preflight Alt Text Audit', () => {
     });
 
     it('should log warning when no audit found for URL', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       // Set up a URL that doesn't have an audit entry
       auditContext.scrapedObjects = [
         {
@@ -417,8 +395,6 @@ describe('Preflight Alt Text Audit', () => {
     });
 
     it('should log debug message when no image issues found', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       auditContext.scrapedObjects = [
         {
           data: {
@@ -440,8 +416,6 @@ describe('Preflight Alt Text Audit', () => {
 
   describe('suggest step - Mystique integration', () => {
     it('should send images to Mystique for suggestions in suggest step', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       auditContext.step = 'suggest';
       auditContext.scrapedObjects = [
         {
@@ -479,8 +453,6 @@ describe('Preflight Alt Text Audit', () => {
     });
 
     it('should send empty-alt images to Mystique for decorative check', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       auditContext.step = 'suggest';
       auditContext.scrapedObjects = [
         {
@@ -506,8 +478,6 @@ describe('Preflight Alt Text Audit', () => {
     });
 
     it('should send long-alt images to Mystique for concise suggestions', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       const longAltText = 'This is an extremely long alt text that goes well beyond the recommended 125 character limit for accessibility and SEO best practices and needs shortening';
 
       auditContext.step = 'suggest';
@@ -535,8 +505,6 @@ describe('Preflight Alt Text Audit', () => {
     });
 
     it('should handle Mystique send error gracefully', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       sqs.sendMessage.rejects(new Error('SQS error'));
 
       auditContext.step = 'suggest';
@@ -560,8 +528,6 @@ describe('Preflight Alt Text Audit', () => {
     });
 
     it('should not send to Mystique in identify step', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       auditContext.step = 'identify';
       auditContext.scrapedObjects = [
         {
@@ -580,8 +546,6 @@ describe('Preflight Alt Text Audit', () => {
     });
 
     it('should send low-quality alt images to Mystique', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       auditContext.step = 'suggest';
       auditContext.scrapedObjects = [
         {
@@ -608,8 +572,6 @@ describe('Preflight Alt Text Audit', () => {
 
   describe('low-quality alt text patterns', () => {
     it('should flag camera default names as low quality', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       auditContext.scrapedObjects = [
         {
           data: {
@@ -635,8 +597,6 @@ describe('Preflight Alt Text Audit', () => {
     });
 
     it('should flag generic terms as low quality', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       auditContext.scrapedObjects = [
         {
           data: {
@@ -664,8 +624,6 @@ describe('Preflight Alt Text Audit', () => {
     });
 
     it('should flag very short alt text as low quality', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       auditContext.scrapedObjects = [
         {
           data: {
@@ -687,8 +645,6 @@ describe('Preflight Alt Text Audit', () => {
     });
 
     it('should flag numbered image patterns as low quality', async () => {
-      const altText = (await import('../../src/preflight/alt-text.js')).default;
-
       auditContext.scrapedObjects = [
         {
           data: {
