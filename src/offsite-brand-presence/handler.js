@@ -17,7 +17,6 @@ import { noopUrlResolver } from '../common/index.js';
 import {
   BRAND_PRESENCE_REGEX,
   DRS_TOP_URLS_LIMIT,
-  FETCH_CONCURRENCY,
   FETCH_PAGE_SIZE,
   FETCH_TIMEOUT_MS,
   INCLUDE_COLUMNS,
@@ -94,7 +93,7 @@ async function fetchBrandPresenceData(siteId, fileName, env, log) {
   const headers = { 'x-api-key': apiKey };
   const baseUrl = `${apiBase}/sites/${siteId}/llmo/data/${fileName}?sheet=all&include=${INCLUDE_COLUMNS}`;
 
-  const allRows = [];
+  let allRows = [];
   let offset = 0;
   let hasMore = true;
 
@@ -123,7 +122,7 @@ async function fetchBrandPresenceData(siteId, fileName, env, log) {
     // eslint-disable-next-line no-await-in-loop
     const data = await response.json();
     const rows = data?.data || [];
-    allRows.push(...rows);
+    allRows = allRows.concat(rows);
 
     if (rows.length < FETCH_PAGE_SIZE) {
       hasMore = false;
@@ -372,15 +371,8 @@ async function addUrlsToUrlStore(siteId, urlEntries, dataAccess, log) {
     }),
   );
 
-  let createdCount = 0;
-  let failCount = 0;
-  for (const status of results) {
-    if (status === URL_STORE_STATUS.CREATED) {
-      createdCount += 1;
-    } else {
-      failCount += 1;
-    }
-  }
+  const createdCount = results.filter((s) => s === URL_STORE_STATUS.CREATED).length;
+  const failCount = results.length - createdCount;
 
   log.info(`${LOG_PREFIX} URL store complete: ${createdCount} created, ${failCount} failed`);
 }
@@ -424,9 +416,9 @@ async function triggerDrsScraping(urlsByDomain, siteId, context) {
     }
   }
 
-  log.info(`${LOG_PREFIX} Submitting ${jobs.length} DRS jobs in parallel`);
+  log.info(`${LOG_PREFIX} Submitting ${jobs.length} DRS scrape jobs`);
 
-  const settled = await Promise.allSettled(
+  return Promise.all(
     jobs.map(async ({ domain, datasetId, params }) => {
       try {
         const result = await drsClient.submitScrapeJob(params);
@@ -442,15 +434,12 @@ async function triggerDrsScraping(urlsByDomain, siteId, context) {
       }
     }),
   );
-
-  return settled.map(({ value }) => value);
 }
 
 /**
- * Fetches matched brand presence files in batches and aggregates
+ * Fetches matched brand presence files sequentially and aggregates
  * all source URLs across files into a unified map.
  * Tracks citation counts and domain classification across all providers.
- * Limits concurrency to avoid overwhelming the API with parallel requests.
  *
  * @param {string} siteId - The site ID
  * @param {string[]} matchedFiles - File paths to fetch
@@ -461,24 +450,16 @@ async function triggerDrsScraping(urlsByDomain, siteId, context) {
 async function fetchAndAggregateUrls(siteId, matchedFiles, env, log) {
   const allUrls = new Map();
 
-  for (let i = 0; i < matchedFiles.length; i += FETCH_CONCURRENCY) {
-    const batch = matchedFiles.slice(i, i + FETCH_CONCURRENCY);
-    // eslint-disable-next-line no-await-in-loop
-    const fetchResults = await Promise.allSettled(
-      batch.map((filePath) => fetchBrandPresenceData(siteId, filePath, env, log)),
-    );
-
-    for (let j = 0; j < fetchResults.length; j += 1) {
-      const entry = fetchResults[j];
-      const filePath = batch[j];
-      if (entry.status === 'rejected') {
-        log.error(`${LOG_PREFIX} Error fetching brand presence file ${filePath}: ${entry.reason.message}`);
-      }
-      if (entry.status !== 'fulfilled' || !entry.value) {
+  for (const filePath of matchedFiles) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const data = await fetchBrandPresenceData(siteId, filePath, env, log);
+      if (!data) {
         // eslint-disable-next-line no-continue
         continue;
       }
-      const fileUrls = extractAllUrls(entry.value, log);
+
+      const fileUrls = extractAllUrls(data, log);
       for (const [url, info] of fileUrls) {
         const existing = allUrls.get(url);
         if (existing) {
@@ -487,6 +468,8 @@ async function fetchAndAggregateUrls(siteId, matchedFiles, env, log) {
           allUrls.set(url, { ...info });
         }
       }
+    } catch (err) {
+      log.error(`${LOG_PREFIX} Error fetching brand presence file ${filePath}: ${err.message}`);
     }
   }
 
