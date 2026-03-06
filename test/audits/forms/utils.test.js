@@ -1367,10 +1367,39 @@ describe('applyOpportunityFilters', () => {
       scrapeData,
     );
 
-    // page1 and page2 have same fingerprint (same id 'newsletter'), should keep page2 (3000 pageviews)
+    // page1 and page2 have same fingerprint, should keep page2 (3000 pageviews)
     expect(result).to.have.lengthOf(2);
     expect(result[0].form).to.equal('https://example.com/page2');
     expect(result[1].form).to.equal('https://example.com/page3');
+  });
+
+  it('should skip fingerprint deduplication when scrapeData.formData is empty', () => {
+    const filteredOpportunities = [
+      { form: 'https://example.com/page1', formsource: '#newsletter-form', pageviews: 1000 },
+      { form: 'https://example.com/page2', formsource: '#newsletter-form', pageviews: 3000 },
+      { form: 'https://example.com/page3', formsource: '#contact-form', pageviews: 2000 },
+      { form: 'https://example.com/page4', formsource: '#signup-form', pageviews: 1500 },
+    ];
+
+    const scrapeData = {
+      formData: [], // Empty formData array
+    };
+
+    const result = applyOpportunityFilters(
+      filteredOpportunities,
+      [],
+      FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+      logStub,
+      2,
+      scrapeData,
+    );
+
+    // Since formData is empty, fingerprint deduplication is skipped
+    // Should deduplicate by formsource (page1 and page2 have same formsource)
+    // Keep page2 (higher pageviews), then sort and take top 2
+    expect(result).to.have.lengthOf(2);
+    expect(result[0].form).to.equal('https://example.com/page2'); // 3000 pageviews
+    expect(result[1].form).to.equal('https://example.com/page3'); // 2000 pageviews
   });
 
 });

@@ -616,7 +616,7 @@ export function checkDynamoItem(item, safetyMargin = 0.85) {
 // Form Deduplication section
 const DELIMITER = '__';
 
-function normalizeClassList(classString) {
+function sortClassList(classString) {
   if (!classString) return '';
   return classString.trim().split(/\s+/).sort().join(' ');
 }
@@ -627,7 +627,7 @@ function getFieldSignature(field) {
   // Default to 'text' if input has no type,
   if (tag === 'input' && !type) type = 'text';
 
-  const classes = normalizeClassList(field.classList);
+  const classes = sortClassList(field.classList);
 
   return `${tag}|${type}|${classes}`;
 }
@@ -642,7 +642,7 @@ function getFormFingerprint(scrape) {
 
   return {
     id: idPart,
-    formSource: sourcePart,
+    formsource: sourcePart,
     fieldSignatures: `${scrape.formFields.length}::${fieldSignatures}`,
   };
 }
@@ -650,7 +650,7 @@ function getFormFingerprint(scrape) {
 function isFingerMatch(myFingerprint, otherPrint) {
   return (
     (myFingerprint.id && otherPrint.id && myFingerprint.id === otherPrint.id)
-    || (myFingerprint.formSource && myFingerprint.formSource === otherPrint.formSource)
+    || (myFingerprint.formsource && myFingerprint.formsource === otherPrint.formsource)
     || (myFingerprint.fieldSignatures === otherPrint.fieldSignatures)
   );
 }
@@ -752,7 +752,7 @@ export class FormDeDuplicator {
  *   (e.g., FORM_OPPORTUNITY_TYPES.LOW_CONVERSION)
  * @param {Object} log - Logger object
  * @param {number} maxLimit - Maximum number of opportunities to return (default: 3)
- * @param scrapeData {object} - the scrape data
+ * @param {object} scrapeData - the scrape data
  * @returns {Array} - Filtered and limited array of opportunity data objects
  */
 export function applyOpportunityFilters(
