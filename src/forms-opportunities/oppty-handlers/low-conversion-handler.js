@@ -15,6 +15,7 @@ import {
   filterForms,
   generateOpptyData,
   shouldExcludeForm,
+  shouldIgnoreFormByDetails,
   calculateProjectedConversionValue,
   sendMessageToFormsQualityAgent,
   sendMessageToMystiqueForGuidance,
@@ -159,28 +160,32 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
       };
 
       log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] forms opportunity high form views low conversion ${JSON.stringify(opportunityData, null, 2)}`);
-      let formsList = [];
+
+      const formEntry = {
+        form: opportunityData.data.form,
+        formSource: opportunityData.data.formsource,
+      };
+      let formsList;
 
       if (!highFormViewsLowConversionsOppty) {
         // eslint-disable-next-line no-await-in-loop
         highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
-        // eslint-disable-next-line max-len
-        formsList = [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
+        formsList = [formEntry];
         log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] forms Opportunity high form views low conversion created`);
       } else if (highFormViewsLowConversionsOppty.getOrigin() === ORIGINS.ESS_OPS) {
         log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] Forms Opportunity high form views low conversion exists and is from ESS_OPS`);
         opportunityData.status = 'IGNORED';
         // eslint-disable-next-line no-await-in-loop
         highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
-        // eslint-disable-next-line max-len
-        formsList = [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
+        formsList = [formEntry];
       } else {
         const data = highFormViewsLowConversionsOppty.getData();
         const { formDetails } = data;
         log.info(`[Form Opportunity] [Site Id: ${auditData.siteId}] Form details available for data  ${JSON.stringify(data, null, 2)}`);
-        formsList = (formDetails !== undefined && isNonEmptyObject(formDetails))
-          ? (log.info(`[Form Opportunity] [Site Id: ${auditData.siteId}] Form details available for opportunity, not sending it to mystique`), [])
-          : [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
+        // eslint-disable-next-line max-len
+        const sendToMystiqueForGuidance = isNonEmptyObject(formDetails) && !shouldIgnoreFormByDetails(formDetails);
+        sendToMystiqueForGuidance && log.debug('Form details available for opportunity, not sending it to mystique');
+        formsList = sendToMystiqueForGuidance ? [] : [formEntry];
 
         highFormViewsLowConversionsOppty.setAuditId(auditData.auditId);
         highFormViewsLowConversionsOppty.setData({
@@ -190,7 +195,6 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         if (!isNonEmptyObject(highFormViewsLowConversionsOppty.guidance)) {
           highFormViewsLowConversionsOppty.setGuidance(opportunityData.guidance);
         }
-
         highFormViewsLowConversionsOppty.setUpdatedBy('system');
         // eslint-disable-next-line no-await-in-loop
         await highFormViewsLowConversionsOppty.save();

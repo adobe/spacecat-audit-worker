@@ -11,10 +11,10 @@
  */
 import wrap from '@adobe/helix-shared-wrap';
 import { helixStatus } from '@adobe/helix-status';
-import secrets from '@adobe/helix-shared-secrets';
-import dataAccess from '@adobe/spacecat-shared-data-access';
-import { resolveSecretsName, sqsEventAdapter, logWrapper } from '@adobe/spacecat-shared-utils';
+import vaultSecrets from '@adobe/spacecat-shared-vault-secrets';
+import { sqsEventAdapter, logWrapper } from '@adobe/spacecat-shared-utils';
 import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import dataAccess from './support/data-access.js';
 import { checkSiteRequiresValidation } from './utils/site-validation.js';
 
 import sqs from './support/sqs.js';
@@ -29,6 +29,7 @@ import lhsMobile from './lhs/handler-mobile.js';
 import sitemap from './sitemap/handler.js';
 import sitemapProductCoverage from './sitemap-product-coverage/handler.js';
 import redirectChains from './redirect-chains/handler.js';
+import identifyRedirects from './identify-redirects/handler.js';
 import paid from './paid-cookie-consent/handler.js';
 import paidKeywordOptimizer from './paid-keyword-optimizer/handler.js';
 import paidKeywordOptimizerGuidance from './paid-keyword-optimizer/guidance-handler.js';
@@ -78,12 +79,13 @@ import unifiedReadabilityGuidance from './readability/shared/unified-guidance-ha
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 import llmErrorPages from './llm-error-pages/handler.js';
 import llmErrorPagesGuidance from './llm-error-pages/guidance-handler.js';
-import { paidTrafficAnalysisWeekly, paidTrafficAnalysisMonthly } from './paid-traffic-analysis/handler.js';
+import paidTrafficAnalysis from './paid-traffic-analysis/handler.js';
 import pageTypeDetection from './page-type/handler.js';
 import pageTypeGuidance from './page-type/guidance-handler.js';
 import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
+import llmoOnboardingPublish from './llmo-onboarding-publish/handler.js';
 import headings from './headings/handler.js';
 import toc from './toc/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
@@ -91,7 +93,7 @@ import vulnerabilitiesCodeFix from './vulnerabilities-code-fix/handler.js';
 import prerender from './prerender/handler.js';
 import prerenderGuidance from './prerender/guidance-handler.js';
 import productMetatags from './product-metatags/handler.js';
-import commerceProductEnrichments from './commerce-product-enrichments/handler.js';
+import { commerceProductEnrichments, commerceProductEnrichmentsYearly } from './commerce-product-enrichments/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import summarization from './summarization/handler.js';
 import summarizationGuidance from './summarization/guidance-handler.js';
@@ -105,7 +107,9 @@ import healthCheck from './health-check/handler.js';
 import wikipediaAnalysis from './wikipedia-analysis/handler.js';
 import wikipediaAnalysisGuidance from './wikipedia-analysis/guidance-handler.js';
 import frescopaDataGeneration from './frescopa-data-generation/handler.js';
-import ptrSelector from './ptr-selector/handler.js';
+import semanticValueVisibility from './semantic-value-visibility/handler.js';
+import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
+import drsPromptGeneration from './drs-prompt-generation/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -118,10 +122,10 @@ const HANDLERS = {
   sitemap,
   'sitemap-product-coverage': sitemapProductCoverage,
   'redirect-chains': redirectChains,
+  'identify-redirects': identifyRedirects,
   paid,
   'no-cta-above-the-fold': noCTAAboveTheFold,
-  'paid-traffic-analysis-weekly': paidTrafficAnalysisWeekly,
-  'paid-traffic-analysis-monthly': paidTrafficAnalysisMonthly,
+  'paid-traffic-analysis': paidTrafficAnalysis,
   'page-type-detection': pageTypeDetection,
   canonical,
   'broken-backlinks': backlinks,
@@ -146,6 +150,10 @@ const HANDLERS = {
   'geo-brand-presence': geoBrandPresence,
   'geo-brand-presence-free': geoBrandPresence,
   'geo-brand-presence-paid': geoBrandPresence,
+  // Splits of geo-brand-presence-free for staggered execution (max 40 sites each)
+  ...Object.fromEntries(
+    Array.from({ length: 23 }, (_, i) => [`geo-brand-presence-free-${i + 1}`, geoBrandPresence]),
+  ),
   'category:geo-brand-presence': handleCategorizationResponseHandler,
   'detect:geo-brand-presence': detectGeoBrandPresence,
   'refresh:geo-brand-presence': detectGeoBrandPresence,
@@ -160,7 +168,8 @@ const HANDLERS = {
   'codefix:accessibility': accessibilityCodeFix,
   'guidance:paid-cookie-consent': paidConsentGuidance,
   'paid-keyword-optimizer': paidKeywordOptimizer,
-  'guidance:paid-keyword-optimizer': paidKeywordOptimizerGuidance,
+  'ad-intent-mismatch': paidKeywordOptimizer,
+  'guidance:paid-ad-intent-gap': paidKeywordOptimizerGuidance,
   'guidance:no-cta-above-the-fold': noCTAAboveTheFoldGuidance,
   'guidance:traffic-analysis': paidTrafficAnalysisGuidance,
   'detect:page-types': pageTypeGuidance,
@@ -179,6 +188,7 @@ const HANDLERS = {
   'guidance:llm-error-pages': llmErrorPagesGuidance,
   'optimization-report-callback': optimizationReportCallback,
   'llmo-customer-analysis': llmoCustomerAnalysis,
+  'trigger:llmo-onboarding-publish': llmoOnboardingPublish,
   summarization,
   'guidance:summarization': summarizationGuidance,
   hreflang,
@@ -188,6 +198,7 @@ const HANDLERS = {
   'guidance:prerender': prerenderGuidance,
   'product-metatags': productMetatags,
   'commerce-product-enrichments': commerceProductEnrichments,
+  'commerce-product-enrichments-yearly': commerceProductEnrichmentsYearly,
   'security-vulnerabilities': vulnerabilities,
   'codefix:security-vulnerabilities': vulnerabilitiesCodeFix,
   'codefix:form-accessibility': accessibilityCodeFixHandler,
@@ -200,9 +211,35 @@ const HANDLERS = {
   'wikipedia-analysis': wikipediaAnalysis,
   'guidance:wikipedia-analysis': wikipediaAnalysisGuidance,
   'frescopa-data-generation': frescopaDataGeneration,
-  'ptr-selector': ptrSelector,
+  'semantic-value-visibility': semanticValueVisibility,
+  'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
+  'drs:prompt_generation_base_url': drsPromptGeneration,
   dummy: (message) => ok(message),
 };
+
+/**
+ * Normalizes a DRS SNS notification into the audit worker message format.
+ * DRS messages have event_type/provider_id instead of type/siteId.
+ * With raw_message_delivery enabled on the SNS subscription, the SQS body
+ * is the raw DRS notification JSON.
+ *
+ * @param {object} message - Raw DRS notification message
+ * @returns {object} Normalized message with type and siteId
+ */
+function normalizeDrsMessage(message) {
+  const { event_type: eventType, provider_id: providerId, metadata = {} } = message;
+  return {
+    type: `drs:${providerId}`,
+    siteId: metadata.site_id,
+    auditContext: {
+      drsEventType: eventType,
+      drsJobId: message.job_id,
+      resultLocation: message.result_location,
+      providerId,
+      source: metadata.source,
+    },
+  };
+}
 
 function getElapsedSeconds(startTime) {
   const endTime = process.hrtime(startTime);
@@ -218,9 +255,22 @@ function getElapsedSeconds(startTime) {
  */
 async function run(message, context) {
   const { log } = context;
-  const { type, siteId } = message;
 
-  log.info(`Received ${type} audit request for: ${siteId}. Message:`, message);
+  // Normalize DRS SNS notifications (have event_type instead of type)
+  // These arrive via SNS → SQS subscription with raw_message_delivery enabled
+  if (!message.type && message.event_type && message.provider_id) {
+    // eslint-disable-next-line no-param-reassign
+    message = normalizeDrsMessage(message);
+  }
+
+  const {
+    type, siteId, jobId,
+  } = message;
+
+  log.info(
+    `Received ${type} audit request for siteId=${siteId}, jobId=${jobId || 'none'}`,
+    message,
+  );
 
   const handler = HANDLERS[type];
   if (!handler) {
@@ -265,5 +315,5 @@ export const main = wrap(run)
   .with(logWrapper)
   .with(sqs)
   .with(s3Client)
-  .with(secrets, { name: resolveSecretsName })
+  .with(vaultSecrets)
   .with(helixStatus);

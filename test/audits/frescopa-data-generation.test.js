@@ -37,16 +37,31 @@ describe('Frescopa Data Generation Handler', () => {
       { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w02-2025.json', lastModified: '2025-01-06' },
       { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w01-2025.json', lastModified: '2024-12-30' },
       { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w52-2024.json', lastModified: '2024-12-23' },
-      { path: '/frescopa.coffee/brand-presence/brandpresence-all-w04-2025.json', lastModified: '2025-01-20' },
-      { path: '/frescopa.coffee/brand-presence/brandpresence-all-w03-2025.json', lastModified: '2025-01-13' },
-      { path: '/frescopa.coffee/brand-presence/brandpresence-all-w02-2025.json', lastModified: '2025-01-06' },
-      { path: '/frescopa.coffee/brand-presence/brandpresence-all-w01-2025.json', lastModified: '2024-12-30' },
-      { path: '/frescopa.coffee/brand-presence/brandpresence-all-w52-2024.json', lastModified: '2024-12-23' },
+      { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w04-2025.json', lastModified: '2025-01-20' },
+      { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w03-2025.json', lastModified: '2025-01-13' },
+      { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w02-2025.json', lastModified: '2025-01-06' },
+      { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w01-2025.json', lastModified: '2024-12-30' },
+      { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w52-2024.json', lastModified: '2024-12-23' },
+      { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w04-2025.json', lastModified: '2025-01-20' },
+      { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w03-2025.json', lastModified: '2025-01-13' },
+      { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w02-2025.json', lastModified: '2025-01-06' },
+      { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w01-2025.json', lastModified: '2024-12-30' },
+      { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w52-2024.json', lastModified: '2024-12-23' },
+      { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w04-2025.json', lastModified: '2025-01-20' },
+      { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w03-2025.json', lastModified: '2025-01-13' },
+      { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w02-2025.json', lastModified: '2025-01-06' },
+      { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w01-2025.json', lastModified: '2024-12-30' },
+      { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w52-2024.json', lastModified: '2024-12-23' },
       { path: '/frescopa.coffee/referral-traffic/referral-traffic-w04-2025.json', lastModified: '2025-01-20' },
       { path: '/frescopa.coffee/referral-traffic/referral-traffic-w03-2025.json', lastModified: '2025-01-13' },
       { path: '/frescopa.coffee/referral-traffic/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
       { path: '/frescopa.coffee/referral-traffic/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
       { path: '/frescopa.coffee/referral-traffic/referral-traffic-w52-2024.json', lastModified: '2024-12-23' },
+      { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w04-2025.json', lastModified: '2025-01-20' },
+      { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w03-2025.json', lastModified: '2025-01-13' },
+      { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
+      { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
+      { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w52-2024.json', lastModified: '2024-12-23' },
     ],
   };
 
@@ -122,14 +137,21 @@ describe('Frescopa Data Generation Handler', () => {
 
       expect(response.status).to.equal(200);
       expect(result).to.have.property('targetWeekIdentifier', 'w05-2025');
-      expect(result.results).to.have.lengthOf(3);
+      expect(result.results).to.have.lengthOf(6);
       expect(result.errors).to.have.lengthOf(0);
 
       // Verify each report type was processed
       const reportTypes = result.results.map((r) => r.filePrefix);
       expect(reportTypes).to.include('agentictraffic');
-      expect(reportTypes).to.include('brandpresence-all');
+      expect(reportTypes).to.include('agentictraffic-errors-404');
+      expect(reportTypes).to.include('agentictraffic-errors-5xx');
+      expect(reportTypes).to.include('brandpresence-chatgpt');
       expect(reportTypes).to.include('referral-traffic');
+      const referralTrafficFolders = result.results
+        .filter((r) => r.filePrefix === 'referral-traffic')
+        .map((r) => r.folder);
+      expect(referralTrafficFolders).to.include('referral-traffic');
+      expect(referralTrafficFolders).to.include('referral-traffic-aa');
 
       // Verify operations were performed
       result.results.forEach((report) => {
@@ -148,8 +170,8 @@ describe('Frescopa Data Generation Handler', () => {
 
       await handlerModule.default.run(message, context);
 
-      // Verify copy was called for each report type (3 times total)
-      expect(mockDocument.copy).to.have.been.calledThrice;
+      // Verify copy was called for each report type (6 times total)
+      expect(mockDocument.copy).to.have.callCount(6);
 
       // Verify copy paths for agentic-traffic
       const copyCall = mockDocument.copy.getCall(0);
@@ -167,14 +189,14 @@ describe('Frescopa Data Generation Handler', () => {
 
       await handlerModule.default.run(message, context);
 
-      // Verify move was called 12 times (4 moves per report type × 3 types)
-      expect(mockDocument.move).to.have.callCount(12);
+      // Verify move was called 24 times (4 moves per report type × 6 types)
+      expect(mockDocument.move).to.have.callCount(24);
 
-      // Verify delete was called 3 times (once per report type, only on first iteration)
-      expect(mockDocument.delete).to.have.been.calledThrice;
+      // Verify delete was called 6 times (once per report type, only on first iteration)
+      expect(mockDocument.delete).to.have.callCount(6);
     });
 
-    it('should publish all 5 files for each report type', async () => {
+    it('should publish all files for each report type', async () => {
       const message = {
         auditContext: {
           weekIdentifier: 'w05-2025',
@@ -183,8 +205,8 @@ describe('Frescopa Data Generation Handler', () => {
 
       await handlerModule.default.run(message, context);
 
-      // 5 files × 3 report types = 15 publish calls
-      expect(publishToAdminHlxStub).to.have.callCount(15);
+      // 5 files × 6 report types = 30 publish calls
+      expect(publishToAdminHlxStub).to.have.callCount(30);
     });
 
     it('should calculate target week automatically when not provided', async () => {
@@ -210,16 +232,31 @@ describe('Frescopa Data Generation Handler', () => {
           { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w03-2025.json', lastModified: '2025-01-13' },
           { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w02-2025.json', lastModified: '2025-01-06' },
           { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w01-2025.json', lastModified: '2024-12-30' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w05-2025.json', lastModified: '2025-01-27' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w04-2025.json', lastModified: '2025-01-20' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w03-2025.json', lastModified: '2025-01-13' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w02-2025.json', lastModified: '2025-01-06' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w01-2025.json', lastModified: '2024-12-30' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w05-2025.json', lastModified: '2025-01-27' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w04-2025.json', lastModified: '2025-01-20' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w03-2025.json', lastModified: '2025-01-13' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w02-2025.json', lastModified: '2025-01-06' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w01-2025.json', lastModified: '2024-12-30' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w05-2025.json', lastModified: '2025-01-27' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w04-2025.json', lastModified: '2025-01-20' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w03-2025.json', lastModified: '2025-01-13' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w02-2025.json', lastModified: '2025-01-06' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w01-2025.json', lastModified: '2024-12-30' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w05-2025.json', lastModified: '2025-01-27' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w04-2025.json', lastModified: '2025-01-20' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w03-2025.json', lastModified: '2025-01-13' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w02-2025.json', lastModified: '2025-01-06' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w01-2025.json', lastModified: '2024-12-30' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w05-2025.json', lastModified: '2025-01-27' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w04-2025.json', lastModified: '2025-01-20' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w03-2025.json', lastModified: '2025-01-13' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w05-2025.json', lastModified: '2025-01-27' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w04-2025.json', lastModified: '2025-01-20' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w03-2025.json', lastModified: '2025-01-13' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
         ],
       };
 
@@ -250,16 +287,21 @@ describe('Frescopa Data Generation Handler', () => {
           { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w03-2025.json', lastModified: '2025-01-13' },
           { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w02-2025.json', lastModified: '2025-01-06' },
           // Only 3 files - insufficient!
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w04-2025.json', lastModified: '2025-01-20' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w03-2025.json', lastModified: '2025-01-13' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w02-2025.json', lastModified: '2025-01-06' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w01-2025.json', lastModified: '2024-12-30' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w52-2024.json', lastModified: '2024-12-23' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w04-2025.json', lastModified: '2025-01-20' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w03-2025.json', lastModified: '2025-01-13' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w02-2025.json', lastModified: '2025-01-06' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w01-2025.json', lastModified: '2024-12-30' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w52-2024.json', lastModified: '2024-12-23' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w04-2025.json', lastModified: '2025-01-20' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w03-2025.json', lastModified: '2025-01-13' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w52-2024.json', lastModified: '2024-12-23' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w04-2025.json', lastModified: '2025-01-20' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w03-2025.json', lastModified: '2025-01-13' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w52-2024.json', lastModified: '2024-12-23' },
         ],
       };
 
@@ -278,8 +320,8 @@ describe('Frescopa Data Generation Handler', () => {
       const result = await response.json();
 
       expect(response.status).to.equal(200);
-      expect(result.results).to.have.lengthOf(2); // Only brand-presence and referral-traffic
-      expect(result.errors).to.have.lengthOf(1);
+      expect(result.results).to.have.lengthOf(3); // brand-presence, referral-traffic, referral-traffic-aa
+      expect(result.errors).to.have.lengthOf(3);
       expect(result.errors[0].filePrefix).to.equal('agentictraffic');
       expect(result.errors[0].error).to.include('Insufficient files');
     });
@@ -305,7 +347,7 @@ describe('Frescopa Data Generation Handler', () => {
       const result = await response.json();
 
       expect(response.status).to.equal(200);
-      expect(result.results).to.have.lengthOf(2); // brand-presence and referral-traffic succeeded
+      expect(result.results).to.have.lengthOf(5); // errors-404, errors-5xx, brand-presence, referral-traffic, referral-traffic-aa succeeded
       expect(result.errors).to.have.lengthOf(1);
       expect(result.errors[0].filePrefix).to.equal('agentictraffic');
     });
@@ -480,14 +522,14 @@ describe('Frescopa Data Generation Handler', () => {
       expect(result.status).to.equal(200);
     });
 
-    it('should handle Sunday correctly in ISO week calculation (tests dayNum || 7 on line 109 and 125)', async () => {
-      // This tests the d.getUTCDay() || 7 logic on lines 109 and 125
+    it('should handle Sunday correctly in ISO week calculation (tests dayNum || 7 on line 114 and 130)', async () => {
+      // This tests the d.getUTCDay() || 7 logic on lines 114 and 130
       // Sunday dates (getUTCDay() === 0) trigger the || 7 fallback
-      // Sunday, January 5, 2025 is in week 01 of 2025
+      // Sunday, January 5, 2025 is in week 01 of 2025 (getUTCDay() returns 0)
       // We need to mock the current date to be a Sunday to trigger automatic week calculation
       
       const clock = sandbox.useFakeTimers({
-        now: new Date('2025-01-05T00:00:00Z').getTime(), // This is a Sunday
+        now: new Date(Date.UTC(2025, 0, 5, 12, 0, 0)).getTime(), // Sunday, Jan 5, 2025 at noon UTC
         shouldAdvanceTime: true,
         advanceTimeDelta: 20,
       });
@@ -500,16 +542,31 @@ describe('Frescopa Data Generation Handler', () => {
           { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w50-2024.json', lastModified: '2024-12-15' },
           { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w49-2024.json', lastModified: '2024-12-08' },
           { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w48-2024.json', lastModified: '2024-12-01' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w52-2024.json', lastModified: '2024-12-29' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w51-2024.json', lastModified: '2024-12-22' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w50-2024.json', lastModified: '2024-12-15' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w49-2024.json', lastModified: '2024-12-08' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w48-2024.json', lastModified: '2024-12-01' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w52-2024.json', lastModified: '2024-12-29' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w51-2024.json', lastModified: '2024-12-22' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w50-2024.json', lastModified: '2024-12-15' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w49-2024.json', lastModified: '2024-12-08' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w48-2024.json', lastModified: '2024-12-01' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w52-2024.json', lastModified: '2024-12-29' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w51-2024.json', lastModified: '2024-12-22' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w50-2024.json', lastModified: '2024-12-15' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w49-2024.json', lastModified: '2024-12-08' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w48-2024.json', lastModified: '2024-12-01' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w52-2024.json', lastModified: '2024-12-29' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w51-2024.json', lastModified: '2024-12-22' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w50-2024.json', lastModified: '2024-12-15' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w49-2024.json', lastModified: '2024-12-08' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w48-2024.json', lastModified: '2024-12-01' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w52-2024.json', lastModified: '2024-12-29' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w51-2024.json', lastModified: '2024-12-22' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w50-2024.json', lastModified: '2024-12-15' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w49-2024.json', lastModified: '2024-12-08' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w48-2024.json', lastModified: '2024-12-01' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w52-2024.json', lastModified: '2024-12-29' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w51-2024.json', lastModified: '2024-12-22' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w50-2024.json', lastModified: '2024-12-15' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w49-2024.json', lastModified: '2024-12-08' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w48-2024.json', lastModified: '2024-12-01' },
         ],
       };
 
@@ -531,7 +588,7 @@ describe('Frescopa Data Generation Handler', () => {
         // The sliding window should succeed: copy w52-2024 to create w01-2025
         expect(response.status).to.equal(200);
         expect(result.targetWeekIdentifier).to.equal('w01-2025'); // Current week from Jan 5, 2025
-        expect(result.results).to.have.lengthOf(3); // Should succeed for all 3 report types
+        expect(result.results).to.have.lengthOf(6); // Should succeed for all 6 report types
         expect(result.errors).to.have.lengthOf(0);
         
         // Verify operations were performed
@@ -539,6 +596,62 @@ describe('Frescopa Data Generation Handler', () => {
           expect(report.status).to.equal('success');
           expect(report.operations).to.have.lengthOf(6); // 1 copy + 4 moves + 1 unpublish
         });
+      } finally {
+        clock.restore();
+      }
+    });
+
+    it('should handle Sunday at year boundary (covers both getISOWeekNumber and getISOWeekYear)', async () => {
+      // Test Sunday, December 31, 2023 (week 52 of 2023)
+      // This ensures both line 114 (getISOWeekNumber) and line 130 (getISOWeekYear) are covered
+      // when getUTCDay() returns 0 (Sunday) at a year boundary
+      
+      const clock = sandbox.useFakeTimers({
+        now: new Date(Date.UTC(2023, 11, 31, 12, 0, 0)).getTime(), // Sunday, Dec 31, 2023 at noon UTC
+        shouldAdvanceTime: true,
+        advanceTimeDelta: 20,
+      });
+      
+      const yearBoundarySundayQueryIndex = {
+        data: [
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w51-2023.json', lastModified: '2023-12-24' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w50-2023.json', lastModified: '2023-12-17' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w49-2023.json', lastModified: '2023-12-10' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w51-2023.json', lastModified: '2023-12-24' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w50-2023.json', lastModified: '2023-12-17' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w49-2023.json', lastModified: '2023-12-10' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w51-2023.json', lastModified: '2023-12-24' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w50-2023.json', lastModified: '2023-12-17' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w49-2023.json', lastModified: '2023-12-10' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w51-2023.json', lastModified: '2023-12-24' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w50-2023.json', lastModified: '2023-12-17' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w49-2023.json', lastModified: '2023-12-10' },
+          { path: '/frescopa.coffee/referral-traffic/referral-traffic-w51-2023.json', lastModified: '2023-12-24' },
+          { path: '/frescopa.coffee/referral-traffic/referral-traffic-w50-2023.json', lastModified: '2023-12-17' },
+          { path: '/frescopa.coffee/referral-traffic/referral-traffic-w49-2023.json', lastModified: '2023-12-10' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w51-2023.json', lastModified: '2023-12-24' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w50-2023.json', lastModified: '2023-12-17' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w49-2023.json', lastModified: '2023-12-10' },
+        ],
+      };
+
+      fetchStub.resolves({
+        ok: true,
+        json: sandbox.stub().resolves(yearBoundarySundayQueryIndex),
+      });
+
+      const message = {
+        auditContext: {}, // No weekIdentifier - will auto-calculate using Sunday date at year boundary
+      };
+
+      try {
+        const response = await handlerModule.default.run(message, context);
+        const result = await response.json();
+
+        // Should calculate week identifier using Sunday logic (|| 7 branch) at year boundary
+        // December 31, 2023 (Sunday) is in week 52 of 2023
+        expect(response.status).to.equal(200);
+        expect(result.targetWeekIdentifier).to.equal('w52-2023'); // Week 52 from Dec 31, 2023
       } finally {
         clock.restore();
       }
@@ -560,10 +673,19 @@ describe('Frescopa Data Generation Handler', () => {
         sinon.match(/\/sites\/elmo-ui-data\/frescopa\.coffee\/agentic-traffic\/agentictraffic-w\d{2}-\d{4}\.xlsx/),
       );
       expect(mockSharepointClient.getDocument).to.have.been.calledWith(
-        sinon.match(/\/sites\/elmo-ui-data\/frescopa\.coffee\/brand-presence\/brandpresence-all-w\d{2}-\d{4}\.xlsx/),
+        sinon.match(/\/sites\/elmo-ui-data\/frescopa\.coffee\/agentic-traffic\/agentictraffic-errors-404-w\d{2}-\d{4}\.xlsx/),
+      );
+      expect(mockSharepointClient.getDocument).to.have.been.calledWith(
+        sinon.match(/\/sites\/elmo-ui-data\/frescopa\.coffee\/agentic-traffic\/agentictraffic-errors-5xx-w\d{2}-\d{4}\.xlsx/),
+      );
+      expect(mockSharepointClient.getDocument).to.have.been.calledWith(
+        sinon.match(/\/sites\/elmo-ui-data\/frescopa\.coffee\/brand-presence\/brandpresence-chatgpt-w\d{2}-\d{4}\.xlsx/),
       );
       expect(mockSharepointClient.getDocument).to.have.been.calledWith(
         sinon.match(/\/sites\/elmo-ui-data\/frescopa\.coffee\/referral-traffic\/referral-traffic-w\d{2}-\d{4}\.xlsx/),
+      );
+      expect(mockSharepointClient.getDocument).to.have.been.calledWith(
+        sinon.match(/\/sites\/elmo-ui-data\/frescopa\.coffee\/referral-traffic-aa\/referral-traffic-w\d{2}-\d{4}\.xlsx/),
       );
     });
   });
@@ -603,7 +725,7 @@ describe('Frescopa Data Generation Handler', () => {
 
       // Should handle gracefully and return success with errors for all types
       expect(response.status).to.equal(200);
-      expect(result.errors).to.have.lengthOf(3);
+      expect(result.errors).to.have.lengthOf(6);
       result.errors.forEach((error) => {
         expect(error.error).to.include('Insufficient files');
       });
@@ -627,7 +749,7 @@ describe('Frescopa Data Generation Handler', () => {
 
       // Should handle gracefully and return success with errors for all types
       expect(response.status).to.equal(200);
-      expect(result.errors).to.have.lengthOf(3);
+      expect(result.errors).to.have.lengthOf(6);
       result.errors.forEach((error) => {
         expect(error.error).to.include('Insufficient files');
       });
@@ -637,16 +759,21 @@ describe('Frescopa Data Generation Handler', () => {
       // Query index with no matching files for agentic-traffic
       const queryIndexNoAgenticFiles = {
         data: [
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w04-2025.json', lastModified: '2025-01-20' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w03-2025.json', lastModified: '2025-01-13' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w02-2025.json', lastModified: '2025-01-06' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w01-2025.json', lastModified: '2024-12-30' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w52-2024.json', lastModified: '2024-12-23' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w04-2025.json', lastModified: '2025-01-20' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w03-2025.json', lastModified: '2025-01-13' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w02-2025.json', lastModified: '2025-01-06' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w01-2025.json', lastModified: '2024-12-30' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w52-2024.json', lastModified: '2024-12-23' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w04-2025.json', lastModified: '2025-01-20' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w03-2025.json', lastModified: '2025-01-13' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w52-2024.json', lastModified: '2024-12-23' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w04-2025.json', lastModified: '2025-01-20' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w03-2025.json', lastModified: '2025-01-13' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w52-2024.json', lastModified: '2024-12-23' },
         ],
       };
 
@@ -665,8 +792,8 @@ describe('Frescopa Data Generation Handler', () => {
       const result = await response.json();
 
       expect(response.status).to.equal(200);
-      expect(result.results).to.have.lengthOf(2); // Only brand-presence and referral-traffic
-      expect(result.errors).to.have.lengthOf(1);
+      expect(result.results).to.have.lengthOf(3); // brand-presence, referral-traffic, referral-traffic-aa
+      expect(result.errors).to.have.lengthOf(3);
       expect(result.errors[0].filePrefix).to.equal('agentictraffic');
       expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/No files found matching prefix "agentictraffic-w"/),
@@ -682,16 +809,31 @@ describe('Frescopa Data Generation Handler', () => {
           { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w52-2024.json', lastModified: '2024-12-23' },
           { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w02-2025.json', lastModified: '2025-01-06' },
           { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w03-2025.json', lastModified: '2025-01-13' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w04-2025.json', lastModified: '2025-01-20' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w03-2025.json', lastModified: '2025-01-13' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w02-2025.json', lastModified: '2025-01-06' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w01-2025.json', lastModified: '2024-12-30' },
-          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w52-2024.json', lastModified: '2024-12-23' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w04-2025.json', lastModified: '2025-01-20' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w03-2025.json', lastModified: '2025-01-13' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w02-2025.json', lastModified: '2025-01-06' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w01-2025.json', lastModified: '2024-12-30' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-404-w52-2024.json', lastModified: '2024-12-23' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w04-2025.json', lastModified: '2025-01-20' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w03-2025.json', lastModified: '2025-01-13' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w02-2025.json', lastModified: '2025-01-06' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w01-2025.json', lastModified: '2024-12-30' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-errors-5xx-w52-2024.json', lastModified: '2024-12-23' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w04-2025.json', lastModified: '2025-01-20' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w03-2025.json', lastModified: '2025-01-13' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w02-2025.json', lastModified: '2025-01-06' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w01-2025.json', lastModified: '2024-12-30' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-chatgpt-w52-2024.json', lastModified: '2024-12-23' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w04-2025.json', lastModified: '2025-01-20' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w03-2025.json', lastModified: '2025-01-13' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w52-2024.json', lastModified: '2024-12-23' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w04-2025.json', lastModified: '2025-01-20' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w03-2025.json', lastModified: '2025-01-13' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w52-2024.json', lastModified: '2024-12-23' },
         ],
       };
 
@@ -711,7 +853,7 @@ describe('Frescopa Data Generation Handler', () => {
 
       // Should still process successfully with correct ordering
       expect(response.status).to.equal(200);
-      expect(result.results).to.have.lengthOf(3);
+      expect(result.results).to.have.lengthOf(6);
     });
   });
 
@@ -741,7 +883,7 @@ describe('Frescopa Data Generation Handler', () => {
 
       // Should still succeed even though unpublish failed
       expect(response.status).to.equal(200);
-      expect(result.results).to.have.lengthOf(3);
+      expect(result.results).to.have.lengthOf(6);
       
       // Verify warning was logged
       expect(context.log.warn).to.have.been.calledWith(
@@ -773,7 +915,7 @@ describe('Frescopa Data Generation Handler', () => {
 
       // Should still succeed even though unpublish threw an error
       expect(response.status).to.equal(200);
-      expect(result.results).to.have.lengthOf(3);
+      expect(result.results).to.have.lengthOf(6);
       
       // Verify error was logged
       expect(context.log.error).to.have.been.calledWith(

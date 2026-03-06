@@ -10,8 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-// Audit type identifier
+// Audit type identifiers
 export const AUDIT_TYPE = 'commerce-product-enrichments';
+export const AUDIT_TYPE_YEARLY = 'commerce-product-enrichments-yearly';
 
 // Log prefix for consistent logging
 export const LOG_PREFIX = '[COMMERCE-PRODUCT-ENRICHMENTS]';

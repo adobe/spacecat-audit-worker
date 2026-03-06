@@ -5164,4 +5164,117 @@ describe('sendOpportunitySuggestionsToMystique', () => {
     expect(result.messagesProcessed).to.equal(1);
     expect(mockSendMessage).to.have.been.called;
   });
+
+  it('should filter suggestions by aggregationKey when provided', async () => {
+    const mockSendMessage = sandbox.stub().resolves();
+    const mockBuildAggregationKey = sandbox.stub();
+    mockBuildAggregationKey.onCall(0).returns('key-1');
+    mockBuildAggregationKey.onCall(1).returns('key-2');
+
+    const mockOpportunity = {
+      getId: () => 'oppty-1',
+      getSiteId: () => 'site-1',
+      getAuditId: () => 'audit-1',
+      getSuggestions: () => Promise.resolve([
+        {
+          getData: () => ({ url: 'https://example.com/page1' }),
+          getId: () => 'sugg-1',
+        },
+        {
+          getData: () => ({ url: 'https://example.com/page2' }),
+          getId: () => 'sugg-2',
+        },
+      ]),
+    };
+
+    module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+      '@adobe/spacecat-shared-utils': {
+        isNonEmptyArray: (arr) => Array.isArray(arr) && arr.length > 0,
+        isString: (val) => typeof val === 'string',
+        buildSuggestionKey: sandbox.stub(),
+        buildAggregationKeyFromSuggestion: mockBuildAggregationKey,
+      },
+    });
+
+    const mockContext = {
+      log: mockLog,
+      site: { getId: () => 'site-1', getDeliveryType: () => 'aem_edge' },
+      dataAccess: {
+        Opportunity: {
+          findById: sandbox.stub().resolves(mockOpportunity),
+        },
+      },
+      sqs: { sendMessage: mockSendMessage },
+      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'mystique-queue' },
+    };
+
+    const result = await module.sendOpportunitySuggestionsToMystique(
+      'oppty-1',
+      mockContext,
+      { skipMystiqueEnabledCheck: true, aggregationKey: 'key-1' },
+    );
+
+    expect(result.success).to.be.true;
+    expect(mockLog.info).to.have.been.calledWith(
+      '[A11yCodefix] Filtered suggestions by aggregationKey: 1 of 2 match',
+    );
+  });
+
+  it('should return success with filterInfo when no suggestions match aggregationKey', async () => {
+    const mockBuildAggregationKey = sandbox.stub().returns('different-key');
+
+    const mockOpportunity = {
+      getId: () => 'oppty-1',
+      getSiteId: () => 'site-1',
+      getAuditId: () => 'audit-1',
+      getSuggestions: () => Promise.resolve([
+        {
+          getData: () => ({ url: 'https://example.com/page1' }),
+          getId: () => 'sugg-1',
+        },
+      ]),
+    };
+
+    module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+      '@adobe/spacecat-shared-utils': {
+        isNonEmptyArray: (arr) => Array.isArray(arr) && arr.length > 0,
+        isString: (val) => typeof val === 'string',
+        buildSuggestionKey: sandbox.stub(),
+        buildAggregationKeyFromSuggestion: mockBuildAggregationKey,
+      },
+    });
+
+    const mockContext = {
+      log: mockLog,
+      site: { getId: () => 'site-1', getDeliveryType: () => 'aem_edge' },
+      dataAccess: {
+        Opportunity: {
+          findById: sandbox.stub().resolves(mockOpportunity),
+        },
+      },
+      sqs: {},
+      env: {},
+    };
+
+    const result = await module.sendOpportunitySuggestionsToMystique(
+      'oppty-1',
+      mockContext,
+      { skipMystiqueEnabledCheck: true, aggregationKey: 'nonexistent-key' },
+    );
+
+    expect(result.success).to.be.true;
+    expect(result.messagesProcessed).to.equal(0);
+    expect(mockLog.info).to.have.been.calledWith(
+      '[A11yCodefix] No suggestions found for opportunity (filtered by aggregationKey: nonexistent-key)',
+    );
+  });
 });

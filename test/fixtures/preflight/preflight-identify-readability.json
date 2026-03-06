@@ -21,7 +21,12 @@
             "check": "missing-h1",
             "issue": "No H1 tag found on the page",
             "seoImpact": "High",
-            "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure"
+            "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure",
+            "elements": [
+              {
+                "selector": "body"
+              }
+            ]
           }
         ]
       },
@@ -42,6 +47,11 @@
             "tagName": "h1"
           },
           {
+            "elements": [
+              {
+                "selector": "head > title"
+              }
+            ],
             "issue": "Title too short",
             "issueDetails": "19 chars below limit",
             "seoImpact": "Moderate",
@@ -80,7 +90,12 @@
             "seoImpact": "Moderate",
             "fleschReadingEase": -10.12,
             "language": "english",
-            "textContent": "The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience. Furthermore, the multifaceted infrastructure exemplifies sophisticated aesthetic considerations. Such complex arrangements require meticulous coordination."
+            "textContent": "The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience. Furthermore, the multifaceted infrastructure exemplifies sophisticated aesthetic considerations. Such complex arrangements require meticulous coordination.",
+            "elements": [
+              {
+                "selector": "body > p"
+              }
+            ]
           }
         ]
       }

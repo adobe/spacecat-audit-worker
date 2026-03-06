@@ -172,11 +172,13 @@ describe("No CTA above the fold guidance handler", () => {
         },
       },
     ];
+    const traceId = "test-trace-id";
 
     const result = await handler(
       {
         auditId: "audit-id",
         siteId,
+        traceId,
         data: { url: pageUrl, guidance: failureGuidance },
       },
       context
@@ -187,11 +189,51 @@ describe("No CTA above the fold guidance handler", () => {
     expect(Opportunity.create).not.to.have.been.called;
     expect(Suggestion.create).not.to.have.been.called;
     expect(logStub.info).to.have.been.calledWith(
-      "Skipping opportunity creation for site: site-id page: https://example.com/testpage audit: audit-id due to suggestion generation failure."
+      '[paid-audit] Skipping no-cta-above-the-fold: suggestion generation failure for site: site-id, url: https://example.com/testpage, audit: audit-id',
     );
   });
 
-  it("skips opportunity creation when matching opportunity already exists", async () => {
+  it("skips opportunity creation when matching opportunity exists with new type", async () => {
+    const audit = {
+      getAuditId: () => "audit-id",
+      getAuditResult: () => [
+        {
+          path: "/testpage",
+          pageviews: "1000",
+          bounce_rate: 0.6,
+          projected_traffic_lost: 900,
+        },
+      ],
+    };
+    Audit.findById.resolves(audit);
+
+    Opportunity.allBySiteId.resolves([
+      {
+        getId: () => "existing-oppty",
+        getType: () => "no-cta-above-the-fold",
+        getData: () => ({
+          opportunityType: "no-cta-above-the-fold",
+          page: pageUrl,
+        }),
+        getStatus: () => "NEW",
+      },
+    ]);
+
+    const result = await handler(
+      {
+        auditId: "audit-id",
+        siteId,
+        data: { url: pageUrl, guidance },
+      },
+      context
+    );
+
+    expect(result.status).to.equal(ok().status);
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(Suggestion.create).not.to.have.been.called;
+  });
+
+  it("skips opportunity creation when matching opportunity exists with old generic type", async () => {
     const audit = {
       getAuditId: () => "audit-id",
       getAuditResult: () => [
@@ -229,6 +271,50 @@ describe("No CTA above the fold guidance handler", () => {
     expect(result.status).to.equal(ok().status);
     expect(Opportunity.create).not.to.have.been.called;
     expect(Suggestion.create).not.to.have.been.called;
+  });
+
+  it("creates opportunity when no matching opportunity of either type exists", async () => {
+    const audit = {
+      getAuditId: () => "audit-id",
+      getAuditResult: () => [
+        {
+          path: "/testpage",
+          pageviews: "1000",
+          bounce_rate: 0.6,
+          projected_traffic_lost: 900,
+        },
+      ],
+    };
+    Audit.findById.resolves(audit);
+
+    Opportunity.allBySiteId.resolves([
+      {
+        getId: () => "other-oppty",
+        getType: () => "generic-opportunity",
+        getData: () => ({
+          opportunityType: "some-other-type",
+          page: pageUrl,
+        }),
+        getStatus: () => "NEW",
+      },
+    ]);
+
+    Opportunity.create.resolves({
+      getId: () => "new-oppty",
+    });
+
+    const result = await handler(
+      {
+        auditId: "audit-id",
+        siteId,
+        data: { url: pageUrl, guidance },
+      },
+      context
+    );
+
+    expect(result.status).to.equal(ok().status);
+    expect(Opportunity.create).to.have.been.calledOnce;
+    expect(Suggestion.create).to.have.been.calledOnce;
   });
 });
 

@@ -38,8 +38,10 @@ describe('Paid Cookie Consent Guidance Handler', () => {
   let Suggestion;
   let Opportunity;
   let Site;
+  let Configuration;
   let opportunityInstance;
   let s3ClientMock;
+  let sqsStub;
   let mockScrapeClient;
   let mockAthenaClient;
 
@@ -79,10 +81,20 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     Site = {
       findById: sandbox.stub(),
     };
+    Configuration = {
+      findLatest: sandbox.stub().resolves({
+        getQueues: () => ({ imports: 'test-imports-queue-url' }),
+      }),
+    };
 
     // Mock S3 client
     s3ClientMock = {
       send: sandbox.stub(),
+    };
+
+    // Mock SQS client
+    sqsStub = {
+      sendMessage: sandbox.stub().resolves(),
     };
 
     // Mock Athena client that returns data for bounce gap and top3 pages queries
@@ -118,7 +130,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
     context = {
       log: logStub,
-      dataAccess: { Site, Opportunity, Suggestion },
+      dataAccess: { Site, Opportunity, Suggestion, Configuration },
       env: {
         SPACECAT_API_URI: 'https://example-space-cat-api',
         S3_MYSTIQUE_BUCKET_NAME: 'test-mystique-bucket',
@@ -126,6 +138,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
         S3_IMPORTER_BUCKET_NAME: 'test-importer-bucket',
       },
       s3Client: s3ClientMock,
+      sqs: sqsStub,
     };
 
     // Mock Site.findById to return a site with baseURL
@@ -154,7 +167,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     const message = { auditId: '123', siteId: 'site', data: { url: 'url', guidance: [{}] } };
     const result = await handler(message, context);
     expect(result.status).to.equal(notFound().status);
-    expect(logStub.warn).to.have.been.calledWithMatch(/No site found/);
+    expect(logStub.warn).to.have.been.calledWithMatch(/\[paid-audit\] Failed paid-cookie-consent: no site found/);
   });
 
   it('should return notFound and log error if audit data has empty top3Pages', async () => {
@@ -170,7 +183,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     const message = { auditId: 'auditId', siteId: 'site', data: { url: 'url', guidance: [{}] } };
     const result = await handler(message, context);
     expect(result.status).to.equal(notFound().status);
-    expect(logStub.error).to.have.been.calledWithMatch(/No consent data available/);
+    expect(logStub.error).to.have.been.calledWithMatch(/\[paid-audit\] Failed paid-cookie-consent: no audit data/);
   });
 
   it('should return notFound and log error if auditData is null', async () => {
@@ -186,7 +199,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     const message = { auditId: 'auditId', siteId: 'site', data: { url: 'url', guidance: [{}] } };
     const result = await handler(message, context);
     expect(result.status).to.equal(notFound().status);
-    expect(logStub.error).to.have.been.calledWithMatch(/No consent data available/);
+    expect(logStub.error).to.have.been.calledWithMatch(/\[paid-audit\] Failed paid-cookie-consent: no audit data/);
   });
 
   it('should create a new opportunity and suggestion with plain markdown', async () => {
@@ -208,7 +221,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
     const result = await handler(message, context);
     expect(Opportunity.create).to.have.been.called;
     expect(Suggestion.create).to.have.been.called;
@@ -239,7 +252,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'test-audit-id-123', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'test-audit-id-123', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
     await handler(message, context);
 
     expect(Opportunity.create).to.have.been.called;
@@ -300,7 +313,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       insight: 'insight', rationale: 'rationale', recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'test-audit-id', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'test-audit-id', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
     await handler(message, context);
 
     expect(Opportunity.create).to.have.been.called;
@@ -338,7 +351,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       insight: 'insight', rationale: 'rationale', recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'test-audit-id', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'test-audit-id', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
     await handler(message, context);
 
     // Should still create opportunity - the sitewideBounceDelta calculation handles 0 pageviews
@@ -365,7 +378,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       insight: 'insight', rationale: 'rationale', recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'test-audit-id', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'test-audit-id', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
     await handler(message, context);
 
     expect(Opportunity.create).to.have.been.called;
@@ -396,7 +409,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
     const result = await handler(message, context);
     expect(Opportunity.create).to.have.been.called;
     expect(Suggestion.create).to.have.been.called;
@@ -452,7 +465,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
     // Act
     const result = await handler(message, context);
@@ -509,7 +522,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
     const result = await handler(message, context);
 
@@ -548,7 +561,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
     const result = await handler(message, context);
 
@@ -570,7 +583,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     const result = await handler(message, context);
     expect(Opportunity.create).not.to.have.been.called;
     expect(Suggestion.create).not.to.have.been.called;
-    expect(logStub.info).to.have.been.calledWithMatch(/Skipping opportunity creation/);
+    expect(logStub.info).to.have.been.calledWithMatch(/\[paid-audit\] Skipping paid-cookie-consent: low issue severity/);
     expect(result.status).to.equal(ok().status);
   });
 
@@ -583,7 +596,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       impact: { business: 'business markdown', user: 'user markdown' },
     } };
     const guidance = [{ body, metadata: { scrape_job_id: 'test-job-id' } }];
-    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
     const result = await handler(message, context);
     expect(Opportunity.create).to.have.been.called;
     expect(Suggestion.create).to.have.been.called;
@@ -599,6 +612,48 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     const result = await handler(message, context);
 
     expect(Opportunity.create).not.to.have.been.called;
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should skip opportunity creation when suggestions is empty array', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    const body = { issueSeverity: 'high', data: {
+      mobile: 'mobile', desktop: 'desktop', impact: { business: 'biz', user: 'usr' },
+    } };
+    const guidance = [{ body, metadata: { scrape_job_id: 'test-job-id' } }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [] } };
+    const result = await handler(message, context);
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(Suggestion.create).not.to.have.been.called;
+    expect(logStub.info).to.have.been.calledWithMatch(/no suggestions from guidance engine/);
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should skip opportunity creation when suggestions is null', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    const body = { issueSeverity: 'high', data: {
+      mobile: 'mobile', desktop: 'desktop', impact: { business: 'biz', user: 'usr' },
+    } };
+    const guidance = [{ body, metadata: { scrape_job_id: 'test-job-id' } }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: null } };
+    const result = await handler(message, context);
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(Suggestion.create).not.to.have.been.called;
+    expect(logStub.info).to.have.been.calledWithMatch(/no suggestions from guidance engine/);
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should skip opportunity creation when suggestions is undefined', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    const body = { issueSeverity: 'high', data: {
+      mobile: 'mobile', desktop: 'desktop', impact: { business: 'biz', user: 'usr' },
+    } };
+    const guidance = [{ body, metadata: { scrape_job_id: 'test-job-id' } }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const result = await handler(message, context);
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(Suggestion.create).not.to.have.been.called;
+    expect(logStub.info).to.have.been.calledWithMatch(/no suggestions from guidance engine/);
     expect(result.status).to.equal(ok().status);
   });
 
@@ -620,7 +675,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
     await handler(message, context);
     expect(Suggestion.create).to.have.been.calledWith(sinon.match.has('status', 'PENDING_VALIDATION'));
   });
@@ -650,7 +705,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
     const result = await handler(message, context);
 
@@ -685,7 +740,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
     const result = await handler(message, context);
 
@@ -721,7 +776,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
         recommendation: 'rec',
         metadata: { scrape_job_id: jobId },
       }];
-      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
       await handler(message, context);
 
@@ -779,7 +834,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
         recommendation: 'rec',
         metadata: { scrape_job_id: 'test-job-123' },
       }];
-      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
       await handler(message, context);
 
@@ -821,7 +876,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
         recommendation: 'rec',
         metadata: { scrape_job_id: jobId },
       }];
-      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
       await handler(message, context);
 
@@ -852,7 +907,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
         recommendation: 'rec',
         metadata: { scrape_job_id: jobId },
       }];
-      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
       await handler(message, context);
 
@@ -896,7 +951,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
         recommendation: 'rec',
         metadata: { scrape_job_id: jobId },
       }];
-      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
       await handler(message, context);
 

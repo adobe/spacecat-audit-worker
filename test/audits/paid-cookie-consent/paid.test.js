@@ -19,9 +19,9 @@ import { describe } from 'mocha';
 
 import {
   paidAuditRunner,
-  paidConsentBannerCheck,
   calculateBounceGapLoss,
   calculateSitewideBounceDelta,
+  importAhrefPaidStep,
   importWeekStep0,
   importWeekStep1,
   importWeekStep2,
@@ -224,189 +224,6 @@ describe('Paid Cookie Consent Audit', () => {
     expect(result.auditResult).to.have.property('defaultCPC', 0.80);
   });
 
-  it('should submit expected result to mistique with bounce rate >= 0.3 filtering', async () => {
-    // New structure: top3Pages at root level, not nested in auditResult
-    const auditData = {
-      id: 'test-audit-id',
-      top3Pages: [
-        {
-          path: '/page2',
-          url: 'https://example.com/page2',
-          pageViews: 5000,
-          bounceRate: 0.9, // Above 0.3 threshold - highest traffic loss
-          trafficLoss: 4500,
-        },
-        {
-          path: '/page3',
-          url: 'https://example.com/page3',
-          pageViews: 3000,
-          bounceRate: 0.8, // Above 0.3 threshold
-          trafficLoss: 2400,
-        },
-        {
-          path: '/page1',
-          url: 'https://example.com/page1',
-          pageViews: 2000,
-          bounceRate: 0.2, // Below 0.3 threshold - would be skipped if first
-          trafficLoss: 400,
-        },
-      ],
-    };
-
-    const expectedSubmitedMsg = {
-      type: 'guidance:paid-cookie-consent',
-      observation: 'High bounce rate detected on paid traffic page',
-      siteId: 'test-site-id',
-      url: 'https://example.com/page2',
-      auditId: 'test-audit-id',
-      deliveryType: 'aem-edge',
-      data: {
-        url: 'https://example.com/page2',
-        top3PageUrls: [
-          'https://example.com/page2',
-          'https://example.com/page3',
-          'https://example.com/page1',
-        ],
-      },
-    };
-
-    await paidConsentBannerCheck(auditUrl, auditData, context, site);
-
-    expect(context.sqs.sendMessage.called).to.be.true;
-    const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
-    expect(sentMessage).to.deep.include(expectedSubmitedMsg);
-  });
-
-  it('should warn and not send when no top3Pages found', async () => {
-    const auditData = {
-      fullAuditRef: 'https://example.com',
-      id: 'test-audit-id',
-      auditResult: {
-        totalPageViews: 0,
-        totalAverageBounceRate: 0,
-        projectedTrafficLost: 0,
-        projectedTrafficValue: 0,
-        top3Pages: [], // No pages
-        averagePageViewsTop3: 0,
-        averageTrafficLostTop3: 0,
-        averageBounceRateMobileTop3: 0,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      },
-    };
-
-    await paidConsentBannerCheck(auditUrl, auditData, context, site);
-
-    expect(context.sqs.sendMessage.called).to.be.false;
-    expect(context.log.warn).to.have.been.calledWithMatch(/No pages with consent='show' found/);
-  });
-
-  it('should warn and not send when first page has bounce rate < 0.3', async () => {
-    // New structure: top3Pages at root level
-    const auditData = {
-      id: 'test-audit-id',
-      top3Pages: [
-        {
-          url: '/page1',
-          pageViews: 5000,
-          bounceRate: 0.2, // Below 0.3 threshold
-          trafficLoss: 1000,
-        },
-      ],
-    };
-
-    await paidConsentBannerCheck(auditUrl, auditData, context, site);
-
-    expect(context.sqs.sendMessage.called).to.be.false;
-    expect(context.log.info).to.have.been.calledWithMatch(/Skipping mystique evaluation step for page/);
-  });
-
-  it('should select first page from top3Pages (highest traffic loss)', async () => {
-    // New structure: top3Pages at root level
-    const auditData = {
-      id: 'test-audit-id',
-      top3Pages: [
-        {
-          path: '/winner',
-          url: 'https://example.com/winner',
-          pageViews: 5000,
-          bounceRate: 1.0, // Highest traffic loss - should be first
-          trafficLoss: 5000,
-        },
-        {
-          path: '/p90',
-          url: 'https://example.com/p90',
-          pageViews: 3000,
-          bounceRate: 0.9,
-          trafficLoss: 2700,
-        },
-        {
-          path: '/p80',
-          url: 'https://example.com/p80',
-          pageViews: 2000,
-          bounceRate: 0.8,
-          trafficLoss: 1600,
-        },
-      ],
-    };
-
-    await paidConsentBannerCheck(auditUrl, auditData, context, site);
-
-    expect(context.sqs.sendMessage.called).to.be.true;
-    const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
-    expect(sentMessage.url).to.equal('https://example.com/winner');
-  });
-
-  it('should handle fewer than 3 pages without error', async () => {
-    // New structure: top3Pages at root level
-    const auditData = {
-      id: 'test-audit-id',
-      top3Pages: [
-        {
-          path: '/high',
-          url: 'https://example.com/high',
-          pageViews: 1000,
-          bounceRate: 0.9, // Above 0.3 threshold
-          trafficLoss: 900,
-        },
-      ],
-    };
-
-    await paidConsentBannerCheck(auditUrl, auditData, context, site);
-
-    expect(context.sqs.sendMessage.called).to.be.true;
-    const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
-    expect(sentMessage.url).to.equal('https://example.com/high');
-  });
-
-  it('should send message when first page has bounce rate >= 0.3', async () => {
-    // New structure: top3Pages at root level
-    const auditData = {
-      id: 'test-audit-id',
-      top3Pages: [
-        {
-          path: '/winner',
-          url: 'https://example.com/winner',
-          pageViews: 3000,
-          bounceRate: 0.8, // Above 0.3 - should send
-          trafficLoss: 2400,
-        },
-        {
-          path: '/low-bounce',
-          url: 'https://example.com/low-bounce',
-          pageViews: 2000,
-          bounceRate: 0.2, // Below 0.3 but not first
-          trafficLoss: 400,
-        },
-      ],
-    };
-
-    await paidConsentBannerCheck(auditUrl, auditData, context, site);
-
-    expect(context.sqs.sendMessage.called).to.be.true;
-    const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
-    expect(sentMessage.url).to.equal('https://example.com/winner');
-  });
-
   it('should throw error when S3_IMPORTER_BUCKET_NAME is missing', async () => {
     const contextWithoutBucket = {
       ...context,
@@ -494,46 +311,6 @@ describe('Paid Cookie Consent Audit', () => {
     expect(logStub.error).to.have.been.calledWith(sinon.match(/Paid traffic Athena query failed: Athena connection failed/));
   });
 
-  it('should not send message when audit result has no top3Pages', async () => {
-    const invalidAuditData = {
-      id: 'test-audit-id',
-      auditResult: {
-        totalPageViews: 0,
-        totalAverageBounceRate: 0,
-        projectedTrafficLost: 0,
-        projectedTrafficValue: 0,
-        top3Pages: null, // Invalid top3Pages
-        averagePageViewsTop3: 0,
-        averageTrafficLostTop3: 0,
-        averageBounceRateMobileTop3: 0,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      },
-    };
-
-    await paidConsentBannerCheck(auditUrl, invalidAuditData, context, site);
-    expect(context.sqs.sendMessage.called).to.be.false;
-  });
-
-  it('should not send message when top3Pages is undefined', async () => {
-    const emptyAuditData = {
-      id: 'test-audit-id',
-      auditResult: {
-        totalPageViews: 0,
-        totalAverageBounceRate: 0,
-        projectedTrafficLost: 0,
-        projectedTrafficValue: 0,
-        // top3Pages is undefined
-        averagePageViewsTop3: 0,
-        averageTrafficLostTop3: 0,
-        averageBounceRateMobileTop3: 0,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      },
-    };
-
-    await paidConsentBannerCheck(auditUrl, emptyAuditData, context, site);
-    expect(context.sqs.sendMessage.called).to.be.false;
-  });
-
   it('should calculate projectedTrafficValue as 80% of projectedTrafficLost', async () => {
     const result = await paidAuditRunner(auditUrl, context, site);
     expect(result.auditResult.projectedTrafficValue).to.equal(result.auditResult.projectedTrafficLost * 0.8);
@@ -568,49 +345,6 @@ describe('Paid Cookie Consent Audit', () => {
     expect(result.auditResult.averagePageViewsTop3).to.equal(2000); // (1000 + 2000 + 3000) / 3
     expect(result.auditResult.averageTrafficLostTop3).to.be.closeTo(1566.67, 0.01); // (800 + 1800 + 2100) / 3
     expect(result.auditResult.averageBounceRateMobileTop3).to.be.closeTo(0.8, 0.01); // (0.8 + 0.9 + 0.7) / 3
-  });
-
-  it('should include time field in mystique message', async () => {
-    // New structure: top3Pages at root level
-    const auditData = {
-      id: 'test-audit-id',
-      top3Pages: [
-        {
-          path: '/page1',
-          url: 'https://example.com/page1',
-          pageViews: 5000,
-          bounceRate: 0.9,
-          trafficLoss: 4500,
-        },
-      ],
-    };
-
-    await paidConsentBannerCheck(auditUrl, auditData, context, site);
-
-    expect(context.sqs.sendMessage.called).to.be.true;
-    const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
-    expect(sentMessage).to.have.property('time');
-    expect(sentMessage.time).to.be.a('string');
-  });
-
-  it('should log debug message with projected traffic loss', async () => {
-    // New structure: top3Pages at root level
-    const auditData = {
-      id: 'test-audit-id',
-      top3Pages: [
-        {
-          url: 'https://example.com/page1',
-          pageViews: 5000,
-          bounceRate: 0.9,
-          trafficLoss: 4500,
-        },
-      ],
-    };
-
-    await paidConsentBannerCheck(auditUrl, auditData, context, site);
-
-    expect(context.log.info).to.have.been.calledWithMatch(/projectedTrafficLoss.*4500/);
-    expect(context.log.info).to.have.been.calledWithMatch(/Completed mystique evaluation step/);
   });
 
   it('should handle zero totalPageViews and calculate totalAverageBounceRate as 0', async () => {
@@ -1011,6 +745,56 @@ describe('importWeekStep0 (first import step)', () => {
   });
 });
 
+describe('importAhrefPaidStep', () => {
+  let sandbox;
+  let logStub;
+  let site;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    logStub = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+      warn: sandbox.stub(),
+    };
+    site = getSite(sandbox);
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should return correct structure for import worker', async () => {
+    const stepContext = {
+      site,
+      log: logStub,
+      finalUrl: auditUrl,
+    };
+
+    const result = await importAhrefPaidStep(stepContext);
+
+    expect(result).to.have.property('auditResult');
+    expect(result.auditResult).to.have.property('status', 'processing');
+    expect(result).to.have.property('fullAuditRef', auditUrl);
+    expect(result).to.have.property('type', 'ahref-paid-pages');
+    expect(result).to.have.property('siteId', 'test-site-id');
+    expect(result).to.have.property('allowCache', true);
+  });
+
+  it('should log info message when triggering import', async () => {
+    const stepContext = {
+      site,
+      log: logStub,
+      finalUrl: auditUrl,
+    };
+
+    await importAhrefPaidStep(stepContext);
+
+    expect(logStub.info).to.have.been.calledWithMatch(/Triggering ahref-paid-pages import/);
+  });
+});
+
 describe('importWeekStep1/2/3 (subsequent import steps)', () => {
   let sandbox;
   let logStub;
@@ -1070,6 +854,18 @@ describe('runPaidConsentAnalysisStep', () => {
   let site;
   let context;
 
+  const mockBounceGapResults = [
+    {
+      path: '/page1', pv_show: '10000', bounce_rate_show: '0.8', pv_hidden: '5000', bounce_rate_hidden: '0.5', bounce_rate_delta: '0.3', bounce_gap_pageviews: '3000',
+    },
+    {
+      path: '/page2', pv_show: '8000', bounce_rate_show: '0.7', pv_hidden: '4000', bounce_rate_hidden: '0.4', bounce_rate_delta: '0.3', bounce_gap_pageviews: '2400',
+    },
+    {
+      path: '/page3', pv_show: '5000', bounce_rate_show: '0.9', pv_hidden: '2000', bounce_rate_hidden: '0.6', bounce_rate_delta: '0.3', bounce_gap_pageviews: '1500',
+    },
+  ];
+
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     logStub = {
@@ -1082,15 +878,8 @@ describe('runPaidConsentAnalysisStep', () => {
       getBaseURL: () => 'https://example.com',
     });
 
-    // Mock AWSAthenaClient - new flow only queries top3Pages (1 query)
     const queryStub = sandbox.stub();
-
-    // Single query: top3PagesTrafficLost with ['path'] grouping
-    queryStub.onCall(0).resolves([
-      {
-        path: '/page1', pageviews: 1000, bounce_rate: 0.8, traffic_loss: 800, utm_source: 'google', click_rate: 0.1, engagement_rate: 0.2, engaged_scroll_rate: 0.15, referrer: 'google.com',
-      },
-    ]);
+    queryStub.onCall(0).resolves(mockBounceGapResults);
 
     context = {
       runtime: { name: 'aws-lambda', region: 'us-east-1' },
@@ -1116,40 +905,68 @@ describe('runPaidConsentAnalysisStep', () => {
     sandbox.restore();
   });
 
-  it('should run analysis and send results to mystique', async () => {
-    const mockAudit = {
-      getId: () => 'test-audit-id',
-    };
-
+  it('should send candidatePages to Mystique with correct payload shape', async () => {
     const stepContext = {
       ...context,
       finalUrl: auditUrl,
-      audit: mockAudit,
-      auditContext: { auditId: 'test-audit-id' },
-    };
-
-    const result = await runPaidConsentAnalysisStep(stepContext);
-
-    expect(result).to.deep.equal({});
-    // Results are sent to Mystique, not stored in audit
-    expect(context.sqs.sendMessage).to.have.been.called;
-  });
-
-  it('should send to mystique when page has bounce rate >= 0.3', async () => {
-    const mockAudit = {
-      getId: () => 'test-audit-id',
-    };
-
-    const stepContext = {
-      ...context,
-      finalUrl: auditUrl,
-      audit: mockAudit,
+      audit: { getId: () => 'test-audit-id' },
       auditContext: { auditId: 'test-audit-id' },
     };
 
     await runPaidConsentAnalysisStep(stepContext);
 
-    expect(context.sqs.sendMessage).to.have.been.called;
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    const [queue, message] = context.sqs.sendMessage.getCall(0).args;
+    expect(queue).to.equal('test-queue');
+    expect(message.type).to.equal('guidance:paid-cookie-consent');
+    expect(message.url).to.equal('https://example.com/page1');
+    expect(message.siteId).to.equal('test-site-id');
+    expect(message.auditId).to.equal('test-audit-id');
+    expect(message.deliveryType).to.equal('aem-edge');
+    expect(message).to.have.property('time');
+
+    // Verify candidatePages payload
+    const { candidatePages } = message.data;
+    expect(candidatePages).to.be.an('array').with.lengthOf(3);
+    expect(candidatePages[0]).to.deep.equal({
+      url: 'https://example.com/page1',
+      pvShow: 10000,
+      bounceRateShow: 0.8,
+      bounceRateDelta: 0.3,
+      bounceGapPageviews: 3000,
+    });
+    expect(message.data.url).to.equal(auditUrl);
+  });
+
+  it('should return auditResult with candidatePages', async () => {
+    const stepContext = {
+      ...context,
+      finalUrl: auditUrl,
+      audit: { getId: () => 'test-audit-id' },
+      auditContext: {},
+    };
+
+    const result = await runPaidConsentAnalysisStep(stepContext);
+
+    expect(result.auditResult).to.be.an('object');
+    expect(result.auditResult.candidatePages).to.be.an('array').with.lengthOf(3);
+    expect(result.fullAuditRef).to.equal(auditUrl);
+  });
+
+  it('should preserve bounce gap ordering in candidatePages', async () => {
+    const stepContext = {
+      ...context,
+      finalUrl: auditUrl,
+      audit: { getId: () => 'test-audit-id' },
+      auditContext: {},
+    };
+
+    await runPaidConsentAnalysisStep(stepContext);
+
+    const { candidatePages } = context.sqs.sendMessage.getCall(0).args[1].data;
+    expect(candidatePages[0].bounceGapPageviews).to.equal(3000);
+    expect(candidatePages[1].bounceGapPageviews).to.equal(2400);
+    expect(candidatePages[2].bounceGapPageviews).to.equal(1500);
   });
 
   it('should use auditContext.auditId when audit is not in context', async () => {
@@ -1160,61 +977,115 @@ describe('runPaidConsentAnalysisStep', () => {
       auditContext: { auditId: 'fallback-audit-id' },
     };
 
-    const result = await runPaidConsentAnalysisStep(stepContext);
+    await runPaidConsentAnalysisStep(stepContext);
 
-    expect(result).to.deep.equal({});
-    // Should send to mystique using fallback auditId
-    expect(context.sqs.sendMessage).to.have.been.called;
-    // Verify the auditId is passed in the mystique message
     const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
     expect(sentMessage.auditId).to.equal('fallback-audit-id');
   });
 
-  it('should return {} and not send to mystique when no top3Pages data available', async () => {
-    // Override to return empty top3Pages
+  it('should return empty candidatePages and not send when no bounce gap data', async () => {
     const customQueryStub = sandbox.stub();
     customQueryStub.onCall(0).resolves([]);
-
-    const mockAudit = {
-      getId: () => 'test-audit-id',
-    };
 
     const stepContext = {
       ...context,
       athenaClient: { query: customQueryStub },
       finalUrl: auditUrl,
-      audit: mockAudit,
-      auditContext: { auditId: 'test-audit-id' },
+      audit: { getId: () => 'test-audit-id' },
+      auditContext: {},
     };
 
     const result = await runPaidConsentAnalysisStep(stepContext);
 
-    expect(result).to.deep.equal({});
+    expect(result.auditResult).to.deep.equal({ candidatePages: [] });
+    expect(result.fullAuditRef).to.equal(auditUrl);
     expect(context.sqs.sendMessage).to.not.have.been.called;
-    expect(logStub.warn).to.have.been.calledWithMatch(/No top3Pages data available/);
+    expect(logStub.warn).to.have.been.calledWithMatch(/No pages with consent bounce gap/);
   });
 
-  it('should succeed and log error when paidConsentBannerCheck throws', async () => {
-    // Override sqs to throw when sending to mystique
-    const failingSqs = {
-      sendMessage: sandbox.stub().rejects(new Error('SQS send failed')),
+  it('should handle items with empty path and missing fields gracefully', async () => {
+    const resultsWithEmptyPath = [
+      {
+        path: '',
+      },
+      ...mockBounceGapResults,
+    ];
+    const customQueryStub = sandbox.stub();
+    customQueryStub.onCall(0).resolves(resultsWithEmptyPath);
+
+    const stepContext = {
+      ...context,
+      athenaClient: { query: customQueryStub },
+      finalUrl: auditUrl,
+      audit: { getId: () => 'test-audit-id' },
+      auditContext: {},
     };
 
-    const mockAudit = {
-      getId: () => 'test-audit-id',
+    const result = await runPaidConsentAnalysisStep(stepContext);
+
+    const allCandidates = result.auditResult.candidatePages;
+    expect(allCandidates[0].url).to.be.undefined;
+    expect(allCandidates[0].pvShow).to.equal(0);
+    expect(allCandidates[0].bounceRateShow).to.equal(0);
+    expect(allCandidates[0].pvHidden).to.equal(0);
+    expect(allCandidates[0].bounceRateHidden).to.equal(0);
+    expect(allCandidates[0].bounceRateDelta).to.equal(0);
+    expect(allCandidates[0].bounceGapPageviews).to.equal(0);
+    expect(allCandidates[1].url).to.equal('https://example.com/page1');
+  });
+
+  it('should handle fewer than 20 qualifying pages', async () => {
+    const singleResult = [mockBounceGapResults[0]];
+    const customQueryStub = sandbox.stub();
+    customQueryStub.onCall(0).resolves(singleResult);
+
+    const stepContext = {
+      ...context,
+      athenaClient: { query: customQueryStub },
+      finalUrl: auditUrl,
+      audit: { getId: () => 'test-audit-id' },
+      auditContext: {},
+    };
+
+    await runPaidConsentAnalysisStep(stepContext);
+
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    const { candidatePages } = context.sqs.sendMessage.getCall(0).args[1].data;
+    expect(candidatePages).to.have.lengthOf(1);
+  });
+
+  it('should respect PAID_CANDIDATE_PAGE_LIMIT env var', async () => {
+    const stepContext = {
+      ...context,
+      env: { ...context.env, PAID_CANDIDATE_PAGE_LIMIT: '5' },
+      finalUrl: auditUrl,
+      audit: { getId: () => 'test-audit-id' },
+      auditContext: {},
+    };
+
+    await runPaidConsentAnalysisStep(stepContext);
+
+    // Verify the query was called (the limit is passed to the SQL template)
+    expect(context.athenaClient.query).to.have.been.calledOnce;
+    const queryStr = context.athenaClient.query.getCall(0).args[0];
+    expect(queryStr).to.include('LIMIT 5');
+  });
+
+  it('should throw and log error when SQS send fails', async () => {
+    const failingSqs = {
+      sendMessage: sandbox.stub().rejects(new Error('SQS send failed')),
     };
 
     const stepContext = {
       ...context,
       sqs: failingSqs,
       finalUrl: auditUrl,
-      audit: mockAudit,
-      auditContext: { auditId: 'test-audit-id' },
+      audit: { getId: () => 'test-audit-id' },
+      auditContext: {},
     };
 
-    const result = await runPaidConsentAnalysisStep(stepContext);
-
-    expect(result).to.deep.equal({});
+    await expect(runPaidConsentAnalysisStep(stepContext))
+      .to.be.rejectedWith('SQS send failed');
     expect(logStub.error).to.have.been.calledWithMatch(/Step 5 failed/);
   });
 });

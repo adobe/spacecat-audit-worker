@@ -11,6 +11,7 @@
  */
 
 import { stripTrailingSlash } from '@adobe/spacecat-shared-utils';
+import { load as cheerioLoad } from 'cheerio';
 import {
   validatePageHeadingFromScrapeJson,
   getH1HeadingASuggestion,
@@ -19,6 +20,7 @@ import {
 import { getBrandGuidelines } from '../headings/shared-utils.js';
 import { saveIntermediateResults } from './utils.js';
 import SeoChecks from '../metatags/seo-checks.js';
+import { getDomElementSelector, toElementTargets } from '../utils/dom-selector.js';
 
 export const PREFLIGHT_HEADINGS = 'headings';
 
@@ -35,6 +37,92 @@ function getSeoImpact(checkType) {
   ];
 
   return highImpactChecks.includes(checkType) ? 'High' : 'Moderate';
+}
+
+/**
+ * Extract selectors for heading issues from the scraped HTML
+ * @param {Object} scrapeJsonObject - The scraped page data
+ * @param {Object} check - The check result from validatePageHeadingFromScrapeJson
+ * @returns {Object} Element targets with selectors
+ */
+function getElementsFromCheck(scrapeJsonObject, check) {
+  if (!scrapeJsonObject?.scrapeResult?.rawBody) {
+    return {};
+  }
+
+  const $ = cheerioLoad(scrapeJsonObject.scrapeResult.rawBody);
+  const { check: checkType } = check;
+  let selectors = [];
+
+  // Use string comparison for check types to avoid dependency on HEADINGS_CHECKS constants
+  switch (checkType) {
+    case 'heading-missing-h1': {
+      // Target the main content area where H1 should be added
+      const mainElement = $('body > main').get(0) || $('body').get(0);
+      const selector = getDomElementSelector(mainElement);
+      if (selector) selectors.push(selector);
+      break;
+    }
+
+    case 'heading-multiple-h1': {
+      // Target all H1 elements
+      const h1Elements = $('h1').toArray();
+      selectors = h1Elements
+        .map((h1) => getDomElementSelector(h1))
+        .filter(Boolean);
+      break;
+    }
+
+    case 'heading-h1-length': {
+      // Target the H1 element
+      const h1Element = $('h1').get(0);
+      if (h1Element) {
+        const selector = getDomElementSelector(h1Element);
+        if (selector) selectors.push(selector);
+      }
+      break;
+    }
+
+    case 'heading-empty': {
+      // Find empty headings - extract tag name from check
+      const tagName = check.tagName?.toLowerCase();
+      if (tagName && /^h[1-6]$/.test(tagName)) {
+        const headingsArray = $(tagName).toArray();
+        // Find empty ones
+        const emptyHeadings = headingsArray.filter((h) => $(h).text().trim().length === 0);
+        selectors = emptyHeadings
+          .map((h) => getDomElementSelector(h))
+          .filter(Boolean);
+      }
+      break;
+    }
+
+    case 'heading-order-invalid': {
+      // Use the selector from transformRules if available, otherwise find headings
+      if (check.transformRules?.selector) {
+        selectors.push(check.transformRules.selector);
+      } else {
+        // Find all headings and identify order violations
+        const allHeadings = $('h1, h2, h3, h4, h5, h6').toArray();
+        // For now, return all headings involved in order issues
+        // A more precise implementation could identify the specific violating heading
+        selectors = allHeadings
+          .map((h) => getDomElementSelector(h))
+          .filter(Boolean);
+      }
+      break;
+    }
+
+    default:
+      // For other check types, try to extract from transformRules or selectors
+      if (check.selectors && Array.isArray(check.selectors)) {
+        selectors = check.selectors;
+      } else if (check.transformRules?.selector) {
+        selectors.push(check.transformRules.selector);
+      }
+  }
+
+  return toElementTargets(selectors);
 }
 
 /**
@@ -113,6 +201,13 @@ export default async function headings(context, auditContext) {
   try {
     const seoChecks = new SeoChecks(log);
 
+    // Create a map from URL to scrapeJsonObject for selector generation
+    const scrapeDataByUrl = new Map();
+    scrapedObjects.forEach(({ data }) => {
+      const url = stripTrailingSlash(data.finalUrl);
+      scrapeDataByUrl.set(url, data);
+    });
+
     // Validate headings for each scraped page
     const detectedIssues = await Promise.all(
       scrapedObjects.map(async ({ data }) => {
@@ -158,6 +253,9 @@ export default async function headings(context, auditContext) {
         return;
       }
 
+      // Get scrape data for this URL to generate selectors
+      const scrapeJsonObject = scrapeDataByUrl.get(url);
+
       // Add each check as an opportunity
       checks.forEach((check) => {
         if (!check.success) {
@@ -174,6 +272,14 @@ export default async function headings(context, auditContext) {
             opportunity.aiSuggestion = check.suggestion;
           } else {
             opportunity.suggestion = check.suggestion;
+          }
+
+          // Generate selectors from the scraped HTML
+          if (scrapeJsonObject) {
+            const elementData = getElementsFromCheck(scrapeJsonObject, check);
+            if (elementData?.elements?.length > 0) {
+              Object.assign(opportunity, elementData);
+            }
           }
 
           audit.opportunities.push(opportunity);
