@@ -12,6 +12,7 @@
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
+import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import { LOG_PREFIX, AUDIT_TYPE } from './constants.js';
@@ -184,9 +185,29 @@ async function sendEnrichment(productPages, commerceConfig, site, env, log) {
   log.info(`${LOG_PREFIX} Step 3: Sending enrichment to ${enrichmentEndpoint} with ${enrichmentPayload.scrapes.length} scrapes`);
   log.debug(`${LOG_PREFIX} Step 3: Enrichment payload:`, JSON.stringify(enrichmentPayload));
 
+  const imsClient = ImsClient.createFrom({
+    log,
+    env: {
+      IMS_HOST: env.IMS_HOST,
+      IMS_CLIENT_ID: env.IMS_CLIENT_ID,
+      IMS_CLIENT_CODE: env.IMS_CLIENT_CODE,
+      IMS_CLIENT_SECRET: env.IMS_CLIENT_SECRET,
+    },
+  });
+  let token;
+  try {
+    token = await imsClient.getServiceAccessToken();
+  } catch (imsError) {
+    log.error(`${LOG_PREFIX} Step 3: IMS token request failed - host=${env.IMS_HOST}, client_id=${env.IMS_CLIENT_ID}, imsError=${JSON.stringify(imsError)}`);
+    throw imsError;
+  }
+
   const response = await fetch(enrichmentEndpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token.access_token}`,
+    },
     body: JSON.stringify(enrichmentPayload),
   });
 
