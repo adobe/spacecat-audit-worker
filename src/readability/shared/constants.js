@@ -11,9 +11,10 @@
  */
 
 // Preflight constants
-export const READABILITY_GUIDANCE_TYPE = 'guidance:readability'; // for preflight
+export const READABILITY_GUIDANCE_TYPE = 'guidance:readability';
 export const READABILITY_OBSERVATION = 'Content readability needs improvement';
 export const MYSTIQUE_BATCH_SIZE = 10;
+export const READABILITY_BATCH_PREFIX = 'readability/batch-requests';
 
 // Opportunity audit constants
 export const READABILITY_OPPORTUNITY_TYPE = 'READABILITY_IMPROVEMENT';

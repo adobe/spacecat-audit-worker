@@ -11,7 +11,12 @@
             "check": "content-length",
             "issue": "Body content length is below 100 characters",
             "seoImpact": "Moderate",
-            "seoRecommendation": "Add more meaningful content to the page"
+            "seoRecommendation": "Add more meaningful content to the page",
+            "elements": [
+              {
+                "selector": "body"
+              }
+            ]
           }
         ]
       },
@@ -23,7 +28,12 @@
             "check": "placeholder-text",
             "issue": "Found Lorem ipsum placeholder text in the page content",
             "seoImpact": "High",
-            "seoRecommendation": "Replace placeholder text with meaningful content"
+            "seoRecommendation": "Replace placeholder text with meaningful content",
+            "elements": [
+              {
+                "selector": "body"
+              }
+            ]
           }
         ]
       },
@@ -35,7 +45,12 @@
             "check": "missing-h1",
             "issue": "No H1 tag found on the page",
             "seoImpact": "High",
-            "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure"
+            "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure",
+            "elements": [
+              {
+                "selector": "body"
+              }
+            ]
           }
         ]
       },
@@ -60,7 +75,12 @@
               "url": "https://main--example--page.aem.page/broken",
               "issue": "Status 404",
               "seoImpact": "High",
-              "seoRecommendation": "Fix or remove broken links to improve user experience and SEO"
+              "seoRecommendation": "Fix or remove broken links to improve user experience and SEO",
+              "elements": [
+                {
+                  "selector": "body > a:nth-of-type(1)"
+                }
+              ]
               }
             ]
           },
@@ -71,7 +91,12 @@
                 "url": "http://test.com/",
                 "issue": "Status 404",
                 "seoImpact": "High",
-                "seoRecommendation": "Fix or remove broken links to improve user experience"
+                "seoRecommendation": "Fix or remove broken links to improve user experience",
+                "elements": [
+                  {
+                    "selector": "body > a:nth-of-type(2)"
+                  }
+                ]
               }
             ]
           },
@@ -82,7 +107,12 @@
                 "url": "http://test.com/",
                 "issue": "Link using HTTP instead of HTTPS",
                 "seoImpact": "High",
-                "seoRecommendation": "Update all links to use HTTPS protocol"
+                "seoRecommendation": "Update all links to use HTTPS protocol",
+                "elements": [
+                  {
+                    "selector": "body > a:nth-of-type(2)"
+                  }
+                ]
               }
             ]
           }

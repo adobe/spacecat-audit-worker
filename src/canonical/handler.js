@@ -385,6 +385,12 @@ export async function processScrapedContent(context) {
     try {
       const scrapedObject = await getObjectFromKey(s3Client, bucketName, key, log);
 
+      // If the scrape result is empty, skip the page for canonical audit
+      if (scrapedObject?.scrapeResult?.rawBody?.length < 300) {
+        log.warn(`[canonical] Scrape result is empty for ${key} (rawBody length: ${scrapedObject?.scrapeResult?.rawBody?.length || 0})`);
+        return null;
+      }
+
       if (!scrapedObject?.scrapeResult?.canonical) {
         log.warn(`[canonical] No canonical metadata in S3 object: ${key}`);
         return null;
@@ -472,12 +478,12 @@ export async function processScrapedContent(context) {
           });
         }
 
-        // Check if canonical is self-referenced (ignoring protocol and case)
+        // Check if canonical is self-referenced (ignoring protocol, domain, query, hash, case)
         const normalizeUrl = (u) => {
           try {
             const urlObj = new URL(u);
-            // Remove protocol, lowercase everything, keep host and path
-            return `${urlObj.host}${urlObj.pathname}${urlObj.search}${urlObj.hash}`.toLowerCase();
+            // Remove protocol, domain, query params, and hash; lowercase; keep only pathname
+            return urlObj.pathname.toLowerCase();
           } catch {
             return u.toLowerCase();
           }
@@ -485,7 +491,7 @@ export async function processScrapedContent(context) {
         const normalizedCanonical = normalizeUrl(canonicalUrl);
         const normalizedFinal = normalizeUrl(finalUrl);
 
-        // Canonical should match the final URL (what was actually served)
+        // Canonical should match the final URL path (what was actually served)
         const isSelfReferenced = normalizedCanonical === normalizedFinal;
         if (isSelfReferenced) {
           canonicalTagChecks.push({
@@ -513,8 +519,25 @@ export async function processScrapedContent(context) {
         );
         const isSelfReferenced = selfRefCheck?.success === true;
 
-        // if self-referenced - skip accessibility
-        if (isSelfReferenced) {
+        // Validate accessibility when canonical targets a different resource (domain or protocol).
+        let canonicalDifferentDomain = false;
+        let canonicalDifferentProtocol = false;
+        try {
+          const canonicalParsed = new URL(canonicalUrl);
+          const baseParsed = new URL(baseURL);
+          const finalParsed = new URL(finalUrl);
+          canonicalDifferentDomain = composeBaseURL(canonicalParsed.hostname)
+            !== composeBaseURL(baseParsed.hostname);
+          canonicalDifferentProtocol = canonicalParsed.protocol !== finalParsed.protocol;
+        } catch {
+          // invalid URL; accessibility check may still run and report fetch error
+        }
+
+        // Skip accessibility only when self-referenced, same domain, and same protocol.
+        const shouldCheckAccessibility = !isSelfReferenced
+          || canonicalDifferentDomain
+          || canonicalDifferentProtocol;
+        if (!shouldCheckAccessibility) {
           checks.push({
             check: CANONICAL_CHECKS.CANONICAL_URL_STATUS_OK.check,
             success: true,
@@ -524,8 +547,6 @@ export async function processScrapedContent(context) {
             success: true,
           });
         } else {
-          // if not self-referenced - validate accessibility
-
           const options = await getPreviewAuthOptions(isPreview, baseURL, site, context, log);
 
           const urlContentCheck = await validateCanonicalRecursively(canonicalUrl, log, options);

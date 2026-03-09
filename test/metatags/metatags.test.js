@@ -928,6 +928,115 @@ describe('Meta Tags', () => {
         });
         expect(logStub.error).to.not.have.been.called;
       });
+
+      it('should skip page when statusCode is 404 (new scrape with HTTP status)', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/missing',
+          statusCode: 404,
+          scrapeResult: {
+            tags: {
+              title: 'Page Not Found',
+              description: 'The page you requested was not found',
+              h1: ['Not Found'],
+            },
+            rawBody: '<html><body><h1>Not Found</h1><p>Content here to exceed 300 chars.</p></body></html>'.repeat(5),
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/missing',
+          'scrapes/site-id/missing/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.info).to.have.been.calledWith(
+          '[metatags] Skipping page with HTTP 404 for http://example.com/missing',
+        );
+      });
+
+      it('should skip page when statusCode is 4xx (e.g. 403)', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/forbidden',
+          statusCode: 403,
+          scrapeResult: {
+            tags: {
+              title: 'Access Denied',
+              description: 'You do not have permission',
+              h1: ['Forbidden'],
+            },
+            rawBody: 'A'.repeat(400),
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/forbidden',
+          'scrapes/site-id/forbidden/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.info).to.have.been.calledWith(
+          '[metatags] Skipping page with HTTP 403 for http://example.com/forbidden',
+        );
+      });
+
+      it('should process page when statusCode is 200 (new scrape)', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/ok',
+          statusCode: 200,
+          scrapeResult: {
+            tags: {
+              title: 'OK Page',
+              description: 'A valid page',
+              h1: ['OK'],
+            },
+            rawBody: 'A'.repeat(300),
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/ok',
+          'scrapes/site-id/ok/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.deep.equal({
+          '/ok': {
+            title: 'OK Page',
+            description: 'A valid page',
+            h1: ['OK'],
+            s3key: 'scrapes/site-id/ok/scrape.json',
+          },
+        });
+      });
     });
 
     describe('opportunities handler method', () => {

@@ -14,13 +14,15 @@ import { main as universalMain } from './index.js';
 
 export const main = async () => {
   const messageBody = {
-    type: 'llm-blocked',
-    siteId: 'b1555a54-48b4-47ee-97c1-438257bd3839',
+    type: 'broken-internal-links',
+    siteId: '1db7b770-db7f-4c52-a9dc-6e05add6c11e',
     auditContext: {
-      next: 'check-llm-blocked',
-      auditId: 'a263123c-9f9a-44a8-9531-955884563472',
-      type: 'llm-blocked',
-      fullAuditRef: 'llm-blocked::cisco.com',
+      next: 'runCrawlDetectionBatch', // Correct: handler.js .addStep('runCrawlDetectionBatch', runCrawlDetectionBatch)
+      auditId: 'd5ae4a88-c122-4d37-b76a-05008418f579',
+      auditType: 'broken-internal-links',
+      fullAuditRef: 'www.asianpaints.com',
+      scrapeJobId: 'c923c43b-0741-4318-a121-0444a222ec62',
+      batchStartIndex: 0,
     },
   };
 

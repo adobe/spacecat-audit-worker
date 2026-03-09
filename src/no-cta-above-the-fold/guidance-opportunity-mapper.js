@@ -12,6 +12,7 @@
 
 import { randomUUID } from 'crypto';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import { DATA_SOURCES } from '../common/constants.js';
 
 export const ESTIMATED_CPC = 0.8;
 
@@ -41,7 +42,7 @@ export function mapToOpportunity(siteId, url, audit, pageGuidance) {
     siteId,
     id: randomUUID(),
     auditId: audit.getAuditId(),
-    type: 'generic-opportunity',
+    type: 'no-cta-above-the-fold',
     origin: 'AUTOMATION',
     title: 'No engageable content above the fold on mobile',
     description: 'The page lacks clear call-to-action (CTA) buttons above the fold. Without a prominent CTA to catch paid visitors\' attention, they are much more likely to bounce.',
@@ -64,6 +65,7 @@ export function mapToOpportunity(siteId, url, audit, pageGuidance) {
       ctr: 0,
       bounceRate,
       pageType: 'unknown',
+      dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.PAGE],
     },
     status: 'NEW',
     tags: ['Engagement'],

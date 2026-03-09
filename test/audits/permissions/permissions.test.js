@@ -1012,6 +1012,73 @@ describe('Permissions Handler Tests', () => {
       expect(result).to.deep.equal({ status: 'complete' });
     });
 
+    it('should not create opportunity or suggestions when adminChecks has no details', async () => {
+      const auditData = {
+        auditResult: {
+          permissionsReport: {
+            allPermissions: [],
+            adminChecks: [
+              {
+                principal: 'admin1',
+                details: [],
+              },
+            ],
+          },
+          success: true,
+        },
+        siteId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        auditId: 'audit-123',
+      };
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+
+      const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    });
+
+
+    it('should not create opportunity or suggestions when adminChecks has no actionable paths', async () => {
+      const auditData = {
+        auditResult: {
+          permissionsReport: {
+            allPermissions: [],
+            adminChecks: [
+              {
+                principal: 'admin1',
+                details: [
+                  { path: '/apps/nonEditablePath', allow: true, privileges: ['jcr:all'] },
+                  { path: '/content/editablePath', allow: true, privileges: ['jcr:all'] }
+                ],
+              },
+            ],
+          },
+          success: true,
+        },
+        siteId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        auditId: 'audit-123',
+      };
+
+      const addSuggestionStub = sandbox.stub().resolves({ errorItems: [], createdItems: [] });
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves({
+        getId: () => 'opp-123',
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub(),
+        addSuggestions: addSuggestionStub,
+        getSuggestions: sandbox.stub().resolves([]),
+      });
+
+
+      const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.dataAccess.Opportunity.create).to.have.been.called;
+      expect(addSuggestionStub).to.have.been.calledOnce;
+    });
+
     it('should handle opportunity creation failure', async () => {
       const auditData = {
         auditResult: {

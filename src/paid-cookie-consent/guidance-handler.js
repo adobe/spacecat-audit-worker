@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { mapToPaidOpportunity, mapToPaidSuggestion, isLowSeverityGuidanceBody } from './guidance-opportunity-mapper.js';
 import { getAuditData } from './audit-data-provider.js';
 import { createPaidLogger } from '../paid/paid-log.js';
@@ -29,7 +30,7 @@ export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Site, Opportunity, Suggestion } = dataAccess;
   const { siteId, auditId, data } = message;
-  const { url, guidance } = data;
+  const { url, guidance, suggestions } = data;
   const paidLog = createPaidLogger(log, GUIDANCE_TYPE);
 
   paidLog.received(siteId, url, auditId);
@@ -55,10 +56,18 @@ export default async function handler(message, context) {
     return ok();
   }
 
+  // Skip if Mystique returned no actionable suggestions
+  if (!isNonEmptyArray(suggestions)) {
+    paidLog.skipping('no suggestions from guidance engine', siteId, url, auditId);
+    return ok();
+  }
+
   const entity = mapToPaidOpportunity(siteId, url, auditData, guidanceParsed, auditId);
   paidLog.creatingOpportunity(siteId, url, auditId);
 
   const opportunity = await Opportunity.create(entity);
+  paidLog.createdOpportunity(siteId, url, opportunity.getId());
+
   // Create suggestion for the new opportunity first
   const suggestionData = await mapToPaidSuggestion(
     context,

@@ -1077,6 +1077,11 @@ describe('shouldIgnoreFormByDetails', () => {
     const formDetails = { is_lead_gen: false };
     expect(shouldIgnoreFormByDetails(formDetails)).to.be.false;
   });
+
+  it('should return true for order form formDetails', () => {
+    const formDetails = { is_lead_gen: false, form_type: 'order form' };
+    expect(shouldIgnoreFormByDetails(formDetails)).to.be.true;
+  });
 });
 
 describe('applyOpportunityFilters', () => {
