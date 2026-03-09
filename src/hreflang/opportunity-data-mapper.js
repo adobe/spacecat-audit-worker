@@ -15,8 +15,8 @@ import { DATA_SOURCES } from '../common/constants.js';
 const OpptyData = {
   runbook: '',
   origin: 'AUTOMATION',
-  title: 'Hreflang implementation issues affecting international SEO',
-  description: 'Hreflang tags help search engines understand which language and geographic versions of pages to serve to users in different regions. Proper hreflang implementation is crucial for international SEO and ensures users see content in their preferred language.',
+  title: 'hreflang tag fixes ready to help reach the right audiences in every region',
+  description: 'Proper hreflang tags ensure users see regionally relevant content — improving international traffic and CTR.',
   guidance: {
     steps: [
       'Review each URL with hreflang issues identified in the audit results.',
@@ -50,7 +50,7 @@ export function createOpportunityDataForElmo() {
         },
       ],
     },
-    tags: [...OpptyData.tags, 'llm', 'isElmo'],
+    tags: [...OpptyData.tags, 'llm'],
     data: {
       ...OpptyData.data,
       dataSources: [DATA_SOURCES.SITE],

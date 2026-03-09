@@ -21,6 +21,7 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityProps } from './opportunity-data-mapper.js';
 import { getImsOrgId, syncSuggestions } from '../utils/data-access.js';
 import { mapVulnerabilityToSuggestion } from './suggestion-data-mapper.js';
+import { noopUrlResolver } from '../common/index.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 1; // days
@@ -177,45 +178,42 @@ export async function extractCodeBucket(context) {
   };
 }
 
-export const dataContainsCode = (data) => {
+export const extractCodeInfo = (data) => {
   if (!data || typeof data !== 'object') {
-    return false;
+    return null;
   }
 
   // Navigate the nested structure
   const { importResults } = data;
   if (!Array.isArray(importResults) || importResults.length === 0) {
-    return false;
+    return null;
   }
 
   const firstImportResult = importResults[0];
   if (!firstImportResult || typeof firstImportResult !== 'object') {
-    return false;
+    return null;
   }
 
   const results = firstImportResult.result;
   if (!Array.isArray(results) || results.length === 0) {
-    return false;
+    return null;
   }
 
   const codeInfo = results[0];
-  return !!(
+  return (
     codeInfo
     && typeof codeInfo === 'object'
     && typeof codeInfo.codeBucket === 'string'
     && codeInfo.codeBucket.trim() !== ''
     && typeof codeInfo.codePath === 'string'
     && codeInfo.codePath.trim() !== ''
-  );
+  ) ? codeInfo : null;
 };
 
 /**
  * Creates opportunities and syncs suggestions.
  *
- * @param {string} auditUrl - The URL that was audited.
- * @param {Object} auditData - The audit data containing results and suggestions.
  * @param {Object} context - The context object containing log, dataAccess, etc.
- * @param {Object} site - The site object
  * @returns {Object} The audit data unchanged (opportunities created as side effect).
  */
 export const opportunityAndSuggestionsStep = async (context) => {
@@ -293,36 +291,52 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
   const configuration = await Configuration.findLatest();
   const generateSuggestions = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-suggest', site);
-
-  if (generateSuggestions && dataContainsCode(data)) {
-    // TODO => only add new suggestions to the payload
-    // TODO => optimize payload to reduce size use s3 instead of data as transport medium
-
-    const message = {
-      type: 'codefix:security-vulnerabilities',
-      siteId: site.getId(),
-      auditId: audit.getId(),
-      deliveryType: site.getDeliveryType(),
-      time: new Date().toISOString(),
-      data: {
-        suggestions: await opportunity.getSuggestions(),
-        importResults: data.importResults,
-      },
-    };
-
-    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] sending message to Mystique for code fix generation`);
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-  } else {
+  if (!generateSuggestions) {
     log.debug(
       `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with mystique, because 
-      'security-vulnerabilities-auto-suggest' not configured or import worker could not get code.`,
+      'security-vulnerabilities-auto-suggest' not configured.`,
     );
+    return { status: 'complete' };
   }
+
+  const codeInfo = extractCodeInfo(data);
+  if (!codeInfo) {
+    log.debug(
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with mystique, because
+      import worker could not get code.`,
+    );
+    return { status: 'complete' };
+  }
+
+  const refreshedOpportunity = await dataAccess.Opportunity.findById?.(opportunity.getId());
+  const suggestions = await (refreshedOpportunity || opportunity).getSuggestions();
+  const newSuggestions = suggestions.filter((s) => [
+    SuggestionDataAccess.STATUSES.NEW,
+    SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
+  ].includes(s.getStatus()));
+  const suggestionIds = newSuggestions.map((s) => s.getId());
+  const message = {
+    type: 'codefix:security-vulnerabilities',
+    siteId: site.getId(),
+    auditId: audit.getId(),
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    data: {
+      opportunityId: opportunity.getId(),
+      suggestionIds,
+      codeBucket: codeInfo.codeBucket,
+      codePath: codeInfo.codePath,
+    },
+  };
+
+  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] sending message to Mystique for code fix generation: ${JSON.stringify(message)}`);
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
   return { status: 'complete' };
 };
 
 export default new AuditBuilder()
 // Note the import worker MUST trigger the next step regardless if code repo is configured
+  .withUrlResolver(noopUrlResolver)
   .addStep('import-from-starfish', extractCodeBucket, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('generate-suggestion-data', opportunityAndSuggestionsStep)
   .build();

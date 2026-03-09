@@ -63,19 +63,6 @@ function getRankFromPriority(priority) {
 }
 
 /**
- * Maps Wikipedia suggestions to suggestion DTO format
- * @param {Array} suggestions - Raw suggestions from Mystique
- * @returns {Array} Mapped suggestions
- */
-function mapSuggestions(suggestions) {
-  return suggestions.map((suggestion) => ({
-    rank: getRankFromPriority(suggestion.priority),
-    type: 'CONTENT_UPDATE',
-    data: suggestion, // Pass through entire suggestion object
-  }));
-}
-
-/**
  * Handles Mystique response for Wikipedia analysis
  * @param {Object} message - Message from Mystique with analysis results
  * @param {Object} context - Context object with data access and logger
@@ -143,15 +130,15 @@ export default async function handler(message, context) {
 
     log.info(`[Wikipedia] Processing ${suggestions.length} suggestions for ${company}`);
 
-    // Create guidance object
-    const guidance = [{
+    // Create guidance object (must be an object, not an array, per Opportunity schema)
+    const guidance = {
       insight: `Wikipedia analysis identified ${suggestions.length} improvement opportunities for ${company}`,
       rationale: industryAnalysis
         ? `Based on comparison with ${industryAnalysis.industry} competitors`
         : 'Based on Wikipedia best practices analysis',
       recommendation: 'Review and implement the suggested improvements to enhance Wikipedia presence and LLM citability',
       type: 'CONTENT_UPDATE',
-    }];
+    };
 
     // Create opportunity
     const opportunity = await createOpportunity(
@@ -162,19 +149,16 @@ export default async function handler(message, context) {
       context,
     );
 
-    // Map and sync suggestions
-    const mappedSuggestions = mapSuggestions(suggestions);
-
     await syncSuggestions({
       context,
       opportunity,
-      newData: mappedSuggestions,
-      buildKey: (suggestion) => `wikipedia::${suggestion.data.id}`,
+      newData: suggestions,
+      buildKey: (suggestion) => `wikipedia::${suggestion.id}`,
       mapNewSuggestion: (suggestion) => ({
         opportunityId: opportunity.getId(),
-        type: suggestion.type,
-        rank: suggestion.rank,
-        data: suggestion.data,
+        type: 'CONTENT_UPDATE',
+        rank: getRankFromPriority(suggestion.priority),
+        data: suggestion,
       }),
     });
 

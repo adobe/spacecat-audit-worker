@@ -13,6 +13,8 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
+import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
+import { filterOutDynamicUrls } from './dynamic-content-filter.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const SCRAPE_AVAILABILITY_THRESHOLD = 0.5; // 50%
@@ -20,10 +22,13 @@ const MAX_TOP_PAGES = 200;
 const MAX_PAGES_TO_MYSTIQUE = 100;
 
 /**
- * Step 1: Import top pages from Ahrefs
+ * Step 1: Import top pages (Athena first, then Ahrefs fallback)
  */
+/* c8 ignore next 1 - function declaration line often not attributed when called from tests */
 export async function importTopPages(context) {
-  const { site, dataAccess, log } = context;
+  const {
+    site, dataAccess, log,
+  } = context;
   const { SiteTopPage } = dataAccess;
 
   try {
@@ -42,7 +47,7 @@ export async function importTopPages(context) {
       };
     }
 
-    log.info(`[SUMMARIZATION] Found ${topPages.length} top pages for site ${site.getId()}`);
+    log.info(`[SUMMARIZATION] Found ${topPages.length} top pages for site ${site.getId()} (using max ${MAX_TOP_PAGES})`);
 
     return {
       type: 'top-pages',
@@ -75,7 +80,6 @@ export async function submitForScraping(context) {
   const {
     site, dataAccess, audit, log,
   } = context;
-  const { SiteTopPage } = dataAccess;
 
   const auditResult = audit.getAuditResult();
   if (auditResult.success === false) {
@@ -83,19 +87,39 @@ export async function submitForScraping(context) {
     throw new Error('Audit failed, skipping scraping');
   }
 
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  // Try to get top agentic URLs from Athena first
+  let topPageUrls = await getTopAgenticUrlsFromAthena(site, context);
 
-  if (topPages.length === 0) {
+  // Fallback to Ahrefs if Athena returns no data
+  if (!topPageUrls || topPageUrls.length === 0) {
+    log.info('[SUMMARIZATION] No agentic URLs from Athena, falling back to Ahrefs');
+    const { SiteTopPage } = dataAccess;
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+    topPageUrls = topPages.map((page) => page.getUrl());
+  }
+
+  if (topPageUrls.length === 0) {
     log.warn('[SUMMARIZATION] No top pages to submit for scraping');
     throw new Error('No top pages to submit for scraping');
   }
-  const topPagesToScrape = topPages.slice(0, MAX_TOP_PAGES);
+
+  const staticUrls = filterOutDynamicUrls(topPageUrls);
+  const excludedCount = topPageUrls.length - staticUrls.length;
+  if (excludedCount > 0) {
+    log.info(`[SUMMARIZATION] Excluded ${excludedCount} dynamic page(s) from summarization`);
+  }
+  if (staticUrls.length === 0) {
+    log.warn('[SUMMARIZATION] No static pages left after filtering dynamic content');
+    throw new Error('No top pages to submit for scraping (all excluded as dynamic)');
+  }
+  const topPagesToScrape = staticUrls.slice(0, MAX_TOP_PAGES);
 
   log.info(`[SUMMARIZATION] Submitting ${topPagesToScrape.length} pages for scraping`);
 
   return {
-    urls: topPagesToScrape.map((topPage) => ({ url: topPage.getUrl() })),
+    urls: topPagesToScrape.map((url) => ({ url })),
     siteId: site.getId(),
+    /* c8 ignore next 3 - return object tail covered by submitForScraping tests */
     type: 'summarization',
   };
 }
@@ -107,7 +131,6 @@ export async function sendToMystique(context) {
   const {
     site, audit, dataAccess, log, sqs, env, scrapeResultPaths,
   } = context;
-  const { SiteTopPage } = dataAccess;
 
   const auditResult = audit.getAuditResult();
   if (auditResult.success === false) {
@@ -120,13 +143,22 @@ export async function sendToMystique(context) {
     throw new Error('SQS or Mystique queue not configured');
   }
 
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  // Try to get top agentic URLs from Athena first
+  let topPageUrls = await getTopAgenticUrlsFromAthena(site, context);
 
-  if (topPages.length === 0) {
+  // Fallback to Ahrefs if Athena returns no data
+  if (!topPageUrls || topPageUrls.length === 0) {
+    log.info('[SUMMARIZATION] No agentic URLs from Athena, falling back to Ahrefs');
+    const { SiteTopPage } = dataAccess;
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+    topPageUrls = topPages.map((page) => page.getUrl());
+  }
+
+  if (topPageUrls.length === 0) {
     log.warn('[SUMMARIZATION] No top pages found, skipping Mystique message');
     throw new Error('No top pages found');
   }
-  const topPagesScraped = topPages.slice(0, MAX_TOP_PAGES);
+  const topPagesScraped = topPageUrls.slice(0, MAX_PAGES_TO_MYSTIQUE);
 
   // Verify scrape availability before sending to Mystique
   if (!scrapeResultPaths || scrapeResultPaths.size === 0) {
@@ -149,9 +181,10 @@ export async function sendToMystique(context) {
     );
   }
 
-  // Use URLs from scrapeResultPaths Map (these are the URLs that actually have scrape data)
+  // Use URLs from scrapeResultPaths Map; exclude dynamic pages (defense in depth)
   const scrapedUrls = Array.from(scrapeResultPaths.keys());
-  const scrapedUrlsToSend = scrapedUrls.slice(0, MAX_PAGES_TO_MYSTIQUE);
+  const staticScrapedUrls = filterOutDynamicUrls(scrapedUrls);
+  const scrapedUrlsToSend = staticScrapedUrls.slice(0, MAX_PAGES_TO_MYSTIQUE);
   const topPagesPayload = scrapedUrlsToSend.map((url) => ({
     page_url: url,
     keyword: '',

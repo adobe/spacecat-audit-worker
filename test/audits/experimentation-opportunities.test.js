@@ -69,6 +69,7 @@ describe('Experimentation Opportunities Tests', () => {
       getCdnLogsConfig: sinon.stub(),
       getLlmoConfig: sinon.stub(),
       getTokowakaConfig: sinon.stub(),
+      getEdgeOptimizeConfig: sinon.stub().returns(undefined),
       getBrandProfile: sinon.stub().returns(null),
     };
     site = {
@@ -792,6 +793,7 @@ describe('Experimentation Opportunities Tests', () => {
       const manualSuggestion = { getUpdatedBy: () => 'user' };
       const existingOpportunity = {
         getData: () => ({ page: urlUnderTest }),
+        getType: () => 'high-organic-low-ctr',
         getSuggestions: sinon.stub().resolves([manualSuggestion]),
       };
 

@@ -256,25 +256,58 @@ export async function syncBrokenInternalLinksSuggestions({
   context,
   opportunityId,
 }) {
-  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
+  // Include itemType in key to distinguish between links and assets pointing to same URL
+  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}-${item.itemType || 'link'}`;
+
+  // Custom merge function to preserve user-edited fields
+  const mergeDataFunction = (existingData, newData) => {
+    const merged = {
+      ...existingData,
+      ...newData,
+    };
+
+    // Preserve urlEdited and isEdited flag if user has made a selection (AI or custom)
+    // eslint-disable-next-line max-len
+    if (existingData.urlEdited !== undefined && existingData.urlEdited !== null && existingData.isEdited !== null) {
+      merged.urlEdited = existingData.urlEdited;
+      merged.isEdited = existingData.isEdited;
+    } else {
+      // Explicitly remove urlEdited if not present or flag is null
+      delete merged.urlEdited;
+    }
+
+    return merged;
+  };
+
   await syncSuggestions({
     opportunity,
     newData: brokenInternalLinks,
     context,
     buildKey,
-    statusToSetForOutdated: SuggestionDataAccess.STATUSES.FIXED,
-    mapNewSuggestion: (entry) => ({
-      opportunityId,
-      type: 'CONTENT_UPDATE',
-      rank: entry.trafficDomain,
-      data: {
-        title: entry.title,
-        urlFrom: entry.urlFrom,
-        urlTo: entry.urlTo,
-        urlsSuggested: entry.urlsSuggested || [],
-        aiRationale: entry.aiRationale || '',
-        trafficDomain: entry.trafficDomain,
-      },
-    }),
+    statusToSetForOutdated: SuggestionDataAccess.STATUSES.NEW,
+    mergeDataFunction,
+    mapNewSuggestion: (entry) => {
+      const itemType = entry.itemType || 'link';
+      // Internal-links must never set trafficDomain to 0 (use 1 when missing or 0)
+      const trafficDomain = (entry.trafficDomain === 0 || entry.trafficDomain == null)
+        ? 1
+        : entry.trafficDomain;
+
+      return {
+        opportunityId,
+        type: 'CONTENT_UPDATE',
+        rank: trafficDomain,
+        data: {
+          title: entry.title,
+          urlFrom: entry.urlFrom,
+          urlTo: entry.urlTo,
+          itemType,
+          priority: entry.priority || 'high',
+          urlsSuggested: entry.urlsSuggested || [],
+          aiRationale: entry.aiRationale || '',
+          trafficDomain,
+        },
+      };
+    },
   });
 }

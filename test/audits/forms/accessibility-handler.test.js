@@ -18,7 +18,7 @@ import nock from 'nock';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
-import mystiqueDetectedFormAccessibilityHandler from '../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js';
+import mystiqueDetectedFormAccessibilityHandler, { extractFormAccessibilityData } from '../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
@@ -33,23 +33,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
     sandbox.restore();
   });
 
-  describe('a11yOpportunityFilter behavior', () => {
-    it('should verify the filter logic for Forms Accessibility tag', () => {
-      const opportunityWithTag = {
-        getTags: () => ['Forms Accessibility', 'Other Tag'],
-      };
-      const opportunityWithoutTag = {
-        getTags: () => ['Other Tag', 'Another Tag'],
-      };
-
-      // Test the filter logic that would be used in a11yOpportunityFilter
-      const filterLogic = (opportunity) => opportunity.getTags().includes('Forms Accessibility');
-
-      expect(filterLogic(opportunityWithTag)).to.be.true;
-      expect(filterLogic(opportunityWithoutTag)).to.be.false;
-    });
-
-    it('should test the complete flow with opportunities that need to be updated to IGNORED', async () => {
+  describe('findOrCreateFormAccessibilityOpportunity behavior', () => {
+    it('should reuse existing active opportunity with NEW status', async () => {
       const message = {
         auditId: 'test-audit-id',
         siteId: 'test-site-id',
@@ -58,20 +43,26 @@ describe('Forms Opportunities - Accessibility Handler', () => {
             form: 'https://example.com/form1',
             formSource: '#form1',
             a11yIssues: [{
-              issue: 'Missing alt text',
-              level: 'error',
-              successCriterias: ['1.1.1'],
-              htmlWithIssues: '<img src="test.jpg">',
-              recommendation: 'Add alt text to image',
+              type: 'image-alt',
+              description: 'Images must have alternative text',
+              wcagRule: 'wcag111',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { target_selector: 'img' },
+              ],
+              failureSummary: 'Add alt text to image',
             }],
           }],
         },
       };
 
-      // Mock existing opportunities that have Forms Accessibility tag
       const existingOpportunity = {
-        getTags: () => ['Forms Accessibility'],
-        setStatus: sandbox.stub(),
+        getId: () => 'existing-opportunity-id',
+        getType: () => 'form-accessibility',
+        getStatus: () => 'NEW',
+        setAuditId: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
         save: sandbox.stub().resolves(),
       };
 
@@ -80,17 +71,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         .withOverrides({
           dataAccess: {
             Opportunity: {
-              // Return existing opportunities when queried for NEW status
-              allBySiteIdAndStatus: sandbox.stub().callsFake(async (siteId, status) => {
-                if (status === 'NEW') {
-                  return [existingOpportunity];
-                }
-                return [];
-              }),
+              allBySiteId: sandbox.stub().resolves([existingOpportunity]),
               create: sandbox.stub().resolves({
                 getId: () => 'new-opportunity-id',
               }),
-              findById: sandbox.stub().resolves(null), // No existing opportunity with this ID
+              findById: sandbox.stub().resolves(null),
             },
             Site: {
               findById: sandbox.stub().resolves({
@@ -114,10 +99,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         })
         .build();
 
-      // Stub isAuditEnabledForSite to return false (auto-fix disabled)
       const isAuditEnabledForSiteStub = sandbox.stub().resolves(false);
 
-      // Mock the handler with stubbed isAuditEnabledForSite
       const mystiqueDetectedFormAccessibilityHandlerMocked = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/common/audit-utils.js': {
           isAuditEnabledForSite: isAuditEnabledForSiteStub,
@@ -126,14 +109,86 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
-      // Verify that allBySiteIdAndStatus was called to find opportunities to update
-      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledWith('test-site-id', 'NEW');
-
-      // Verify that the existing opportunity was updated to IGNORED status
-      expect(existingOpportunity.setStatus).to.have.been.calledWith('IGNORED');
+      expect(context.dataAccess.Opportunity.allBySiteId).to.have.been.calledWith('test-site-id');
+      expect(existingOpportunity.setAuditId).to.have.been.calledWith('test-audit-id');
+      expect(existingOpportunity.setUpdatedBy).to.have.been.calledWith('system');
       expect(existingOpportunity.save).to.have.been.calledOnce;
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    });
 
-      // Verify that a new opportunity was created
+    it('should create new opportunity when no active opportunity exists', async () => {
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          a11y: [{
+            form: 'https://example.com/form1',
+            formSource: '#form1',
+            a11yIssues: [{
+              type: 'image-alt',
+              description: 'Images must have alternative text',
+              wcagRule: 'wcag111',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { target_selector: 'img' },
+              ],
+              failureSummary: 'Add alt text to image',
+            }],
+          }],
+        },
+      };
+
+      const ignoredOpportunity = {
+        getId: () => 'ignored-opportunity-id',
+        getType: () => 'form-accessibility',
+        getStatus: () => 'IGNORED',
+      };
+
+      const context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          dataAccess: {
+            Opportunity: {
+              allBySiteId: sandbox.stub().resolves([ignoredOpportunity]),
+              create: sandbox.stub().resolves({
+                getId: () => 'new-opportunity-id',
+              }),
+              findById: sandbox.stub().resolves(null),
+            },
+            Site: {
+              findById: sandbox.stub().resolves({
+                getId: sinon.stub().returns('test-site-id'),
+                getDeliveryType: sinon.stub().returns('aem'),
+                getBaseURL: sinon.stub().returns('https://example.com'),
+              }),
+            },
+          },
+          sqs: {
+            sendMessage: sandbox.stub().resolves(),
+          },
+          env: {
+            QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+          },
+          log: {
+            info: sinon.stub(),
+            error: sinon.stub(),
+            debug: sinon.stub(),
+          },
+        })
+        .build();
+
+      const isAuditEnabledForSiteStub = sandbox.stub().resolves(false);
+
+      const mystiqueDetectedFormAccessibilityHandlerMocked = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/common/audit-utils.js': {
+          isAuditEnabledForSite: isAuditEnabledForSiteStub,
+        },
+      });
+
+      await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
+
+      expect(context.dataAccess.Opportunity.allBySiteId).to.have.been.calledWith('test-site-id');
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
     });
   });
@@ -173,7 +228,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           },
           dataAccess: {
             Opportunity: {
-              allBySiteIdAndStatus: sandbox.stub().resolves([]),
+              allBySiteId: sandbox.stub().resolves([]),
               create: sandbox.stub().resolves({
                 getId: () => 'test-opportunity-id',
                 getData: () => ({
@@ -684,7 +739,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       );
     });
 
-    it('should continue processing even when updateStatusToIgnored returns failure', async () => {
+    it('should reuse existing active opportunity instead of creating new one', async () => {
       const latestAudit = {
         siteId,
         auditId: 'test-audit-id',
@@ -692,7 +747,6 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         getAuditId: () => 'test-audit-id',
       };
 
-      // Mock aggregateAccessibilityData to return success with actual violations
       const aggregateAccessibilityDataStub = sandbox.stub();
       aggregateAccessibilityDataStub.resolves({
         success: true,
@@ -731,44 +785,36 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       });
 
-      // Mock updateStatusToIgnored to return a failure result (not reject)
-      const updateStatusToIgnoredStub = sandbox.stub().resolves({
-        success: false,
-        updatedCount: 0,
-        error: 'Failed to update some opportunities',
-      });
-
-      // Mock the created opportunity
-      const createdOpportunity = {
-        getId: () => 'opportunity-123',
+      const existingOpportunity = {
+        getId: () => 'existing-opportunity-id',
+        getType: () => 'form-accessibility',
+        getStatus: () => 'NEW',
+        setAuditId: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
       };
-      context.dataAccess.Opportunity.create.resolves(createdOpportunity);
+      context.dataAccess.Opportunity.allBySiteId.resolves([existingOpportunity]);
 
-      // Mock the module to override the imported function
       const sendRunImportMessageStub = sandbox.stub().resolves();
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/accessibility/utils/data-processing.js': {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
           sendRunImportMessage: sendRunImportMessageStub,
         },
-        '../../../src/accessibility/utils/scrape-utils.js': {
-          updateStatusToIgnored: updateStatusToIgnoredStub,
-        },
         '../../../src/accessibility/utils/generate-individual-opportunities.js': {
-          aggregateAccessibilityIssues: sandbox.stub().returns({ data: [] }),
+          aggregateA11yIssuesByOppType: sandbox.stub().returns({ data: [] }),
           createIndividualOpportunitySuggestions: sandbox.stub().resolves(),
         },
       });
 
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
-      // Verify updateStatusToIgnored was called
-      expect(updateStatusToIgnoredStub).to.have.been.calledOnce;
+      expect(context.dataAccess.Opportunity.allBySiteId).to.have.been.calledWith(siteId);
+      expect(existingOpportunity.setAuditId).to.have.been.calledWith('test-audit-id');
+      expect(existingOpportunity.setUpdatedBy).to.have.been.calledWith('system');
+      expect(existingOpportunity.save).to.have.been.calledOnce;
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
 
-      // Verify that the opportunity was still created despite updateStatusToIgnored failure
-      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
-
-      // Verify that both SQS messages were still sent
       expect(sendRunImportMessageStub).to.have.been.calledOnce;
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       expect(context.sqs.sendMessage).to.have.been.calledWith(
@@ -780,12 +826,6 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         }),
       );
 
-      // Verify success was logged (not error)
-      expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(/a11y opportunity created.*and sent to mystique/),
-      );
-
-      // Verify no error was logged since the function continues normally
       expect(context.log.error).to.not.have.been.called;
     });
 
@@ -1485,7 +1525,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         auditId: 'test-audit-id',
         type: 'form-accessibility',
         origin: 'AUTOMATION',
-        title: 'Accessibility - Assistive technology is incompatible on form',
+        title: 'Forms missing key accessibility attributes — enhancements prepared to support all users',
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/Ebpoflp2gHFNl4w5-9C7dFEBBHHE4gTaRzHaofqSxJMuuQ?e=Ss6mep',
       });
 
@@ -1820,7 +1860,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           },
           dataAccess: {
             Opportunity: {
-              allBySiteIdAndStatus: sandbox.stub().resolves([]),
+              allBySiteId: sandbox.stub().resolves([]),
               findById: sandbox.stub().resolves({
                 getId: () => opportunityId,
                 getType: () => 'form-accessibility',
@@ -1869,7 +1909,6 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         })
         .build();
 
-      // Mock the handler with stubbed isAuditEnabledForSite (default: auto-fix disabled)
       mystiqueDetectedFormAccessibilityHandlerMocked = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/common/audit-utils.js': {
           isAuditEnabledForSite: isAuditEnabledForSiteStub,
@@ -1916,6 +1955,39 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       );
       // Verify that no opportunity operations were attempted
       expect(context.dataAccess.Opportunity.findById).to.not.have.been.called;
+    });
+
+    it('should log A11y preflight detected, skipping guidance for preflight request', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          opportunityId,
+          a11y: [{
+            form: 'https://example.com/form1',
+            formSource: '#form1',
+            a11yIssues: [{
+              issue: 'Missing alt text',
+              level: 'error',
+              successCriterias: ['1.1.1'],
+              htmlWithIssues: ['<img src="test.jpg">'],
+              recommendation: 'Add alt text to image',
+            }],
+          }],
+        },
+        options: {
+          a11yPreflight: true,
+        }
+      };
+
+      // Override the Site.findById to return null (site not found)
+      const siteFindByIdStub = sandbox.stub().resolves(null);
+      context.dataAccess.Site.findById = siteFindByIdStub;
+      await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
+
+      expect(context.log.info).to.have.been.calledWith(
+          `[Form Opportunity] [Site Id: ${siteId}] A11y preflight detected, skipping guidance`,
+      );
     });
 
     it('should return notFound when opportunityId is provided but opportunity is not found', async () => {
@@ -1977,16 +2049,26 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       };
 
-      // Mock Opportunity.create to return null (opportunity creation failed)
-      context.dataAccess.Opportunity.create.resolves(null);
+      const findOrCreateStub = sandbox.stub().resolves({ opportunity: null, isNew: true });
+      const handlerWithNullOpportunity = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/common/audit-utils.js': {
+          isAuditEnabledForSite: isAuditEnabledForSiteStub,
+        },
+        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
+          createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
+          findOrCreateAccessibilityOpportunity: findOrCreateStub,
+        },
+        '../../../src/accessibility/utils/data-processing.js': {
+          sendCodeFixMessagesToMystique: sendCodeFixMessagesToMystiqueStub,
+        },
+      });
 
-      const result = await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
+      const result = await handlerWithNullOpportunity.default(message, context);
 
       expect(result.status).to.equal(200);
       expect(context.log.info).to.have.been.calledWith(
         `[Form Opportunity] [Site Id: ${siteId}] A11y opportunity not detected, skipping guidance`,
       );
-      // Verify that no suggestions were created
       expect(createIndividualOpportunitySuggestionsStub).to.not.have.been.called;
     });
 
@@ -2068,7 +2150,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           },
           dataAccess: {
             Opportunity: {
-              allBySiteIdAndStatus: sandbox.stub().resolves([]),
+              allBySiteId: sandbox.stub().resolves([]),
               findById: sandbox.stub().resolves({
                 getId: () => opportunityId,
                 getType: () => 'form-accessibility',
@@ -2179,12 +2261,57 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
       
-      // Opportunity should be created even with empty a11y data
-      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+      // Opportunity should NOT be created when no a11y issues are found
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
       
-      // Should log that no individual suggestions were created
+      // Should log that no issues were found from Mystique
       expect(context.log.info).to.have.been.calledWith(
-        '[FormMystiqueSuggestions] No individual form accessibility suggestions to create from Mystique data',
+        `[Form Opportunity] [Site Id: ${siteId}] No accessibility issues found from Mystique, skipping opportunity creation`,
+      );
+      
+      // Should not send code-fix messages when no issues found
+      expect(sendCodeFixMessagesToMystiqueStub).to.not.have.been.called;
+    });
+
+    it('should not create opportunity when a11y data has no valid issues', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          opportunityId: null,
+          a11y: [
+            {
+              form: 'https://example.com/form1',
+              formSource: '#form1',
+              a11yIssues: [], // Empty issues
+            },
+            {
+              form: 'https://example.com/form2',
+              formSource: '#form2',
+              a11yIssues: [
+                {
+                  type: 'label',
+                  description: 'Form elements must have labels',
+                  wcagRule: 'wcag412',
+                  wcagLevel: 'A',
+                  severity: 'critical',
+                  htmlWithIssues: [], // Empty htmlWithIssues
+                  failureSummary: 'Fix any of the following...',
+                },
+              ],
+            },
+          ],
+        },
+      };
+
+      await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
+      
+      // Opportunity should NOT be created when no valid issues are found
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+      
+      // Should log that no issues were found from Mystique
+      expect(context.log.info).to.have.been.calledWith(
+        `[Form Opportunity] [Site Id: ${siteId}] No accessibility issues found from Mystique, skipping opportunity creation`,
       );
       
       // Should not send code-fix messages when no issues found
@@ -2281,7 +2408,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(suggestionsData.data.length).to.equal(2); // Two htmlWithIssues = two suggestions
     });
 
-    it('should create a new opportunity when no existing opportunity is found', async () => {
+    it('should create a new opportunity when no existing active opportunity is found', async () => {
       const message = {
         auditId,
         siteId,
@@ -2305,17 +2432,15 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       };
 
       await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
+      expect(context.dataAccess.Opportunity.allBySiteId).to.have.been.calledWith(siteId);
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
       const createArgs = context.dataAccess.Opportunity.create.getCall(0).args[0];
       expect(createArgs.siteId).to.equal(siteId);
       expect(createArgs.auditId).to.equal('test-audit-id');
       expect(createArgs.type).to.equal(FORM_OPPORTUNITY_TYPES.FORM_A11Y);
-
-      // Verify updateStatusToIgnored was called by checking the dataAccess calls
-      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledWith(siteId, 'NEW');
     });
 
-    it('should not call updateStatusToIgnored when updating existing opportunity', async () => {
+    it('should skip allBySiteId when opportunityId is provided in message', async () => {
       const message = {
         auditId,
         siteId,
@@ -2341,8 +2466,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
-      // Verify updateStatusToIgnored was NOT called when updating existing opportunity
-      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.not.have.been.called;
+      expect(context.dataAccess.Opportunity.allBySiteId).to.not.have.been.called;
       expect(context.dataAccess.Opportunity.findById).to.have.been.calledWith(opportunityId);
     });
 
@@ -2845,6 +2969,312 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       // understandingUrl should be populated from getSuccessCriteriaDetails
       expect(issue.understandingUrl).to.be.a('string');
+    });
+  });
+
+  describe('extractFormAccessibilityData', () => {
+    let context;
+
+    beforeEach(() => {
+      context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          log: {
+            info: sinon.stub(),
+            error: sinon.stub(),
+          },
+        })
+        .build();
+    });
+
+    it('should extract form accessibility data with valid issues', async () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { target_selector: 'input[type="text"]' },
+              ],
+              failureSummary: 'Fix any of the following...',
+            },
+          ],
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0]).to.deep.include({
+        type: 'url',
+        url: 'https://example.com/form1',
+        source: 'aem',
+      });
+      expect(result[0].issues).to.have.lengthOf(1);
+      expect(result[0].issues[0]).to.include({
+        type: 'label',
+        description: 'Form elements must have labels',
+        wcagRule: 'wcag412',
+        wcagLevel: 'A',
+        severity: 'critical',
+        occurrences: 1,
+        failureSummary: 'Fix any of the following...',
+      });
+    });
+
+    it('should handle null a11yData', () => {
+      const result = extractFormAccessibilityData(null, context.log);
+      expect(result).to.be.an('array');
+      expect(result).to.have.lengthOf(0);
+    });
+
+    it('should handle undefined a11yData', () => {
+      const result = extractFormAccessibilityData(undefined, context.log);
+      expect(result).to.be.an('array');
+      expect(result).to.have.lengthOf(0);
+    });
+
+    it('should handle non-array a11yData', () => {
+      const result = extractFormAccessibilityData('not-an-array', context.log);
+      expect(result).to.be.an('array');
+      expect(result).to.have.lengthOf(0);
+    });
+
+    it('should filter out forms without a11yIssues', () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [],
+        },
+        {
+          form: 'https://example.com/form2',
+          formSource: 'contact',
+          // No a11yIssues
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+      expect(result).to.have.lengthOf(0);
+    });
+
+    it('should handle forms without formSource', () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          a11yIssues: [
+            {
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { target_selector: 'input' },
+              ],
+              failureSummary: 'Fix...',
+            },
+          ],
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+      expect(result).to.have.lengthOf(1);
+      expect(result[0]).to.not.have.property('source');
+    });
+
+    it('should handle issues with aiGenerated flag', () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { target_selector: 'input' },
+              ],
+              failureSummary: 'Fix...',
+              aiGenerated: true,
+            },
+          ],
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+      expect(result).to.have.lengthOf(1);
+      expect(result[0]).to.have.property('aiGenerated', true);
+    });
+
+    it('should create one suggestion per htmlWithIssues item', () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { target_selector: 'input#name' },
+                { target_selector: 'input#email' },
+                { target_selector: 'input#phone' },
+              ],
+              failureSummary: 'Fix...',
+            },
+          ],
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+      // Should create 3 suggestions (one per htmlWithIssues)
+      expect(result).to.have.lengthOf(3);
+    });
+
+    it('should handle issues without htmlWithIssues', () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: null,
+              failureSummary: 'Fix...',
+            },
+          ],
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+      expect(result).to.have.lengthOf(0);
+    });
+
+    it('should handle issues with empty htmlWithIssues array', () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [],
+              failureSummary: 'Fix...',
+            },
+          ],
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+      expect(result).to.have.lengthOf(0);
+    });
+
+    it('should handle error from getSuccessCriteriaDetails gracefully', () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'invalid-rule',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { target_selector: 'input' },
+              ],
+              failureSummary: 'Fix...',
+            },
+          ],
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+      
+      // Should log error for invalid wcagRule
+      expect(context.log.error).to.have.been.called;
+      
+      // Should skip the issue with invalid wcagRule
+      expect(result).to.have.lengthOf(0);
+    });
+
+    it('should handle multiple forms with multiple issues', () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { target_selector: 'input#name' },
+              ],
+              failureSummary: 'Fix...',
+            },
+            {
+              type: 'color-contrast',
+              description: 'Elements must meet color contrast',
+              wcagRule: 'wcag143',
+              wcagLevel: 'AA',
+              severity: 'serious',
+              htmlWithIssues: [
+                { target_selector: 'button' },
+              ],
+              failureSummary: 'Improve...',
+            },
+          ],
+        },
+        {
+          form: 'https://example.com/form2',
+          formSource: 'contact',
+          a11yIssues: [
+            {
+              type: 'alt-text',
+              description: 'Images must have alt text',
+              wcagRule: 'wcag111',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { target_selector: 'img' },
+              ],
+              failureSummary: 'Add alt...',
+            },
+          ],
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+      // Should create 3 suggestions (1 + 1 + 1)
+      expect(result).to.have.lengthOf(3);
+      expect(result[0].url).to.equal('https://example.com/form1');
+      expect(result[1].url).to.equal('https://example.com/form1');
+      expect(result[2].url).to.equal('https://example.com/form2');
     });
   });
 

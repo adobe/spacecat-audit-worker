@@ -34,6 +34,7 @@ describe('createLowNavigationOpportunities handler method', () => {
     formsCTAOppty = {
       getOrigin: sinon.stub().returns('AUTOMATION'),
       getId: () => 'opportunity-id',
+      getStatus: sinon.stub().returns('NEW'),
       setAuditId: sinon.stub(),
       save: sinon.stub(),
       getType: () => FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION,
@@ -85,8 +86,8 @@ describe('createLowNavigationOpportunities handler method', () => {
       runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/ETCwSsZJzRJIuPqnC_jZFhgBsW29GijIgk9C6-GpkQ16xg?e=dNYZhD',
       type: FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION,
       origin: 'AUTOMATION',
-      title: 'Form has low views',
-      description: 'The form has low views due to low navigations in the page containing its CTA',
+      title: 'Visitors aren\'t scrolling or navigating to your form — placement and visibility optimizations ready for review',
+      description: 'If users don\'t reach your form, they can\'t convert — optimizing layout increases reach and interactions.',
       tags: [
         'Form Navigation',
       ],
@@ -175,8 +176,8 @@ describe('createLowNavigationOpportunities handler method', () => {
       runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/ETCwSsZJzRJIuPqnC_jZFhgBsW29GijIgk9C6-GpkQ16xg?e=dNYZhD',
       type: FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION,
       origin: 'AUTOMATION',
-      title: 'Form has low views',
-      description: 'The form has low views due to low navigations in the page containing its CTA',
+      title: 'Visitors aren\'t scrolling or navigating to your form — placement and visibility optimizations ready for review',
+      description: 'If users don\'t reach your form, they can\'t convert — optimizing layout increases reach and interactions.',
       tags: [
         'Form Navigation',
       ],
@@ -295,6 +296,47 @@ describe('createLowNavigationOpportunities handler method', () => {
     expect(formsCTAOppty.setUpdatedBy).to.be.calledWith('system');
     expect(formsCTAOppty.save).to.be.calledOnce;
     expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] successfully synced opportunity for high page views low form nav audit type.');
+  });
+
+  it('should send to Mystique for guidance when existing opportunity has formDetails that are not should-ignore type', async () => {
+    dataAccessStub.Opportunity.allBySiteId.resolves([formsCTAOppty]);
+    formsCTAOppty.type = FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION;
+    formsCTAOppty.getData = sinon.stub().returns({
+      form: 'https://www.surest.com/newsletter',
+      screenshot: '',
+      trackedFormKPIName: 'Conversion Rate',
+      trackedFormKPIValue: 0.5,
+      formViews: 1000,
+      pageViews: 5000,
+      samples: 5000,
+      formDetails: {
+        is_lead_gen: true,
+        form_type: 'Quote Request Form',
+      },
+    });
+    await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
+    const [, message] = context.sqs.sendMessage.getCall(0).args;
+    expect(message.type).to.equal('guidance:high-page-views-low-form-nav');
+  });
+
+  it('should update existing opportunity and send to Quality Agent when formDetails are should-ignore type', async () => {
+    dataAccessStub.Opportunity.allBySiteId.resolves([formsCTAOppty]);
+    formsCTAOppty.getData = sinon.stub().returns({
+      form: 'https://www.surest.com/newsletter',
+      screenshot: '',
+      trackedFormKPIName: 'Conversion Rate',
+      trackedFormKPIValue: 0.5,
+      formViews: 1000,
+      pageViews: 5000,
+      samples: 5000,
+      formDetails: {
+        is_lead_gen: false,
+        form_type: 'search form',
+      },
+    });
+    await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
+    expect(formsCTAOppty.setUpdatedBy).to.have.been.calledWith('system');
+    expect(formsCTAOppty.save).to.have.been.called;
   });
 
   it('should not process opportunities with origin ESS_OPS', async () => {

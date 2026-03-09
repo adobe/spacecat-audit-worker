@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Adobe. All rights reserved.
+ * Copyright 2026 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -10,7 +10,12 @@
  * governing permissions and limitations under the License.
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { mapToPaidOpportunity, mapToPaidSuggestion, isLowSeverityGuidanceBody } from './guidance-opportunity-mapper.js';
+import { getAuditData } from './audit-data-provider.js';
+import { createPaidLogger } from '../paid/paid-log.js';
+
+const GUIDANCE_TYPE = 'paid-cookie-consent';
 
 function getGuidanceObj(guidance) {
   const body = guidance && guidance[0] && guidance[0].body;
@@ -23,31 +28,46 @@ function getGuidanceObj(guidance) {
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Audit, Opportunity, Suggestion } = dataAccess;
-  const { auditId, siteId, data } = message;
-  const { url, guidance } = data;
+  const { Site, Opportunity, Suggestion } = dataAccess;
+  const { siteId, auditId, data } = message;
+  const { url, guidance, suggestions } = data;
+  const paidLog = createPaidLogger(log, GUIDANCE_TYPE);
 
-  log.debug(`Message received for guidance:paid-cookie-consent handler site: ${siteId} url: ${url} message: ${JSON.stringify(message)}`);
+  paidLog.received(siteId, url, auditId);
 
-  const audit = await Audit.findById(auditId);
-  if (!audit) {
-    log.warn(`No audit found for auditId: ${auditId}`);
+  // Get site to retrieve baseURL for Athena queries
+  const site = await Site.findById(siteId);
+  if (!site) {
+    paidLog.failed('no site found', siteId, url, auditId);
     return notFound();
   }
-  log.debug(`Fetched Audit ${JSON.stringify(message)}`);
+
+  // Query Athena directly for audit data (no dependency on stored audit)
+  const auditData = await getAuditData(context, siteId, site.getBaseURL());
+  if (!auditData?.top3Pages) {
+    log.error(`[paid-audit] Failed ${GUIDANCE_TYPE}: no audit data for site: ${siteId}, url: ${url}, audit: ${auditId}`);
+    return notFound();
+  }
 
   // Check for low severity and skip if so
   const guidanceParsed = getGuidanceObj(guidance);
   if (isLowSeverityGuidanceBody(guidanceParsed.body)) {
-    log.info(`Skipping opportunity creation for site: ${siteId} page: ${url} audit: ${auditId} due to low issue severity: ${guidanceParsed}`);
+    paidLog.skipping('low issue severity', siteId, url, auditId);
     return ok();
   }
 
-  const entity = mapToPaidOpportunity(siteId, url, audit, guidanceParsed);
-  // Always create a new opportunity
-  log.debug(`Creating new paid-cookie-consent opportunity for ${siteId} page: ${url}`);
+  // Skip if Mystique returned no actionable suggestions
+  if (!isNonEmptyArray(suggestions)) {
+    paidLog.skipping('no suggestions from guidance engine', siteId, url, auditId);
+    return ok();
+  }
+
+  const entity = mapToPaidOpportunity(siteId, url, auditData, guidanceParsed, auditId);
+  paidLog.creatingOpportunity(siteId, url, auditId);
 
   const opportunity = await Opportunity.create(entity);
+  paidLog.createdOpportunity(siteId, url, opportunity.getId());
+
   // Create suggestion for the new opportunity first
   const suggestionData = await mapToPaidSuggestion(
     context,
@@ -57,8 +77,7 @@ export default async function handler(message, context) {
     guidanceParsed,
   );
   await Suggestion.create(suggestionData);
-  log.info(`Created suggestion for opportunity ${opportunity.getId()}: ${JSON.stringify(suggestionData, null, 2)}`);
-  log.debug(`Created suggestion for opportunity ${opportunity.getId()}`);
+  paidLog.createdSuggestion(opportunity.getId(), siteId, url, auditId);
 
   // Only after suggestion is successfully created,
   // find and mark existing NEW system opportunities as IGNORED
@@ -69,15 +88,12 @@ export default async function handler(message, context) {
     .filter((oppty) => oppty.getId() !== opportunity.getId()); // Exclude the newly created one
 
   if (existingMatches.length > 0) {
-    log.debug(`Found ${existingMatches.length} existing NEW system opportunities for page ${url}. Marking them as IGNORED.`);
     await Promise.all(existingMatches.map(async (oldOppty) => {
       oldOppty.setStatus('IGNORED');
       await oldOppty.save();
-      log.info(`Marked opportunity ${oldOppty.getId()} as IGNORED`);
+      paidLog.markedIgnored(oldOppty.getId(), siteId, url, auditId);
     }));
   }
-
-  log.debug(`paid-cookie-consent  opportunity succesfully added for site: ${siteId} page: ${url} audit: ${auditId}  opportunity: ${JSON.stringify(opportunity, null, 2)}`);
 
   return ok();
 }

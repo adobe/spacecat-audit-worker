@@ -15,11 +15,13 @@ import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
  * @class SQS utility to send messages to SQS
  * @param {string} region - AWS region
  * @param {object} log - log object
+ * @param {object} context - context object for trace ID propagation
  */
 class SQS {
-  constructor(region, log) {
+  constructor(region, log, context) {
     this.sqsClient = new SQSClient({ region });
     this.log = log;
+    this.context = context;
   }
 
   async sendMessage(queueUrl, message, msgGroupId, delaySeconds = 0) {
@@ -28,20 +30,32 @@ class SQS {
       timestamp: new Date().toISOString(),
     };
 
+    // Auto-add trace ID from context if not already present in message
+    // This maintains trace continuity across service boundaries (e.g., SpaceCat → Mystique)
+    if (!('traceId' in body) && this.context?.traceId) {
+      body.traceId = this.context.traceId;
+    }
+
+    // Auto-extract MessageGroupId from message for SQS fair queuing.
+    // Uses type (opptyType) as the group identifier to ensure per-audit-type fairness.
+    const resolvedGroupId = msgGroupId || body.type || undefined;
+
     const asJSON = JSON.stringify(body);
     const msgCommand = new SendMessageCommand({
       MessageBody: asJSON,
       QueueUrl: queueUrl,
-      MessageGroupId: msgGroupId, // Only needed for FIFO queues
+      MessageGroupId: resolvedGroupId,
       DelaySeconds: delaySeconds,
     });
 
     try {
       const data = await this.sqsClient.send(msgCommand);
-      this.log.debug(`Success, message sent. MessageID:  ${data.MessageId}`);
+      const queueName = queueUrl?.split('/').pop() || 'unknown';
+      const messageType = body.type || 'unknown';
+      this.log.info(`Success, message sent. Queue: ${queueName}, Type: ${messageType}, MessageID: ${data.MessageId}${body.traceId ? `, TraceID: ${body.traceId}` : ''}${resolvedGroupId ? `, GroupID: ${resolvedGroupId}` : ''}`);
     } catch (e) {
       const { type, code, message: msg } = e;
-      this.log.error(`Message send failed. Type: ${type}, Code: ${code}, Message: ${msg}`, { length: asJSON.length }, e);
+      this.log.error(`Message send failed. Type: ${type}, Code: ${code}, Message: ${msg}`, e);
       throw e;
     }
   }
@@ -52,7 +66,7 @@ export default function sqsWrapper(fn) {
     if (!context.sqs) {
       const { log } = context;
       const { region } = context.runtime;
-      context.sqs = new SQS(region, log);
+      context.sqs = new SQS(region, log, context);
     }
 
     return fn(request, context);

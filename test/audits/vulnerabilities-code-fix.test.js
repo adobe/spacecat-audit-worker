@@ -12,52 +12,53 @@
 
 /* eslint-env mocha */
 import { expect, use } from 'chai';
-import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import handler from '../../src/vulnerabilities-code-fix/handler.js';
+import esmock from 'esmock';
 import { MockContextBuilder } from '../shared.js';
 
 use(sinonChai);
-use(chaiAsPromised);
 
 describe('Vulnerabilities Code-Fix Handler Tests', function () {
   let sandbox;
   let context;
   let message;
   let site;
-  let audit;
   let opportunity;
   let suggestion;
+  let getObjectFromKey;
+  let handler;
 
   const siteId = 'site-123';
-  const auditId = 'audit-123';
   const opportunityId = 'opp-123';
   const suggestionId = 'sugg-123';
+  const defaultBucketName = 'mystique-bucket';
 
-  beforeEach(() => {
+  const buildMessage = () => ({
+    siteId,
+    data: {
+      opportunityId,
+      updates: [{
+        suggestion_id: suggestionId,
+        fixes: [{
+          code_fix_path: 'reports/report.json',
+        }],
+      }],
+    },
+  });
+
+  beforeEach(async () => {
     sandbox = sinon.createSandbox();
+    getObjectFromKey = sandbox.stub().resolves({ diff: 'diff-content' });
 
-    message = {
-      siteId,
-      auditId,
-      data: {
-        opportunityId,
-        patches: [
-          {
-            suggestionId,
-            patch: 'some-patch-content',
-          },
-        ],
-      },
-    };
+    ({ default: handler } = await esmock('../../src/vulnerabilities-code-fix/handler.js', {
+      '../../src/utils/s3-utils.js': { getObjectFromKey },
+    }));
+
+    message = buildMessage();
 
     site = {
       getId: () => siteId,
-    };
-
-    audit = {
-      getId: () => auditId,
     };
 
     opportunity = {
@@ -75,12 +76,15 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
+        log: {
+          debug: sandbox.spy(),
+          info: sandbox.spy(),
+          warn: sandbox.spy(),
+          error: sandbox.spy(),
+        },
         dataAccess: {
           Site: {
             findById: sandbox.stub().resolves(site),
-          },
-          Audit: {
-            findById: sandbox.stub().resolves(audit),
           },
           Opportunity: {
             findById: sandbox.stub().resolves(opportunity),
@@ -89,25 +93,27 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
             findById: sandbox.stub().resolves(suggestion),
           },
         },
+        s3Client: { send: sandbox.stub().resolves() },
+        env: { S3_MYSTIQUE_BUCKET_NAME: defaultBucketName },
       })
-      .build(message);
+      .build();
   });
 
   afterEach(() => {
     sandbox.restore();
   });
 
-  it('should successfully process valid patches', async () => {
+  it('returns bad request when siteId is missing', async () => {
+    message = { data: message.data };
+
     const response = await handler(message, context);
 
-    expect(response.status).to.equal(200);
-    expect(context.dataAccess.Suggestion.findById).to.have.been.calledWith(suggestionId);
-    expect(suggestion.setData).to.have.been.calledOnce;
-    expect(suggestion.save).to.have.been.calledOnce;
-    expect(context.log.debug).to.have.been.calledWith(sinon.match(/Message received/));
+    expect(response.status).to.equal(400);
+    expect(response.headers.get('x-error')).to.equal('No siteId provided in message');
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/No siteId provided/));
   });
 
-  it('should return not found if site does not exist', async () => {
+  it('returns not found when site does not exist', async () => {
     context.dataAccess.Site.findById.resolves(null);
 
     const response = await handler(message, context);
@@ -117,17 +123,27 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
     expect(context.log.error).to.have.been.calledWith(sinon.match(/Site not found/));
   });
 
-  it('should return not found if audit does not exist', async () => {
-    context.dataAccess.Audit.findById.resolves(null);
+  it('returns bad request when data is missing', async () => {
+    message = { siteId };
 
     const response = await handler(message, context);
 
-    expect(response.status).to.equal(404);
-    expect(response.headers.get('x-error')).to.equal('Audit not found');
-    expect(context.log.warn).to.have.been.calledWith(sinon.match(/No audit found/));
+    expect(response.status).to.equal(400);
+    expect(response.headers.get('x-error')).to.equal('No data provided in message');
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/No data provided/));
   });
 
-  it('should return not found if opportunity does not exist', async () => {
+  it('returns bad request when opportunityId is missing', async () => {
+    message.data = { updates: [] };
+
+    const response = await handler(message, context);
+
+    expect(response.status).to.equal(400);
+    expect(response.headers.get('x-error')).to.equal('No opportunityId provided in message data');
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/No opportunityId/));
+  });
+
+  it('returns not found when opportunity does not exist', async () => {
     context.dataAccess.Opportunity.findById.resolves(null);
 
     const response = await handler(message, context);
@@ -137,7 +153,7 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
     expect(context.log.error).to.have.been.calledWith(sinon.match(/Opportunity not found/));
   });
 
-  it('should return bad request if site ID mismatch', async () => {
+  it('returns bad request when opportunity does not belong to site', async () => {
     opportunity.getSiteId = () => 'other-site-id';
 
     const response = await handler(message, context);
@@ -147,7 +163,27 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
     expect(context.log.error).to.have.been.calledWith(sinon.match(/Site ID mismatch/));
   });
 
-  it('should skip patch processing if suggestion not found', async () => {
+  it('returns ok when updates are empty', async () => {
+    message.data.updates = [];
+
+    const response = await handler(message, context);
+
+    expect(response.status).to.equal(200);
+    expect(context.log.warn).to.have.been.calledWith(sinon.match(/Empty updates array/));
+    expect(context.dataAccess.Suggestion.findById).to.not.have.been.called;
+  });
+
+  it('skips updates when suggestionId is missing', async () => {
+    message.data.updates = [{ fixes: [{ code_fix_path: 'reports/report.json' }] }];
+
+    const response = await handler(message, context);
+
+    expect(response.status).to.equal(200);
+    expect(context.dataAccess.Suggestion.findById).to.not.have.been.called;
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/No suggestionId/));
+  });
+
+  it('skips updates when suggestion is not found', async () => {
     context.dataAccess.Suggestion.findById.resolves(null);
 
     const response = await handler(message, context);
@@ -155,35 +191,96 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
     expect(response.status).to.equal(200);
     expect(context.log.error).to.have.been.calledWith(sinon.match(/Suggestion not found/));
     expect(suggestion.setData).to.not.have.been.called;
-    expect(suggestion.save).to.not.have.been.called;
   });
 
-  it('should process multiple patches where some suggestions are missing', async () => {
-    const suggestion2Id = 'sugg-456';
-    const suggestion2 = {
-      getId: () => suggestion2Id,
-      getData: () => ({ some: 'data' }),
-      setData: sandbox.stub(),
-      save: sandbox.stub().resolves(),
-    };
-
-    message.data.patches.push({
-      suggestionId: suggestion2Id,
-      patch: 'patch-2',
-    });
-
-    context.dataAccess.Suggestion.findById.withArgs(suggestionId).resolves(null);
-    context.dataAccess.Suggestion.findById.withArgs(suggestion2Id).resolves(suggestion2);
+  it('skips updates when fixes are empty', async () => {
+    message.data.updates[0].fixes = [];
 
     const response = await handler(message, context);
 
     expect(response.status).to.equal(200);
-    // First suggestion missing
-    expect(context.log.error).to.have.been.calledWith(sinon.match(/Suggestion not found for ID: sugg-123/));
-    
-    // Second suggestion found and processed
-    expect(suggestion2.setData).to.have.been.calledOnce;
-    expect(suggestion2.save).to.have.been.calledOnce;
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/No code-fixes in update data/));
+    expect(getObjectFromKey).to.not.have.been.called;
+  });
+
+  it('handles missing report data from S3', async () => {
+    getObjectFromKey.resolves(null);
+
+    const response = await handler(message, context);
+
+    expect(response.status).to.equal(200);
+    expect(context.log.warn).to.have.been.calledWith(sinon.match(/No code change report found/));
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/No code-fix report found/));
+    expect(suggestion.setData).to.not.have.been.called;
+  });
+
+  it('handles invalid JSON report data from S3', async () => {
+    getObjectFromKey.resolves('not-json');
+
+    const response = await handler(message, context);
+
+    expect(response.status).to.equal(200);
+    expect(context.log.warn).to.have.been.calledWith(sinon.match(/Failed to parse report data as JSON/));
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/No code-fix report found/));
+    expect(suggestion.setData).to.not.have.been.called;
+  });
+
+  it('handles errors when fetching report data from S3', async () => {
+    getObjectFromKey.rejects(new Error('S3 failure'));
+
+    const response = await handler(message, context);
+
+    expect(response.status).to.equal(200);
+    expect(context.log.error).to.have.been.calledWith(
+      sinon.match(/Error reading code change report from S3/),
+      sinon.match.instanceOf(Error),
+    );
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/No code-fix report found/));
+  });
+
+  it('applies patch data and warns for multiple fixes', async () => {
+    message.data.updates[0].fixes = [
+      { code_fix_path: 'reports/report-a.json', code_fix_bucket: 'custom-bucket' },
+      { code_fix_path: 'reports/report-b.json' },
+    ];
+
+    const response = await handler(message, context);
+
+    expect(response.status).to.equal(200);
+    expect(context.log.warn).to.have.been.calledWith(sinon.match(/More than one code-fix/));
+    expect(context.log.info).to.have.been.calledWith(sinon.match(/Successfully read code change report/));
+    expect(getObjectFromKey).to.have.been.calledWith(
+      context.s3Client,
+      'custom-bucket',
+      'reports/report-a.json',
+      context.log,
+    );
+    expect(suggestion.setData).to.have.been.calledWith({
+      some: 'data',
+      patchContent: 'diff-content',
+      isCodeChangeAvailable: true,
+    });
+    expect(suggestion.save).to.have.been.calledOnce;
+  });
+
+  it('parses report JSON strings and uses default bucket name', async () => {
+    getObjectFromKey.resolves(JSON.stringify({ diff: 'json-diff' }));
+
+    const response = await handler(message, context);
+
+    expect(response.status).to.equal(200);
+    expect(getObjectFromKey).to.have.been.calledWith(
+      context.s3Client,
+      defaultBucketName,
+      'reports/report.json',
+      context.log,
+    );
+    expect(suggestion.setData).to.have.been.calledWith({
+      some: 'data',
+      patchContent: 'json-diff',
+      isCodeChangeAvailable: true,
+    });
+    expect(suggestion.save).to.have.been.calledOnce;
   });
 });
 

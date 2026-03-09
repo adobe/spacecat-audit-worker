@@ -20,12 +20,14 @@ import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js
 import {
   getPrefixedPageAuthToken, isValidUrls, saveIntermediateResults,
 } from './utils.js';
+import { getDomElementSelector, toElementTargets } from '../utils/dom-selector.js';
 import canonical from './canonical.js';
 import metatags from './metatags.js';
 import links from './links.js';
 import readability from '../readability/preflight/handler.js';
 import accessibility from './accessibility.js';
 import headings from './headings.js';
+import formAccessibility from './form-accessibility.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const PREFLIGHT_STEP_IDENTIFY = 'identify';
@@ -48,6 +50,7 @@ export const AUDIT_H1_COUNT = 'h1-count';
 export const AUDIT_ACCESSIBILITY = 'accessibility';
 export const AUDIT_READABILITY = 'readability';
 export const AUDIT_HEADINGS = 'headings';
+export const AUDIT_FORM_ACCESSIBILITY = 'form-accessibility';
 
 const AVAILABLE_CHECKS = [
   AUDIT_CANONICAL,
@@ -59,6 +62,7 @@ const AVAILABLE_CHECKS = [
   AUDIT_ACCESSIBILITY,
   AUDIT_READABILITY,
   AUDIT_HEADINGS,
+  AUDIT_FORM_ACCESSIBILITY,
 ];
 
 export const PREFLIGHT_HANDLERS = {
@@ -68,6 +72,7 @@ export const PREFLIGHT_HANDLERS = {
   headings,
   readability,
   accessibility,
+  'form-accessibility': formAccessibility,
 };
 
 export async function scrapePages(context) {
@@ -232,27 +237,56 @@ export const preflightAudit = async (context) => {
               issue: 'Body content length is below 100 characters',
               seoImpact: 'Moderate',
               seoRecommendation: 'Add more meaningful content to the page',
+              ...toElementTargets(getDomElementSelector($('body').get(0))),
             });
           }
         }
 
         if (loremIpsumEnabled && /lorem ipsum/i.test(textContent)) {
+          const loremElements = $('p, div, span, li, section, article, h1, h2, h3, h4, h5, h6')
+            .toArray()
+            .filter((el) => /lorem ipsum/i.test($(el).text()));
+          const loremSelectors = loremElements.map(
+            (el) => getDomElementSelector(el),
+          ).filter(Boolean);
+          const fallbackSelector = loremSelectors.length === 0
+            ? getDomElementSelector($('body').get(0))
+            : null;
           auditsByName[AUDIT_LOREM_IPSUM].opportunities.push({
             check: 'placeholder-text',
             issue: 'Found Lorem ipsum placeholder text in the page content',
             seoImpact: 'High',
             seoRecommendation: 'Replace placeholder text with meaningful content',
+            ...toElementTargets(
+              loremSelectors.length > 0 ? loremSelectors : fallbackSelector,
+              10,
+            ),
           });
         }
 
         if (h1CountEnabled) {
           const headingCount = $('h1').length;
           if (headingCount !== 1) {
+            const h1Elements = $('h1').toArray();
+
+            const h1Selectors = h1Elements
+              .map((el) => getDomElementSelector(el))
+              .filter(Boolean);
+            const fallbackElement = $('body > main').get(0) || $('body').get(0);
+            const fallbackSelector = getDomElementSelector(fallbackElement);
+
             auditsByName[AUDIT_H1_COUNT].opportunities.push({
               check: headingCount > 1 ? 'multiple-h1' : 'missing-h1',
-              issue: headingCount > 1 ? `Found ${headingCount} H1 tags` : 'No H1 tag found on the page',
+              issue:
+                headingCount > 1
+                  ? `Found ${headingCount} H1 tags`
+                  : 'No H1 tag found on the page',
               seoImpact: 'High',
-              seoRecommendation: 'Use exactly one H1 tag per page for better SEO structure',
+              seoRecommendation:
+                'Use exactly one H1 tag per page for better SEO structure',
+              ...toElementTargets(
+                headingCount > 0 ? h1Selectors : fallbackSelector,
+              ),
             });
           }
         }

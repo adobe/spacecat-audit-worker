@@ -61,7 +61,15 @@ const syllablePromiseCache = new Map(); // key -> Promise<number>
 
 const clamp = (x) => Math.max(0, Math.min(100, x));
 
-// --- Hyphenation loader (lazy) ---
+// Explicit import functions for each locale (bundlers can statically analyze these)
+const HYPHEN_LOADERS = Object.freeze({
+  de: () => import('hyphen/de/index.js'),
+  es: () => import('hyphen/es/index.js'),
+  it: () => import('hyphen/it/index.js'),
+  fr: () => import('hyphen/fr/index.js'),
+  nl: () => import('hyphen/nl/index.js'),
+});
+
 // cache promises to dedupe concurrent calls
 const hyphenatorCache = new Map(); // Map<string, Promise<Function|null>>
 
@@ -78,9 +86,18 @@ export async function getHyphenator(language) {
       return null;
     }
 
+    const importFn = HYPHEN_LOADERS[locale];
+    /* c8 ignore start */
+    if (!importFn) {
+      // eslint-disable-next-line no-console
+      console.info(`[readability-suggest multilingual] 🔤 No hyphenation loader available for locale: ${locale}`);
+      return null;
+    }
+    /* c8 ignore end */
+
     // eslint-disable-next-line no-console
     console.info(`[readability-suggest multilingual] 📚 Loading hyphenation patterns for ${language} (locale: ${locale})`);
-    const mod = await import(`hyphen/${locale}/index.js`);
+    const mod = await importFn();
     const hyphenate = mod?.default?.hyphenate;
     if (hyphenate) {
       // eslint-disable-next-line no-console

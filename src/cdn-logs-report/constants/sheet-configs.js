@@ -35,13 +35,14 @@ export const SHEET_CONFIGS = {
       'Product',
       'Category',
       'Citability Score',
+      'Deployed at Edge',
     ],
     headerColor: HEADER_COLOR,
     numberColumns: [2, 3, 4],
     processData: async (data, site, dataAccess) => {
       if (!data || !site || !dataAccess) return [];
 
-      // Fetch citability scores from database
+      // Fetch citability scores and deployment status from database
       const { PageCitability } = dataAccess;
       const citabilityScores = await PageCitability.allBySiteId(site.getId());
       const citabilityMap = citabilityScores.reduce((acc, score) => {
@@ -51,6 +52,7 @@ export const SHEET_CONFIGS = {
         if (!existingScore || new Date(score.getUpdatedAt()) > new Date(existingScore.updatedAt)) {
           acc[pathname] = {
             score: score.getCitabilityScore(),
+            isDeployedAtEdge: score.getIsDeployedAtEdge(),
             updatedAt: score.getUpdatedAt(),
           };
         }
@@ -60,24 +62,28 @@ export const SHEET_CONFIGS = {
       /* c8 ignore next */
       const baseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL || site.getBaseURL();
 
-      return data.map((row) => {
-        const urlPath = row.url === '-' ? '/' : (row.url || '');
-        const path = new URL(joinBaseAndPath(baseURL, urlPath)).pathname;
-        const citabilityScore = citabilityMap[path]?.score || 'N/A';
+      return data
+        .filter((row) => row.agent_type && row.agent_type !== 'Other')
+        .map((row) => {
+          const urlPath = row.url === '-' ? '/' : (row.url || '');
+          const path = new URL(joinBaseAndPath(baseURL, urlPath)).pathname;
+          const citabilityScore = citabilityMap[path]?.score || 'N/A';
+          const isDeployedAtEdge = citabilityMap[path]?.isDeployedAtEdge || false;
 
-        return [
-          row.agent_type || 'Other',
-          row.user_agent_display || 'Unknown',
-          Number(row.status) || 'N/A',
-          Number(row.number_of_hits) || 0,
-          Number(row.avg_ttfb_ms) || 0,
-          validateCountryCode(row.country_code),
-          urlPath,
-          capitalizeFirstLetter(row.product) || 'Other',
-          row.category || 'Uncategorized',
-          citabilityScore,
-        ];
-      });
+          return [
+            row.agent_type,
+            row.user_agent_display || 'Unknown',
+            Number(row.status) || 'N/A',
+            Number(row.number_of_hits) || 0,
+            Number(row.avg_ttfb_ms) || 0,
+            validateCountryCode(row.country_code),
+            urlPath,
+            capitalizeFirstLetter(row.product) || 'Other',
+            row.category || 'Uncategorized',
+            citabilityScore,
+            isDeployedAtEdge,
+          ];
+        });
     },
   },
   referral: {

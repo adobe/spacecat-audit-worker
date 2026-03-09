@@ -11,16 +11,15 @@
  */
 
 import {
-  getLastNumberOfWeeks, isNonEmptyObject, llmoConfig,
+  getLastNumberOfWeeks, llmoConfig,
 } from '@adobe/spacecat-shared-utils';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
-import { ImsClient } from '@adobe/spacecat-shared-ims-client';
+import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { isAuditEnabledForSite } from '../common/audit-utils.js';
 import {
-  getLastSunday, compareConfigs, areCategoryNamesDifferent,
+  compareConfigs, areCategoryNamesDifferent,
 } from './utils.js';
 import { getRUMUrl } from '../support/utils.js';
 import { handleCdnBucketConfigChanges } from './cdn-config-handler.js';
@@ -29,6 +28,33 @@ import { ContentAIClient } from '../utils/content-ai.js';
 
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
+
+const GEO_FREE_SPLIT_COUNT = 23;
+const GEO_FREE_SPLITS = Array.from(
+  { length: GEO_FREE_SPLIT_COUNT },
+  (_, i) => `geo-brand-presence-free-${i + 1}`,
+);
+
+/**
+ * Finds the geo-brand-presence-free split with the fewest enabled sites.
+ * @param {object} configuration - Configuration instance
+ * @returns {string} The split audit type to assign
+ */
+function findBestFreeSplit(configuration) {
+  let bestSplit = GEO_FREE_SPLITS[0];
+  let minCount = Infinity;
+
+  for (const split of GEO_FREE_SPLITS) {
+    const count = configuration.getEnabledSiteIdsForHandler(split).length;
+    if (count < minCount) {
+      minCount = count;
+      bestSplit = split;
+      if (count === 0) break;
+    }
+  }
+
+  return bestSplit;
+}
 
 /* c8 ignore start */
 /* this is actually running during tests. verified manually on 2025-12-10. */
@@ -144,136 +170,21 @@ export async function triggerCdnLogsReport(context, site) {
   log.info('Successfully triggered cdn-logs-report audit');
 }
 
-export async function triggerGeoBrandPresence(context, site, auditContext = {}) {
-  const { sqs, dataAccess, log } = context;
-  const { Configuration } = dataAccess;
-  const configuration = await Configuration.findLatest();
-  const siteId = site.getSiteId();
-
-  // Priority: auditContext > site config > default
-  const cadence = auditContext?.brandPresenceCadence
-    || site.getConfig()?.getBrandPresenceCadence?.()
-    || 'weekly';
-
-  const auditType = cadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence';
-
-  log.info(`Triggering ${auditType} audit for site: ${siteId} (cadence: ${cadence})`);
-
-  // Check if the selected audit type is enabled
-  const isAuditEnabled = await isAuditEnabledForSite(auditType, site, context);
-  if (!isAuditEnabled) {
-    log.warn(`${auditType} audit is not enabled for site ${siteId}, skipping geo-brand-presence trigger`);
+async function triggerBrandPresenceViaDrs(context, site, log, triggeredSteps) {
+  const drsClient = DrsClient.createFrom(context);
+  if (!drsClient.isConfigured()) {
+    log.warn('DRS client not configured, skipping brand presence trigger via DRS');
     return;
   }
 
-  // Optional: Warn if the opposite audit type is also enabled
-  const oppositeAuditType = cadence === 'daily' ? 'geo-brand-presence' : 'geo-brand-presence-daily';
-  const isOppositeEnabled = await isAuditEnabledForSite(oppositeAuditType, site, context);
-  if (isOppositeEnabled) {
-    log.warn(`Both ${auditType} and ${oppositeAuditType} are enabled for site ${siteId}. Consider disabling ${oppositeAuditType} to avoid duplicate processing.`);
-  }
-
-  const geoBrandPresenceMessage = {
-    type: auditType,
-    siteId,
-    data: getLastSunday(),
-  };
-
-  await sqs.sendMessage(configuration.getQueues().audits, geoBrandPresenceMessage);
-
-  log.info(`Successfully triggered ${auditType} audit`);
-}
-
-export async function triggerGeoBrandPresenceRefresh(context, site, configVersion) {
-  const { sqs, dataAccess, log } = context;
-  const { Configuration } = dataAccess;
-  const configuration = await Configuration.findLatest();
-  const auditType = 'geo-brand-presence-trigger-refresh';
   const siteId = site.getSiteId();
-
-  log.info('Triggering %s audit for site: %s', auditType, siteId);
-
-  await sqs.sendMessage(configuration.getQueues().audits, {
-    type: auditType,
-    siteId,
-    auditContext: { configVersion },
-  });
-  log.info(`Successfully triggered ${auditType} audit`);
-}
-
-async function triggerAllSteps(context, site, log, triggeredSteps, auditContext = {}) {
-  log.info('Triggering all relevant audits (no config version provided or first-time setup)');
-
-  await triggerGeoBrandPresence(context, site, auditContext);
-  triggeredSteps.push(auditContext?.brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
-}
-
-async function triggerMystiqueCategorization(context, siteId, domain) {
-  const {
-    env, log, s3Client,
-  } = context;
-
-  const s3Bucket = env.S3_IMPORTER_BUCKET_NAME;
-  const mystiqueApiBaseUrl = env.MYSTIQUE_API_BASE_URL;
-  const categorizationEndpoint = `${mystiqueApiBaseUrl}/v1/categorization/site`;
-
-  const {
-    config,
-    exists,
-  } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket });
-
-  if (exists && isNonEmptyObject(config.categories)) {
-    log.info('Config categories already exist; skipping Mystique categorization');
-    return;
-  }
-
-  log.info(`Triggering Mystique categorization for siteId: ${siteId}, domain: ${domain}`);
-  const imsContext = {
-    log,
-    env: {
-      IMS_HOST: env.IMS_HOST,
-      IMS_CLIENT_ID: env.IMS_CLIENT_ID,
-      IMS_CLIENT_CODE: env.IMS_CLIENT_CODE,
-      IMS_CLIENT_SECRET: env.IMS_CLIENT_SECRET,
-    },
-  };
-  const imsClient = ImsClient.createFrom(imsContext);
-  const { access_token: accessToken } = await imsClient.getServiceAccessToken();
-
   try {
-    const response = await fetch(categorizationEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        authorization: accessToken,
-      },
-      body: JSON.stringify({
-        url: domain,
-      }),
-      timeout: 60000,
-    });
-
-    const data = await response.json();
-    const { categories } = data.categories;
-    config.categories = categories;
-    await llmoConfig.writeConfig(siteId, config, s3Client, { s3Bucket });
+    await drsClient.triggerBrandDetection(siteId);
+    triggeredSteps.push('drs-brand-detection');
+    log.info(`Triggered DRS brand detection for site ${siteId}`);
   } catch (error) {
-    log.error(`Failed to trigger Mystique categorization: ${error.message}`);
+    log.error(`Failed to trigger DRS brand detection for site ${siteId}: ${error.message}`);
   }
-}
-
-async function getBaseUrlBySiteId(siteId, context) {
-  const { dataAccess, log } = context;
-  const { Site } = dataAccess;
-
-  try {
-    const site = await Site.findById(siteId);
-    /* c8 ignore next */
-    return site?.getBaseURL() || '';
-  } catch /* c8 ignore start */ {
-    log.info(`Unable to fetch base URL for siteId: ${siteId}`);
-    return '';
-  } /* c8 ignore stop */
 }
 
 export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditContext = {}) {
@@ -294,12 +205,12 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       'headings',
       'llm-blocked',
       'llm-error-pages',
-      'canonical',
-      'hreflang',
       'summarization',
       'faqs',
       REFERRAL_TRAFFIC_AUDIT,
       'cdn-logs-report',
+      'readability',
+      'wikipedia-analysis',
     ];
     const [isDailyEnabled, isPaidEnabled] = await Promise.all([
       configuration.isHandlerEnabledForSite('geo-brand-presence-daily', site),
@@ -311,7 +222,8 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       auditsToEnable.push('geo-brand-presence');
       // only enable free geo brand presence if paid is not already enabled
       if (!isPaidEnabled) {
-        auditsToEnable.push('geo-brand-presence-free');
+        const targetSplit = findBestFreeSplit(configuration);
+        auditsToEnable.push(targetSplit);
       }
     }
 
@@ -348,7 +260,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   const isFirstTimeOnboarding = !previousConfigVersion;
 
   if (isFirstTimeOnboarding) {
-    await triggerMystiqueCategorization(context, siteId, domain);
+    await sendOnboardingNotification(context, site, 'first_onboarding');
   }
 
   // Handle referral traffic imports for first-time onboarding
@@ -362,10 +274,10 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     log.info('Domain has no OpTel data available; skipping referral traffic import');
   }
 
-  // If no config version provided, trigger all steps
+  // If no config version provided, trigger brand presence via DRS
   if (!configVersion) {
-    log.info('No config version provided; triggering all relevant audits');
-    await triggerAllSteps(context, site, log, triggeredSteps, auditContext);
+    log.info('No config version provided; triggering brand presence via DRS');
+    await triggerBrandPresenceViaDrs(context, site, log, triggeredSteps);
 
     return {
       auditResult: {
@@ -401,7 +313,6 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     oldConfig = oldConfigResult.config;
   } else {
     oldConfig = llmoConfig.defaultConfig();
-    await sendOnboardingNotification(context, site, 'first_configuration', { configVersion });
   }
 
   const changes = compareConfigs(oldConfig ?? {}, newConfig ?? {});
@@ -410,12 +321,15 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   if (changes.cdnBucketConfig) {
     try {
-      log.info('LLMO config changes detected in CDN bucket configuration; processing CDN config changes');
+      log.info('LLMO config changes detected in CDN bucket configuration; processing CDN config changes', {
+        siteId,
+        cdnBucketConfig: changes.cdnBucketConfig,
+      });
 
       /* c8 ignore next */
       if (isFirstTimeOnboarding || !oldConfig.cdnBucketConfig) {
         await sendOnboardingNotification(context, site, 'cdn_provisioning', { cdnBucketConfig: changes.cdnBucketConfig });
-        log.info('First-time LLMO onboarding detected', {
+        log.info('First-time LLMO CDN bucket configuration changes detected', {
           siteId,
           cdnBucketConfig: changes.cdnBucketConfig,
         });
@@ -439,31 +353,13 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     triggeredSteps.push('cdn-logs-report');
   }
 
-  const brandPresenceCadence = auditContext?.brandPresenceCadence || 'weekly';
   const hasBrandPresenceChanges = changes.topics || changes.categories || changes.entities;
   const needsBrandPresenceRefresh = previousConfigVersion
     && (changes.brands || changes.competitors);
 
-  const baseUrl = await getBaseUrlBySiteId(siteId, context);
-  const isAdobe = baseUrl.startsWith('https://adobe.com');
-
-  if (hasBrandPresenceChanges && !isAdobe) {
-    const isAICategorizationOnly = changes.metadata?.isAICategorizationOnly || false;
-
-    if (isAICategorizationOnly) {
-      log.info('LLMO config changes detected from AI categorization flow; triggering geo-brand-presence refresh');
-      await triggerGeoBrandPresenceRefresh(context, site, configVersion);
-      triggeredSteps.push('geo-brand-presence-refresh');
-    } else {
-      log.info('LLMO config changes detected in topics, categories, or entities; triggering geo-brand-presence audit');
-      await triggerGeoBrandPresence(context, site, auditContext);
-      triggeredSteps.push(brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
-    }
-  }
-  if (needsBrandPresenceRefresh && !isAdobe) {
-    log.info('LLMO config changes detected in brand or competitor aliases; triggering geo-brand-presence-refresh');
-    await triggerGeoBrandPresenceRefresh(context, site, configVersion);
-    triggeredSteps.push('geo-brand-presence-refresh');
+  if (hasBrandPresenceChanges || needsBrandPresenceRefresh) {
+    log.info('LLMO config changes detected affecting brand presence; triggering DRS brand detection');
+    await triggerBrandPresenceViaDrs(context, site, log, triggeredSteps);
   }
 
   if (triggeredSteps.length > 0) {

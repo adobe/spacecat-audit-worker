@@ -17,10 +17,9 @@ import { isLangCode } from 'is-language-code';
 
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
-import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-access.js';
+import { syncSuggestions, keepLatestMergeDataFunction, getTopPagesForSiteId } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
-import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { limitConcurrencyAllSettled } from '../support/utils.js';
 
 const auditType = Audit.AUDIT_TYPES.HREFLANG;
@@ -278,13 +277,15 @@ export function generateSuggestions(auditUrl, auditData, context) {
       }
 
       checkResult.urls.forEach((url) => {
+        // eslint-disable-next-line no-use-before-define
+        const recommendedAction = generateRecommendedAction(checkType, url);
         const suggestion = {
           type: 'CODE_CHANGE',
           checkType,
           explanation: checkResult.explanation,
           url,
-          // eslint-disable-next-line no-use-before-define
-          recommendedAction: generateRecommendedAction(checkType),
+          recommendedAction,
+          suggestion: recommendedAction,
         };
         suggestionsByType[checkType].push(suggestion);
         allSuggestions.push(suggestion);
@@ -323,14 +324,25 @@ export function generateSuggestions(auditUrl, auditData, context) {
  * Generates recommended actions based on the check type.
  *
  * @param {string} checkType - The type of hreflang check that failed.
+ * @param {string} url - The URL being audited (optional, for context-specific suggestions).
  * @returns {string} The recommended action for fixing the issue.
  */
-function generateRecommendedAction(checkType) {
+function generateRecommendedAction(checkType, url = null) {
   switch (checkType) {
     case HREFLANG_CHECKS.HREFLANG_INVALID_LANGUAGE_TAG.check:
       return 'Update hreflang attribute to use valid language tags (ISO 639-1 language codes and ISO 3166-1 Alpha 2 country codes).';
     case HREFLANG_CHECKS.HREFLANG_X_DEFAULT_MISSING.check:
-      return 'Add x-default hreflang tag: <link rel="alternate" href="https://example.com/" hreflang="x-default" />';
+      if (url) {
+        // Extract base URL for the suggestion
+        try {
+          const urlObj = new URL(url);
+          const baseUrl = `${urlObj.protocol}//${urlObj.hostname}/`;
+          return `Add x-default hreflang tag: <link rel="alternate" href="${baseUrl}" hreflang="x-default" />`;
+        } catch (e) {
+          // Fall through to default response if URL parsing fails
+        }
+      }
+      return 'Add x-default hreflang tag: <link rel="alternate" href="[base-url]" hreflang="x-default" />';
     case HREFLANG_CHECKS.HREFLANG_OUTSIDE_HEAD.check:
       return 'Move hreflang tags from the body to the <head> section of the HTML document.';
 
@@ -383,6 +395,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
         checkType: suggestion.checkType,
         explanation: suggestion.explanation,
         recommendedAction: suggestion.recommendedAction,
+        suggestion: suggestion.suggestion || suggestion.recommendedAction,
       },
     }),
   });

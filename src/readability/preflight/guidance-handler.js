@@ -307,19 +307,21 @@ export default async function handler(message, context) {
           return pageResult;
         });
 
-        // Update AsyncJob with completed results (only if not already completed)
-        asyncJob.setResult(updatedResult);
-
-        // Only update status and endedAt if the job is not already completed
-        // This prevents race conditions when multiple Mystique responses arrive simultaneously
-        if (asyncJob.getStatus() !== AsyncJob.Status.COMPLETED) {
-          asyncJob.setStatus(AsyncJob.Status.COMPLETED);
-          asyncJob.setEndedAt(new Date().toISOString());
-        }
-
         // Reload job before saving to avoid stale updatedAt conflicts
         const freshAsyncJob = await AsyncJobEntity.findById(auditId);
-        freshAsyncJob.setResult(asyncJob.getResult());
+
+        // Use updatedResult directly instead of asyncJob.getResult()
+        // After asyncJob.save() at the metadata step, the entity may reset
+        // internal state causing getResult() to return the stale (empty) result
+        freshAsyncJob.setResult(updatedResult);
+
+        // Clean up the suggestions buffer from metadata now that they're in the result
+        const freshMetadata = freshAsyncJob.getMetadata();
+        if (freshMetadata.payload?.readabilityMetadata?.suggestions) {
+          delete freshMetadata.payload.readabilityMetadata.suggestions;
+          freshAsyncJob.setMetadata(freshMetadata);
+        }
+
         if (freshAsyncJob.getStatus() !== AsyncJob.Status.COMPLETED) {
           freshAsyncJob.setStatus(AsyncJob.Status.COMPLETED);
           freshAsyncJob.setEndedAt(new Date().toISOString());

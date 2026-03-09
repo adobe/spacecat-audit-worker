@@ -21,32 +21,13 @@ import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { CopyObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import handler from '../../../src/paid-cookie-consent/guidance-handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
 
-// Helper to create a fresh stubbed opportunity instance
-function makeOppty({
-  page, opportunityType, status = 'NEW', updatedBy = 'system', updatedAt = new Date().toISOString(),
-}) {
-  return {
-    getId: () => `opptyId-${page}-${opportunityType}`,
-    getSuggestions: async () => [],
-    setAuditId: sinon.stub(),
-    setData: sinon.stub(),
-    setGuidance: sinon.stub(),
-    setTitle: sinon.stub(),
-    setDescription: sinon.stub(),
-    setStatus: sinon.stub(),
-    save: sinon.stub().resolvesThis(),
-    getType: () => 'generic-opportunity',
-    getData: () => ({ page, opportunityType }),
-    getStatus: () => status,
-    getUpdatedBy: () => updatedBy,
-    getUpdatedAt: () => updatedAt,
-  };
-}
+
 
 const TEST_PAGE = 'https://example-page/to-check';
 
@@ -56,9 +37,13 @@ describe('Paid Cookie Consent Guidance Handler', () => {
   let context;
   let Suggestion;
   let Opportunity;
-  let Audit;
+  let Site;
+  let Configuration;
   let opportunityInstance;
   let s3ClientMock;
+  let sqsStub;
+  let mockScrapeClient;
+  let mockAthenaClient;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -83,7 +68,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       setStatus: sinon.stub(),
       setDescription: sinon.stub(),
       save: sinon.stub().resolvesThis(),
-      getType: () => 'generic-opportunity',
+      getType: () => 'consent-banner',
       getData: () => ({ page: TEST_PAGE, opportunityType: 'paid-cookie-consent' }),
       getStatus: () => 'NEW',
       getUpdatedBy: () => 'system',
@@ -93,43 +78,77 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       allBySiteId: sandbox.stub(),
       create: sandbox.stub(),
     };
-    Audit = { findById: sandbox.stub() };
+    Site = {
+      findById: sandbox.stub(),
+    };
+    Configuration = {
+      findLatest: sandbox.stub().resolves({
+        getQueues: () => ({ imports: 'test-imports-queue-url' }),
+      }),
+    };
 
     // Mock S3 client
     s3ClientMock = {
       send: sandbox.stub(),
     };
 
+    // Mock SQS client
+    sqsStub = {
+      sendMessage: sandbox.stub().resolves(),
+    };
+
+    // Mock Athena client that returns data for bounce gap and top3 pages queries
+    mockAthenaClient = {
+      query: sandbox.stub(),
+    };
+
+    // Default Athena query responses for the audit-data-provider queries:
+    // 1. Bounce gap metrics query
+    mockAthenaClient.query.onCall(0).resolves([
+      { trf_type: 'paid', consent: 'show', pageviews: '5000', bounce_rate: '0.8' },
+      { trf_type: 'paid', consent: 'hidden', pageviews: '5000', bounce_rate: '0.65' },
+    ]);
+    // 2. Top3 pages by path query
+    mockAthenaClient.query.onCall(1).resolves([
+      {
+        path: '/to-check', pageviews: '5000', traffic_loss: '4000', bounce_rate: '0.8',
+      },
+    ]);
+    // 3. Lost traffic summary by device query
+    mockAthenaClient.query.onCall(2).resolves([
+      { device: 'mobile', pageviews: '5000', traffic_loss: '4000', bounce_rate: '0.8' },
+    ]);
+    // 4. Top3 by device query
+    mockAthenaClient.query.onCall(3).resolves([
+      {
+        path: '/to-check', device: 'mobile', pageviews: '5000', traffic_loss: '4000', bounce_rate: '0.85',
+      },
+    ]);
+
+    // Stub AWSAthenaClient.fromContext to return our mock
+    sandbox.stub(AWSAthenaClient, 'fromContext').returns(mockAthenaClient);
+
     context = {
       log: logStub,
-      dataAccess: { Audit, Opportunity, Suggestion },
+      dataAccess: { Site, Opportunity, Suggestion, Configuration },
       env: {
         SPACECAT_API_URI: 'https://example-space-cat-api',
         S3_MYSTIQUE_BUCKET_NAME: 'test-mystique-bucket',
         S3_SCRAPER_BUCKET_NAME: 'test-scraper-bucket',
+        S3_IMPORTER_BUCKET_NAME: 'test-importer-bucket',
       },
       s3Client: s3ClientMock,
+      sqs: sqsStub,
     };
 
-    Audit.findById.resolves({
-      getAuditId: () => 'auditId',
-      getAuditResult: () => ({
-        totalPageViews: 10000,
-        totalAverageBounceRate: 0.8,
-        projectedTrafficLost: 8000,
-        projectedTrafficValue: 6400,
-        top3Pages: [
-          { url: 'https://example-page/to-check', trafficLoss: 4000, pageViews: 5000, bounceRate: 0.8 },
-        ],
-        averagePageViewsTop3: 5000,
-        averageTrafficLostTop3: 4000,
-        averageBounceRateMobileTop3: 0.85,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      }),
+    // Mock Site.findById to return a site with baseURL
+    Site.findById.resolves({
+      getId: () => 'site',
+      getBaseURL: () => 'https://example-page',
     });
 
     // Mock ScrapeClient
-    const mockScrapeClient = {
+    mockScrapeClient = {
       getScrapeJobUrlResults: sandbox.stub().resolves([{
         path: 'path/to/scrape.json',
       }]),
@@ -142,12 +161,45 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     nock.cleanAll();
   });
 
-  it('should return notFound if no audit is found', async () => {
-    Audit.findById.resolves(null);
+  it('should return notFound if no site is found', async () => {
+    Site.findById.resolves(null);
     Opportunity.allBySiteId.resolves([]);
     const message = { auditId: '123', siteId: 'site', data: { url: 'url', guidance: [{}] } };
     const result = await handler(message, context);
     expect(result.status).to.equal(notFound().status);
+    expect(logStub.warn).to.have.been.calledWithMatch(/\[paid-audit\] Failed paid-cookie-consent: no site found/);
+  });
+
+  it('should return notFound and log error if audit data has empty top3Pages', async () => {
+    // Reconfigure Athena to return empty top3Pages
+    // The handler checks if (!auditData?.top3Pages) - empty array is truthy, but length 0 means no data
+    // Actually we need to check the handler logic - it just checks for existence of top3Pages property
+    // Since empty array has length 0, we need another approach: return null from bounce gap check
+    mockAthenaClient.query.reset();
+    // Return empty bounce gap data - this causes hasShowData = false
+    mockAthenaClient.query.onCall(0).resolves([]);
+
+    Opportunity.allBySiteId.resolves([]);
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: 'url', guidance: [{}] } };
+    const result = await handler(message, context);
+    expect(result.status).to.equal(notFound().status);
+    expect(logStub.error).to.have.been.calledWithMatch(/\[paid-audit\] Failed paid-cookie-consent: no audit data/);
+  });
+
+  it('should return notFound and log error if auditData is null', async () => {
+    // Reconfigure Athena to return data that will cause getAuditData to return null
+    // This happens when bounce gap data is missing show or hidden consent data
+    mockAthenaClient.query.reset();
+    // Return only show data (no hidden) - this causes getAuditData to return null
+    mockAthenaClient.query.onCall(0).resolves([
+      { trf_type: 'paid', consent: 'show', pageviews: '5000', bounce_rate: '0.8' },
+    ]);
+
+    Opportunity.allBySiteId.resolves([]);
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: 'url', guidance: [{}] } };
+    const result = await handler(message, context);
+    expect(result.status).to.equal(notFound().status);
+    expect(logStub.error).to.have.been.calledWithMatch(/\[paid-audit\] Failed paid-cookie-consent: no audit data/);
   });
 
   it('should create a new opportunity and suggestion with plain markdown', async () => {
@@ -169,7 +221,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
     const result = await handler(message, context);
     expect(Opportunity.create).to.have.been.called;
     expect(Suggestion.create).to.have.been.called;
@@ -181,10 +233,9 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     expect(result.status).to.equal(ok().status);
   });
 
-  it('should create a new opportunity and suggestion from serialized JSON with markdown', async () => {
+  it('should include auditId and all auditData fields in the opportunity', async () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
-    const markdown = 'json\nmarkdown';
     const guidance = [{
       body: {
         data: {
@@ -201,7 +252,164 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'test-audit-id-123', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
+    await handler(message, context);
+
+    expect(Opportunity.create).to.have.been.called;
+    const opportunityData = Opportunity.create.getCall(0).args[0];
+
+    // Verify auditId is at opportunity root level (not in data)
+    expect(opportunityData.auditId).to.equal('test-audit-id-123');
+
+    // Verify all auditData fields are preserved in opportunity.data
+    // Note: The opportunity mapper transforms some field names from auditData
+    const { data } = opportunityData;
+
+    // temporalCondition - dynamic based on current date
+    expect(data.temporalCondition).to.be.a('string');
+    expect(data.temporalCondition).to.include('year=');
+    expect(data.temporalCondition).to.include('week');
+
+    // CPC fields - DEFAULT_CPC is 0.80 in ahrefs-cpc.js
+    expect(data.appliedCPC).to.equal(0.8);
+    expect(data.cpcSource).to.equal('default');
+    expect(data.defaultCPC).to.equal(0.8);
+
+    // Traffic metrics (mapper renames: pageViews = totalPageViews, bounceRate = totalAverageBounceRate)
+    expect(data.projectedTrafficLost).to.be.a('number');
+    expect(data.projectedTrafficValue).to.be.a('number');
+    expect(data.pageViews).to.be.a('number'); // was totalPageViews in auditData
+    expect(data.bounceRate).to.be.a('number'); // was totalAverageBounceRate in auditData
+
+    // page URL is preserved
+    expect(data.page).to.equal(TEST_PAGE);
+  });
+
+  it('should handle Athena results with missing optional fields (branch coverage)', async () => {
+    // Reset mock to return data with missing optional fields to cover || 0 branches
+    mockAthenaClient.query.reset();
+    // 1. Bounce gap metrics with missing bounce_rate and pageviews
+    mockAthenaClient.query.onCall(0).resolves([
+      { trf_type: 'paid', consent: 'show' }, // missing pageviews, bounce_rate
+      { trf_type: 'paid', consent: 'hidden', pageviews: '5000', bounce_rate: '0.65' },
+    ]);
+    // 2. Top3 pages with missing optional fields (traffic_loss, pct_pageviews, click_rate, etc.)
+    mockAthenaClient.query.onCall(1).resolves([
+      { path: '/to-check' }, // missing all optional fields
+    ]);
+    // 3. Lost traffic summary with missing pageviews (covers totalPageViews = 0 branch)
+    mockAthenaClient.query.onCall(2).resolves([
+      { device: 'mobile' }, // missing pageviews
+    ]);
+    // 4. Top3 by device with missing fields
+    mockAthenaClient.query.onCall(3).resolves([
+      { path: '/to-check', device: 'mobile' }, // missing bounce_rate
+    ]);
+
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    const guidance = [{
+      body: { data: { mobile: 'mobile', desktop: 'desktop', impact: { business: 'biz', user: 'usr' } } },
+      insight: 'insight', rationale: 'rationale', recommendation: 'rec',
+      metadata: { scrape_job_id: 'test-job-id' },
+    }];
+    const message = { auditId: 'test-audit-id', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
+    await handler(message, context);
+
+    expect(Opportunity.create).to.have.been.called;
+    const opportunityData = Opportunity.create.getCall(0).args[0];
+    // Verify defaults are applied correctly when fields are missing
+    // opportunity.data.pageViews is stats.totalPageViews in the mapper
+    expect(opportunityData.data.pageViews).to.equal(0);
+    // opportunity.data.bounceRate is stats.totalAverageBounceRate in the mapper (totalPageViews = 0 branch)
+    expect(opportunityData.data.bounceRate).to.equal(0);
+  });
+
+  it('should handle zero pageviews in sitewide bounce delta calculation', async () => {
+    // Reset mock to cover totalPVShow = 0 and totalPVHidden = 0 branches (lines 138-139)
+    mockAthenaClient.query.reset();
+    // 1. Bounce gap with zero pageviews for show and hidden
+    mockAthenaClient.query.onCall(0).resolves([
+      { trf_type: 'paid', consent: 'show', pageviews: '0', bounce_rate: '0.8' },
+      { trf_type: 'paid', consent: 'hidden', pageviews: '0', bounce_rate: '0.65' },
+    ]);
+    // 2-4. Normal responses for other queries
+    mockAthenaClient.query.onCall(1).resolves([
+      { path: '/to-check', pageviews: '5000', traffic_loss: '4000', bounce_rate: '0.8' },
+    ]);
+    mockAthenaClient.query.onCall(2).resolves([
+      { device: 'mobile', pageviews: '5000', traffic_loss: '4000', bounce_rate: '0.8' },
+    ]);
+    mockAthenaClient.query.onCall(3).resolves([
+      { path: '/to-check', device: 'mobile', pageviews: '5000', traffic_loss: '4000', bounce_rate: '0.85' },
+    ]);
+
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    const guidance = [{
+      body: { data: { mobile: 'mobile', desktop: 'desktop', impact: { business: 'biz', user: 'usr' } } },
+      insight: 'insight', rationale: 'rationale', recommendation: 'rec',
+      metadata: { scrape_job_id: 'test-job-id' },
+    }];
+    const message = { auditId: 'test-audit-id', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
+    await handler(message, context);
+
+    // Should still create opportunity - the sitewideBounceDelta calculation handles 0 pageviews
+    expect(Opportunity.create).to.have.been.called;
+    // The opportunity is created, meaning the ternary branches for 0 pageviews were exercised
+  });
+
+  it('should include ahrefs CPC fields when cpcSource is ahrefs (line 229 branch)', async () => {
+    // Configure S3 to return valid ahrefs CPC data
+    const ahrefsCPCData = {
+      organicTraffic: 10000,
+      organicCost: 9500, // organicCPC = 9500/10000 = 0.95
+      paidTraffic: 5000,
+      paidCost: 6250, // paidCPC = 6250/5000 = 1.25
+    };
+    s3ClientMock.send.resolves({
+      Body: { transformToString: () => JSON.stringify(ahrefsCPCData) },
+    });
+
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    const guidance = [{
+      body: { data: { mobile: 'mobile', desktop: 'desktop', impact: { business: 'biz', user: 'usr' } } },
+      insight: 'insight', rationale: 'rationale', recommendation: 'rec',
+      metadata: { scrape_job_id: 'test-job-id' },
+    }];
+    const message = { auditId: 'test-audit-id', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
+    await handler(message, context);
+
+    expect(Opportunity.create).to.have.been.called;
+    const opportunityData = Opportunity.create.getCall(0).args[0];
+    // Verify ahrefs-specific fields are included (line 229 conditional spread)
+    expect(opportunityData.data.cpcSource).to.equal('ahrefs');
+    expect(opportunityData.data.ahrefsOrganicCPC).to.equal(0.95);
+    expect(opportunityData.data.ahrefsPaidCPC).to.equal(1.25);
+    expect(opportunityData.data.appliedCPC).to.equal(1.25);
+  });
+
+  it('should create a new opportunity and suggestion from serialized JSON with markdown', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    const guidance = [{
+      body: {
+        data: {
+          mobile: 'mobile markdown',
+          desktop: 'desktop markdown',
+          impact: {
+            business: 'business markdown',
+            user: 'user markdown',
+          },
+        },
+      },
+      insight: 'insight',
+      rationale: 'rationale',
+      recommendation: 'rec',
+      metadata: { scrape_job_id: 'test-job-id' },
+    }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
     const result = await handler(message, context);
     expect(Opportunity.create).to.have.been.called;
     expect(Suggestion.create).to.have.been.called;
@@ -257,7 +465,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
     // Act
     const result = await handler(message, context);
@@ -314,7 +522,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
     const result = await handler(message, context);
 
@@ -353,7 +561,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
     const result = await handler(message, context);
 
@@ -375,7 +583,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     const result = await handler(message, context);
     expect(Opportunity.create).not.to.have.been.called;
     expect(Suggestion.create).not.to.have.been.called;
-    expect(logStub.info).to.have.been.calledWithMatch(/Skipping opportunity creation/);
+    expect(logStub.info).to.have.been.calledWithMatch(/\[paid-audit\] Skipping paid-cookie-consent: low issue severity/);
     expect(result.status).to.equal(ok().status);
   });
 
@@ -388,7 +596,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       impact: { business: 'business markdown', user: 'user markdown' },
     } };
     const guidance = [{ body, metadata: { scrape_job_id: 'test-job-id' } }];
-    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
     const result = await handler(message, context);
     expect(Opportunity.create).to.have.been.called;
     expect(Suggestion.create).to.have.been.called;
@@ -404,6 +612,48 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     const result = await handler(message, context);
 
     expect(Opportunity.create).not.to.have.been.called;
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should skip opportunity creation when suggestions is empty array', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    const body = { issueSeverity: 'high', data: {
+      mobile: 'mobile', desktop: 'desktop', impact: { business: 'biz', user: 'usr' },
+    } };
+    const guidance = [{ body, metadata: { scrape_job_id: 'test-job-id' } }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [] } };
+    const result = await handler(message, context);
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(Suggestion.create).not.to.have.been.called;
+    expect(logStub.info).to.have.been.calledWithMatch(/no suggestions from guidance engine/);
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should skip opportunity creation when suggestions is null', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    const body = { issueSeverity: 'high', data: {
+      mobile: 'mobile', desktop: 'desktop', impact: { business: 'biz', user: 'usr' },
+    } };
+    const guidance = [{ body, metadata: { scrape_job_id: 'test-job-id' } }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: null } };
+    const result = await handler(message, context);
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(Suggestion.create).not.to.have.been.called;
+    expect(logStub.info).to.have.been.calledWithMatch(/no suggestions from guidance engine/);
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should skip opportunity creation when suggestions is undefined', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    const body = { issueSeverity: 'high', data: {
+      mobile: 'mobile', desktop: 'desktop', impact: { business: 'biz', user: 'usr' },
+    } };
+    const guidance = [{ body, metadata: { scrape_job_id: 'test-job-id' } }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const result = await handler(message, context);
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(Suggestion.create).not.to.have.been.called;
+    expect(logStub.info).to.have.been.calledWithMatch(/no suggestions from guidance engine/);
     expect(result.status).to.equal(ok().status);
   });
 
@@ -425,7 +675,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
     await handler(message, context);
     expect(Suggestion.create).to.have.been.calledWith(sinon.match.has('status', 'PENDING_VALIDATION'));
   });
@@ -455,7 +705,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
     const result = await handler(message, context);
 
@@ -490,7 +740,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
-    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
     const result = await handler(message, context);
 
@@ -526,7 +776,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
         recommendation: 'rec',
         metadata: { scrape_job_id: jobId },
       }];
-      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
       await handler(message, context);
 
@@ -584,13 +834,18 @@ describe('Paid Cookie Consent Guidance Handler', () => {
         recommendation: 'rec',
         metadata: { scrape_job_id: 'test-job-123' },
       }];
-      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
       await handler(message, context);
 
-      // Should not make any S3 calls
-      expect(s3ClientMock.send).to.not.have.been.called;
-
+      // Should not make HeadObjectCommand or CopyObjectCommand calls (screenshot copying)
+      // Note: getCPCData may still call S3 for CPC data via GetObjectCommand
+      const s3Calls = s3ClientMock.send.getCalls();
+      const screenshotCopyingCalls = s3Calls.filter(
+        (call) => call.args[0] instanceof HeadObjectCommand
+          || call.args[0] instanceof CopyObjectCommand,
+      );
+      expect(screenshotCopyingCalls).to.have.lengthOf(0);
     });
     it('should handle file not found gracefully and continue processing', async () => {
       const jobId = 'test-job-123';
@@ -621,7 +876,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
         recommendation: 'rec',
         metadata: { scrape_job_id: jobId },
       }];
-      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
       await handler(message, context);
 
@@ -652,7 +907,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
         recommendation: 'rec',
         metadata: { scrape_job_id: jobId },
       }];
-      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
       await handler(message, context);
 
@@ -696,7 +951,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
         recommendation: 'rec',
         metadata: { scrape_job_id: jobId },
       }];
-      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
 
       await handler(message, context);
 

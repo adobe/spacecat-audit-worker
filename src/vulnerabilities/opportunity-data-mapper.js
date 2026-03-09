@@ -53,8 +53,8 @@ export function createOpportunityData(props) {
   return {
     runbook: 'https://wiki.corp.adobe.com/display/WEM/Security+Success',
     origin: 'AUTOMATION',
-    title: '3rd-party libraries in application code have known vulnerabilities',
-    description: 'The application code is using 3rd party libraries which have known vulnerabilities.\n\nThese vulnerabilities could be exploited by a malicious attacker, increasing the risk and decreasing the security posture of your website.\n\nIt is highly recommended to always upgrade them to the latest compatible versions, as new vulnerabilities are discovered.',
+    title: 'Some third-party libraries on your site pose security risks — remediation ready for review',
+    description: 'Outdated libraries can introduce security flaws — updating them keeps the site stable and safe.',
     tags: ['Vulnerabilities'],
     data: {
       howToFix: 'Apply a code patch which upgrades the versions of the 3rd-party libraries in the application code.\n\nReview all suggested fixes below before applying. Entries can be dismissed or edited as needed.',

@@ -20,10 +20,15 @@ import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-
 import {
   retrieveSiteBySiteId,
   syncSuggestions,
+  syncSuggestionsWithPublishDetection,
   getImsOrgId,
   retrieveAuditById,
   keepSameDataFunction,
   keepLatestMergeDataFunction,
+  getDisappearedSuggestions,
+  reconcileDisappearedSuggestions,
+  publishDeployedFixEntities,
+  AUTHOR_ONLY_OPPORTUNITY_TYPES,
 } from '../../src/utils/data-access.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -103,16 +108,16 @@ describe('data-access', () => {
 
     beforeEach(() => {
       mockOpportunity = {
-        getSuggestions: sinon.stub(),
-        addSuggestions: sinon.stub(),
+        getSuggestions: sandbox.stub(),
+        addSuggestions: sandbox.stub(),
         getSiteId: () => 'site-id',
       };
 
       mockLogger = {
-        debug: sinon.spy(),
-        error: sinon.spy(),
-        info: sinon.spy(),
-        warn: sinon.spy(),
+        debug: sandbox.spy(),
+        error: sandbox.spy(),
+        info: sandbox.spy(),
+        warn: sandbox.spy(),
       };
 
       context = new MockContextBuilder()
@@ -129,6 +134,10 @@ describe('data-access', () => {
           log: mockLogger,
         })
         .build();
+    });
+
+    afterEach(() => {
+      sandbox.restore();
     });
 
     it('should return early if context is null', async () => {
@@ -198,6 +207,60 @@ describe('data-access', () => {
       expect(actualArgs[1].status).to.equal('PENDING_VALIDATION');
       expect(actualArgs[1].data).to.deep.equal({ key: '4' });
       expect(mockLogger.error).to.not.have.been.called;
+    });
+
+    it('should use "unknown" as siteId when getSiteId is undefined', async () => {
+      const newData = [{ key: '1' }];
+      const suggestionsResult = {
+        errorItems: [],
+        createdItems: newData,
+        length: newData.length,
+      };
+
+      // Create opportunity without getSiteId
+      const opportunityWithoutSiteId = {
+        getSuggestions: sandbox.stub().resolves([]),
+        addSuggestions: sandbox.stub().resolves(suggestionsResult),
+      };
+
+      await syncSuggestions({
+        context,
+        opportunity: opportunityWithoutSiteId,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify that "unknown" is used as siteId
+      expect(mockLogger.info).to.have.been.calledWith('Adding 1 new suggestions for siteId unknown');
+      expect(mockLogger.debug).to.have.been.calledWith(
+        sinon.match(/Successfully created.*suggestions for siteId unknown/),
+      );
+    });
+
+    it('should use suggestions.length when createdItems is undefined', async () => {
+      const newData = [{ key: '1' }, { key: '2' }];
+      // Return suggestions without createdItems property
+      const suggestionsResult = {
+        errorItems: [],
+        length: newData.length,
+      };
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves(suggestionsResult);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify that suggestions.length is used when createdItems is undefined
+      expect(mockLogger.debug).to.have.been.calledWith(
+        `Successfully created ${suggestionsResult.length} suggestions for siteId site-id`,
+      );
     });
 
     it('should not handle outdated suggestions if context is not provided', async () => {
@@ -309,6 +372,366 @@ describe('data-access', () => {
       expect(existingSuggestions[0].save).to.have.been.called;
     });
 
+    it('should preserve REJECTED status when same suggestion appears again with no data changes', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'same title', url: 'https://example.com/page1' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      // Exact same data (no changes)
+      const newData = [
+        { key: '1', title: 'same title', url: 'https://example.com/page1' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify that REJECTED status is NOT changed (setStatus should not be called)
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      // Verify that debug log is called with the correct message
+      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
+      // Verify that save is called
+      expect(existingSuggestions[0].save).to.have.been.called;
+      // Verify that setData is called to update the data
+      expect(existingSuggestions[0].setData).to.have.been.called;
+    });
+
+    it('should preserve REJECTED status when data changes', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title', description: 'old description' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      // Data changed (title changed)
+      const newData = [
+        { key: '1', title: 'new title', description: 'old description' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify that REJECTED status is NOT changed (setStatus should not be called)
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      // Verify that debug log is called with the correct message
+      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
+      // Verify that save is called
+      expect(existingSuggestions[0].save).to.have.been.called;
+      // Verify that setData is called to update the data
+      expect(existingSuggestions[0].setData).to.have.been.called;
+    });
+
+    it('should preserve REJECTED status when data changes even if site requires validation', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title', url: 'https://example.com/page1' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      // Data changed (url changed)
+      const newData = [
+        { key: '1', title: 'old title', url: 'https://example.com/page2' },
+      ];
+
+      // Mock site with requiresValidation
+      context.site = {
+        requiresValidation: true,
+      };
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify that REJECTED status is NOT changed (setStatus should not be called)
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      // Verify that debug log is called with the correct message
+      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
+      // Verify that save is called
+      expect(existingSuggestions[0].save).to.have.been.called;
+      // Verify that setData is called to update the data
+      expect(existingSuggestions[0].setData).to.have.been.called;
+    });
+
+    it('should preserve REJECTED status when nested objects and arrays change', async () => {
+      const suggestionsData = [
+        { key: '1', metrics: [{ value: 100 }], issues: [{ type: 'error1' }] },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      // Nested object/array changed in data
+      const newData = [
+        { key: '1', metrics: [{ value: 200 }], issues: [{ type: 'error2' }] },
+      ];
+
+      context.site = {
+        requiresValidation: false,
+      };
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify that REJECTED status is NOT changed (setStatus should not be called)
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
+      expect(existingSuggestions[0].save).to.have.been.called;
+      expect(existingSuggestions[0].setData).to.have.been.called;
+    });
+
+    it('should not mark REJECTED suggestions as OUTDATED when they do not appear in new audit data', async () => {
+      const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+      // Existing REJECTED suggestion that doesn't appear in new audit
+      const existingSuggestions = [
+        {
+          id: '1',
+          data: { url: 'https://example.com/page1', key: 'page1' },
+          getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1' }),
+          getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+        },
+        {
+          id: '2',
+          data: { url: 'https://example.com/page2', key: 'page2' },
+          getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+          getStatus: sinon.stub().returns('NEW'),
+        },
+      ];
+
+      // New audit data only has page3 (page1 and page2 are not in new data)
+      const newData = [{ url: 'https://example.com/page3', key: 'page3' }];
+      const scrapedUrlsSet = new Set([
+        'https://example.com/page1',
+        'https://example.com/page2',
+        'https://example.com/page3',
+      ]);
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey: buildKeyWithUrl,
+        mapNewSuggestion,
+        scrapedUrlsSet,
+      });
+
+      // Verify that bulkUpdateStatus was called only with NEW suggestion (not REJECTED)
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        [existingSuggestions[1]], // Only the NEW suggestion, not REJECTED
+        'OUTDATED',
+      );
+      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
+    });
+
+    it('should not mark REJECTED suggestions as OUTDATED even when scrapedUrlsSet is null', async () => {
+      const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+      // Existing REJECTED and NEW suggestions that don't appear in new audit
+      const existingSuggestions = [
+        {
+          id: '1',
+          data: { url: 'https://example.com/page1', key: 'page1' },
+          getData: sinon.stub().returns({ key: 'page1' }),
+          getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+        },
+        {
+          id: '2',
+          data: { url: 'https://example.com/page2', key: 'page2' },
+          getData: sinon.stub().returns({ key: 'page2' }),
+          getStatus: sinon.stub().returns('NEW'),
+        },
+      ];
+
+      // New audit data only has page3 (page1 and page2 are not in new data)
+      const newData = [{ url: 'https://example.com/page3', key: 'page3' }];
+      // scrapedUrlsSet is null (no URL filtering)
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey: buildKeyWithUrl,
+        mapNewSuggestion,
+        scrapedUrlsSet: null, // Explicitly null
+      });
+
+      // Verify that bulkUpdateStatus was called only with NEW suggestion (not REJECTED)
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        [existingSuggestions[1]], // Only the NEW suggestion, not REJECTED
+        'OUTDATED',
+      );
+      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
+    });
+
+    it('should not mark APPROVED or IN_PROGRESS suggestions as OUTDATED', async () => {
+      const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+      const existingSuggestions = [
+        {
+          id: '1',
+          data: { url: 'https://example.com/page1', key: 'page1' },
+          getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1' }),
+          getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.APPROVED),
+        },
+        {
+          id: '2',
+          data: { url: 'https://example.com/page2', key: 'page2' },
+          getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+          getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.IN_PROGRESS),
+        },
+        {
+          id: '3',
+          data: { url: 'https://example.com/page3', key: 'page3' },
+          getData: sinon.stub().returns({ url: 'https://example.com/page3', key: 'page3' }),
+          getStatus: sinon.stub().returns('NEW'),
+        },
+      ];
+
+      const newData = [{ url: 'https://example.com/page4', key: 'page4' }];
+      const scrapedUrlsSet = new Set([
+        'https://example.com/page1',
+        'https://example.com/page2',
+        'https://example.com/page3',
+        'https://example.com/page4',
+      ]);
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey: buildKeyWithUrl,
+        mapNewSuggestion,
+        scrapedUrlsSet,
+      });
+
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        [existingSuggestions[2]],
+        'OUTDATED',
+      );
+      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
+    });
+
+    it('should not mark deployed suggestions as OUTDATED', async () => {
+      const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+      const existingSuggestions = [
+        {
+          id: '1',
+          data: { url: 'https://example.com/page1', key: 'page1', edgeDeployed: 1769607504287 },
+          getId: sinon.stub().returns('1'),
+          getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1', edgeDeployed: 1769607504287 }),
+          getStatus: sinon.stub().returns('NEW'),
+        },
+        {
+          id: '2',
+          data: { url: 'https://example.com/page2', key: 'page2', edgeDeployed: 1769607504287 },
+          getId: sinon.stub().returns('2'),
+          getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2', edgeDeployed: 1769607504287 }),
+          getStatus: sinon.stub().returns('NEW'),
+        },
+        {
+          id: '3',
+          data: { url: 'https://example.com/page3', key: 'page3' },
+          getId: sinon.stub().returns('3'),
+          getData: sinon.stub().returns({ url: 'https://example.com/page3', key: 'page3' }),
+          getStatus: sinon.stub().returns('NEW'),
+        },
+      ];
+
+      const newData = [{ url: 'https://example.com/page4', key: 'page4' }];
+      const scrapedUrlsSet = new Set([
+        'https://example.com/page1',
+        'https://example.com/page2',
+        'https://example.com/page3',
+        'https://example.com/page4',
+      ]);
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey: buildKeyWithUrl,
+        mapNewSuggestion,
+        scrapedUrlsSet,
+      });
+
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        [existingSuggestions[2]],
+        'OUTDATED',
+      );
+      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
+    });
+
     it('should update suggestions when they are detected again', async () => {
       const suggestionsData = [
         { key: '1', title: 'old title' },
@@ -381,7 +804,7 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
       expect(existingSuggestions[0].setStatus).to.have.been
         .calledOnceWith(SuggestionDataAccess.STATUSES.NEW);
-      expect(mockLogger.warn).to.have.been.calledOnceWith('Resolved suggestion found in audit. Possible regression.');
+      expect(mockLogger.warn).to.have.been.calledOnceWith('Outdated suggestion found in audit. Possible regression.');
       expect(existingSuggestions[0].save).to.have.been.calledOnce;
     });
 
@@ -1188,6 +1611,36 @@ describe('data-access', () => {
         expect(e.message).to.include('Sample error: Unknown error');
       }
     });
+
+    it('should use pre-fetched suggestions when provided to avoid double DB query', async () => {
+      const suggestionsData = [{ key: '1', title: 'existing' }];
+      const prefetchedSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub(),
+        getStatus: sinon.stub().returns('NEW'),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+      const newData = [{ key: '1', title: 'updated' }];
+
+      // Pass existingSuggestions directly - getSuggestions should NOT be called
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+        existingSuggestions: prefetchedSuggestions,
+      });
+
+      // Verify getSuggestions was NOT called since we provided pre-fetched suggestions
+      expect(mockOpportunity.getSuggestions).to.not.have.been.called;
+      // Verify the pre-fetched suggestions were used
+      expect(prefetchedSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
+      expect(prefetchedSuggestions[0].save).to.have.been.calledOnce;
+    });
   });
 
   describe('getImsOrgId', () => {
@@ -1319,6 +1772,666 @@ describe('data-access', () => {
       expect(result).to.not.have.property('oldProperty');
       expect(result).to.have.property('newProperty', 'newValue');
       expect(result).to.have.property('sharedProperty', 'newValue');
+    });
+  });
+
+  describe('AUTHOR_ONLY_OPPORTUNITY_TYPES', () => {
+    it('should contain expected opportunity types', () => {
+      expect(AUTHOR_ONLY_OPPORTUNITY_TYPES).to.include('security-permissions-redundant');
+      expect(AUTHOR_ONLY_OPPORTUNITY_TYPES).to.include('security-permissions');
+    });
+  });
+
+  describe('getDisappearedSuggestions', () => {
+    it('should return suggestions whose keys are not in newDataKeys', () => {
+      const existingSuggestions = [
+        { getData: () => ({ key: '1' }) },
+        { getData: () => ({ key: '2' }) },
+        { getData: () => ({ key: '3' }) },
+      ];
+      const newDataKeys = new Set(['1', '3']);
+      const buildKey = (data) => data.key;
+
+      const result = getDisappearedSuggestions(existingSuggestions, newDataKeys, buildKey);
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].getData().key).to.equal('2');
+    });
+
+    it('should return empty array when all suggestions exist in newDataKeys', () => {
+      const existingSuggestions = [
+        { getData: () => ({ key: '1' }) },
+        { getData: () => ({ key: '2' }) },
+      ];
+      const newDataKeys = new Set(['1', '2']);
+      const buildKey = (data) => data.key;
+
+      const result = getDisappearedSuggestions(existingSuggestions, newDataKeys, buildKey);
+
+      expect(result).to.have.lengthOf(0);
+    });
+  });
+
+  describe('reconcileDisappearedSuggestions', () => {
+    let mockLogger;
+    let mockOpportunity;
+
+    beforeEach(() => {
+      mockLogger = {
+        info: sinon.stub(),
+        warn: sinon.stub(),
+        debug: sinon.stub(),
+        error: sinon.stub(),
+      };
+      mockOpportunity = {
+        getId: sinon.stub().returns('opp-id'),
+        addFixEntities: sinon.stub().resolves({ createdItems: [], errorItems: [] }),
+      };
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('should mark NEW suggestions as FIXED when isIssueFixedWithAISuggestion returns true', async () => {
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-1'),
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        getType: sinon.stub().returns('TEST_TYPE'),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      await reconcileDisappearedSuggestions({
+        opportunity: mockOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        buildFixEntityPayload: (s, opp) => ({
+          opportunityId: opp.getId(),
+          status: 'PUBLISHED',
+          suggestions: [s.getId()],
+        }),
+      });
+
+      expect(suggestion.setStatus).to.have.been.calledWith(SuggestionDataAccess.STATUSES.FIXED);
+      expect(suggestion.save).to.have.been.called;
+      expect(mockOpportunity.addFixEntities).to.have.been.called;
+    });
+
+    it('should skip suggestions not in NEW status', async () => {
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-1'),
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.APPROVED),
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      await reconcileDisappearedSuggestions({
+        opportunity: mockOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        buildFixEntityPayload: sinon.stub(),
+      });
+
+      expect(suggestion.setStatus).to.not.have.been.called;
+      expect(mockOpportunity.addFixEntities).to.not.have.been.called;
+    });
+
+    it('should pass isAuthorOnly to buildFixEntityPayload', async () => {
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-1'),
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        getType: sinon.stub().returns('TEST_TYPE'),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      const buildFixEntityPayloadStub = sinon.stub().returns({
+        opportunityId: 'opp-id',
+        status: 'DEPLOYED',
+        suggestions: ['sugg-1'],
+      });
+
+      await reconcileDisappearedSuggestions({
+        opportunity: mockOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        buildFixEntityPayload: buildFixEntityPayloadStub,
+        isAuthorOnly: true,
+      });
+
+      expect(buildFixEntityPayloadStub).to.have.been.calledWith(
+        suggestion,
+        mockOpportunity,
+        true,
+      );
+    });
+
+    it('should log warning when suggestion.save() throws', async () => {
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-1'),
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().rejects(new Error('DB error')),
+      };
+
+      await reconcileDisappearedSuggestions({
+        opportunity: mockOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        buildFixEntityPayload: sinon.stub(),
+      });
+
+      expect(mockLogger.warn).to.have.been.calledWith(
+        'Failed to mark suggestion sugg-1 as FIXED: DB error',
+      );
+    });
+
+    it('should log warning when buildFixEntityPayload throws', async () => {
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-2'),
+        getData: sinon.stub().returns({ key: '2' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      await reconcileDisappearedSuggestions({
+        opportunity: mockOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        buildFixEntityPayload: sinon.stub().throws(new Error('Payload error')),
+      });
+
+      expect(mockLogger.warn).to.have.been.calledWith(
+        'Failed building fix entity for suggestion sugg-2: Payload error',
+      );
+    });
+
+    it('should log warning when opportunity.addFixEntities throws', async () => {
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-3'),
+        getData: sinon.stub().returns({ key: '3' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      mockOpportunity.addFixEntities.rejects(new Error('Add fix entities error'));
+
+      await reconcileDisappearedSuggestions({
+        opportunity: mockOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        buildFixEntityPayload: sinon.stub().returns({ id: 'fix-1' }),
+      });
+
+      expect(mockLogger.warn).to.have.been.calledWith(
+        'Failed to add fix entities on opportunity opp-id: Add fix entities error',
+      );
+    });
+
+    it('should log warning on outer catch when unexpected error occurs', async () => {
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-4'),
+        getData: sinon.stub().returns({ key: '4' }),
+        getStatus: sinon.stub().throws(new Error('Unexpected error')),
+      };
+
+      await reconcileDisappearedSuggestions({
+        opportunity: mockOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        buildFixEntityPayload: sinon.stub(),
+      });
+
+      expect(mockLogger.warn).to.have.been.calledWith(
+        'Failed reconciliation for disappeared suggestions: Unexpected error',
+      );
+    });
+
+    it('should skip when isIssueFixedWithAISuggestion returns false', async () => {
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-5'),
+        getData: sinon.stub().returns({ key: '5' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      await reconcileDisappearedSuggestions({
+        opportunity: mockOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(false),
+        buildFixEntityPayload: sinon.stub(),
+      });
+
+      expect(suggestion.setStatus).to.not.have.been.called;
+      expect(mockOpportunity.addFixEntities).to.not.have.been.called;
+    });
+  });
+
+  describe('publishDeployedFixEntities', () => {
+    let mockLogger;
+    let mockDataAccess;
+
+    beforeEach(() => {
+      mockLogger = {
+        info: sinon.stub(),
+        warn: sinon.stub(),
+        debug: sinon.stub(),
+        error: sinon.stub(),
+      };
+      mockDataAccess = {
+        FixEntity: {
+          allByOpportunityIdAndStatus: sinon.stub().resolves([]),
+        },
+        Suggestion: {
+          getFixEntitiesBySuggestionId: sinon.stub().resolves({ data: [] }),
+        },
+      };
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('should skip when FixEntity APIs not available', async () => {
+      await publishDeployedFixEntities({
+        opportunityId: 'opp-id',
+        context: { dataAccess: {}, log: mockLogger },
+        isIssueResolvedOnProduction: sinon.stub().resolves(true),
+      });
+
+      expect(mockLogger.debug).to.have.been.calledWith('FixEntity APIs not available; skipping publish.');
+    });
+
+    it('should handle when context is falsy', async () => {
+      // This should not throw - just return early
+      await publishDeployedFixEntities({
+        opportunityId: 'opp-id',
+        context: null,
+        isIssueResolvedOnProduction: sinon.stub().resolves(true),
+      });
+      // No assertions needed - just ensure no error thrown
+    });
+
+    it('should handle when dataAccess is undefined in context', async () => {
+      await publishDeployedFixEntities({
+        opportunityId: 'opp-id',
+        context: { log: mockLogger },
+        isIssueResolvedOnProduction: sinon.stub().resolves(true),
+      });
+
+      expect(mockLogger.debug).to.have.been.calledWith('FixEntity APIs not available; skipping publish.');
+    });
+
+    it('should handle fix entity with getSuggestionIds returning undefined', async () => {
+      const fixEntity = {
+        getId: sinon.stub().returns('fix-undefined'),
+        getSuggestionIds: sinon.stub().returns(undefined),
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      mockDataAccess.FixEntity.allByOpportunityIdAndStatus.resolves([fixEntity]);
+
+      await publishDeployedFixEntities({
+        opportunityId: 'opp-id',
+        context: { dataAccess: mockDataAccess, log: mockLogger },
+        isIssueResolvedOnProduction: sinon.stub().resolves(true),
+      });
+
+      // Should not publish since suggestionIds is empty after || []
+      expect(fixEntity.setStatus).to.not.have.been.called;
+    });
+
+    it('should skip when no deployed fix entities found', async () => {
+      mockDataAccess.FixEntity.allByOpportunityIdAndStatus.resolves([]);
+
+      await publishDeployedFixEntities({
+        opportunityId: 'opp-id',
+        context: { dataAccess: mockDataAccess, log: mockLogger },
+        isIssueResolvedOnProduction: sinon.stub().resolves(true),
+      });
+
+      expect(mockDataAccess.FixEntity.allByOpportunityIdAndStatus).to.have.been.called;
+    });
+
+    it('should skip fix entity with empty suggestionIds', async () => {
+      const fixEntity = {
+        getId: sinon.stub().returns('fix-1'),
+        getSuggestionIds: sinon.stub().returns([]),
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      mockDataAccess.FixEntity.allByOpportunityIdAndStatus.resolves([fixEntity]);
+
+      await publishDeployedFixEntities({
+        opportunityId: 'opp-id',
+        context: { dataAccess: mockDataAccess, log: mockLogger },
+        isIssueResolvedOnProduction: sinon.stub().resolves(true),
+      });
+
+      expect(fixEntity.setStatus).to.not.have.been.called;
+    });
+
+    it('should not publish when suggestion not found', async () => {
+      const fixEntity = {
+        getId: sinon.stub().returns('fix-2'),
+        getSuggestionIds: sinon.stub().returns(['sugg-1']),
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      mockDataAccess.FixEntity.allByOpportunityIdAndStatus.resolves([fixEntity]);
+      mockDataAccess.Suggestion.getFixEntitiesBySuggestionId.resolves({ data: [] });
+
+      await publishDeployedFixEntities({
+        opportunityId: 'opp-id',
+        context: { dataAccess: mockDataAccess, log: mockLogger },
+        isIssueResolvedOnProduction: sinon.stub().resolves(true),
+      });
+
+      expect(fixEntity.setStatus).to.not.have.been.called;
+    });
+
+    it('should not publish when key exists in currentAuditData (fast-path)', async () => {
+      const suggestion = {
+        getData: sinon.stub().returns({ key: 'existing-key' }),
+      };
+
+      const fixEntity = {
+        getId: sinon.stub().returns('fix-3'),
+        getSuggestionIds: sinon.stub().returns(['sugg-1']),
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      mockDataAccess.FixEntity.allByOpportunityIdAndStatus.resolves([fixEntity]);
+      mockDataAccess.Suggestion.getFixEntitiesBySuggestionId.resolves({ data: [suggestion] });
+
+      await publishDeployedFixEntities({
+        opportunityId: 'opp-id',
+        context: { dataAccess: mockDataAccess, log: mockLogger },
+        isIssueResolvedOnProduction: sinon.stub().resolves(true),
+        currentAuditData: [{ key: 'existing-key' }],
+        buildKey: (d) => d?.key,
+      });
+
+      expect(fixEntity.setStatus).to.not.have.been.called;
+    });
+
+    it('should not publish when isIssueResolvedOnProduction returns false', async () => {
+      const suggestion = {
+        getData: sinon.stub().returns({ key: 'resolved-key' }),
+      };
+
+      const fixEntity = {
+        getId: sinon.stub().returns('fix-4'),
+        getSuggestionIds: sinon.stub().returns(['sugg-1']),
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      mockDataAccess.FixEntity.allByOpportunityIdAndStatus.resolves([fixEntity]);
+      mockDataAccess.Suggestion.getFixEntitiesBySuggestionId.resolves({ data: [suggestion] });
+
+      await publishDeployedFixEntities({
+        opportunityId: 'opp-id',
+        context: { dataAccess: mockDataAccess, log: mockLogger },
+        isIssueResolvedOnProduction: sinon.stub().resolves(false),
+      });
+
+      expect(fixEntity.setStatus).to.not.have.been.called;
+    });
+
+    it('should publish fix entity when all suggestions resolved', async () => {
+      const suggestion = {
+        getData: sinon.stub().returns({ key: 'resolved-key' }),
+      };
+
+      const fixEntity = {
+        getId: sinon.stub().returns('fix-5'),
+        getSuggestionIds: sinon.stub().returns(['sugg-1']),
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      mockDataAccess.FixEntity.allByOpportunityIdAndStatus.resolves([fixEntity]);
+      mockDataAccess.Suggestion.getFixEntitiesBySuggestionId.resolves({ data: [suggestion] });
+
+      await publishDeployedFixEntities({
+        opportunityId: 'opp-id',
+        context: { dataAccess: mockDataAccess, log: mockLogger },
+        isIssueResolvedOnProduction: sinon.stub().resolves(true),
+      });
+
+      expect(fixEntity.setStatus).to.have.been.called;
+      expect(fixEntity.save).to.have.been.called;
+      expect(mockLogger.info).to.have.been.calledWith('Published fix entity fix-5');
+    });
+
+    it('should log debug when fixEntity.save() throws', async () => {
+      const suggestion = {
+        getData: sinon.stub().returns({ key: 'resolved-key' }),
+      };
+
+      const fixEntity = {
+        getId: sinon.stub().returns('fix-6'),
+        getSuggestionIds: sinon.stub().returns(['sugg-1']),
+        setStatus: sinon.stub(),
+        save: sinon.stub().rejects(new Error('Save error')),
+      };
+
+      mockDataAccess.FixEntity.allByOpportunityIdAndStatus.resolves([fixEntity]);
+      mockDataAccess.Suggestion.getFixEntitiesBySuggestionId.resolves({ data: [suggestion] });
+
+      await publishDeployedFixEntities({
+        opportunityId: 'opp-id',
+        context: { dataAccess: mockDataAccess, log: mockLogger },
+        isIssueResolvedOnProduction: sinon.stub().resolves(true),
+      });
+
+      expect(mockLogger.debug).to.have.been.calledWith('Failed to save fix entity: Save error');
+    });
+
+    it('should log warning on outer catch when unexpected error occurs', async () => {
+      mockDataAccess.FixEntity.allByOpportunityIdAndStatus.rejects(new Error('DB error'));
+
+      await publishDeployedFixEntities({
+        opportunityId: 'opp-id',
+        context: { dataAccess: mockDataAccess, log: mockLogger },
+        isIssueResolvedOnProduction: sinon.stub().resolves(true),
+      });
+
+      expect(mockLogger.warn).to.have.been.calledWith(
+        'Failed to publish deployed fix entities: DB error',
+      );
+    });
+  });
+
+  describe('syncSuggestionsWithPublishDetection', () => {
+    let mockLogger;
+    let mockOpportunity;
+    let context;
+    const buildKey = (d) => d?.key;
+    const mapNewSuggestion = (d) => ({ type: 'TEST', data: d });
+
+    beforeEach(() => {
+      mockLogger = {
+        info: sinon.stub(),
+        warn: sinon.stub(),
+        debug: sinon.stub(),
+        error: sinon.stub(),
+      };
+      mockOpportunity = {
+        getId: sinon.stub().returns('opp-id'),
+        getSiteId: sinon.stub().returns('site-id'),
+        getSuggestions: sinon.stub().resolves([]),
+        addSuggestions: sinon.stub().resolves({ createdItems: [], errorItems: [] }),
+        addFixEntities: sinon.stub().resolves({ createdItems: [], errorItems: [] }),
+        getType: sinon.stub().returns('broken-backlinks'),
+      };
+      context = {
+        dataAccess: {
+          Suggestion: {
+            bulkUpdateStatus: sinon.stub().resolves(),
+            getFixEntitiesBySuggestionId: sinon.stub().resolves({ data: [] }),
+          },
+          FixEntity: {
+            allByOpportunityIdAndStatus: sinon.stub().resolves([]),
+          },
+        },
+        log: mockLogger,
+        site: {
+          getDeliveryType: sinon.stub().returns('aem_edge'),
+          requiresValidation: false,
+        },
+      };
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('should call reconcile when callbacks provided', async () => {
+      const newData = [];
+      const disappearedSuggestion = {
+        getId: sinon.stub().returns('sugg-1'),
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        getType: sinon.stub().returns('TEST'),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      mockOpportunity.getSuggestions.resolves([disappearedSuggestion]);
+
+      const isIssueFixedStub = sinon.stub().resolves(true);
+      const buildFixEntityStub = sinon.stub().returns({
+        opportunityId: 'opp-id',
+        status: 'PUBLISHED',
+        suggestions: ['sugg-1'],
+      });
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+        isIssueFixedWithAISuggestion: isIssueFixedStub,
+        buildFixEntityPayload: buildFixEntityStub,
+      });
+
+      expect(isIssueFixedStub).to.have.been.called;
+      expect(disappearedSuggestion.setStatus).to.have.been.calledWith(
+        SuggestionDataAccess.STATUSES.FIXED,
+      );
+    });
+
+    it('should skip publish step for author-only opportunity types', async () => {
+      mockOpportunity.getType.returns('security-permissions-redundant');
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData: [{ key: '1' }],
+        buildKey,
+        mapNewSuggestion,
+        isIssueResolvedOnProduction: sinon.stub().resolves(true),
+      });
+
+      expect(mockLogger.debug).to.have.been.calledWith(
+        '[syncSuggestionsWithPublishDetection] Skipping publish for author-only type',
+      );
+    });
+
+    it('should call publish step for non-author-only types', async () => {
+      mockOpportunity.getType.returns('broken-backlinks');
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData: [{ key: '1' }],
+        buildKey,
+        mapNewSuggestion,
+        isIssueResolvedOnProduction: sinon.stub().resolves(true),
+      });
+
+      // Should have called allByOpportunityIdAndStatus for publish step
+      expect(context.dataAccess.FixEntity.allByOpportunityIdAndStatus).to.have.been.called;
+    });
+
+    it('should return early when context is falsy', async () => {
+      await syncSuggestionsWithPublishDetection({
+        context: null,
+        opportunity: mockOpportunity,
+        newData: [{ key: '1' }],
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Should not have called any methods on opportunity
+      expect(mockOpportunity.getSuggestions).to.not.have.been.called;
+    });
+
+    it('should return early when context is undefined', async () => {
+      await syncSuggestionsWithPublishDetection({
+        context: undefined,
+        opportunity: mockOpportunity,
+        newData: [{ key: '1' }],
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Should not have called any methods on opportunity
+      expect(mockOpportunity.getSuggestions).to.not.have.been.called;
+    });
+
+    it('should only call getSuggestions once to avoid duplicate DB queries', async () => {
+      const existingSuggestion = {
+        id: '1',
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns('NEW'),
+        setData: sinon.stub(),
+        save: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      };
+      mockOpportunity.getSuggestions.resolves([existingSuggestion]);
+      mockOpportunity.getType.returns('broken-backlinks');
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData: [{ key: '1', title: 'updated' }],
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify getSuggestions is only called ONCE, not twice
+      // (once in wrapper, passed to syncSuggestions to avoid double query)
+      expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
     });
   });
 });

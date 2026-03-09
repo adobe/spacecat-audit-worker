@@ -18,8 +18,8 @@ export function createOpportunityData(params = {}) {
   return {
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Acquisition%20-%20SEO/Experience_Success_Studio_Redirect_Chains_Runbook.docx?d=w15b25d46a5124cf29543ed08acf6caae&csf=1&web=1&e=Kiosk9',
     origin: 'AUTOMATION',
-    title: 'Redirect issues found with the /redirects.json file',
-    description: 'This audit identifies issues with the /redirects.json file that may lead to degraded Core Web Vitals (CWV) performance. It is recommended to review and resolve these issues to improve your site\'s performance.',
+    title: 'Redirect chains slowing navigation — cleanup ready to speed up navigation and crawling',
+    description: 'Multiple redirects slow pages and waste crawl budget — cleaner paths improve performance and SEO efficiency.',
     guidance: {
       steps: [
         'For each affected entry in the /redirects.json file, check if the redirect is valid. See the suggestion provided for details on how to resolve.',

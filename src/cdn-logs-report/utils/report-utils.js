@@ -10,11 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { getStaticContent, llmoConfig } from '@adobe/spacecat-shared-utils';
-import {
-  getWeek,
-  getYear,
-} from 'date-fns';
+import { getStaticContent, isoCalendarWeek, llmoConfig } from '@adobe/spacecat-shared-utils';
 import {
   extractCustomerDomain,
   resolveConsolidatedBucketName,
@@ -68,29 +64,6 @@ export function validateCountryCode(code) {
   return DEFAULT_COUNTRY_CODE;
 }
 
-export async function ensureTableExists(athenaClient, databaseName, reportConfig, log) {
-  const {
-    createTableSql, tableName, aggregatedLocation,
-  } = reportConfig;
-
-  try {
-    const createTableQuery = await loadSql(createTableSql, {
-      databaseName,
-      tableName,
-      aggregatedLocation,
-    });
-
-    log.debug(`Creating or checking table: ${tableName}`);
-    const sqlCreateTableDescription = `[Athena Query] Create table ${databaseName}.${tableName}`;
-    await athenaClient.execute(createTableQuery, databaseName, sqlCreateTableDescription);
-
-    log.debug(`Table ${tableName} is ready`);
-  } catch (error) {
-    log.error(`Failed to ensure table exists: ${error.message}`);
-    throw error;
-  }
-}
-
 /**
  * Generates reporting periods data for past weeks
  * @param {number|Date} [offsetOrDate=-1] - If number: weeks offset. If Date: reference date
@@ -115,13 +88,7 @@ export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1)
   weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
   weekEnd.setUTCHours(23, 59, 59, 999);
 
-  const localDate = new Date(
-    weekStart.getUTCFullYear(),
-    weekStart.getUTCMonth(),
-    weekStart.getUTCDate(),
-  );
-  const weekNumber = getWeek(localDate, { weekStartsOn: 1, firstWeekContainsDate: 4 });
-  const year = getYear(localDate);
+  const { week: weekNumber, year } = isoCalendarWeek(weekStart);
 
   const periodIdentifier = `w${String(weekNumber).padStart(2, '0')}-${year}`;
 

@@ -25,10 +25,15 @@ import {
   buildUserAgentFilter,
   buildSiteFilters,
 } from '../utils/cdn-utils.js';
+import { EXCLUDED_URL_SUFFIXES } from '../utils/agentic-urls.js';
+import { buildExcludedUrlSuffixesFilter } from '../cdn-logs-report/utils/query-builder.js';
 import { joinBaseAndPath } from '../utils/url-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const LOG_PREFIX = '[PageCitability]';
+const PAGE_CITABILITY_SCRAPE_OPTIONS = {
+  hideConsentBanners: true,
+};
 
 export async function getS3Config(site, context) {
   const customerDomain = extractCustomerDomain(site);
@@ -52,6 +57,7 @@ const createEmptyResult = (baseURL, siteId) => ({
   fullAuditRef: baseURL,
   processingType: 'page-citability',
   urls: [{ url: baseURL }],
+  options: PAGE_CITABILITY_SCRAPE_OPTIONS,
   siteId,
 });
 
@@ -94,6 +100,7 @@ export async function extractUrls(context) {
       dateFilter: getDateFilter(),
       userAgentFilter: buildUserAgentFilter(),
       siteFilters: buildSiteFilters(filters, site),
+      excludedUrlSuffixesFilter: buildExcludedUrlSuffixesFilter(EXCLUDED_URL_SUFFIXES),
     };
 
     const query = await getStaticContent(variables, './src/page-citability/sql/top-urls.sql');
@@ -154,6 +161,7 @@ export async function extractUrls(context) {
     fullAuditRef: finalUrl,
     urls: urlsForScraping,
     processingType: 'page-citability',
+    options: PAGE_CITABILITY_SCRAPE_OPTIONS,
     siteId,
   };
 }
@@ -169,6 +177,8 @@ async function fetchScrapedData(s3Path, context) {
 }
 
 async function processUrl(url, scrapeResult, context, existingRecordsMap) {
+  const { log } = context;
+
   try {
     /* c8 ignore next 3 */
     if (!scrapeResult?.location) {
@@ -182,7 +192,7 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
       return { url, success: false, error: 'Missing bot or human view data' };
     }
 
-    const { rawPage: botHtml } = scrapeData.botView;
+    const { rawPage: botHtml, isDeployedAtEdge } = scrapeData.botView;
     const { rawPage: humanHtml } = scrapeData.humanView;
 
     /* c8 ignore next 3 */
@@ -198,15 +208,14 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
     const existingRecord = existingRecordsMap.get(url);
 
     if (existingRecord) {
-      // Update existing record
       existingRecord.setCitabilityScore(scores.citabilityScore);
       existingRecord.setContentRatio(scores.contentRatio);
       existingRecord.setWordDifference(scores.wordDifference);
       existingRecord.setBotWords(scores.botWords);
       existingRecord.setNormalWords(scores.normalWords);
+      existingRecord.setIsDeployedAtEdge(isDeployedAtEdge);
       await existingRecord.save();
     } else {
-      // Create new record
       await PageCitability.create({
         siteId,
         url,
@@ -215,13 +224,19 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
         wordDifference: scores.wordDifference,
         botWords: scores.botWords,
         normalWords: scores.normalWords,
+        isDeployedAtEdge,
       });
     }
 
-    return { url, success: true, ...scores };
-    /* c8 ignore next 3 */
+    return {
+      url, success: true, ...scores, isDeployedAtEdge,
+    };
+    /* c8 ignore next 6 */
   } catch (error) {
-    return { url, success: false, error: error.message };
+    log.error(`${LOG_PREFIX} Error processing ${url}: ${error.message}`);
+    return {
+      url, success: false, error: error.message,
+    };
   }
 }
 
@@ -260,10 +275,15 @@ export async function analyzeCitability(context) {
   }
 
   const successful = results.filter((r) => r.success).length;
-  log.info(`${LOG_PREFIX} Completed: ${successful}/${results.length} successful`);
+  const deployedAtEdge = results.filter((r) => r.isDeployedAtEdge).length;
+  log.info(`${LOG_PREFIX} Completed: ${successful}/${results.length} successful (${deployedAtEdge} deployed at edge)`);
 
   return {
-    auditResult: { successfulPages: successful, failedPages: results.length - successful },
+    auditResult: {
+      successfulPages: successful,
+      failedPages: results.length - successful,
+      deployedAtEdge,
+    },
     fullAuditRef: audit.getFullAuditRef(),
   };
 }

@@ -69,6 +69,7 @@ export function processSuggestionsForMystique(suggestions, useCodeFixFlow = true
   const SKIPPED_STATUSES = [
     SuggestionDataAccess.STATUSES.FIXED,
     SuggestionDataAccess.STATUSES.SKIPPED,
+    SuggestionDataAccess.STATUSES.OUTDATED,
   ];
 
   // Helper: Extract issue items from a suggestion that need Mystique processing

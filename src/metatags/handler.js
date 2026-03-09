@@ -11,13 +11,12 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { calculateCPCValue } from '../support/utils.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import metatagsAutoSuggest from './metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { getIssueRanking, trimTagValue, normalizeTagValue } from '../utils/seo-utils.js';
 import { getBaseUrl } from '../utils/url-utils.js';
@@ -75,12 +74,33 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
       });
     });
 
+  // Custom merge function to preserve user-edited fields
+  const mergeDataFunction = (existingData, newData) => {
+    const merged = {
+      ...existingData,
+      ...newData,
+    };
+
+    // Preserve editedSuggestion and is_edited flag if user has made a selection (AI or custom)
+    // eslint-disable-next-line max-len
+    if (existingData.editedSuggestion !== undefined && existingData.editedSuggestion !== null && existingData.is_edited !== null) {
+      merged.editedSuggestion = existingData.editedSuggestion;
+      merged.is_edited = existingData.is_edited;
+    } else {
+      // Explicitly remove editedSuggestion if not present or flag is null
+      delete merged.editedSuggestion;
+    }
+
+    return merged;
+  };
+
   // Sync the suggestions from new audit with old ones
   await syncSuggestions({
     opportunity,
     newData: suggestions,
     context,
     buildKey,
+    mergeDataFunction,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: 'METADATA_UPDATE',
@@ -95,6 +115,12 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
   if (!object?.scrapeResult?.tags || typeof object.scrapeResult.tags !== 'object') {
     log.error(`No Scraped tags found in S3 ${key} object`);
+    return null;
+  }
+
+  // Skip 4xx pages when statusCode is present (new scrapes); old scrapes have no statusCode
+  if (object.statusCode != null && object.statusCode >= 400 && object.statusCode < 500) {
+    log.info(`[metatags] Skipping page with HTTP ${object.statusCode} for ${url}`);
     return null;
   }
 
@@ -298,21 +324,135 @@ export async function runAuditAndGenerateSuggestions(context) {
     healthyTags: seoChecks.getFewHealthyTags(),
     extractedTags,
   };
-  const updatedDetectedTags = await metatagsAutoSuggest(allTags, context, site);
 
-  const auditResult = {
-    detectedTags: updatedDetectedTags,
-    sourceS3Folder: `${context.env.S3_SCRAPER_BUCKET_NAME}/scrapes/${site.getId()}/`,
-    fullAuditRef: '',
+  // Mystique (asynchronous with chunking)
+  // Create opportunity first (needed for Mystique)
+  const opportunity = await convertToOpportunity(
     finalUrl,
-    ...(projectedTrafficLost && { projectedTrafficLost }),
-    ...(projectedTrafficValue && { projectedTrafficValue }),
+    { siteId: site.getId(), id: audit.getId() },
+    context,
+    createOpportunityData,
+    auditType,
+    {
+      projectedTrafficLost,
+      projectedTrafficValue,
+    },
+  );
+
+  // Get useHostnameOnly setting
+  let useHostnameOnly = false;
+  try {
+    const siteId = opportunity.getSiteId();
+    const siteObj = await context.dataAccess.Site.findById(siteId);
+    useHostnameOnly = siteObj?.getDeliveryConfig?.()?.useHostnameOnly ?? false;
+  } catch (error) {
+    log.error('Error in meta-tags configuration:', error);
+  }
+
+  // Build ALL suggestions list first
+  const suggestionsList = [];
+  Object.keys(validatedDetectedTags).forEach((endpoint) => {
+    [TITLE, DESCRIPTION, H1].forEach((tag) => {
+      if (validatedDetectedTags[endpoint]?.[tag]?.issue) {
+        suggestionsList.push({
+          ...validatedDetectedTags[endpoint][tag],
+          tagName: tag,
+          url: getBaseUrl(finalUrl, useHostnameOnly) + endpoint,
+          rank: getIssueRanking(tag, validatedDetectedTags[endpoint][tag].issue),
+        });
+      }
+    });
+  });
+
+  log.info(`[metatags] Built ${suggestionsList.length} suggestions for Mystique`);
+
+  // Custom merge function to preserve user-edited fields
+  const mergeDataFunction = (existingData, newData) => {
+    const merged = {
+      ...existingData,
+      ...newData,
+    };
+
+    // Preserve editedSuggestion and is_edited flag if user has made a selection (AI or custom)
+    // eslint-disable-next-line max-len
+    if (existingData.editedSuggestion !== undefined && existingData.editedSuggestion !== null && existingData.is_edited !== null) {
+      merged.editedSuggestion = existingData.editedSuggestion;
+      merged.is_edited = existingData.is_edited;
+    } else {
+      // Explicitly remove editedSuggestion if not present or flag is null
+      delete merged.editedSuggestion;
+    }
+
+    return merged;
   };
-  await opportunityAndSuggestions(finalUrl, {
+
+  // Sync ALL suggestions to database first (before chunking)
+  await syncSuggestions({
+    opportunity,
+    newData: suggestionsList,
+    context,
+    buildKey,
+    mergeDataFunction,
+    mapNewSuggestion: (suggestion) => ({
+      opportunityId: opportunity.getId(),
+      type: 'METADATA_UPDATE',
+      rank: suggestion.rank,
+      data: { ...suggestion },
+    }),
+  });
+
+  // Get synced suggestions from database (with IDs)
+  const { Suggestion, Configuration } = context.dataAccess;
+  const configuration = await Configuration.findLatest();
+  if (!configuration.isHandlerEnabledForSite('meta-tags-auto-suggest', site)) {
+    log.info('Metatags auto-suggest is disabled for site');
+    return {
+      status: 'complete',
+    };
+  }
+
+  const syncedSuggestions = await Suggestion.allByOpportunityIdAndStatus(
+    opportunity.getId(),
+    SuggestionModel.STATUSES.NEW,
+  );
+
+  // Build suggestion map with actual DB IDs
+  const suggestionMap = syncedSuggestions.map((s) => {
+    const suggestionUrl = s.getData().url;
+    // Extract endpoint from full URL (e.g., "https://example.com/page1" -> "/page1")
+    const endpoint = new URL(suggestionUrl).pathname;
+    return {
+      suggestionId: s.getId(),
+      endpoint,
+      tagName: s.getData().tagName,
+    };
+  });
+
+  // Build unique pageUrls from all suggestions
+  const pageUrls = [...new Set(suggestionMap.map((s) => `${site.getBaseURL()}${s.endpoint}`))];
+
+  log.info(`[metatags] Sending ${suggestionMap.length} suggestions to Mystique (${pageUrls.length} unique pages)`);
+
+  // Send single SQS message with all suggestions
+  const { sqs, env } = context;
+  const message = {
+    type: 'guidance:metatags',
     siteId: site.getId(),
     auditId: audit.getId(),
-    auditResult,
-  }, context);
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    data: {
+      detectedTags: validatedDetectedTags,
+      healthyTags: allTags.healthyTags,
+      suggestionMap,
+      baseUrl: site.getBaseURL(),
+      pageUrls,
+      opportunityId: opportunity.getId(),
+    },
+  };
+
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+  log.info(`[metatags] Successfully sent all ${suggestionMap.length} suggestions to Mystique`);
 
   log.info(`[metatags] Finish runAuditAndGenerateSuggestions step for: ${site.getId()}`);
 

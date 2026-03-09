@@ -425,6 +425,10 @@ describe('Structured Data Audit', () => {
               property: 'itemListElement',
               type: 'ListItem',
             }],
+            fieldNames: [
+              'name',
+              'item.name',
+            ],
             errors: [],
           },
           {

@@ -13,15 +13,53 @@
 /* eslint-env mocha */
 
 import { expect } from 'chai';
-import sinon from 'sinon';
 import nock from 'nock';
 import {
   isPreviewPage,
   getCountryCodeFromLang,
   parseCustomUrls,
   findBestMatchingPath,
+  isPdfUrl,
 } from '../../src/utils/url-utils.js';
 import * as utils from '../../src/utils/url-utils.js';
+
+describe('isPdfUrl', () => {
+  it('should return true for URLs ending with .pdf', () => {
+    expect(isPdfUrl('https://example.com/document.pdf')).to.be.true;
+    expect(isPdfUrl('https://example.com/path/to/file.pdf')).to.be.true;
+    expect(isPdfUrl('https://www.bmw.fr/content/dam/bmw/brochure.pdf')).to.be.true;
+  });
+
+  it('should return true for URLs with .pdf regardless of case', () => {
+    expect(isPdfUrl('https://example.com/document.PDF')).to.be.true;
+    expect(isPdfUrl('https://example.com/file.Pdf')).to.be.true;
+    expect(isPdfUrl('https://example.com/doc.PdF')).to.be.true;
+  });
+
+  it('should return false for non-PDF URLs', () => {
+    expect(isPdfUrl('https://example.com/page.html')).to.be.false;
+    expect(isPdfUrl('https://example.com/image.jpg')).to.be.false;
+    expect(isPdfUrl('https://example.com/document.docx')).to.be.false;
+    expect(isPdfUrl('https://example.com/page')).to.be.false;
+  });
+
+  it('should return true for URLs with query parameters after .pdf', () => {
+    expect(isPdfUrl('https://example.com/doc.pdf?version=1')).to.be.true;
+    expect(isPdfUrl('https://example.com/file.pdf#page=2')).to.be.true;
+  });
+
+  it('should return false for invalid URLs', () => {
+    expect(isPdfUrl('not-a-url')).to.be.false;
+    expect(isPdfUrl('')).to.be.false;
+    expect(isPdfUrl(null)).to.be.false;
+    expect(isPdfUrl(undefined)).to.be.false;
+  });
+
+  it('should return false for URLs containing "pdf" but not ending with .pdf', () => {
+    expect(isPdfUrl('https://example.com/pdf-documents/page')).to.be.false;
+    expect(isPdfUrl('https://example.com/my-pdf-file.html')).to.be.false;
+  });
+});
 
 describe('isPreviewPage', () => {
   it('should return true for preview pages', () => {
@@ -150,17 +188,10 @@ describe('parseCustomUrls Function', () => {
 });
 
 describe('filterBrokenSuggestedUrls', () => {
-  let fetchStub;
-  let prependSchemaStub;
   const baseURL = 'https://example.com';
 
-  beforeEach(() => {
-    fetchStub = sinon.stub();
-    prependSchemaStub = sinon.stub();
-  });
-
   afterEach(() => {
-    sinon.restore();
+    nock.cleanAll();
   });
 
   it('should return only working URLs from the same domain', async () => {
@@ -170,17 +201,10 @@ describe('filterBrokenSuggestedUrls', () => {
       'https://www.other.com/page3',
     ];
 
-    nock('https://example.com')
+    nock('https://www.example.com')
       .get('/page1').reply(200)
       .get('/page2')
       .reply(200);
-    nock('https://www.other.com')
-      .head('/page3').reply(200);
-
-    prependSchemaStub.callsFake((url) => url);
-    fetchStub.withArgs('https://www.example.com/page1').resolves({ ok: true });
-    fetchStub.withArgs('https://www.example.com/page2').resolves({ ok: true });
-    fetchStub.withArgs('https://www.other.com/page3').resolves({ ok: true });
 
     const result = await utils.filterBrokenSuggestedUrls(suggestedUrls, baseURL);
     expect(result).to.deep.equal([
@@ -194,13 +218,10 @@ describe('filterBrokenSuggestedUrls', () => {
       'https://www.example.com/page1',
       'https://www.example.com/page2',
     ];
-    nock('https://example.com')
+    nock('https://www.example.com')
       .get('/page1').reply(404)
       .get('/page2')
       .reply(200);
-    prependSchemaStub.callsFake((url) => url);
-    fetchStub.withArgs('https://www.example.com/page1').resolves({ ok: false });
-    fetchStub.withArgs('https://www.example.com/page2').resolves({ ok: true });
 
     const result = await utils.filterBrokenSuggestedUrls(suggestedUrls, baseURL);
     expect(result).to.deep.equal(['https://www.example.com/page2']);
@@ -211,11 +232,8 @@ describe('filterBrokenSuggestedUrls', () => {
       'https://www.example.com/page1',
       'https://www.other.com/page2',
     ];
-    nock('https://example.com')
-      .get('/page1').reply(200)
-      .get('/page2')
-      .reply(200);
-    fetchStub.resolves({ ok: true });
+    nock('https://www.example.com')
+      .get('/page1').reply(200);
 
     const result = await utils.filterBrokenSuggestedUrls(suggestedUrls, baseURL);
     expect(result).to.deep.equal(['https://www.example.com/page1']);
@@ -226,16 +244,49 @@ describe('filterBrokenSuggestedUrls', () => {
       'https://www.example.com/page1',
       'https://www.example.com/page2',
     ];
-    nock('https://example.com')
+    nock('https://www.example.com')
       .get('/page1').replyWithError('Network error')
       .get('/page2')
       .reply(200);
-    prependSchemaStub.callsFake((url) => url);
-    fetchStub.withArgs('https://www.example.com/page1').rejects(new Error('Network error'));
-    fetchStub.withArgs('https://www.example.com/page2').resolves({ ok: true });
 
     const result = await utils.filterBrokenSuggestedUrls(suggestedUrls, baseURL);
     expect(result).to.deep.equal(['https://www.example.com/page2']);
+  });
+});
+
+describe('isUnscrapeable', () => {
+  it('should return true for PDF files', () => {
+    expect(utils.isUnscrapeable('https://example.com/document.pdf')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/document.PDF')).to.be.true;
+  });
+
+  it('should return true for Office files', () => {
+    expect(utils.isUnscrapeable('https://example.com/data.xls')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/data.xlsx')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/slides.ppt')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/slides.pptx')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/report.doc')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/report.docx')).to.be.true;
+  });
+
+  it('should return true for other document types', () => {
+    expect(utils.isUnscrapeable('https://example.com/file.rtf')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/file.ps')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/drawing.dwf')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/map.kml')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/map.kmz')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/animation.swf')).to.be.true;
+  });
+
+  it('should return false for HTML pages', () => {
+    expect(utils.isUnscrapeable('https://example.com/page.html')).to.be.false;
+    expect(utils.isUnscrapeable('https://example.com/page')).to.be.false;
+    expect(utils.isUnscrapeable('https://example.com/')).to.be.false;
+  });
+
+  it('should handle invalid URLs gracefully', () => {
+    expect(utils.isUnscrapeable('not-a-url')).to.be.false;
+    expect(utils.isUnscrapeable('')).to.be.false;
   });
 });
 
@@ -282,5 +333,115 @@ describe('joinBaseAndPath', () => {
     expect(utils.joinBaseAndPath('https://example.com/', 'products/analytics')).to.equal('https://example.com/products/analytics');
     expect(utils.joinBaseAndPath('https://example.com/base', '/page')).to.equal('https://example.com/base/page');
     expect(utils.joinBaseAndPath('https://example.com/base/', 'page')).to.equal('https://example.com/base/page');
+  });
+});
+
+describe('stripQueryString', () => {
+  it('should remove query string from URL', () => {
+    expect(utils.stripQueryString('https://example.com/page?foo=bar'))
+      .to.equal('https://example.com/page');
+  });
+
+  it('should remove multiple query parameters', () => {
+    expect(utils.stripQueryString('https://example.com/page?foo=bar&baz=qux'))
+      .to.equal('https://example.com/page');
+  });
+
+  it('should handle URLs without query strings', () => {
+    expect(utils.stripQueryString('https://example.com/page'))
+      .to.equal('https://example.com/page');
+  });
+
+  it('should handle root URLs', () => {
+    expect(utils.stripQueryString('https://example.com/'))
+      .to.equal('https://example.com/');
+  });
+
+  it('should return original value for invalid URLs', () => {
+    expect(utils.stripQueryString('not-a-url')).to.equal('not-a-url');
+    expect(utils.stripQueryString('')).to.equal('');
+  });
+});
+
+describe('normalizeUrlForComparison', () => {
+  it('should lowercase URL', () => {
+    expect(utils.normalizeUrlForComparison('HTTPS://EXAMPLE.COM/Page'))
+      .to.equal('https://example.com/page');
+  });
+
+  it('should strip trailing slashes', () => {
+    expect(utils.normalizeUrlForComparison('https://example.com/page/'))
+      .to.equal('https://example.com/page');
+  });
+
+  it('should strip multiple trailing slashes', () => {
+    expect(utils.normalizeUrlForComparison('https://example.com/page///'))
+      .to.equal('https://example.com/page');
+  });
+
+  it('should handle undefined', () => {
+    expect(utils.normalizeUrlForComparison(undefined)).to.be.undefined;
+  });
+
+  it('should handle null', () => {
+    expect(utils.normalizeUrlForComparison(null)).to.be.undefined;
+  });
+
+  it('should return original value when toLowerCase throws', () => {
+    const badUrl = {
+      toLowerCase: () => { throw new Error('Cannot lowercase'); },
+    };
+    expect(utils.normalizeUrlForComparison(badUrl)).to.equal(badUrl);
+  });
+});
+
+describe('urlsMatch', () => {
+  it('should match identical URLs', () => {
+    expect(utils.urlsMatch(
+      'https://example.com/page',
+      'https://example.com/page',
+    )).to.be.true;
+  });
+
+  it('should match URLs with different cases', () => {
+    expect(utils.urlsMatch(
+      'https://example.com/Page',
+      'https://example.com/page',
+    )).to.be.true;
+  });
+
+  it('should match URLs with/without trailing slash', () => {
+    expect(utils.urlsMatch(
+      'https://example.com/page/',
+      'https://example.com/page',
+    )).to.be.true;
+  });
+
+  it('should match URLs ignoring query strings', () => {
+    expect(utils.urlsMatch(
+      'https://example.com/page?foo=bar',
+      'https://example.com/page',
+    )).to.be.true;
+  });
+
+  it('should match URLs with different query strings', () => {
+    expect(utils.urlsMatch(
+      'https://example.com/page?foo=bar',
+      'https://example.com/page?baz=qux',
+    )).to.be.true;
+  });
+
+  it('should not match different URLs', () => {
+    expect(utils.urlsMatch(
+      'https://example.com/page1',
+      'https://example.com/page2',
+    )).to.be.false;
+  });
+
+  it('should not match URLs with different hosts', () => {
+    expect(utils.urlsMatch(
+      'https://example.com/page',
+      'https://other.com/page',
+    )).to.be.false;
   });
 });

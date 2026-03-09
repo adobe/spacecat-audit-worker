@@ -11,7 +11,38 @@
  */
 
 function joinKeyPoints(keyPoints) {
+  if (!Array.isArray(keyPoints)) {
+    return '';
+  }
   return keyPoints.map((keyPoint) => `  * ${keyPoint}`).join('\n');
+}
+
+/**
+ * Returns true if the string has meaningful content (not null, undefined, or blank)
+ * @param {string} text
+ * @returns {boolean}
+ */
+function hasSummaryText(text) {
+  return typeof text === 'string' && text.trim().length > 0;
+}
+
+/**
+ * Page summaries should always appear at the top of the page so they are noticed by LLMs early.
+ * When no h1 is found, the fallback is body + appendChild (content at bottom). We override
+ * to body > :first-child + insertBefore so content is prepended to the page.
+ */
+function getPageSummaryTransformRules(pageSummary) {
+  const selector = pageSummary?.heading_selector || 'body';
+  const action = pageSummary?.insertion_method || 'appendChild';
+  const isBodyFallback = !selector || selector === 'body';
+
+  if (isBodyFallback) {
+    return {
+      selector: 'body > :first-child',
+      action: 'insertBefore',
+    };
+  }
+  return { selector, action };
 }
 
 export function getJsonSummarySuggestion(suggestions) {
@@ -19,50 +50,35 @@ export function getJsonSummarySuggestion(suggestions) {
   suggestions.forEach((suggestion) => {
     // Get scrapedAt once for all suggestion values from this suggestion
     const scrapedAt = suggestion.scrapedAt || new Date().toISOString();
+    const pageTransformRules = getPageSummaryTransformRules(suggestion.pageSummary);
 
-    // handle page level summary
-    suggestionValues.push({
-      summarizationText: suggestion.pageSummary?.formatted_summary,
-      fullPage: true,
-      keyPoints: false,
-      url: suggestion.pageUrl,
-      title: suggestion.pageSummary?.title,
-      transformRules: {
-        selector: suggestion.pageSummary?.heading_selector || 'body',
-        action: suggestion.pageSummary?.insertion_method || 'appendChild',
-      },
-      scrapedAt,
-    });
-
-    // handle key points summary
-    suggestionValues.push({
-      summarizationText: `${joinKeyPoints(suggestion.keyPoints?.formatted_items)}`,
-      fullPage: true,
-      keyPoints: true,
-      url: suggestion.pageUrl,
-      title: suggestion.pageSummary?.title,
-      transformRules: {
-        selector: suggestion.pageSummary?.heading_selector || 'body',
-        action: suggestion.pageSummary?.insertion_method || 'appendChild',
-      },
-      scrapedAt,
-    });
-
-    // handle paragraph level summary
-    suggestion.sectionSummaries?.forEach((section) => {
+    // handle page level summary - only add if summary text is present
+    const pageSummaryText = suggestion.pageSummary?.formatted_summary;
+    if (hasSummaryText(pageSummaryText)) {
       suggestionValues.push({
-        summarizationText: section.formatted_summary,
-        fullPage: false,
+        summarizationText: pageSummaryText,
+        fullPage: true,
         keyPoints: false,
         url: suggestion.pageUrl,
-        title: section.title,
-        transformRules: {
-          selector: section.heading_selector,
-          action: section.insertion_method || 'insertAfter',
-        },
+        title: suggestion.pageSummary?.title,
+        transformRules: pageTransformRules,
         scrapedAt,
       });
-    });
+    }
+
+    // handle key points summary - only add if there are key points
+    const keyPointsText = joinKeyPoints(suggestion.keyPoints?.formatted_items);
+    if (hasSummaryText(keyPointsText)) {
+      suggestionValues.push({
+        summarizationText: keyPointsText,
+        fullPage: true,
+        keyPoints: true,
+        url: suggestion.pageUrl,
+        title: suggestion.pageSummary?.title,
+        transformRules: pageTransformRules,
+        scrapedAt,
+      });
+    }
   });
 
   return suggestionValues;
