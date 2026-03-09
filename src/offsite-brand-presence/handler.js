@@ -293,7 +293,7 @@ function collectSourceUrls(sources, allUrls) {
 
 /**
  * Extracts all source URLs from brand presence data rows into a unified map.
- * Only processes rows with Region=US and Mentions=true.
+ * Only processes rows with Region=US.
  *
  * @param {object} data - Brand presence JSON data (expects a "data" array of rows)
  * @param {object} log - Logger instance
@@ -304,7 +304,7 @@ function extractAllUrls(data, log) {
   const rows = data.data;
   for (const row of rows) {
     const sources = row.Sources?.trim();
-    if (sources && row.Region === 'US' && row.Mentions === 'true') {
+    if (sources && row.Region === 'US') {
       collectSourceUrls(sources, allUrls);
     }
   }
