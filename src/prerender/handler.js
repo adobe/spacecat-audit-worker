@@ -1115,7 +1115,7 @@ export async function processContentAndGenerateOpportunities(context) {
 
     // Build prerender status map from scrape metadata for suggestion verification
     const prerenderStatusMap = new Map(
-      comparisonResults.map((result) => [result.url, result.isPrerenderEnabled]),
+      comparisonResults.map((result) => [result.url, result.isPrerenderEnabled ?? false]),
     );
 
     // Remove internal tracking fields from results before storing
