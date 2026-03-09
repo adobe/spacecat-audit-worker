@@ -519,8 +519,25 @@ export async function processScrapedContent(context) {
         );
         const isSelfReferenced = selfRefCheck?.success === true;
 
-        // if self-referenced - skip accessibility
-        if (isSelfReferenced) {
+        // Validate accessibility when canonical targets a different resource (domain or protocol).
+        let canonicalDifferentDomain = false;
+        let canonicalDifferentProtocol = false;
+        try {
+          const canonicalParsed = new URL(canonicalUrl);
+          const baseParsed = new URL(baseURL);
+          const finalParsed = new URL(finalUrl);
+          canonicalDifferentDomain = composeBaseURL(canonicalParsed.hostname)
+            !== composeBaseURL(baseParsed.hostname);
+          canonicalDifferentProtocol = canonicalParsed.protocol !== finalParsed.protocol;
+        } catch {
+          // invalid URL; accessibility check may still run and report fetch error
+        }
+
+        // Skip accessibility only when self-referenced, same domain, and same protocol.
+        const shouldCheckAccessibility = !isSelfReferenced
+          || canonicalDifferentDomain
+          || canonicalDifferentProtocol;
+        if (!shouldCheckAccessibility) {
           checks.push({
             check: CANONICAL_CHECKS.CANONICAL_URL_STATUS_OK.check,
             success: true,
@@ -530,8 +547,6 @@ export async function processScrapedContent(context) {
             success: true,
           });
         } else {
-          // if not self-referenced - validate accessibility
-
           const options = await getPreviewAuthOptions(isPreview, baseURL, site, context, log);
 
           const urlContentCheck = await validateCanonicalRecursively(canonicalUrl, log, options);

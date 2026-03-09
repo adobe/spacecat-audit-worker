@@ -22,6 +22,11 @@ import {
   sendToMystique,
   triggerPaidPagesImportStep,
   runPaidKeywordAnalysisStep,
+  importTrafficAnalysisWeekStep0,
+  importTrafficAnalysisWeekStep1,
+  importTrafficAnalysisWeekStep2,
+  importTrafficAnalysisWeekStep3,
+  importTrafficAnalysisWeekStep4,
 } from '../../../src/paid-keyword-optimizer/handler.js';
 
 use(sinonChai);
@@ -267,6 +272,153 @@ describe('Paid Keyword Optimizer Audit', () => {
 
       await expect(triggerPaidPagesImportStep(stepContext))
         .to.be.rejectedWith('Database connection failed');
+    });
+  });
+
+  describe('importTrafficAnalysisWeekStep0', () => {
+    it('should return correct structure with type traffic-analysis', async () => {
+      const stepContext = {
+        site,
+        log: logStub,
+        finalUrl: auditUrl,
+      };
+
+      const result = await importTrafficAnalysisWeekStep0(stepContext);
+
+      expect(result).to.have.property('type', 'traffic-analysis');
+      expect(result).to.have.property('siteId', 'test-site-id');
+      expect(result).to.have.property('allowCache', true);
+      expect(result).to.have.property('fullAuditRef', auditUrl);
+      expect(result.auditResult).to.have.property('status', 'processing');
+      expect(result.auditContext).to.have.property('week');
+      expect(result.auditContext).to.have.property('year');
+    });
+
+    it('should enable traffic-analysis import when not enabled', async () => {
+      const stepContext = {
+        site,
+        log: logStub,
+        finalUrl: auditUrl,
+      };
+
+      await importTrafficAnalysisWeekStep0(stepContext);
+
+      expect(site.getConfig().enableImport).to.have.been.calledWith('traffic-analysis');
+    });
+
+    it('should skip enableImport when already enabled', async () => {
+      const mockConfigWithImport = createMockConfig(sandbox, {
+        getImports: () => [{ type: 'traffic-analysis', enabled: true }],
+      });
+      const siteWithImportEnabled = getSite(sandbox, {
+        getConfig: () => mockConfigWithImport,
+      });
+
+      const stepContext = {
+        site: siteWithImportEnabled,
+        log: logStub,
+        finalUrl: auditUrl,
+      };
+
+      await importTrafficAnalysisWeekStep0(stepContext);
+
+      expect(mockConfigWithImport.enableImport).to.not.have.been.called;
+    });
+
+    it('should throw when site config is null', async () => {
+      const siteWithNullConfig = getSite(sandbox, {
+        getConfig: () => null,
+      });
+
+      const stepContext = {
+        site: siteWithNullConfig,
+        log: logStub,
+        finalUrl: auditUrl,
+      };
+
+      await expect(importTrafficAnalysisWeekStep0(stepContext))
+        .to.be.rejectedWith(/site config is null/);
+
+      expect(logStub.error).to.have.been.calledWithMatch(/site config is null/);
+    });
+  });
+
+  describe('importTrafficAnalysisWeekSteps 1-4', () => {
+    it('steps 1-4 should NOT call enableImport', async () => {
+      const steps = [
+        importTrafficAnalysisWeekStep1,
+        importTrafficAnalysisWeekStep2,
+        importTrafficAnalysisWeekStep3,
+        importTrafficAnalysisWeekStep4,
+      ];
+
+      for (const step of steps) {
+        const mockConfig = createMockConfig(sandbox);
+        const stepSite = getSite(sandbox, { getConfig: () => mockConfig });
+
+        const stepContext = {
+          site: stepSite,
+          log: logStub,
+          finalUrl: auditUrl,
+        };
+
+        // eslint-disable-next-line no-await-in-loop
+        await step(stepContext);
+
+        expect(mockConfig.enableImport).to.not.have.been.called;
+      }
+    });
+
+    it('steps 1-4 should return correct structure with week/year', async () => {
+      const steps = [
+        importTrafficAnalysisWeekStep1,
+        importTrafficAnalysisWeekStep2,
+        importTrafficAnalysisWeekStep3,
+        importTrafficAnalysisWeekStep4,
+      ];
+
+      for (const step of steps) {
+        const stepContext = {
+          site,
+          log: logStub,
+          finalUrl: auditUrl,
+        };
+
+        // eslint-disable-next-line no-await-in-loop
+        const result = await step(stepContext);
+
+        expect(result).to.have.property('type', 'traffic-analysis');
+        expect(result).to.have.property('siteId', 'test-site-id');
+        expect(result).to.have.property('allowCache', true);
+        expect(result.auditContext).to.have.property('week');
+        expect(result.auditContext).to.have.property('year');
+      }
+    });
+
+    it('all 5 steps should return different weeks (uniqueness check)', async () => {
+      const steps = [
+        importTrafficAnalysisWeekStep0,
+        importTrafficAnalysisWeekStep1,
+        importTrafficAnalysisWeekStep2,
+        importTrafficAnalysisWeekStep3,
+        importTrafficAnalysisWeekStep4,
+      ];
+
+      const weekKeys = [];
+      for (const step of steps) {
+        const stepContext = {
+          site,
+          log: logStub,
+          finalUrl: auditUrl,
+        };
+
+        // eslint-disable-next-line no-await-in-loop
+        const result = await step(stepContext);
+        weekKeys.push(`${result.auditContext.week}-${result.auditContext.year}`);
+      }
+
+      const uniqueKeys = new Set(weekKeys);
+      expect(uniqueKeys.size).to.equal(5);
     });
   });
 
@@ -765,6 +917,14 @@ describe('Paid Keyword Optimizer Audit', () => {
 
       // Should still work - paid = 90%
       expect(result.auditResult.predominantlyPaidCount).to.equal(1);
+    });
+
+    it('should use 5-week temporal condition', async () => {
+      const result = await paidKeywordOptimizerRunner(auditUrl, context, site);
+
+      // The temporalCondition should contain at least 5 week clauses
+      const weekClauses = result.auditResult.temporalCondition.split(' OR ');
+      expect(weekClauses.length).to.be.at.least(5);
     });
   });
 

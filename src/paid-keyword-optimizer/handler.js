@@ -14,7 +14,7 @@ import {
 } from '@adobe/spacecat-shared-athena-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
-import { getWeekInfo, getTemporalCondition } from '@adobe/spacecat-shared-utils';
+import { getWeekInfo, getTemporalCondition, getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getLowPerformingPaidPagesTemplate } from './queries.js';
@@ -28,6 +28,7 @@ const PAGE_VIEW_THRESHOLD = 1000;
 
 // Import type constant
 const IMPORT_AHREF_PAID_PAGES = 'ahref-paid-pages';
+const IMPORT_TRAFFIC_ANALYSIS = 'traffic-analysis';
 
 const AUDIT_CONSTANTS = {
   GUIDANCE_TYPE: 'guidance:paid-ad-intent-gap',
@@ -251,6 +252,62 @@ function buildMystiqueMessage(site, auditId, page) {
 }
 
 /**
+ * Factory function that creates a traffic-analysis import step for a specific week index.
+ * Week index 0 = oldest week in the 5-week lookback, index 4 = most recent.
+ * Only weekIndex 0 enables the traffic-analysis import on the site config.
+ * @param {number} weekIndex - Index into the getLastNumberOfWeeks(5) array
+ * @returns {Function} Step handler function
+ */
+function createTrafficAnalysisImportStep(weekIndex) {
+  return async function triggerTrafficAnalysisImportStep(context) {
+    const { site, finalUrl, log } = context;
+    const siteId = site.getId();
+
+    const weeks = getLastNumberOfWeeks(5);
+    const { week, year } = weeks[weekIndex];
+
+    log.info(
+      `[ad-intent-mismatch] [Site: ${finalUrl}] Import step ${weekIndex + 1}/5: `
+      + `Triggering traffic-analysis import for week ${week}/${year}`,
+    );
+
+    // Only enable import on the first step
+    if (weekIndex === 0) {
+      const siteConfig = site.getConfig();
+      const imports = siteConfig?.getImports() || [];
+
+      if (!isImportEnabled(IMPORT_TRAFFIC_ANALYSIS, imports)) {
+        log.debug(
+          `[ad-intent-mismatch] [Site: ${finalUrl}] Enabling ${IMPORT_TRAFFIC_ANALYSIS} import for site ${siteId}`,
+        );
+        await toggleImport(site, IMPORT_TRAFFIC_ANALYSIS, true, log);
+      }
+    }
+
+    return {
+      auditResult: {
+        status: 'processing',
+        message: `Importing traffic-analysis data for week ${week}/${year}`,
+      },
+      fullAuditRef: finalUrl,
+      type: IMPORT_TRAFFIC_ANALYSIS,
+      siteId,
+      allowCache: true,
+      auditContext: {
+        week,
+        year,
+      },
+    };
+  };
+}
+
+export const importTrafficAnalysisWeekStep0 = createTrafficAnalysisImportStep(0);
+export const importTrafficAnalysisWeekStep1 = createTrafficAnalysisImportStep(1);
+export const importTrafficAnalysisWeekStep2 = createTrafficAnalysisImportStep(2);
+export const importTrafficAnalysisWeekStep3 = createTrafficAnalysisImportStep(3);
+export const importTrafficAnalysisWeekStep4 = createTrafficAnalysisImportStep(4);
+
+/**
  * Main audit runner for paid keyword optimizer (used by step 2)
  * @param {string} auditUrl - Audit URL
  * @param {Object} context - Execution context
@@ -267,9 +324,9 @@ export async function paidKeywordOptimizerRunner(auditUrl, context, site) {
     `[ad-intent-mismatch] [Site: ${auditUrl}] Querying Athena metrics for low-performing paid pages (siteId: ${siteId})`,
   );
 
-  // Get temporal parameters (4 weeks back from current week)
+  // Get temporal parameters (5 weeks back from current week)
   const { week, year } = getWeekInfo();
-  const temporalCondition = getTemporalCondition({ week, year, numSeries: 4 });
+  const temporalCondition = getTemporalCondition({ week, year, numSeries: 5 });
 
   const athenaClient = AWSAthenaClient.fromContext(context, `${config.athenaTemp}/ad-intent-mismatch/${siteId}-${Date.now()}`);
 
@@ -488,5 +545,10 @@ export async function sendToMystique(auditUrl, auditData, context, site) {
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .addStep('triggerPaidPagesImportStep', triggerPaidPagesImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('importTrafficAnalysisWeekStep0', importTrafficAnalysisWeekStep0, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('importTrafficAnalysisWeekStep1', importTrafficAnalysisWeekStep1, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('importTrafficAnalysisWeekStep2', importTrafficAnalysisWeekStep2, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('importTrafficAnalysisWeekStep3', importTrafficAnalysisWeekStep3, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('importTrafficAnalysisWeekStep4', importTrafficAnalysisWeekStep4, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('runPaidKeywordAnalysisStep', runPaidKeywordAnalysisStep)
   .build();

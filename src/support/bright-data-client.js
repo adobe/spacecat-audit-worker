@@ -10,7 +10,135 @@
  * governing permissions and limitations under the License.
  */
 
-import { hasText, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { hasText, tracingFetch as fetch, prependSchema } from '@adobe/spacecat-shared-utils';
+
+/**
+ * Locale allowlist: ISO 639-1 language codes + ISO 3166-1 country codes + common regional codes.
+ * Used to validate path segments as valid locales for locale-scoped searches.
+ */
+const LOCALE_ALLOWLIST = new Set([
+  // ISO 639-1 Language codes
+  'en', 'de', 'fr', 'es', 'it', 'pt', 'nl', 'da', 'sv', 'no', 'fi', 'pl', 'cs', 'sk',
+  'hu', 'ro', 'bg', 'hr', 'sl', 'sr', 'uk', 'ru', 'el', 'tr', 'ar', 'he', 'fa', 'hi',
+  'bn', 'pa', 'ta', 'te', 'mr', 'gu', 'kn', 'ml', 'si', 'th', 'lo', 'my', 'km', 'vi',
+  'id', 'ms', 'tl', 'zh', 'ja', 'ko', 'mn', 'ka', 'hy', 'az', 'kz', 'uz', 'tk', 'ky',
+  'tg', 'ps', 'ur', 'sd', 'ne', 'dz', 'bo', 'am', 'ti', 'om', 'so', 'sw', 'rw', 'ny',
+  'mg', 'eo', 'cy', 'eu', 'ca', 'gl', 'ast', 'br', 'co', 'gd', 'ga', 'gv', 'kw', 'lb',
+  'li', 'oc', 'rm', 'sc', 'an', 'ht', 'la', 'jv', 'su', 'mad', 'bug', 'ban', 'bew',
+  'bho', 'dv', 'fo', 'fy', 'haw', 'ig', 'iu', 'kl', 'ln', 'lv', 'lt', 'mk', 'mt',
+  'mi', 'nv', 'se', 'sm', 'sn', 'st', 'to', 'ts', 'tn', 've', 'wo', 'xh', 'yo',
+  'zu', 'aa', 'ab', 'ae', 'af', 'ak', 'ay', 'ba', 'be', 'bi', 'bm', 'bs', 'ce', 'ch',
+  'cu', 'cv', 'ee', 'et', 'ff', 'fj', 'gn', 'ha', 'ho', 'hz', 'ia', 'ie', 'ii', 'ik',
+  'io', 'is', 'kg', 'ki', 'kj', 'kr', 'ku', 'kv', 'lg', 'lu', 'mh', 'na', 'nb', 'nd',
+  'ng', 'nn', 'nr', 'nso', 'oj', 'or', 'os', 'pi', 'qu', 'rn', 'sa', 'sg', 'ss', 'tw',
+  'ty', 'ug', 'vo', 'wa', 'yi', 'za',
+  // ISO 3166-1 Country codes (alpha-2) + common regional codes
+  'us', 'gb', 'ca', 'au', 'nz', 'ie', 'za', 'in', 'pk', 'bd', 'lk', 'np', 'bt',
+  'mv', 'af', 'ir', 'iq', 'sy', 'lb', 'jo', 'il', 'sa', 'ye', 'om', 'ae', 'kw',
+  'qa', 'bh', 'cy', 'ge', 'am', 'az', 'kz', 'tm', 'kg', 'tj', 'mn', 'cn',
+  'tw', 'hk', 'mo', 'jp', 'kr', 'kp', 'vn', 'th', 'la', 'kh', 'mm', 'my', 'sg', 'bn',
+  'ph', 'pg', 'sb', 'vu', 'fj', 'nc', 'pf', 'ck', 'ws', 'tv',
+  'ki', 'nr', 'pw', 'fm', 'mh', 'mp', 'gu', 'as', 'pr', 'vi', 'um', 'mx', 'gt', 'bz',
+  'hn', 'ni', 'cr', 'pa', 'cu', 'jm', 'do', 'tt', 'bb', 'gd', 'lc', 'vc',
+  'ag', 'dm', 'kn', 'bs', 'tc', 'bm', 'ky', 'vg', 'ai', 'ms', 'pm', 'gl', 'fo', 'is',
+  'no', 'se', 'dk', 'fi', 'ee', 'lv', 'lt', 'by', 'ua', 'md', 'ro', 'bg', 'gr', 'al',
+  'mk', 'rs', 'me', 'ba', 'hr', 'si', 'sk', 'cz', 'pl', 'hu', 'at', 'ch', 'li', 'de',
+  'lu', 'be', 'nl', 'fr', 'mc', 'ad', 'es', 'pt', 'gi', 'va', 'sm', 'it', 'mt', 'dz',
+  'tn', 'ly', 'eg', 'sd', 'ss', 'er', 'et', 'so', 'dj', 'ke', 'ug', 'rw', 'bi', 'tz',
+  'mw', 'mz', 'zm', 'zw', 'bw', 'na', 'za', 'ls', 'sz', 'mg', 'km', 'mu', 'sc', 're',
+  'yt', 'ma', 'eh', 'mr', 'ml', 'sn', 'gm', 'gw', 'gn', 'sl', 'lr', 'ci', 'bf', 'ne',
+  'ng', 'td', 'cm', 'cf', 'gq', 'ga', 'cg', 'cd', 'ao', 'st', 'ar', 'bo', 'br', 'cl',
+  'co', 'ec', 'fk', 'gf', 'gy', 'py', 'pe', 'sr', 'uy', 've', 'aw', 'cw', 'sx', 'bq',
+  // Common regional codes
+  'eu', 'apac', 'emea', 'latam', 'mena', 'anz', 'sea', 'gcc', 'uk',
+]);
+
+/**
+ * Validates if a path segment is a valid locale code.
+ * Supports single codes (dk, fr, eu) and composite codes (ko-kr, en_us, pt-br).
+ * @param {string} segment - Path segment to validate
+ * @returns {boolean} - True if the segment is a recognized locale
+ */
+export function isValidLocale(segment) {
+  if (!segment || typeof segment !== 'string') {
+    return false;
+  }
+  const lower = segment.toLowerCase();
+
+  // Single code: 'dk', 'en', 'eu'
+  if (LOCALE_ALLOWLIST.has(lower)) {
+    return true;
+  }
+
+  // Composite code: 'ko-kr', 'en_us', 'pt-br'
+  const parts = lower.split(/[-_]/);
+  if (parts.length === 2) {
+    return LOCALE_ALLOWLIST.has(parts[0]) && LOCALE_ALLOWLIST.has(parts[1]);
+  }
+
+  return false;
+}
+
+/**
+ * Extracts and validates the locale from a URL's first path segment.
+ * @param {string} url - Full or partial URL
+ * @returns {string|null} - Validated locale (e.g., "dk", "ko-kr") or null
+ */
+export function extractLocaleFromUrl(url) {
+  if (!url || typeof url !== 'string') {
+    return null;
+  }
+  try {
+    const urlWithSchema = url.startsWith('http') ? url : `https://${url}`;
+    const parsed = new URL(urlWithSchema);
+    const { pathname } = parsed;
+    if (!pathname || pathname === '/') {
+      return null;
+    }
+    const segments = pathname.split('/').filter((seg) => seg.length > 0);
+    if (segments.length === 0) {
+      return null;
+    }
+    const firstSegment = segments[0].toLowerCase();
+    return isValidLocale(firstSegment) ? firstSegment : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Builds a locale-scoped search URL from a base URL and a broken link URL.
+ * If the base URL already has a subpath (e.g. https://example.com/uk), it is returned as-is.
+ * Otherwise, the locale is extracted from the broken link URL and appended if valid
+ * (e.g. https://example.com + /dk/broken-page → https://example.com/dk).
+ *
+ * @param {string} baseUrl - The site base URL (may already include a subpath)
+ * @param {string} brokenLinkUrl - The broken link URL to extract locale from
+ * @returns {string} - The locale-scoped search URL
+ */
+export function buildLocaleSearchUrl(baseUrl, brokenLinkUrl) {
+  const searchUrl = prependSchema(baseUrl);
+  const parsedBaseUrl = new URL(searchUrl);
+  const hasBaseSubpath = parsedBaseUrl.pathname && parsedBaseUrl.pathname !== '/';
+  if (hasBaseSubpath) return searchUrl;
+  const locale = extractLocaleFromUrl(brokenLinkUrl);
+  return locale ? `${searchUrl}/${locale}` : searchUrl;
+}
+
+/**
+ * Checks if two locale values match for filtering purposes.
+ * - Both null → match (both are default/no locale)
+ * - Both same string → match
+ * - Otherwise → no match
+ * @param {string|null} locale1
+ * @param {string|null} locale2
+ * @returns {boolean}
+ */
+export function localesMatch(locale1, locale2) {
+  if (!locale1 && !locale2) return true;
+  if (!locale1 || !locale2) return false;
+  return locale1.toLowerCase() === locale2.toLowerCase();
+}
 
 /**
  * Maps 2-letter ISO 639-1 language codes to default country codes for hl/gl.
@@ -99,11 +227,12 @@ const FILE_EXTENSIONS = new Set([
  * Bright Data SERP API Client
  * Documentation: https://docs.brightdata.com/scraping-automation/serp-api/introduction
  */
-export default class BrightDataClient {
-  constructor(apiKey, zone, log) {
+class BrightDataClient {
+  constructor(apiKey, zone, log, env = {}) {
     this.apiKey = apiKey;
     this.zone = zone;
     this.log = log;
+    this.env = env;
     this.baseUrl = 'https://api.brightdata.com/request';
   }
 
@@ -122,6 +251,7 @@ export default class BrightDataClient {
       env.BRIGHT_DATA_API_KEY,
       env.BRIGHT_DATA_ZONE,
       log,
+      env,
     );
   }
 
@@ -136,24 +266,22 @@ export default class BrightDataClient {
       const urlObj = new URL(brokenUrl);
       const path = urlObj.pathname;
 
-      // Match explicit lang_region patterns: en_us, de_ch, en_US, fr_ca, etc.
-      // Validate that the language part is in our whitelist
-      const fullLocaleMatch = path.match(/^\/([a-z]{2})_([a-z]{2})(?:\/|$)/i);
+      // Match explicit lang_region patterns: en_us, de_ch, ko-kr, pt-br, etc.
+      // Supports both underscore and dash separators; preserves original separator
+      const fullLocaleMatch = path.match(/^\/([a-z]{2})([_-])([a-z]{2})(?:\/|$)/i);
       if (fullLocaleMatch) {
         const lang = fullLocaleMatch[1].toLowerCase();
-        const region = fullLocaleMatch[2].toLowerCase();
+        const sep = fullLocaleMatch[2];
+        const region = fullLocaleMatch[3].toLowerCase();
         if (KNOWN_LOCALES.has(lang)) {
-          return `${lang}_${region}`;
+          return `${lang}${sep}${region}`;
         }
       }
 
-      // Match 2-letter codes only if they're in the known locales whitelist
-      const shortLocaleMatch = path.match(/^\/([a-z]{2})(?:\/|$)/i);
-      if (shortLocaleMatch) {
-        const code = shortLocaleMatch[1].toLowerCase();
-        if (KNOWN_LOCALES.has(code)) {
-          return code;
-        }
+      // Match any first path segment that is a valid locale (dk, uk, apac, emea, etc.)
+      const segments = path.split('/').filter((seg) => seg.length > 0);
+      if (segments.length > 0 && isValidLocale(segments[0])) {
+        return segments[0].toLowerCase();
       }
 
       return null;
@@ -175,23 +303,22 @@ export default class BrightDataClient {
       const urlObj = new URL(baseUrl);
       const path = urlObj.pathname;
 
-      // Check for xx_yy pattern - validate language part is in whitelist
-      const fullLocaleMatch = path.match(/^\/([a-z]{2})_([a-z]{2})(?:\/|$)/i);
+      // Check for xx_yy or xx-yy pattern - validate language part is in whitelist
+      // Preserves original separator so site: scope matches actual URL paths
+      const fullLocaleMatch = path.match(/^\/([a-z]{2})([_-])([a-z]{2})(?:\/|$)/i);
       if (fullLocaleMatch) {
         const lang = fullLocaleMatch[1].toLowerCase();
-        const region = fullLocaleMatch[2].toLowerCase();
+        const sep = fullLocaleMatch[2];
+        const region = fullLocaleMatch[3].toLowerCase();
         if (KNOWN_LOCALES.has(lang)) {
-          return `${lang}_${region}`;
+          return `${lang}${sep}${region}`;
         }
       }
 
-      // Check for whitelisted 2-letter code
-      const shortLocaleMatch = path.match(/^\/([a-z]{2})(?:\/|$)/i);
-      if (shortLocaleMatch) {
-        const code = shortLocaleMatch[1].toLowerCase();
-        if (KNOWN_LOCALES.has(code)) {
-          return code;
-        }
+      // Match any first path segment that is a valid locale (dk, uk, apac, emea, etc.)
+      const segments = path.split('/').filter((seg) => seg.length > 0);
+      if (segments.length > 0 && isValidLocale(segments[0])) {
+        return segments[0].toLowerCase();
       }
 
       return null;
@@ -224,7 +351,7 @@ export default class BrightDataClient {
       if (effectiveLocale) {
         path = path.replace(new RegExp(`^/${effectiveLocale}(?:/|$)`, 'i'), '/');
       } else {
-        path = path.replace(/^\/[a-z]{2}_[a-z]{2}\//i, '/');
+        path = path.replace(/^\/[a-z]{2}[_-][a-z]{2}\//i, '/');
       }
 
       // Remove dates (YYYY/MM/DD or YYYY/MM)
@@ -418,8 +545,8 @@ export default class BrightDataClient {
     }
     const normalized = locale.toLowerCase();
 
-    // Full locale: xx_yy -> hl=xx, gl=YY (only if language is in whitelist)
-    const fullMatch = normalized.match(/^([a-z]{2})_([a-z]{2})$/);
+    // Full locale: xx_yy or xx-yy -> hl=xx, gl=YY (only if language is in whitelist)
+    const fullMatch = normalized.match(/^([a-z]{2})[_-]([a-z]{2})$/);
     if (fullMatch) {
       const lang = fullMatch[1];
       if (KNOWN_LOCALES.has(lang)) {
@@ -498,23 +625,26 @@ export default class BrightDataClient {
   }
 
   /**
-   * Run search with locale-first fallback using path-scoped site queries.
+   * Run search with locale-scoped queries and keyword fallbacks.
    *
-   * This method controls how aggressively we try to resolve suggestions via Bright Data
-   * before falling back to Mystique (LLM). More fallback attempts = higher Bright Data
-   * resolution rate but more API calls. Fewer attempts = faster, cheaper, but more
-   * links sent to Mystique.
+   * When a locale is detected (e.g., /it/, /ko-kr/), searches are scoped to that
+   * locale path using site:domain/locale. Up to 10 results are returned and
+   * post-filtered by locale match in the handler.
    *
    * Fallback order (example: broken URL /it/products/electrolyte-sachets-blackcurrant):
    * 1. Locale scope + full keywords: site:bulk.com/it products electrolyte... (hl=it, gl=IT)
    * 2. Locale scope + head keywords: site:bulk.com/it products... (hl=it, gl=IT)
    * 3. Locale scope + tail keywords: site:bulk.com/it ...blackcurrant (hl=it, gl=IT)
+   *
+   * If no locale is detected, or if BRIGHT_DATA_LOCALE_FALLBACK_ENABLED=true,
+   * non-locale fallbacks are also tried:
    * 4. No locale + full keywords: site:bulk.com products electrolyte... (no hl/gl)
    * 5. No locale + head keywords: site:bulk.com products... (no hl/gl)
    * 6. No locale + tail keywords: site:bulk.com ...blackcurrant (no hl/gl)
    *
+   * By default, non-locale fallback is disabled to preserve locale isolation.
    * To reduce Bright Data calls: remove tail keyword attempts or reduce fallback variants.
-   * To increase resolution rate: add more keyword trimming variants or retry logic.
+   * To increase resolution rate: enable locale fallback or add more keyword variants.
    */
   async googleSearchWithFallback(siteBaseURL, brokenUrl, numResults = 1, options = {}) {
     const siteUrlObj = new URL(siteBaseURL);
@@ -578,11 +708,18 @@ export default class BrightDataClient {
       ? this.buildSiteScope(siteDomain, baseLocale) // Keep base locale if it was in URL
       : this.buildSiteScope(siteDomain, null);
 
-    // Determine scope variants: locale-scoped first (if applicable), then broad
+    // Determine scope variants based on feature flag
+    // BRIGHT_DATA_LOCALE_FALLBACK_ENABLED controls whether to fall back to non-locale search
+    const enableLocaleFallback = this.env?.BRIGHT_DATA_LOCALE_FALLBACK_ENABLED === 'true';
+
     const scopeVariants = scopeWithLocale
       ? [{ scope: scopeWithLocale, locale: effectiveLocale, useLocaleHlGl: true }]
       : [];
-    scopeVariants.push({ scope: scopeWithoutLocale, locale: null, useLocaleHlGl: false });
+
+    // Only add non-locale fallback if flag is enabled OR no locale was detected
+    if (enableLocaleFallback || !scopeWithLocale) {
+      scopeVariants.push({ scope: scopeWithoutLocale, locale: null, useLocaleHlGl: false });
+    }
 
     let lastQuery = this.buildSearchQuery(scopeVariants[0].scope, fullKeywords);
 
@@ -615,3 +752,5 @@ export default class BrightDataClient {
     };
   }
 }
+
+export default BrightDataClient;

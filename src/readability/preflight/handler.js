@@ -379,14 +379,9 @@ export default async function readability(context, auditContext) {
           log.debug(`[readability-suggest handler] readability: Successfully sent ${allReadabilityIssues.length} `
             + 'readability issues to Mystique for processing');
           // Indicate to preflight runner that we are still processing
+          // Keep readability opportunities in the response with suggestionStatus: 'processing'
+          // so the API shows identified issues while waiting for Mystique
           isProcessing = true;
-          // While waiting for Mystique, clear readability opportunities in response
-          auditsResult.forEach((page) => {
-            const readabilityAudit = page.audits.find((a) => a.name === PREFLIGHT_READABILITY);
-            if (readabilityAudit) {
-              readabilityAudit.opportunities = [];
-            }
-          });
         } else {
           log.info(`[readability-suggest handler] readability: All ${allReadabilityIssues.length} `
             + 'readability issues already have suggestions');

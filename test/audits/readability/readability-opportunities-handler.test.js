@@ -276,7 +276,7 @@ describe('Readability Opportunities Handler Tests', () => {
           fleschReadingEase: 15.5,
           language: 'english',
           traffic: 1000,
-          rank: 25.5,
+          rank: 26,
           category: 'Critical',
           seoImpact: 'High',
         },
@@ -318,7 +318,7 @@ describe('Readability Opportunities Handler Tests', () => {
           fleschReadingEase: 15.5,
           language: 'english',
           traffic: 1000,
-          rank: 25.5,
+          rank: 26,
           category: 'Critical',
           seoImpact: 'High',
         },
@@ -394,7 +394,7 @@ describe('Readability Opportunities Handler Tests', () => {
           fleschReadingEase: 15.5,
           language: 'english',
           traffic: 1000,
-          rank: 25.5,
+          rank: 26,
           category: 'Critical',
           seoImpact: 'High',
         },
@@ -437,7 +437,7 @@ describe('Readability Opportunities Handler Tests', () => {
           fleschReadingEase: 15.5,
           language: 'english',
           traffic: 1000,
-          rank: 25.5,
+          rank: 26,
           category: 'Critical',
           seoImpact: 'High',
         },
@@ -465,13 +465,13 @@ describe('Readability Opportunities Handler Tests', () => {
       const { mapNewSuggestion } = syncCall.args[0];
 
       // Call the mapNewSuggestion callback to test coverage
-      const testData = { rank: 10.5, pageUrl: 'https://test.com' };
+      const testData = { rank: 11, pageUrl: 'https://test.com' };
       const result = mapNewSuggestion(testData);
 
       expect(result).to.deep.equal({
         opportunityId: 'test-opp-id',
         type: 'CONTENT_UPDATE',
-        rank: 10.5,
+        rank: 11,
         data: testData,
       });
     });
@@ -486,7 +486,7 @@ describe('Readability Opportunities Handler Tests', () => {
           fleschReadingEase: 15.5,
           language: 'english',
           traffic: 1000,
-          rank: 25.5,
+          rank: 26,
           category: 'Critical',
           seoImpact: 'High',
         },
@@ -498,7 +498,7 @@ describe('Readability Opportunities Handler Tests', () => {
           fleschReadingEase: 20.0,
           language: 'english',
           traffic: 500,
-          rank: 20.0,
+          rank: 20,
           category: 'Important',
           seoImpact: 'Moderate',
         },
@@ -523,6 +523,65 @@ describe('Readability Opportunities Handler Tests', () => {
       expect(result.status).to.equal('OPPORTUNITIES_FOUND');
       expect(result.opportunitiesFound).to.equal(2);
       expect(result.urlsProcessed).to.equal(2);
+    });
+
+    it('should filter out readability issues with null selector', async () => {
+      const mockReadabilityIssues = [
+        {
+          pageUrl: 'https://example.com/page1',
+          scrapedAt: '2025-01-01T00:00:00Z',
+          selector: null,
+          textContent: 'Text without selector.',
+          fleschReadingEase: 20,
+          language: 'english',
+          traffic: 1000,
+          rank: 10,
+          category: 'Critical',
+          seoImpact: 'High',
+        },
+        {
+          pageUrl: 'https://example.com/page1',
+          scrapedAt: '2025-01-01T00:00:00Z',
+          selector: 'p.content',
+          textContent: 'Text with selector.',
+          fleschReadingEase: 15,
+          language: 'english',
+          traffic: 500,
+          rank: 20,
+          category: 'Important',
+          seoImpact: 'Moderate',
+        },
+      ];
+
+      analyzePageReadabilityStub.resolves({
+        success: true,
+        message: 'Found 2 readability issues',
+        readabilityIssues: mockReadabilityIssues,
+        urlsProcessed: 1,
+      });
+
+      const mockOpportunity = {
+        getId: sandbox.stub().returns('opp-id'),
+      };
+      convertToOpportunityStub.resolves(mockOpportunity);
+      syncSuggestionsStub.resolves();
+      sendReadabilityToMystiqueStub.resolves();
+
+      const result = await processReadabilityOpportunities(mockContext);
+
+      expect(result.status).to.equal('OPPORTUNITIES_FOUND');
+      expect(result.opportunitiesFound).to.equal(1);
+
+      // Only the issue with a selector should be synced
+      const syncCall = syncSuggestionsStub.getCall(0);
+      const { newData } = syncCall.args[0];
+      expect(newData).to.have.length(1);
+      expect(newData[0].selector).to.equal('p.content');
+
+      // Only the issue with a selector should be sent to Mystique
+      const mystiqueCall = sendReadabilityToMystiqueStub.getCall(0);
+      expect(mystiqueCall.args[1]).to.have.length(1);
+      expect(mystiqueCall.args[1][0].selector).to.equal('p.content');
     });
 
     it('should pass scrapeResultPaths to analyzePageReadability', async () => {
