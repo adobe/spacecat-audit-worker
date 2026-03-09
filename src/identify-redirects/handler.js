@@ -62,52 +62,47 @@ async function oneshotSearchCompat(client, searchString) {
   return response.json();
 }
 
-function buildDispatcherQueries(serviceId, minutes) {
-  return [
-    {
-      id: 'dispatcher-logs',
-      search: `( index=dx_aem_engineering OR index=dx_aem_engineering_prod OR index=dx_aem_engineering_restricted )
-        sourcetype=httpderror
-        namespace!=ns-team-buds*
-        level=managed_rewrite_maps*
-        earliest=-${minutes}m@m
-        latest=@m
-        aem_service="${serviceId}"
-        message="*mapping '*' from path '*'"
-        | rex field=message "^mapping '(?<orig>[^']*)' from path '(?<fileName>[^']*)' with params.*$"
-        | rename aem_program_id AS program_id
-        | lookup skyline_program_id_to_program_name program_id OUTPUT program_name
-        | eval redirectMethodUsed = case(
-            match(fileName,"^/conf/"), "acsredirectmanager",
-            match(fileName,"^(/etc/acs-commons|/content/.*\\.redirectmap\\.txt$)"), "acsredirectmapmanager",
-            match(fileName,"^/content/dam/"), "damredirectmgr",
-            1=1, "Custom"
-          )
-        | stats count AS totalLogHits,
-                latest(_time) AS mostRecentEpoch,
-                first(fileName) AS "fileName",
-                values(program_name) AS Customers,
-                values(aem_service) AS Services
-          BY redirectMethodUsed
-        | eval mostRecentISO = strftime(mostRecentEpoch, "%Y-%m-%d %H:%M:%S %Z")
-        | sort redirectMethodUsed
-      `,
-    },
-  ];
+function buildDispatcherQuery(serviceId, minutes) {
+  return {
+    id: 'dispatcher-logs',
+    search: `search ( index=dx_aem_engineering OR index=dx_aem_engineering_prod OR index=dx_aem_engineering_restricted )
+      sourcetype=httpderror
+      namespace!=ns-team-buds*
+      level=managed_rewrite_maps*
+      earliest=-${minutes}m@m
+      latest=@m
+      aem_service="${serviceId}"
+      message="*mapping '*' from path '*'"
+      | rex field=message "^mapping '(?<orig>[^']*)' from path '(?<fileName>[^']*)' with params.*$"
+      | eval redirectMethodUsed = case(
+          match(fileName,"^/conf/"), "acsredirectmanager",
+          match(fileName,"^(/etc/acs-commons|/content/.*\\.redirectmap\\.txt$)"), "acsredirectmapmanager",
+          match(fileName,"^/content/dam/"), "damredirectmgr",
+          1=1, "Custom"
+        )
+      | stats count AS totalLogHits,
+              latest(_time) AS mostRecentEpoch,
+              first(fileName) AS "fileName",
+              values(aem_service) AS Services
+        BY redirectMethodUsed
+      | sort redirectMethodUsed
+    `,
+  };
 }
 
-function pickWinner(patternResults) {
-  const successful = patternResults.filter((r) => !r.error);
-  if (successful.length === 0) return { id: 'vanityurlmgr', fileName: 'none' };
+export function pickWinner(patternResults) {
+  if (patternResults.error) return { redirectMethodUsed: 'none', fileName: 'none' };
+  if (patternResults.length === 0) return { redirectMethodUsed: 'vanityurlmgr', fileName: 'none' };
+  if (patternResults.every((r) => r.error)) return null;
 
   // Sort by most recent, then by totalLogHits; ties leave order unchanged
-  successful.sort((a, b) => {
+  patternResults.sort((a, b) => {
     if (b.mostRecentEpoch !== a.mostRecentEpoch) return b.mostRecentEpoch - a.mostRecentEpoch;
     if (b.totalLogHits !== a.totalLogHits) return b.totalLogHits - a.totalLogHits;
     return 0;
   });
 
-  return successful[0];
+  return patternResults[0];
 }
 
 function formatQueriesForSlack(queries) {
@@ -123,10 +118,10 @@ function formatResponsesPreviewForSlack(results, {
   let acc = '';
 
   for (const r of results) {
-    const header = `# ${r.id}\n`;
+    const header = `# ${r.redirectMethodUsed}\n`;
     const body = hasText(r.error)
       ? `error: ${String(r.error)}\n`
-      : `${(r.rows || []).slice(0, maxRowsPerPattern).map((row) => JSON.stringify(row)).join('\n') || '(no rows)'}\n`;
+      : `${r.fileName}\n`;
 
     const block = `${header}${body}\n`;
     if (acc.length + block.length > totalLimit) {
@@ -153,10 +148,11 @@ function formatSlackMessage({
     + `AEM CS: programId=\`${programId}\`, environmentId=\`${environmentId}\`, window=\`last ${minutes}m\`\n`;
 
   const lines = results.map((r) => {
+    const methodUsed = r.redirectMethodUsed;
     const status = r.error
       ? `failed: ${r.error}`
-      : `rows=${r.rowsCount}, count=${r.totalCount}`;
-    return `- \`${r.id}\`: ${status}`;
+      : `rows=${r.rowsCount ?? (r.rows?.length ?? 1)}, count=${r.totalCount ?? r.totalLogHits ?? 0}`;
+    return `- \`${methodUsed}\`: ${status}`;
   }).join('\n');
 
   if (!winner) {
@@ -167,7 +163,8 @@ function formatSlackMessage({
     ? `\n\n*Top matched strings for winner (\`${winner.redirectMethodUsed}\`)*\n\`\`\`\n${winner.fileName}\n\`\`\``
     : '';
 
-  return `${header}\n*Winner*: \`${winner.id}\`\n\n*Results*\n${lines}${examplesBlock}${formatQueriesForSlack(queries)}${formatResponsesPreviewForSlack(results)}`;
+  const methodUsed = winner.redirectMethodUsed;
+  return `${header}\n*Winner*: \`${methodUsed}\`\n\n*Results*\n${lines}${examplesBlock}${formatQueriesForSlack(queries)}${formatResponsesPreviewForSlack(results)}`;
 }
 
 export default async function identifyRedirects(message, context) {
@@ -218,42 +215,36 @@ export default async function identifyRedirects(message, context) {
   );
 
   const serviceId = `cm-p${programId}-e${environmentId}`;
-  const queries = buildDispatcherQueries(serviceId, minutes);
+  const query = buildDispatcherQuery(serviceId, minutes);
+  const queries = [query];
 
-  let settled;
+  let response;
   try {
-    // Ensure a single login, then run queries in parallel.
+    // Ensure a single login, then run the query.
     await client.login();
-    settled = await Promise.allSettled(queries.map((q) => oneshotSearchCompat(client, q.search)));
+    response = await oneshotSearchCompat(client, query.search);
   } catch (e) {
-    const text = `:x: Failed to query Splunk for redirect patterns for *${baseURL}*: ${e.message}`;
-    await postMessageSafe(context, channelId, text, {
-      threadTs,
-      ...(slackTarget && { target: slackTarget }),
-    });
-    return ok({ status: 'error', reason: 'splunk-query-failed' });
+    response = { rejected: true, error: e };
   }
 
-  const results = queries.map((q, idx) => {
-    const item = settled[idx];
-    if (item.status === 'rejected') {
-      return {
-        id: q.id,
-        rowsCount: 0,
-        rows: [],
-        totalCount: 0,
-        error: item.reason?.message || String(item.reason),
-      };
-    }
-
-    const response = item.value || {};
-    // response.results holds the results of the search as an array of json objects
-    // results.redirectMethodUsed is redirectsMode
-    // results.fileName is redirectsSource
-    // totalPerMethod is the numberf
-    const splunkResults = Array.isArray(response.results) ? response.results : [];
-    return splunkResults;
-  });
+  let results;
+  if (response.rejected) {
+    const err = response.error;
+    results = [{
+      redirectMethodUsed: query.id,
+      error: err?.message ?? String(err),
+    }];
+  } else if (response.error) {
+    results = [{
+      redirectMethodUsed: query.id,
+      rowsCount: 0,
+      rows: [],
+      totalCount: 0,
+      error: response.reason?.message || String(response.reason),
+    }];
+  } else {
+    results = response.results || [];
+  }
 
   const winner = pickWinner(results);
   const allZero = results.every((r) => !r.error && r.totalLogHits === 0);
@@ -261,7 +252,7 @@ export default async function identifyRedirects(message, context) {
   const finalText = allZero
     ? `*Redirect pattern detection* for *${baseURL}*\n`
       + `AEM CS: programId=\`${programId}\`, environmentId=\`${environmentId}\`, window=\`last ${minutes}m\`\n\n`
-      + `No redirect patterns detected in the last ${minutes} minutes.`
+      + `No redirect patterns detected in the last ${minutes} minutes.\n\n*Winner*: \`${winner?.redirectMethodUsed ?? 'none'}\` (no patterns)`
       + `${formatQueriesForSlack(queries)}${formatResponsesPreviewForSlack(results)}`
     : formatSlackMessage({
       baseURL,
@@ -289,12 +280,8 @@ export default async function identifyRedirects(message, context) {
         { threadTs, ...(slackTarget && { target: slackTarget }) },
       );
     } else {
-      let redirectsSource = 'none';
-      const redirectsMode = winner.id;
-
-      if (redirectsMode !== 'vanityurlmgr') {
-        [redirectsSource] = winner.examples || ['none'];
-      }
+      const redirectsMode = winner.redirectMethodUsed;
+      const redirectsSource = redirectsMode === 'vanityurlmgr' ? 'none' : (winner.fileName || 'none');
 
       site.setDeliveryConfig({
         ...site.getDeliveryConfig(),
