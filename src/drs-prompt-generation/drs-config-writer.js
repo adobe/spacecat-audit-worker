@@ -90,13 +90,13 @@ export default async function writeDrsPromptsToLlmoConfig({
       }
     }
 
-    // Merge prompts: group by prompt text, collect unique regions
+    // Merge prompts: group by prompt text, collect unique regions and type
     const promptMap = {};
     for (const p of prompts) {
       const text = p.prompt || '';
       if (text) {
         if (!promptMap[text]) {
-          promptMap[text] = { regions: new Set() };
+          promptMap[text] = { regions: new Set(), type: p.type || '' };
         }
         if (p.region) {
           promptMap[text].regions.add(p.region.toLowerCase());
@@ -104,7 +104,7 @@ export default async function writeDrsPromptsToLlmoConfig({
       }
     }
 
-    const aiPrompts = Object.entries(promptMap).map(([text, { regions }]) => ({
+    const aiPrompts = Object.entries(promptMap).map(([text, { regions, type }]) => ({
       id: randomUUID(),
       prompt: text,
       regions: [...regions],
@@ -112,6 +112,7 @@ export default async function writeDrsPromptsToLlmoConfig({
       source: 'drs',
       updatedBy: 'drs',
       updatedAt: now,
+      ...(type && { type }),
     }));
 
     if (aiPrompts.length > 0) {
