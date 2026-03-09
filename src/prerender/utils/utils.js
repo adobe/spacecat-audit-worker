@@ -14,7 +14,7 @@
  * General utilities for the Prerender audit.
  */
 
-import { Entitlement } from '@adobe/spacecat-shared-data-access';
+import { Entitlement, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 
 /**
@@ -116,5 +116,57 @@ export async function isPaidLLMOCustomer(context) {
   } catch (e) {
     log.warn(`Prerender - Failed to check paid LLMO customer status for siteId=${site.getId()}: ${e.message}`);
     return false;
+  }
+}
+
+/**
+ * Verifies NEW suggestions for prerender opportunity and marks them as FIXED
+ * using the isPrerenderEnabled status captured during content scraping.
+ *
+ * @param {Object} opportunity - The opportunity object containing suggestions
+ * @param {Object} context - Context with log
+ * @param {Map<string, boolean>} prerenderStatusMap - Map of URL to isPrerenderEnabled
+ * @returns {Promise<number>} - Number of suggestions marked as fixed
+ */
+export async function verifyAndMarkFixedSuggestions(opportunity, context, prerenderStatusMap) {
+  const { log } = context;
+
+  try {
+    const suggestions = await opportunity.getSuggestions();
+    const newSuggestions = suggestions.filter(
+      (s) => s.getStatus() === SuggestionDataAccess.STATUSES.NEW,
+    );
+
+    if (newSuggestions.length === 0) {
+      return 0;
+    }
+
+    const urlSuggestions = newSuggestions.filter((s) => {
+      const data = s.getData();
+      return data?.url && !data?.key;
+    });
+
+    if (urlSuggestions.length === 0) {
+      return 0;
+    }
+
+    const fixedSuggestions = urlSuggestions.filter((suggestion) => {
+      const { url } = suggestion.getData();
+      return prerenderStatusMap.get(url) === true;
+    });
+
+    if (fixedSuggestions.length > 0) {
+      await Promise.all(
+        fixedSuggestions.map((suggestion) => {
+          suggestion.setStatus(SuggestionDataAccess.STATUSES.FIXED);
+          return suggestion.save();
+        }),
+      );
+    }
+
+    return fixedSuggestions.length;
+  } catch (error) {
+    log.error(`Prerender - verification error: ${error.message}`, error);
+    return 0;
   }
 }
