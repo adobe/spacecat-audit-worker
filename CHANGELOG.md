@@ -1,3 +1,24 @@
+## [1.347.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.347.1...v1.347.2) (2026-03-07)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2090](https://github.com/adobe/spacecat-audit-worker/issues/2090)) ([cf7e1ee](https://github.com/adobe/spacecat-audit-worker/commit/cf7e1ee9b7d18dd95a0996cde7e74519451b7779))
+
+## [1.347.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.347.0...v1.347.1) (2026-03-07)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2089](https://github.com/adobe/spacecat-audit-worker/issues/2089)) ([8f5f8de](https://github.com/adobe/spacecat-audit-worker/commit/8f5f8debf53b6ef56cfdedae75c423280f3f1d76))
+
+# [1.347.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.346.1...v1.347.0) (2026-03-06)
+
+
+### Features
+
+* LLMO-2845 Display meta-tags opportunity for LLMO customers ([#2076](https://github.com/adobe/spacecat-audit-worker/issues/2076)) ([47ad57d](https://github.com/adobe/spacecat-audit-worker/commit/47ad57d082ba9f76540bcec71d1daa6e9b5a87a6))
+
 ## [1.346.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.346.0...v1.346.1) (2026-03-06)
 
 
