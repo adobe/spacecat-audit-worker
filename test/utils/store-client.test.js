@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Adobe. All rights reserved.
+ * Copyright 2026 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -183,17 +183,11 @@ describe('StoreClient', () => {
       });
     });
 
-    it('should not include x-api-key header when API key is not set', async () => {
+    it('should throw error when SPACECAT_API_KEY is not configured', async () => {
       const clientNoKey = new StoreClient({ apiBaseUrl }, mockFetch, mockLog);
 
-      mockFetch.resolves({
-        ok: true,
-        json: sandbox.stub().resolves({ items: [{ url: 'test' }], pagination: {} }),
-      });
-
-      await clientNoKey.getUrls(siteId, URL_TYPES.WIKIPEDIA);
-
-      expect(mockFetch.firstCall.args[1].headers).to.not.have.property('x-api-key');
+      await expect(clientNoKey.getUrls(siteId, URL_TYPES.WIKIPEDIA))
+        .to.be.rejectedWith('StoreClient is not configured: missing SPACECAT_API_KEY');
     });
 
     it('should throw StoreEmptyError when no URLs returned', async () => {
@@ -214,6 +208,13 @@ describe('StoreClient', () => {
 
       await expect(storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA))
         .to.be.rejectedWith(StoreEmptyError);
+    });
+
+    it('should throw error when SPACECAT_API_BASE_URL and SPACECAT_API_KEY are not configured', async () => {
+      const unconfiguredClient = new StoreClient({}, mockFetch, mockLog);
+
+      await expect(unconfiguredClient.getUrls(siteId, URL_TYPES.WIKIPEDIA))
+        .to.be.rejectedWith('StoreClient is not configured: missing SPACECAT_API_BASE_URL, SPACECAT_API_KEY');
     });
 
     it('should throw error on API failure', async () => {

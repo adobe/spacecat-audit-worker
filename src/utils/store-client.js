@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Adobe. All rights reserved.
+ * Copyright 2026 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -99,22 +99,25 @@ export default class StoreClient {
     this.log = log;
   }
 
+  #ensureConfigured() {
+    const missing = [];
+    if (!this.apiBaseUrl) missing.push('SPACECAT_API_BASE_URL');
+    if (!this.apiKey) missing.push('SPACECAT_API_KEY');
+    if (missing.length > 0) {
+      throw new Error(`StoreClient is not configured: missing ${missing.join(', ')}`);
+    }
+  }
+
   /**
    * Builds headers for API requests
    * @returns {Object} Headers object
    * @private
    */
   #buildHeaders() {
-    const headers = {
+    return {
       'Content-Type': 'application/json',
+      'x-api-key': this.apiKey,
     };
-
-    // Add authorization header if API key is configured
-    if (this.apiKey) {
-      headers['x-api-key'] = this.apiKey;
-    }
-
-    return headers;
   }
 
   /**
@@ -125,6 +128,8 @@ export default class StoreClient {
    * @private
    */
   async #sendRequest(endpoint, queryParams = {}) {
+    this.#ensureConfigured();
+
     const queryString = Object.entries(queryParams)
       .filter(([, value]) => value !== undefined && value !== null)
       .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
