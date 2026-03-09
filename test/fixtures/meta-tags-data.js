@@ -382,7 +382,7 @@ const testData = {
         'Publish the changes to apply the updates to your live site.',
       ],
     },
-    tags: ['Traffic acquisition'],
+    tags: ['Traffic acquisition', 'isElmo', 'tech-seo'],
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.RUM, DATA_SOURCES.SITE],
       projectedTrafficLost: 100,
