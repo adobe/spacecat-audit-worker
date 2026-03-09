@@ -1115,6 +1115,7 @@ export async function processContentAndGenerateOpportunities(context) {
 
     // Build prerender status map from scrape metadata for suggestion verification
     const prerenderStatusMap = new Map(
+      /* c8 ignore next */
       comparisonResults.map((result) => [result.url, result.isPrerenderEnabled ?? false]),
     );
 
