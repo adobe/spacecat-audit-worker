@@ -1,3 +1,10 @@
+# [1.348.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.347.2...v1.348.0) (2026-03-09)
+
+
+### Features
+
+* forms adding suggestion object from generated guidances ([#1813](https://github.com/adobe/spacecat-audit-worker/issues/1813)) ([650fad4](https://github.com/adobe/spacecat-audit-worker/commit/650fad4c32387bde7e261f84ac6d11be9e733e1f))
+
 ## [1.347.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.347.1...v1.347.2) (2026-03-07)
 
 
