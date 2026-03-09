@@ -5878,6 +5878,9 @@ describe('Prerender Audit', () => {
           ScrapeUrl: {
             allByScrapeJobId: sandbox.stub().resolves(mockScrapeUrls),
           },
+          Opportunity: {
+            allBySiteIdAndStatus: sandbox.stub().resolves([]),
+          },
         },
         log: {
           info: sandbox.stub(),
@@ -5921,6 +5924,9 @@ describe('Prerender Audit', () => {
         dataAccess: {
           ScrapeUrl: {
             allByScrapeJobId: sandbox.stub().rejects(new Error('DB connection failed')),
+          },
+          Opportunity: {
+            allBySiteIdAndStatus: sandbox.stub().resolves([]),
           },
         },
         log: {
