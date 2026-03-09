@@ -102,8 +102,7 @@ function buildPromptRegionMap(promptItems) {
     const topUrls = item.relatedUrls
       .map((entry) => entry.url)
       .filter((url) => isLikelyHtmlPage(url))
-      .slice(0, MAX_URLS_TO_WRITE)
-      .map((url) => url);
+      .slice(0, MAX_URLS_TO_WRITE);
     if (topUrls.length > 0) {
       map.set(key, topUrls);
     }
