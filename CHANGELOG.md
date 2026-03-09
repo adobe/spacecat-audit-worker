@@ -1,3 +1,31 @@
+## [1.348.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.348.0...v1.348.1) (2026-03-09)
+
+
+### Bug Fixes
+
+* preserve branded/unbranded type field from DRS prompts ([#2093](https://github.com/adobe/spacecat-audit-worker/issues/2093)) ([05d8ceb](https://github.com/adobe/spacecat-audit-worker/commit/05d8ceb502a7b6f30d85dbbfa815920a075bb958))
+
+# [1.348.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.347.2...v1.348.0) (2026-03-09)
+
+
+### Features
+
+* forms adding suggestion object from generated guidances ([#1813](https://github.com/adobe/spacecat-audit-worker/issues/1813)) ([650fad4](https://github.com/adobe/spacecat-audit-worker/commit/650fad4c32387bde7e261f84ac6d11be9e733e1f))
+
+## [1.347.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.347.1...v1.347.2) (2026-03-07)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2090](https://github.com/adobe/spacecat-audit-worker/issues/2090)) ([cf7e1ee](https://github.com/adobe/spacecat-audit-worker/commit/cf7e1ee9b7d18dd95a0996cde7e74519451b7779))
+
+## [1.347.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.347.0...v1.347.1) (2026-03-07)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2089](https://github.com/adobe/spacecat-audit-worker/issues/2089)) ([8f5f8de](https://github.com/adobe/spacecat-audit-worker/commit/8f5f8debf53b6ef56cfdedae75c423280f3f1d76))
+
 # [1.347.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.346.1...v1.347.0) (2026-03-06)
 
 
