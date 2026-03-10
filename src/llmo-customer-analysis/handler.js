@@ -206,7 +206,6 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       'llm-blocked',
       'llm-error-pages',
       'summarization',
-      'faqs',
       REFERRAL_TRAFFIC_AUDIT,
       'cdn-logs-report',
       'readability',
