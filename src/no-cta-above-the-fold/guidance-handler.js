@@ -59,12 +59,14 @@ export default async function handler(message, context) {
 
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   const matchingOpportunity = existingOpportunities
-    .filter((oppty) => oppty.getType() === 'generic-opportunity')
     .find((oppty) => {
+      const type = oppty.getType();
       const opportunityData = oppty.getData();
       const status = oppty.getStatus();
-
-      return opportunityData?.opportunityType === 'no-cta-above-the-fold'
+      const isNoCta = type === 'no-cta-above-the-fold'
+        || (type === 'generic-opportunity'
+            && opportunityData?.opportunityType === 'no-cta-above-the-fold');
+      return isNoCta
         && opportunityData?.page === url
         && status !== 'RESOLVED'
         && status !== 'IGNORED';
@@ -79,6 +81,7 @@ export default async function handler(message, context) {
   paidLog.creatingOpportunity(siteId, url, auditId);
 
   const opportunity = await Opportunity.create(entity);
+  paidLog.createdOpportunity(siteId, url, opportunity.getId());
 
   const suggestionData = await mapToSuggestion(
     context,

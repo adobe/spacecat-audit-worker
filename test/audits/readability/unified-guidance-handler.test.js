@@ -60,29 +60,12 @@ describe('Unified Readability Guidance Handler', () => {
     sinon.restore();
   });
 
-  describe('mode routing', () => {
-    it('should route to preflight handler when mode is "preflight"', async () => {
+  describe('payload-based routing', () => {
+    it('should route to opportunity handler when data.s3ResultsPath is present', async () => {
       const message = {
-        mode: 'preflight',
-        siteId: 'site-123',
-        data: { test: 'data' },
-      };
-
-      const result = await unifiedHandler(message, mockContext);
-
-      expect(result).to.deep.equal({ status: 200, body: 'preflight response' });
-      expect(mockPreflightHandler).to.have.been.calledOnceWith(message, mockContext);
-      expect(mockOpportunityHandler).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWith('[unified-readability-guidance] Processing Mystique response with mode: preflight');
-      expect(log.info).to.have.been.calledWith('[unified-readability-guidance] Routing to preflight guidance handler');
-    });
-
-    it('should route to opportunity handler when mode is "opportunity"', async () => {
-      const message = {
-        mode: 'opportunity',
         siteId: 'site-123',
         auditId: 'audit-456',
-        data: { test: 'data' },
+        data: { s3ResultsPath: 'readability/batch-results/site-123/audit-456.json' },
       };
 
       const result = await unifiedHandler(message, mockContext);
@@ -90,14 +73,44 @@ describe('Unified Readability Guidance Handler', () => {
       expect(result).to.deep.equal({ status: 200, body: 'opportunity response' });
       expect(mockOpportunityHandler).to.have.been.calledOnceWith(message, mockContext);
       expect(mockPreflightHandler).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWith('[unified-readability-guidance] Processing Mystique response with mode: opportunity');
-      expect(log.info).to.have.been.calledWith('[unified-readability-guidance] Routing to opportunity guidance handler');
+      expect(log.info).to.have.been.calledWith('[unified-readability-guidance] Detected s3ResultsPath — routing to opportunity guidance handler');
     });
 
-    it('should default to preflight handler when mode is missing', async () => {
+    it('should route to opportunity handler even without mode field when s3ResultsPath is present', async () => {
       const message = {
         siteId: 'site-123',
-        data: { test: 'data' },
+        auditId: 'audit-456',
+        traceId: 'trace-789',
+        data: { s3ResultsPath: 'readability/batch-results/site-123/audit-456.json' },
+      };
+
+      const result = await unifiedHandler(message, mockContext);
+
+      expect(result).to.deep.equal({ status: 200, body: 'opportunity response' });
+      expect(mockOpportunityHandler).to.have.been.calledOnceWith(message, mockContext);
+      expect(mockPreflightHandler).to.not.have.been.called;
+    });
+
+    it('should route to opportunity handler when both mode and s3ResultsPath are present', async () => {
+      const message = {
+        mode: 'opportunity',
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        data: { s3ResultsPath: 'readability/batch-results/site-123/audit-456.json' },
+      };
+
+      const result = await unifiedHandler(message, mockContext);
+
+      expect(result).to.deep.equal({ status: 200, body: 'opportunity response' });
+      expect(mockOpportunityHandler).to.have.been.calledOnceWith(message, mockContext);
+      expect(mockPreflightHandler).to.not.have.been.called;
+    });
+
+    it('should route to preflight handler when mode is "preflight" and no s3ResultsPath', async () => {
+      const message = {
+        mode: 'preflight',
+        siteId: 'site-123',
+        data: { improved_paragraph: 'Simplified text.' },
       };
 
       const result = await unifiedHandler(message, mockContext);
@@ -105,14 +118,13 @@ describe('Unified Readability Guidance Handler', () => {
       expect(result).to.deep.equal({ status: 200, body: 'preflight response' });
       expect(mockPreflightHandler).to.have.been.calledOnceWith(message, mockContext);
       expect(mockOpportunityHandler).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWith('[unified-readability-guidance] Processing Mystique response with mode: preflight');
+      expect(log.info).to.have.been.calledWith('[unified-readability-guidance] Routing to preflight guidance handler');
     });
 
-    it('should default to preflight handler for unknown mode with warning', async () => {
+    it('should route to preflight handler when mode is missing and no s3ResultsPath', async () => {
       const message = {
-        mode: 'unknown-mode',
         siteId: 'site-123',
-        data: { test: 'data' },
+        data: { improved_paragraph: 'Simplified text.' },
       };
 
       const result = await unifiedHandler(message, mockContext);
@@ -120,7 +132,32 @@ describe('Unified Readability Guidance Handler', () => {
       expect(result).to.deep.equal({ status: 200, body: 'preflight response' });
       expect(mockPreflightHandler).to.have.been.calledOnceWith(message, mockContext);
       expect(mockOpportunityHandler).to.not.have.been.called;
-      expect(log.warn).to.have.been.calledWith("[unified-readability-guidance] Unknown mode: 'unknown-mode', defaulting to preflight for safety");
+      expect(log.info).to.have.been.calledWith('[unified-readability-guidance] Processing Mystique response (mode: unknown)');
+    });
+
+    it('should route to preflight handler when data is missing entirely', async () => {
+      const message = {
+        siteId: 'site-123',
+      };
+
+      const result = await unifiedHandler(message, mockContext);
+
+      expect(result).to.deep.equal({ status: 200, body: 'preflight response' });
+      expect(mockPreflightHandler).to.have.been.calledOnceWith(message, mockContext);
+      expect(mockOpportunityHandler).to.not.have.been.called;
+    });
+
+    it('should route to preflight handler when data is null', async () => {
+      const message = {
+        siteId: 'site-123',
+        data: null,
+      };
+
+      const result = await unifiedHandler(message, mockContext);
+
+      expect(result).to.deep.equal({ status: 200, body: 'preflight response' });
+      expect(mockPreflightHandler).to.have.been.calledOnceWith(message, mockContext);
+      expect(mockOpportunityHandler).to.not.have.been.called;
     });
   });
 
@@ -136,7 +173,7 @@ describe('Unified Readability Guidance Handler', () => {
 
       await expect(unifiedHandler(message, mockContext)).to.be.rejectedWith('Preflight handler error');
       expect(log.error).to.have.been.calledWith(
-        "[unified-readability-guidance] Error processing Mystique response with mode 'preflight': Preflight handler error",
+        '[unified-readability-guidance] Error processing Mystique response (mode: preflight): Preflight handler error',
         testError,
       );
     });
@@ -146,34 +183,33 @@ describe('Unified Readability Guidance Handler', () => {
       mockOpportunityHandler.rejects(testError);
 
       const message = {
-        mode: 'opportunity',
         siteId: 'site-123',
         auditId: 'audit-456',
+        data: { s3ResultsPath: 'readability/batch-results/site-123/audit-456.json' },
       };
 
       await expect(unifiedHandler(message, mockContext)).to.be.rejectedWith('Opportunity handler error');
       expect(log.error).to.have.been.calledWith(
-        "[unified-readability-guidance] Error processing Mystique response with mode 'opportunity': Opportunity handler error",
+        '[unified-readability-guidance] Error processing Mystique response (mode: unknown): Opportunity handler error',
         testError,
       );
     });
 
-    it('should catch and re-throw errors for unknown mode fallback', async () => {
-      const testError = new Error('Fallback handler error');
-      mockPreflightHandler.rejects(testError);
+    it('should include mode in error log when mode is provided', async () => {
+      const testError = new Error('Handler error');
+      mockOpportunityHandler.rejects(testError);
 
       const message = {
-        mode: 'some-invalid-mode',
+        mode: 'opportunity',
         siteId: 'site-123',
+        data: { s3ResultsPath: 'some/path.json' },
       };
 
-      await expect(unifiedHandler(message, mockContext)).to.be.rejectedWith('Fallback handler error');
-      expect(log.warn).to.have.been.calledWith("[unified-readability-guidance] Unknown mode: 'some-invalid-mode', defaulting to preflight for safety");
+      await expect(unifiedHandler(message, mockContext)).to.be.rejectedWith('Handler error');
       expect(log.error).to.have.been.calledWith(
-        "[unified-readability-guidance] Error processing Mystique response with mode 'some-invalid-mode': Fallback handler error",
+        '[unified-readability-guidance] Error processing Mystique response (mode: opportunity): Handler error',
         testError,
       );
     });
   });
 });
-

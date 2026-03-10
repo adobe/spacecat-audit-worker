@@ -74,7 +74,7 @@ async function ignorePreviousOpportunitiesForPeriod(Opportunity, siteId, period,
     .filter((oppty) => {
       const data = oppty.getData() || {};
       if (period.week != null) return data.week != null;
-      if (period.month != null) return data.month != null;
+      if (period.month != null) return data.week == null && data.month != null;
       return false;
     });
 

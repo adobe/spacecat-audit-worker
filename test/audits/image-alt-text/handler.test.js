@@ -16,6 +16,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
+import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
 
@@ -120,10 +121,12 @@ describe('Image Alt Text Handler', () => {
   describe('processAltTextWithMystique', () => {
     let sendAltTextOpportunityToMystiqueStub;
     let clearAltTextSuggestionsStub;
+    let isAuditEnabledForSiteStub;
 
     beforeEach(async () => {
       sendAltTextOpportunityToMystiqueStub = sandbox.stub().resolves();
       clearAltTextSuggestionsStub = sandbox.stub().resolves();
+      isAuditEnabledForSiteStub = sandbox.stub().resolves(false); // Default to 100 page limit
       // Mock the module with our stubs
       handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
         '@adobe/spacecat-shared-utils': { tracingFetch: tracingFetchStub },
@@ -131,6 +134,9 @@ describe('Image Alt Text Handler', () => {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
           clearAltTextSuggestions: clearAltTextSuggestionsStub,
+        },
+        '../../../src/common/audit-utils.js': {
+          isAuditEnabledForSite: isAuditEnabledForSiteStub,
         },
       });
     });
@@ -150,6 +156,7 @@ describe('Image Alt Text Handler', () => {
         'audit-id',
         context,
         [],
+        false,
       );
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Processing alt-text with Mystique for site site-id',
@@ -290,6 +297,7 @@ describe('Image Alt Text Handler', () => {
         'audit-id',
         context,
         [],
+        false,
       );
     });
 
@@ -309,6 +317,7 @@ describe('Image Alt Text Handler', () => {
         'audit-id',
         context,
         [],
+        false,
       );
     });
 
@@ -328,6 +337,7 @@ describe('Image Alt Text Handler', () => {
         'audit-id',
         context,
         [],
+        false,
       );
     });
 
@@ -349,6 +359,7 @@ describe('Image Alt Text Handler', () => {
         'audit-id',
         context,
         [],
+        false,
       );
     });
 
@@ -640,6 +651,7 @@ describe('Image Alt Text Handler', () => {
           'audit-id',
           context,
           ['https://example.com/image1.jpg', 'https://example.com/image3.jpg'],
+          false,
         );
       });
 
@@ -691,6 +703,7 @@ describe('Image Alt Text Handler', () => {
           'audit-id',
           context,
           ['https://example.com/image2.jpg'],
+          false,
         );
       });
 
@@ -727,6 +740,391 @@ describe('Image Alt Text Handler', () => {
         // bulkUpdateStatus should NOT be called since all URLs are in current pageUrls
         expect(bulkUpdateStatusStub).to.not.have.been.called;
       });
+    });
+  });
+
+  describe('processScraping', () => {
+    let s3ClientMock;
+    let isAuditEnabledForSiteStub;
+
+    beforeEach(async () => {
+      s3ClientMock = {
+        send: sandbox.stub(),
+      };
+
+      isAuditEnabledForSiteStub = sandbox.stub();
+
+      context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          s3Client: s3ClientMock,
+          site: {
+            getId: () => 'site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          env: {
+            S3_SCRAPER_BUCKET_NAME: bucketName,
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                { getUrl: () => 'https://example.com/page1' },
+                { getUrl: () => 'https://example.com/page2' },
+                { getUrl: () => 'https://example.com/page3' },
+              ]),
+            },
+          },
+        })
+        .build();
+
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/common/audit-utils.js': {
+          isAuditEnabledForSite: isAuditEnabledForSiteStub,
+        },
+      });
+    });
+
+    it('should check S3 for existing scrapes and return missing URLs', async () => {
+      isAuditEnabledForSiteStub.resolves(false); // Regular site, 100 page limit
+
+      // Mock S3 responses: page1 exists, page2 and page3 don't
+      s3ClientMock.send.callsFake((command) => {
+        if (command instanceof HeadObjectCommand) {
+          const key = command.input.Key;
+          if (key.includes('page1')) {
+            return Promise.resolve(); // Scrape exists
+          }
+          const error = new Error('NotFound');
+          error.name = 'NotFound';
+          throw error;
+        }
+        return Promise.resolve();
+      });
+
+      const result = await handlerModule.processScraping(context);
+
+      expect(result).to.deep.equal({
+        urls: [
+          { url: 'https://example.com/page2' },
+          { url: 'https://example.com/page3' },
+        ],
+        siteId: 'site-id',
+        type: 'default',
+        allowCache: false,
+        maxScrapeAge: 0,
+      });
+
+      // Verify HeadObjectCommand was called for each page
+      expect(s3ClientMock.send).to.have.been.calledThrice;
+      expect(s3ClientMock.send).to.have.been.calledWith(
+        sinon.match.instanceOf(HeadObjectCommand),
+      );
+    });
+
+    it('should send first URL when all scrapes exist', async () => {
+      isAuditEnabledForSiteStub.resolves(false);
+
+      // Mock S3 to return success for all pages
+      s3ClientMock.send.resolves();
+
+      const result = await handlerModule.processScraping(context);
+
+      expect(result).to.deep.equal({
+        urls: [{ url: 'https://example.com/page1' }],
+        siteId: 'site-id',
+        type: 'default',
+        allowCache: true,
+        maxScrapeAge: 0,
+      });
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: All scrapes exist, sending first URL to ensure scrape client step completes',
+      );
+    });
+
+    it('should throw error when no top pages found', async () => {
+      isAuditEnabledForSiteStub.resolves(false);
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+
+      await expect(handlerModule.processScraping(context))
+        .to.be.rejectedWith('No top pages found for site site-id');
+    });
+
+    it('should limit pages to 20 when summit-plg is enabled', async () => {
+      isAuditEnabledForSiteStub.resolves(true); // summit-plg enabled
+
+      // Create 25 pages to ensure slicing works
+      const pages = Array.from({ length: 25 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+
+      // All scrapes missing
+      const error = new Error('NotFound');
+      error.name = 'NotFound';
+      s3ClientMock.send.rejects(error);
+
+      const result = await handlerModule.processScraping(context);
+
+      // Should only check first 20 pages
+      expect(s3ClientMock.send).to.have.callCount(20);
+      expect(result.urls).to.have.lengthOf(20);
+      expect(result.urls[0].url).to.equal('https://example.com/page1');
+      expect(result.urls[19].url).to.equal('https://example.com/page20');
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Page limit set to 20 (summit-plg enabled: true)',
+      );
+    });
+
+    it('should limit pages to 100 when summit-plg is disabled', async () => {
+      isAuditEnabledForSiteStub.resolves(false); // summit-plg disabled
+
+      // Create 150 pages to ensure slicing works
+      const pages = Array.from({ length: 150 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+
+      // All scrapes missing
+      const error = new Error('NotFound');
+      error.name = 'NotFound';
+      s3ClientMock.send.rejects(error);
+
+      const result = await handlerModule.processScraping(context);
+
+      // Should check first 100 pages
+      expect(s3ClientMock.send).to.have.callCount(100);
+      expect(result.urls).to.have.lengthOf(100);
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Page limit set to 100 (summit-plg enabled: false)',
+      );
+    });
+
+    it('should handle NoSuchKey error as missing scrape', async () => {
+      isAuditEnabledForSiteStub.resolves(false);
+
+      const error = new Error('NoSuchKey');
+      error.name = 'NoSuchKey';
+      s3ClientMock.send.rejects(error);
+
+      const result = await handlerModule.processScraping(context);
+
+      expect(result.urls).to.have.lengthOf(3);
+      expect(result.urls).to.deep.equal([
+        { url: 'https://example.com/page1' },
+        { url: 'https://example.com/page2' },
+        { url: 'https://example.com/page3' },
+      ]);
+    });
+
+    it('should handle other S3 errors with fail-safe approach', async () => {
+      isAuditEnabledForSiteStub.resolves(false);
+
+      const error = new Error('S3 Connection timeout');
+      error.name = 'NetworkError';
+      s3ClientMock.send.rejects(error);
+
+      const result = await handlerModule.processScraping(context);
+
+      // Should assume all scrapes are missing (fail-safe)
+      expect(result.urls).to.have.lengthOf(3);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Error checking scrape for.*assuming missing/),
+      );
+    });
+
+    it('should use correct S3 key format with pathname', async () => {
+      isAuditEnabledForSiteStub.resolves(false);
+
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+        { getUrl: () => 'https://example.com/products/item1' },
+      ]);
+
+      s3ClientMock.send.resolves();
+
+      await handlerModule.processScraping(context);
+
+      expect(s3ClientMock.send).to.have.been.calledWith(
+        sinon.match((cmd) => cmd instanceof HeadObjectCommand
+          && cmd.input.Bucket === bucketName
+          && cmd.input.Key === 'scrapes/site-id/products/item1/scrape.json'),
+      );
+    });
+
+    it('should handle mix of existing and missing scrapes', async () => {
+      isAuditEnabledForSiteStub.resolves(false);
+
+      // page1 exists, page2 doesn't, page3 exists
+      s3ClientMock.send.callsFake((command) => {
+        if (command instanceof HeadObjectCommand) {
+          const key = command.input.Key;
+          if (key.includes('page2')) {
+            const error = new Error('NotFound');
+            error.name = 'NotFound';
+            throw error;
+          }
+          return Promise.resolve();
+        }
+        return Promise.resolve();
+      });
+
+      const result = await handlerModule.processScraping(context);
+
+      expect(result.urls).to.have.lengthOf(1);
+      expect(result.urls[0].url).to.equal('https://example.com/page2');
+      expect(context.log.info).to.have.been.calledWith(
+        '[alt-text]: Found 1 URLs needing scraping out of 3 top pages',
+      );
+    });
+  });
+
+  describe('processAltTextWithMystique with page limits', () => {
+    let sendAltTextOpportunityToMystiqueStub;
+    let isAuditEnabledForSiteStub;
+
+    beforeEach(async () => {
+      sendAltTextOpportunityToMystiqueStub = sandbox.stub().resolves();
+      isAuditEnabledForSiteStub = sandbox.stub();
+
+      context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          site: {
+            getId: () => 'site-id',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({
+              getIncludedURLs: sandbox.stub().returns([]),
+            }),
+          },
+          audit: {
+            getId: () => 'audit-id',
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sandbox.stub(),
+            },
+            Opportunity: {
+              allBySiteIdAndStatus: sandbox.stub().resolves([]),
+              create: sandbox.stub().resolves({
+                getId: sandbox.stub().returns('opportunity-id'),
+                getData: sandbox.stub().returns({}),
+                setData: sandbox.stub(),
+                save: sandbox.stub().resolves(),
+                getType: sandbox.stub().returns('alt-text'),
+              }),
+            },
+          },
+        })
+        .build();
+
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '@adobe/spacecat-shared-utils': { tracingFetch: tracingFetchStub },
+        '../../../src/image-alt-text/opportunityHandler.js': {
+          default: sandbox.stub(),
+          sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
+        },
+        '../../../src/common/audit-utils.js': {
+          isAuditEnabledForSite: isAuditEnabledForSiteStub,
+        },
+      });
+    });
+
+    it('should limit to 20 pages when summit-plg is enabled', async () => {
+      isAuditEnabledForSiteStub.resolves(true); // summit-plg enabled
+
+      // Create 50 pages
+      const pages = Array.from({ length: 50 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      // Should only send first 20 pages to Mystique
+      const callArgs = sendAltTextOpportunityToMystiqueStub.getCall(0).args;
+      const sentUrls = callArgs[1];
+      expect(sentUrls).to.have.lengthOf(20);
+      expect(sentUrls[0]).to.equal('https://example.com/page1');
+      expect(sentUrls[19]).to.equal('https://example.com/page20');
+      expect(callArgs[6]).to.equal(true);
+
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Page limit set to 20 (summit-plg enabled: true)',
+      );
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Using 20 top pages out of 50 (limit: 20)',
+      );
+    });
+
+    it('should limit to 100 pages when summit-plg is disabled', async () => {
+      isAuditEnabledForSiteStub.resolves(false); // summit-plg disabled
+
+      // Create 150 pages
+      const pages = Array.from({ length: 150 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      // Should only send first 100 pages to Mystique
+      const callArgs = sendAltTextOpportunityToMystiqueStub.getCall(0).args;
+      const sentUrls = callArgs[1];
+      expect(sentUrls).to.have.lengthOf(100);
+      expect(sentUrls[0]).to.equal('https://example.com/page1');
+      expect(sentUrls[99]).to.equal('https://example.com/page100');
+      expect(callArgs[6]).to.equal(false);
+
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Page limit set to 100 (summit-plg enabled: false)',
+      );
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Using 100 top pages out of 150 (limit: 100)',
+      );
+    });
+
+    it('should include includedURLs in addition to limited top pages', async () => {
+      isAuditEnabledForSiteStub.resolves(true); // 20 page limit
+
+      const pages = Array.from({ length: 25 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getIncludedURLs: sandbox.stub().withArgs('alt-text').returns([
+            'https://example.com/included1',
+            'https://example.com/included2',
+          ]),
+        }),
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      const callArgs = sendAltTextOpportunityToMystiqueStub.getCall(0).args;
+      const sentUrls = callArgs[1];
+
+      // Should have 20 top pages + 2 included URLs = 22 total
+      expect(sentUrls).to.have.lengthOf(22);
+      expect(sentUrls).to.include('https://example.com/included1');
+      expect(sentUrls).to.include('https://example.com/included2');
+      expect(sentUrls).to.include('https://example.com/page1');
+      expect(sentUrls).to.include('https://example.com/page20');
+      expect(sentUrls).to.not.include('https://example.com/page21');
+      expect(callArgs[6]).to.equal(true);
+    });
+
+    it('should handle when isAuditEnabledForSite throws error', async () => {
+      isAuditEnabledForSiteStub.rejects(new Error('Configuration error'));
+
+      await expect(handlerModule.processAltTextWithMystique(context))
+        .to.be.rejectedWith('Configuration error');
+
+      expect(context.log.error).to.have.been.calledWith(
+        '[alt-text]: Failed to process with Mystique: Configuration error',
+      );
     });
   });
 });

@@ -26,11 +26,31 @@ function hasSummaryText(text) {
   return typeof text === 'string' && text.trim().length > 0;
 }
 
+/**
+ * Page summaries should always appear at the top of the page so they are noticed by LLMs early.
+ * When no h1 is found, the fallback is body + appendChild (content at bottom). We override
+ * to body > :first-child + insertBefore so content is prepended to the page.
+ */
+function getPageSummaryTransformRules(pageSummary) {
+  const selector = pageSummary?.heading_selector || 'body';
+  const action = pageSummary?.insertion_method || 'appendChild';
+  const isBodyFallback = !selector || selector === 'body';
+
+  if (isBodyFallback) {
+    return {
+      selector: 'body > :first-child',
+      action: 'insertBefore',
+    };
+  }
+  return { selector, action };
+}
+
 export function getJsonSummarySuggestion(suggestions) {
   const suggestionValues = [];
   suggestions.forEach((suggestion) => {
     // Get scrapedAt once for all suggestion values from this suggestion
     const scrapedAt = suggestion.scrapedAt || new Date().toISOString();
+    const pageTransformRules = getPageSummaryTransformRules(suggestion.pageSummary);
 
     // handle page level summary - only add if summary text is present
     const pageSummaryText = suggestion.pageSummary?.formatted_summary;
@@ -41,10 +61,7 @@ export function getJsonSummarySuggestion(suggestions) {
         keyPoints: false,
         url: suggestion.pageUrl,
         title: suggestion.pageSummary?.title,
-        transformRules: {
-          selector: suggestion.pageSummary?.heading_selector || 'body',
-          action: suggestion.pageSummary?.insertion_method || 'appendChild',
-        },
+        transformRules: pageTransformRules,
         scrapedAt,
       });
     }
@@ -58,10 +75,7 @@ export function getJsonSummarySuggestion(suggestions) {
         keyPoints: true,
         url: suggestion.pageUrl,
         title: suggestion.pageSummary?.title,
-        transformRules: {
-          selector: suggestion.pageSummary?.heading_selector || 'body',
-          action: suggestion.pageSummary?.insertion_method || 'appendChild',
-        },
+        transformRules: pageTransformRules,
         scrapedAt,
       });
     }

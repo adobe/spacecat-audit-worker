@@ -34,7 +34,7 @@ export async function fetchCPCData(context, bucketName, siteId, log) {
   const key = `metrics/${siteId}/ahrefs/agg-metrics.json`;
 
   try {
-    log.info(`Fetching Ahrefs CPC data from s3://${bucketName}/${key}`);
+    log.info(`[paid-audit] [Site: ${siteId}] Fetching Ahrefs CPC data from s3://${bucketName}/${key}`);
 
     const command = new GetObjectCommand({
       Bucket: bucketName,
@@ -54,7 +54,7 @@ export async function fetchCPCData(context, bucketName, siteId, log) {
       ? data.paidCost / data.paidTraffic
       : DEFAULT_CPC;
 
-    log.info(`Ahrefs CPC calculated - organic: $${organicCPC.toFixed(4)}, paid: $${paidCPC.toFixed(4)}`);
+    log.info(`[paid-audit] [Site: ${siteId}] Ahrefs CPC calculated - organic: $${organicCPC.toFixed(4)}, paid: $${paidCPC.toFixed(4)}`);
 
     return {
       organicCPC,
@@ -62,7 +62,7 @@ export async function fetchCPCData(context, bucketName, siteId, log) {
       source: 'ahrefs',
     };
   } catch (error) {
-    log.warn(`Failed to fetch Ahrefs CPC data: ${error.message}. Using default CPC: $${DEFAULT_CPC}. Please make paid ahrefs import is enabled and run for this site to get accurate CPC data.`);
+    log.warn(`[paid-audit] [Site: ${siteId}] Failed to fetch Ahrefs CPC data: ${error.message}. Using default CPC: $${DEFAULT_CPC}. Please make paid ahrefs import is enabled and run for this site to get accurate CPC data.`);
 
     return {
       organicCPC: DEFAULT_CPC,

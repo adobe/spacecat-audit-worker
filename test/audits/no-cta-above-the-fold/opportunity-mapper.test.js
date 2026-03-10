@@ -45,11 +45,13 @@ describe("No Engageable Content opportunity mapper", () => {
       const result = mapToOpportunity(siteId, pageUrl, audit, guidance);
 
       expect(result.id).to.be.a("string");
+      expect(result.type).to.equal("no-cta-above-the-fold");
       expect(result.data.pageViews).to.equal(1500);
       expect(result.data.bounceRate).to.equal(0.6);
       expect(result.data.projectedTrafficLost).to.equal(900);
       expect(result.data.projectedTrafficValue).to.equal(900 * 0.8);
       expect(result.data.page).to.equal(pageUrl);
+      expect(result.data.dataSources).to.deep.equal(["RUM", "Page"]);
     });
 
     it("falls back to zeroed metrics when URL not found", () => {

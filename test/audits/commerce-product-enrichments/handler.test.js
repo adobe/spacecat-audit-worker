@@ -16,6 +16,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 
+import esmock from 'esmock';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import {
   importTopPages,
@@ -64,6 +65,7 @@ describe('Commerce Product Enrichments Handler', () => {
 
     site = {
       getId: sinon.stub().returns('site-1'),
+      getBaseURL: sinon.stub().returns('https://example.com'),
       getConfig: sinon.stub().returns({
         getIncludedURLs: sinon.stub().resolves([]),
         getExcludedURLs: sinon.stub().returns([]),
@@ -85,7 +87,7 @@ describe('Commerce Product Enrichments Handler', () => {
     sinon.restore();
   });
 
-  it('importTopPages returns top-pages metadata with default limit when not provided', async () => {
+  it('importTopPages returns top-pages metadata without auditContext when no limit provided', async () => {
     const context = {
       site,
       finalUrl: 'https://example.com',
@@ -97,11 +99,10 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: 'site-1',
-      auditContext: { limit: 20 },
       auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
       fullAuditRef: 'scrapes/site-1/',
     });
-    expect(result).to.not.have.property('limit');
+    expect(result).to.not.have.property('auditContext');
   });
 
   it('importTopPages includes limit in auditContext when provided as object', async () => {
@@ -155,10 +156,10 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: 'site-1',
-      auditContext: { limit: 20 },
       auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
       fullAuditRef: 'scrapes/site-1/',
     });
+    expect(result).to.not.have.property('auditContext');
   });
 
   it('submitForScraping combines top pages and included URLs, filters PDFs', async () => {
@@ -262,7 +263,7 @@ describe('Commerce Product Enrichments Handler', () => {
     ]);
   });
 
-  it('submitForScraping ignores limit from context.data', async () => {
+  it('submitForScraping uses all top pages when no auditContext limit', async () => {
     // Create an array of 50 top pages
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
       getUrl: () => `https://example.com/page-${i + 1}`,
@@ -284,12 +285,12 @@ describe('Commerce Product Enrichments Handler', () => {
 
     const result = await submitForScraping(context);
 
-    expect(result.urls).to.have.lengthOf(20);
+    expect(result.urls).to.have.lengthOf(50);
     expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
-    expect(result.urls[19]).to.deep.equal({ url: 'https://example.com/page-20' });
+    expect(result.urls[49]).to.deep.equal({ url: 'https://example.com/page-50' });
   });
 
-  it('submitForScraping uses default limit when limit not provided', async () => {
+  it('submitForScraping returns all top pages when no limit provided', async () => {
     // Create an array of 50 top pages
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
       getUrl: () => `https://example.com/page-${i + 1}`,
@@ -310,9 +311,9 @@ describe('Commerce Product Enrichments Handler', () => {
 
     const result = await submitForScraping(context);
 
-    expect(result.urls).to.have.lengthOf(20);
+    expect(result.urls).to.have.lengthOf(50);
     expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
-    expect(result.urls[19]).to.deep.equal({ url: 'https://example.com/page-20' });
+    expect(result.urls[49]).to.deep.equal({ url: 'https://example.com/page-50' });
   });
 
   it('submitForScraping ignores limit from context.data when provided as JSON string', async () => {
@@ -337,9 +338,9 @@ describe('Commerce Product Enrichments Handler', () => {
 
     const result = await submitForScraping(context);
 
-    expect(result.urls).to.have.lengthOf(20);
+    expect(result.urls).to.have.lengthOf(50);
     expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
-    expect(result.urls[19]).to.deep.equal({ url: 'https://example.com/page-20' });
+    expect(result.urls[49]).to.deep.equal({ url: 'https://example.com/page-50' });
   });
 
   it('submitForScraping ignores invalid JSON in context.data', async () => {
@@ -363,7 +364,7 @@ describe('Commerce Product Enrichments Handler', () => {
 
     const result = await submitForScraping(context);
 
-    expect(result.urls).to.have.lengthOf(20);
+    expect(result.urls).to.have.lengthOf(50);
   });
 
   it('submitForScraping respects limit from auditContext (step chaining)', async () => {
@@ -985,106 +986,6 @@ describe('Commerce Product Enrichments Handler', () => {
     );
   });
 
-  it('runAuditAndProcessResults calls enrichment API with correct payload when product pages found', async () => {
-    // Mock config fetch
-    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'application/json' },
-      json: () => Promise.resolve(validACCSConfig),
-    });
-
-    // Mock enrichment endpoint
-    fetchStub.withArgs('http://test-enrichment-endpoint/catalog-enrichment', sinon.match.any).resolves({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'application/json' },
-      json: () => Promise.resolve({ status: 'accepted', jobId: 'job-123' }),
-    });
-
-    site.getConfig.returns({
-      getHandlers: sinon.stub().returns({
-        'commerce-product-enrichments': {
-          instanceType: 'ACCS',
-        },
-      }),
-    });
-
-    const s3Client = {
-      send: sinon.stub().resolves({
-        ContentType: 'application/json',
-        Body: {
-          transformToString: sinon.stub().resolves(JSON.stringify({
-            url: 'https://example.com/product-1',
-            finalUrl: 'https://example.com/product-1',
-            scrapeResult: {
-              structuredData: {
-                jsonld: {
-                  Product: [{ name: 'Test Product', sku: 'TEST-SKU-123' }],
-                },
-              },
-            },
-          })),
-        },
-      }),
-    };
-
-    const scrapeResultPaths = new Map([
-      ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
-    ]);
-
-    const context = {
-      site,
-      audit: { getId: () => 'audit-13' },
-      finalUrl: 'https://example.com',
-      log,
-      s3Client,
-      env: {
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-        CATALOG_ENRICHMENT_ENDPOINT: 'http://test-enrichment-endpoint/catalog-enrichment',
-      },
-      scrapeResultPaths,
-    };
-
-    const result = await runAuditAndProcessResults(context);
-
-    // Verify enrichment API was called
-    expect(fetchStub).to.have.been.calledWith(
-      'http://test-enrichment-endpoint/catalog-enrichment',
-      sinon.match({
-        method: 'POST',
-        headers: sinon.match({ 'Content-Type': 'application/json' }),
-      }),
-    );
-
-    // Verify the payload structure
-    const enrichmentCall = fetchStub.getCalls().find((call) => call.args[0] === 'http://test-enrichment-endpoint/catalog-enrichment');
-    expect(enrichmentCall).to.exist;
-
-    const payload = JSON.parse(enrichmentCall.args[1].body);
-    expect(payload).to.deep.include({
-      siteId: 'site-1',
-      environmentId: 'env-123',
-      websiteCode: 'website-code',
-      storeCode: 'store-code',
-      storeViewCode: 'view-code',
-    });
-    expect(payload.scrapes).to.have.lengthOf(1);
-    expect(payload.scrapes[0]).to.deep.equal({
-      sku: 'TEST-SKU-123',
-      key: 'scrapes/site-1/product-1/scrape.json',
-    });
-
-    // Verify logging
-    expect(log.info).to.have.been.calledWith(sinon.match(/Sending enrichment to/));
-
-    // Verify enrichment response included in audit result
-    expect(result.auditResult.enrichmentResponse).to.deep.equal({
-      status: 'accepted',
-      jobId: 'job-123',
-    });
-  });
-
   it('runAuditAndProcessResults does not call enrichment API when no product pages detected', async () => {
     // Mock config fetch
     fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
@@ -1129,7 +1030,7 @@ describe('Commerce Product Enrichments Handler', () => {
       s3Client,
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-        CATALOG_ENRICHMENT_ENDPOINT: 'http://test-enrichment-endpoint/catalog-enrichment',
+        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
       },
       scrapeResultPaths,
     };
@@ -1137,156 +1038,11 @@ describe('Commerce Product Enrichments Handler', () => {
     const result = await runAuditAndProcessResults(context);
 
     // Verify enrichment API was NOT called
-    const enrichmentCalls = fetchStub.getCalls().filter((call) => call.args[0] === 'http://test-enrichment-endpoint/catalog-enrichment');
+    const enrichmentCalls = fetchStub.getCalls().filter((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
     expect(enrichmentCalls).to.have.lengthOf(0);
 
     // Verify enrichment response is null
     expect(result.auditResult.enrichmentResponse).to.be.null;
-  });
-
-  it('runAuditAndProcessResults handles enrichment API failure gracefully', async () => {
-    // Mock config fetch
-    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'application/json' },
-      json: () => Promise.resolve(validACCSConfig),
-    });
-
-    // Mock enrichment endpoint with error
-    fetchStub.withArgs('http://test-enrichment-endpoint/catalog-enrichment', sinon.match.any).resolves({
-      ok: false,
-      status: 500,
-      statusText: 'Internal Server Error',
-      headers: { get: () => null },
-      text: () => Promise.resolve('Server error'),
-    });
-
-    site.getConfig.returns({
-      getHandlers: sinon.stub().returns({
-        'commerce-product-enrichments': {
-          instanceType: 'ACCS',
-        },
-      }),
-    });
-
-    const s3Client = {
-      send: sinon.stub().resolves({
-        ContentType: 'application/json',
-        Body: {
-          transformToString: sinon.stub().resolves(JSON.stringify({
-            url: 'https://example.com/product-1',
-            finalUrl: 'https://example.com/product-1',
-            scrapeResult: {
-              structuredData: {
-                jsonld: {
-                  Product: [{ name: 'Test Product', sku: 'TEST-SKU-123' }],
-                },
-              },
-            },
-          })),
-        },
-      }),
-    };
-
-    const scrapeResultPaths = new Map([
-      ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
-    ]);
-
-    const context = {
-      site,
-      audit: { getId: () => 'audit-15' },
-      finalUrl: 'https://example.com',
-      log,
-      s3Client,
-      env: {
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-        CATALOG_ENRICHMENT_ENDPOINT: 'http://test-enrichment-endpoint/catalog-enrichment',
-      },
-      scrapeResultPaths,
-    };
-
-    const result = await runAuditAndProcessResults(context);
-
-    // Verify audit still completes
-    expect(result.auditResult.status).to.equal('OPPORTUNITIES_FOUND');
-
-    // Verify error was logged
-    expect(log.error).to.have.been.calledWith(sinon.match(/Enrichment API failed/));
-
-    // Verify enrichment response contains error info
-    expect(result.auditResult.enrichmentResponse).to.have.property('error');
-  });
-
-  it('runAuditAndProcessResults handles enrichment API network error gracefully', async () => {
-    // Mock config fetch
-    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'application/json' },
-      json: () => Promise.resolve(validACCSConfig),
-    });
-
-    // Mock enrichment endpoint with network error (fetch throws)
-    fetchStub.withArgs('http://test-enrichment-endpoint/catalog-enrichment', sinon.match.any)
-      .rejects(new Error('Network connection refused'));
-
-    site.getConfig.returns({
-      getHandlers: sinon.stub().returns({
-        'commerce-product-enrichments': {
-          instanceType: 'ACCS',
-        },
-      }),
-    });
-
-    const s3Client = {
-      send: sinon.stub().resolves({
-        ContentType: 'application/json',
-        Body: {
-          transformToString: sinon.stub().resolves(JSON.stringify({
-            url: 'https://example.com/product-1',
-            finalUrl: 'https://example.com/product-1',
-            scrapeResult: {
-              structuredData: {
-                jsonld: {
-                  Product: [{ name: 'Test Product', sku: 'TEST-SKU-123' }],
-                },
-              },
-            },
-          })),
-        },
-      }),
-    };
-
-    const scrapeResultPaths = new Map([
-      ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
-    ]);
-
-    const context = {
-      site,
-      audit: { getId: () => 'audit-19' },
-      finalUrl: 'https://example.com',
-      log,
-      s3Client,
-      env: {
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-        CATALOG_ENRICHMENT_ENDPOINT: 'http://test-enrichment-endpoint/catalog-enrichment',
-      },
-      scrapeResultPaths,
-    };
-
-    const result = await runAuditAndProcessResults(context);
-
-    // Verify audit still completes
-    expect(result.auditResult.status).to.equal('OPPORTUNITIES_FOUND');
-
-    // Verify error was logged
-    expect(log.error).to.have.been.calledWith(sinon.match(/Enrichment API call failed/));
-
-    // Verify enrichment response contains error info
-    expect(result.auditResult.enrichmentResponse).to.deep.equal({
-      error: 'Network connection refused',
-    });
   });
 
   it('runAuditAndProcessResults skips enrichment when CATALOG_ENRICHMENT_ENDPOINT not configured', async () => {
@@ -1392,7 +1148,7 @@ describe('Commerce Product Enrichments Handler', () => {
       s3Client,
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-        CATALOG_ENRICHMENT_ENDPOINT: 'http://test-enrichment-endpoint/catalog-enrichment',
+        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
       },
       scrapeResultPaths,
     };
@@ -1400,130 +1156,11 @@ describe('Commerce Product Enrichments Handler', () => {
     const result = await runAuditAndProcessResults(context);
 
     // Verify no enrichment call attempted
-    const enrichmentCalls = fetchStub.getCalls().filter((call) => call.args[0] === 'http://test-enrichment-endpoint/catalog-enrichment');
+    const enrichmentCalls = fetchStub.getCalls().filter((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
     expect(enrichmentCalls).to.have.lengthOf(0);
 
     // Verify enrichment response is null
     expect(result.auditResult.enrichmentResponse).to.be.null;
-  });
-
-  it('runAuditAndProcessResults includes multiple product pages in enrichment payload', async () => {
-    // Mock config fetch
-    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'application/json' },
-      json: () => Promise.resolve(validACCSConfig),
-    });
-
-    // Mock enrichment endpoint
-    fetchStub.withArgs('http://test-enrichment-endpoint/catalog-enrichment', sinon.match.any).resolves({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'application/json' },
-      json: () => Promise.resolve({ status: 'accepted', jobId: 'job-456' }),
-    });
-
-    site.getConfig.returns({
-      getExcludedURLs: sinon.stub().returns([]),
-      updateExcludedURLs: sinon.stub(),
-      getHandlers: sinon.stub().returns({
-        'commerce-product-enrichments': {
-          instanceType: 'ACCS',
-        },
-      }),
-    });
-
-    const s3Client = {
-      send: sinon.stub(),
-    };
-
-    // First call: product page with single SKU
-    s3Client.send.onCall(0).resolves({
-      ContentType: 'application/json',
-      Body: {
-        transformToString: sinon.stub().resolves(JSON.stringify({
-          url: 'https://example.com/product-1',
-          finalUrl: 'https://example.com/product-1',
-          scrapeResult: {
-            structuredData: {
-              jsonld: {
-                Product: [{ name: 'Product 1', sku: 'SKU-001' }],
-              },
-            },
-          },
-        })),
-      },
-    });
-
-    // Second call: non-product page
-    s3Client.send.onCall(1).resolves({
-      ContentType: 'application/json',
-      Body: {
-        transformToString: sinon.stub().resolves(JSON.stringify({
-          url: 'https://example.com/about',
-          finalUrl: 'https://example.com/about',
-          scrapeResult: {},
-        })),
-      },
-    });
-
-    // Third call: product page with single SKU
-    s3Client.send.onCall(2).resolves({
-      ContentType: 'application/json',
-      Body: {
-        transformToString: sinon.stub().resolves(JSON.stringify({
-          url: 'https://example.com/product-2',
-          finalUrl: 'https://example.com/product-2',
-          scrapeResult: {
-            structuredData: {
-              jsonld: {
-                Product: [{ name: 'Product 2', sku: 'SKU-002' }],
-              },
-            },
-          },
-        })),
-      },
-    });
-
-    const scrapeResultPaths = new Map([
-      ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
-      ['https://example.com/about', 'scrapes/site-1/about/scrape.json'],
-      ['https://example.com/product-2', 'scrapes/site-1/product-2/scrape.json'],
-    ]);
-
-    const context = {
-      site,
-      audit: { getId: () => 'audit-18' },
-      finalUrl: 'https://example.com',
-      log,
-      s3Client,
-      env: {
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-        CATALOG_ENRICHMENT_ENDPOINT: 'http://test-enrichment-endpoint/catalog-enrichment',
-      },
-      scrapeResultPaths,
-    };
-
-    const result = await runAuditAndProcessResults(context);
-
-    // Verify the payload contains exactly 2 scrapes
-    const enrichmentCall = fetchStub.getCalls().find((call) => call.args[0] === 'http://test-enrichment-endpoint/catalog-enrichment');
-    expect(enrichmentCall).to.exist;
-
-    const payload = JSON.parse(enrichmentCall.args[1].body);
-    expect(payload.scrapes).to.have.lengthOf(2);
-    expect(payload.scrapes[0]).to.deep.equal({
-      sku: 'SKU-001',
-      key: 'scrapes/site-1/product-1/scrape.json',
-    });
-    expect(payload.scrapes[1]).to.deep.equal({
-      sku: 'SKU-002',
-      key: 'scrapes/site-1/product-2/scrape.json',
-    });
-
-    // Verify audit result shows 2 product pages
-    expect(result.auditResult.productPages).to.equal(2);
   });
 
   it('runAuditAndProcessResults persists non-product URLs as excluded', async () => {
@@ -1838,5 +1475,759 @@ describe('Commerce Product Enrichments Handler', () => {
     // updateExcludedURLs should not be called when there are no non-product pages
     expect(mockConfig.updateExcludedURLs).to.not.have.been.called;
   });
+});
 
+describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
+  let log;
+  let site;
+  let fetchStub;
+  let mockImsClient;
+  let runAuditWithIms;
+
+  beforeEach(async () => {
+    fetchStub = sinon.stub(global, 'fetch');
+
+    mockImsClient = {
+      getServiceAccessToken: sinon.stub().resolves({
+        access_token: 'test-ims-token',
+        token_type: 'bearer',
+        expires_in: 86400,
+      }),
+    };
+
+    const mockedHandler = await esmock(
+      '../../../src/commerce-product-enrichments/handler.js',
+      {
+        '@adobe/spacecat-shared-ims-client': {
+          ImsClient: {
+            createFrom: sinon.stub().returns(mockImsClient),
+          },
+        },
+      },
+    );
+    runAuditWithIms = mockedHandler.runAuditAndProcessResults;
+
+    log = {
+      info: sinon.spy(),
+      warn: sinon.spy(),
+      error: sinon.spy(),
+      debug: sinon.spy(),
+    };
+
+    site = {
+      getId: sinon.stub().returns('site-1'),
+      getBaseURL: sinon.stub().returns('https://example.com'),
+      getConfig: sinon.stub().returns({
+        getIncludedURLs: sinon.stub().resolves([]),
+        getExcludedURLs: sinon.stub().returns([]),
+        updateExcludedURLs: sinon.stub(),
+        getHandlers: sinon.stub().returns({
+          'commerce-product-enrichments': { instanceType: 'ACCS' },
+        }),
+      }),
+      setConfig: sinon.stub(),
+      save: sinon.stub().resolves(),
+    };
+
+    sinon.stub(Config, 'toDynamoItem').returns({});
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('enrichment API call includes IMS Authorization header', async () => {
+    // Mock config fetch (for getCommerceConfig)
+    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve({
+        public: {
+          default: {
+            'commerce-endpoint': 'https://commerce.example.com/graphql',
+            headers: {
+              cs: {
+                'Magento-Environment-Id': 'env-123',
+                'Magento-Store-Code': 'store-code',
+                'Magento-Store-View-Code': 'view-code',
+                'Magento-Website-Code': 'website-code',
+                'x-api-key': 'api-key-123',
+              },
+            },
+          },
+        },
+      }),
+    });
+
+    // Mock enrichment endpoint
+    fetchStub.withArgs('https://test-enrichment-endpoint/catalog-enrichment', sinon.match.any).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve({ status: 'accepted' }),
+    });
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            scrapeResult: {
+              structuredData: {
+                jsonld: { Product: [{ name: 'Test', sku: 'SKU-1' }] },
+              },
+            },
+          })),
+        },
+      }),
+    };
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-ims-1' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
+        IMS_HOST: 'ims-na1.adobelogin.com',
+        IMS_CLIENT_ID: 'test-client-id',
+        IMS_CLIENT_CODE: 'test-client-code',
+        IMS_CLIENT_SECRET: 'test-client-secret',
+
+      },
+      scrapeResultPaths: new Map([
+        ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
+      ]),
+    };
+
+    await runAuditWithIms(context);
+
+    // Find the enrichment fetch call
+    const enrichmentCall = fetchStub.getCalls().find(
+      (call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment',
+    );
+    expect(enrichmentCall).to.exist;
+
+    const { headers } = enrichmentCall.args[1];
+    expect(headers).to.have.property('Authorization', 'Bearer test-ims-token');
+    expect(headers).to.have.property('Content-Type', 'application/json');
+  });
+
+  it('calls enrichment API with correct payload when product pages found', async () => {
+    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve(validACCSConfig),
+    });
+
+    fetchStub.withArgs('https://test-enrichment-endpoint/catalog-enrichment', sinon.match.any).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve({ status: 'accepted', jobId: 'job-123' }),
+    });
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            scrapeResult: {
+              structuredData: {
+                jsonld: {
+                  Product: [{ name: 'Test Product', sku: 'TEST-SKU-123' }],
+                },
+              },
+            },
+          })),
+        },
+      }),
+    };
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-13' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
+        IMS_HOST: 'ims-na1.adobelogin.com',
+        IMS_CLIENT_ID: 'test-client-id',
+        IMS_CLIENT_CODE: 'test-client-code',
+        IMS_CLIENT_SECRET: 'test-client-secret',
+
+      },
+      scrapeResultPaths: new Map([
+        ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
+      ]),
+    };
+
+    const result = await runAuditWithIms(context);
+
+    const enrichmentCall = fetchStub.getCalls().find((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
+    expect(enrichmentCall).to.exist;
+
+    const payload = JSON.parse(enrichmentCall.args[1].body);
+    expect(payload).to.deep.include({
+      siteId: 'site-1',
+      environmentId: 'env-123',
+      websiteCode: 'website-code',
+      storeCode: 'store-code',
+      storeViewCode: 'view-code',
+    });
+    expect(payload.scrapes).to.have.lengthOf(1);
+    expect(payload.scrapes[0]).to.deep.equal({
+      sku: 'TEST-SKU-123',
+      key: 'scrapes/site-1/product-1/scrape.json',
+    });
+
+    expect(result.auditResult.enrichmentResponse).to.deep.equal({
+      status: 'accepted',
+      jobId: 'job-123',
+    });
+  });
+
+  it('handles enrichment API failure gracefully', async () => {
+    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve(validACCSConfig),
+    });
+
+    fetchStub.withArgs('https://test-enrichment-endpoint/catalog-enrichment', sinon.match.any).resolves({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      headers: { get: () => null },
+      text: () => Promise.resolve('Server error'),
+    });
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            scrapeResult: {
+              structuredData: {
+                jsonld: {
+                  Product: [{ name: 'Test Product', sku: 'TEST-SKU-123' }],
+                },
+              },
+            },
+          })),
+        },
+      }),
+    };
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-15' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
+        IMS_HOST: 'ims-na1.adobelogin.com',
+        IMS_CLIENT_ID: 'test-client-id',
+        IMS_CLIENT_CODE: 'test-client-code',
+        IMS_CLIENT_SECRET: 'test-client-secret',
+
+      },
+      scrapeResultPaths: new Map([
+        ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
+      ]),
+    };
+
+    const result = await runAuditWithIms(context);
+
+    expect(result.auditResult.status).to.equal('OPPORTUNITIES_FOUND');
+    expect(log.error).to.have.been.calledWith(sinon.match(/Enrichment API failed/));
+    expect(result.auditResult.enrichmentResponse).to.have.property('error');
+  });
+
+  it('handles enrichment API network error gracefully', async () => {
+    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve(validACCSConfig),
+    });
+
+    fetchStub.withArgs('https://test-enrichment-endpoint/catalog-enrichment', sinon.match.any)
+      .rejects(new Error('Network connection refused'));
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            scrapeResult: {
+              structuredData: {
+                jsonld: {
+                  Product: [{ name: 'Test Product', sku: 'TEST-SKU-123' }],
+                },
+              },
+            },
+          })),
+        },
+      }),
+    };
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-19' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
+        IMS_HOST: 'ims-na1.adobelogin.com',
+        IMS_CLIENT_ID: 'test-client-id',
+        IMS_CLIENT_CODE: 'test-client-code',
+        IMS_CLIENT_SECRET: 'test-client-secret',
+
+      },
+      scrapeResultPaths: new Map([
+        ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
+      ]),
+    };
+
+    const result = await runAuditWithIms(context);
+
+    expect(result.auditResult.status).to.equal('OPPORTUNITIES_FOUND');
+    expect(log.error).to.have.been.calledWith(sinon.match(/Enrichment API call failed/));
+    expect(result.auditResult.enrichmentResponse).to.deep.equal({
+      error: 'Network connection refused',
+    });
+  });
+
+  it('includes multiple product pages in enrichment payload', async () => {
+    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve(validACCSConfig),
+    });
+
+    fetchStub.withArgs('https://test-enrichment-endpoint/catalog-enrichment', sinon.match.any).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve({ status: 'accepted', jobId: 'job-456' }),
+    });
+
+    site.getConfig.returns({
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({
+        'commerce-product-enrichments': { instanceType: 'ACCS' },
+      }),
+    });
+
+    const s3Client = { send: sinon.stub() };
+
+    s3Client.send.onCall(0).resolves({
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sinon.stub().resolves(JSON.stringify({
+          scrapeResult: {
+            structuredData: {
+              jsonld: { Product: [{ name: 'Product 1', sku: 'SKU-001' }] },
+            },
+          },
+        })),
+      },
+    });
+
+    s3Client.send.onCall(1).resolves({
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sinon.stub().resolves(JSON.stringify({
+          scrapeResult: {},
+        })),
+      },
+    });
+
+    s3Client.send.onCall(2).resolves({
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sinon.stub().resolves(JSON.stringify({
+          scrapeResult: {
+            structuredData: {
+              jsonld: { Product: [{ name: 'Product 2', sku: 'SKU-002' }] },
+            },
+          },
+        })),
+      },
+    });
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-18' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
+        IMS_HOST: 'ims-na1.adobelogin.com',
+        IMS_CLIENT_ID: 'test-client-id',
+        IMS_CLIENT_CODE: 'test-client-code',
+        IMS_CLIENT_SECRET: 'test-client-secret',
+
+      },
+      scrapeResultPaths: new Map([
+        ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
+        ['https://example.com/about', 'scrapes/site-1/about/scrape.json'],
+        ['https://example.com/product-2', 'scrapes/site-1/product-2/scrape.json'],
+      ]),
+    };
+
+    const result = await runAuditWithIms(context);
+
+    const enrichmentCall = fetchStub.getCalls().find((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
+    expect(enrichmentCall).to.exist;
+
+    const payload = JSON.parse(enrichmentCall.args[1].body);
+    expect(payload.scrapes).to.have.lengthOf(2);
+    expect(payload.scrapes[0]).to.deep.equal({
+      sku: 'SKU-001',
+      key: 'scrapes/site-1/product-1/scrape.json',
+    });
+    expect(payload.scrapes[1]).to.deep.equal({
+      sku: 'SKU-002',
+      key: 'scrapes/site-1/product-2/scrape.json',
+    });
+
+    expect(result.auditResult.productPages).to.equal(2);
+  });
+
+  it('logs and rethrows IMS token error', async () => {
+    mockImsClient.getServiceAccessToken.rejects(
+      new Error('IMS getServiceAccessToken request failed with status: 400'),
+    );
+
+    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve(validACCSConfig),
+    });
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            scrapeResult: {
+              structuredData: {
+                jsonld: { Product: [{ name: 'Test Product', sku: 'SKU-1' }] },
+              },
+            },
+          })),
+        },
+      }),
+    };
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-ims-error' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
+        IMS_HOST: 'ims-na1.adobelogin.com',
+        IMS_CLIENT_ID: 'test-client-id',
+        IMS_CLIENT_CODE: 'test-client-code',
+        IMS_CLIENT_SECRET: 'test-client-secret',
+      },
+      scrapeResultPaths: new Map([
+        ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
+      ]),
+    };
+
+    const result = await runAuditWithIms(context);
+
+    expect(result.auditResult.status).to.equal('OPPORTUNITIES_FOUND');
+    expect(log.error).to.have.been.calledWith(sinon.match(/IMS token request failed/));
+    expect(result.auditResult.enrichmentResponse).to.have.property('error');
+  });
+
+});
+
+describe('Commerce Product Enrichments Handler - Yearly (Sitemap)', () => {
+  let log;
+  let site;
+  let getSitemapUrlsStub;
+  let discoverSitemapUrlsAndSubmitForScraping;
+
+  beforeEach(async () => {
+    getSitemapUrlsStub = sinon.stub();
+
+    const mockedHandler = await esmock(
+      '../../../src/commerce-product-enrichments/handler.js',
+      {
+        '../../../src/sitemap/common.js': {
+          getSitemapUrls: getSitemapUrlsStub,
+        },
+      },
+    );
+    discoverSitemapUrlsAndSubmitForScraping = mockedHandler.discoverSitemapUrlsAndSubmitForScraping;
+
+    log = {
+      info: sinon.spy(),
+      warn: sinon.spy(),
+      error: sinon.spy(),
+      debug: sinon.spy(),
+    };
+
+    site = {
+      getId: sinon.stub().returns('site-1'),
+      getBaseURL: sinon.stub().returns('https://example.com'),
+      getConfig: sinon.stub().returns({
+        getIncludedURLs: sinon.stub().resolves([]),
+        getExcludedURLs: sinon.stub().returns([]),
+      }),
+    };
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('discovers sitemap URLs and builds scrape payload', async () => {
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {
+        extractedPaths: {
+          'https://example.com/sitemap.xml': [
+            'https://example.com/product-1',
+            'https://example.com/product-2',
+            'https://example.com/product-3',
+          ],
+        },
+      },
+    });
+
+    const result = await discoverSitemapUrlsAndSubmitForScraping({
+      site, log, data: {},
+    });
+
+    expect(getSitemapUrlsStub).to.have.been.calledOnceWith(
+      'https://example.com',
+      log,
+    );
+    expect(result.urls).to.deep.equal([
+      { url: 'https://example.com/product-1' },
+      { url: 'https://example.com/product-2' },
+      { url: 'https://example.com/product-3' },
+    ]);
+    expect(result.siteId).to.equal('site-1');
+  });
+
+  it('uses all sitemap URLs when no limit specified', async () => {
+    const manyUrls = Array.from(
+      { length: 50 },
+      (_, i) => `https://example.com/page-${i + 1}`,
+    );
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {
+        extractedPaths: {
+          'https://example.com/sitemap.xml': manyUrls,
+        },
+      },
+    });
+
+    const result = await discoverSitemapUrlsAndSubmitForScraping({
+      site, log, data: {},
+    });
+
+    expect(result.urls).to.have.lengthOf(50);
+    expect(result.urls[0]).to.deep.equal({
+      url: 'https://example.com/page-1',
+    });
+    expect(result.urls[49]).to.deep.equal({
+      url: 'https://example.com/page-50',
+    });
+  });
+
+  it('respects custom limit from data', async () => {
+    const manyUrls = Array.from(
+      { length: 50 },
+      (_, i) => `https://example.com/page-${i + 1}`,
+    );
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {
+        extractedPaths: {
+          'https://example.com/sitemap.xml': manyUrls,
+        },
+      },
+    });
+
+    const result = await discoverSitemapUrlsAndSubmitForScraping({
+      site, log, data: { limit: 10 },
+    });
+
+    expect(result.urls).to.have.lengthOf(10);
+    expect(result.urls[0]).to.deep.equal({
+      url: 'https://example.com/page-1',
+    });
+    expect(result.urls[9]).to.deep.equal({
+      url: 'https://example.com/page-10',
+    });
+  });
+
+  it('parses limit from JSON string data', async () => {
+    const manyUrls = Array.from(
+      { length: 50 },
+      (_, i) => `https://example.com/page-${i + 1}`,
+    );
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {
+        extractedPaths: {
+          'https://example.com/sitemap.xml': manyUrls,
+        },
+      },
+    });
+
+    const result = await discoverSitemapUrlsAndSubmitForScraping({
+      site, log, data: '{"limit":5}',
+    });
+
+    expect(result.urls).to.have.lengthOf(5);
+  });
+
+  it('throws on sitemap discovery failure', async () => {
+    getSitemapUrlsStub.resolves({
+      success: false,
+      reasons: [
+        {
+          value: 'https://example.com/robots.txt',
+          error: 'NO_SITEMAP_IN_ROBOTS',
+        },
+      ],
+    });
+
+    await expect(
+      discoverSitemapUrlsAndSubmitForScraping({ site, log, data: {} }),
+    ).to.be.rejectedWith('Sitemap discovery failed');
+  });
+
+  it('throws when extractedPaths is missing', async () => {
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {},
+    });
+
+    await expect(
+      discoverSitemapUrlsAndSubmitForScraping({ site, log, data: {} }),
+    ).to.be.rejectedWith('Sitemap discovery failed');
+  });
+
+  it('respects excluded and included URLs', async () => {
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {
+        extractedPaths: {
+          'https://example.com/sitemap.xml': [
+            'https://example.com/page-1',
+            'https://example.com/page-2',
+            'https://example.com/page-3',
+          ],
+        },
+      },
+    });
+
+    site.getConfig.returns({
+      getIncludedURLs: sinon.stub().resolves([
+        'https://example.com/included-page',
+      ]),
+      getExcludedURLs: sinon.stub().returns([
+        'https://example.com/page-2',
+      ]),
+    });
+
+    const result = await discoverSitemapUrlsAndSubmitForScraping({
+      site, log, data: {},
+    });
+
+    expect(result.urls).to.deep.equal([
+      { url: 'https://example.com/page-1' },
+      { url: 'https://example.com/page-3' },
+      { url: 'https://example.com/included-page' },
+    ]);
+  });
+
+  it('flattens URLs from multiple sitemaps', async () => {
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {
+        extractedPaths: {
+          'https://example.com/sitemap-1.xml': [
+            'https://example.com/page-a',
+            'https://example.com/page-b',
+          ],
+          'https://example.com/sitemap-2.xml': [
+            'https://example.com/page-c',
+          ],
+        },
+      },
+    });
+
+    const result = await discoverSitemapUrlsAndSubmitForScraping({
+      site, log, data: {},
+    });
+
+    expect(result.urls).to.have.lengthOf(3);
+    expect(result.urls.map((u) => u.url)).to.include.members([
+      'https://example.com/page-a',
+      'https://example.com/page-b',
+      'https://example.com/page-c',
+    ]);
+  });
+
+  it('handles invalid JSON in data gracefully', async () => {
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {
+        extractedPaths: {
+          'https://example.com/sitemap.xml': [
+            'https://example.com/page-1',
+          ],
+        },
+      },
+    });
+
+    const result = await discoverSitemapUrlsAndSubmitForScraping({
+      site, log, data: 'invalid-json{',
+    });
+
+    // No limit applied, all URLs returned
+    expect(result.urls).to.have.lengthOf(1);
+    expect(log.warn).to.have.been.calledWith(
+      sinon.match(/Could not parse data as JSON/),
+    );
+  });
 });
