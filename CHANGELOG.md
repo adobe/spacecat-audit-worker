@@ -1,3 +1,24 @@
+# [1.349.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.348.2...v1.349.0) (2026-03-10)
+
+
+### Features
+
+* add related URLs audit ([#2085](https://github.com/adobe/spacecat-audit-worker/issues/2085)) ([b24d635](https://github.com/adobe/spacecat-audit-worker/commit/b24d635a46b29df4a0ceab542cc969a2b5d10bd8))
+
+## [1.348.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.348.1...v1.348.2) (2026-03-09)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2094](https://github.com/adobe/spacecat-audit-worker/issues/2094)) ([35bb054](https://github.com/adobe/spacecat-audit-worker/commit/35bb054b55263c0749199d23328e45ca21023fff))
+
+## [1.348.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.348.0...v1.348.1) (2026-03-09)
+
+
+### Bug Fixes
+
+* preserve branded/unbranded type field from DRS prompts ([#2093](https://github.com/adobe/spacecat-audit-worker/issues/2093)) ([05d8ceb](https://github.com/adobe/spacecat-audit-worker/commit/05d8ceb502a7b6f30d85dbbfa815920a075bb958))
+
 # [1.348.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.347.2...v1.348.0) (2026-03-09)
 
 
