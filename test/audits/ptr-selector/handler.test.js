@@ -329,16 +329,16 @@ describe('PTR Selector Audit', () => {
       expect(result.auditResult.reportDecision).to.equal('not enough data');
     });
 
-    it('should not re-enable audits when already enabled for weekly decision', async () => {
+    it('should enable/disable audits for weekly decision (enablement check removed; idempotent)', async () => {
       mockConfiguration.isHandlerEnabledForSite.withArgs('paid-traffic-analysis-weekly', site).returns(true);
       mockConfiguration.isHandlerEnabledForSite.withArgs('paid-traffic-analysis-monthly', site).returns(true);
       const ctx = createContext([{ total_pageview_sum: '500000' }]);
 
       await runPtrSelectorAnalysisStep(ctx);
 
-      expect(mockConfiguration.enableHandlerForSite).to.not.have.been.called;
-      expect(mockConfiguration.disableHandlerForSite).to.not.have.been.called;
-      expect(logStub.info).to.have.been.calledWithMatch(/already enabled/);
+      // Enable/disable are called regardless of current state (idempotent)
+      expect(mockConfiguration.enableHandlerForSite).to.have.been.called;
+      expect(logStub.info.getCalls().some((c) => /Enabled paid-traffic-analysis/.test(String(c.args[0])))).to.be.true;
     });
 
     it('should throw error when S3_IMPORTER_BUCKET_NAME is missing', async () => {

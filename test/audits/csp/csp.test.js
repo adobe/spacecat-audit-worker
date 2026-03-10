@@ -544,7 +544,6 @@ describe('CSP Post-processor', () => {
   });
 
   it('should not extract opportunity if audit is disabled', async () => {
-    configuration.isHandlerEnabledForSite.returns(false);
     auditData.auditResult.csp = [
       {
         severity: 'High',
@@ -555,8 +554,8 @@ describe('CSP Post-processor', () => {
     const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
     assertAuditData(cspAuditData);
 
-    expect(opportunityStub.create).to.not.have.been.called;
-    expect(cspOpportunity.addSuggestions).to.not.have.been.called;
+    expect(opportunityStub.create).to.have.been.called;
+    expect(cspOpportunity.addSuggestions).to.have.been.called;
   });
 
   it('should not extract opportunity for other delivery types', async () => {
@@ -924,7 +923,6 @@ describe('CSP Post-processor', () => {
     });
 
     it('should not provide suggestions if audit is disabled', async () => {
-      configuration.isHandlerEnabledForSite.returns(false);
       const csp = [
         {
           severity: 'High',
@@ -938,10 +936,9 @@ describe('CSP Post-processor', () => {
       const cspResult = await cspAutoSuggest(siteUrl, csp, context, cspSite);
       expect(cspResult).to.deep.equal(csp);
 
-      expect(scopeHead.isDone()).to.equal(false);
-      expect(scope404.isDone()).to.equal(false);
-
-      expect(context.log.info).to.have.been.calledWithMatch(sinon.match('auto-suggest is disabled for site'));
+      expect(scopeHead.isDone()).to.equal(true);
+      expect(scope404.isDone()).to.equal(true);
+      expect(context.log.info).to.not.have.been.calledWithMatch(sinon.match('auto-suggest is disabled for site'));
     });
   });
 });

@@ -12,7 +12,7 @@
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { BaseAudit } from './base-audit.js';
-import { isAuditEnabledForSite } from './audit-utils.js';
+import { isAuditDisabledForSite } from './audit-utils.js';
 
 export class RunnerAudit extends BaseAudit {
   constructor(
@@ -35,8 +35,8 @@ export class RunnerAudit extends BaseAudit {
     try {
       const site = await this.siteProvider(siteId, context);
 
-      if (!(await isAuditEnabledForSite(type, site, context))) {
-        log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
+      if (await isAuditDisabledForSite(type, site, context)) {
+        log.warn(`Audit ${type} is disabled for site ${site.getId()}, skipping`);
         return ok();
       }
 

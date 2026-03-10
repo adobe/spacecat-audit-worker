@@ -161,21 +161,15 @@ describe('CWV Auto-Suggest', () => {
       expect(message.data.codePath).to.equal('code/test-site-id/github/test-owner/test-repo/main/repository.zip');
     });
 
-    it('should NOT include codeBucket and codePath when auto-fix is disabled', async () => {
-      // Create a new instance with mocked getCodeInfo
+    it('should include codeBucket and codePath when site has code (enablement checked upstream)', async () => {
       const getCodeInfoStub = sandbox.stub().resolves({
         codeBucket: 'test-bucket',
         codePath: 'code/test-site-id/github/test-owner/test-repo/main/repository.zip',
       });
 
-      // Mock isAuditEnabledForSite: auto-suggest enabled, auto-fix disabled
-      const isAuditEnabledStub = sandbox.stub();
-      isAuditEnabledStub.onFirstCall().resolves(true); // auto-suggest enabled
-      isAuditEnabledStub.onSecondCall().resolves(false); // auto-fix disabled
-
-      const { processAutoSuggest: processWithoutAutoFix } = await esmock('../../../src/cwv/auto-suggest.js', {
+      const { processAutoSuggest: processWithCodeInfo } = await esmock('../../../src/cwv/auto-suggest.js', {
         '../../../src/common/index.js': {
-          isAuditEnabledForSite: isAuditEnabledStub,
+          isAuditEnabledForSite: sandbox.stub().resolves(true),
         },
         '../../../src/accessibility/utils/data-processing.js': {
           getCodeInfo: getCodeInfoStub,
@@ -210,16 +204,15 @@ describe('CWV Auto-Suggest', () => {
         }]),
       };
 
-      await processWithoutAutoFix(context, opportunity, siteWithCode);
+      await processWithCodeInfo(context, opportunity, siteWithCode);
 
       expect(sqsStub.calledOnce).to.be.true;
       const message = sqsStub.firstCall.args[1];
 
       expect(message.data.type).to.equal('cwv');
-      expect(message.data.codeBucket).to.be.undefined;
-      expect(message.data.codePath).to.be.undefined;
-      // getCodeInfo should not be called when auto-fix is disabled
-      expect(getCodeInfoStub.called).to.be.false;
+      expect(message.data.codeBucket).to.equal('test-bucket');
+      expect(message.data.codePath).to.equal('code/test-site-id/github/test-owner/test-repo/main/repository.zip');
+      expect(getCodeInfoStub.called).to.be.true;
     });
 
     it('should skip group-type suggestions and only send URL-type suggestions', async () => {
@@ -260,9 +253,7 @@ describe('CWV Auto-Suggest', () => {
       expect(message.data.suggestionId).to.equal('sugg-url');
     });
 
-    it('should not send messages when feature toggle is disabled', async () => {
-      isAuditEnabledForSite.resolves(false);
-
+    it('sends messages when opportunity has URL-type suggestions (enablement checked upstream)', async () => {
       const opportunity = {
         getSiteId: () => 'site-123',
         getAuditId: () => 'audit-456',
@@ -281,8 +272,7 @@ describe('CWV Auto-Suggest', () => {
 
       await processAutoSuggest(context, opportunity, site);
 
-      expect(sqsStub.called).to.be.false;
-      expect(context.log.info).to.have.been.calledWith('[audit-worker-cwv] siteId: test-site-id | baseURL: https://example.com | CWV auto-suggest is disabled, skipping');
+      expect(sqsStub.called).to.be.true;
     });
 
     it('should not send messages for suggestions with existing guidance', async () => {

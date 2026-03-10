@@ -15,7 +15,7 @@ import { Audit, AsyncJob } from '@adobe/spacecat-shared-data-access';
 import { load as cheerioLoad } from 'cheerio';
 import { retrievePageAuthentication } from '@adobe/spacecat-shared-ims-client';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { isAuditEnabledForSite, noopPersister, noopUrlResolver } from '../common/index.js';
+import { noopPersister, noopUrlResolver } from '../common/index.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import {
   getPrefixedPageAuthToken, isValidUrls, saveIntermediateResults,
@@ -52,7 +52,7 @@ export const AUDIT_READABILITY = 'readability';
 export const AUDIT_HEADINGS = 'headings';
 export const AUDIT_FORM_ACCESSIBILITY = 'form-accessibility';
 
-const AVAILABLE_CHECKS = [
+export const AVAILABLE_CHECKS = [
   AUDIT_CANONICAL,
   AUDIT_LINKS,
   AUDIT_METATAGS,
@@ -139,19 +139,16 @@ export const preflightAudit = async (context) => {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
   }
 
-  // Compute enabled preflight checks for the site and store in job metadata
-  let enabledChecks = [];
+  // Compute enabled preflight checks; enablement is enforced upstream, so run all available checks
+  const enabledChecks = [...AVAILABLE_CHECKS];
+  let checksForIdentify = enabledChecks;
   try {
-    enabledChecks = (await Promise.all(
-      AVAILABLE_CHECKS.map(async (audit) => {
-        const enabled = await isAuditEnabledForSite(`${audit}-preflight`, site, context);
-        return enabled ? audit : null;
-      }),
-    )).filter(Boolean);
-
     const jobEntity = await AsyncJobEntity.findById(jobId);
     const currentMetadata = jobEntity.getMetadata();
     const currentPayload = currentMetadata?.payload;
+    if (currentPayload?.checks?.length) {
+      checksForIdentify = currentPayload.checks;
+    }
     jobEntity.setMetadata({
       ...currentMetadata,
       payload: {
@@ -199,9 +196,9 @@ export const preflightAudit = async (context) => {
     }));
     const audits = new Map(auditsResult.map((r) => [r.pageUrl, r]));
 
-    const bodySizeEnabled = enabledChecks.includes(AUDIT_BODY_SIZE);
-    const loremIpsumEnabled = enabledChecks.includes(AUDIT_LOREM_IPSUM);
-    const h1CountEnabled = enabledChecks.includes(AUDIT_H1_COUNT);
+    const bodySizeEnabled = checksForIdentify.includes(AUDIT_BODY_SIZE);
+    const loremIpsumEnabled = checksForIdentify.includes(AUDIT_LOREM_IPSUM);
+    const h1CountEnabled = checksForIdentify.includes(AUDIT_H1_COUNT);
     // DOM-based checks: body size, lorem ipsum, h1 count
     if (bodySizeEnabled || loremIpsumEnabled || h1CountEnabled) {
       const domStartTime = Date.now();

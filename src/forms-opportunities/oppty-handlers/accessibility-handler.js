@@ -21,7 +21,6 @@ import {
 } from '../../accessibility/utils/generate-individual-opportunities.js';
 import { aggregateAccessibilityData, sendRunImportMessage, sendCodeFixMessagesToMystique } from '../../accessibility/utils/data-processing.js';
 import { URL_SOURCE_SEPARATOR, A11Y_METRICS_AGGREGATOR_IMPORT_TYPE, WCAG_CRITERIA_COUNTS } from '../../accessibility/utils/constants.js';
-import { isAuditEnabledForSite } from '../../common/audit-utils.js';
 
 /**
  * Extracts form accessibility data from Mystique a11y data
@@ -377,18 +376,13 @@ export default async function handler(message, context) {
     // Create individual suggestions from Mystique data
     await createFormAccessibilitySuggestionsFromMystique(a11y, opportunity, context);
 
-    // send message to importer for code-fix generation
-    const isAutoFixEnabled = await isAuditEnabledForSite(`${opportunity.getType()}-auto-fix`, site, context);
-    if (isAutoFixEnabled) {
-      await sendCodeFixMessagesToMystique(
-        opportunity,
-        auditId,
-        site,
-        context,
-      );
-    } else {
-      log.info(`[Form Opportunity] [Site Id: ${siteId}] ${opportunity.getType()}-auto-fix is disabled for site, skipping code-fix generation`);
-    }
+    // send message to importer for code-fix generation (enablement checked upstream)
+    await sendCodeFixMessagesToMystique(
+      opportunity,
+      auditId,
+      site,
+      context,
+    );
     // TODO: Send message to mystique for guidance
   } catch (error) {
     log.error(`[Form Opportunity] [Site Id: ${siteId}] Failed to process a11y opportunity from mystique: ${error.message}`);

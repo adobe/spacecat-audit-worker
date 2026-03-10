@@ -27,7 +27,6 @@ import {
 } from './constants.js';
 import { getAuditData, getCodeInfo } from './data-processing.js';
 import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-processing.js';
-import { isAuditEnabledForSite } from '../../common/audit-utils.js';
 import { saveMystiqueValidationMetricsToS3, saveOpptyWithRetry } from './scrape-utils.js';
 
 /**
@@ -184,8 +183,7 @@ async function sendMystiqueMessage({
   // Determine useCodeFixFlow if not provided
   let useCodeFixFlow = useCodeFixFlowParam;
   if (useCodeFixFlow === undefined && context) {
-    const autoFixEnabled = await isAuditEnabledForSite('a11y-mystique-auto-fix', context.site, context);
-    useCodeFixFlow = autoFixEnabled && shouldUseCodeFixFlow(issuesList);
+    useCodeFixFlow = shouldUseCodeFixFlow(issuesList);
   }
 
   // Create base message
@@ -263,25 +261,22 @@ async function sendSuggestionsToMystiqueInternal(opportunity, suggestions, conte
     log.debug(`${logTag} Suggestion ${index}: URL=${suggestionData.url}, DatabaseKey=${databaseKey}, Issues=[${issueTypes.join(', ')}]`);
   });
 
-  // Determine if code fix flow should be used
-  const autoFixEnabled = await isAuditEnabledForSite('a11y-mystique-auto-fix', site, context);
+  // Determine if code fix flow should be used based on eligible issues
   let hasCodeFixEligibleIssues = false;
-  if (autoFixEnabled) {
-    for (const suggestion of suggestions) {
-      const suggestionData = suggestion.getData();
-      if (isNonEmptyArray(suggestionData.issues)) {
-        const eligibleIssues = suggestionData.issues
-          .filter((issue) => issueTypesForCodeFix.includes(issue.type))
-          .filter((issue) => isNonEmptyArray(issue.htmlWithIssues));
-        if (eligibleIssues.length > 0) {
-          hasCodeFixEligibleIssues = true;
-          break;
-        }
+  for (const suggestion of suggestions) {
+    const suggestionData = suggestion.getData();
+    if (isNonEmptyArray(suggestionData.issues)) {
+      const eligibleIssues = suggestionData.issues
+        .filter((issue) => issueTypesForCodeFix.includes(issue.type))
+        .filter((issue) => isNonEmptyArray(issue.htmlWithIssues));
+      if (eligibleIssues.length > 0) {
+        hasCodeFixEligibleIssues = true;
+        break;
       }
     }
   }
-  const useCodeFixFlow = autoFixEnabled && hasCodeFixEligibleIssues;
-  log.debug(`${logTag} Code fix flow enabled: ${autoFixEnabled}, has eligible issues: ${hasCodeFixEligibleIssues}, using code fix flow: ${useCodeFixFlow}`);
+  const useCodeFixFlow = hasCodeFixEligibleIssues;
+  log.debug(`${logTag} Has eligible issues: ${hasCodeFixEligibleIssues}, using code fix flow: ${useCodeFixFlow}`);
 
   const mystiqueData = processSuggestionsForMystique(suggestions, useCodeFixFlow);
 
@@ -340,25 +335,16 @@ async function sendSuggestionsToMystiqueInternal(opportunity, suggestions, conte
  * @param {string} opportunityId - The opportunity ID to process
  * @param {Object} context - Audit context containing site, sqs, env, dataAccess, and log
  * @param {Object} [options] - Optional configuration
- * @param {boolean} [options.skipMystiqueEnabledCheck] - Skip the a11y-mystique-auto-suggest check
  * @param {string} [options.aggregationKey] - If provided, only process suggestions
  *   matching this key
  * @returns {Promise<Object>} Result object with success status and details
  */
 export async function sendOpportunitySuggestionsToMystique(opportunityId, context, options = {}) {
-  const { log, dataAccess, site } = context;
-  const { skipMystiqueEnabledCheck = false, aggregationKey } = options;
+  const { log, dataAccess } = context;
+  const { aggregationKey } = options;
   const LOG_TAG = '[A11yCodefix]';
 
   try {
-    if (!skipMystiqueEnabledCheck) {
-      const isMystiqueEnabled = await isAuditEnabledForSite('a11y-mystique-auto-suggest', site, context);
-      if (!isMystiqueEnabled) {
-        log.info(`${LOG_TAG} Mystique suggestions are disabled for site, skipping message sending`);
-        return { success: true, messagesProcessed: 0 };
-      }
-    }
-
     const { Opportunity } = dataAccess;
     const opportunity = await Opportunity.findById(opportunityId);
     if (!opportunity) {
@@ -714,13 +700,6 @@ export async function sendMessageToMystiqueForRemediation(
   const LOG_TAG = '[A11yIndividual]';
 
   try {
-    // Check if mystique suggestions are enabled for this site
-    const isMystiqueEnabled = await isAuditEnabledForSite('a11y-mystique-auto-suggest', context.site, context);
-    if (!isMystiqueEnabled) {
-      log.info(`${LOG_TAG} Mystique suggestions are disabled for site, skipping message sending`);
-      return { success: true };
-    }
-
     // Get fresh opportunity data to ensure we have the latest suggestions
     const { Opportunity } = context.dataAccess;
     const refreshedOpportunity = await Opportunity.findById(opportunity.getId());

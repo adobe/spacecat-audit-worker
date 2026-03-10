@@ -842,53 +842,44 @@ describe('Image Alt Text Handler', () => {
         .to.be.rejectedWith('No top pages found for site site-id');
     });
 
-    it('should limit pages to 20 when summit-plg is enabled', async () => {
-      isAuditEnabledForSiteStub.resolves(true); // summit-plg enabled
-
-      // Create 25 pages to ensure slicing works
+    it('should limit pages to 100 (page limit is fixed at 100)', async () => {
+      // Create 25 pages; with limit 100 we check all 25
       const pages = Array.from({ length: 25 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
       }));
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
 
-      // All scrapes missing
       const error = new Error('NotFound');
       error.name = 'NotFound';
       s3ClientMock.send.rejects(error);
 
       const result = await handlerModule.processScraping(context);
 
-      // Should only check first 20 pages
-      expect(s3ClientMock.send).to.have.callCount(20);
-      expect(result.urls).to.have.lengthOf(20);
+      expect(s3ClientMock.send).to.have.callCount(25);
+      expect(result.urls).to.have.lengthOf(25);
       expect(result.urls[0].url).to.equal('https://example.com/page1');
-      expect(result.urls[19].url).to.equal('https://example.com/page20');
+      expect(result.urls[24].url).to.equal('https://example.com/page25');
       expect(context.log.debug).to.have.been.calledWith(
-        '[alt-text]: Page limit set to 20 (summit-plg enabled: true)',
+        '[alt-text]: Page limit set to 100',
       );
     });
 
-    it('should limit pages to 100 when summit-plg is disabled', async () => {
-      isAuditEnabledForSiteStub.resolves(false); // summit-plg disabled
-
-      // Create 150 pages to ensure slicing works
+    it('should limit pages to 100 when many pages exist', async () => {
       const pages = Array.from({ length: 150 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
       }));
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
 
-      // All scrapes missing
       const error = new Error('NotFound');
       error.name = 'NotFound';
       s3ClientMock.send.rejects(error);
 
       const result = await handlerModule.processScraping(context);
 
-      // Should check first 100 pages
       expect(s3ClientMock.send).to.have.callCount(100);
       expect(result.urls).to.have.lengthOf(100);
       expect(context.log.debug).to.have.been.calledWith(
-        '[alt-text]: Page limit set to 100 (summit-plg enabled: false)',
+        '[alt-text]: Page limit set to 100',
       );
     });
 
@@ -1021,10 +1012,7 @@ describe('Image Alt Text Handler', () => {
       });
     });
 
-    it('should limit to 20 pages when summit-plg is enabled', async () => {
-      isAuditEnabledForSiteStub.resolves(true); // summit-plg enabled
-
-      // Create 50 pages
+    it('should limit to 100 pages (page limit is fixed at 100)', async () => {
       const pages = Array.from({ length: 50 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
       }));
@@ -1032,25 +1020,21 @@ describe('Image Alt Text Handler', () => {
 
       await handlerModule.processAltTextWithMystique(context);
 
-      // Should only send first 20 pages to Mystique
       const callArgs = sendAltTextOpportunityToMystiqueStub.getCall(0).args;
       const sentUrls = callArgs[1];
-      expect(sentUrls).to.have.lengthOf(20);
+      expect(sentUrls).to.have.lengthOf(50);
       expect(sentUrls[0]).to.equal('https://example.com/page1');
-      expect(sentUrls[19]).to.equal('https://example.com/page20');
+      expect(sentUrls[49]).to.equal('https://example.com/page50');
 
       expect(context.log.debug).to.have.been.calledWith(
-        '[alt-text]: Page limit set to 20 (summit-plg enabled: true)',
+        '[alt-text]: Page limit set to 100',
       );
       expect(context.log.debug).to.have.been.calledWith(
-        '[alt-text]: Using 20 top pages out of 50 (limit: 20)',
+        '[alt-text]: Using 50 top pages out of 50 (limit: 100)',
       );
     });
 
-    it('should limit to 100 pages when summit-plg is disabled', async () => {
-      isAuditEnabledForSiteStub.resolves(false); // summit-plg disabled
-
-      // Create 150 pages
+    it('should limit to 100 pages when many pages exist', async () => {
       const pages = Array.from({ length: 150 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
       }));
@@ -1058,7 +1042,6 @@ describe('Image Alt Text Handler', () => {
 
       await handlerModule.processAltTextWithMystique(context);
 
-      // Should only send first 100 pages to Mystique
       const callArgs = sendAltTextOpportunityToMystiqueStub.getCall(0).args;
       const sentUrls = callArgs[1];
       expect(sentUrls).to.have.lengthOf(100);
@@ -1066,7 +1049,7 @@ describe('Image Alt Text Handler', () => {
       expect(sentUrls[99]).to.equal('https://example.com/page100');
 
       expect(context.log.debug).to.have.been.calledWith(
-        '[alt-text]: Page limit set to 100 (summit-plg enabled: false)',
+        '[alt-text]: Page limit set to 100',
       );
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Using 100 top pages out of 150 (limit: 100)',
@@ -1074,8 +1057,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should include includedURLs in addition to limited top pages', async () => {
-      isAuditEnabledForSiteStub.resolves(true); // 20 page limit
-
       const pages = Array.from({ length: 25 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
       }));
@@ -1097,24 +1078,25 @@ describe('Image Alt Text Handler', () => {
       const callArgs = sendAltTextOpportunityToMystiqueStub.getCall(0).args;
       const sentUrls = callArgs[1];
 
-      // Should have 20 top pages + 2 included URLs = 22 total
-      expect(sentUrls).to.have.lengthOf(22);
+      // 25 top pages (limit 100) + 2 included URLs = 27 total
+      expect(sentUrls).to.have.lengthOf(27);
       expect(sentUrls).to.include('https://example.com/included1');
       expect(sentUrls).to.include('https://example.com/included2');
       expect(sentUrls).to.include('https://example.com/page1');
-      expect(sentUrls).to.include('https://example.com/page20');
-      expect(sentUrls).to.not.include('https://example.com/page21');
+      expect(sentUrls).to.include('https://example.com/page25');
     });
 
-    it('should handle when isAuditEnabledForSite throws error', async () => {
-      isAuditEnabledForSiteStub.rejects(new Error('Configuration error'));
+    it('runs processAltTextWithMystique with fixed page limit (no enablement check)', async () => {
+      const pages = Array.from({ length: 10 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
 
-      await expect(handlerModule.processAltTextWithMystique(context))
-        .to.be.rejectedWith('Configuration error');
+      await handlerModule.processAltTextWithMystique(context);
 
-      expect(context.log.error).to.have.been.calledWith(
-        '[alt-text]: Failed to process with Mystique: Configuration error',
-      );
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledOnce;
+      const sentUrls = sendAltTextOpportunityToMystiqueStub.getCall(0).args[1];
+      expect(sentUrls).to.have.lengthOf(10);
     });
   });
 });

@@ -72,6 +72,19 @@ export async function isAuditEnabledForSite(type, site, context) {
   return configuration.isHandlerEnabledForSite(type, site);
 }
 
+/**
+ * Returns true if the audit type is disabled for the site (skip execution).
+ * Supports use case: customers can disable specific audits (e.g. meta-tags) while others run.
+ * @param {string} type - Audit type
+ * @param {Object} site - Site object
+ * @param {Object} context - Context with dataAccess, log
+ * @returns {Promise<boolean>} True if audit should be skipped (disabled or not entitled)
+ */
+export async function isAuditDisabledForSite(type, site, context) {
+  const enabled = await isAuditEnabledForSite(type, site, context);
+  return !enabled;
+}
+
 export async function loadExistingAudit(auditId, context) {
   if (!isValidUUID(auditId)) {
     throw new Error('Valid auditId is required for step execution');

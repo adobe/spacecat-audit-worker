@@ -18,7 +18,6 @@ import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/confi
 import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { isAuditEnabledForSite } from '../common/audit-utils.js';
 import {
   getLastSunday, compareConfigs, areCategoryNamesDifferent,
 } from './utils.js';
@@ -74,10 +73,8 @@ async function enableAudits(site, context, audits = [], options = undefined) {
 
   let hasChanges = false;
   audits.forEach((audit) => {
-    if (!configuration.isHandlerEnabledForSite(audit, site)) {
-      configuration.enableHandlerForSite(audit, site);
-      hasChanges = true;
-    }
+    configuration.enableHandlerForSite(audit, site);
+    hasChanges = true;
   });
 
   if (hasChanges) {
@@ -185,20 +182,6 @@ export async function triggerGeoBrandPresence(context, site, auditContext = {}) 
   const auditType = cadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence';
 
   log.info(`Triggering ${auditType} audit for site: ${siteId} (cadence: ${cadence})`);
-
-  // Check if the selected audit type is enabled
-  const isAuditEnabled = await isAuditEnabledForSite(auditType, site, context);
-  if (!isAuditEnabled) {
-    log.warn(`${auditType} audit is not enabled for site ${siteId}, skipping geo-brand-presence trigger`);
-    return;
-  }
-
-  // Optional: Warn if the opposite audit type is also enabled
-  const oppositeAuditType = cadence === 'daily' ? 'geo-brand-presence' : 'geo-brand-presence-daily';
-  const isOppositeEnabled = await isAuditEnabledForSite(oppositeAuditType, site, context);
-  if (isOppositeEnabled) {
-    log.warn(`Both ${auditType} and ${oppositeAuditType} are enabled for site ${siteId}. Consider disabling ${oppositeAuditType} to avoid duplicate processing.`);
-  }
 
   const geoBrandPresenceMessage = {
     type: auditType,

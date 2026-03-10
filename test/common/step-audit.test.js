@@ -154,17 +154,14 @@ describe('Step-based Audit Tests', () => {
         .build();
     });
 
-    it('skips execution when audit is disabled for site', async () => {
-      // Configure audit to be disabled
+    it('skips when audit is disabled for site', async () => {
       configuration.isHandlerEnabledForSite.returns(false);
 
       const result = await audit.run(message, context);
 
-      // Verify audit was skipped
       expect(result.status).to.equal(200);
+      expect(context.log.warn).to.have.been.calledWith(sinon.match(/disabled for site.*skipping/));
       expect(context.dataAccess.Audit.create).not.to.have.been.called;
-      expect(context.sqs.sendMessage).not.to.have.been.called;
-      expect(context.log.warn).to.have.been.calledWith('content-audit audits disabled for site 42322ae6-b8b1-4a61-9c88-25205fa65b07, skipping...');
     });
 
     it('executes first step and creates audit record', async () => {

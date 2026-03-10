@@ -728,17 +728,14 @@ describe('sendCodeFixMessagesToImporter', () => {
     });
   });
 
-    describe('Auto-fix disabled', () => {
-        it('should skip code-fix generation when auto-fix is disabled', async () => {
-            isAuditEnabledForSiteStub.resolves(false);
-
+    describe('Code-fix generation (enablement checked upstream)', () => {
+        it('proceeds with code-fix generation when suggestions exist', async () => {
             await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
 
-            expect(isAuditEnabledForSiteStub).to.have.been.calledWith('form-accessibility-auto-fix', mockSite, context);
+            expect(context.sqs.sendMessage).to.have.been.called;
             expect(context.log.info).to.have.been.calledWith(
-                '[Form Opportunity] [Site Id: site-123] form-accessibility-auto-fix is disabled for site, skipping code-fix generation',
+                '[Form Opportunity] [Site Id: site-123] Grouped suggestions into 2 groups for code-fix generation',
             );
-            expect(context.sqs.sendMessage).not.to.have.been.called;
         });
     });
 
@@ -886,18 +883,6 @@ describe('sendCodeFixMessagesToImporter', () => {
   });
 
   describe('Error handling', () => {
-    it('should handle errors in isAuditEnabledForSite check', async () => {
-      const error = new Error('Configuration check failed');
-      isAuditEnabledForSiteStub.rejects(error);
-
-      await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
-
-      expect(context.log.error).to.have.been.calledWith(
-        '[Form Opportunity] [Site Id: site-123] Error in sendCodeFixMessagesToImporter: Configuration check failed',
-      );
-      expect(context.sqs.sendMessage).not.to.have.been.called;
-    });
-
     it('should handle errors in getSuggestions', async () => {
       const error = new Error('Database error');
       mockOpportunity.getSuggestions.rejects(error);

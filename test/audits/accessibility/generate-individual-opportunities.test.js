@@ -2882,14 +2882,12 @@ describe('sendMessageToMystiqueForRemediation', () => {
   });
 
   it('should skip when feature toggle is disabled', async () => {
-    mockIsAuditEnabledForSite.withArgs('a11y-mystique-auto-suggest', sinon.match.any, sinon.match.any).resolves(false);
-
     const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
         processSuggestionsForMystique: sandbox.stub().returns([]),
       },
       '../../../src/common/audit-utils.js': {
-        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+        isAuditEnabledForSite: sandbox.stub().resolves(false), // Mock for a11y-mystique-auto-fix
       },
     });
 
@@ -2900,7 +2898,8 @@ describe('sendMessageToMystiqueForRemediation', () => {
     );
 
     expect(result).to.deep.equal({ success: true });
-    expect(mockLog.info).to.have.been.calledWith('[A11yIndividual] Mystique suggestions are disabled for site, skipping message sending');
+    // The log message about being disabled should no longer be called
+    expect(mockLog.info).to.not.have.been.calledWith('[A11yIndividual] Mystique suggestions are disabled for site, skipping message sending');
   });
 
   it('should use fallback logic for siteId and auditId', async () => {
@@ -4980,19 +4979,25 @@ describe('sendOpportunitySuggestionsToMystique', () => {
     sandbox.restore();
   });
 
-  it('should skip when mystique is disabled for site', async () => {
-    mockIsAuditEnabledForSite.withArgs('a11y-mystique-auto-suggest', sinon.match.any, sinon.match.any).resolves(false);
-
+  it('should proceed without mystique skip check (enablement checked upstream)', async () => {
     module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
       '../../../src/common/audit-utils.js': {
         isAuditEnabledForSite: mockIsAuditEnabledForSite,
       },
     });
 
+    const mockOpportunity = {
+      getId: () => 'oppty-1',
+      getSuggestions: () => Promise.resolve([]),
+    };
     const mockContext = {
       log: mockLog,
       site: { getId: () => 'site-1' },
-      dataAccess: {},
+      dataAccess: {
+        Opportunity: {
+          findById: sandbox.stub().resolves(mockOpportunity),
+        },
+      },
       sqs: {},
       env: {},
     };
@@ -5001,7 +5006,7 @@ describe('sendOpportunitySuggestionsToMystique', () => {
 
     expect(result.success).to.be.true;
     expect(result.messagesProcessed).to.equal(0);
-    expect(mockLog.info).to.have.been.calledWith('[A11yCodefix] Mystique suggestions are disabled for site, skipping message sending');
+    expect(mockLog.info).to.not.have.been.calledWith('[A11yCodefix] Mystique suggestions are disabled for site, skipping message sending');
   });
 
   it('should skip mystique check when skipMystiqueEnabledCheck is true', async () => {
@@ -5099,14 +5104,18 @@ describe('sendOpportunitySuggestionsToMystique', () => {
   it('should handle errors gracefully', async () => {
     module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
       '../../../src/common/audit-utils.js': {
-        isAuditEnabledForSite: sandbox.stub().rejects(new Error('Database error')),
+        isAuditEnabledForSite: sandbox.stub().resolves(true),
       },
     });
 
     const mockContext = {
       log: mockLog,
       site: { getId: () => 'site-1' },
-      dataAccess: {},
+      dataAccess: {
+        Opportunity: {
+          findById: sandbox.stub().rejects(new Error('Database error')),
+        },
+      },
       sqs: {},
       env: {},
     };

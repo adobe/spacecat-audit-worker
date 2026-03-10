@@ -224,7 +224,7 @@ describe('Audit tests', () => {
       expect(finalURL).to.equal('https://www.spacekitty.cat');
     });
 
-    it('audit run skips when audit is disabled', async () => {
+    it('audit run skips when audit is disabled for site', async () => {
       configuration.isHandlerEnabledForSite = sinon.stub().returns(false);
       const queueUrl = 'some-queue-url';
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
@@ -233,13 +233,15 @@ describe('Audit tests', () => {
       context.dataAccess.Configuration.findLatest = sinon.stub().resolves(configuration);
 
       const audit = new AuditBuilder()
-        .withRunner(() => 123)
+        .withUrlResolver(noopUrlResolver)
+        .withRunner(() => ({ auditResult: {}, fullAuditRef: 's3://test' }))
         .build();
 
       const resp = await audit.run(message, context);
 
       expect(resp.status).to.equal(200);
-      expect(context.log.warn).to.have.been.calledWith('dummy audits disabled for site site-id, skipping...');
+      expect(context.log.warn).to.have.been.calledWith(sinon.match(/disabled for site.*skipping/));
+      expect(context.dataAccess.Audit.create).not.to.have.been.called;
     });
 
     it('audit runs as expected with post processors', async () => {

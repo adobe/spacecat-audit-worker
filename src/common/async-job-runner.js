@@ -11,10 +11,10 @@
  */
 
 import { isNonEmptyObject, isValidUUID } from '@adobe/spacecat-shared-utils';
-import { AsyncJob, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
+import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { StepAudit } from './step-audit.js';
-import { sendContinuationMessage, isAuditEnabledForSite } from './audit-utils.js';
+import { isAuditDisabledForSite, sendContinuationMessage } from './audit-utils.js';
 
 const { AUDIT_STEP_DESTINATION_CONFIGS } = AuditModel;
 
@@ -82,16 +82,8 @@ export class AsyncJobRunner extends StepAudit {
 
       const site = await this.siteProvider(siteId, context);
 
-      if (!(await isAuditEnabledForSite(type, site, context))) {
-        log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
-        job.setStatus(AsyncJob.Status.CANCELLED);
-        job.setMetadata({
-          payload: {
-            siteId,
-            reason: `${type} audits disabled for site ${siteId}`,
-          },
-        });
-        await job.save();
+      if (await isAuditDisabledForSite(type, site, context)) {
+        log.warn(`Audit ${type} is disabled for site ${site.getId()}, skipping`);
         return ok();
       }
 

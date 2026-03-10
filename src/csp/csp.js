@@ -113,7 +113,7 @@ export async function resolveOpportunity(auditData, context, auditType) {
 
 // eslint-disable-next-line no-unused-vars
 export async function cspOpportunityAndSuggestions(auditUrl, auditData, context, site) {
-  const { dataAccess, log } = context;
+  const { log } = context;
   log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Classifying CSP suggestions for ${JSON.stringify(auditData)}`);
 
   if (auditData.auditResult.success === false) {
@@ -124,14 +124,6 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
   // this opportunity is only relevant for aem_edge delivery type at the moment
   if (site.getDeliveryType() !== Site.DELIVERY_TYPES.AEM_EDGE) {
     log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping CSP opportunity as it is of delivery type ${site.getDeliveryType()}`);
-    return { ...auditData };
-  }
-
-  // Check whether the audit is enabled for the site
-  const { Configuration } = dataAccess;
-  const configuration = await Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite('security-csp', site)) {
-    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] audit is disabled for site`);
     return { ...auditData };
   }
 

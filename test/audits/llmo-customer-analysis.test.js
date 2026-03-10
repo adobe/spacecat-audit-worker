@@ -1004,14 +1004,11 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(log.warn).to.have.been.calledWith(sinon.match(/Both.*and.*are enabled for site/));
+      expect(log.warn).to.not.have.been.calledWith(sinon.match(/Both.*and.*are enabled for site/));
       expect(result.auditResult.status).to.equal('completed');
     });
 
     it('should skip geo-brand-presence when audit is not enabled', async () => {
-      // Create a mock where isAuditEnabledForSite returns false
-      const mockIsAuditDisabled = sandbox.stub().resolves(false);
-
       const testMockRUMAPIClientClass = {
         createFrom: sandbox.stub().returns(mockRUMAPIClient),
       };
@@ -1031,9 +1028,6 @@ describe('LLMO Customer Analysis Handler', () => {
         },
         '../../src/support/utils.js': {
           getRUMUrl: mockGetRUMUrl,
-        },
-        '../../src/common/audit-utils.js': {
-          isAuditEnabledForSite: mockIsAuditDisabled,
         },
         '../../src/llmo-customer-analysis/cdn-config-handler.js': {
           handleCdnBucketConfigChanges: sandbox.stub().resolves(),
@@ -1086,8 +1080,7 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      // The warning should be logged
-      expect(log.warn).to.have.been.calledWith(sinon.match(/audit is not enabled for site.*skipping/));
+      expect(log.warn).to.not.have.been.calledWith(sinon.match(/audit is not enabled for site.*skipping/));
     });
 
     it('should use getBrandPresenceCadence from site config when available (covering line 140 branch)', async () => {

@@ -78,19 +78,13 @@ function determineReportDecision(totalPageViewSum) {
 }
 
 async function enableAuditForSite(auditType, site, configuration, log) {
-  if (!configuration.isHandlerEnabledForSite(auditType, site)) {
-    configuration.enableHandlerForSite(auditType, site);
-    log.info(`[ptr-selector] Enabled ${auditType} for site ${site.getId()}`);
-  } else {
-    log.info(`[ptr-selector] ${auditType} already enabled for site ${site.getId()}`);
-  }
+  configuration.enableHandlerForSite(auditType, site);
+  log.info(`[ptr-selector] Enabled ${auditType} for site ${site.getId()}`);
 }
 
 async function disableAuditForSite(auditType, site, configuration, log) {
-  if (configuration.isHandlerEnabledForSite(auditType, site)) {
-    configuration.disableHandlerForSite(auditType, site);
-    log.info(`[ptr-selector] Disabled ${auditType} for site ${site.getId()}`);
-  }
+  configuration.disableHandlerForSite(auditType, site);
+  log.info(`[ptr-selector] Disabled ${auditType} for site ${site.getId()}`);
 }
 
 function createImportStep(weekIndex) {

@@ -19,7 +19,11 @@ import chaiAsPromised from 'chai-as-promised';
 
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import {
-  isAuditEnabledForSite, loadExistingAudit, sendContinuationMessage, checkProductCodeEntitlements,
+  isAuditEnabledForSite,
+  isAuditDisabledForSite,
+  loadExistingAudit,
+  sendContinuationMessage,
+  checkProductCodeEntitlements,
 } from '../../src/common/audit-utils.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -56,7 +60,7 @@ describe('Audit Utils Tests', () => {
   });
 
   describe('isAuditEnabledForSite', () => {
-    it('returns true when audit is enabled for site', async () => {
+    it('returns true when handler has productCodes, entitlement, and config enabled', async () => {
       configuration.getHandlers = () => ({
         'content-audit': {
           enabledByDefault: true,
@@ -73,27 +77,6 @@ describe('Audit Utils Tests', () => {
 
       const result = await isAuditEnabledForSite('content-audit', site, context);
       expect(result).to.be.true;
-      expect(configuration.isHandlerEnabledForSite).to.have.been.calledWith('content-audit', site);
-    });
-
-    it('returns false when audit is disabled for site', async () => {
-      configuration.getHandlers = () => ({
-        'content-audit': {
-          enabledByDefault: true,
-          productCodes: ['ASO', 'LLMO'],
-        },
-      });
-      configuration.isHandlerEnabledForSite.returns(false);
-
-      // Mock TierClient to return entitlement
-      const mockTierClient = {
-        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
-      };
-      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
-
-      const result = await isAuditEnabledForSite('content-audit', site, context);
-      expect(result).to.be.false;
-      expect(configuration.isHandlerEnabledForSite).to.have.been.calledWith('content-audit', site);
     });
 
     it('throws error when configuration lookup fails', async () => {
@@ -123,7 +106,6 @@ describe('Audit Utils Tests', () => {
           productCodes: ['ASO', 'LLMO'],
         },
       });
-      configuration.isHandlerEnabledForSite.returns(true);
 
       // Mock TierClient to return no entitlement
       const mockTierClient = {
@@ -135,7 +117,7 @@ describe('Audit Utils Tests', () => {
       expect(result).to.be.false;
     });
 
-    it('returns true when handler has productCodes and entitlement', async () => {
+    it('returns true when handler has productCodes and entitlement and config enabled', async () => {
       configuration.getHandlers = () => ({
         'test-handler': {
           enabledByDefault: true,
@@ -155,6 +137,54 @@ describe('Audit Utils Tests', () => {
 
       const result = await isAuditEnabledForSite('test-handler', site, context);
       expect(result).to.be.true;
+    });
+
+    it('returns false when entitlement passes but handler disabled in config', async () => {
+      configuration.getHandlers = () => ({
+        'test-handler': {
+          enabledByDefault: true,
+          productCodes: ['ASO', 'LLMO'],
+        },
+      });
+      configuration.isHandlerEnabledForSite.returns(false);
+
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const result = await isAuditEnabledForSite('test-handler', site, context);
+      expect(result).to.be.false;
+    });
+  });
+
+  describe('isAuditDisabledForSite', () => {
+    it('returns true when isAuditEnabledForSite returns false', async () => {
+      configuration.getHandlers = () => ({
+        'test-handler': { productCodes: ['ASO'] },
+      });
+      configuration.isHandlerEnabledForSite.returns(false);
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const result = await isAuditDisabledForSite('test-handler', site, context);
+      expect(result).to.be.true;
+    });
+
+    it('returns false when isAuditEnabledForSite returns true', async () => {
+      configuration.getHandlers = () => ({
+        'test-handler': { productCodes: ['ASO'] },
+      });
+      configuration.isHandlerEnabledForSite.returns(true);
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const result = await isAuditDisabledForSite('test-handler', site, context);
+      expect(result).to.be.false;
     });
   });
 

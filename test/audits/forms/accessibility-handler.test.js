@@ -2243,9 +2243,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
-      // Verify isAuditEnabledForSite was called with the site fetched from database
-      expect(isAuditEnabledForSiteStub).to.have.been.calledWith('form-accessibility-auto-fix', sinon.match.has('getId'), context);
-      // Verify sendCodeFixMessagesToMystique was called
+      // Verify sendCodeFixMessagesToMystique was called (enablement checked upstream)
       expect(sendCodeFixMessagesToMystiqueStub).to.have.been.called;
     });
 

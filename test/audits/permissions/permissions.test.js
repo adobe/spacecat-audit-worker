@@ -1145,10 +1145,8 @@ describe('Permissions Handler Tests', () => {
         auditId: 'audit-123',
       };
 
-      context.dataAccess.Configuration.findLatest.rejects(new Error('Configuration fetch failed'));
-
       await expect(redundantPermissionsOpportunityStep('https://example.com', auditData, context, site))
-        .to.be.rejectedWith('Configuration fetch failed');
+        .to.not.be.rejected;
     });
 
     it('should handle opportunity fetch failure', async () => {
@@ -1347,6 +1345,9 @@ describe('Permissions Handler Tests', () => {
     });
 
     it('should handle configuration fetch failure', async () => {
+      // Since we removed the Configuration.findLatest check for isHandlerEnabledForSite,
+      // this test is no longer applicable. The handler no longer performs configuration lookup
+      // for enabled checks, so there's nothing to fail gracefully.
       const auditData = {
         auditResult: {
           permissionsReport: mockPermissionsReport,
@@ -1356,10 +1357,9 @@ describe('Permissions Handler Tests', () => {
         auditId: 'audit-123',
       };
 
-      context.dataAccess.Configuration.findLatest.rejects(new Error('Configuration fetch failed'));
-
+      // The handler should now run successfully without configuration lookup
       await expect(tooStrongOpportunityStep('https://example.com', auditData, context, site))
-        .to.be.rejectedWith('Configuration fetch failed');
+        .to.not.be.rejected;
     });
 
     it('should handle opportunity fetch failure', async () => {

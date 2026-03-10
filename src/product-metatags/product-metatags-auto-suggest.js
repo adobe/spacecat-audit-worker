@@ -19,16 +19,14 @@ const EXPIRY_IN_SECONDS = 25 * 60;
 export default async function productMetatagsAutoSuggest(allTags, context, site, options = {
   forceAutoSuggest: false,
 }) {
-  const { s3Client, dataAccess, log } = context;
+  const { s3Client, log } = context;
   const {
     detectedTags,
     extractedTags,
     healthyTags,
   } = allTags;
   const { forceAutoSuggest = false } = options;
-  const { Configuration } = dataAccess;
-  const configuration = await Configuration.findLatest();
-  if (!forceAutoSuggest && !configuration.isHandlerEnabledForSite('product-metatags-auto-suggest', site)) {
+  if (!forceAutoSuggest) {
     log.info('[PRODUCT-METATAGS] Product metatags auto-suggest is disabled for site');
     return detectedTags;
   }

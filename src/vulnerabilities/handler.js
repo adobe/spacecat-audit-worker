@@ -220,7 +220,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
   const {
     site, data, audit, log, sqs, env, finalUrl, dataAccess,
   } = context;
-  const { Configuration, Suggestion } = dataAccess;
+  const { Suggestion } = dataAccess;
 
   const auditResult = audit.getAuditResult();
   if (auditResult.success === false) {
@@ -288,16 +288,6 @@ export const opportunityAndSuggestionsStep = async (context) => {
         (entry) => mapVulnerabilityToSuggestion(opportunity, entry),
     log,
   });
-
-  const configuration = await Configuration.findLatest();
-  const generateSuggestions = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-suggest', site);
-  if (!generateSuggestions) {
-    log.debug(
-      `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with mystique, because 
-      'security-vulnerabilities-auto-suggest' not configured.`,
-    );
-    return { status: 'complete' };
-  }
 
   const codeInfo = extractCodeInfo(data);
   if (!codeInfo) {

@@ -25,7 +25,6 @@ import {
 } from './constants.js';
 import { calculateCPCValue } from '../support/utils.js';
 import { getPresignedUrl as getPresignedUrlUtil } from '../utils/getPresignedUrl.js';
-import { isAuditEnabledForSite } from '../common/audit-utils.js';
 
 function getS3PathPrefix(url, site) {
   const urlObj = new URL(url);
@@ -701,12 +700,6 @@ export async function sendCodeFixMessagesToImporter(opportunity, auditId, contex
   const siteId = opportunity.getSiteId();
   const baseUrl = site.getBaseURL();
   try {
-    const isAutoFixEnabled = await isAuditEnabledForSite(`${opportunity.getType()}-auto-fix`, site, context);
-    if (!isAutoFixEnabled) {
-      log.info(`[Form Opportunity] [Site Id: ${siteId}] ${opportunity.getType()}-auto-fix is disabled for site, skipping code-fix generation`);
-      return;
-    }
-
     // Get all suggestions from the opportunity
     const suggestions = await opportunity.getSuggestions();
     if (!suggestions || suggestions.length === 0) {

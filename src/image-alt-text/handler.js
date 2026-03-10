@@ -15,24 +15,17 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { sendAltTextOpportunityToMystique, chunkArray } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
 import { MYSTIQUE_BATCH_SIZE } from './constants.js';
-import { isAuditEnabledForSite } from '../common/audit-utils.js';
 import { getScrapeJsonPath } from '../headings/utils.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
 
 /**
- * Determines the page limit for alt-text audit based on summit-plg configuration
- * @param {Object} site - Site object
- * @param {Object} context - Lambda context with log and dataAccess
- * @returns {Promise<number>} - Page limit (20 for summit-plg enabled, 100 otherwise)
+ * Returns the page limit for alt-text audit (enablement checked upstream).
+ * @returns {number} - Page limit (100)
  */
-async function getTopPagesLimit(site, context) {
-  const { log } = context;
-  const isSummitPlgEnabled = await isAuditEnabledForSite('summit-plg', site, context);
-  const pageLimit = isSummitPlgEnabled ? 20 : 100;
-  log.debug(`[${AUDIT_TYPE}]: Page limit set to ${pageLimit} (summit-plg enabled: ${isSummitPlgEnabled})`);
-  return pageLimit;
+function getTopPagesLimit() {
+  return 100;
 }
 
 export async function processImportStep(context) {
@@ -62,8 +55,8 @@ export async function processScraping(context) {
 
   log.debug(`[${AUDIT_TYPE}]: Processing scraping step for site ${siteId}`);
 
-  // Get page limit based on summit-plg configuration
   const pageLimit = await getTopPagesLimit(site, context);
+  log.debug(`[${AUDIT_TYPE}]: Page limit set to ${pageLimit}`);
 
   // Get top pages from ahrefs
   const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
@@ -145,8 +138,8 @@ export async function processAltTextWithMystique(context) {
     const { Opportunity, Suggestion } = dataAccess;
     const siteId = site.getId();
 
-    // Get page limit based on summit-plg configuration
     const pageLimit = await getTopPagesLimit(site, context);
+    log.debug(`[${AUDIT_TYPE}]: Page limit set to ${pageLimit}`);
 
     // Get top pages and included URLs
     const { SiteTopPage } = dataAccess;

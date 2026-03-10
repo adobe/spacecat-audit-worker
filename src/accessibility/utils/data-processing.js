@@ -1091,29 +1091,19 @@ export async function sendRunImportMessage(
  * @param {Object} site - The site object
  * @param {string} opportunityType - Opportunity type for logging
  * @param {Object} context - The context object containing log, s3Client, env
+ * @param {Object} [options] - Optional; isAemyEnabled: false in tests for manual flow
  * @returns {Promise<Object|null>} Object containing codeBucket and codePath, or null if should skip
  */
-export async function getCodeInfo(site, opportunityType, context) {
+export async function getCodeInfo(site, opportunityType, context, options = {}) {
   const {
-    log, s3Client, env, dataAccess,
+    log, s3Client, env,
   } = context;
   const siteId = site.getId();
   const deliveryType = site.getDeliveryType();
   const codeConfig = site.getCode();
   const baseUrl = site.getBaseURL();
 
-  let isAemyEnabled = true;
-
-  if (opportunityType === 'accessibility' && dataAccess?.Configuration) {
-    try {
-      const { Configuration } = dataAccess;
-      const configuration = await Configuration.findLatest();
-      isAemyEnabled = configuration.isHandlerEnabledForSite('a11y-aemy-code-injection', site);
-    } catch (error) {
-      log.warn(`[${opportunityType}] [Site Id: ${siteId}] Could not check feature flag, defaulting to AEMY enabled: ${error.message}`);
-      isAemyEnabled = true;
-    }
-  }
+  const isAemyEnabled = options.isAemyEnabled !== false;
 
   if (!isAemyEnabled) {
     if (!baseUrl) {
