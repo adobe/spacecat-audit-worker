@@ -147,7 +147,12 @@ sendMystiqueMessagePostProcessor()
     
     // From Sentiment Config
     topics: [
-      { topicId: '...', name: 'Product Launch', subPrompts: [...] }
+      {
+        siteid: '...', topicId: '...', name: 'Product Launch', description: '...', 
+        urls: [
+          { url: '...', timesCited: '...', category: '...', subPrompts: ['...'] }
+        ]
+      }
     ],
     guidelines: [
       { guidelineId: '...', name: 'Quality Focus', instruction: '...' }
