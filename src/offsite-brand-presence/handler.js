@@ -25,7 +25,6 @@ import {
   PROVIDERS_SET,
   TOP_CITED_AUDIT_TYPE,
   TOP_CITED_URLS_LIMIT,
-  URL_STORE_STATUS,
 } from './constants.js';
 
 const LOG_PREFIX = '[OffsiteBrandPresence]';
@@ -313,16 +312,21 @@ function extractAllUrls(data, log) {
 }
 
 /**
- * Builds URL store entries for all per-domain and top-cited URL buckets.
+ * Persists offsite-domain and top-cited URLs to the URL store.
+ * Returns the successfully stored offsite URLs organized by domain,
+ * suitable for passing directly to triggerDrsScraping.
  *
+ * @param {string} siteId - The site ID
  * @param {Object<string, string[]>} topByDomain - Top URLs per offsite domain
- * @param {string[]} topCited - Top cited URLs (non-offsite)
+ * @param {string[]} topCited - Top cited non-offsite URLs
+ * @param {object} dataAccess - Data access layer from context
  * @param {object} log - Logger instance
- * @returns {Array<{url: string, audits: string[]}>}
+ * @returns {Promise<Object<string, string[]>>} Stored URLs keyed by domain
  */
-function buildUrlStoreEntries(topByDomain, topCited, log) {
-  const entries = [];
+async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log) {
+  const { AuditUrl } = dataAccess;
 
+  const entries = [];
   for (const [domain, config] of Object.entries(OFFSITE_DOMAINS)) {
     const urls = topByDomain[domain];
     for (const url of urls) {
@@ -330,30 +334,14 @@ function buildUrlStoreEntries(topByDomain, topCited, log) {
     }
     log.info(`${LOG_PREFIX} Selected top ${urls.length} ${domain} URLs (limit ${DRS_TOP_URLS_LIMIT})`);
   }
-
   for (const url of topCited) {
     entries.push({ url, audits: [TOP_CITED_AUDIT_TYPE] });
   }
   log.info(`${LOG_PREFIX} Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${TOP_CITED_URLS_LIMIT})`);
-
-  return entries;
-}
-
-/**
- * Adds URLs to the URL store via dataAccess.
- *
- * @param {string} siteId - The site ID
- * @param {Array<{url: string, audits: string[]}>} urlEntries - URL entries to add
- * @param {object} dataAccess - Data access layer from context
- * @param {object} log - Logger instance
- */
-async function addUrlsToUrlStore(siteId, urlEntries, dataAccess, log) {
-  const { AuditUrl } = dataAccess;
-
-  log.info(`${LOG_PREFIX} Adding ${urlEntries.length} URLs to URL store`);
+  log.info(`${LOG_PREFIX} Adding ${entries.length} URLs to URL store`);
 
   const results = await Promise.all(
-    urlEntries.map(async (entry) => {
+    entries.map(async (entry) => {
       try {
         await AuditUrl.create({
           siteId,
@@ -363,18 +351,25 @@ async function addUrlsToUrlStore(siteId, urlEntries, dataAccess, log) {
           createdBy: 'system',
           updatedBy: 'system',
         });
-        return URL_STORE_STATUS.CREATED;
+        return entry.url;
       } catch (error) {
         log.warn(`${LOG_PREFIX} Failed to add URL to store: ${entry.url} - ${error.message}`);
-        return URL_STORE_STATUS.FAILED;
+        return null;
       }
     }),
   );
 
-  const createdCount = results.filter((s) => s === URL_STORE_STATUS.CREATED).length;
-  const failCount = results.length - createdCount;
+  const storedUrls = new Set(results.filter(Boolean));
+  const failCount = results.length - storedUrls.size;
 
-  log.info(`${LOG_PREFIX} URL store complete: ${createdCount} created, ${failCount} failed`);
+  log.info(`${LOG_PREFIX} URL store complete: ${storedUrls.size} created, ${failCount} failed`);
+
+  const storedByDomain = {};
+  for (const domain of Object.keys(OFFSITE_DOMAINS)) {
+    storedByDomain[domain] = topByDomain[domain].filter((url) => storedUrls.has(url));
+  }
+
+  return storedByDomain;
 }
 
 /**
@@ -517,7 +512,8 @@ function selectTopUrls(allUrls, limitPerDomain, topCitedLimit, excludedFromTopCi
  * 2. Fetches brand presence data for each provider from the Spacecat API
  * 3. Collects all source URLs with citation counts into a unified map
  * 4. Extracts top URLs per offsite domain and top cited URLs (excluding reddit/youtube)
- * 5. Adds all top URLs to the URL store and triggers DRS scraping jobs
+ * 5. Persists selected URLs to the URL store, then triggers DRS scraping
+ *    only for offsite URLs that were successfully stored
  *
  * @param {string} finalUrl - The resolved audit URL
  * @param {object} context - The execution context
@@ -592,13 +588,8 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
     topByDomain, topCited,
   } = selectTopUrls(allUrls, DRS_TOP_URLS_LIMIT, TOP_CITED_URLS_LIMIT, excludedFromTopCited);
 
-  const urlStoreEntries = buildUrlStoreEntries(topByDomain, topCited, log);
-
-  // Send URLs to store and trigger DRS scraping for offsite domains
-  const [, drsResults] = await Promise.all([
-    addUrlsToUrlStore(siteId, urlStoreEntries, dataAccess, log),
-    triggerDrsScraping(topByDomain, siteId, context),
-  ]);
+  const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
+  const drsResults = await triggerDrsScraping(storedByDomain, siteId, context);
 
   log.info(`${LOG_PREFIX} Audit complete for site ${siteId}: ${allUrls.size} URLs processed, ${drsResults.length} DRS jobs triggered`);
 

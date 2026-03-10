@@ -206,7 +206,7 @@ describe('Offsite Brand Presence Handler', () => {
   });
 
   describe('Environment Validation', () => {
-    it('should return error when SPACECAT_API_URI or SPACECAT_API_KEY is missing', async () => {
+    it('should return error when SPACECAT_API_URI is missing', async () => {
       delete env.SPACECAT_API_URI;
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
@@ -218,6 +218,16 @@ describe('Offsite Brand Presence Handler', () => {
       expect(log.error).to.have.been.calledWith(
         sinon.match(/SPACECAT_API_URI or SPACECAT_API_KEY not configured/),
       );
+    });
+
+    it('should return error when SPACECAT_API_KEY is missing', async () => {
+      delete env.SPACECAT_API_KEY;
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.include('SPACECAT_API_URI or SPACECAT_API_KEY not configured');
+      expect(mockFetch).to.not.have.been.called;
     });
   });
 
@@ -719,6 +729,20 @@ describe('Offsite Brand Presence Handler', () => {
       expect(mockSubmitScrapeJob).to.have.been.called;
     });
 
+    it('should preserve trailing slash for domain-root URLs', async () => {
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData(['https://example.com/']);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls[0].args[0].url).to.equal('https://example.com/');
+    });
+
     it('should strip trailing slash and query parameters from reddit URLs', async () => {
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
         if (i === 0) return stubProviderData(['https://reddit.com/r/test/post/?utm_source=share']);
@@ -781,7 +805,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(createArg.audits).to.deep.equal(['youtube-analysis']);
     });
 
-    it('should handle URL store create failure gracefully', async () => {
+    it('should handle URL store create failure gracefully and skip DRS for failed URLs', async () => {
       dataAccess.AuditUrl.create.rejects(new Error('DynamoDB error'));
 
       const providerResponses = setupWithYoutubeUrl();
@@ -793,12 +817,69 @@ describe('Offsite Brand Presence Handler', () => {
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.drsJobs).to.deep.equal([]);
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
       expect(log.warn).to.have.been.calledWith(
         sinon.match(/Failed to add URL to store/),
       );
       expect(log.info).to.have.been.calledWith(
         sinon.match(/0 created, 1 failed/),
       );
+    });
+
+    it('should only send successfully stored URLs to DRS when some fail', async () => {
+      const sources = 'https://youtube.com/shorts/a;https://youtube.com/shorts/b;https://reddit.com/r/test';
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([sources]);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      dataAccess.AuditUrl.create.onCall(1).rejects(new Error('write failed'));
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/2 created, 1 failed/),
+      );
+
+      const videosCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === 'youtube_videos',
+      );
+      expect(videosCall.args[0].urls).to.have.lengthOf(1);
+
+      const postsCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === 'reddit_posts',
+      );
+      expect(postsCall.args[0].urls).to.have.lengthOf(1);
+    });
+
+    it('should skip DRS for a domain when all its URLs fail to store', async () => {
+      const sources = 'https://youtube.com/shorts/a;https://reddit.com/r/test';
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([sources]);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      dataAccess.AuditUrl.create.onCall(0).rejects(new Error('youtube store failed'));
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+
+      const ytCalls = mockSubmitScrapeJob.getCalls().filter(
+        (c) => c.args[0].datasetId.startsWith('youtube_'),
+      );
+      expect(ytCalls).to.have.lengthOf(0);
+
+      const redditCalls = mockSubmitScrapeJob.getCalls().filter(
+        (c) => c.args[0].datasetId.startsWith('reddit_'),
+      );
+      expect(redditCalls).to.have.lengthOf(2);
     });
 
     it('should add URLs for multiple domains to URL store', async () => {
