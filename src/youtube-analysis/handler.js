@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Adobe. All rights reserved.
+ * Copyright 2026 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -9,10 +9,10 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import StoreClient, { StoreEmptyError, URL_TYPES, GUIDELINE_TYPES } from '../utils/store-client.js';
+import StoreClient, { StoreEmptyError } from '../utils/store-client.js';
 
 const LOG_PREFIX = '[YouTube]';
 
@@ -62,10 +62,10 @@ async function fetchStoreData(siteId, context) {
 
   log.info(`${LOG_PREFIX} Fetching data from stores for siteId: ${siteId}`);
 
-  const urls = await storeClient.getUrls(siteId, URL_TYPES.YOUTUBE);
+  const urls = await storeClient.getUrls(siteId, Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS);
   log.info(`${LOG_PREFIX} Retrieved ${urls.length} YouTube URLs from URL Store`);
 
-  const auditType = GUIDELINE_TYPES.YOUTUBE_ANALYSIS;
+  const auditType = Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS;
   const sentimentConfig = await storeClient.getGuidelines(siteId, auditType);
   const topicCount = sentimentConfig.topics.length;
   const guidelineCount = sentimentConfig.guidelines.length;

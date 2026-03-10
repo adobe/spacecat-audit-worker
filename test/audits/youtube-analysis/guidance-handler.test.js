@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Adobe. All rights reserved.
+ * Copyright 2026 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -215,6 +215,26 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(result.status).to.equal(204);
       expect(convertToOpportunityStub).to.not.have.been.called;
     });
+
+    it('should return noContent and log error when Mystique returns an error', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          error: true,
+          errorMessage: 'HTTP error in content store /url-lookup (dataset=youtube_videos): 400 Bad Request',
+        },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(204);
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Mystique returned an error.*400 Bad Request/),
+      );
+      expect(convertToOpportunityStub).to.not.have.been.called;
+    });
+
 
     it('should return badRequest when no analysis data provided', async () => {
       const message = {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Adobe. All rights reserved.
+ * Copyright 2026 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -14,12 +14,12 @@ import {
   badRequest, notFound, ok, noContent,
 } from '@adobe/spacecat-shared-http-utils';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
-
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 
-const AUDIT_TYPE = 'youtube-analysis';
+const AUDIT_TYPE = Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS;
 
 /**
  * Handles Mystique response for YouTube analysis
@@ -33,6 +33,11 @@ export default async function handler(message, context) {
   const { siteId, auditId, data } = message;
 
   log.info(`[YouTube] Received YouTube analysis guidance for siteId: ${siteId}, auditId: ${auditId}`);
+
+  if (data?.error) {
+    log.error(`[Youtube] Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}: ${data.errorMessage}`);
+    return noContent();
+  }
 
   let analysisData = data?.analysis;
   const { companyName, presignedUrl } = data || {};

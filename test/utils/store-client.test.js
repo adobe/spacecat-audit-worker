@@ -16,10 +16,9 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import StoreClient, {
   StoreEmptyError,
-  URL_TYPES,
-  GUIDELINE_TYPES,
 } from '../../src/utils/store-client.js';
 
 use(sinonChai);
@@ -52,24 +51,6 @@ describe('StoreClient', () => {
 
   afterEach(() => {
     sandbox.restore();
-  });
-
-  describe('Constants', () => {
-    it('should export URL_TYPES', () => {
-      expect(URL_TYPES).to.deep.equal({
-        WIKIPEDIA: 'wikipedia-analysis',
-        REDDIT: 'reddit-analysis',
-        YOUTUBE: 'youtube-analysis',
-      });
-    });
-
-    it('should export GUIDELINE_TYPES', () => {
-      expect(GUIDELINE_TYPES).to.deep.equal({
-        WIKIPEDIA_ANALYSIS: 'wikipedia-analysis',
-        REDDIT_ANALYSIS: 'reddit-analysis',
-        YOUTUBE_ANALYSIS: 'youtube-analysis',
-      });
-    });
   });
 
   describe('StoreEmptyError', () => {
@@ -144,7 +125,7 @@ describe('StoreClient', () => {
         json: sandbox.stub().resolves({ items: mockUrls, pagination: { cursor: null } }),
       });
 
-      const result = await storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA);
+      const result = await storeClient.getUrls(siteId, Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS);
 
       expect(result).to.deep.equal(mockUrls);
       expect(mockFetch).to.have.been.calledOnce;
@@ -164,7 +145,7 @@ describe('StoreClient', () => {
         json: sandbox.stub().resolves({ items: page2, pagination: { cursor: null } }),
       });
 
-      const result = await storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA);
+      const result = await storeClient.getUrls(siteId, Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS);
 
       expect(result).to.deep.equal([...page1, ...page2]);
       expect(mockFetch).to.have.been.calledTwice;
@@ -176,7 +157,7 @@ describe('StoreClient', () => {
         json: sandbox.stub().resolves({ items: [{ url: 'test' }], pagination: {} }),
       });
 
-      await storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA);
+      await storeClient.getUrls(siteId, Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS);
 
       expect(mockFetch.firstCall.args[1].headers).to.deep.include({
         'x-api-key': 'test-api-key',
@@ -196,7 +177,7 @@ describe('StoreClient', () => {
         json: sandbox.stub().resolves({ items: [], pagination: {} }),
       });
 
-      await expect(storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA))
+      await expect(storeClient.getUrls(siteId, Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS))
         .to.be.rejectedWith(StoreEmptyError);
     });
 
@@ -206,7 +187,7 @@ describe('StoreClient', () => {
         json: sandbox.stub().resolves({ pagination: {} }),
       });
 
-      await expect(storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA))
+      await expect(storeClient.getUrls(siteId, Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS))
         .to.be.rejectedWith(StoreEmptyError);
     });
 
@@ -224,7 +205,7 @@ describe('StoreClient', () => {
         statusText: 'Internal Server Error',
       });
 
-      await expect(storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA))
+      await expect(storeClient.getUrls(siteId, Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS))
         .to.be.rejectedWith('Store API request failed: 500 Internal Server Error');
     });
   });
@@ -241,7 +222,7 @@ describe('StoreClient', () => {
         json: sandbox.stub().resolves(mockConfig),
       });
 
-      const result = await storeClient.getGuidelines(siteId, GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS);
+      const result = await storeClient.getGuidelines(siteId, Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS);
 
       expect(result).to.deep.equal(mockConfig);
       expect(mockFetch).to.have.been.calledOnce;
@@ -255,7 +236,7 @@ describe('StoreClient', () => {
         json: sandbox.stub().resolves({ topics: [], guidelines: [] }),
       });
 
-      await expect(storeClient.getGuidelines(siteId, GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS))
+      await expect(storeClient.getGuidelines(siteId, Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS))
         .to.be.rejectedWith(StoreEmptyError);
     });
 
@@ -265,7 +246,7 @@ describe('StoreClient', () => {
         json: sandbox.stub().resolves({}),
       });
 
-      await expect(storeClient.getGuidelines(siteId, GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS))
+      await expect(storeClient.getGuidelines(siteId, Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS))
         .to.be.rejectedWith(StoreEmptyError);
     });
 
@@ -307,7 +288,7 @@ describe('StoreClient', () => {
         json: sandbox.stub().resolves(null),
       });
 
-      await expect(storeClient.getGuidelines(siteId, GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS))
+      await expect(storeClient.getGuidelines(siteId, Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS))
         .to.be.rejectedWith(StoreEmptyError);
     });
   });
