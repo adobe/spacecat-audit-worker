@@ -1,3 +1,10 @@
+## [1.349.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.349.1...v1.349.2) (2026-03-10)
+
+
+### Bug Fixes
+
+* increase max prompts processed by related-urls audit ([#2103](https://github.com/adobe/spacecat-audit-worker/issues/2103)) ([328bbb2](https://github.com/adobe/spacecat-audit-worker/commit/328bbb22feac664baee1f0d04471afe954e9f151))
+
 ## [1.349.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.349.0...v1.349.1) (2026-03-10)
 
 
