@@ -282,6 +282,26 @@ describe('enrichUrlsWithTopicData', () => {
     expect(result[1].categories).to.deep.equal(['cat']);
   });
 
+  it('should handle topic url entries with no subPrompts field', () => {
+    const urls = [{ url: redditUrl1 }];
+    const topics = [
+      {
+        topicId: 'topic-1',
+        urls: [{
+          url: redditUrl1,
+          category: 'insurance',
+          timesCited: 4,
+        }],
+      },
+    ];
+
+    const result = enrichUrlsWithTopicData(urls, topics);
+
+    expect(result[0].categories).to.deep.equal(['insurance']);
+    expect(result[0].timesCited).to.equal(4);
+    expect(result[0]).to.not.have.property('prompts');
+  });
+
   it('should preserve existing url item properties', () => {
     const urls = [{
       url: redditUrl1,
