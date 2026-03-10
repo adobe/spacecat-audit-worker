@@ -110,6 +110,7 @@ describe('LLM Error Pages Handler', function () {
         year: 2025,
         startDate: new Date('2025-08-18T00:00:00Z'),
         endDate: new Date('2025-08-24T23:59:59Z'),
+        periodIdentifier: 'w34-2025',
       }],
     });
 
@@ -348,10 +349,10 @@ describe('LLM Error Pages Handler', function () {
 
       expect(result.type).to.equal('audit-result');
       expect(result.siteId).to.equal('site-id-123');
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
-      expect(result.auditResult.totalErrors).to.equal(3);
-      expect(result.auditResult.categorizedResults).to.exist;
+      expect(result.auditResult[0].success).to.be.true;
+      expect(result.auditResult[0].periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
+      expect(result.auditResult[0].totalErrors).to.equal(3);
+      expect(result.auditResult[0].categorizedResults).to.exist;
       expect(result.fullAuditRef).to.equal('https://example.com');
 
       expect(context.log.info).to.have.been.calledWith('[LLM-ERROR-PAGES] Starting audit for https://example.com');
@@ -367,8 +368,8 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.equal('Database error');
+      expect(result.auditResult[0].success).to.be.false;
+      expect(result.auditResult[0].error).to.equal('Database error');
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/\[LLM-ERROR-PAGES\] Audit failed: Database error/),
         sinon.match.instanceOf(Error),
@@ -381,7 +382,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] SQS or Mystique queue not configured, skipping message',
       );
@@ -392,7 +393,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] SQS or Mystique queue not configured, skipping message',
       );
@@ -407,7 +408,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message',
       );
@@ -431,7 +432,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const [, message] = context.sqs.sendMessage.firstCall.args;
       expect(message.data.brokenLinks.length).to.be.at.most(50);
@@ -485,7 +486,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(mockSaveExcelReport).to.have.been.calledThrice;
     });
 
@@ -566,7 +567,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(mockBuildSiteFilters).to.have.been.calledWith([], site);
     });
 
@@ -575,7 +576,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
     });
 
     it('should use fallback delivery type when not available', async () => {
@@ -643,7 +644,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message',
       );
@@ -867,7 +868,7 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
           bucket: 'test', customerName: 'test', databaseName: 'test_db', tableName: 'test_table',
           getAthenaTempLocation: () => 's3://test/temp/',
         }),
-        generateReportingPeriods: sandbox.stub().returns({ weeks: [{ weekNumber: 1, year: 2025, startDate: new Date(), endDate: new Date() }] }),
+        generateReportingPeriods: sandbox.stub().returns({ weeks: [{ weekNumber: 1, year: 2025, startDate: new Date(), endDate: new Date(), periodIdentifier: 'w01-2025' }] }),
         processErrorPagesResults: mockProcessResults,
         buildLlmErrorPagesQuery: sandbox.stub().resolves('SELECT'),
         getAllLlmProviders: sandbox.stub().returns([]),
@@ -907,14 +908,12 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
 
     const result = await handler.runAuditAndSendToMystique(context);
 
-    expect(result.auditResult.success).to.be.true;
-    // Verify Athena URLs were used
+    expect(result.auditResult[0].success).to.be.true;
     const sentMessage = context.sqs.sendMessage.firstCall.args[1];
     expect(sentMessage.data.alternativeUrls).to.deep.equal([
       'https://example.com/athena-alt1',
       'https://example.com/athena-alt2',
     ]);
-    // Ahrefs was NOT called
     expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
   });
 
@@ -946,7 +945,7 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
           bucket: 'test', customerName: 'test', databaseName: 'test_db', tableName: 'test_table',
           getAthenaTempLocation: () => 's3://test/temp/',
         }),
-        generateReportingPeriods: sandbox.stub().returns({ weeks: [{ weekNumber: 1, year: 2025, startDate: new Date(), endDate: new Date() }] }),
+        generateReportingPeriods: sandbox.stub().returns({ weeks: [{ weekNumber: 1, year: 2025, startDate: new Date(), endDate: new Date(), periodIdentifier: 'w01-2025' }] }),
         processErrorPagesResults: mockProcessResults,
         buildLlmErrorPagesQuery: sandbox.stub().resolves('SELECT'),
         getAllLlmProviders: sandbox.stub().returns([]),
@@ -988,8 +987,7 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
 
     const result = await handler.runAuditAndSendToMystique(context);
 
-    expect(result.auditResult.success).to.be.true;
-    // Verify Ahrefs URLs were used as fallback
+    expect(result.auditResult[0].success).to.be.true;
     const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.alternativeUrls).to.deep.equal(['https://example.com/ahrefs-alt1']);
       expect(context.log.info).to.have.been.calledWith(
@@ -1044,6 +1042,7 @@ describe('LLM Error Pages Handler (isolated)', function () {
         year: 2025,
         startDate: new Date('2025-08-18T00:00:00Z'),
         endDate: new Date('2025-08-24T23:59:59Z'),
+        periodIdentifier: 'w34-2025',
       }],
     });
     const mockBuildSiteFilters = sandbox.stub().returns('');
