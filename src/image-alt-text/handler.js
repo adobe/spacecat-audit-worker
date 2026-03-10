@@ -14,7 +14,7 @@ import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendAltTextOpportunityToMystique, chunkArray } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
-import { MYSTIQUE_BATCH_SIZE } from './constants.js';
+import { MYSTIQUE_BATCH_SIZE, SUMMIT_PLG_PAGE_LIMIT, DEFAULT_PAGE_LIMIT } from './constants.js';
 import { isAuditEnabledForSite } from '../common/audit-utils.js';
 import { getScrapeJsonPath } from '../headings/utils.js';
 
@@ -30,7 +30,7 @@ const { AUDIT_STEP_DESTINATIONS } = AuditModel;
 async function getTopPagesLimit(site, context) {
   const { log } = context;
   const isSummitPlgEnabled = await isAuditEnabledForSite('summit-plg', site, context);
-  const pageLimit = isSummitPlgEnabled ? 20 : 100;
+  const pageLimit = isSummitPlgEnabled ? SUMMIT_PLG_PAGE_LIMIT : DEFAULT_PAGE_LIMIT;
   log.debug(`[${AUDIT_TYPE}]: Page limit set to ${pageLimit} (summit-plg enabled: ${isSummitPlgEnabled})`);
   return { pageLimit, isSummitPlg: isSummitPlgEnabled };
 }
@@ -52,7 +52,8 @@ function getTopPagesWindow(allTopPages, pageLimit, topPagesOffset, isSummitPlg, 
     effectiveOffset = 0;
   }
   const topPages = allTopPages.slice(effectiveOffset, effectiveOffset + pageLimit);
-  log.debug(`[${AUDIT_TYPE}]: Using pages ${effectiveOffset}-${effectiveOffset + topPages.length - 1} of ${allTopPages.length} (limit: ${pageLimit})`);
+  const endIndex = topPages.length > 0 ? effectiveOffset + topPages.length - 1 : effectiveOffset;
+  log.debug(`[${AUDIT_TYPE}]: Using pages ${effectiveOffset}-${endIndex} of ${allTopPages.length} (limit: ${pageLimit})`);
   return { topPages, effectiveOffset };
 }
 
