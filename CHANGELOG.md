@@ -1,3 +1,10 @@
+## [1.349.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.349.2...v1.349.3) (2026-03-10)
+
+
+### Bug Fixes
+
+* **geo-brand-presence:** read AI prompts from LLMO config instead of parquet ([#2097](https://github.com/adobe/spacecat-audit-worker/issues/2097)) ([e6ab80e](https://github.com/adobe/spacecat-audit-worker/commit/e6ab80e4601ff2b06a249c4391f6bd7977177fc6))
+
 ## [1.349.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.349.1...v1.349.2) (2026-03-10)
 
 
