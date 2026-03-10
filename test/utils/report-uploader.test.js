@@ -28,6 +28,8 @@ describe('Utils Report Uploader', () => {
   let saveExcelReport;
   let uploadAndPublishFile;
   let readFromSharePoint;
+  let bulkPublishToAdminHlx;
+  let sleepStub;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -35,9 +37,11 @@ describe('Utils Report Uploader', () => {
 
     fetchStub = sandbox.stub(global, 'fetch');
 
+    sleepStub = sandbox.stub().resolves();
+
     const reportUploaderModule = await esmock('../../src/utils/report-uploader.js', {
       '../../src/support/utils.js': {
-        sleep: sandbox.stub().resolves(),
+        sleep: sleepStub,
       },
     });
 
@@ -45,6 +49,7 @@ describe('Utils Report Uploader', () => {
     saveExcelReport = reportUploaderModule.saveExcelReport;
     uploadAndPublishFile = reportUploaderModule.uploadAndPublishFile;
     readFromSharePoint = reportUploaderModule.readFromSharePoint;
+    bulkPublishToAdminHlx = reportUploaderModule.bulkPublishToAdminHlx;
 
     mockContext = {
       workbook: { xlsx: { writeBuffer: sandbox.stub().resolves(Buffer.from('excel data')) } },
@@ -407,6 +412,76 @@ describe('Utils Report Uploader', () => {
       expect(mockContext.log.warn).to.have.been.calledWith(
         '%s: No SharePoint client provided for test-file.xlsx, skipping upload',
         'REPORT_UPLOADER',
+      );
+    });
+  });
+
+  describe('bulkPublishToAdminHlx', () => {
+    it('should retry bulk status checks when Helix returns 429', async function bulkPollRetryTest() {
+      this.timeout(2000);
+
+      const previewJobUrl = 'https://admin.hlx.page/job/preview-job';
+      const liveJobUrl = 'https://admin.hlx.page/job/live-job';
+
+      sandbox.stub(Math, 'random').returns(0);
+
+      fetchStub.onCall(0).resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({ links: { self: previewJobUrl } }),
+      });
+      fetchStub.onCall(1).resolves({
+        ok: false,
+        status: 429,
+        statusText: 'Too Many Requests',
+        headers: { get: sandbox.stub().returns(null) },
+      });
+      fetchStub.onCall(2).resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({
+          state: 'stopped',
+          progress: {
+            total: 2,
+            processed: 2,
+            failed: 0,
+          },
+        }),
+      });
+      fetchStub.onCall(3).resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({ links: { self: liveJobUrl } }),
+      });
+      fetchStub.onCall(4).resolves({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: sandbox.stub().resolves({
+          state: 'stopped',
+          progress: {
+            total: 2,
+            processed: 2,
+            failed: 0,
+          },
+        }),
+      });
+
+      await bulkPublishToAdminHlx([
+        { filename: 'agentictraffic-w10-2026.xlsx', outputLocation: 'allianz-at/agentic-traffic' },
+        { filename: 'referral-traffic-w10-2026.xlsx', outputLocation: 'allianz-at/referral-traffic-cdn' },
+      ], mockContext.log);
+
+      expect(fetchStub.callCount).to.equal(5);
+      expect(mockContext.log.warn).to.have.been.calledWith(
+        sinon.match(/preview status check Helix API failed with error 429 Too Many Requests.*retrying in \d+ms.*attempt 1\/3/),
+      );
+      expect(sleepStub).to.have.been.calledWith(10000);
+      expect(mockContext.log.error).to.not.have.been.calledWith(
+        sinon.match(/Bulk publish failed/),
       );
     });
   });
