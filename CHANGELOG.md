@@ -1,3 +1,10 @@
+# [1.349.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.348.2...v1.349.0) (2026-03-10)
+
+
+### Features
+
+* add related URLs audit ([#2085](https://github.com/adobe/spacecat-audit-worker/issues/2085)) ([b24d635](https://github.com/adobe/spacecat-audit-worker/commit/b24d635a46b29df4a0ceab542cc969a2b5d10bd8))
+
 ## [1.348.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.348.1...v1.348.2) (2026-03-09)
 
 
