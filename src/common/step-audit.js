@@ -107,6 +107,16 @@ export class StepAudit extends BaseAudit {
 
     try {
       const site = await this.siteProvider(siteId, context);
+      // Preserve requiresValidation from index.js - siteProvider returns a fresh site
+      // that doesn't have this computed flag, which causes syncSuggestions to use NEW
+      // instead of PENDING_VALIDATION for paid ASO sites
+      if (context.site?.requiresValidation !== undefined) {
+        site.requiresValidation = context.site.requiresValidation;
+      }
+      log.debug(
+        `[requiresValidation] step-audit: siteId=${siteId}, type=${type}, `
+        + `context.site?.requiresValidation=${context.site?.requiresValidation}, site.requiresValidation=${site.requiresValidation}`,
+      );
 
       if (!(await isAuditEnabledForSite(type, site, context))) {
         log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
