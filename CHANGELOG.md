@@ -1,3 +1,10 @@
+## [1.349.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.349.3...v1.349.4) (2026-03-10)
+
+
+### Bug Fixes
+
+* retry bulk publish job checks on throttling ([#2104](https://github.com/adobe/spacecat-audit-worker/issues/2104)) ([373038a](https://github.com/adobe/spacecat-audit-worker/commit/373038aedc5beb339868635ee8ef14ad7ad83329))
+
 ## [1.349.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.349.2...v1.349.3) (2026-03-10)
 
 
