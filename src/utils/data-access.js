@@ -378,6 +378,11 @@ export async function syncSuggestions({
   // Prepare new suggestions - O(N) with Set lookup
   const { site } = context;
   const requiresValidation = Boolean(site?.requiresValidation);
+  const siteId = opportunity.getSiteId?.() || 'unknown';
+  log.info(
+    `[requiresValidation] syncSuggestions: siteId=${siteId}, requiresValidation=${requiresValidation}, `
+    + `newSuggestionsStatus=${requiresValidation ? 'PENDING_VALIDATION' : 'NEW'}`,
+  );
   const newSuggestions = newData
     .filter((data) => !existingSuggestionKeys.has(buildKey(data)))
     .map((data) => {
@@ -391,7 +396,6 @@ export async function syncSuggestions({
 
   // Add new suggestions if any
   if (newSuggestions.length > 0) {
-    const siteId = opportunity.getSiteId?.() || 'unknown';
     log.info(`Adding ${newSuggestions.length} new suggestions for siteId ${siteId}`);
 
     const suggestions = await opportunity.addSuggestions(newSuggestions);

@@ -107,6 +107,10 @@ export class StepAudit extends BaseAudit {
 
     try {
       const site = await this.siteProvider(siteId, context);
+      log.debug(
+        `[requiresValidation] step-audit: siteId=${siteId}, type=${type}, `
+        + `context.site?.requiresValidation=${context.site?.requiresValidation}, site.requiresValidation=${site.requiresValidation}`,
+      );
 
       if (!(await isAuditEnabledForSite(type, site, context))) {
         log.warn(`${type} audits disabled for site ${siteId}, skipping...`);

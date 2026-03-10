@@ -289,6 +289,7 @@ async function run(message, context) {
         const requiresValidation = await checkSiteRequiresValidation(site, context);
         site.requiresValidation = requiresValidation;
         context.site = site;
+        log.info(`[requiresValidation] index.js: siteId=${siteId}, requiresValidation=${requiresValidation}`);
       }
     } catch (e) {
       log.warn(`Failed to fetch site ${siteId}: ${e.message}`);

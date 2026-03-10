@@ -166,12 +166,13 @@
     "yaml": "2.8.2"
   },
   "overrides": {
-    "@adobe/fetch": "4.2.3"
+    "@adobe/fetch": "4.2.3",
+    "@mysticat/data-service-types": "git+https://github.com/adobe/mysticat-data-service.git#815f3039d14a49d7ea07600d79308a3101f438b6"
   },
   "lint-staged": {
-    "*.js": "eslint",
-    "*.ts": "eslint",
-    "*.cjs": "eslint"
+    "*.js": "npx eslint --fix",
+    "*.ts": "npx eslint --fix",
+    "*.cjs": "npx eslint --fix"
   },
   "nodemonConfig": {
     "exec": "node --inspect ./test/dev/server.mjs",
