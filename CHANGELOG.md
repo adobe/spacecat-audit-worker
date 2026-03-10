@@ -1,3 +1,10 @@
+# [1.350.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.349.5...v1.350.0) (2026-03-10)
+
+
+### Features
+
+* broken backline delivery config update ([#2069](https://github.com/adobe/spacecat-audit-worker/issues/2069)) ([7fa03fe](https://github.com/adobe/spacecat-audit-worker/commit/7fa03fe4c55232f15a3d6c5b4526af11901272cc))
+
 ## [1.349.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.349.4...v1.349.5) (2026-03-10)
 
 
