@@ -13,6 +13,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import StoreClient, { StoreEmptyError } from '../utils/store-client.js';
+import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 
 const LOG_PREFIX = '[YouTube]';
 
@@ -172,6 +173,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
     const { config, storeData } = auditResult;
     const { urls, sentimentConfig } = storeData;
+    const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics);
 
     const message = {
       type: 'guidance:youtube-analysis',
@@ -187,7 +189,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
         competitorRegion: config.competitorRegion,
         industry: config.industry,
         brandKeywords: config.brandKeywords,
-        urls,
+        urls: enrichedUrls,
         topics: sentimentConfig.topics,
         guidelines: sentimentConfig.guidelines,
       },

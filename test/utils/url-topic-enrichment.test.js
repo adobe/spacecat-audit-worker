@@ -328,4 +328,114 @@ describe('enrichUrlsWithTopicData', () => {
     expect(result[0].byCustomer).to.equal(false);
     expect(result[0].categories).to.deep.equal(['cat']);
   });
+
+  describe('YouTube URLs', () => {
+    const ytUrl1 = 'https://www.youtube.com/watch?v=abc123';
+    const ytUrl2 = 'https://youtube.com/watch?v=def456';
+
+    it('should enrich YouTube URLs with topic data', () => {
+      const urls = [
+        { url: ytUrl1, siteId: 'site-1' },
+        { url: ytUrl2, siteId: 'site-1' },
+      ];
+
+      const topics = [
+        {
+          topicId: 'topic-1',
+          name: 'Product Reviews',
+          urls: [
+            {
+              url: ytUrl1,
+              category: 'product-demo',
+              timesCited: 2,
+              subPrompts: ['prompt-a', 'prompt-b'],
+            },
+          ],
+        },
+        {
+          topicId: 'topic-2',
+          name: 'Tutorials',
+          urls: [
+            {
+              url: ytUrl1,
+              category: 'how-to',
+              timesCited: 2,
+              subPrompts: ['prompt-b', 'prompt-c'],
+            },
+            {
+              url: ytUrl2,
+              category: 'tutorial',
+              timesCited: 1,
+              subPrompts: ['prompt-d'],
+            },
+          ],
+        },
+      ];
+
+      const result = enrichUrlsWithTopicData(urls, topics);
+
+      expect(result[0]).to.deep.equal({
+        url: ytUrl1,
+        siteId: 'site-1',
+        categories: ['product-demo', 'how-to'],
+        timesCited: 4,
+        prompts: ['prompt-a', 'prompt-b', 'prompt-c'],
+      });
+
+      expect(result[1]).to.deep.equal({
+        url: ytUrl2,
+        siteId: 'site-1',
+        categories: ['tutorial'],
+        timesCited: 1,
+        prompts: ['prompt-d'],
+      });
+    });
+
+    it('should match YouTube URLs case-insensitively', () => {
+      const urls = [{ url: 'https://WWW.YouTube.com/watch?v=ABC123' }];
+      const topics = [
+        {
+          topicId: 'topic-1',
+          urls: [{
+            url: 'https://www.youtube.com/watch?v=abc123',
+            category: 'brand',
+            timesCited: 1,
+            subPrompts: [],
+          }],
+        },
+      ];
+
+      const result = enrichUrlsWithTopicData(urls, topics);
+
+      expect(result[0].categories).to.deep.equal(['brand']);
+      expect(result[0].timesCited).to.equal(1);
+    });
+
+    it('should preserve existing url item properties for YouTube URLs', () => {
+      const urls = [{
+        url: ytUrl1,
+        siteId: 'site-1',
+        audits: ['youtube-analysis'],
+        byCustomer: false,
+      }];
+      const topics = [
+        {
+          topicId: 'topic-1',
+          urls: [{
+            url: ytUrl1,
+            category: 'brand-mention',
+            timesCited: 1,
+            subPrompts: ['p1'],
+          }],
+        },
+      ];
+
+      const result = enrichUrlsWithTopicData(urls, topics);
+
+      expect(result[0].siteId).to.equal('site-1');
+      expect(result[0].audits).to.deep.equal(['youtube-analysis']);
+      expect(result[0].byCustomer).to.equal(false);
+      expect(result[0].categories).to.deep.equal(['brand-mention']);
+    });
+  });
 });
