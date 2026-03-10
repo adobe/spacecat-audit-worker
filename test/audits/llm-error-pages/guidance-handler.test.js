@@ -66,6 +66,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
           urlTo: 'https://example.com/products/item',
           suggestedUrls: ['/products'],
           aiRationale: 'Closest match',
+          suggestionId: 'llm-404-suggestion-w34-2025-0',
         }],
       },
     };
@@ -76,7 +77,6 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
           getId: () => 'test-site-id',
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
-            // keep legacy for code paths that still read it
             getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
             getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),

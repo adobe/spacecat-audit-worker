@@ -363,6 +363,23 @@ describe('LLM Error Pages Handler', function () {
       );
     });
 
+    it('should produce two weeks when run on a Monday without weekOffset', async () => {
+      const monday = new Date('2025-08-18T12:00:00Z'); // Monday
+      const clock = sinon.useFakeTimers(monday.getTime());
+      try {
+        mockGenerateReportingPeriods.returns({
+          weeks: [
+            { weekNumber: 33, year: 2025, startDate: new Date('2025-08-11'), endDate: new Date('2025-08-17'), periodIdentifier: 'w33-2025' },
+            { weekNumber: 34, year: 2025, startDate: new Date('2025-08-18'), endDate: new Date('2025-08-24'), periodIdentifier: 'w34-2025' },
+          ],
+        });
+        const result = await runAuditAndSendToMystique(context);
+        expect(result.auditResult).to.have.length(2);
+      } finally {
+        clock.restore();
+      }
+    });
+
     it('should handle audit failure gracefully', async () => {
       mockAthenaClient.query.rejects(new Error('Database error'));
 
@@ -1119,5 +1136,117 @@ describe('LLM Error Pages Handler (isolated)', function () {
     sinon.assert.match(dataRows[0][6], '');
     sinon.assert.match(dataRows[0][7], '');
     sinon.assert.match(dataRows[1][2], 0);
+  });
+});
+
+describe('LLM Error Pages Handler – default export routing', function () {
+  this.timeout(10000);
+
+  it('routes to backfillAudit when weekOffset is present', async () => {
+    const sandbox = sinon.createSandbox();
+    const mockBackfillRun = sandbox.stub().resolves({ status: 200 });
+    const mockStepRun = sandbox.stub().resolves({ status: 200 });
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class AuditBuilder {
+          withUrlResolver() { return this; }
+          addStep() { return this; }
+          withRunner() { this._runner = true; return this; }
+          build() { return { run: this._runner ? mockBackfillRun : mockStepRun }; }
+        },
+      },
+    });
+
+    await handler.default.run({ auditContext: { weekOffset: -1 } }, {});
+    expect(mockBackfillRun).to.have.been.calledOnce;
+    expect(mockStepRun).not.to.have.been.called;
+
+    sandbox.restore();
+  });
+
+  it('routes to stepAudit when weekOffset is absent', async () => {
+    const sandbox = sinon.createSandbox();
+    const mockBackfillRun = sandbox.stub().resolves({ status: 200 });
+    const mockStepRun = sandbox.stub().resolves({ status: 200 });
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class AuditBuilder {
+          withUrlResolver() { return this; }
+          addStep() { return this; }
+          withRunner() { this._runner = true; return this; }
+          build() { return { run: this._runner ? mockBackfillRun : mockStepRun }; }
+        },
+      },
+    });
+
+    await handler.default.run({}, {});
+    expect(mockStepRun).to.have.been.calledOnce;
+    expect(mockBackfillRun).not.to.have.been.called;
+
+    sandbox.restore();
+  });
+
+  it('backfillAudit runner calls runAuditAndSendToMystique with enriched context', async () => {
+    const sandbox = sinon.createSandbox();
+    let capturedRunner;
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class AuditBuilder {
+          withUrlResolver() { return this; }
+          addStep() { return this; }
+          withRunner(runner) { capturedRunner = runner; return this; }
+          build() { return { run: sandbox.stub() }; }
+        },
+      },
+      '@adobe/spacecat-shared-athena-client': {
+        AWSAthenaClient: { fromContext: sandbox.stub().returns({ query: sandbox.stub().resolves([]) }) },
+      },
+      '../../../src/llm-error-pages/utils.js': {
+        getS3Config: sandbox.stub().resolves({
+          databaseName: 'db', tableName: 'tbl', customerName: 'test',
+          getAthenaTempLocation: () => 's3://tmp/',
+        }),
+        generateReportingPeriods: sandbox.stub().returns({
+          weeks: [{ startDate: new Date(), endDate: new Date(), periodIdentifier: 'w01-2025' }],
+        }),
+        processErrorPagesResults: sandbox.stub().returns({ totalErrors: 0, errorPages: [], summary: { uniqueUrls: 0 } }),
+        buildLlmErrorPagesQuery: sandbox.stub().resolves('SELECT'),
+        getAllLlmProviders: sandbox.stub().returns([]),
+        categorizeErrorsByStatusCode: sandbox.stub().returns({}),
+        consolidateErrorsByUrl: (e) => e,
+        sortErrorsByTrafficVolume: (e) => e,
+        toPathOnly: (u) => u,
+        SPREADSHEET_COLUMNS: [],
+      },
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: sandbox.stub().resolves({}),
+        saveExcelReport: sandbox.stub().resolves(),
+      },
+      '../../../src/utils/cdn-utils.js': {
+        buildSiteFilters: sandbox.stub().returns(''),
+      },
+      exceljs: {
+        default: { Workbook: function Workbook() { return { addWorksheet: () => ({ addRow: sandbox.stub() }) }; } },
+      },
+    });
+
+    expect(capturedRunner).to.be.a('function');
+
+    const mockSite = {
+      getBaseURL: () => 'https://example.com',
+      getId: () => 'site-1',
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [], getLlmoDataFolder: () => 'test' }),
+    };
+    const mockContext = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+    };
+
+    const result = await capturedRunner('https://example.com', mockContext, mockSite, { weekOffset: -1 });
+    expect(result).to.have.property('auditResult');
+
+    sandbox.restore();
   });
 });
