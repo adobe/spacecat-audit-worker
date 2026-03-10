@@ -15,3 +15,8 @@
  * Single source of truth for check identifiers shared between handler and sub-handlers.
  */
 export const AUDIT_ALT_TEXT = 'alt-text';
+
+/**
+ * Preflight audit type (category) constants for the audit result object.
+ */
+export const PREFLIGHT_AUDIT_TYPE_ACCESSIBILITY = 'accessibility';

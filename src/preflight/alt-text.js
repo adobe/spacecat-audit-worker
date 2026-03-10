@@ -59,7 +59,7 @@ import {
   PREFLIGHT_ALT_TEXT_OBSERVATION,
   MAX_ALT_TEXT_LENGTH,
 } from '../image-alt-text/constants.js';
-import { AUDIT_ALT_TEXT } from './audit-constants.js';
+import { AUDIT_ALT_TEXT, PREFLIGHT_AUDIT_TYPE_ACCESSIBILITY } from './audit-constants.js';
 
 /**
  * Regular expression patterns that identify low-quality or generic alt text.
@@ -384,7 +384,11 @@ export default async function imageAltText(context, auditContext) {
   // Create alt-text audit entries for all pages in the audit map
   previewUrls.forEach((url) => {
     const pageResult = audits.get(url);
-    pageResult.audits.push({ name: AUDIT_ALT_TEXT, type: 'accessibility', opportunities: [] });
+    pageResult.audits.push({
+      name: AUDIT_ALT_TEXT,
+      type: PREFLIGHT_AUDIT_TYPE_ACCESSIBILITY,
+      opportunities: [],
+    });
   });
 
   // Pre-index audits for O(1) lookups
@@ -450,7 +454,7 @@ export default async function imageAltText(context, auditContext) {
   const imageAltTextEndTimestamp = new Date().toISOString();
   const imageAltTextElapsed = ((imageAltTextEndTime - imageAltTextStartTime) / 1000).toFixed(2);
 
-  log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Alt text audit completed in ${imageAltTextElapsed} seconds`);
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. ${AUDIT_ALT_TEXT} audit completed in ${imageAltTextElapsed} seconds`);
 
   timeExecutionBreakdown.push({
     name: 'alt-text',

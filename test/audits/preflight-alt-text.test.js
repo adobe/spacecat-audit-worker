@@ -59,7 +59,7 @@ describe('Preflight Alt Text Audit', () => {
     context = {
       site: {
         getId: () => 'site-123',
-        getBaseURL: () => 'https://example.com',
+        getBaseURL: () => 'https://main--aemtutorial--dogadogan.aem.page',
         getDeliveryType: () => 'aem_edge',
       },
       job: {
