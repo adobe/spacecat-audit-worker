@@ -268,7 +268,6 @@ export function formatDateString(date) {
   return date.toISOString().split('T')[0];
 }
 
-
 export function getWeekRange(offsetWeeks = 0, referenceDate = new Date()) {
   const refDate = new Date(referenceDate);
   const isSunday = refDate.getUTCDay() === TIME_CONSTANTS.ISO_SUNDAY;
