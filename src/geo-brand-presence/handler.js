@@ -278,7 +278,7 @@ export async function loadPromptsAndSendDetection(
         volume: -1,
         volumeImportTime: -1,
         source: p.source || 'drs',
-        market: (p.regions || []).join(','),
+        market: region,
         origin: p.origin || 'ai',
       })));
     });
