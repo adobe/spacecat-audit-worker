@@ -83,10 +83,8 @@ async function enableAudits(site, context, audits = [], options = undefined) {
 
   let hasChanges = false;
   audits.forEach((audit) => {
-    if (!configuration.isHandlerEnabledForSite(audit, site)) {
-      configuration.enableHandlerForSite(audit, site);
-      hasChanges = true;
-    }
+    configuration.enableHandlerForSite(audit, site);
+    hasChanges = true;
   });
 
   if (hasChanges) {

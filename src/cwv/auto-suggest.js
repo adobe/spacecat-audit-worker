@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-import { isAuditEnabledForSite } from '../common/index.js';
 import { getCodeInfo } from '../accessibility/utils/data-processing.js';
 import { METRICS, THRESHOLDS } from './kpi-metrics.js';
 
@@ -43,8 +42,6 @@ function getFailingMetricInfo(allMetrics) {
 }
 
 const CWV_AUTO_SUGGEST_MESSAGE_TYPE = 'guidance:cwv';
-const CWV_AUTO_SUGGEST_FEATURE_TOGGLE = 'cwv-auto-suggest';
-const CWV_AUTO_FIX_FEATURE_TOGGLE = 'cwv-auto-fix';
 
 /**
  * Checks if a specific suggestion should receive auto-suggest from Mystique
@@ -113,24 +110,6 @@ export async function processAutoSuggest(context, opportunity, site) {
   const {
     log, sqs, env,
   } = context;
-
-  // Check if CWV auto-suggest feature is enabled for this site
-  const isAutoSuggestEnabled = await isAuditEnabledForSite(
-    CWV_AUTO_SUGGEST_FEATURE_TOGGLE,
-    site,
-    context,
-  );
-  if (!isAutoSuggestEnabled) {
-    log.info(`[audit-worker-cwv] siteId: ${site?.getId?.()} | baseURL: ${site?.getBaseURL?.()} | CWV auto-suggest is disabled, skipping`);
-    return;
-  }
-
-  // Check if CWV auto-fix feature is enabled for this site
-  const isAutoFixEnabled = await isAuditEnabledForSite(
-    CWV_AUTO_FIX_FEATURE_TOGGLE,
-    site,
-    context,
-  );
 
   try {
     const siteId = opportunity.getSiteId();
