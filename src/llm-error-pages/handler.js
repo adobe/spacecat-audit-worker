@@ -130,7 +130,7 @@ export async function submitForScraping(context) {
  */
 /* eslint-disable no-await-in-loop */
 export async function runAuditAndSendToMystique(context) {
-  const { log, site, auditContext = {} } = context;
+  const { log, site } = context;
   const s3Config = await getS3Config(site, context);
   const url = site.getBaseURL();
 
@@ -141,8 +141,8 @@ export async function runAuditAndSendToMystique(context) {
 
     const isMonday = new Date().getUTCDay() === 1;
     let weekOffsets;
-    if (auditContext.weekOffset !== undefined) {
-      weekOffsets = [auditContext.weekOffset];
+    if (context.auditContext?.weekOffset !== undefined) {
+      weekOffsets = [context.auditContext.weekOffset];
     } else if (isMonday) {
       weekOffsets = [-1, 0];
     } else {
@@ -152,12 +152,18 @@ export async function runAuditAndSendToMystique(context) {
     const { weeks } = generateReportingPeriods(new Date(), weekOffsets);
     const auditResults = [];
 
+    const filters = site.getConfig()?.getLlmoCdnlogsFilter?.() || [];
+    const siteFilters = buildSiteFilters(filters, site);
+    const sharepointClient = await createLLMOSharepointClient(context);
+    const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.customerName;
+    const outputLocation = `${llmoFolder}/agentic-traffic`;
+    const {
+      dataAccess, sqs, env, audit,
+    } = context;
+
     for (const week of weeks) {
       const { startDate, endDate, periodIdentifier } = week;
       log.info(`[LLM-ERROR-PAGES] Running weekly audit for ${periodIdentifier}`);
-
-      const filters = site.getConfig()?.getLlmoCdnlogsFilter?.() || [];
-      const siteFilters = buildSiteFilters(filters, site);
 
       const query = await buildLlmErrorPagesQuery({
         databaseName: s3Config.databaseName,
@@ -179,10 +185,6 @@ export async function runAuditAndSendToMystique(context) {
 
       const processedResults = processErrorPagesResults(results);
       const categorizedResults = categorizeErrorsByStatusCode(processedResults.errorPages);
-
-      const sharepointClient = await createLLMOSharepointClient(context);
-      const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.customerName;
-      const outputLocation = `${llmoFolder}/agentic-traffic`;
 
       const buildFilename = (code) => `agentictraffic-errors-${code}-${periodIdentifier}.xlsx`;
 
@@ -233,15 +235,7 @@ export async function runAuditAndSendToMystique(context) {
         writeCategoryExcel('5xx', categorizedResults['5xx']),
       ]);
 
-      log.info(
-        '[LLM-ERROR-PAGES] Found %d total errors across %d unique URLs',
-        processedResults.totalErrors,
-        processedResults.summary.uniqueUrls,
-      );
-
-      const {
-        dataAccess, sqs, env, audit,
-      } = context;
+      log.info(`[LLM-ERROR-PAGES] Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
 
       if (sqs && env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
         const errors404 = categorizedResults[404] || [];
@@ -290,10 +284,7 @@ export async function runAuditAndSendToMystique(context) {
           };
 
           await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-          log.info(
-            '[LLM-ERROR-PAGES] Sent %d consolidated 404 URLs to Mystique for AI processing',
-            urlToUserAgentsMap.size,
-          );
+          log.info(`[LLM-ERROR-PAGES] Sent ${urlToUserAgentsMap.size} consolidated 404 URLs to Mystique for AI processing`);
         } else {
           log.warn('[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message');
         }
@@ -354,7 +345,7 @@ const stepAudit = new AuditBuilder()
 
 const backfillAudit = new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .withRunner(async (finalUrl, context, site, auditContext) => {
+  .withRunner(async (_finalUrl, context, site, auditContext) => {
     const enrichedContext = { ...context, site, auditContext };
     return runAuditAndSendToMystique(enrichedContext);
   })
