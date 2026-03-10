@@ -15,15 +15,11 @@
  * ============================================
  * STEP 0: Import (runs in import-worker via keywordPromptsImportStep)
  *   - Fetches keyword data from Ahrefs API
- *   - Generates AI prompts from keywords + URL combinations
- *   - Writes prompts to partitioned parquet files: metrics/${siteId}/llmo-prompts-ahrefs/...
- *   - Returns parquetFiles array for use in Step 1
+ *   - Returns import result for use in Step 1
  *
  * STEP 1: Unified Detection (loadPromptsAndSendDetection)
- *   - Reads AI prompts from parquet files
- *   - Deduplicates AI prompts
- *   - Loads human prompts from LLMO config
- *   - Combines AI + human prompts
+ *   - Loads AI prompts (aiTopics) and human prompts (topics) from LLMO config
+ *   - Deduplicates all prompts
  *   - Uploads combined prompts as JSON with presigned URL (24h expiry)
  *   - Sends Detection messages directly to Mystique (one per web search provider)
  *   - Mystique conditionally categorizes AI prompts if needed (inline)
@@ -44,7 +40,6 @@ import {
   isoCalendarWeek,
   llmoConfig,
 } from '@adobe/spacecat-shared-utils';
-import { parquetReadObjects } from 'hyparquet';
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'node:crypto';
 import { getSignedUrl } from '../utils/getPresignedUrl.js';
@@ -194,7 +189,7 @@ export async function loadPromptsAndSendDetection(
   const baseURL = site.getBaseURL();
   const isDaily = brandPresenceCadence === 'daily';
 
-  const { calendarWeek, parquetFiles, success } = auditContext ?? /* c8 ignore next */ {};
+  const { calendarWeek, success } = auditContext ?? /* c8 ignore next */ {};
 
   const auditResult = audit?.getAuditResult();
   const aiPlatform = auditResult?.aiPlatform;
@@ -222,11 +217,8 @@ export async function loadPromptsAndSendDetection(
     : WEB_SEARCH_PROVIDERS;
   log.info('GEO BRAND PRESENCE: aiPlatform: %s for site id %s (%s). Will use providers: %j', aiPlatform, siteId, baseURL, providersToUse);
 
-  // When import fails (success === false), continue with human prompts only.
-  // This allows graceful degradation when Ahrefs API is unavailable.
-  const importFailed = success === false;
-  if (importFailed) {
-    log.warn('GEO BRAND PRESENCE: Import failed for site id %s (%s). Continuing with human prompts only.', siteId, baseURL);
+  if (success === false) {
+    log.warn('GEO BRAND PRESENCE: Import failed for site id %s (%s). Continuing with config prompts only.', siteId, baseURL);
   }
 
   // For weekly cadence, validate calendarWeek; for daily, use dailyDateContext
@@ -235,42 +227,19 @@ export async function loadPromptsAndSendDetection(
     log.error('GEO BRAND PRESENCE: Invalid date context for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
     return;
   }
-  if (!importFailed && (!Array.isArray(parquetFiles) || !parquetFiles.every((x) => typeof x === 'string'))) {
-    log.error('GEO BRAND PRESENCE: Invalid parquetFiles in auditContext for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
-    return;
-  }
 
-  log.debug('GEO BRAND PRESENCE: Unified step - Loading AI prompts from parquet and human prompts from config for site id %s (%s)', siteId, baseURL);
+  log.debug('GEO BRAND PRESENCE: Loading prompts from LLMO config for site id %s (%s)', siteId, baseURL);
 
   const bucket = context.env?.S3_IMPORTER_BUCKET_NAME ?? /* c8 ignore next */ '';
 
-  // Load AI prompts from parquet (skip if import failed)
-  let aiPrompts = [];
-  if (!importFailed && parquetFiles?.length > 0) {
-    const recordSets = await Promise.all(
-      parquetFiles.map((key) => loadParquetDataFromS3({ key, bucket, s3Client })),
-    );
-    aiPrompts = recordSets.flat();
-  }
-  for (const x of aiPrompts) {
-    x.market = x.region; // TODO(aurelio): remove when .region is supported by Mystique
-    x.origin = x.source; // TODO(aurelio): remove when we decided which one to pick
-  }
-
-  log.debug('GEO BRAND PRESENCE: Loaded %d AI prompts from parquet for site id %s (%s)', aiPrompts.length, siteId, baseURL);
-
-  aiPrompts = deduplicatePrompts(aiPrompts, siteId, log);
-
-  // Load LLMO config to get human prompts and config version
+  // Load LLMO config to get prompts and config version
   const {
     config,
     exists: configExists,
     version: configVersion,
   } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket: bucket });
 
-  log.info('GEO BRAND PRESENCE: Found %d AI prompts (after dedup) for site id %s (%s)', aiPrompts.length, siteId, baseURL);
-
-  // Load human prompts from LLMO config
+  // Load human prompts from config.topics
   let humanPrompts = [];
   if (configExists && config) {
     humanPrompts = Object.values(config.topics || {}).flatMap((x) => {
@@ -293,7 +262,33 @@ export async function loadPromptsAndSendDetection(
     log.info('GEO BRAND PRESENCE: Loaded %d human prompts from config for site id %s (%s)', humanPrompts.length, siteId, baseURL);
   }
 
-  // Combine AI and human prompts
+  // Load AI-generated prompts from config.aiTopics (written by DRS prompt generation)
+  let aiPrompts = [];
+  if (configExists && config) {
+    aiPrompts = Object.values(config.aiTopics || {}).flatMap((x) => {
+      const category = config.categories[x.category];
+      return x.prompts.flatMap((p) => (p.regions || []).map((region) => ({
+        prompt: p.prompt,
+        region,
+        category: category?.name || '',
+        topic: x.name,
+        url: '',
+        keyword: '',
+        keywordImportTime: -1,
+        volume: -1,
+        volumeImportTime: -1,
+        source: p.source || 'drs',
+        market: (p.regions || []).join(','),
+        origin: p.origin || 'ai',
+      })));
+    });
+    log.info('GEO BRAND PRESENCE: Loaded %d AI prompts from config for site id %s (%s)', aiPrompts.length, siteId, baseURL);
+  }
+
+  aiPrompts = deduplicatePrompts(aiPrompts, siteId, log);
+  log.info('GEO BRAND PRESENCE: Found %d AI prompts (after dedup) for site id %s (%s)', aiPrompts.length, siteId, baseURL);
+
+  // Combine human and AI prompts
   const allPrompts = humanPrompts.concat(aiPrompts);
   log.info(
     'GEO BRAND PRESENCE: Combined %d human + %d AI prompts = %d total for site id %s (%s)',
@@ -363,29 +358,6 @@ export async function loadPromptsAndSendDetection(
     + 'messages sent directly to Mystique (categorization will happen internally if needed) for site id %s (%s)';
   log.info(stepCompleteMsg, cadenceLabel, siteId, baseURL);
   /* c8 ignore end */
-}
-
-/**
- * Loads and parses a Parquet file from S3 into JavaScript objects.
- *
- * @param {Object} params - The parameters object.
- * @param {string} params.key - The S3 key of the Parquet file.
- * @param {string} params.bucket - The S3 bucket name.
- * @param {AWS.S3Client} params.s3Client - The AWS S3 client instance.
- * @returns {Promise<AsyncGenerator<Object>>}
- * - An async generator yielding objects from the Parquet file.
- * @throws {Error} If the Parquet file cannot be read from S3.
- */
-export async function loadParquetDataFromS3({ key, bucket, s3Client }) {
-  const res = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
-  const body = await res.Body?.transformToByteArray();
-  /* c8 ignore start */
-  if (!body) {
-    throw new Error(`Failed to read Parquet file from s3://${bucket}/${key}`);
-  }
-  /* c8 ignore end */
-
-  return parquetReadObjects({ file: body.buffer });
 }
 
 /**
