@@ -11,13 +11,10 @@
  */
 
 import { GetObjectCommand } from '@aws-sdk/client-s3';
-import { Audit } from '@adobe/spacecat-shared-data-access';
 import { CWV_THRESHOLDS, MIN_PAGEVIEWS } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncOpportunitiesAndSuggestions } from './opportunity-sync.js';
 import { TREND_DAYS, S3_BASE_PATH } from './constants.js';
-
-const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 /**
  * Reads CWV data from S3 for a 28-day period
@@ -30,42 +27,47 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
  * @throws {Error} If any S3 files are missing
  */
 async function readCwvDataFromS3(s3Client, bucketName, startDate, endDate, log) {
-  const cwvData = [];
-  const missingDates = [];
-
+  // Collect all dates in the range
+  const dates = [];
   const currentDate = new Date(startDate);
   while (currentDate <= endDate) {
-    const dateStr = currentDate.toISOString().split('T')[0]; // YYYY-MM-DD
-    const s3Key = `${S3_BASE_PATH}/cwv-trends-daily-${dateStr}/cwv-trends-daily-${dateStr}.json`;
-
-    try {
-      const command = new GetObjectCommand({
-        Bucket: bucketName,
-        Key: s3Key,
-      });
-      const response = await s3Client.send(command);
-      const bodyString = await response.Body.transformToString();
-      const data = JSON.parse(bodyString);
-
-      cwvData.push({ date: dateStr, urls: data });
-      log.info(`Successfully read S3 data for ${dateStr}: ${data.length} URLs`);
-    } catch (error) {
-      log.error(`Missing S3 file for ${dateStr}: ${s3Key}`, { error: error.message });
-      missingDates.push(dateStr);
-    }
-
-    // Move to next day
+    dates.push(currentDate.toISOString().split('T')[0]); // YYYY-MM-DD
     currentDate.setDate(currentDate.getDate() + 1);
   }
 
-  // Fail if any dates are missing
+  // Read all S3 files in parallel
+  const results = await Promise.all(
+    dates.map(async (dateStr) => {
+      const s3Key = `${S3_BASE_PATH}/cwv-trends-daily-${dateStr}/cwv-trends-daily-${dateStr}.json`;
+
+      try {
+        const command = new GetObjectCommand({
+          Bucket: bucketName,
+          Key: s3Key,
+        });
+        const response = await s3Client.send(command);
+        const bodyString = await response.Body.transformToString();
+        const data = JSON.parse(bodyString);
+
+        log.info(`Successfully read S3 data for ${dateStr}: ${data.length} URLs`);
+        return { date: dateStr, urls: data, error: null };
+      } catch (error) {
+        log.error(`Missing S3 file for ${dateStr}: ${s3Key}`, { error: error.message });
+        return { date: dateStr, urls: null, error: error.message };
+      }
+    }),
+  );
+
+  // Check for missing dates
+  const missingDates = results.filter((r) => r.error !== null).map((r) => r.date);
   if (missingDates.length > 0) {
     const errorMsg = `CWV Trends Audit failed: Missing S3 data for ${missingDates.length} days: ${missingDates.join(', ')}`;
     log.error(errorMsg);
     throw new Error(errorMsg);
   }
 
-  return cwvData;
+  // Return successful results
+  return results.map((r) => ({ date: r.date, urls: r.urls }));
 }
 
 /**
@@ -118,7 +120,8 @@ function filterUrlsByDevice(urls, deviceType, log) {
  * @param {number} lcp - Largest Contentful Paint (ms)
  * @param {number} cls - Cumulative Layout Shift (score)
  * @param {number} inp - Interaction to Next Paint (ms)
- * @returns {string|null} Category: 'good', 'needs-improvement', 'poor', or null if insufficient data
+ * @returns {string|null} Category: 'good', 'needs-improvement', 'poor',
+ *   or null if insufficient data
  */
 function categorizeCwv(lcp, cls, inp) {
   // Handle null metrics
@@ -183,7 +186,8 @@ function generateAuditResult(dailyData, deviceType) {
   const summary = {
     totalUrls: dailyData[dailyData.length - 1].urls.length, // Latest day
     avgGood: trendData.reduce((sum, d) => sum + d.good, 0) / trendData.length,
-    avgNeedsImprovement: trendData.reduce((sum, d) => sum + d.needsImprovement, 0) / trendData.length,
+    avgNeedsImprovement: trendData.reduce((sum, d) => sum + d.needsImprovement, 0)
+      / trendData.length,
     avgPoor: trendData.reduce((sum, d) => sum + d.poor, 0) / trendData.length,
   };
 
@@ -209,14 +213,16 @@ function generateAuditResult(dailyData, deviceType) {
 }
 
 /**
- * Step 1: Collect CWV Trends Data
- * Reads 28 days of S3 data, calculates trends, and persists audit result
+ * CWV Trends Audit Runner
+ * Collects 28 days of CWV data, generates trends, and creates opportunities
+ * @param {string} auditUrl - Base URL of the site
  * @param {object} context - Context object containing site, log, s3Client, env
+ * @param {object} site - Site object
  * @returns {Promise<object>} Object containing auditResult and fullAuditRef
  */
-export async function collectTrendData(context) {
+async function cwvTrendsRunner(auditUrl, context, site) {
   const {
-    site, log, s3Client, env, auditContext,
+    log, s3Client, env, auditContext,
   } = context;
   const siteId = site.getId();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
@@ -224,7 +230,7 @@ export async function collectTrendData(context) {
   // Get device type from audit context (passed by scheduler)
   const deviceType = auditContext?.deviceType || 'mobile'; // Default to mobile
 
-  log.info(`[cwv-trends-audit] siteId: ${siteId} | device: ${deviceType} | Step 1: Collecting trend data`);
+  log.info(`[cwv-trends-audit] siteId: ${siteId} | device: ${deviceType} | Collecting trend data`);
 
   // Calculate date range (28 days)
   const endDate = new Date();
@@ -252,25 +258,24 @@ export async function collectTrendData(context) {
 }
 
 /**
- * Step 2: Sync Opportunities and Suggestions
- * Creates/updates device-specific opportunity and syncs suggestions
- * @param {object} context - Context object containing site, audit, log, dataAccess
- * @returns {Promise<object>} Status object with 'complete' status
+ * Post-processor to create opportunities and suggestions
+ * @param {string} auditUrl - Base URL of the site
+ * @param {object} auditData - Audit data with result
+ * @param {object} context - Context object
+ * @returns {Promise<object>} Audit data (unchanged)
  */
-export async function syncOpportunityAndSuggestionsStep(context) {
+async function createOpportunitiesPostProcessor(auditUrl, auditData, context) {
   const { site, log } = context;
   const siteId = site.getId();
 
-  log.info(`[cwv-trends-audit] siteId: ${siteId} | Step 2: Syncing opportunities and suggestions`);
+  log.info(`[cwv-trends-audit] siteId: ${siteId} | Creating opportunities and suggestions`);
 
   await syncOpportunitiesAndSuggestions(context);
 
-  return {
-    status: 'complete',
-  };
+  return auditData;
 }
 
 export default new AuditBuilder()
-  .addStep('collectTrendData', collectTrendData, AUDIT_STEP_DESTINATIONS.DEFAULT)
-  .addStep('syncOpportunityAndSuggestions', syncOpportunityAndSuggestionsStep)
+  .withRunner(cwvTrendsRunner)
+  .withPostProcessors([createOpportunitiesPostProcessor])
   .build();

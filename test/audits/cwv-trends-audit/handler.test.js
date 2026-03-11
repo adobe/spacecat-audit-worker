@@ -27,8 +27,7 @@ describe('CWV Trends Audit Handler', () => {
   let mockSite;
   let mockS3Client;
   let mockAudit;
-  let collectTrendData;
-  let syncOpportunityAndSuggestionsStep;
+  let cwvTrendsAuditHandler;
   let syncOpportunitiesAndSuggestionsStub;
 
   const createMockS3Data = (deviceType = 'mobile') => [
@@ -141,6 +140,9 @@ describe('CWV Trends Audit Handler', () => {
       })
       .build();
 
+    // Make Site.findById return mockSite
+    mockContext.dataAccess.Site.findById.resolves(mockSite);
+
     // Mock syncOpportunitiesAndSuggestions
     syncOpportunitiesAndSuggestionsStub = sandbox.stub().resolves({
       getId: () => 'opportunity-123',
@@ -152,15 +154,14 @@ describe('CWV Trends Audit Handler', () => {
       },
     });
 
-    collectTrendData = handlerModule.collectTrendData;
-    syncOpportunityAndSuggestionsStep = handlerModule.syncOpportunityAndSuggestionsStep;
+    cwvTrendsAuditHandler = handlerModule.default;
   });
 
   afterEach(() => {
     sandbox.restore();
   });
 
-  describe('collectTrendData', () => {
+  describe('cwvTrendsAuditHandler', () => {
     it('should successfully collect trend data for 28 days', async () => {
       // Arrange
       const mockS3Response = {
@@ -171,26 +172,37 @@ describe('CWV Trends Audit Handler', () => {
 
       mockS3Client.send.resolves(mockS3Response);
 
+      const message = {
+        type: 'cwv-trends-audit',
+        siteId: 'test-site-id',
+      };
+
       // Act
-      const result = await collectTrendData(mockContext);
+      const result = await cwvTrendsAuditHandler.run(message, mockContext);
 
       // Assert
       expect(mockS3Client.send).to.have.callCount(28); // 28 days
-      expect(result).to.have.property('auditResult');
-      expect(result).to.have.property('fullAuditRef', '/metrics/cwv-trends');
-      expect(result.auditResult).to.have.property('deviceType', 'mobile');
-      expect(result.auditResult).to.have.property('trendData');
-      expect(result.auditResult.trendData).to.have.lengthOf(28);
-      expect(result.auditResult).to.have.property('summary');
-      expect(result.auditResult).to.have.property('urlDetails');
+      expect(result.status).to.equal(200);
+      expect(mockContext.dataAccess.Audit.create).to.have.been.calledOnce;
+
+      const auditData = mockContext.dataAccess.Audit.create.firstCall.args[0];
+      expect(auditData).to.have.property('auditResult');
+      expect(auditData.auditResult).to.have.property('deviceType', 'mobile');
+      expect(auditData.auditResult).to.have.property('trendData');
+      expect(auditData.auditResult.trendData).to.have.lengthOf(28);
+      expect(auditData.auditResult).to.have.property('summary');
+      expect(auditData.auditResult).to.have.property('urlDetails');
 
       // Verify URL filtering (should exclude page4 with 500 pageviews)
-      expect(result.auditResult.urlDetails).to.have.lengthOf(3);
+      expect(auditData.auditResult.urlDetails).to.have.lengthOf(3);
 
       // Verify percentages are converted
-      expect(result.auditResult.urlDetails[0].bounceRate).to.equal(25);
-      expect(result.auditResult.urlDetails[0].engagement).to.equal(75);
-      expect(result.auditResult.urlDetails[0].clickRate).to.equal(60);
+      expect(auditData.auditResult.urlDetails[0].bounceRate).to.equal(25);
+      expect(auditData.auditResult.urlDetails[0].engagement).to.equal(75);
+      expect(auditData.auditResult.urlDetails[0].clickRate).to.equal(60);
+
+      // Verify opportunities were synced
+      expect(syncOpportunitiesAndSuggestionsStub).to.have.been.calledOnce;
     });
 
     it('should use desktop device type when specified', async () => {
@@ -204,11 +216,17 @@ describe('CWV Trends Audit Handler', () => {
       mockS3Client.send.resolves(mockS3Response);
       mockContext.auditContext = { deviceType: 'desktop' };
 
+      const message = {
+        type: 'cwv-trends-audit',
+        siteId: 'test-site-id',
+      };
+
       // Act
-      const result = await collectTrendData(mockContext);
+      const result = await cwvTrendsAuditHandler.run(message, mockContext);
 
       // Assert
-      expect(result.auditResult.deviceType).to.equal('desktop');
+      const auditData = mockContext.dataAccess.Audit.create.firstCall.args[0];
+      expect(auditData.auditResult.deviceType).to.equal('desktop');
     });
 
     it('should default to mobile when device type not specified', async () => {
@@ -222,19 +240,30 @@ describe('CWV Trends Audit Handler', () => {
       mockS3Client.send.resolves(mockS3Response);
       mockContext.auditContext = {};
 
+      const message = {
+        type: 'cwv-trends-audit',
+        siteId: 'test-site-id',
+      };
+
       // Act
-      const result = await collectTrendData(mockContext);
+      const result = await cwvTrendsAuditHandler.run(message, mockContext);
 
       // Assert
-      expect(result.auditResult.deviceType).to.equal('mobile');
+      const auditData = mockContext.dataAccess.Audit.create.firstCall.args[0];
+      expect(auditData.auditResult.deviceType).to.equal('mobile');
     });
 
     it('should throw error when S3 files are missing', async () => {
       // Arrange
       mockS3Client.send.rejects(new Error('NoSuchKey'));
 
+      const message = {
+        type: 'cwv-trends-audit',
+        siteId: 'test-site-id',
+      };
+
       // Act & Assert
-      await expect(collectTrendData(mockContext)).to.be.rejectedWith(/Missing S3 data for/);
+      await expect(cwvTrendsAuditHandler.run(message, mockContext)).to.be.rejectedWith(/Missing S3 data for/);
     });
 
     it('should categorize CWV correctly', async () => {
@@ -292,13 +321,19 @@ describe('CWV Trends Audit Handler', () => {
 
       mockS3Client.send.resolves(mockS3Response);
 
+      const message = {
+        type: 'cwv-trends-audit',
+        siteId: 'test-site-id',
+      };
+
       // Act
-      const result = await collectTrendData(mockContext);
+      const result = await cwvTrendsAuditHandler.run(message, mockContext);
 
       // Assert
-      expect(result.auditResult.trendData[0].good).to.be.closeTo(33.33, 1);
-      expect(result.auditResult.trendData[0].needsImprovement).to.be.closeTo(33.33, 1);
-      expect(result.auditResult.trendData[0].poor).to.be.closeTo(33.33, 1);
+      const auditData = mockContext.dataAccess.Audit.create.firstCall.args[0];
+      expect(auditData.auditResult.trendData[0].good).to.be.closeTo(33.33, 1);
+      expect(auditData.auditResult.trendData[0].needsImprovement).to.be.closeTo(33.33, 1);
+      expect(auditData.auditResult.trendData[0].poor).to.be.closeTo(33.33, 1);
     });
 
     it('should handle null CWV metrics gracefully', async () => {
@@ -342,14 +377,20 @@ describe('CWV Trends Audit Handler', () => {
 
       mockS3Client.send.resolves(mockS3Response);
 
+      const message = {
+        type: 'cwv-trends-audit',
+        siteId: 'test-site-id',
+      };
+
       // Act
-      const result = await collectTrendData(mockContext);
+      const result = await cwvTrendsAuditHandler.run(message, mockContext);
 
       // Assert
+      const auditData = mockContext.dataAccess.Audit.create.firstCall.args[0];
       // Should only count page2 (page1 has null metrics)
-      expect(result.auditResult.trendData[0].good).to.equal(100);
-      expect(result.auditResult.trendData[0].needsImprovement).to.equal(0);
-      expect(result.auditResult.trendData[0].poor).to.equal(0);
+      expect(auditData.auditResult.trendData[0].good).to.equal(100);
+      expect(auditData.auditResult.trendData[0].needsImprovement).to.equal(0);
+      expect(auditData.auditResult.trendData[0].poor).to.equal(0);
     });
 
     it('should filter URLs below MIN_PAGEVIEWS threshold', async () => {
@@ -362,13 +403,19 @@ describe('CWV Trends Audit Handler', () => {
 
       mockS3Client.send.resolves(mockS3Response);
 
+      const message = {
+        type: 'cwv-trends-audit',
+        siteId: 'test-site-id',
+      };
+
       // Act
-      const result = await collectTrendData(mockContext);
+      const result = await cwvTrendsAuditHandler.run(message, mockContext);
 
       // Assert
+      const auditData = mockContext.dataAccess.Audit.create.firstCall.args[0];
       // page4 has 500 pageviews (below 1000 threshold), should be filtered out
-      expect(result.auditResult.urlDetails).to.have.lengthOf(3);
-      expect(result.auditResult.urlDetails.map((u) => u.url)).to.not.include('https://example.com/page4');
+      expect(auditData.auditResult.urlDetails).to.have.lengthOf(3);
+      expect(auditData.auditResult.urlDetails.map((u) => u.url)).to.not.include('https://example.com/page4');
     });
 
     it('should sort URLs by pageviews descending', async () => {
@@ -381,13 +428,19 @@ describe('CWV Trends Audit Handler', () => {
 
       mockS3Client.send.resolves(mockS3Response);
 
+      const message = {
+        type: 'cwv-trends-audit',
+        siteId: 'test-site-id',
+      };
+
       // Act
-      const result = await collectTrendData(mockContext);
+      const result = await cwvTrendsAuditHandler.run(message, mockContext);
 
       // Assert
-      expect(result.auditResult.urlDetails[0].pageviews).to.equal(5000);
-      expect(result.auditResult.urlDetails[1].pageviews).to.equal(3000);
-      expect(result.auditResult.urlDetails[2].pageviews).to.equal(1500);
+      const auditData = mockContext.dataAccess.Audit.create.firstCall.args[0];
+      expect(auditData.auditResult.urlDetails[0].pageviews).to.equal(5000);
+      expect(auditData.auditResult.urlDetails[1].pageviews).to.equal(3000);
+      expect(auditData.auditResult.urlDetails[2].pageviews).to.equal(1500);
     });
 
     it('should calculate summary statistics correctly', async () => {
@@ -400,15 +453,21 @@ describe('CWV Trends Audit Handler', () => {
 
       mockS3Client.send.resolves(mockS3Response);
 
+      const message = {
+        type: 'cwv-trends-audit',
+        siteId: 'test-site-id',
+      };
+
       // Act
-      const result = await collectTrendData(mockContext);
+      const result = await cwvTrendsAuditHandler.run(message, mockContext);
 
       // Assert
-      expect(result.auditResult.summary).to.have.property('totalUrls');
-      expect(result.auditResult.summary).to.have.property('avgGood');
-      expect(result.auditResult.summary).to.have.property('avgNeedsImprovement');
-      expect(result.auditResult.summary).to.have.property('avgPoor');
-      expect(result.auditResult.summary.totalUrls).to.equal(3);
+      const auditData = mockContext.dataAccess.Audit.create.firstCall.args[0];
+      expect(auditData.auditResult.summary).to.have.property('totalUrls');
+      expect(auditData.auditResult.summary).to.have.property('avgGood');
+      expect(auditData.auditResult.summary).to.have.property('avgNeedsImprovement');
+      expect(auditData.auditResult.summary).to.have.property('avgPoor');
+      expect(auditData.auditResult.summary.totalUrls).to.equal(3);
     });
 
     it('should log info messages during execution', async () => {
@@ -421,29 +480,23 @@ describe('CWV Trends Audit Handler', () => {
 
       mockS3Client.send.resolves(mockS3Response);
 
+      const message = {
+        type: 'cwv-trends-audit',
+        siteId: 'test-site-id',
+      };
+
       // Act
-      await collectTrendData(mockContext);
+      await cwvTrendsAuditHandler.run(message, mockContext);
 
       // Assert
       expect(mockContext.log.info).to.have.been.calledWith(
-        sinon.match(/Step 1: Collecting trend data/),
+        sinon.match(/Collecting trend data/),
       );
       expect(mockContext.log.info).to.have.been.calledWith(
         sinon.match(/Processed \d+ URLs for device: mobile/),
       );
-    });
-  });
-
-  describe('syncOpportunityAndSuggestionsStep', () => {
-    it('should successfully sync opportunities and suggestions', async () => {
-      // Act
-      const result = await syncOpportunityAndSuggestionsStep(mockContext);
-
-      // Assert
-      expect(syncOpportunitiesAndSuggestionsStub).to.have.been.calledOnceWith(mockContext);
-      expect(result).to.deep.equal({ status: 'complete' });
       expect(mockContext.log.info).to.have.been.calledWith(
-        sinon.match(/Step 2: Syncing opportunities and suggestions/),
+        sinon.match(/Creating opportunities and suggestions/),
       );
     });
   });
