@@ -9,10 +9,10 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { Audit } from '@adobe/spacecat-shared-data-access';
+
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import StoreClient, { StoreEmptyError } from '../utils/store-client.js';
+import StoreClient, { StoreEmptyError, URL_TYPES, GUIDELINE_TYPES } from '../utils/store-client.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 
 const LOG_PREFIX = '[YouTube]';
@@ -63,10 +63,10 @@ async function fetchStoreData(siteId, context) {
 
   log.info(`${LOG_PREFIX} Fetching data from stores for siteId: ${siteId}`);
 
-  const urls = await storeClient.getUrls(siteId, Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS);
+  const urls = await storeClient.getUrls(siteId, URL_TYPES.YOUTUBE);
   log.info(`${LOG_PREFIX} Retrieved ${urls.length} YouTube URLs from URL Store`);
 
-  const auditType = Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS;
+  const auditType = GUIDELINE_TYPES.YOUTUBE_ANALYSIS;
   const sentimentConfig = await storeClient.getGuidelines(siteId, auditType);
   const topicCount = sentimentConfig.topics.length;
   const guidelineCount = sentimentConfig.guidelines.length;

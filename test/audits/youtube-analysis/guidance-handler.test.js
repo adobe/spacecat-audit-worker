@@ -22,65 +22,99 @@ import { MockContextBuilder } from '../../shared.js';
 use(sinonChai);
 use(chaiAsPromised);
 
-describe('YouTube Analysis Guidance Handler', () => {
+describe('YouTube Analysis Handler', () => {
   let sandbox;
   let context;
   let mockSite;
   let mockAudit;
-  let mockOpportunity;
-  let handler;
-  let syncSuggestionsStub;
-  let convertToOpportunityStub;
-  let fetchStub;
+  let mockStoreClient;
+  let youtubeAnalysisHandler;
+  let StoreEmptyError;
 
   const baseURL = 'https://example.com';
   const siteId = 'test-site-id';
   const auditId = 'test-audit-id';
 
+  const mockUrls = [
+    { url: 'https://www.youtube.com/watch?v=QnNPSecYm7Q', type: 'youtube', metadata: {} },
+    { url: 'https://www.youtube.com/watch?v=Q5QHGySU5Tw', type: 'youtube', metadata: {} },
+  ];
+
+  const mockSentimentConfig = {
+    topics: [
+      { topicId: 'topic-1', name: 'Video Content Quality', subPrompts: ['engagement', 'production value'] },
+    ],
+    guidelines: [
+      { guidelineId: 'guide-1', name: 'YouTube Best Practices', instruction: 'Focus on viewer engagement', audits: ['youtube-analysis'] },
+    ],
+  };
+
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
+
+    StoreEmptyError = class extends Error {
+      constructor(storeName, siteIdParam, details = '') {
+        super(`${storeName} returned empty results for siteId: ${siteIdParam}${details ? `. ${details}` : ''}`);
+        this.name = 'StoreEmptyError';
+        this.storeName = storeName;
+        this.siteId = siteIdParam;
+      }
+    };
+
+    mockStoreClient = {
+      getUrls: sandbox.stub().resolves(mockUrls),
+      getGuidelines: sandbox.stub().resolves(mockSentimentConfig),
+    };
+
+    const mockStoreClientClass = {
+      createFrom: sandbox.stub().returns(mockStoreClient),
+    };
+
+    youtubeAnalysisHandler = await esmock('../../../src/youtube-analysis/handler.js', {
+      '../../../src/utils/store-client.js': {
+        default: mockStoreClientClass,
+        StoreEmptyError,
+      },
+    });
 
     mockSite = {
       getId: sandbox.stub().returns(siteId),
       getBaseURL: sandbox.stub().returns(baseURL),
+      getOrganizationId: sandbox.stub().returns('org-123'),
+      getDeliveryType: sandbox.stub().returns('aem_edge'),
+      getConfig: sandbox.stub().returns({
+        getCompanyName: sandbox.stub().returns('Example Corp'),
+        getCompetitors: sandbox.stub().returns(['Competitor A', 'Competitor B']),
+        getCompetitorRegion: sandbox.stub().returns('US'),
+        getIndustry: sandbox.stub().returns('Technology'),
+        getBrandKeywords: sandbox.stub().returns(['example', 'corp']),
+      }),
     };
 
     mockAudit = {
       getId: sandbox.stub().returns(auditId),
+      getFullAuditRef: sandbox.stub().returns(`${baseURL}/audit-ref`),
     };
-
-    mockOpportunity = {
-      getId: sandbox.stub().returns('opp-123'),
-      getData: sandbox.stub().returns({ existingData: true }),
-      setData: sandbox.stub(),
-      save: sandbox.stub().resolves(),
-    };
-
-    syncSuggestionsStub = sandbox.stub().resolves();
-    convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
-    fetchStub = sandbox.stub();
-
-    handler = await esmock('../../../src/youtube-analysis/guidance-handler.js', {
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: syncSuggestionsStub,
-      },
-      '../../../src/common/opportunity.js': {
-        convertToOpportunity: convertToOpportunityStub,
-      },
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: fetchStub,
-      },
-    });
 
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
+        site: mockSite,
+        audit: mockAudit,
+        finalUrl: baseURL,
+        env: {
+          QUEUE_SPACECAT_TO_MYSTIQUE: 'spacecat-to-mystique',
+          STORE_API_BASE_URL: 'https://store-api.example.com',
+        },
+        sqs: {
+          sendMessage: sandbox.stub().resolves(),
+        },
         dataAccess: {
           Site: {
             findById: sandbox.stub().resolves(mockSite),
           },
-          Audit: {
-            findById: sandbox.stub().resolves(mockAudit),
+          Configuration: {
+            findLatest: sandbox.stub().resolves({ isHandlerEnabledForSite: sandbox.stub().returns(true), getHandlers: sandbox.stub().returns({}) }),
           },
         },
       })
@@ -91,488 +125,267 @@ describe('YouTube Analysis Guidance Handler', () => {
     sandbox.restore();
   });
 
-  describe('Handler with inline analysis data', () => {
-    it('should process analysis with suggestions successfully', async () => {
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          companyName: 'Example Corp',
-          analysis: {
-            suggestions: [
-              {
-                id: 'sug_1',
-                type: 'CONTENT_UPDATE',
-                rank: 1,
-                data: { suggestionValue: 'Improve thumbnails' },
-              },
-              {
-                id: 'sug_2',
-                type: 'CONTENT_UPDATE',
-                rank: 2,
-                data: { suggestionValue: 'Increase upload frequency' },
-              },
-            ],
-          },
-        },
-      };
-
-      const result = await handler.default(message, context);
-
-      expect(result.status).to.equal(200);
-      expect(convertToOpportunityStub).to.have.been.calledOnce;
-      expect(syncSuggestionsStub).to.have.been.calledOnce;
-      expect(mockOpportunity.setData).to.have.been.called;
-      expect(mockOpportunity.save).to.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Successfully processed YouTube analysis/));
+  describe('Handler Export', () => {
+    it('should export a valid audit handler', () => {
+      expect(youtubeAnalysisHandler.default).to.be.an('object');
+      expect(youtubeAnalysisHandler.default).to.have.property('runner');
+      expect(youtubeAnalysisHandler.default.runner).to.be.a('function');
     });
 
-    it('should pass opportunityData from BO JSON to convertToOpportunity', async () => {
-      const opportunityData = {
-        title: '[ʙᴇᴛᴀ] Cited YouTube Sentiment Analysis',
-        description: 'Custom description from Mystique',
-        runbook: 'https://adobe.sharepoint.com/sites/youtube-sentiment-analysis',
-        origin: 'ESS_OPS',
-        tags: ['Video Content', 'social', 'Youtube', 'isElmo', 'Social Media'],
-      };
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          companyName: 'Example Corp',
-          analysis: {
-            opportunity: opportunityData,
-            suggestions: [
-              { id: 'test_1', type: 'CONTENT_UPDATE', rank: 1, data: { suggestionValue: 'Test' } },
-            ],
-          },
-        },
-      };
-
-      await handler.default(message, context);
-
-      const convertCall = convertToOpportunityStub.firstCall;
-      expect(convertCall.args[0]).to.equal(baseURL);
-      expect(convertCall.args[1]).to.deep.include({ siteId, auditId });
-      expect(convertCall.args[4]).to.equal('youtube-analysis');
-      const propsArg = convertCall.args[5];
-      expect(propsArg.opportunityData).to.deep.equal(opportunityData);
+    it('should have URL resolver configured', () => {
+      expect(youtubeAnalysisHandler.default).to.have.property('urlResolver');
+      expect(youtubeAnalysisHandler.default.urlResolver).to.be.a('function');
     });
 
-    it('should pass empty opportunityData when opportunity is missing from analysis', async () => {
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          companyName: 'Example Corp',
-          analysis: {
-            suggestions: [
-              { id: 'test_1', type: 'CONTENT_UPDATE', rank: 1, data: {} },
-            ],
-          },
-        },
-      };
-
-      await handler.default(message, context);
-
-      const propsArg = convertToOpportunityStub.firstCall.args[5];
-      expect(propsArg.opportunityData).to.deep.equal({});
-    });
-
-    it('should return noContent when no suggestions found', async () => {
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          companyName: 'Example Corp',
-          analysis: {
-            suggestions: [],
-          },
-        },
-      };
-
-      const result = await handler.default(message, context);
-
-      expect(result.status).to.equal(204);
-      expect(convertToOpportunityStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith('[YouTube] No suggestions found in analysis');
-    });
-
-    it('should return noContent when suggestions property is missing from analysis', async () => {
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          companyName: 'Example Corp',
-          analysis: {
-            opportunity: { title: 'Some title' },
-          },
-        },
-      };
-
-      const result = await handler.default(message, context);
-
-      expect(result.status).to.equal(204);
-      expect(convertToOpportunityStub).to.not.have.been.called;
-    });
-
-    it('should return noContent and log error when Mystique returns an error', async () => {
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          error: true,
-          errorMessage: 'HTTP error in content store /url-lookup (dataset=youtube_videos): 400 Bad Request',
-        },
-      };
-
-      const result = await handler.default(message, context);
-
-      expect(result.status).to.equal(204);
-      expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Mystique returned an error.*400 Bad Request/),
-      );
-      expect(convertToOpportunityStub).to.not.have.been.called;
-    });
-
-
-    it('should return badRequest when no analysis data provided', async () => {
-      const message = {
-        siteId,
-        auditId,
-        data: {},
-      };
-
-      const result = await handler.default(message, context);
-
-      expect(result.status).to.equal(400);
-      expect(context.log.error).to.have.been.calledWith('[YouTube] No analysis data provided in message');
-    });
-
-    it('should return notFound when site not found', async () => {
-      context.dataAccess.Site.findById.resolves(null);
-
-      const message = {
-        siteId: 'non-existent-site',
-        auditId,
-        data: {
-          companyName: 'Example Corp',
-          analysis: {
-            suggestions: [{ id: 'test_1', type: 'CONTENT_UPDATE', rank: 1, data: {} }],
-          },
-        },
-      };
-
-      const result = await handler.default(message, context);
-
-      expect(result.status).to.equal(404);
-      expect(context.log.error).to.have.been.calledWith(sinon.match(/Site not found/));
+    it('should have post processors configured', () => {
+      expect(youtubeAnalysisHandler.default).to.have.property('postProcessors');
+      expect(youtubeAnalysisHandler.default.postProcessors).to.be.an('array');
+      expect(youtubeAnalysisHandler.default.postProcessors).to.have.lengthOf(1);
     });
   });
 
-  describe('Handler with presigned URL', () => {
-    it('should fetch BO JSON from presigned URL and pass opportunityData', async () => {
-      const opportunityData = {
-        id: 'opp-1',
-        title: '[ʙᴇᴛᴀ] Cited YouTube Sentiment Analysis',
-        description: 'Analysis description',
-        runbook: 'https://adobe.sharepoint.com/sites/youtube-sentiment-analysis',
-        origin: 'ESS_OPS',
-        tags: ['Video Content', 'social', 'Youtube', 'isElmo', 'Social Media'],
-      };
-      const boJson = {
-        opportunity: opportunityData,
-        suggestions: [
-          {
-            id: 'critical_1',
-            type: 'CONTENT_UPDATE',
-            rank: 1,
-            data: { suggestionValue: 'Critical improvement' },
-          },
-        ],
-      };
+  describe('runYouTubeAnalysisAudit (via runner)', () => {
+    it('should return pending_analysis status with config and store data when successful', async () => {
+      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      fetchStub.resolves({
-        ok: true,
-        json: sandbox.stub().resolves(boJson),
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.status).to.equal('pending_analysis');
+      expect(result.auditResult.config).to.deep.include({
+        companyName: 'Example Corp',
+        companyWebsite: baseURL,
       });
+      expect(result.auditResult.config.competitors).to.deep.equal(['Competitor A', 'Competitor B']);
+      expect(result.auditResult.config.competitorRegion).to.equal('US');
+      expect(result.auditResult.config.industry).to.equal('Technology');
+      expect(result.auditResult.config.brandKeywords).to.deep.equal(['example', 'corp']);
 
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          companyName: 'Example Corp',
-          presignedUrl: 'https://s3.amazonaws.com/bucket/bo.json',
-        },
-      };
+      expect(result.auditResult.storeData).to.exist;
+      expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
+      expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(mockSentimentConfig);
 
-      const result = await handler.default(message, context);
-
-      expect(result.status).to.equal(200);
-      expect(fetchStub).to.have.been.calledWith('https://s3.amazonaws.com/bucket/bo.json');
-      expect(convertToOpportunityStub).to.have.been.calledOnce;
-
-      const propsArg = convertToOpportunityStub.firstCall.args[5];
-      expect(propsArg.opportunityData).to.deep.equal(opportunityData);
+      expect(result.fullAuditRef).to.equal(baseURL);
     });
 
-    it('should override inline analysis when presigned URL is also provided', async () => {
-      const presignedBoJson = {
-        opportunity: { title: 'From presigned URL' },
-        suggestions: [
-          { id: 'from_url', type: 'CONTENT_UPDATE', rank: 1, data: { suggestionValue: 'URL suggestion' } },
-        ],
-      };
+    it('should call StoreClient with correct parameters', async () => {
+      await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      fetchStub.resolves({
-        ok: true,
-        json: sandbox.stub().resolves(presignedBoJson),
-      });
-
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          companyName: 'Example Corp',
-          presignedUrl: 'https://s3.amazonaws.com/bucket/bo.json',
-          analysis: {
-            opportunity: { title: 'From inline' },
-            suggestions: [
-              { id: 'from_inline', type: 'SEO_UPDATE', rank: 5, data: { suggestionValue: 'Inline suggestion' } },
-            ],
-          },
-        },
-      };
-
-      await handler.default(message, context);
-
-      const syncCall = syncSuggestionsStub.firstCall;
-      const { newData } = syncCall.args[0];
-      expect(newData[0].id).to.equal('from_url');
-
-      const propsArg = convertToOpportunityStub.firstCall.args[5];
-      expect(propsArg.opportunityData.title).to.equal('From presigned URL');
+      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'youtube-analysis');
+      expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, 'youtube-analysis');
     });
 
-    it('should return badRequest when presigned URL fetch fails with non-ok response', async () => {
-      fetchStub.resolves({
-        ok: false,
-        status: 500,
-        statusText: 'Internal Server Error',
-      });
+    it('should return error when urlStore returns empty', async () => {
+      mockStoreClient.getUrls.rejects(new StoreEmptyError('urlStore', siteId, 'No youtube-analysis URLs found'));
 
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          companyName: 'Example Corp',
-          presignedUrl: 'https://s3.amazonaws.com/bucket/bo.json',
-        },
-      };
+      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      const result = await handler.default(message, context);
-
-      expect(result.status).to.equal(400);
-      expect(context.log.error).to.have.been.calledWith(sinon.match(/Failed to fetch analysis data/));
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.include('urlStore returned empty results');
+      expect(result.auditResult.storeName).to.equal('urlStore');
+      expect(context.log.error).to.have.been.called;
     });
 
-    it('should return badRequest when presigned URL fetch throws error', async () => {
-      fetchStub.rejects(new Error('Network error'));
+    it('should return error when guidelinesStore returns empty', async () => {
+      mockStoreClient.getGuidelines.rejects(new StoreEmptyError('guidelinesStore', 'N/A', 'No guidelines found'));
 
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          companyName: 'Example Corp',
-          presignedUrl: 'https://s3.amazonaws.com/bucket/bo.json',
-        },
-      };
+      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      const result = await handler.default(message, context);
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.include('guidelinesStore returned empty results');
+      expect(result.auditResult.storeName).to.equal('guidelinesStore');
+    });
 
-      expect(result.status).to.equal(400);
-      expect(context.log.error).to.have.been.calledWith(sinon.match(/Error fetching from presigned URL/));
+    it('should return error when company name is not configured', async () => {
+      mockSite.getConfig.returns({
+        getCompanyName: sandbox.stub().returns(''),
+        getCompetitors: sandbox.stub().returns([]),
+        getCompetitorRegion: sandbox.stub().returns(null),
+        getIndustry: sandbox.stub().returns(null),
+        getBrandKeywords: sandbox.stub().returns([]),
+      });
+      mockSite.getBaseURL.returns('');
+
+      const result = await youtubeAnalysisHandler.default.runner('', context, mockSite);
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.equal('No company name configured for this site');
+      expect(context.log.warn).to.have.been.called;
+    });
+
+    it('should use baseURL as companyName when company name is not configured', async () => {
+      mockSite.getConfig.returns({
+        getCompanyName: sandbox.stub().returns(null),
+        getCompetitors: sandbox.stub().returns([]),
+        getCompetitorRegion: sandbox.stub().returns(null),
+        getIndustry: sandbox.stub().returns(null),
+        getBrandKeywords: sandbox.stub().returns([]),
+      });
+      mockSite.getBaseURL.returns('https://adobe.com');
+
+      const result = await youtubeAnalysisHandler.default.runner('https://adobe.com', context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.config.companyName).to.equal('https://adobe.com');
+    });
+
+    it('should handle missing config gracefully and use baseURL', async () => {
+      mockSite.getConfig.returns(null);
+      mockSite.getBaseURL.returns('https://test-company.com');
+
+      const result = await youtubeAnalysisHandler.default.runner('https://test-company.com', context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.config.companyName).to.equal('https://test-company.com');
+    });
+
+    it('should handle general errors during execution', async () => {
+      mockSite.getConfig.throws(new Error('Config error'));
+
+      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.equal('Config error');
+      expect(context.log.error).to.have.been.called;
     });
   });
 
-  describe('Suggestion mapping', () => {
-    it('should pass suggestion type, rank, and data directly', async () => {
-      const message = {
+  describe('Post Processor - sendMystiqueMessagePostProcessor', () => {
+    it('should send message to Mystique queue with all store data when audit is successful', async () => {
+      const auditData = {
         siteId,
-        auditId,
-        data: {
-          companyName: 'Example Corp',
-          analysis: {
-            suggestions: [
-              {
-                id: 'sug_1',
-                type: 'CONTENT_UPDATE',
-                rank: 1,
-                data: { suggestionValue: '## Report content' },
-              },
-            ],
+        auditResult: {
+          success: true,
+          status: 'pending_analysis',
+          config: {
+            companyName: 'Example Corp',
+            companyWebsite: baseURL,
+            competitors: ['Competitor A'],
+            competitorRegion: 'US',
+            industry: 'Technology',
+            brandKeywords: ['example'],
+          },
+          storeData: {
+            urls: mockUrls,
+            sentimentConfig: mockSentimentConfig,
           },
         },
       };
 
-      await handler.default(message, context);
+      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
 
-      const syncCall = syncSuggestionsStub.firstCall;
-      const { newData, mapNewSuggestion } = syncCall.args[0];
-
-      const mapped = mapNewSuggestion(newData[0]);
-      expect(mapped.opportunityId).to.equal('opp-123');
-      expect(mapped.type).to.equal('CONTENT_UPDATE');
-      expect(mapped.rank).to.equal(1);
-      expect(mapped.data.suggestionValue).to.equal('## Report content');
-    });
-
-    it('should use correct buildKey function', async () => {
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          companyName: 'Example Corp',
-          analysis: {
-            suggestions: [
-              { id: 'my_suggestion_id', type: 'CONTENT_UPDATE', rank: 1, data: {} },
-            ],
-          },
-        },
-      };
-
-      await handler.default(message, context);
-
-      const syncCall = syncSuggestionsStub.firstCall;
-      const { buildKey } = syncCall.args[0];
-      const key = buildKey({ id: 'my_suggestion_id' });
-
-      expect(key).to.equal('youtube::my_suggestion_id');
-    });
-  });
-
-  describe('Error handling', () => {
-    it('should handle errors during opportunity creation', async () => {
-      convertToOpportunityStub.rejects(new Error('Database connection failed'));
-
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          companyName: 'Example Corp',
-          analysis: {
-            suggestions: [
-              { id: 's1', type: 'CONTENT_UPDATE', rank: 1, data: {} },
-            ],
-          },
-        },
-      };
-
-      const result = await handler.default(message, context);
-
-      expect(result.status).to.equal(400);
-      expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Error processing YouTube analysis/),
-        sinon.match.any,
-      );
-    });
-
-    it('should skip audit lookup when auditId is not provided', async () => {
-      const message = {
-        siteId,
-        data: {
-          companyName: 'Example Corp',
-          analysis: {
-            suggestions: [
-              { id: 's1', type: 'CONTENT_UPDATE', rank: 1, data: {} },
-            ],
-          },
-        },
-      };
-
-      const result = await handler.default(message, context);
-
-      expect(result.status).to.equal(200);
-      expect(context.dataAccess.Audit.findById).to.not.have.been.called;
-    });
-
-    it('should return badRequest when data is undefined', async () => {
-      const message = { siteId, auditId };
-
-      const result = await handler.default(message, context);
-
-      expect(result.status).to.equal(400);
-      expect(context.log.error).to.have.been.calledWith('[YouTube] No analysis data provided in message');
-    });
-
-    it('should return notFound when audit not found', async () => {
-      context.dataAccess.Audit.findById.resolves(null);
-
-      const message = {
-        siteId,
-        auditId: 'non-existent-audit',
-        data: {
-          companyName: 'Example Corp',
-          analysis: {
-            suggestions: [
-              { id: 's1', type: 'CONTENT_UPDATE', rank: 1, data: {} },
-            ],
-          },
-        },
-      };
-
-      const result = await handler.default(message, context);
-
-      expect(result.status).to.equal(404);
-      expect(context.log.error).to.have.been.calledWith(sinon.match(/Audit not found/));
-    });
-
-    it('should store full analysis in opportunity data', async () => {
-      const boJson = {
-        suggestions: [
-          { id: 's1', type: 'CONTENT_UPDATE', rank: 1, data: { suggestionValue: 'Test' } },
-        ],
-        extraData: 'should be preserved',
-      };
-
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          companyName: 'Example Corp',
-          analysis: boJson,
-        },
-      };
-
-      await handler.default(message, context);
-
-      expect(mockOpportunity.setData).to.have.been.calledWith(
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).to.have.been.calledWith(
+        'spacecat-to-mystique',
         sinon.match({
-          existingData: true,
-          fullAnalysis: sinon.match({ suggestions: boJson.suggestions }),
+          type: 'guidance:youtube-analysis',
+          siteId,
+          url: baseURL,
+          auditId,
+          deliveryType: 'aem_edge',
+          data: sinon.match({
+            companyName: 'Example Corp',
+            companyWebsite: baseURL,
+            competitors: ['Competitor A'],
+            competitorRegion: 'US',
+            industry: 'Technology',
+            brandKeywords: ['example'],
+            urls: mockUrls,
+            topics: mockSentimentConfig.topics,
+            guidelines: mockSentimentConfig.guidelines,
+          }),
         }),
       );
     });
-  });
 
-  describe('Message logging', () => {
-    it('should log received message', async () => {
-      const message = {
+    it('should skip sending message when audit failed', async () => {
+      const auditData = {
         siteId,
-        auditId,
-        data: {
-          companyName: 'Test',
-          analysis: {
-            suggestions: [],
-          },
+        auditResult: {
+          success: false,
+          error: 'urlStore returned empty results',
         },
       };
 
-      await handler.default(message, context);
+      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
+      const result = await postProcessor(baseURL, auditData, context);
 
-      expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Received YouTube analysis guidance for siteId/),
-      );
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(result).to.deep.equal(auditData);
+      expect(context.log.info).to.have.been.calledWith('[YouTube] Audit failed, skipping Mystique message');
+    });
+
+    it('should skip sending message when SQS is not configured', async () => {
+      context.sqs = null;
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
+        },
+      };
+
+      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
+      const result = await postProcessor(baseURL, auditData, context);
+
+      expect(result).to.deep.equal(auditData);
+      expect(context.log.warn).to.have.been.calledWith('[YouTube] SQS or Mystique queue not configured, skipping message');
+    });
+
+    it('should skip sending message when queue env is not set', async () => {
+      context.env.QUEUE_SPACECAT_TO_MYSTIQUE = null;
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
+        },
+      };
+
+      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
+      const result = await postProcessor(baseURL, auditData, context);
+
+      expect(result).to.deep.equal(auditData);
+    });
+
+    it('should skip sending message when site not found', async () => {
+      context.dataAccess.Site.findById.resolves(null);
+
+      const auditData = {
+        siteId: 'non-existent-site',
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
+        },
+      };
+
+      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
+      const result = await postProcessor(baseURL, auditData, context);
+
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(result).to.deep.equal(auditData);
+      expect(context.log.warn).to.have.been.calledWith('[YouTube] Site not found, skipping Mystique message');
+    });
+
+    it('should throw error when SQS send fails', async () => {
+      context.sqs.sendMessage.rejects(new Error('SQS Error'));
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: { urls: mockUrls, sentimentConfig: mockSentimentConfig },
+        },
+      };
+
+      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
+      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
+      expect(context.log.error).to.have.been.calledWith('[YouTube] Failed to send Mystique message: SQS Error');
     });
   });
 });

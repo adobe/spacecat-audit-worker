@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { DATA_SOURCES } from '../common/constants.js';
+
 /**
  * Creates opportunity data for YouTube analysis from the Mystique payload.
  * @param {Object} props - The props object from convertToOpportunity
@@ -20,11 +22,19 @@ export function createOpportunityData({ opportunityData } = {}) {
   return {
     runbook: opportunityData?.runbook || 'https://adobe.sharepoint.com/sites/youtube-sentiment-analysis',
     origin: opportunityData?.origin || 'AUTOMATION',
-    type: opportunityData?.type || 'generic-opportunity',
-    title: opportunityData?.title || '[ʙᴇᴛᴀ] Cited YouTube Sentiment Analysis',
-    description: opportunityData?.description || 'YouTube sentiment analysis for cited videos.',
+    type: opportunityData?.type || 'youtube-analysis',
+    title: opportunityData?.title || 'Youtube presence: Improve brand sentiment and visibility',
+    description: opportunityData?.description || 'Enhance your company\'s Youtube presence to improve brand sentiment and visibility. '
+      + 'A well-managed Youtube presence can influence how your brand is perceived in community discussions.',
     status: opportunityData?.status || 'NEW',
-    tags: opportunityData?.tags || ['Video Content', 'social', 'Youtube', 'isElmo', 'Social Media'],
-    data: opportunityData?.data || { dataSources: ['Site', 'Page'] },
+    tags: opportunityData?.tags || ['Video Content', 'social', 'isElmo'],
+    data: {
+      ...(opportunityData?.data || {}),
+      dataSources: [...new Set([
+        ...(opportunityData?.data?.dataSources || []),
+        DATA_SOURCES.SITE,
+        DATA_SOURCES.PAGE,
+      ])],
+    },
   };
 }

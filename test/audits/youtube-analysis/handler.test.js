@@ -36,16 +36,16 @@ describe('YouTube Analysis Handler', () => {
   const auditId = 'test-audit-id';
 
   const mockUrls = [
-    { url: 'https://youtube.com/watch?v=abc', type: 'youtube', metadata: {} },
-    { url: 'https://youtube.com/watch?v=def', type: 'youtube', metadata: {} },
+    { url: 'https://www.youtube.com/watch?v=abc', type: 'youtube', metadata: {} },
+    { url: 'https://www.youtube.com/watch?v=Qdef', type: 'youtube', metadata: {} },
   ];
 
   const mockSentimentConfig = {
     topics: [
-      { topicId: 'topic-1', name: 'Channel Sentiment', subPrompts: ['engagement', 'feedback'] },
+      { topicId: 'topic-1', name: 'Video Content Quality', subPrompts: ['engagement', 'production value'] },
     ],
     guidelines: [
-      { guidelineId: 'guide-1', name: 'YouTube Best Practices', instruction: 'Focus on channel engagement', audits: ['youtube-analysis'] },
+      { guidelineId: 'guide-1', name: 'YouTube Best Practices', instruction: 'Focus on viewer engagement', audits: ['youtube-analysis'] },
     ],
   };
 

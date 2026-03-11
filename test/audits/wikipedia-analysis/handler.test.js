@@ -79,6 +79,8 @@ describe('Wikipedia Analysis Handler', () => {
       '../../../src/utils/store-client.js': {
         default: mockStoreClientClass,
         StoreEmptyError,
+        URL_TYPES: { WIKIPEDIA: 'wikipedia-analysis' },
+        GUIDELINE_TYPES: { WIKIPEDIA_ANALYSIS: 'wikipedia-analysis' },
       },
     });
 

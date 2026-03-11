@@ -9,17 +9,31 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import {
   badRequest, notFound, ok, noContent,
 } from '@adobe/spacecat-shared-http-utils';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
-import { Audit } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS;
+
+/**
+ * Gets rank based on priority
+ * @param {string} priority - The priority level
+ * @returns {number} The rank
+ */
+function getRankFromPriority(priority) {
+  const priorityRanks = {
+    CRITICAL: 0,
+    HIGH: 1,
+    MEDIUM: 2,
+    LOW: 3,
+  };
+  return priorityRanks[priority] ?? 4;
+}
 
 /**
  * Handles Mystique response for YouTube analysis
@@ -57,6 +71,8 @@ export default async function handler(message, context) {
       log.error(`[YouTube] Error fetching from presigned URL: ${error.message}`);
       return badRequest(`Error fetching analysis data: ${error.message}`);
     }
+  } else if (data?.analysis) {
+    analysisData = data.analysis;
   }
 
   if (!analysisData) {
@@ -111,9 +127,9 @@ export default async function handler(message, context) {
       buildKey: (suggestion) => `youtube::${suggestion.id}`,
       mapNewSuggestion: (suggestion) => ({
         opportunityId: opportunity.getId(),
-        type: suggestion.type,
-        rank: suggestion.rank,
-        data: suggestion.data,
+        type: suggestion.type || 'CONTENT_UPDATE',
+        rank: getRankFromPriority(suggestion.priority),
+        data: suggestion,
       }),
     });
 

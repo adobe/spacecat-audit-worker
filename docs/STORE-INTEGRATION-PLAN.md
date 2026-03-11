@@ -83,7 +83,7 @@ client.getGuidelines(siteId, auditType)   // GET /sites/{siteId}/sentiment/confi
 **Usage in Handlers:**
 ```javascript
 // All handlers in spacecat-audit-worker use:
-import StoreClient, { StoreEmptyError } from '../utils/store-client.js';
+import StoreClient, { StoreEmptyError, URL_TYPES, GUIDELINE_TYPES } from '../utils/store-client.js';
 ```
 
 **Environment Variables:**
@@ -92,6 +92,20 @@ SPACECAT_API_BASE_URL=http://localhost:3000  # or https://spacecat.experienceclo
 SPACECAT_API_KEY=your-api-key
 ```
 
+**Constants:**
+```javascript
+URL_TYPES = { 
+  WIKIPEDIA: 'wikipedia-analysis', 
+  REDDIT: 'reddit-analysis', 
+  YOUTUBE: 'youtube-analysis' 
+}
+
+GUIDELINE_TYPES = { 
+  WIKIPEDIA_ANALYSIS: 'wikipedia-analysis', 
+  REDDIT_ANALYSIS: 'reddit-analysis', 
+  YOUTUBE_ANALYSIS: 'youtube-analysis' 
+}
+```
 
 ## Handler Flow (`src/wikipedia-analysis/handler.js`)
 
@@ -249,6 +263,7 @@ npm run test:spec -- test/utils/store-client.test.js
 Use `wikipedia-analysis` as a template:
 ```bash
 cp -r src/wikipedia-analysis src/reddit-analysis
+# Then update: URL_TYPES.REDDIT, GUIDELINE_TYPES.REDDIT_ANALYSIS, log prefix, message type
 ```
 
 ### 3. Mystique Updates
