@@ -84,7 +84,7 @@
     "@adobe/spacecat-helix-content-sdk": "1.4.33",
     "@adobe/spacecat-shared-ahrefs-client": "1.10.7",
     "@adobe/spacecat-shared-athena-client": "1.9.6",
-    "@adobe/spacecat-shared-data-access": "3.15.0",
+    "@adobe/spacecat-shared-data-access": "3.15.1",
     "@adobe/spacecat-shared-data-access-v2": "npm:@adobe/spacecat-shared-data-access@2.109.0",
     "@adobe/spacecat-shared-drs-client": "1.2.0",
     "@adobe/spacecat-shared-google-client": "1.5.5",
