@@ -48,11 +48,12 @@ const CWV_AUTO_FIX_FEATURE_TOGGLE = 'cwv-auto-fix';
  * @param {Object} suggestion - Suggestion object
  * @returns {boolean} True if suggestion should receive auto-suggest
  */
-export function shouldSendAutoSuggestForSuggestion(suggestion) {
+export function shouldSendAutoSuggestForSuggestion(suggestion, log) {
   const status = suggestion.getStatus();
 
   // Only send for NEW suggestions
   if (status !== 'NEW') {
+    log.info(`[audit-worker-cwv] suggestion ${suggestion.getId()} is not NEW, skipping`);
     return false;
   }
 
@@ -65,7 +66,11 @@ export function shouldSendAutoSuggestForSuggestion(suggestion) {
   }
 
   // If any issue has empty value, send for auto-suggest
-  return issues.some((issue) => !issue.value || !issue.value.trim());
+  const shouldSend = issues.some((issue) => !issue.value || !issue.value.trim());
+  if (shouldSend) {
+    log.info(`[audit-worker-cwv] suggestion ${suggestion.getId()} has empty value, sending for auto-suggest`);
+  }
+  return shouldSend;
 }
 
 /**
@@ -129,7 +134,7 @@ export async function processAutoSuggest(context, opportunity, site) {
       const metrics = suggestionData.metrics?.[0] || {};
 
       // Skip suggestions that don't need auto-suggest
-      if (!shouldSendAutoSuggestForSuggestion(suggestion)) {
+      if (!shouldSendAutoSuggestForSuggestion(suggestion, log)) {
         log.info(`[audit-worker-cwv] siteId: ${siteId} | Skipping suggestion ${suggestion.getId()} for CWV auto-suggest, suggestionId: ${suggestionId}, url: ${url}`);
         // eslint-disable-next-line no-continue
         continue;
