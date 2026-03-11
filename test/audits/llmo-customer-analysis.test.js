@@ -1025,86 +1025,6 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.configChangesDetected).to.equal(false);
     });
 
-    it('should handle errors from enableContentAI gracefully', async () => {
-      const auditContext = {
-        configVersion: 'v1',
-      };
-
-      mockLlmoConfig.readConfig.resolves({
-        config: {
-          entities: {},
-          categories: {},
-          topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      // Create a mock handler with enableContentAI that throws an error
-      const mockEnableContentAIError = await esmock('../../src/llmo-customer-analysis/handler.js', {
-        '@adobe/spacecat-shared-utils': {
-          getLastNumberOfWeeks: () => [
-            { week: 1, year: 2025 },
-            { week: 2, year: 2025 },
-            { week: 3, year: 2025 },
-            { week: 4, year: 2025 },
-          ],
-          llmoConfig: mockLlmoConfig,
-        },
-        '@adobe/spacecat-shared-rum-api-client': {
-          default: {
-            createFrom: sandbox.stub().returns(mockRUMAPIClient),
-          },
-        },
-        '@adobe/spacecat-shared-drs-client': {
-          default: {
-            createFrom: () => ({
-              isConfigured: () => true,
-              triggerBrandDetection: sandbox.stub().resolves(),
-            }),
-          },
-        },
-        '../../src/support/utils.js': {
-          getRUMUrl: mockGetRUMUrl,
-        },
-        '../../src/common/audit-utils.js': {
-          isAuditEnabledForSite: sandbox.stub().resolves(true),
-        },
-        '../../src/llmo-customer-analysis/cdn-config-handler.js': {
-          handleCdnBucketConfigChanges: sandbox.stub().resolves(),
-        },
-        '../../src/utils/content-ai.js': {
-          ContentAIClient: class {
-            async initialize() { return this; }
-            async createConfiguration() { throw new Error('ContentAI service unavailable'); }
-          },
-        },
-        '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
-          Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
-        },
-        '@adobe/spacecat-shared-ims-client': {
-          ImsClient: {
-            createFrom: sandbox.stub().returns({
-              getServiceAccessToken: sandbox.stub().resolves({ access_token: 'mock-token' }),
-            }),
-          },
-        },
-      });
-
-      const result = await mockEnableContentAIError.runLlmoCustomerAnalysis(
-        'https://example.com',
-        context,
-        site,
-        auditContext,
-      );
-
-      // Should log the error
-      expect(log.error).to.have.been.calledWith('Failed to process ContentAI for site site-123: ContentAI service unavailable');
-
-      // Should still complete successfully despite the error
-      expect(result.auditResult.status).to.equal('completed');
-    });
-
     it('should handle errors from enableAudits gracefully', async () => {
       // Use previousConfigVersion to skip first-time onboarding path
       const auditContext = {
@@ -1329,6 +1249,7 @@ describe('LLMO Customer Analysis Handler', () => {
         'llm-blocked',
         'llm-error-pages',
         'summarization',
+        'faqs',
         'llmo-referral-traffic',
         'cdn-logs-report',
         'readability',

@@ -15,7 +15,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
 import { getPreviousWeekTriples } from '../utils/date-utils.js';
-import { SPREADSHEET_COLUMNS } from './utils.js';
+import { SPREADSHEET_COLUMNS, validateContentAI } from './utils.js';
 
 const MAX_SUGGESTION_PROMPTS = 200;
 const WEEKS_TO_LOOK_BACK = 4;
@@ -151,6 +151,34 @@ async function runFaqsAudit(url, context, site) {
   log.info('[FAQ] Running FAQs audit');
 
   try {
+    const contentAIStatus = await validateContentAI(site, context);
+
+    // Check if Content AI is properly configured and working
+    if (!contentAIStatus.uid || !contentAIStatus.genSearchEnabled || !contentAIStatus.isWorking) {
+      let errorMessage;
+      if (!contentAIStatus.uid) {
+        errorMessage = 'Content AI configuration not found';
+        log.warn('[FAQ] Content AI configuration does not exist for this site, skipping audit');
+      } else if (!contentAIStatus.genSearchEnabled) {
+        errorMessage = 'Content AI generative search not enabled';
+        log.warn(`[FAQ] Content AI generative search not enabled for index ${contentAIStatus.indexName}, skipping audit`);
+      } else {
+        errorMessage = 'Content AI search endpoint validation failed';
+        log.warn(`[FAQ] Content AI search endpoint is not working for index ${contentAIStatus.indexName}, skipping audit`);
+      }
+
+      return {
+        auditResult: {
+          success: false,
+          error: errorMessage,
+          promptsByUrl: [],
+        },
+        fullAuditRef: url,
+      };
+    }
+
+    log.info(`[FAQ] Content AI validation successful - UID: ${contentAIStatus.uid}, Index: ${contentAIStatus.indexName}, GenSearch: ${contentAIStatus.genSearchEnabled}`);
+
     // Prepare SharePoint client and file location
     const sharepointClient = await createLLMOSharepointClient(context);
     const outputLocation = getOutputLocation
