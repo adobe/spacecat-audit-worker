@@ -25,16 +25,26 @@ const AUDIT_TYPE = 'broken-internal-links';
  */
 const CRAWL_DEFAULT_TRAFFIC = Number(process.env.BROKEN_LINKS_CRAWL_TRAFFIC_DOMAIN) || 1;
 
-// Optimized for speed while respecting target server
-const SCRAPE_FETCH_DELAY_MS = 50;
-const LINK_CHECK_BATCH_SIZE = 10;
-const LINK_CHECK_DELAY_MS = 300;
+// Optimized defaults for speed while respecting target server
+const DEFAULT_SCRAPE_FETCH_DELAY_MS = 50;
+const DEFAULT_LINK_CHECK_BATCH_SIZE = 10;
+const DEFAULT_LINK_CHECK_DELAY_MS = 300;
 
 export const PAGES_PER_BATCH = 10;
 
 const sleep = (ms) => new Promise((resolve) => {
   setTimeout(resolve, ms);
 });
+
+const parsePositiveInt = (value, fallback) => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const parseNonNegativeInt = (value, fallback) => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+};
 
 /**
  * Extracts internal links from HTML using cheerio
@@ -249,6 +259,8 @@ async function validateLinksWithCache(
           /* c8 ignore next - Fallback tested via link detection */
           itemType: link.type || 'link',
           trafficDomain: CRAWL_DEFAULT_TRAFFIC,
+          detectionSource: 'crawl',
+          // No HTTP metadata for cache hits (not validated this time)
         };
       }
 
@@ -256,8 +268,8 @@ async function validateLinksWithCache(
         return { type: 'cache-hit-working' };
       }
 
-      const isBroken = await isLinkInaccessible(link.url, baseLog, siteId);
-      if (isBroken) {
+      const validation = await isLinkInaccessible(link.url, baseLog, siteId);
+      if (validation.isBroken) {
         brokenUrlsCache.add(link.url);
         return {
           type: 'api-broken',
@@ -267,6 +279,10 @@ async function validateLinksWithCache(
           /* c8 ignore next - Fallback tested via link detection */
           itemType: link.type || 'link',
           trafficDomain: CRAWL_DEFAULT_TRAFFIC,
+          detectionSource: 'crawl',
+          httpStatus: validation.httpStatus,
+          statusBucket: validation.statusBucket,
+          contentType: validation.contentType,
         };
       }
       workingUrlsCache.add(link.url);
@@ -309,6 +325,21 @@ export async function detectBrokenLinksFromCrawlBatch({
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   const baseURL = site.getBaseURL();
   const baseHostname = new URL(baseURL).hostname.replace(/^www\./, '');
+  /* c8 ignore start - config fallback parsing is defensive */
+  const internalLinksConfig = site?.getConfig?.()?.getHandlers?.()?.['broken-internal-links']?.config || {};
+  const scrapeFetchDelayMs = parseNonNegativeInt(
+    internalLinksConfig.scrapeFetchDelayMs,
+    DEFAULT_SCRAPE_FETCH_DELAY_MS,
+  );
+  const linkCheckBatchSize = parsePositiveInt(
+    internalLinksConfig.linkCheckBatchSize,
+    DEFAULT_LINK_CHECK_BATCH_SIZE,
+  );
+  const linkCheckDelayMs = parseNonNegativeInt(
+    internalLinksConfig.linkCheckDelayMs,
+    DEFAULT_LINK_CHECK_DELAY_MS,
+  );
+  /* c8 ignore stop */
 
   const startTime = Date.now();
   const formatElapsed = () => `[${((Date.now() - startTime) / 1000).toFixed(1)}s]`;
@@ -367,8 +398,8 @@ export async function detectBrokenLinksFromCrawlBatch({
       const validations = [];
 
       // eslint-disable-next-line no-await-in-loop
-      for (let i = 0; i < allLinks.length; i += LINK_CHECK_BATCH_SIZE) {
-        const batch = allLinks.slice(i, i + LINK_CHECK_BATCH_SIZE);
+      for (let i = 0; i < allLinks.length; i += linkCheckBatchSize) {
+        const batch = allLinks.slice(i, i + linkCheckBatchSize);
 
         // eslint-disable-next-line no-await-in-loop
         const batchResults = await validateLinksWithCache(
@@ -384,9 +415,9 @@ export async function detectBrokenLinksFromCrawlBatch({
         allValidationResults.push(...batchResults);
         validations.push(...batchResults);
 
-        if (i + LINK_CHECK_BATCH_SIZE < allLinks.length) {
+        if (i + linkCheckBatchSize < allLinks.length) {
           // eslint-disable-next-line no-await-in-loop
-          await sleep(LINK_CHECK_DELAY_MS);
+          await sleep(linkCheckDelayMs);
         }
       }
 
@@ -404,7 +435,7 @@ export async function detectBrokenLinksFromCrawlBatch({
     }
 
     // eslint-disable-next-line no-await-in-loop
-    await sleep(SCRAPE_FETCH_DELAY_MS);
+    await sleep(scrapeFetchDelayMs);
   }
 
   const results = Array.from(brokenLinksMap.values());
@@ -456,29 +487,66 @@ export async function detectBrokenLinksFromCrawlBatch({
 /**
  * Merges crawl-detected and RUM-detected broken links.
  * RUM links take priority as they have traffic data.
+ * When same link found in both sources, combines detectionSource and keeps RUM traffic
+ * + crawl metadata.
  * @param {Array} crawlLinks - Links from crawl (trafficDomain: CRAWL_DEFAULT_TRAFFIC)
  * @param {Array} rumLinks - Links from RUM (have trafficDomain)
  * @param {Object} log - Logger instance
  * @returns {Array} - Merged and deduplicated array
  */
-export function mergeAndDeduplicate(crawlLinks, rumLinks, log) {
+export function mergeAndDeduplicate(firstLinks, secondLinks, log) {
   const linkMap = new Map();
 
-  rumLinks.forEach((link) => {
+  // Detect source names from the input data
+  const firstSource = firstLinks[0]?.detectionSource || 'unknown';
+  const secondSource = secondLinks[0]?.detectionSource || 'unknown';
+
+  // Add second batch of links first (priority links - RUM has traffic data)
+  secondLinks.forEach((link) => {
     linkMap.set(`${link.urlFrom}|${link.urlTo}`, link);
   });
 
-  let crawlOnlyCount = 0;
-  crawlLinks.forEach((link) => {
+  let firstOnlyCount = 0;
+  let bothSourcesCount = 0;
+  firstLinks.forEach((link) => {
     const key = `${link.urlFrom}|${link.urlTo}`;
     if (!linkMap.has(key)) {
+      // First-only link
       linkMap.set(key, link);
-      crawlOnlyCount += 1;
+      firstOnlyCount += 1;
+    } else {
+      // Link found in both sources - merge metadata
+      const secondLink = linkMap.get(key);
+
+      // Combine detection sources dynamically
+      const existingSources = (
+        typeof secondLink.detectionSource === 'string' && secondLink.detectionSource.length > 0
+          ? secondLink.detectionSource
+          : secondSource
+      ).split('+').filter(Boolean);
+      const newSource = (
+        typeof link.detectionSource === 'string' && link.detectionSource.length > 0
+          ? link.detectionSource
+          : firstSource
+      );
+      const combinedSources = [...new Set([...existingSources, newSource])].sort().join('+');
+
+      linkMap.set(key, {
+        ...secondLink, // Keep second batch data (e.g., RUM traffic)
+        detectionSource: combinedSources,
+        // Add metadata from first batch if available
+        anchorText: link.anchorText || secondLink.anchorText,
+        itemType: link.itemType || secondLink.itemType,
+        httpStatus: link.httpStatus || secondLink.httpStatus,
+        statusBucket: link.statusBucket || secondLink.statusBucket,
+        contentType: link.contentType || secondLink.contentType,
+      });
+      bothSourcesCount += 1;
     }
   });
 
   const merged = Array.from(linkMap.values());
-  log.info(`Merged: ${rumLinks.length} RUM + ${crawlOnlyCount} crawl-only = ${merged.length} total`);
+  log.info(`Merged: ${secondLinks.length} ${secondSource} (${bothSourcesCount} also in ${firstSource}) + ${firstOnlyCount} ${firstSource}-only = ${merged.length} total`);
 
   return merged;
 }

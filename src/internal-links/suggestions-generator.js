@@ -19,13 +19,21 @@ import { filterByAuditScope, extractPathPrefix } from './subpath-filter.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
+const getPositiveIntConfig = (value, fallback) => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
 export const generateSuggestionData = async (finalUrl, brokenInternalLinks, context, site) => {
   const { log } = context;
 
   const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
   const azureOpenAIOptions = { responseFormat: 'json_object' };
-  const BATCH_SIZE = 100;
-  const MAX_CONCURRENT_AI_CALLS = 5;
+  /* c8 ignore start - config fallback parsing is defensive */
+  const internalLinksConfig = site?.getConfig?.()?.getHandlers?.()?.['broken-internal-links']?.config || {};
+  const BATCH_SIZE = getPositiveIntConfig(internalLinksConfig.suggestionBatchSize, 100);
+  const MAX_CONCURRENT_AI_CALLS = getPositiveIntConfig(internalLinksConfig.maxConcurrentAiCalls, 5);
+  /* c8 ignore stop */
 
   // Ensure brokenInternalLinks is an array
   if (!Array.isArray(brokenInternalLinks)) {
@@ -306,6 +314,13 @@ export async function syncBrokenInternalLinksSuggestions({
           urlsSuggested: entry.urlsSuggested || [],
           aiRationale: entry.aiRationale || '',
           trafficDomain,
+          // HTTP metadata
+          httpStatus: entry.httpStatus,
+          statusBucket: entry.statusBucket,
+          contentType: entry.contentType,
+          // Detection metadata
+          detectionSource: entry.detectionSource,
+          anchorText: entry.anchorText,
         },
       };
     },

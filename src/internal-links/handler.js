@@ -13,7 +13,7 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess }
   from '@adobe/spacecat-shared-data-access';
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { hasText, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 import { isUnscrapeable, filterBrokenSuggestedUrls } from '../utils/url-utils.js';
@@ -31,23 +31,43 @@ import {
   PAGES_PER_BATCH,
 } from './crawl-detection.js';
 import {
-  loadBatchState,
-  saveBatchState,
+  saveBatchResults,
+  updateCache,
+  loadCache,
+  markBatchCompleted,
+  isBatchCompleted,
   loadFinalResults,
   cleanupBatchState,
+  getTimeoutStatus,
 } from './batch-state.js';
-import { createAuditLogger } from '../common/context-logger.js';
+import {
+  buildLinkCheckerQuery,
+  submitSplunkJob,
+  pollJobStatus,
+  fetchJobResults,
+} from './linkchecker-splunk.js';
+import { createAuditLogger, createContextLogger } from '../common/context-logger.js';
 import BrightDataClient, { buildLocaleSearchUrl, extractLocaleFromUrl, localesMatch } from '../support/bright-data-client.js';
 import { sleep } from '../support/utils.js';
+import { createSplunkClient } from '../support/splunk-client-loader.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 const MAX_URLS_TO_PROCESS = 100;
+const DEFAULT_LINKCHECKER_MIN_TIME_NEEDED_MS = 5 * 60 * 1000;
 /** Max broken links per Mystique batch (batching only) */
 const MAX_BROKEN_LINKS = 100;
 /** Max broken links to report in audit result and suggestions (backoffice/export limit) */
 export const MAX_BROKEN_LINKS_REPORTED = 500;
+/**
+ * No filtering applied - includes all broken links (404, 5xx, timeouts, network errors).
+ * @param {Array} links - Array of broken links
+ * @returns {Array} Unfiltered links
+ */
+function filterByStatusIfNeeded(links) {
+  return links; // Include all broken links
+}
 
 const BRIGHT_DATA_VALIDATE_URLS = 'BRIGHT_DATA_VALIDATE_URLS';
 const BRIGHT_DATA_MAX_RESULTS = 'BRIGHT_DATA_MAX_RESULTS';
@@ -61,6 +81,135 @@ function getEnvBool(env, key, defaultValue) {
 function getEnvInt(env, key, defaultValue) {
   const value = Number.parseInt(env?.[key], 10);
   return Number.isFinite(value) ? value : defaultValue;
+}
+
+function getLinkCheckerPollingConfig(env) {
+  return {
+    maxPollAttempts: getEnvInt(env, 'LINKCHECKER_MAX_POLL_ATTEMPTS', 10),
+    pollIntervalMs: getEnvInt(env, 'LINKCHECKER_POLL_INTERVAL_MS', 60000),
+  };
+}
+
+function getInternalLinksHandlerConfig(site) {
+  return site?.getConfig?.()?.getHandlers?.()?.['broken-internal-links']?.config || {};
+}
+
+function getPositiveIntConfig(value, fallback) {
+  const numericValue = Number.parseInt(value, 10);
+  return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : fallback;
+}
+
+function getBooleanConfig(value, fallback) {
+  if (typeof value === 'boolean') return value;
+  /* c8 ignore start - defensive support for string-based configs */
+  if (typeof value === 'string') {
+    if (value.toLowerCase() === 'true') return true;
+    if (value.toLowerCase() === 'false') return false;
+  }
+  /* c8 ignore stop */
+  return fallback;
+}
+
+function getEnumConfig(value, allowedValues, fallback) {
+  return allowedValues.includes(value) ? value : fallback;
+}
+
+function getMaxUrlsToProcess(site) {
+  return getPositiveIntConfig(
+    getInternalLinksHandlerConfig(site).maxUrlsToProcess,
+    MAX_URLS_TO_PROCESS,
+  );
+}
+
+function getBatchSize(site) {
+  return getPositiveIntConfig(getInternalLinksHandlerConfig(site).batchSize, PAGES_PER_BATCH);
+}
+
+function getLinkCheckerMinTimeNeededMs(site) {
+  return getPositiveIntConfig(
+    getInternalLinksHandlerConfig(site).linkCheckerMinTimeNeededMs,
+    DEFAULT_LINKCHECKER_MIN_TIME_NEEDED_MS,
+  );
+}
+
+function getMaxBrokenLinksPerBatch(site) {
+  return getPositiveIntConfig(
+    getInternalLinksHandlerConfig(site).maxBrokenLinksPerSuggestionBatch,
+    MAX_BROKEN_LINKS,
+  );
+}
+
+function getMaxBrokenLinksReported(site) {
+  return getPositiveIntConfig(
+    getInternalLinksHandlerConfig(site).maxBrokenLinksReported,
+    MAX_BROKEN_LINKS_REPORTED,
+  );
+}
+
+function getBrightDataBatchSize(site) {
+  return getPositiveIntConfig(getInternalLinksHandlerConfig(site).brightDataBatchSize, 10);
+}
+
+function getMaxAlternativeUrlsToSend(site) {
+  return getPositiveIntConfig(getInternalLinksHandlerConfig(site).maxAlternativeUrlsToSend, 200);
+}
+
+function getBrightDataConfig(site, env) {
+  const config = getInternalLinksHandlerConfig(site);
+  return {
+    validateUrls: config.validateBrightDataUrls
+      ?? getEnvBool(env, BRIGHT_DATA_VALIDATE_URLS, false),
+    maxResults: getPositiveIntConfig(
+      config.brightDataMaxResults,
+      getEnvInt(env, BRIGHT_DATA_MAX_RESULTS, 10),
+    ),
+    requestDelayMs: getPositiveIntConfig(
+      config.brightDataRequestDelayMs,
+      getEnvInt(env, BRIGHT_DATA_REQUEST_DELAY_MS, 500),
+    ),
+  };
+}
+
+function getLinkCheckerPollingConfigWithOverrides(site, env) {
+  const handlerConfig = getInternalLinksHandlerConfig(site);
+  const pollingConfig = getLinkCheckerPollingConfig(env);
+  return {
+    maxPollAttempts: getPositiveIntConfig(
+      handlerConfig.linkCheckerMaxPollAttempts,
+      pollingConfig.maxPollAttempts,
+    ),
+    pollIntervalMs: getPositiveIntConfig(
+      handlerConfig.linkCheckerPollIntervalMs,
+      pollingConfig.pollIntervalMs,
+    ),
+  };
+}
+
+function getScraperOptions(site) {
+  const config = getInternalLinksHandlerConfig(site);
+  const allowedWaitUntilValues = ['load', 'domcontentloaded', 'networkidle0', 'networkidle2'];
+  const scrollDurationConfig = config.maxScrollDurationMs ?? config.scrollMaxDurationMs;
+  return {
+    enableJavascript: getBooleanConfig(config.enableJavascript, true),
+    pageLoadTimeout: getPositiveIntConfig(config.pageLoadTimeout, 30000),
+    evaluateTimeout: getPositiveIntConfig(config.evaluateTimeout, 10000),
+    waitUntil: getEnumConfig(config.waitUntil, allowedWaitUntilValues, 'networkidle2'),
+    networkIdleTimeout: getPositiveIntConfig(config.networkIdleTimeout, 2000),
+    waitForSelector: config.waitForSelector || 'body',
+    rejectRedirects: getBooleanConfig(config.rejectRedirects, false),
+    expandShadowDOM: getBooleanConfig(config.expandShadowDOM, true),
+    // Internal-links audit enables scrolling by default for better lazy-loaded link coverage.
+    scrollToBottom: getBooleanConfig(config.scrollToBottom, true),
+    // Hard stop for scrolling to avoid long-running/infinite lazy-load flows.
+    maxScrollDurationMs: getPositiveIntConfig(scrollDurationConfig, 30000),
+    // Internal-links audit enables load-more by default for lazy-content coverage.
+    clickLoadMore: getBooleanConfig(config.clickLoadMore, true),
+    loadMoreSelector: hasText(config.loadMoreSelector) ? config.loadMoreSelector : undefined,
+    screenshotTypes: Array.isArray(config.screenshotTypes)
+      ? config.screenshotTypes.filter((type) => typeof type === 'string')
+      : [],
+    hideConsentBanners: getBooleanConfig(config.hideConsentBanners, true),
+  };
 }
 
 /**
@@ -145,14 +294,14 @@ function isCanonicalOrHreflangLink(link) {
 export async function internalLinksAuditRunner(auditUrl, context) {
   const { log: baseLog, site } = context;
   const log = createAuditLogger(baseLog, AUDIT_TYPE, site.getId());
-  const finalUrl = await wwwUrlResolver(site, context);
+  const finalUrl = context?.finalUrl || await wwwUrlResolver(site, context);
 
   log.info('====== RUM Detection Phase ======');
   log.info(`Site: ${site.getId()}, Domain: ${finalUrl}`);
 
   try {
     // 1. Create RUM API client
-    const rumAPIClient = RUMAPIClient.createFrom(context);
+    const rumAPIClient = context.rumApiClient || RUMAPIClient.createFrom(context);
 
     // 2. Prepare query options
     const options = {
@@ -186,10 +335,14 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     log.info(`Validating ${internal404Links.length} links to confirm they are still broken...`);
 
     const accessibilitySettled = await Promise.allSettled(
-      internal404Links.map(async (link) => ({
-        link,
-        inaccessible: await isLinkInaccessible(link.url_to, baseLog, site.getId()),
-      })),
+      internal404Links.map(async (link) => {
+        const validation = await isLinkInaccessible(link.url_to, baseLog, site.getId());
+        return {
+          link,
+          validation,
+          inaccessible: validation.isBroken,
+        };
+      }),
     );
 
     const accessibilityResults = accessibilitySettled
@@ -224,6 +377,11 @@ export async function internalLinksAuditRunner(auditUrl, context) {
         urlFrom: result.link.url_from,
         urlTo: result.link.url_to,
         trafficDomain: result.link.traffic_domain,
+        detectionSource: 'rum',
+        // Include HTTP metadata from validation
+        httpStatus: result.validation.httpStatus,
+        statusBucket: result.validation.statusBucket,
+        contentType: result.validation.contentType,
       }));
 
     // Calculate total traffic impact
@@ -333,6 +491,7 @@ export async function submitForScraping(context) {
 
   const includedURLs = site?.getConfig()?.getIncludedURLs?.('broken-internal-links') || [];
   log.info(`Found ${includedURLs.length} includedURLs from siteConfig`);
+  const maxUrlsToProcess = getMaxUrlsToProcess(site);
 
   let finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
   log.info(`Merged URLs: ${topPagesUrls.length} (Ahrefs) + ${includedURLs.length} (manual) = ${finalUrls.length} unique`);
@@ -341,9 +500,9 @@ export async function submitForScraping(context) {
   finalUrls = finalUrls.filter((url) => isWithinAuditScope(url, baseURL));
   log.info(`After audit scope filtering: ${finalUrls.length} URLs`);
 
-  if (finalUrls.length > MAX_URLS_TO_PROCESS) {
-    log.warn(`Capping URLs from ${finalUrls.length} to ${MAX_URLS_TO_PROCESS}`);
-    finalUrls = finalUrls.slice(0, MAX_URLS_TO_PROCESS);
+  if (finalUrls.length > maxUrlsToProcess) {
+    log.warn(`Capping URLs from ${finalUrls.length} to ${maxUrlsToProcess}`);
+    finalUrls = finalUrls.slice(0, maxUrlsToProcess);
   }
 
   const beforeFilter = finalUrls.length;
@@ -367,10 +526,8 @@ export async function submitForScraping(context) {
   log.info(`Submitting ${finalUrls.length} URLs for scraping (cache enabled)`);
   log.info('==========================================');
 
-  // Configure scraper to capture lazy-loaded content
-  // Many sites use Intersection Observers to load content (related articles, comments, etc.)
-  // only when scrolled into view. scrollToBottom: true enables gradual scrolling with
-  // safeguards against infinite scroll pages (10s max, height change detection).
+  const scraperOptions = getScraperOptions(site);
+
   return {
     auditResult: audit.getAuditResult(),
     fullAuditRef: audit.getFullAuditRef(),
@@ -378,18 +535,7 @@ export async function submitForScraping(context) {
     siteId: site.getId(),
     type: 'broken-internal-links',
     processingType: 'default',
-    options: {
-      // CRITICAL: Ensure JavaScript is enabled
-      enableJavascript: true,
-      // Increase from default 15s to 30s for slow sites
-      pageLoadTimeout: 30000,
-      // Wait for body element to be present
-      waitForSelector: 'body',
-      // Wait up to 5s for meta tags (legacy option)
-      waitTimeoutForMetaTags: 5000,
-      // Scroll to trigger lazy-loaded content like related blogs
-      scrollToBottom: true,
-    },
+    options: scraperOptions,
   };
 }
 
@@ -399,6 +545,11 @@ export const opportunityAndSuggestionsStep = async (context) => {
   } = context;
   const log = createAuditLogger(baseLog, AUDIT_TYPE, site.getId());
   const { Suggestion, SiteTopPage } = dataAccess;
+  const maxBrokenLinksReported = getMaxBrokenLinksReported(site);
+  const maxBrokenLinksPerBatch = getMaxBrokenLinksPerBatch(site);
+  const brightDataBatchSize = getBrightDataBatchSize(site);
+  const maxAlternativeUrlsToSend = getMaxAlternativeUrlsToSend(site);
+  const brightDataConfig = getBrightDataConfig(site, env);
 
   // Use updated result if passed (from crawl detection), otherwise read from audit
   const auditResultToUse = updatedAuditResult || audit.getAuditResult();
@@ -414,11 +565,11 @@ export const opportunityAndSuggestionsStep = async (context) => {
   );
 
   // Cap here (before suggestions + Mystique); persist for audit/backoffice limit
-  const reportedLinks = brokenInternalLinksFiltered.length > MAX_BROKEN_LINKS_REPORTED
-    ? brokenInternalLinksFiltered.slice(0, MAX_BROKEN_LINKS_REPORTED)
+  const reportedLinks = brokenInternalLinksFiltered.length > maxBrokenLinksReported
+    ? brokenInternalLinksFiltered.slice(0, maxBrokenLinksReported)
     : brokenInternalLinksFiltered;
-  if (brokenInternalLinksFiltered.length > MAX_BROKEN_LINKS_REPORTED) {
-    log.warn(`Capping reported broken links from ${brokenInternalLinksFiltered.length} to ${MAX_BROKEN_LINKS_REPORTED} (priority order)`);
+  if (brokenInternalLinksFiltered.length > maxBrokenLinksReported) {
+    log.warn(`Capping reported broken links from ${brokenInternalLinksFiltered.length} to ${maxBrokenLinksReported} (priority order)`);
     await updateAuditResult(
       audit,
       auditResultToUse,
@@ -489,15 +640,16 @@ export const opportunityAndSuggestionsStep = async (context) => {
   // Get includedURLs from siteConfig
   const includedURLs = site?.getConfig()?.getIncludedURLs?.('broken-internal-links') || [];
   log.info(`Found ${includedURLs.length} includedURLs from siteConfig`);
+  const maxUrlsToProcess = getMaxUrlsToProcess(site);
 
   // Merge Ahrefs + includedURLs for alternatives
   const includedTopPages = includedURLs.map((url) => ({ getUrl: () => url }));
   let topPages = [...ahrefsTopPages, ...includedTopPages];
 
   // Limit total pages
-  if (topPages.length > MAX_URLS_TO_PROCESS) {
-    log.warn(`Capping URLs from ${topPages.length} to ${MAX_URLS_TO_PROCESS}`);
-    topPages = topPages.slice(0, MAX_URLS_TO_PROCESS);
+  if (topPages.length > maxUrlsToProcess) {
+    log.warn(`Capping URLs from ${topPages.length} to ${maxUrlsToProcess}`);
+    topPages = topPages.slice(0, maxUrlsToProcess);
   }
 
   // Filter by audit scope
@@ -527,9 +679,9 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
   // Bright Data: resolve suggestions first, then fallback to Mystique
   const useBrightData = Boolean(env.BRIGHT_DATA_API_KEY && env.BRIGHT_DATA_ZONE);
-  const validateBrightDataUrls = getEnvBool(env, BRIGHT_DATA_VALIDATE_URLS, false);
-  const brightDataMaxResults = getEnvInt(env, BRIGHT_DATA_MAX_RESULTS, 10);
-  const brightDataRequestDelayMs = getEnvInt(env, BRIGHT_DATA_REQUEST_DELAY_MS, 500);
+  const validateBrightDataUrls = brightDataConfig.validateUrls;
+  const brightDataMaxResults = brightDataConfig.maxResults;
+  const brightDataRequestDelayMs = brightDataConfig.requestDelayMs;
 
   const resolvedByBrightData = new Set();
   if (useBrightData && brokenLinks.length > 0) {
@@ -592,15 +744,14 @@ export const opportunityAndSuggestionsStep = async (context) => {
       resolvedByBrightData.add(brokenLink.suggestionId);
     };
 
-    const batchSize = 10;
-    for (let i = 0; i < brokenLinks.length; i += batchSize) {
-      const batch = brokenLinks.slice(i, i + batchSize);
+    for (let i = 0; i < brokenLinks.length; i += brightDataBatchSize) {
+      const batch = brokenLinks.slice(i, i + brightDataBatchSize);
       // eslint-disable-next-line no-await-in-loop
       await Promise.allSettled(batch.map((brokenLink) => processBrokenLink(brokenLink)
         .catch((error) => {
           log.warn(`Bright Data failed for ${brokenLink.urlTo}:`, error);
         })));
-      if (i + batchSize < brokenLinks.length
+      if (i + brightDataBatchSize < brokenLinks.length
         && Number.isFinite(brightDataRequestDelayMs)
         && brightDataRequestDelayMs > 0) {
         // eslint-disable-next-line no-await-in-loop
@@ -638,6 +789,12 @@ export const opportunityAndSuggestionsStep = async (context) => {
   if (alternativeUrls.length < originalCount) {
     log.info(`Filtered out ${originalCount - alternativeUrls.length} unscrape-able file URLs`);
   }
+  /* c8 ignore start - activated for exceptionally large alternative URL sets */
+  if (alternativeUrls.length > maxAlternativeUrlsToSend) {
+    log.warn(`Capping alternative URLs from ${alternativeUrls.length} to ${maxAlternativeUrlsToSend}`);
+    alternativeUrls = alternativeUrls.slice(0, maxAlternativeUrlsToSend);
+  }
+  /* c8 ignore stop */
 
   // Validate before sending to Mystique
   if (brokenLinksForMystique.length === 0) {
@@ -657,23 +814,24 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
   // Batch broken links to stay within SQS message size limit (256KB)
   // Each batch gets its own message with batch metadata for Mystique to reassemble
-  const totalBatches = Math.ceil(brokenLinksForMystique.length / MAX_BROKEN_LINKS);
+  const totalBatches = Math.ceil(brokenLinksForMystique.length / maxBrokenLinksPerBatch);
 
   log.info(`Sending ${brokenLinksForMystique.length} broken links in ${totalBatches} batch(es) to Mystique`);
 
   for (let batchIndex = 0; batchIndex < totalBatches; batchIndex += 1) {
-    const batchStart = batchIndex * MAX_BROKEN_LINKS;
-    const batchEnd = Math.min(batchStart + MAX_BROKEN_LINKS, brokenLinksForMystique.length);
+    const batchStart = batchIndex * maxBrokenLinksPerBatch;
+    const batchEnd = Math.min(batchStart + maxBrokenLinksPerBatch, brokenLinksForMystique.length);
     const batchLinks = brokenLinksForMystique.slice(batchStart, batchEnd);
 
-    const message = {
+    const alternativeUrlsForMessage = [...alternativeUrls];
+    let message = {
       type: 'guidance:broken-links',
       siteId: site.getId(),
       auditId: audit.getId(),
       deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
       data: {
-        alternativeUrls,
+        alternativeUrls: alternativeUrlsForMessage,
         opportunityId: opportunity.getId(),
         brokenLinks: batchLinks,
         // Include canonical domain for Mystique to use when looking up content
@@ -689,6 +847,18 @@ export const opportunityAndSuggestionsStep = async (context) => {
       },
     };
 
+    /* c8 ignore start - defensive payload-size backoff path */
+    while (JSON.stringify(message).length > 240000 && alternativeUrlsForMessage.length > 1) {
+      alternativeUrlsForMessage.pop();
+      message = {
+        ...message,
+        data: {
+          ...message.data,
+          alternativeUrls: alternativeUrlsForMessage,
+        },
+      };
+    }
+    /* c8 ignore stop */
     // eslint-disable-next-line no-await-in-loop
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.debug(`Batch ${batchIndex + 1}/${totalBatches} sent to Mystique (${batchLinks.length} links)`);
@@ -706,9 +876,14 @@ export const opportunityAndSuggestionsStep = async (context) => {
  * @param {Object} context - Audit context
  * @param {Object} options - Options
  * @param {boolean} options.skipCrawlDetection - Whether crawl detection was skipped
+ * @param {number} startTime - Lambda start time for timeout tracking
  * @returns {Promise<Object>} Result of opportunityAndSuggestionsStep
  */
-export async function finalizeCrawlDetection(context, { skipCrawlDetection = false }) {
+export async function finalizeCrawlDetection(
+  context,
+  { skipCrawlDetection = false },
+  startTime = Date.now(),
+) {
   const {
     log: baseLog, site, audit, dataAccess,
   } = context;
@@ -717,27 +892,69 @@ export async function finalizeCrawlDetection(context, { skipCrawlDetection = fal
   const auditId = audit.getId();
   const shouldCleanup = !skipCrawlDetection;
 
+  // Log timeout status at finalization
+  const timeoutStatus = getTimeoutStatus(startTime);
   log.info('====== Finalize: Merge and Generate Suggestions ======');
   log.info(`auditId: ${auditId}`);
+  log.info(`Timeout status: ${timeoutStatus.percentUsed.toFixed(1)}% used, ${Math.floor(timeoutStatus.safeTimeRemaining / 1000)}s safe time remaining`);
+
+  /* c8 ignore next 4 - Defensive timeout warning path depends on invocation timing */
+  if (timeoutStatus.isApproachingTimeout) {
+    log.warn('Limited time for finalization, but all batch data is saved - proceeding with merge');
+    log.warn('If timeout occurs, SQS retry will complete finalization (all data persisted)');
+  }
 
   // Get RUM results from audit
   const auditResult = audit.getAuditResult();
+  if (auditResult?.internalLinksFinalizedAt) {
+    log.info(`Audit already finalized at ${auditResult.internalLinksFinalizedAt}, skipping duplicate finalization`);
+    return { status: 'already-finalized' };
+  }
   const rumLinks = auditResult.brokenInternalLinks ?? [];
   log.info(`RUM detection results: ${rumLinks.length} broken links`);
+
+  // Get LinkChecker results from context (if available)
+  const linkCheckerResults = context.linkCheckerResults ?? [];
+  log.info(`LinkChecker detection results: ${linkCheckerResults.length} broken links`);
 
   let finalLinks = rumLinks;
 
   try {
     if (!skipCrawlDetection) {
-      // Load final results from S3 (single file contains all accumulated results)
-      const crawlLinks = await loadFinalResults(auditId, context);
+      // Load final results from S3 (loads and merges all batch files)
+      const crawlLinks = await loadFinalResults(auditId, context, startTime);
       log.info(`Crawl detected ${crawlLinks.length} broken links`);
 
-      // Merge crawl + RUM results (RUM takes priority for traffic data)
-      finalLinks = mergeAndDeduplicate(crawlLinks, rumLinks, log);
+      // Transform LinkChecker results to standard format
+      /* c8 ignore start - defensive normalization defaults */
+      const linkCheckerLinks = linkCheckerResults.map((lc) => ({
+        urlFrom: lc.urlFrom,
+        urlTo: lc.urlTo,
+        anchorText: lc.anchorText || '[no text]',
+        itemType: lc.itemType || 'link',
+        detectionSource: 'linkchecker',
+        trafficDomain: 0, // LinkChecker has no traffic data
+        httpStatus: lc.httpStatus,
+        statusBucket: lc.httpStatus === '404' || lc.httpStatus === 404 ? '4xx' : 'unknown',
+      })).filter((link) => link.urlFrom && link.urlTo);
+      /* c8 ignore stop */
+
+      log.info(`LinkChecker links transformed: ${linkCheckerLinks.length} broken links`);
+
+      // 3-way merge: Crawl + LinkChecker + RUM (RUM takes priority for traffic data)
+      // First merge crawl + LinkChecker
+      const crawlAndLinkCheckerMerged = mergeAndDeduplicate(crawlLinks, linkCheckerLinks, log);
+      log.info(`After crawl+LinkChecker merge: ${crawlAndLinkCheckerMerged.length} unique broken links`);
+
+      // Then merge with RUM (RUM overrides traffic data)
+      finalLinks = mergeAndDeduplicate(crawlAndLinkCheckerMerged, rumLinks, log);
+      log.info(`After 3-way merge (crawl+linkchecker+RUM): ${finalLinks.length} unique broken links`);
     } else {
       log.info('No crawl results to merge, using RUM-only results');
     }
+
+    // No filtering applied - include all broken links
+    finalLinks = filterByStatusIfNeeded(finalLinks);
 
     // Calculate priority for all links (already sorted by traffic; high → medium → low)
     const prioritizedLinks = calculatePriority(finalLinks);
@@ -751,7 +968,10 @@ export async function finalizeCrawlDetection(context, { skipCrawlDetection = fal
     // Update audit result with full list; cap applied in opportunityAndSuggestionsStep
     const updatedAuditResult = await updateAuditResult(
       audit,
-      auditResult,
+      {
+        ...auditResult,
+        internalLinksFinalizedAt: new Date().toISOString(),
+      },
       prioritizedLinks,
       dataAccess,
       baseLog,
@@ -771,116 +991,583 @@ export async function finalizeCrawlDetection(context, { skipCrawlDetection = fal
 }
 
 /**
- * Run crawl-based detection in batches to avoid Lambda timeout.
- * This is the terminal step that processes PAGES_PER_BATCH pages at a time,
- * loops back to itself via SQS until all pages are processed, then completes
- * the audit by merging results and generating opportunities.
+ * Step: Fetch LinkChecker logs from Splunk.
+ * This step runs AFTER crawl detection completes and BEFORE final merge.
+ * It submits an async Splunk job, polls until complete or timeout, and stores results.
  *
- * State is stored in a SINGLE S3 file that accumulates:
- * - results: All broken links found so far
- * - brokenUrlsCache: All known broken URLs (for cache efficiency)
- * - workingUrlsCache: All known working URLs (for cache efficiency)
- * - lastBatchNum: Last completed batch number
- * - totalPagesProcessed: Total pages processed so far
+ * If timeout approaches, it sends an SQS continuation message to resume polling.
  *
- * SQS message only contains minimal info (batchStartIndex), caches are loaded from S3.
+ * @param {Object} context - Lambda context
+ * @returns {Promise<Object>} Status object
  */
-export async function runCrawlDetectionBatch(context) {
+export async function fetchLinkCheckerLogsStep(context) {
+  const startTime = Date.now();
   const {
-    log: baseLog, site, audit, auditContext, sqs, env,
+    log: baseLog, site, audit, sqs, env, skipCrawlDetection = false,
   } = context;
-  const log = createAuditLogger(baseLog, AUDIT_TYPE, site.getId(), audit.getId());
 
-  const scrapeResultPaths = context.scrapeResultPaths ?? new Map();
-  const scrapeJobId = context.scrapeJobId || 'N/A';
   const auditId = audit.getId();
+  const internalLinksConfig = getInternalLinksHandlerConfig(site);
+  const enableLinkCheckerDetection = internalLinksConfig.enableLinkCheckerDetection ?? false;
 
-  // Extract batch index from auditContext (minimal state in SQS)
-  const batchStartIndex = auditContext?.batchStartIndex || 0;
+  const log = createAuditLogger(baseLog, AUDIT_TYPE, site.getId(), auditId);
 
-  const totalPages = scrapeResultPaths.size;
-  const estimatedTotalBatches = Math.ceil(totalPages / PAGES_PER_BATCH);
-  const currentBatchNum = Math.floor(batchStartIndex / PAGES_PER_BATCH);
+  log.info('====== LinkChecker Detection Step ======');
+  log.info(`auditId: ${auditId}, enableLinkCheckerDetection: ${enableLinkCheckerDetection}`);
 
-  log.info(`====== Crawl Detection Batch ${currentBatchNum + 1}/${estimatedTotalBatches || 1} ======`);
-  log.info(`scrapeJobId: ${scrapeJobId}`);
-  log.info(`Total pages: ${totalPages}, Batch size: ${PAGES_PER_BATCH}`);
-
-  // Handle case with no scraped content - go directly to merge step
-  if (scrapeResultPaths.size === 0) {
-    log.info('No scraped content available, proceeding to merge step');
-    return finalizeCrawlDetection(context, { skipCrawlDetection: true });
+  // Feature flag check
+  if (!enableLinkCheckerDetection) {
+    log.info('LinkChecker detection disabled in site config, skipping');
+    return finalizeCrawlDetection(context, { skipCrawlDetection }, startTime);
   }
 
-  // Check if batchStartIndex is already beyond total pages
-  if (batchStartIndex >= totalPages) {
-    log.info(`Batch start index (${batchStartIndex}) >= total pages (${totalPages}), all batches already complete`);
-    return finalizeCrawlDetection(context, { skipCrawlDetection: false });
+  // Get AEM program/environment from site config
+  const programId = internalLinksConfig.aemProgramId;
+  const environmentId = internalLinksConfig.aemEnvironmentId;
+
+  if (!programId || !environmentId) {
+    log.warn('Missing AEM programId or environmentId in site config, skipping LinkChecker detection');
+    return finalizeCrawlDetection(context, { skipCrawlDetection }, startTime);
   }
 
-  // Load existing state from S3 (includes accumulated results + caches)
-  const existingState = await loadBatchState(auditId, context);
-  const initialBrokenUrls = existingState.brokenUrlsCache;
-  const initialWorkingUrls = existingState.workingUrlsCache;
-  const accumulatedResults = existingState.results;
+  /* c8 ignore next - fallback branch when lookback is missing */
+  const lookbackMinutes = internalLinksConfig.linkCheckerLookbackMinutes ?? 1440;
 
-  log.info(`Loaded state: ${accumulatedResults.length} existing results, caches: ${initialBrokenUrls.length} broken, ${initialWorkingUrls.length} working`);
+  log.info(`Starting LinkChecker detection: programId=${programId}, environmentId=${environmentId}, lookback=${lookbackMinutes}m`);
 
-  // Process this batch
-  const batchResult = await detectBrokenLinksFromCrawlBatch({
-    scrapeResultPaths,
-    batchStartIndex,
-    batchSize: PAGES_PER_BATCH,
-    initialBrokenUrls,
-    initialWorkingUrls,
-  }, context);
+  try {
+    // Build query
+    const searchQuery = buildLinkCheckerQuery({
+      programId,
+      environmentId,
+      lookbackMinutes,
+    });
 
-  // Accumulate results (append new results to existing)
-  const allResults = accumulatedResults.concat(batchResult.results);
-  const totalPagesProcessed = (existingState.totalPagesProcessed || 0) + batchResult.pagesProcessed;
+    log.info('Submitting Splunk job for LinkChecker logs');
 
-  // Save accumulated state to S3 (single file)
-  await saveBatchState({
-    auditId,
-    results: allResults,
-    brokenUrlsCache: batchResult.brokenUrlsCache,
-    workingUrlsCache: batchResult.workingUrlsCache,
-    batchNum: currentBatchNum,
-    totalPagesProcessed,
-  }, context);
+    // Submit job
+    const client = await createSplunkClient(context);
+    await client.login();
 
-  log.info(`Batch ${currentBatchNum + 1} complete: ${batchResult.results.length} new broken links, ${allResults.length} total`);
+    const sid = await submitSplunkJob(client, searchQuery, log);
 
-  // Check if more pages remain
-  if (batchResult.hasMorePages) {
-    log.info(`${batchResult.totalPages - batchResult.nextBatchStartIndex} pages remaining, sending continuation message`);
+    log.info(`Splunk job submitted successfully: sid=${sid}`);
 
-    // Send continuation message back to AUDIT_JOBS_QUEUE
-    // Note: Caches are in S3 now, so SQS message is minimal
+    // Store job ID in audit context for resumption
+    const auditContextWithJob = {
+      ...context.auditContext,
+      linkCheckerJobId: sid,
+      linkCheckerStartTime: Date.now(),
+    };
+
+    // Poll with timeout awareness
+    const { maxPollAttempts, pollIntervalMs } = getLinkCheckerPollingConfigWithOverrides(site, env);
+
+    for (let attempt = 1; attempt <= maxPollAttempts; attempt += 1) {
+      // Check timeout before polling
+      const timeoutStatus = getTimeoutStatus(startTime);
+      if (timeoutStatus.isApproachingTimeout) {
+        log.warn(`Approaching Lambda timeout (${timeoutStatus.percentUsed.toFixed(1)}% used), sending continuation for polling`);
+
+        // Send continuation message
+        const continuationPayload = {
+          type: AUDIT_TYPE,
+          siteId: site.getId(),
+          auditContext: {
+            next: 'runCrawlDetectionBatch',
+            resumePolling: true, // Flag to route to resumeLinkCheckerPollingStep
+            auditId,
+            auditType: audit.getAuditType(),
+            fullAuditRef: audit.getFullAuditRef(),
+            ...auditContextWithJob,
+            skipCrawlDetection,
+          },
+        };
+
+        // eslint-disable-next-line no-await-in-loop
+        await sqs.sendMessage(env.AUDIT_JOBS_QUEUE_URL, continuationPayload);
+        log.info('Continuation message sent for LinkChecker polling');
+        return { status: 'linkchecker-polling-continuation' };
+      }
+
+      // Poll status
+      // eslint-disable-next-line no-await-in-loop
+      const status = await pollJobStatus(client, sid, log);
+
+      if (status.isFailed) {
+        log.error(`Splunk job failed: sid=${sid}, dispatchState=${status.dispatchState}`);
+        log.warn('Proceeding to finalization without LinkChecker data');
+        return finalizeCrawlDetection(context, { skipCrawlDetection }, startTime);
+      }
+
+      if (status.isDone) {
+        log.info(`Splunk job completed after ${attempt} poll(s), fetching results`);
+        // eslint-disable-next-line no-await-in-loop
+        const linkCheckerResults = await fetchJobResults(client, sid, log);
+        log.info(`LinkChecker detection found ${linkCheckerResults.length} broken links`);
+
+        // Store results in context for merge
+        const contextWithLinkChecker = {
+          ...context,
+          linkCheckerResults,
+        };
+
+        return finalizeCrawlDetection(contextWithLinkChecker, { skipCrawlDetection }, startTime);
+      }
+
+      log.info(`Job not ready (attempt ${attempt}/${maxPollAttempts}), waiting ${pollIntervalMs}ms`);
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => {
+        setTimeout(resolve, pollIntervalMs);
+      });
+    }
+
+    // Max polls reached without completion - send continuation
+    log.warn(`Max poll attempts (${maxPollAttempts}) reached, job still running. Sending continuation.`);
     const continuationPayload = {
       type: AUDIT_TYPE,
       siteId: site.getId(),
       auditContext: {
-        next: 'runCrawlDetectionBatch', // Loop back to same step
+        next: 'runCrawlDetectionBatch',
+        resumePolling: true, // Flag to route to resumeLinkCheckerPollingStep
         auditId,
         auditType: audit.getAuditType(),
         fullAuditRef: audit.getFullAuditRef(),
-        scrapeJobId,
-        // Only pass the index - caches are loaded from S3
-        batchStartIndex: batchResult.nextBatchStartIndex,
+        ...auditContextWithJob,
       },
     };
 
-    log.info(`Continuation payload: ${JSON.stringify(continuationPayload, null, 2)}`);
+    await sqs.sendMessage(env.AUDIT_JOBS_QUEUE_URL, continuationPayload);
+    log.info('Continuation message sent for LinkChecker polling (max attempts reached)');
+    return { status: 'linkchecker-polling-continuation' };
+  } catch (error) {
+    log.error(`LinkChecker detection failed: ${error.message}`, error);
+    log.warn('Proceeding to finalization without LinkChecker data');
+    return finalizeCrawlDetection(context, { skipCrawlDetection }, startTime);
+  }
+}
+
+/**
+ * Step: Resume polling for LinkChecker Splunk job.
+ * This step is called via SQS continuation when the initial polling times out.
+ *
+ * @param {Object} context - Lambda context
+ * @returns {Promise<Object>} Status object
+ */
+export async function resumeLinkCheckerPollingStep(context) {
+  const startTime = Date.now();
+  const {
+    log: baseLog, site, audit, auditContext, sqs, env,
+  } = context;
+
+  const auditId = audit.getId();
+  const sid = auditContext?.linkCheckerJobId;
+  /* c8 ignore next - fallback for legacy continuations without timestamp */
+  const jobStartTime = auditContext?.linkCheckerStartTime || Date.now();
+  const skipCrawlDetection = auditContext?.skipCrawlDetection ?? false;
+
+  const log = createAuditLogger(baseLog, AUDIT_TYPE, site.getId(), auditId);
+
+  log.info('====== LinkChecker Polling Continuation ======');
+  log.info(`auditId: ${auditId}, sid: ${sid}`);
+
+  if (!sid) {
+    log.error('Missing linkCheckerJobId in auditContext, cannot resume polling');
+    return finalizeCrawlDetection(context, { skipCrawlDetection }, startTime);
+  }
+
+  // Check if job has been running too long (configurable safety limit)
+  const totalJobDuration = Date.now() - jobStartTime;
+  const maxJobDurationMinutes = (
+    getInternalLinksHandlerConfig(site).linkCheckerMaxJobDurationMinutes ?? 60
+  );
+  const maxJobDuration = maxJobDurationMinutes * 60 * 1000;
+
+  if (totalJobDuration > maxJobDuration) {
+    log.warn(`LinkChecker job has been running for ${Math.floor(totalJobDuration / 1000)}s (max ${Math.floor(maxJobDuration / 1000)}s), aborting`);
+    log.warn('Proceeding to finalization without LinkChecker data');
+    return finalizeCrawlDetection(context, { skipCrawlDetection }, startTime);
+  }
+
+  try {
+    const client = await createSplunkClient(context);
+    await client.login();
+
+    // Poll with timeout awareness
+    const { maxPollAttempts, pollIntervalMs } = getLinkCheckerPollingConfigWithOverrides(site, env);
+
+    for (let attempt = 1; attempt <= maxPollAttempts; attempt += 1) {
+      // Check timeout before polling
+      const timeoutStatus = getTimeoutStatus(startTime);
+      if (timeoutStatus.isApproachingTimeout) {
+        log.warn('Approaching Lambda timeout, sending another continuation for polling');
+
+        // Send continuation message
+        const continuationPayload = {
+          type: AUDIT_TYPE,
+          siteId: site.getId(),
+          auditContext: {
+            next: 'runCrawlDetectionBatch',
+            resumePolling: true, // Flag to route to resumeLinkCheckerPollingStep
+            auditId,
+            auditType: audit.getAuditType(),
+            fullAuditRef: audit.getFullAuditRef(),
+            linkCheckerJobId: sid,
+            linkCheckerStartTime: jobStartTime,
+            skipCrawlDetection,
+          },
+        };
+
+        // eslint-disable-next-line no-await-in-loop
+        await sqs.sendMessage(env.AUDIT_JOBS_QUEUE_URL, continuationPayload);
+        log.info('Continuation message sent for continued polling');
+        return { status: 'linkchecker-polling-continuation' };
+      }
+
+      // Poll status
+      // eslint-disable-next-line no-await-in-loop
+      const status = await pollJobStatus(client, sid, log);
+
+      if (status.isFailed) {
+        log.error(`Splunk job failed: sid=${sid}, dispatchState=${status.dispatchState}`);
+        log.warn('Proceeding to finalization without LinkChecker data');
+        return finalizeCrawlDetection(context, { skipCrawlDetection }, startTime);
+      }
+
+      if (status.isDone) {
+        log.info(`Splunk job completed after ${attempt} poll(s) in continuation, fetching results`);
+        // eslint-disable-next-line no-await-in-loop
+        const linkCheckerResults = await fetchJobResults(client, sid, log);
+        log.info(`LinkChecker detection found ${linkCheckerResults.length} broken links`);
+
+        // Store results in context for merge
+        const contextWithLinkChecker = {
+          ...context,
+          linkCheckerResults,
+        };
+
+        return finalizeCrawlDetection(contextWithLinkChecker, { skipCrawlDetection }, startTime);
+      }
+
+      log.info(`Job not ready (attempt ${attempt}/${maxPollAttempts}), waiting ${pollIntervalMs}ms`);
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => {
+        setTimeout(resolve, pollIntervalMs);
+      });
+    }
+
+    // Max polls reached again - send another continuation
+    log.warn(`Max poll attempts (${maxPollAttempts}) reached in continuation. Sending another continuation.`);
+    const continuationPayload = {
+      type: AUDIT_TYPE,
+      siteId: site.getId(),
+      auditContext: {
+        next: 'runCrawlDetectionBatch',
+        resumePolling: true, // Flag to route to resumeLinkCheckerPollingStep
+        auditId,
+        auditType: audit.getAuditType(),
+        fullAuditRef: audit.getFullAuditRef(),
+        linkCheckerJobId: sid,
+        linkCheckerStartTime: jobStartTime,
+        skipCrawlDetection,
+      },
+    };
 
     await sqs.sendMessage(env.AUDIT_JOBS_QUEUE_URL, continuationPayload);
-    log.info(`Continuation message sent to AUDIT_JOBS_QUEUE for batch ${currentBatchNum + 2}`);
+    log.info('Continuation message sent for continued polling');
+    return { status: 'linkchecker-polling-continuation' };
+  } catch (error) {
+    log.error(`LinkChecker polling continuation failed: ${error.message}`, error);
+    log.warn('Proceeding to finalization without LinkChecker data');
+    return finalizeCrawlDetection(context, { skipCrawlDetection }, startTime);
+  }
+}
 
-    // Return - this Lambda invocation is complete, next batch will continue
+/**
+ * Send continuation message with retry logic
+ */
+async function sendContinuationWithRetry({
+  auditId,
+  nextBatchIndex,
+  batchSize = PAGES_PER_BATCH,
+  site,
+  audit,
+  scrapeJobId,
+  sqs,
+  env,
+  log,
+}, maxRetries = 3) {
+  const continuationPayload = {
+    type: AUDIT_TYPE,
+    siteId: site.getId(),
+    auditContext: {
+      next: 'runCrawlDetectionBatch',
+      auditId,
+      auditType: audit.getAuditType(),
+      fullAuditRef: audit.getFullAuditRef(),
+      scrapeJobId,
+      batchStartIndex: nextBatchIndex,
+    },
+  };
+
+  for (let attempt = 0; attempt < maxRetries; attempt += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await sqs.sendMessage(env.AUDIT_JOBS_QUEUE_URL, continuationPayload);
+      log.info(`Continuation message sent successfully for batch ${Math.floor(nextBatchIndex / batchSize)} (attempt ${attempt + 1})`);
+      return;
+    } catch (error) {
+      if (attempt === maxRetries - 1) {
+        log.error(`Failed to send continuation after ${maxRetries} attempts: ${error.message}`);
+        log.error(`MANUAL ACTION REQUIRED: Resume audit ${auditId} from batchIndex ${nextBatchIndex}`);
+        log.error(`Batch ${Math.floor(nextBatchIndex / batchSize) - 1} is saved. Audit can be resumed.`);
+        throw new Error(`Continuation message failed after retries: ${error.message}`);
+      }
+      log.warn(`Continuation message send failed (attempt ${attempt + 1}), retrying...`);
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => {
+        setTimeout(resolve, 1000 * (attempt + 1));
+      }); // Exponential backoff
+    }
+  }
+}
+
+/**
+ * Run crawl-based detection in batches to avoid Lambda timeout.
+ * This is the terminal step that processes batchSize pages at a time,
+ * loops back to itself via SQS until all pages are processed, then completes
+ * the audit by merging results and generating opportunities.
+ *
+ * State is stored across S3 keys:
+ * - batches/batch-N.json: results per batch (idempotent)
+ * - cache/urls.json: shared URL cache (atomic merge via ETag)
+ * - completed.json: completed batches (atomic merge via ETag)
+ *
+ * SQS message only contains minimal info (batchStartIndex), caches are loaded from S3.
+ */
+export async function runCrawlDetectionBatch(context) {
+  const startTime = Date.now(); // Track Lambda execution time
+  const {
+    log: baseLog, site, audit, auditContext, sqs, env,
+  } = context;
+
+  const scrapeResultPaths = context.scrapeResultPaths ?? new Map();
+  const scrapeJobId = context.scrapeJobId || 'N/A';
+  const auditId = audit.getId();
+  const batchStartIndex = auditContext?.batchStartIndex || 0;
+  const totalPages = scrapeResultPaths.size;
+  const batchSize = getBatchSize(site);
+  const minTimeNeeded = getLinkCheckerMinTimeNeededMs(site);
+  const estimatedTotalBatches = Math.ceil(totalPages / batchSize);
+  const currentBatchNum = Math.floor(batchStartIndex / batchSize);
+
+  // Create logger with batch context for better log correlation
+  const log = createContextLogger(baseLog, {
+    auditType: AUDIT_TYPE,
+    siteId: site.getId(),
+    auditId,
+    batchNum: currentBatchNum,
+  });
+
+  log.info(`====== Crawl Detection Batch ${currentBatchNum + 1}/${estimatedTotalBatches || 1} ======`);
+  log.info(`scrapeJobId: ${scrapeJobId}, auditId: ${auditId}`);
+  log.info(`Total pages: ${totalPages}, Batch size: ${batchSize}, Start index: ${batchStartIndex}`);
+
+  // Log timeout status
+  const timeoutStatus = getTimeoutStatus(startTime);
+  log.debug(`Timeout status: ${timeoutStatus.percentUsed.toFixed(1)}% used, ${(timeoutStatus.safeTimeRemaining / 1000).toFixed(0)}s safe time remaining`);
+
+  // Special mode: If triggered to start LinkChecker directly
+  if (auditContext?.startLinkChecker) {
+    log.info('Starting LinkChecker detection (triggered via SQS for fresh Lambda)');
+    return fetchLinkCheckerLogsStep(context);
+  }
+
+  // Special mode: If triggered to resume LinkChecker polling
+  if (auditContext?.resumePolling) {
+    log.info('Resuming LinkChecker polling (continuation from previous Lambda)');
+    return resumeLinkCheckerPollingStep(context);
+  }
+
+  // Handle case with no scraped content
+  if (scrapeResultPaths.size === 0) {
+    log.info('No scraped content available, proceeding to LinkChecker detection');
+    // Direct call - sufficient time in this scenario (no batch processing done)
+    return fetchLinkCheckerLogsStep({ ...context, skipCrawlDetection: true });
+  }
+
+  // Check if batchStartIndex is already beyond total pages
+  if (batchStartIndex >= totalPages) {
+    log.info(`Batch start index (${batchStartIndex}) >= total pages (${totalPages}), all batches complete`);
+    // Check if we have enough time left for LinkChecker detection
+    const currentTimeoutStatus = getTimeoutStatus(startTime);
+    if (currentTimeoutStatus.safeTimeRemaining < minTimeNeeded) {
+      log.warn(`Only ${Math.floor(currentTimeoutStatus.safeTimeRemaining / 1000)}s remaining, deferring LinkChecker to fresh Lambda`);
+      await sqs.sendMessage(env.AUDIT_JOBS_QUEUE_URL, {
+        type: AUDIT_TYPE,
+        siteId: site.getId(),
+        auditContext: {
+          ...auditContext,
+          next: 'runCrawlDetectionBatch',
+          startLinkChecker: true, // Flag to jump directly to LinkChecker
+          auditId,
+          scrapeJobId,
+        },
+      });
+      return { status: 'linkchecker-deferred' };
+    }
+
+    log.info(`${Math.floor(currentTimeoutStatus.safeTimeRemaining / 1000)}s remaining, proceeding to LinkChecker in current Lambda`);
+    return fetchLinkCheckerLogsStep(context);
+  }
+
+  // Check if this batch already completed (duplicate SQS message)
+  if (await isBatchCompleted(auditId, currentBatchNum, context)) {
+    log.info(`Batch ${currentBatchNum} already completed (duplicate message), checking for continuation...`);
+
+    // Check if more batches remain
+    const hasMorePages = batchStartIndex + batchSize < totalPages;
+
+    if (hasMorePages) {
+      log.info('More batches remain, re-sending continuation message (safe duplicate)');
+      await sendContinuationWithRetry({
+        auditId,
+        nextBatchIndex: batchStartIndex + batchSize,
+        batchSize,
+        site,
+        audit,
+        scrapeJobId,
+        sqs,
+        env,
+        log,
+      });
+      return { status: 'already-completed-continuation-sent' };
+    }
+
+    log.info('All batches complete (duplicate message), checking time for LinkChecker');
+    // Check if we have enough time left for LinkChecker detection
+    const duplicateTimeoutStatus = getTimeoutStatus(startTime);
+    if (duplicateTimeoutStatus.safeTimeRemaining < minTimeNeeded) {
+      log.warn(`Only ${Math.floor(duplicateTimeoutStatus.safeTimeRemaining / 1000)}s remaining, deferring LinkChecker to fresh Lambda`);
+      await sqs.sendMessage(env.AUDIT_JOBS_QUEUE_URL, {
+        type: AUDIT_TYPE,
+        siteId: site.getId(),
+        auditContext: {
+          ...auditContext,
+          next: 'runCrawlDetectionBatch',
+          startLinkChecker: true,
+          auditId,
+          scrapeJobId,
+        },
+      });
+      return { status: 'linkchecker-deferred' };
+    }
+
+    log.info('All batches complete, proceeding to finalization');
+    return fetchLinkCheckerLogsStep(context);
+  }
+
+  // Log timeout status before processing
+  const preProcessTimeoutStatus = getTimeoutStatus(startTime);
+  log.info(`Starting batch ${currentBatchNum} - time used: ${preProcessTimeoutStatus.percentUsed.toFixed(1)}%`);
+
+  if (preProcessTimeoutStatus.isApproachingTimeout) {
+    log.warn(`Starting batch ${currentBatchNum} with limited time remaining (${Math.floor(preProcessTimeoutStatus.safeTimeRemaining / 1000)}s)`);
+    log.warn('If timeout occurs, SQS will retry this batch (idempotent processing)');
+  }
+
+  // Load cache for this batch
+  const { brokenUrlsCache, workingUrlsCache } = await loadCache(auditId, context);
+  log.info(`Loaded cache: ${brokenUrlsCache.length} broken, ${workingUrlsCache.length} working URLs`);
+
+  // Process this batch
+  log.info(`Processing batch ${currentBatchNum}...`);
+  const batchResult = await detectBrokenLinksFromCrawlBatch({
+    scrapeResultPaths,
+    batchStartIndex,
+    batchSize,
+    initialBrokenUrls: brokenUrlsCache,
+    initialWorkingUrls: workingUrlsCache,
+  }, context);
+
+  // Log timeout status after processing
+  const postProcessTimeoutStatus = getTimeoutStatus(startTime);
+  log.info(`Batch ${currentBatchNum} processing complete: ${batchResult.results.length} broken links, ${batchResult.pagesProcessed} pages`);
+  log.info(`Time used: ${postProcessTimeoutStatus.percentUsed.toFixed(1)}% - proceeding to save results`);
+
+  if (postProcessTimeoutStatus.isApproachingTimeout) {
+    log.warn(`Limited time remaining (${Math.floor(postProcessTimeoutStatus.safeTimeRemaining / 1000)}s), but proceeding with save operations`);
+    log.warn('S3 saves are fast and idempotent - if timeout occurs, retry will complete');
+  }
+
+  // Save results (idempotent - safe to overwrite if duplicate)
+  await saveBatchResults(
+    auditId,
+    currentBatchNum,
+    batchResult.results,
+    batchResult.pagesProcessed,
+    context,
+  );
+
+  // Update shared cache (atomic with ETag)
+  await updateCache(
+    auditId,
+    batchResult.brokenUrlsCache,
+    batchResult.workingUrlsCache,
+    context,
+  );
+
+  // Mark batch as completed
+  await markBatchCompleted(auditId, currentBatchNum, context);
+
+  log.info(`Batch ${currentBatchNum} saved successfully`);
+
+  // Check if more pages remain
+  if (batchResult.hasMorePages) {
+    const remainingPages = batchResult.totalPages - batchResult.nextBatchStartIndex;
+    log.info(`${remainingPages} pages remaining, sending continuation for batch ${currentBatchNum + 1}`);
+
+    await sendContinuationWithRetry({
+      auditId,
+      nextBatchIndex: batchResult.nextBatchStartIndex,
+      batchSize,
+      site,
+      audit,
+      scrapeJobId,
+      sqs,
+      env,
+      log,
+    });
+
+    const finalTimeoutStatus = getTimeoutStatus(startTime);
+    log.info(`Batch ${currentBatchNum} complete. Time used: ${(finalTimeoutStatus.elapsed / 1000).toFixed(1)}s (${finalTimeoutStatus.percentUsed.toFixed(1)}%)`);
+
     return { status: 'batch-continuation' };
   }
-  log.info(`All ${currentBatchNum + 1} batches complete, proceeding to merge step`);
-  return finalizeCrawlDetection(context, { skipCrawlDetection: false });
+
+  log.info(`All ${currentBatchNum + 1} batches complete, checking time for LinkChecker detection`);
+
+  // Check if we have enough time left for LinkChecker detection
+  const postBatchTimeoutStatus = getTimeoutStatus(startTime);
+  if (postBatchTimeoutStatus.safeTimeRemaining < minTimeNeeded) {
+    log.warn(`Only ${Math.floor(postBatchTimeoutStatus.safeTimeRemaining / 1000)}s remaining after batch processing, deferring LinkChecker to fresh Lambda`);
+    await sqs.sendMessage(env.AUDIT_JOBS_QUEUE_URL, {
+      type: AUDIT_TYPE,
+      siteId: site.getId(),
+      auditContext: {
+        ...auditContext,
+        next: 'runCrawlDetectionBatch',
+        startLinkChecker: true, // Special flag to jump to LinkChecker
+        auditId,
+        scrapeJobId,
+      },
+    });
+    return { status: 'linkchecker-deferred' };
+  }
+
+  log.info(`All ${currentBatchNum + 1} batches complete, proceeding to finalization`);
+  log.info(`${Math.floor(postBatchTimeoutStatus.safeTimeRemaining / 1000)}s remaining, proceeding to LinkChecker in current Lambda`);
+  return fetchLinkCheckerLogsStep(context);
 }
 
 /**
@@ -890,7 +1577,7 @@ export async function runCrawlDetectionBatch(context) {
  * 1. runAuditAndSubmitForScraping - RUM detection, fetches Ahrefs top pages directly,
  *    merges with includedURLs, submits to scrape client
  * 2. runCrawlDetectionBatch - Process pages in batches (terminal step)
- *    - Processes PAGES_PER_BATCH pages per Lambda invocation
+ *    - Processes configurable batch size per Lambda invocation
  *    - Stores batch results in S3 with broken/working URL caches
  *    - Loops back to itself via AUDIT_JOBS_QUEUE until all pages processed
  *    - When complete, internally merges results and generates opportunities

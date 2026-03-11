@@ -95,7 +95,7 @@ function isStaticAsset(url) {
  * Checks a link using HEAD request (faster than GET)
  * @param {string} url - The URL to check
  * @param {Object} log - Logger instance
- * @returns {Promise<boolean|null>} True if broken, false if accessible, null if inconclusive
+ * @returns {Promise<Object|null>} Result object with metadata, or null if inconclusive
  */
 async function checkLinkWithHead(url, log) {
   try {
@@ -107,14 +107,19 @@ async function checkLinkWithHead(url, log) {
       },
     });
     const { status } = headResponse;
+    const contentType = headResponse.headers.get('content-type') || null;
 
     if (status < 400) {
-      return false;
+      return {
+        isBroken: false, httpStatus: status, statusBucket: '2xx-3xx', contentType,
+      };
     }
 
     if (status === 404) {
       log.info(`✗ BROKEN LINK FOUND: ${url} (HEAD ${status})`);
-      return true;
+      return {
+        isBroken: true, httpStatus: status, statusBucket: '4xx', contentType,
+      };
     }
 
     // For auth errors (401, 403), return null to trigger GET verification
@@ -123,7 +128,9 @@ async function checkLinkWithHead(url, log) {
     // Timeout could be rate limiting, treat as accessible
     if (isTimeoutError(headError)) {
       log.info(`⏱ TIMEOUT: ${url} (HEAD request timed out after ${LINK_TIMEOUT}ms, assuming accessible)`);
-      return false;
+      return {
+        isBroken: false, httpStatus: 'timeout', statusBucket: 'timeout', contentType: null,
+      };
     }
 
     return null;
@@ -135,7 +142,7 @@ async function checkLinkWithHead(url, log) {
  * @param {string} url - The URL to check
  * @param {boolean} isAsset - Whether the URL is a static asset
  * @param {Object} log - Logger instance
- * @returns {Promise<boolean>} True if broken, false if accessible
+ * @returns {Promise<Object>} Result object with metadata
  */
 async function checkLinkWithGet(url, isAsset, log) {
   try {
@@ -154,9 +161,21 @@ async function checkLinkWithGet(url, isAsset, log) {
       headers: getHeaders,
     });
     const { status } = getResponse;
+    const contentType = getResponse.headers.get('content-type') || null;
+
+    let statusBucket;
+    if (status >= 500) {
+      statusBucket = '5xx';
+    } else if (status >= 400) {
+      statusBucket = '4xx';
+    } else {
+      statusBucket = '2xx-3xx';
+    }
 
     if (status < 400) {
-      return false;
+      return {
+        isBroken: false, httpStatus: status, statusBucket, contentType,
+      };
     }
 
     if (status >= 400 && status < 500 && status !== 404) {
@@ -167,11 +186,15 @@ async function checkLinkWithGet(url, isAsset, log) {
     if (isBroken) {
       log.info(`✗ BROKEN LINK FOUND: ${url} (GET ${status})`);
     }
-    return isBroken;
+    return {
+      isBroken, httpStatus: status, statusBucket, contentType,
+    };
   } catch (getError) {
     if (isTimeoutError(getError)) {
       log.info(`⏱ TIMEOUT: ${url} (GET request timed out after ${LINK_TIMEOUT}ms, assuming accessible)`);
-      return false;
+      return {
+        isBroken: false, httpStatus: 'timeout', statusBucket: 'timeout', contentType: null,
+      };
     }
 
     let errorMessage = getError.message || 'Unknown error';
@@ -187,14 +210,17 @@ async function checkLinkWithGet(url, isAsset, log) {
     }
 
     log.error(`✗ BROKEN LINK FOUND: ${url} (ERROR: ${errorMessage})`);
-    return true;
+    return {
+      isBroken: true, httpStatus: 'error', statusBucket: 'network-error', contentType: null,
+    };
   }
 }
 
 /**
  * Checks if a URL is inaccessible by attempting to fetch it.
- * Returns true only when statusCode is 404 or GET request throws (network/other error).
- * Other 4xx (401, 403, 410) and 5xx are not reported as broken; timeouts are treated as accessible.
+ * Returns validation object with metadata when statusCode is 404 or GET request throws
+ * (network/other error). Other 4xx (401, 403, 410) and 5xx are not reported as broken;
+ * timeouts are treated as accessible.
  *
  * Strategy: HEAD first (faster), fallback to GET if inconclusive.
  * Static assets skip HEAD (often fail) and use GET with Range header.
@@ -202,7 +228,8 @@ async function checkLinkWithGet(url, isAsset, log) {
  * @param {string} url - The URL to validate
  * @param {Object} baseLog - Base logger object
  * @param {string} siteId - Site ID for logging context
- * @returns {Promise<boolean>} True if inaccessible, false if accessible
+ * @returns {Promise<Object>} Validation result with
+ *   { isBroken, httpStatus, statusBucket, contentType }
  */
 export async function isLinkInaccessible(url, baseLog, siteId) {
   const log = createAuditLogger(baseLog, AUDIT_TYPE, siteId);

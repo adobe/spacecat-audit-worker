@@ -68,18 +68,30 @@ const AUDIT_RESULT_DATA_WITH_PRIORITY = [
     urlTo: 'https://www.petplace.com/a01',
     urlFrom: 'https://www.petplace.com/a02nf',
     priority: 'high',
+    detectionSource: 'rum',
+    httpStatus: 404,
+    statusBucket: '4xx',
+    contentType: 'text/html; charset=utf-8',
   },
   {
     trafficDomain: 1200,
     urlTo: 'https://www.petplace.com/ax02',
     urlFrom: 'https://www.petplace.com/ax02nf',
     priority: 'medium',
+    detectionSource: 'rum',
+    httpStatus: 404,
+    statusBucket: '4xx',
+    contentType: 'text/html; charset=utf-8',
   },
   {
     trafficDomain: 200,
     urlTo: 'https://www.petplace.com/a01',
     urlFrom: 'https://www.petplace.com/a01nf',
     priority: 'low',
+    detectionSource: 'rum',
+    httpStatus: 404,
+    statusBucket: '4xx',
+    contentType: 'text/html; charset=utf-8',
   },
 ];
 const AUDIT_RESULT_DATA_WITH_SUGGESTIONS = [
@@ -203,6 +215,39 @@ describe('Broken internal links audit', () => {
     );
   }).timeout(5000);
 
+  it('broken-internal-links audit resolves finalUrl when context.finalUrl is missing', async () => {
+    const resolvedFinalUrl = 'www.resolved-example.com';
+    const resolverStub = sinon.stub().resolves(resolvedFinalUrl);
+    const rumQueryStub = sinon.stub().resolves([]);
+
+    const { internalLinksAuditRunner: mockedRunner } = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/common/base-audit.js': {
+        wwwUrlResolver: resolverStub,
+      },
+      '@adobe/spacecat-shared-rum-api-client': {
+        default: {
+          createFrom: () => ({
+            query: rumQueryStub,
+          }),
+        },
+      },
+    });
+
+    const contextWithoutFinalUrl = {
+      ...context,
+      finalUrl: undefined,
+      rumApiClient: undefined,
+    };
+
+    const result = await mockedRunner('ignored-url', contextWithoutFinalUrl, site);
+
+    expect(resolverStub).to.have.been.calledOnceWith(site, contextWithoutFinalUrl);
+    expect(rumQueryStub).to.have.been.calledOnce;
+    expect(result.auditResult.finalUrl).to.equal(resolvedFinalUrl);
+    expect(result.auditResult.success).to.equal(true);
+    expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
+  }).timeout(5000);
+
   it('broken-internal-links audit runs ans throws error incase of error in audit', async () => {
     context.rumApiClient.query.rejects(new Error('error'));
     expect(await internalLinksAuditRunner(
@@ -243,7 +288,7 @@ describe('Broken internal links audit', () => {
           if (url === 'https://www.example.com/catastrophic-error') {
             throw new Error('Database connection failed');
           }
-          return true;
+          return { isBroken: true, httpStatus: 404, statusBucket: '4xx', contentType: 'text/html' };
         },
         calculatePriority: (links) => links.map((l) => ({ ...l, priority: 'high' })),
         calculateKpiDeltasForAudit: () => ({ projectedTrafficLost: 0, projectedTrafficValue: 0 }),
@@ -359,14 +404,34 @@ describe('Broken internal links audit', () => {
     expect(result.siteId).to.equal(site.getId());
     expect(result.type).to.equal('broken-internal-links');
     
-    // CRITICAL: Verify scraper configuration for dynamic content
+    // CRITICAL: Verify scraper configuration for broken links detection
     expect(result.processingType).to.equal('default');
     expect(result.options).to.be.an('object');
-    expect(result.options.enableJavascript).to.equal(true); // CRITICAL: JavaScript must be enabled
-    expect(result.options.pageLoadTimeout).to.equal(30000);
-    expect(result.options.waitForSelector).to.equal('body');
-    expect(result.options.waitTimeoutForMetaTags).to.equal(5000);
-    expect(result.options.scrollToBottom).to.equal(true); // NEW: Verify scroll option
+    // JavaScript & Page Loading
+    expect(result.options.enableJavascript).to.equal(true); // JavaScript for dynamic content
+    expect(result.options.pageLoadTimeout).to.equal(30000); // 30s for slow sites
+    expect(result.options.evaluateTimeout).to.equal(10000); // 10s for evaluate operations
+    expect(result.options.waitUntil).to.equal('networkidle2'); // Wait for JS-generated links
+    expect(result.options.networkIdleTimeout).to.equal(2000); // Extra wait for late scripts
+    expect(result.options.waitForSelector).to.equal('body'); // Wait for DOM
+    // Redirect Handling
+    expect(result.options.rejectRedirects).to.equal(false); // CRITICAL: Follow redirects
+    // Content Extraction
+    expect(result.options.expandShadowDOM).to.equal(true); // Access shadow DOM links
+    // Lazy-Loaded Content
+    expect(result.options.scrollToBottom).to.equal(true); // Enable scrolling for internal-links audit
+    expect(result.options.maxScrollDurationMs).to.equal(30000); // Hard cap for total scroll duration
+    expect(result.options.clickLoadMore).to.equal(true); // Enable load-more for lazy-content coverage
+    expect(result.options.loadMoreSelector).to.equal(undefined); // No selector by default
+    expect(result.options).to.not.have.property('scrollDelay');
+    expect(result.options).to.not.have.property('maxScrolls');
+    expect(result.options).to.not.have.property('scrollIncrement');
+    expect(result.options).to.not.have.property('maxLoadMoreClicks');
+    expect(result.options).to.not.have.property('stableScrollCount');
+    // Storage & Performance
+    expect(result.options.screenshotTypes).to.deep.equal([]); // No screenshots needed
+    // Cookie Consent
+    expect(result.options.hideConsentBanners).to.equal(true); // Hide consent banner links
   }).timeout(10000);
 
   it('submitForScraping should fall back to includedURLs when database fetch fails', async () => {
@@ -690,9 +755,11 @@ describe('Broken internal links audit', () => {
     const { runAuditAndImportTopPagesStep: runAuditAndImportTopPagesStepMocked } = await esmock('../../../src/internal-links/handler.js', {
       '@adobe/spacecat-shared-rum-api-client': { default: RUMAPIClientMock },
     });
+    const testContext = { ...context };
+    delete testContext.rumApiClient;
 
     // Should throw because internalLinksAuditRunner caught an error and returned success: false
-    await expect(runAuditAndImportTopPagesStepMocked(context))
+    await expect(runAuditAndImportTopPagesStepMocked(testContext))
       .to.be.rejectedWith('Audit failed, skip scraping and suggestion generation');
 
     expect(mockRumClient.query).to.have.been.called;
@@ -722,6 +789,71 @@ describe('Broken internal links audit', () => {
     // Should throw because audit was not successful
     await expect(submitForScraping(testContext))
       .to.be.rejectedWith('Audit failed, skip scraping and suggestion generation');
+  }).timeout(10000);
+
+  it('submitForScraping should use scraper config from single config object', async () => {
+    // Mock database read
+    const mockSiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+        { getUrl: () => 'https://example.com/page1' },
+      ]),
+    };
+
+    // Mock site config with custom scraper options in the same config object
+    const mockSite = {
+      ...site,
+      getConfig: () => ({
+        getIncludedURLs: () => [],
+        getFetchConfig: () => ({}),
+        getHandlers: () => ({
+          'broken-internal-links': {
+            config: {
+              maxUrlsToProcess: 100,
+              pageLoadTimeout: 60000,
+              rejectRedirects: true,
+              waitUntil: 'load',
+              scrollToBottom: false,
+              scrollMaxDurationMs: 45000,
+              clickLoadMore: false,
+              maxLoadMoreClicks: 3,
+              loadMoreSelector: '.listings-load-more',
+              screenshotTypes: ['full-page'],
+            },
+          },
+        }),
+      }),
+    };
+
+    const mockAudit = {
+      getId: () => 'audit-123',
+      getAuditResult: () => ({ success: true }),
+      getFullAuditRef: () => 'www.example.com',
+    };
+
+    const testContext = {
+      ...context,
+      site: mockSite,
+      audit: mockAudit,
+      dataAccess: {
+        ...context.dataAccess,
+        SiteTopPage: mockSiteTopPage,
+      },
+    };
+
+    const result = await submitForScraping(testContext);
+
+    expect(result.options.pageLoadTimeout).to.equal(60000);
+    expect(result.options.rejectRedirects).to.equal(true);
+    expect(result.options.waitUntil).to.equal('load');
+    expect(result.options.scrollToBottom).to.equal(false);
+    expect(result.options.maxScrollDurationMs).to.equal(45000);
+    expect(result.options.clickLoadMore).to.equal(false);
+    expect(result.options.loadMoreSelector).to.equal('.listings-load-more');
+    expect(result.options).to.not.have.property('maxLoadMoreClicks');
+    expect(result.options.screenshotTypes).to.deep.equal(['full-page']);
+    expect(result.options.enableJavascript).to.equal(true);
+    expect(result.options.waitForSelector).to.equal('body');
+    expect(result.options.hideConsentBanners).to.equal(true);
   }).timeout(10000);
 
 });
@@ -2699,10 +2831,36 @@ describe('runCrawlDetectionBatch - Coverage Tests', () => {
       },
     };
 
-    // Mock S3 - no existing state, then save succeeds
-    s3ClientStub.send
-      .onFirstCall().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' }))
-      .onSecondCall().resolves(); // PUT succeeds
+    // Mock S3 - multiple calls for new hybrid storage pattern:
+    // 1. Load cache at batch start (GetObject) - NoSuchKey
+    // 2. Load completion tracking (GetObject) - NoSuchKey
+    // 3. Save batch results (PutObject)
+    // 4. Update cache - Load (GetObject) with ETag then Save (PutObject)
+    // 5. Mark completed - Load (GetObject) with ETag then Save (PutObject)
+    const noSuchKeyError = Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' });
+    const mockCacheResponse = {
+      Body: { transformToString: async () => JSON.stringify({ broken: [], working: [] }) },
+      ETag: '"etag-123"',
+    };
+    const mockCompletedResponse = {
+      Body: { transformToString: async () => JSON.stringify({ completed: [] }) },
+      ETag: '"etag-456"',
+    };
+
+    s3ClientStub.send.callsFake(async (command) => {
+      const commandName = command.constructor.name;
+      if (commandName === 'GetObjectCommand') {
+        // Check if it's for cache or completion tracking
+        if (command.input.Key.includes('/cache/')) {
+          return mockCacheResponse;
+        }
+        if (command.input.Key.includes('/completed.json')) {
+          return mockCompletedResponse;
+        }
+      }
+      // PutObject, DeleteObject, etc. just return success
+      return {};
+    });
 
     // Mock getObjectFromKey via esmock
     const getObjectFromKeyStub = sandbox.stub().resolves({
@@ -2725,9 +2883,9 @@ describe('runCrawlDetectionBatch - Coverage Tests', () => {
 
     // Should return batch-continuation status
     expect(result).to.deep.equal({ status: 'batch-continuation' });
-    
-    // Should log continuation payload
-    expect(mockLog.info).to.have.been.calledWith(sinon.match(/Continuation payload:/));
+
+    // Should log continuation message sent
+    expect(mockLog.info).to.have.been.calledWith(sinon.match(/Continuation message sent successfully/));
     
     // Should send SQS message
     expect(mockContext.sqs.sendMessage).to.have.been.calledOnce;
@@ -2762,19 +2920,30 @@ describe('runCrawlDetectionBatch - Coverage Tests', () => {
       ['https://example.com/page3', 'scrape/page3.json'],
     ]);
 
+    const noSuchKeyError = Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' });
     const mockS3Send = sandbox.stub()
-      .onCall(0).rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) // GET
-      .onCall(1).resolves() // PUT
-      .onCall(2).resolves({
+      // During batch processing:
+      .onCall(0).rejects(noSuchKeyError) // Load cache
+      .onCall(1).rejects(noSuchKeyError) // Load completion
+      .onCall(2).resolves() // Save batch results
+      .onCall(3).rejects(noSuchKeyError) // Update cache load
+      .onCall(4).resolves() // Update cache save
+      .onCall(5).rejects(noSuchKeyError) // Mark completed load
+      .onCall(6).resolves() // Mark completed save
+      // During finalization:
+      .onCall(7).resolves({ Contents: [{ Key: 'broken-internal-links/batch-state/audit-finish/batches/batch-0.json' }] }) // ListObjects
+      .onCall(8).resolves({
         Body: {
           transformToString: async () => JSON.stringify({
+            batchNum: 0,
             results: [],
-            brokenUrlsCache: [],
-            workingUrlsCache: [],
+            pagesProcessed: 3,
           }),
         },
-      }) // GET final
-      .onCall(3).resolves(); // DELETE
+      }) // Get batch file
+      // Cleanup:
+      .onCall(9).resolves({ Contents: [] }) // List for cleanup
+      .resolves(); // Any additional calls
 
     const mockContext = {
       log: mockLog,
@@ -2844,7 +3013,7 @@ describe('runCrawlDetectionBatch - Coverage Tests', () => {
     await module.runCrawlDetectionBatch(mockContext);
 
     // Verify completion path (lines 664-665)
-    expect(mockLog.info).to.have.been.calledWith(sinon.match(/All 1 batches complete, proceeding to merge step/));
+    expect(mockLog.info).to.have.been.calledWith(sinon.match(/All 1 batches complete, proceeding to finalization/));
   });
 
   it('should cover finalizeCrawlDetection with crawl results (lines 521-526)', async function () {
@@ -2880,16 +3049,25 @@ describe('runCrawlDetectionBatch - Coverage Tests', () => {
       },
       s3Client: {
         send: sandbox.stub()
+          // ListObjectsV2 for loadAllBatchResults
           .onCall(0).resolves({
+            Contents: [
+              { Key: 'broken-internal-links/batch-state/audit-finalize-1/batches/batch-0.json' },
+            ],
+          })
+          // GetObject for batch file
+          .onCall(1).resolves({
             Body: {
               transformToString: async () => JSON.stringify({
+                batchNum: 0,
                 results: crawlResults,
-                brokenUrlsCache: [],
-                workingUrlsCache: [],
+                pagesProcessed: 1,
               }),
             },
           })
-          .onCall(1).resolves(), // cleanup
+          // ListObjectsV2 for cleanup
+          .onCall(2).resolves({ Contents: [] })
+          .resolves(), // Any additional calls
       },
       dataAccess: {
         Audit: {
@@ -3082,16 +3260,24 @@ describe('runCrawlDetectionBatch - Coverage Tests', () => {
       },
       s3Client: {
         send: sandbox.stub()
+          // ListObjectsV2 for loadAllBatchResults
           .onCall(0).resolves({
+            Contents: [
+              { Key: 'broken-internal-links/batch-state/audit-cleanup-1/batches/batch-0.json' },
+            ],
+          })
+          // GetObject for batch file
+          .onCall(1).resolves({
             Body: {
               transformToString: async () => JSON.stringify({
+                batchNum: 0,
                 results: [],
-                brokenUrlsCache: [],
-                workingUrlsCache: [],
+                pagesProcessed: 0,
               }),
             },
           })
-          .onCall(1).rejects(new Error('Cleanup error')), // DELETE fails
+          // ListObjectsV2 for cleanup - this should fail
+          .onCall(2).rejects(new Error('Cleanup error')),
       },
       dataAccess: {
         Audit: {
@@ -3119,7 +3305,7 @@ describe('runCrawlDetectionBatch - Coverage Tests', () => {
     await finalizeCrawlDetection(mockContext, { skipCrawlDetection: false });
 
     // Verify lines 556-563: cleanup failure logged
-    expect(mockLog.warn).to.have.been.calledWith(sinon.match(/Failed to.*: Cleanup error/));
+    expect(mockLog.warn).to.have.been.calledWith(sinon.match(/Cleanup failed: Cleanup error/));
   });
 
   it('should cap reported broken links to MAX_BROKEN_LINKS_REPORTED when merge yields more than limit', async function () {
@@ -3161,16 +3347,25 @@ describe('runCrawlDetectionBatch - Coverage Tests', () => {
       },
       s3Client: {
         send: sandbox.stub()
+          // ListObjectsV2 for loadAllBatchResults
           .onCall(0).resolves({
+            Contents: [
+              { Key: 'broken-internal-links/batch-state/audit-cap/batches/batch-0.json' },
+            ],
+          })
+          // GetObject for batch file
+          .onCall(1).resolves({
             Body: {
               transformToString: async () => JSON.stringify({
+                batchNum: 0,
                 results: manyCrawlResults,
-                brokenUrlsCache: [],
-                workingUrlsCache: [],
+                pagesProcessed: overLimit,
               }),
             },
           })
-          .onCall(1).resolves(),
+          // ListObjectsV2 for cleanup
+          .onCall(2).resolves({ Contents: [] })
+          .resolves(), // Any additional calls
       },
       dataAccess: {
         Audit: {
@@ -3287,7 +3482,7 @@ describe('runCrawlDetectionBatch - Coverage Tests', () => {
 
     // Should log that batchStartIndex >= totalPages
     expect(mockLog.info).to.have.been.calledWith(
-      sinon.match(/Batch start index \(100\) >= total pages \(2\), all batches already complete/),
+      sinon.match(/Batch start index \(100\) >= total pages \(2\), all batches complete/),
     );
 
     // Should return 'complete' status
@@ -3296,5 +3491,491 @@ describe('runCrawlDetectionBatch - Coverage Tests', () => {
     // Should NOT send continuation message
     expect(mockContext.sqs.sendMessage).to.not.have.been.called;
   });
-});
 
+  it('should log timeout warnings when time is running low', async function () {
+    this.timeout(15000);
+
+    const mockLog = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/page1', 'scrape/page1.json'],
+    ]);
+
+    const mockContext = {
+      log: mockLog,
+      site: {
+        getId: () => 'test-site',
+        getBaseURL: () => 'https://example.com',
+      },
+      audit: {
+        getId: () => 'audit-123',
+        getAuditType: () => AUDIT_TYPE,
+        getFullAuditRef: () => 'site/audit-type/audit-123',
+        getAuditResult: () => ({ brokenInternalLinks: [] }),
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      },
+      auditContext: {
+        batchStartIndex: 0,
+      },
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
+      env: {
+        AUDIT_JOBS_QUEUE_URL: 'https://sqs.test/queue',
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: {
+        send: sandbox.stub().callsFake(async (command) => {
+          const commandName = command.constructor.name;
+          if (commandName === 'GetObjectCommand') {
+            const noKeyError = new Error('NoSuchKey');
+            noKeyError.name = 'NoSuchKey';
+            throw noKeyError;
+          }
+          return {};
+        }),
+      },
+      scrapeResultPaths,
+      scrapeJobId: 'scrape-123',
+      dataAccess: {
+        Audit: {
+          findById: sandbox.stub().resolves({
+            getId: () => 'audit-123',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          }),
+        },
+        Opportunity: {
+          allByAuditId: sandbox.stub().resolves([]),
+          allBySiteIdAndStatus: sandbox.stub().resolves([]),
+        },
+        Suggestion: {
+          allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    // Mock getTimeoutStatus to return approaching timeout status
+    const getTimeoutStatusStub = sandbox.stub().returns({
+      elapsed: 840000, // 14 minutes
+      percentUsed: 93.3,
+      isApproachingTimeout: true,
+      safeTimeRemaining: 60000, // 1 minute
+    });
+
+    const getObjectFromKeyStub = sandbox.stub().resolves({
+      scrapeResult: {
+        rawBody: '<html><body><main><p>Test</p></main></body></html>',
+      },
+      finalUrl: 'https://example.com/page1',
+    });
+
+    const module = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/utils/s3-utils.js': {
+        getObjectFromKey: getObjectFromKeyStub,
+      },
+      '../../../src/internal-links/batch-state.js': {
+        ...await import('../../../src/internal-links/batch-state.js'),
+        getTimeoutStatus: getTimeoutStatusStub,
+      },
+    });
+
+    await module.runCrawlDetectionBatch(mockContext);
+
+    // Should log timeout warnings for pre-process check
+    expect(mockLog.warn).to.have.been.calledWith(
+      sinon.match(/Starting batch 0 with limited time remaining/),
+    );
+    expect(mockLog.warn).to.have.been.calledWith(
+      sinon.match(/If timeout occurs, SQS will retry this batch/),
+    );
+
+    // Should log timeout warnings for post-process check
+    expect(mockLog.warn).to.have.been.calledWith(
+      sinon.match(/Limited time remaining.*but proceeding with save operations/),
+    );
+    expect(mockLog.warn).to.have.been.calledWith(
+      sinon.match(/S3 saves are fast and idempotent/),
+    );
+  });
+
+  it('should handle duplicate message when batch already completed with continuation', async function () {
+    this.timeout(15000);
+
+    const mockLog = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    const scrapeResultPaths = new Map();
+    for (let i = 0; i < 20; i += 1) {
+      scrapeResultPaths.set(`https://example.com/page${i}`, `scrape/page${i}.json`);
+    }
+
+    const mockContext = {
+      log: mockLog,
+      site: {
+        getId: () => 'test-site',
+        getBaseURL: () => 'https://example.com',
+      },
+      audit: {
+        getId: () => 'audit-123',
+        getAuditType: () => AUDIT_TYPE,
+        getFullAuditRef: () => 'site/audit-type/audit-123',
+        getAuditResult: () => ({ brokenInternalLinks: [] }),
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      },
+      auditContext: {
+        batchStartIndex: 0, // First batch
+      },
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
+      env: {
+        AUDIT_JOBS_QUEUE_URL: 'https://sqs.test/queue',
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: {
+        send: sandbox.stub().callsFake(async (command) => {
+          const commandName = command.constructor.name;
+          if (commandName === 'GetObjectCommand') {
+            // Return that batch 0 is already completed
+            if (command.input.Key.includes('/completed.json')) {
+              return {
+                Body: {
+                  transformToString: async () => JSON.stringify({ completed: [0] }),
+                },
+              };
+            }
+          }
+          return {};
+        }),
+      },
+      scrapeResultPaths,
+      scrapeJobId: 'scrape-123',
+      dataAccess: {
+        Audit: {
+          findById: sandbox.stub().resolves({
+            getId: () => 'audit-123',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          }),
+        },
+        Opportunity: {
+          allByAuditId: sandbox.stub().resolves([]),
+          allBySiteIdAndStatus: sandbox.stub().resolves([]),
+        },
+        Suggestion: {
+          allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    const result = await runCrawlDetectionBatch(mockContext);
+
+    // Should detect duplicate and send continuation
+    expect(mockLog.info).to.have.been.calledWith(
+      sinon.match(/Batch 0 already completed \(duplicate message\)/),
+    );
+    expect(mockLog.info).to.have.been.calledWith(
+      sinon.match(/More batches remain, re-sending continuation message/),
+    );
+    expect(result).to.deep.equal({ status: 'already-completed-continuation-sent' });
+    expect(mockContext.sqs.sendMessage).to.have.been.calledOnce;
+  });
+
+  it('should handle duplicate message when all batches already completed', async function () {
+    this.timeout(15000);
+
+    const mockLog = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/page1', 'scrape/page1.json'],
+    ]);
+
+    const mockContext = {
+      log: mockLog,
+      site: {
+        getId: () => 'test-site',
+        getBaseURL: () => 'https://example.com',
+      },
+      audit: {
+        getId: () => 'audit-123',
+        getAuditType: () => AUDIT_TYPE,
+        getFullAuditRef: () => 'site/audit-type/audit-123',
+        getAuditResult: () => ({ brokenInternalLinks: [] }),
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      },
+      auditContext: {
+        batchStartIndex: 0, // Only 1 batch total
+      },
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
+      env: {
+        AUDIT_JOBS_QUEUE_URL: 'https://sqs.test/queue',
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: {
+        send: sandbox.stub().callsFake(async (command) => {
+          const commandName = command.constructor.name;
+          if (commandName === 'GetObjectCommand') {
+            if (command.input.Key.includes('/completed.json')) {
+              return {
+                Body: {
+                  transformToString: async () => JSON.stringify({ completed: [0] }),
+                },
+              };
+            }
+          }
+          if (commandName === 'ListObjectsV2Command') {
+            return { Contents: [] };
+          }
+          return {};
+        }),
+      },
+      scrapeResultPaths,
+      scrapeJobId: 'scrape-123',
+      dataAccess: {
+        Audit: {
+          findById: sandbox.stub().resolves({
+            getId: () => 'audit-123',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          }),
+        },
+        Opportunity: {
+          allByAuditId: sandbox.stub().resolves([]),
+          allBySiteIdAndStatus: sandbox.stub().resolves([]),
+        },
+        Suggestion: {
+          allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    const result = await runCrawlDetectionBatch(mockContext);
+
+    // Should detect duplicate and proceed to finalization
+    expect(mockLog.info).to.have.been.calledWith(
+      sinon.match(/Batch 0 already completed \(duplicate message\)/),
+    );
+    expect(mockLog.info).to.have.been.calledWith(
+      sinon.match(/All batches complete, proceeding to finalization/),
+    );
+    expect(result).to.have.property('status', 'complete');
+  });
+
+  it('should skip finalization when internal-links already finalized', async function () {
+    this.timeout(15000);
+
+    const mockLog = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    const mockContext = {
+      log: mockLog,
+      site: {
+        getId: () => 'test-site',
+        getBaseURL: () => 'https://example.com',
+      },
+      audit: {
+        getId: () => 'audit-123',
+        getAuditType: () => AUDIT_TYPE,
+        getFullAuditRef: () => 'site/audit-type/audit-123',
+        getAuditResult: () => ({
+          brokenInternalLinks: [],
+          internalLinksFinalizedAt: '2026-03-10T00:00:00.000Z',
+        }),
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      },
+      auditContext: {
+        batchStartIndex: 0,
+      },
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
+      env: {
+        AUDIT_JOBS_QUEUE_URL: 'https://sqs.test/queue',
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: {
+        send: sandbox.stub().callsFake(async (command) => {
+          const commandName = command.constructor.name;
+          if (commandName === 'GetObjectCommand') {
+            if (command.input.Key.includes('/completed.json')) {
+              return {
+                Body: {
+                  transformToString: async () => JSON.stringify({ completed: [0] }),
+                },
+              };
+            }
+          }
+          if (commandName === 'ListObjectsV2Command') {
+            return { Contents: [] };
+          }
+          return {};
+        }),
+      },
+      scrapeResultPaths: new Map([
+        ['https://example.com/page1', 'scrape/page1.json'],
+      ]),
+      scrapeJobId: 'scrape-123',
+      dataAccess: {
+        Audit: {
+          findById: sandbox.stub().resolves({
+            getId: () => 'audit-123',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          }),
+        },
+        Opportunity: {
+          allByAuditId: sandbox.stub().resolves([]),
+          allBySiteIdAndStatus: sandbox.stub().resolves([]),
+        },
+        Suggestion: {
+          allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    const result = await runCrawlDetectionBatch(mockContext);
+    expect(result).to.deep.equal({ status: 'already-finalized' });
+    expect(mockLog.info).to.have.been.calledWith(sinon.match(/Audit already finalized/));
+  });
+
+  it('should handle SQS send failure with retries and eventual failure', async function () {
+    this.timeout(15000);
+
+    const mockLog = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    const scrapeResultPaths = new Map();
+    for (let i = 0; i < 20; i += 1) {
+      scrapeResultPaths.set(`https://example.com/page${i}`, `scrape/page${i}.json`);
+    }
+
+    const sqsSendError = new Error('SQS send failed');
+    const mockContext = {
+      log: mockLog,
+      site: {
+        getId: () => 'test-site',
+        getBaseURL: () => 'https://example.com',
+      },
+      audit: {
+        getId: () => 'audit-123',
+        getAuditType: () => AUDIT_TYPE,
+        getFullAuditRef: () => 'site/audit-type/audit-123',
+        getAuditResult: () => ({ brokenInternalLinks: [] }),
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      },
+      auditContext: {
+        batchStartIndex: 0,
+      },
+      sqs: {
+        sendMessage: sandbox.stub().rejects(sqsSendError), // Always fails
+      },
+      env: {
+        AUDIT_JOBS_QUEUE_URL: 'https://sqs.test/queue',
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: {
+        send: sandbox.stub().callsFake(async (command) => {
+          const commandName = command.constructor.name;
+          if (commandName === 'GetObjectCommand') {
+            const noKeyError = new Error('NoSuchKey');
+            noKeyError.name = 'NoSuchKey';
+            throw noKeyError;
+          }
+          return {};
+        }),
+      },
+      scrapeResultPaths,
+      scrapeJobId: 'scrape-123',
+      dataAccess: {
+        Audit: {
+          findById: sandbox.stub().resolves({
+            getId: () => 'audit-123',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          }),
+        },
+        Opportunity: {
+          allByAuditId: sandbox.stub().resolves([]),
+          allBySiteIdAndStatus: sandbox.stub().resolves([]),
+        },
+        Suggestion: {
+          allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    const getObjectFromKeyStub = sandbox.stub().resolves({
+      scrapeResult: {
+        rawBody: '<html><body><main><p>Test</p></main></body></html>',
+      },
+      finalUrl: 'https://example.com/page1',
+    });
+
+    const module = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/utils/s3-utils.js': {
+        getObjectFromKey: getObjectFromKeyStub,
+      },
+    });
+
+    await expect(module.runCrawlDetectionBatch(mockContext))
+      .to.be.rejectedWith('Continuation message failed after retries: SQS send failed');
+
+    // Should retry 3 times and log error
+    expect(mockContext.sqs.sendMessage).to.have.callCount(3);
+    expect(mockLog.warn).to.have.been.calledWith(
+      sinon.match(/Continuation message send failed \(attempt 1\), retrying/),
+    );
+    expect(mockLog.warn).to.have.been.calledWith(
+      sinon.match(/Continuation message send failed \(attempt 2\), retrying/),
+    );
+    expect(mockLog.error).to.have.been.calledWith(
+      sinon.match(/Failed to send continuation after 3 attempts: SQS send failed/),
+    );
+    expect(mockLog.error).to.have.been.calledWith(sinon.match(/MANUAL ACTION REQUIRED: Resume audit audit-123/));
+  });
+});

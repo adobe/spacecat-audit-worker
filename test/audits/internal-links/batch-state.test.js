@@ -17,19 +17,22 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import {
-  getBatchStateKey,
-  loadBatchState,
-  saveBatchState,
-  loadFinalResults,
+  saveBatchResults,
+  updateCache,
+  loadCache,
+  markBatchCompleted,
+  isBatchCompleted,
+  loadAllBatchResults,
   cleanupBatchState,
-  estimateCacheSize,
-  SQS_CACHE_SIZE_LIMIT,
+  getTimeoutStatus,
+  loadFinalResults,
+  BATCH_TIMEOUT_CONFIG,
 } from '../../../src/internal-links/batch-state.js';
 
 use(sinonChai);
 use(chaiAsPromised);
 
-describe('Batch State Module', () => {
+describe('Batch State Module - Hybrid Storage', () => {
   let sandbox;
   let mockS3Client;
   let mockContext;
@@ -60,305 +63,588 @@ describe('Batch State Module', () => {
     sandbox.restore();
   });
 
-  describe('getBatchStateKey', () => {
-    it('should generate correct S3 key for audit ID', () => {
-      const key = getBatchStateKey('audit-123');
-      expect(key).to.equal('broken-internal-links/batch-state/audit-123/state.json');
-    });
-
-    it('should handle different audit IDs', () => {
-      const key1 = getBatchStateKey('abc-def-ghi');
-      const key2 = getBatchStateKey('xyz-123-456');
-
-      expect(key1).to.equal('broken-internal-links/batch-state/abc-def-ghi/state.json');
-      expect(key2).to.equal('broken-internal-links/batch-state/xyz-123-456/state.json');
-    });
-  });
-
-  describe('loadBatchState', () => {
-    it('should load existing state from S3', async () => {
-      const existingState = {
-        results: [{ urlFrom: 'https://example.com', urlTo: 'https://example.com/broken' }],
-        brokenUrlsCache: ['https://example.com/broken'],
-        workingUrlsCache: ['https://example.com/working'],
-        lastBatchNum: 2,
-        totalPagesProcessed: 60,
-      };
-
-      mockS3Client.send.resolves({
-        Body: {
-          transformToString: () => Promise.resolve(JSON.stringify(existingState)),
-        },
-      });
-
-      const result = await loadBatchState(TEST_AUDIT_ID, mockContext);
-
-      expect(result).to.deep.equal(existingState);
-      expect(mockContext.log.debug).to.have.been.calledWith(
-        sinon.match(/Loaded existing state: 1 results, batch 2/),
-      );
-    });
-
-    it('should handle state with undefined results property', async () => {
-      const stateWithoutResults = {
-        brokenUrlsCache: ['https://example.com/broken'],
-        workingUrlsCache: ['https://example.com/working'],
-        lastBatchNum: 1,
-        // results property is missing
-      };
-
-      mockS3Client.send.resolves({
-        Body: {
-          transformToString: () => Promise.resolve(JSON.stringify(stateWithoutResults)),
-        },
-      });
-
-      const result = await loadBatchState(TEST_AUDIT_ID, mockContext);
-
-      // loadBatchState now normalizes the state
-      expect(result).to.deep.equal({
-        results: [],
-        brokenUrlsCache: ['https://example.com/broken'],
-        workingUrlsCache: ['https://example.com/working'],
-        lastBatchNum: 1,
-        totalPagesProcessed: 0,
-      });
-      expect(mockContext.log.debug).to.have.been.calledWith(
-        sinon.match(/Loaded existing state: 0 results/),
-      );
-    });
-
-    it('should handle state with lastBatchNum as 0 (falsy but valid)', async () => {
-      const stateWithZeroBatch = {
-        results: [{ url: 'test' }],
-        brokenUrlsCache: [],
-        workingUrlsCache: [],
-        lastBatchNum: 0, // 0 is falsy but valid
-      };
-
-      mockS3Client.send.resolves({
-        Body: {
-          transformToString: () => Promise.resolve(JSON.stringify(stateWithZeroBatch)),
-        },
-      });
-
-      await loadBatchState(TEST_AUDIT_ID, mockContext);
-
-      expect(mockContext.log.debug).to.have.been.calledWith(
-        sinon.match(/Loaded existing state: 1 results, batch 0/),
-      );
-    });
-
-    it('should handle state with null cache arrays', async () => {
-      const stateWithNullCaches = {
-        results: null,
-        brokenUrlsCache: null,
-        workingUrlsCache: null,
-        lastBatchNum: 0,
-      };
-
-      mockS3Client.send.resolves({
-        Body: {
-          transformToString: () => Promise.resolve(JSON.stringify(stateWithNullCaches)),
-        },
-      });
-
-      const state = await loadBatchState(TEST_AUDIT_ID, mockContext);
-
-      // loadBatchState normalizes null values to empty arrays
-      expect(state.results).to.deep.equal([]);
-      expect(state.brokenUrlsCache).to.deep.equal([]);
-      expect(state.workingUrlsCache).to.deep.equal([]);
-      expect(state.lastBatchNum).to.equal(0);
-      expect(state.totalPagesProcessed).to.equal(0);
-    });
-
-    it('should return default state when no existing state in S3', async () => {
-      const error = new Error('NoSuchKey');
-      error.name = 'NoSuchKey';
-      mockS3Client.send.rejects(error);
-
-      const result = await loadBatchState(TEST_AUDIT_ID, mockContext);
-
-      expect(result).to.deep.equal({
-        results: [],
-        brokenUrlsCache: [],
-        workingUrlsCache: [],
-        lastBatchNum: -1,
-        totalPagesProcessed: 0,
-      });
-      expect(mockContext.log.debug).to.have.been.calledWith(
-        sinon.match(/No existing state found/),
-      );
-    });
-
-    it('should throw error for non-NoSuchKey errors', async () => {
-      const error = new Error('Access Denied');
-      error.name = 'AccessDenied';
-      mockS3Client.send.rejects(error);
-
-      await expect(loadBatchState(TEST_AUDIT_ID, mockContext))
-        .to.be.rejectedWith('Access Denied');
-
-      expect(mockContext.log.error).to.have.been.calledWith(
-        sinon.match(/Failed to load state/),
-      );
-    });
-  });
-
-  describe('saveBatchState', () => {
-    it('should save state to S3', async () => {
+  describe('saveBatchResults', () => {
+    it('should save batch results to S3', async () => {
       mockS3Client.send.resolves({});
 
-      const stateParams = {
-        auditId: TEST_AUDIT_ID,
-        results: [{ urlFrom: 'https://example.com', urlTo: 'https://example.com/broken' }],
-        brokenUrlsCache: ['https://example.com/broken'],
-        workingUrlsCache: ['https://example.com/working'],
-        batchNum: 1,
-        totalPagesProcessed: 30,
-      };
+      const results = [
+        { urlFrom: 'https://example.com', urlTo: 'https://example.com/broken' },
+      ];
 
-      await saveBatchState(stateParams, mockContext);
+      await saveBatchResults(TEST_AUDIT_ID, 1, results, 10, mockContext);
 
       expect(mockS3Client.send).to.have.been.calledOnce;
+      const putCall = mockS3Client.send.firstCall.args[0];
+      expect(putCall.input.Key).to.equal(
+        'broken-internal-links/batch-state/test-audit-123/batches/batch-1.json',
+      );
       expect(mockContext.log.info).to.have.been.calledWith(
-        sinon.match(/Saved state: batch 1, 1 results/),
+        sinon.match(/Saved batch 1: 1 results, 10 pages/),
       );
     });
 
     it('should throw error on S3 save failure', async () => {
       mockS3Client.send.rejects(new Error('S3 Error'));
 
-      const stateParams = {
-        auditId: TEST_AUDIT_ID,
-        results: [],
-        brokenUrlsCache: [],
-        workingUrlsCache: [],
-        batchNum: 0,
-        totalPagesProcessed: 0,
-      };
-
-      await expect(saveBatchState(stateParams, mockContext))
+      await expect(saveBatchResults(TEST_AUDIT_ID, 1, [], 0, mockContext))
         .to.be.rejectedWith('S3 Error');
 
       expect(mockContext.log.error).to.have.been.calledWith(
-        sinon.match(/Failed to save state/),
+        sinon.match(/Failed to save batch 1/),
       );
     });
   });
 
-  describe('loadFinalResults', () => {
-    it('should load and return results from state', async () => {
-      const state = {
-        results: [
-          { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1' },
-          { urlFrom: 'https://example.com/page2', urlTo: 'https://example.com/broken2' },
-        ],
-        lastBatchNum: 3,
-      };
+  describe('updateCache', () => {
+    it('should create new cache when none exists', async () => {
+      const noKeyError = new Error('NoSuchKey');
+      noKeyError.name = 'NoSuchKey';
+      mockS3Client.send.onFirstCall().rejects(noKeyError);
+      mockS3Client.send.onSecondCall().resolves({});
 
-      mockS3Client.send.resolves({
-        Body: {
-          transformToString: () => Promise.resolve(JSON.stringify(state)),
-        },
-      });
+      await updateCache(TEST_AUDIT_ID, ['broken1'], ['working1'], mockContext);
 
-      const results = await loadFinalResults(TEST_AUDIT_ID, mockContext);
-
-      expect(results).to.deep.equal(state.results);
+      expect(mockS3Client.send).to.have.been.calledTwice;
       expect(mockContext.log.info).to.have.been.calledWith(
-        sinon.match(/Loaded final results: 2 broken links from 4 batches/),
+        sinon.match(/Cache updated.*1 broken, 1 working/),
       );
     });
 
-    it('should return empty array when no state exists', async () => {
-      const error = new Error('NoSuchKey');
-      error.name = 'NoSuchKey';
-      mockS3Client.send.rejects(error);
+    it('should merge with existing cache', async () => {
+      const existingCache = {
+        broken: ['existing-broken'],
+        working: ['existing-working'],
+      };
 
-      const results = await loadFinalResults(TEST_AUDIT_ID, mockContext);
+      mockS3Client.send.onFirstCall().resolves({
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify(existingCache)),
+        },
+        ETag: '"etag-123"',
+      });
+      mockS3Client.send.onSecondCall().resolves({});
 
-      expect(results).to.deep.equal([]);
+      await updateCache(TEST_AUDIT_ID, ['new-broken'], ['new-working'], mockContext);
+
+      expect(mockS3Client.send).to.have.been.calledTwice;
+      const putCall = mockS3Client.send.secondCall.args[0];
+      expect(putCall.input.IfMatch).to.equal('"etag-123"');
+      expect(mockContext.log.info).to.have.been.calledWith(
+        sinon.match(/Cache updated.*2 broken, 2 working/),
+      );
     });
 
-    it('should handle state with undefined results', async () => {
-      const state = {
-        lastBatchNum: 1,
-        // results is undefined
+    it('should retry on PreconditionFailed', async () => {
+      const existingCache = { broken: ['b1'], working: ['w1'] };
+
+      // First attempt: load succeeds, put fails with PreconditionFailed
+      mockS3Client.send.onCall(0).resolves({
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify(existingCache)),
+        },
+        ETag: '"old-etag"',
+      });
+      const preconditionError = new Error('PreconditionFailed');
+      preconditionError.name = 'PreconditionFailed';
+      mockS3Client.send.onCall(1).rejects(preconditionError);
+
+      // Second attempt: load with updated cache, put succeeds
+      mockS3Client.send.onCall(2).resolves({
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify({
+            broken: ['b1', 'b2'],
+            working: ['w1', 'w2'],
+          })),
+        },
+        ETag: '"new-etag"',
+      });
+      mockS3Client.send.onCall(3).resolves({});
+
+      await updateCache(TEST_AUDIT_ID, ['b3'], ['w3'], mockContext);
+
+      expect(mockS3Client.send).to.have.callCount(4);
+      expect(mockContext.log.warn).to.have.been.calledWith(
+        sinon.match(/Cache conflict.*attempt 1.*retrying/),
+      );
+    });
+
+    it('should deduplicate URLs in cache', async () => {
+      const noKeyError = new Error('NoSuchKey');
+      noKeyError.name = 'NoSuchKey';
+      mockS3Client.send.onFirstCall().rejects(noKeyError);
+      mockS3Client.send.onSecondCall().resolves({});
+
+      // Add duplicate URLs
+      await updateCache(
+        TEST_AUDIT_ID,
+        ['broken1', 'broken1', 'broken2'],
+        ['working1', 'working1'],
+        mockContext,
+      );
+
+      const putCall = mockS3Client.send.secondCall.args[0];
+      const savedData = JSON.parse(putCall.input.Body);
+      expect(savedData.broken).to.have.lengthOf(2);
+      expect(savedData.working).to.have.lengthOf(1);
+    });
+
+    it('should throw error after max retries exhausted', async () => {
+      const existingCache = { broken: [], working: [] };
+      const preconditionError = new Error('PreconditionFailed');
+      preconditionError.name = 'PreconditionFailed';
+
+      // All attempts fail with PreconditionFailed
+      mockS3Client.send.callsFake(async (command) => {
+        const commandName = command.constructor.name;
+        if (commandName === 'GetObjectCommand') {
+          return {
+            Body: {
+              transformToString: () => Promise.resolve(JSON.stringify(existingCache)),
+            },
+            ETag: '"etag"',
+          };
+        }
+        // All PUT attempts fail
+        throw preconditionError;
+      });
+
+      await expect(updateCache(TEST_AUDIT_ID, ['b1'], ['w1'], mockContext))
+        .to.be.rejectedWith('PreconditionFailed');
+
+      expect(mockContext.log.error).to.have.been.calledWith(
+        sinon.match(/Cache update failed after 5 attempts: PreconditionFailed/),
+      );
+    });
+
+    it('should throw error when maxRetries is 0', async () => {
+      // Edge case: maxRetries = 0 means no attempts
+      await expect(updateCache(TEST_AUDIT_ID, ['b1'], ['w1'], mockContext, 0))
+        .to.be.rejectedWith('Failed to update cache after 0 attempts');
+    });
+  });
+
+  describe('loadCache', () => {
+    it('should load existing cache', async () => {
+      const cache = {
+        broken: ['broken1', 'broken2'],
+        working: ['working1'],
       };
 
       mockS3Client.send.resolves({
         Body: {
-          transformToString: () => Promise.resolve(JSON.stringify(state)),
+          transformToString: () => Promise.resolve(JSON.stringify(cache)),
         },
       });
 
-      const results = await loadFinalResults(TEST_AUDIT_ID, mockContext);
+      const result = await loadCache(TEST_AUDIT_ID, mockContext);
+
+      expect(result.brokenUrlsCache).to.have.lengthOf(2);
+      expect(result.workingUrlsCache).to.have.lengthOf(1);
+      expect(mockContext.log.debug).to.have.been.calledWith(
+        sinon.match(/Loaded cache: 2 broken, 1 working/),
+      );
+    });
+
+    it('should return empty cache when none exists', async () => {
+      const noKeyError = new Error('NoSuchKey');
+      noKeyError.name = 'NoSuchKey';
+      mockS3Client.send.rejects(noKeyError);
+
+      const result = await loadCache(TEST_AUDIT_ID, mockContext);
+
+      expect(result.brokenUrlsCache).to.deep.equal([]);
+      expect(result.workingUrlsCache).to.deep.equal([]);
+      expect(mockContext.log.debug).to.have.been.calledWith(
+        sinon.match(/No cache found/),
+      );
+    });
+
+    it('should throw error for non-NoSuchKey S3 errors', async () => {
+      const s3Error = new Error('AccessDenied');
+      s3Error.name = 'AccessDenied';
+      mockS3Client.send.rejects(s3Error);
+
+      await expect(loadCache(TEST_AUDIT_ID, mockContext))
+        .to.be.rejectedWith('AccessDenied');
+    });
+
+    it('should handle missing broken/working arrays in cache', async () => {
+      // Cache without broken/working arrays (fallback to empty arrays)
+      mockS3Client.send.resolves({
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify({})),
+        },
+        ETag: '"etag-123"',
+      });
+
+      const result = await loadCache(TEST_AUDIT_ID, mockContext);
+
+      expect(result.brokenUrlsCache).to.deep.equal([]);
+      expect(result.workingUrlsCache).to.deep.equal([]);
+    });
+  });
+
+  describe('markBatchCompleted', () => {
+    it('should mark batch as completed', async () => {
+      const noKeyError = new Error('NoSuchKey');
+      noKeyError.name = 'NoSuchKey';
+      mockS3Client.send.onFirstCall().rejects(noKeyError);
+      mockS3Client.send.onSecondCall().resolves({});
+
+      await markBatchCompleted(TEST_AUDIT_ID, 1, mockContext);
+
+      expect(mockS3Client.send).to.have.been.calledTwice;
+      const putCall = mockS3Client.send.secondCall.args[0];
+      const savedData = JSON.parse(putCall.input.Body);
+      expect(savedData.completed).to.deep.equal([1]);
+      expect(mockContext.log.debug).to.have.been.calledWith(
+        sinon.match(/Marked batch 1 as completed/),
+      );
+    });
+
+    it('should add to existing completed batches', async () => {
+      const existing = { completed: [0, 1, 2] };
+
+      mockS3Client.send.onFirstCall().resolves({
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify(existing)),
+        },
+        ETag: '"etag-123"',
+      });
+      mockS3Client.send.onSecondCall().resolves({});
+
+      await markBatchCompleted(TEST_AUDIT_ID, 3, mockContext);
+
+      const putCall = mockS3Client.send.secondCall.args[0];
+      const savedData = JSON.parse(putCall.input.Body);
+      expect(savedData.completed).to.deep.equal([0, 1, 2, 3]);
+    });
+
+    it('should deduplicate batch numbers', async () => {
+      const existing = { completed: [0, 1] };
+
+      mockS3Client.send.onFirstCall().resolves({
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify(existing)),
+        },
+        ETag: '"etag-123"',
+      });
+      mockS3Client.send.onSecondCall().resolves({});
+
+      await markBatchCompleted(TEST_AUDIT_ID, 1, mockContext);
+
+      const putCall = mockS3Client.send.secondCall.args[0];
+      const savedData = JSON.parse(putCall.input.Body);
+      expect(savedData.completed).to.deep.equal([0, 1]);
+    });
+
+    it('should throw error after max retries for markBatchCompleted', async () => {
+      const existing = { completed: [0] };
+      const preconditionError = new Error('PreconditionFailed');
+      preconditionError.name = 'PreconditionFailed';
+
+      // All attempts fail with PreconditionFailed
+      mockS3Client.send.callsFake(async (command) => {
+        const commandName = command.constructor.name;
+        if (commandName === 'GetObjectCommand') {
+          return {
+            Body: {
+              transformToString: () => Promise.resolve(JSON.stringify(existing)),
+            },
+            ETag: '"etag"',
+          };
+        }
+        // All PUT attempts fail
+        throw preconditionError;
+      });
+
+      await expect(markBatchCompleted(TEST_AUDIT_ID, 1, mockContext))
+        .to.be.rejectedWith('PreconditionFailed');
+    });
+
+    it('should handle missing completed array in completion file', async () => {
+      // Completion file without completed array (fallback to empty array)
+      mockS3Client.send.onFirstCall().resolves({
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify({})),
+        },
+        ETag: '"etag-123"',
+      });
+      mockS3Client.send.onSecondCall().resolves({});
+
+      await markBatchCompleted(TEST_AUDIT_ID, 1, mockContext);
+
+      const putCall = mockS3Client.send.secondCall.args[0];
+      const savedData = JSON.parse(putCall.input.Body);
+      expect(savedData.completed).to.deep.equal([1]);
+    });
+  });
+
+  describe('isBatchCompleted', () => {
+    it('should return true if batch is completed', async () => {
+      const completed = { completed: [0, 1, 2] };
+
+      mockS3Client.send.resolves({
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify(completed)),
+        },
+      });
+
+      const result = await isBatchCompleted(TEST_AUDIT_ID, 1, mockContext);
+
+      expect(result).to.be.true;
+    });
+
+    it('should return false if batch is not completed', async () => {
+      const completed = { completed: [0, 2] };
+
+      mockS3Client.send.resolves({
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify(completed)),
+        },
+      });
+
+      const result = await isBatchCompleted(TEST_AUDIT_ID, 1, mockContext);
+
+      expect(result).to.be.false;
+    });
+
+    it('should return false when no completion file exists', async () => {
+      const noKeyError = new Error('NoSuchKey');
+      noKeyError.name = 'NoSuchKey';
+      mockS3Client.send.rejects(noKeyError);
+
+      const result = await isBatchCompleted(TEST_AUDIT_ID, 1, mockContext);
+
+      expect(result).to.be.false;
+    });
+
+    it('should return false and log error on S3 error', async () => {
+      const s3Error = new Error('S3 Service Error');
+      s3Error.name = 'ServiceUnavailable';
+      mockS3Client.send.rejects(s3Error);
+
+      const result = await isBatchCompleted(TEST_AUDIT_ID, 1, mockContext);
+
+      expect(result).to.be.false;
+      expect(mockContext.log.error).to.have.been.calledWith(
+        sinon.match(/Error checking batch completion: S3 Service Error/),
+      );
+    });
+  });
+
+  describe('loadAllBatchResults', () => {
+    it('should load all batch results', async () => {
+      const batch0 = {
+        batchNum: 0,
+        results: [{ urlFrom: 'page1', urlTo: 'broken1' }],
+        pagesProcessed: 10,
+      };
+      const batch1 = {
+        batchNum: 1,
+        results: [{ urlFrom: 'page2', urlTo: 'broken2' }],
+        pagesProcessed: 10,
+      };
+
+      // Mock listObjectsV2 to return 2 batches
+      mockS3Client.send.onCall(0).resolves({
+        Contents: [
+          { Key: 'broken-internal-links/batch-state/test-audit-123/batches/batch-0.json' },
+          { Key: 'broken-internal-links/batch-state/test-audit-123/batches/batch-1.json' },
+        ],
+      });
+
+      // Mock getObject calls for each batch (Promise.all runs them in parallel)
+      mockS3Client.send.onCall(1).resolves({
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify(batch0)),
+        },
+      });
+      mockS3Client.send.onCall(2).resolves({
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify(batch1)),
+        },
+      });
+
+      const results = await loadAllBatchResults(TEST_AUDIT_ID, mockContext, Date.now());
+
+      expect(results).to.have.lengthOf(2);
+      expect(mockContext.log.info).to.have.been.calledWith(
+        sinon.match(/Loading 2 batch files/),
+      );
+      expect(mockContext.log.info).to.have.been.calledWith(
+        sinon.match(/Merged 2 batches: 2 unique broken links/),
+      );
+    });
+
+    it('should return empty array when no batch files exist', async () => {
+      mockS3Client.send.resolves({ Contents: [] });
+
+      const results = await loadAllBatchResults(TEST_AUDIT_ID, mockContext, Date.now());
 
       expect(results).to.deep.equal([]);
+      expect(mockContext.log.info).to.have.been.calledWith(
+        sinon.match(/No batch files found/),
+      );
+    });
+
+    it('should deduplicate results from multiple batches', async () => {
+      const batch0 = {
+        batchNum: 0,
+        results: [
+          { urlFrom: 'page1', urlTo: 'broken1' },
+          { urlFrom: 'page2', urlTo: 'broken2' },
+        ],
+      };
+      const batch1 = {
+        batchNum: 1,
+        results: [
+          { urlFrom: 'page1', urlTo: 'broken1' }, // Duplicate
+          { urlFrom: 'page3', urlTo: 'broken3' },
+        ],
+      };
+
+      mockS3Client.send.onCall(0).resolves({
+        Contents: [
+          { Key: 'broken-internal-links/batch-state/test-audit-123/batches/batch-0.json' },
+          { Key: 'broken-internal-links/batch-state/test-audit-123/batches/batch-1.json' },
+        ],
+      });
+
+      mockS3Client.send.onCall(1).resolves({
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify(batch0)),
+        },
+      });
+      mockS3Client.send.onCall(2).resolves({
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify(batch1)),
+        },
+      });
+
+      const results = await loadAllBatchResults(TEST_AUDIT_ID, mockContext, Date.now());
+
+      expect(results).to.have.lengthOf(3); // 3 unique links (duplicate removed)
+    });
+
+    it('should throw error when approaching timeout', async () => {
+      // Start time 14 minutes ago (approaching 15 min timeout)
+      const startTime = Date.now() - (14 * 60 * 1000);
+
+      await expect(loadAllBatchResults(TEST_AUDIT_ID, mockContext, startTime))
+        .to.be.rejectedWith('Timeout approaching - cannot complete merge operation');
+
+      expect(mockContext.log.error).to.have.been.calledWith(
+        sinon.match(/Approaching timeout, cannot safely load all batch results/),
+      );
     });
   });
 
   describe('cleanupBatchState', () => {
-    it('should delete state file from S3', async () => {
-      mockS3Client.send.resolves({});
+    it('should delete all batch state files', async () => {
+      // Mock list response
+      mockS3Client.send.onCall(0).resolves({
+        Contents: [
+          { Key: 'broken-internal-links/batch-state/test-audit-123/batches/batch-0.json' },
+          { Key: 'broken-internal-links/batch-state/test-audit-123/batches/batch-1.json' },
+          { Key: 'broken-internal-links/batch-state/test-audit-123/cache/urls.json' },
+        ],
+      });
+
+      // Mock delete responses
+      mockS3Client.send.onCall(1).resolves({});
+      mockS3Client.send.onCall(2).resolves({});
+      mockS3Client.send.onCall(3).resolves({});
 
       await cleanupBatchState(TEST_AUDIT_ID, mockContext);
 
-      expect(mockS3Client.send).to.have.been.calledOnce;
+      // Should call: 1 list + 3 deletes = 4 calls
+      expect(mockS3Client.send).to.have.callCount(4);
       expect(mockContext.log.info).to.have.been.calledWith(
-        sinon.match(/Cleaning up state file/),
+        sinon.match(/Cleaning up 3 files/),
       );
       expect(mockContext.log.info).to.have.been.calledWith(
         sinon.match(/Cleanup complete/),
       );
     });
 
-    it('should handle delete failure gracefully', async () => {
+    it('should handle delete failures gracefully', async () => {
       mockS3Client.send.rejects(new Error('Delete failed'));
 
       // Should not throw
       await cleanupBatchState(TEST_AUDIT_ID, mockContext);
 
       expect(mockContext.log.warn).to.have.been.calledWith(
-        sinon.match(/Failed to delete state file/),
+        sinon.match(/Cleanup failed/),
       );
     });
   });
 
-  describe('estimateCacheSize', () => {
-    it('should calculate combined size of cache arrays', () => {
-      const brokenUrls = ['https://example.com/broken1', 'https://example.com/broken2'];
-      const workingUrls = ['https://example.com/working1'];
+  describe('getTimeoutStatus', () => {
+    it('should calculate timeout status correctly', () => {
+      const startTime = Date.now() - (5 * 60 * 1000); // 5 minutes ago
 
-      const size = estimateCacheSize(brokenUrls, workingUrls);
+      const status = getTimeoutStatus(startTime);
 
-      const expectedSize = JSON.stringify(brokenUrls).length + JSON.stringify(workingUrls).length;
-      expect(size).to.equal(expectedSize);
+      expect(status.elapsed).to.be.closeTo(5 * 60 * 1000, 100);
+      expect(status.percentUsed).to.be.closeTo((5 / 15) * 100, 1);
+      expect(status.isApproachingTimeout).to.be.false;
+      expect(status.safeTimeRemaining).to.be.closeTo(8 * 60 * 1000, 100);
     });
 
-    it('should handle empty arrays', () => {
-      const size = estimateCacheSize([], []);
-      expect(size).to.equal(4); // "[]" + "[]" = 4 chars
+    it('should detect approaching timeout', () => {
+      const startTime = Date.now() - (14 * 60 * 1000); // 14 minutes ago
+
+      const status = getTimeoutStatus(startTime);
+
+      expect(status.isApproachingTimeout).to.be.true;
+      expect(status.percentUsed).to.be.greaterThan(86);
     });
 
-    it('should handle large arrays', () => {
-      const brokenUrls = Array.from({ length: 100 }, (_, i) => `https://example.com/broken${i}`);
-      const workingUrls = Array.from({ length: 500 }, (_, i) => `https://example.com/working${i}`);
+    it('should handle timeout exceeded', () => {
+      const startTime = Date.now() - (16 * 60 * 1000); // 16 minutes ago (exceeded)
 
-      const size = estimateCacheSize(brokenUrls, workingUrls);
+      const status = getTimeoutStatus(startTime);
 
-      expect(size).to.be.greaterThan(0);
-      expect(size).to.equal(
-        JSON.stringify(brokenUrls).length + JSON.stringify(workingUrls).length,
-      );
+      expect(status.isApproachingTimeout).to.be.true;
+      expect(status.safeTimeRemaining).to.be.lessThan(0);
     });
   });
 
-  describe('SQS_CACHE_SIZE_LIMIT', () => {
-    it('should be 200KB', () => {
-      expect(SQS_CACHE_SIZE_LIMIT).to.equal(200 * 1024);
+  describe('loadFinalResults', () => {
+    it('should delegate to loadAllBatchResults', async () => {
+      const batch0 = {
+        batchNum: 0,
+        results: [{ urlFrom: 'page1', urlTo: 'broken1' }],
+      };
+
+      mockS3Client.send.onCall(0).resolves({
+        Contents: [
+          { Key: 'broken-internal-links/batch-state/test-audit-123/batches/batch-0.json' },
+        ],
+      });
+      mockS3Client.send.onCall(1).resolves({
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify(batch0)),
+        },
+      });
+
+      const results = await loadFinalResults(TEST_AUDIT_ID, mockContext, Date.now());
+
+      expect(results).to.have.lengthOf(1);
+      expect(results[0].urlTo).to.equal('broken1');
+    });
+  });
+
+  describe('BATCH_TIMEOUT_CONFIG', () => {
+    it('should have correct timeout configuration', () => {
+      expect(BATCH_TIMEOUT_CONFIG).to.have.property('LAMBDA_TIMEOUT_MS');
+      expect(BATCH_TIMEOUT_CONFIG).to.have.property('TIMEOUT_BUFFER_MS');
+      expect(BATCH_TIMEOUT_CONFIG).to.have.property('SAFE_PROCESSING_TIME_MS');
+
+      expect(BATCH_TIMEOUT_CONFIG.LAMBDA_TIMEOUT_MS).to.equal(15 * 60 * 1000);
+      expect(BATCH_TIMEOUT_CONFIG.TIMEOUT_BUFFER_MS).to.equal(2 * 60 * 1000);
+      expect(BATCH_TIMEOUT_CONFIG.SAFE_PROCESSING_TIME_MS).to.equal(13 * 60 * 1000);
     });
   });
 });
