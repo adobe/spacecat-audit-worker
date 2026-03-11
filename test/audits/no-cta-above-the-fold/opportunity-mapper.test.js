@@ -99,7 +99,9 @@ describe("No Engageable Content opportunity mapper", () => {
       const recommendation = {
         body: { markdown: "Test markdown" },
         metadata: {
-          content_fix: contentFix,
+          fix: {
+            content_fix: contentFix,
+          },
           cta_link_suggestion: ctaLinkSuggestion,
         },
       };
