@@ -1249,7 +1249,6 @@ describe('LLMO Customer Analysis Handler', () => {
         'llm-blocked',
         'llm-error-pages',
         'summarization',
-        'faqs',
         'llmo-referral-traffic',
         'cdn-logs-report',
         'readability',
