@@ -14,7 +14,7 @@ import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendAltTextOpportunityToMystique, chunkArray } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
-import { MYSTIQUE_BATCH_SIZE } from './constants.js';
+import { MYSTIQUE_BATCH_SIZE, SUMMIT_PLG_PAGE_LIMIT, DEFAULT_PAGE_LIMIT } from './constants.js';
 import { isAuditEnabledForSite } from '../common/audit-utils.js';
 import { getScrapeJsonPath } from '../headings/utils.js';
 
@@ -30,9 +30,31 @@ const { AUDIT_STEP_DESTINATIONS } = AuditModel;
 async function getTopPagesLimit(site, context) {
   const { log } = context;
   const isSummitPlgEnabled = await isAuditEnabledForSite('summit-plg', site, context);
-  const pageLimit = isSummitPlgEnabled ? 20 : 100;
+  const pageLimit = isSummitPlgEnabled ? SUMMIT_PLG_PAGE_LIMIT : DEFAULT_PAGE_LIMIT;
   log.debug(`[${AUDIT_TYPE}]: Page limit set to ${pageLimit} (summit-plg enabled: ${isSummitPlgEnabled})`);
   return { pageLimit, isSummitPlg: isSummitPlgEnabled };
+}
+
+/**
+ * Computes the page window based on offset for summit-plg sites.
+ * Non-summit-plg sites always start at offset 0.
+ * @param {Array} allTopPages - All top pages
+ * @param {number} pageLimit - Max pages per window
+ * @param {number} topPagesOffset - Stored offset from opportunity data
+ * @param {boolean} isSummitPlg - Whether summit-plg is enabled
+ * @param {Object} log - Logger
+ * @returns {{ topPages: Array, effectiveOffset: number }}
+ */
+function getTopPagesWindow(allTopPages, pageLimit, topPagesOffset, isSummitPlg, log) {
+  let effectiveOffset = isSummitPlg ? topPagesOffset : 0;
+  if (isSummitPlg && effectiveOffset >= allTopPages.length) {
+    log.info(`[${AUDIT_TYPE}]: Offset ${effectiveOffset} exceeds ${allTopPages.length} pages, wrapping to 0`);
+    effectiveOffset = 0;
+  }
+  const topPages = allTopPages.slice(effectiveOffset, effectiveOffset + pageLimit);
+  const endIndex = topPages.length > 0 ? effectiveOffset + topPages.length - 1 : effectiveOffset;
+  log.debug(`[${AUDIT_TYPE}]: Using pages ${effectiveOffset}-${endIndex} of ${allTopPages.length} (limit: ${pageLimit})`);
+  return { topPages, effectiveOffset };
 }
 
 export async function processImportStep(context) {
@@ -57,13 +79,13 @@ export async function processScraping(context) {
   const {
     log, site, dataAccess, s3Client, env,
   } = context;
-  const { SiteTopPage } = dataAccess;
+  const { SiteTopPage, Opportunity } = dataAccess;
   const siteId = site.getId();
 
   log.debug(`[${AUDIT_TYPE}]: Processing scraping step for site ${siteId}`);
 
   // Get page limit based on summit-plg configuration
-  const { pageLimit } = await getTopPagesLimit(site, context);
+  const { pageLimit, isSummitPlg } = await getTopPagesLimit(site, context);
 
   // Get top pages from ahrefs
   const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
@@ -72,8 +94,64 @@ export async function processScraping(context) {
     throw new Error(`No top pages found for site ${siteId}`);
   }
 
-  // Limit to top N pages
-  const topPages = allTopPages.slice(0, pageLimit);
+  // Read stored offset and check suggestions for advancement (fail-safe: default 0)
+  let topPagesOffset = 0;
+  let altTextOppty = null;
+  try {
+    const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+    altTextOppty = opportunities.find(
+      (oppty) => oppty.getType() === AUDIT_TYPE,
+    );
+    if (altTextOppty) {
+      const storedOffset = altTextOppty.getData()?.topPagesOffset || 0;
+
+      if (isSummitPlg) {
+        // Check for NEW suggestions in the current window
+        const suggestions = await altTextOppty.getSuggestions();
+        const windowPages = allTopPages
+          .slice(storedOffset, storedOffset + pageLimit)
+          .map((p) => p.getUrl());
+        const windowSet = new Set(windowPages);
+
+        const newSuggestionsInWindow = suggestions.filter((s) => {
+          const pageUrl = s.getData()?.recommendations?.[0]?.pageUrl;
+          return pageUrl
+            && windowSet.has(pageUrl)
+            && s.getStatus() === 'NEW';
+        });
+
+        if (newSuggestionsInWindow.length === 0) {
+          topPagesOffset = storedOffset + pageLimit;
+          log.debug(`[${AUDIT_TYPE}]: No NEW suggestions in current window, advancing offset to ${topPagesOffset}`);
+        } else {
+          topPagesOffset = storedOffset;
+          log.debug(`[${AUDIT_TYPE}]: ${newSuggestionsInWindow.length} NEW suggestions in current window, keeping offset at ${topPagesOffset}`);
+        }
+      } else {
+        topPagesOffset = storedOffset;
+      }
+    }
+  } catch (error) {
+    log.warn(`[${AUDIT_TYPE}]: Failed to read opportunity offset, defaulting to 0: ${error.message}`);
+  }
+
+  // Compute page window using offset (handles wrap-around)
+  const window = getTopPagesWindow(allTopPages, pageLimit, topPagesOffset, isSummitPlg, log);
+  const { topPages, effectiveOffset } = window;
+
+  // Save the effective offset back to the opportunity
+  if (altTextOppty) {
+    try {
+      const existingData = altTextOppty.getData() || {};
+      altTextOppty.setData({
+        ...existingData,
+        topPagesOffset: effectiveOffset,
+      });
+      await altTextOppty.save();
+    } catch (error) {
+      log.warn(`[${AUDIT_TYPE}]: Failed to save opportunity offset: ${error.message}`);
+    }
+  }
   log.debug(`[${AUDIT_TYPE}]: Checking scrapes for ${topPages.length} top pages (limit: ${pageLimit})`);
 
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
@@ -151,10 +229,20 @@ export async function processAltTextWithMystique(context) {
     // Get top pages and included URLs
     const { SiteTopPage } = dataAccess;
     const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
-    const topPages = allTopPages.slice(0, pageLimit);
-    const includedURLs = await site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
 
-    log.debug(`[${AUDIT_TYPE}]: Using ${topPages.length} top pages out of ${allTopPages.length} (limit: ${pageLimit})`);
+    // Look up existing opportunity to read stored offset
+    const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+    let altTextOppty = opportunities.find(
+      (oppty) => oppty.getType() === AUDIT_TYPE,
+    );
+
+    // Read offset (already computed and saved by processScraping)
+    const topPagesOffset = altTextOppty?.getData()?.topPagesOffset || 0;
+    const {
+      topPages, effectiveOffset,
+    } = getTopPagesWindow(allTopPages, pageLimit, topPagesOffset, isSummitPlg, log);
+
+    const includedURLs = await site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
 
     // Get ALL page URLs to send to Mystique
     const pageUrls = [...new Set([...topPages.map((page) => page.getUrl()), ...includedURLs])];
@@ -164,22 +252,15 @@ export async function processAltTextWithMystique(context) {
 
     const urlBatches = chunkArray(pageUrls, MYSTIQUE_BATCH_SIZE);
 
-    // First, find or create the opportunity and clear existing suggestions
-    const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
-    let altTextOppty = opportunities.find(
-      (oppty) => oppty.getType() === AUDIT_TYPE,
-    );
-
     let imageUrlsWithAltText = [];
 
     if (altTextOppty) {
       log.info(`[${AUDIT_TYPE}]: Updating opportunity for new audit run`);
 
-      // Step 1: Get existing suggestions from the opportunity
       const existingSuggestions = await altTextOppty.getSuggestions();
       log.debug(`[${AUDIT_TYPE}]: Found ${existingSuggestions.length} existing suggestions`);
 
-      // Step 2: Filter suggestions with URLs not in current pageUrls
+      // Filter suggestions with URLs not in current pageUrls
       const pageUrlSet = new Set(pageUrls);
       const IGNORED_STATUSES = ['SKIPPED', 'FIXED', 'OUTDATED'];
 
@@ -208,13 +289,13 @@ export async function processAltTextWithMystique(context) {
 
       log.debug(`[${AUDIT_TYPE}]: Found ${suggestionsToOutdate.length} suggestions to mark as OUTDATED (URLs no longer in top pages)`);
 
-      // Step 3: Mark filtered suggestions as OUTDATED
+      // Mark filtered suggestions as OUTDATED
       if (suggestionsToOutdate.length > 0) {
         await Suggestion.bulkUpdateStatus(suggestionsToOutdate, SuggestionModel.STATUSES.OUTDATED);
         log.info(`[${AUDIT_TYPE}]: Marked ${suggestionsToOutdate.length} suggestions as OUTDATED`);
       }
 
-      // Step 4: Collect image URLs from remaining NEW suggestions (excluding just-outdated ones)
+      // Collect image URLs from remaining NEW suggestions (excluding just-outdated ones)
       const outdatedSet = new Set(suggestionsToOutdate);
       imageUrlsWithAltText = [...new Set(
         existingSuggestions
@@ -224,10 +305,11 @@ export async function processAltTextWithMystique(context) {
       )];
       log.debug(`[${AUDIT_TYPE}]: Found ${imageUrlsWithAltText.length} existing image URLs with alt text`);
 
-      // Reset only Mystique-related data, keep existing metrics
+      // Reset only Mystique-related data, keep existing metrics, store offset
       const existingData = altTextOppty.getData() || {};
       const resetData = {
         ...existingData,
+        topPagesOffset: effectiveOffset,
         mystiqueResponsesReceived: 0,
         mystiqueResponsesExpected: urlBatches.length,
         processedSuggestionIds: [],
@@ -256,6 +338,7 @@ export async function processAltTextWithMystique(context) {
           ],
         },
         data: {
+          topPagesOffset: 0,
           projectedTrafficLost: 0,
           projectedTrafficValue: 0,
           decorativeImagesCount: 0,
