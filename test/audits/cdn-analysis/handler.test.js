@@ -566,6 +566,56 @@ describe('CDN Analysis Handler', () => {
         .to.include('/raw/byocdn-other/2025/06/15/');
     });
 
+    it('should clear forceReprocess partitions once even when multiple providers are processed', async () => {
+      const auditContext = {
+        year: 2025, month: 6, day: 15, hour: 10,
+        forceReprocess: true,
+        isSubAudit: true,
+      };
+
+      const orgId = 'test-ims-org-id';
+      const deletePrefixes = [];
+
+      context.s3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'HeadBucketCommand') {
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'DeleteObjectsCommand') {
+          deletePrefixes.push(command.input.Delete.Objects[0].Key);
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'ListObjectsV2Command') {
+          const { Prefix = '' } = command.input || {};
+          if (Prefix === `${orgId}/raw/`) {
+            return Promise.resolve({
+              CommonPrefixes: [
+                { Prefix: `${orgId}/raw/aem-cs-fastly/` },
+                { Prefix: `${orgId}/raw/byocdn-fastly/` },
+              ],
+            });
+          }
+          if (Prefix.includes('aggregated')) {
+            return Promise.resolve({ Contents: [{ Key: `${Prefix}data.parquet` }] });
+          }
+          if (Prefix.includes('/raw/aem-cs-fastly/2025/06/15/10/')) {
+            return Promise.resolve({ Contents: [{ Key: `${Prefix}file1.log` }] });
+          }
+          if (Prefix.includes('/raw/byocdn-fastly/2025/06/15/10/')) {
+            return Promise.resolve({ Contents: [{ Key: `${Prefix}file2.log` }] });
+          }
+          return Promise.resolve({ Contents: [] });
+        }
+        return Promise.resolve({});
+      });
+
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext);
+
+      expect(result.auditResult.providers).to.be.an('array').with.length(2);
+      expect(deletePrefixes).to.have.length(2);
+      expect(deletePrefixes[0]).to.include('aggregated/test-site-id/2025/06/15/10/');
+      expect(deletePrefixes[1]).to.include('aggregated-referral/test-site-id/2025/06/15/10/');
+    });
+
     it('deduplicates cdn-logs-report triggers by week', async () => {
       const auditContext = {
         year: 2025, month: 6, day: 15, hour: 23,

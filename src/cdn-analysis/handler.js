@@ -241,7 +241,7 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
     ? await discoverCdnProviders(s3Client, bucketName, { year, month, day, hour })
     : providers;
 
-  log.debug(`Processing ${serviceProviders.length} service provider(s) in bucket: ${bucketName}`);
+  log.info(`Processing ${serviceProviders.length} service provider(s) in bucket: ${bucketName}`);
 
   const database = `cdn_logs_${customerDomain}`;
   const { aggregatedTable, aggregatedReferralTable } = getAggregatedTableNames(
@@ -249,6 +249,10 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
   );
   const consolidatedBucket = awsRuntime.bucket;
   const siteId = site.getId();
+  const athenaClient = awsRuntime.createAthenaClient(
+    `s3://${consolidatedBucket}/temp/athena-results/`,
+    { maxPollAttempts: 500 },
+  );
 
   // byocdn-other files arrive on unpredictable schedules, so the dispatcher-scheduled
   // daily run (isSubAudit is absent, hour=23) doesn't process logs itself. Instead it
@@ -287,9 +291,12 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
   // Check if aggregated data already exists for this hour
   const hasAggregatedData = await pathHasData(s3Client, `s3://${consolidatedBucket}/aggregated/${siteId}/${year}/${month}/${day}/${hour}/`);
   const hasAggregatedReferralData = await pathHasData(s3Client, `s3://${consolidatedBucket}/aggregated-referral/${siteId}/${year}/${month}/${day}/${hour}/`);
+  const hasPartialAggregates = hasAggregatedData !== hasAggregatedReferralData;
+  const aggregatedPrefix = `aggregated/${siteId}/${year}/${month}/${day}/${hour}/`;
+  const aggregatedReferralPrefix = `aggregated-referral/${siteId}/${year}/${month}/${day}/${hour}/`;
 
   if (hasAggregatedData && hasAggregatedReferralData && !auditContext?.forceReprocess) {
-    log.info(`${auditType} aggregated data already exists for siteId=${siteId} at path=s3://${consolidatedBucket}/aggregated/${siteId}/${year}/${month}/${day}/${hour}/ Skipping processing.`);
+    log.info(`${auditType} aggregated data already exists for siteId=${siteId} at path=s3://${consolidatedBucket}/${aggregatedPrefix} Skipping processing.`);
     return {
       auditResult: {
         database,
@@ -299,6 +306,15 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
       },
       fullAuditRef: auditUrl,
     };
+  }
+
+  if (hasPartialAggregates) {
+    log.warn(`${auditType} found partial aggregates for siteId=${siteId}. Rebuilding s3://${consolidatedBucket}/${aggregatedPrefix} and s3://${consolidatedBucket}/${aggregatedReferralPrefix}.`);
+  }
+
+  if (auditContext?.forceReprocess || hasPartialAggregates) {
+    await clearS3Partition(s3Client, consolidatedBucket, aggregatedPrefix, log);
+    await clearS3Partition(s3Client, consolidatedBucket, aggregatedReferralPrefix, log);
   }
 
   // Create database and aggregated tables once
@@ -326,9 +342,6 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
         siteId,
       );
       const rawTable = `raw_logs_${customerDomain}_${serviceProvider.replace(/-/g, '_')}`;
-      const athenaClient = awsRuntime.createAthenaClient(paths.tempLocation, {
-        maxPollAttempts: 500,
-      });
 
       if (!tablesCreated) {
         // eslint-disable-next-line no-await-in-loop
@@ -426,13 +439,6 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
           serviceProvider,
         }),
       ]);
-
-      if (auditContext?.forceReprocess) {
-        // eslint-disable-next-line no-await-in-loop
-        await clearS3Partition(s3Client, consolidatedBucket, `aggregated/${siteId}/${year}/${month}/${day}/`, log);
-        // eslint-disable-next-line no-await-in-loop
-        await clearS3Partition(s3Client, consolidatedBucket, `aggregated-referral/${siteId}/${year}/${month}/${day}/`, log);
-      }
 
       // eslint-disable-next-line no-await-in-loop
       await athenaClient.execute(sqlInsert, database, `[Athena Query] Insert aggregated data for ${serviceProvider} into ${database}.${aggregatedTable}`);

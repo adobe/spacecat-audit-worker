@@ -97,14 +97,14 @@ export async function runWeeklyReport({
 }) {
   const siteId = site.getId();
   try {
-    log.info(`Starting ${reportConfig.name} report for site ${siteId} with week offset: ${weekOffset}...`);
+    log.debug(`Starting ${reportConfig.name} report for site ${siteId} with week offset: ${weekOffset}...`);
     const result = await runReport(reportConfig, athenaClient, s3Config, log, {
       site,
       sharepointClient,
       weekOffset,
       context,
     });
-    log.info(`Successfully completed ${reportConfig.name} report for site ${siteId}`);
+    log.debug(`Successfully completed ${reportConfig.name} report for site ${siteId}`);
     return { success: true, uploadResult: result?.uploadResult };
   } catch (error) {
     log.error(`Failed to generate ${reportConfig.name} report for site ${siteId}: ${error.message}`);
