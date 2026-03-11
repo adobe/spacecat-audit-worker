@@ -375,6 +375,7 @@ describe('LLM Error Pages Handler', function () {
         });
         const result = await runAuditAndSendToMystique(context);
         expect(result.auditResult).to.have.length(2);
+        expect(mockGenerateReportingPeriods).to.have.been.calledWith(sinon.match.date, [-1, 0]);
       } finally {
         clock.restore();
       }
