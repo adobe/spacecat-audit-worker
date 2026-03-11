@@ -115,6 +115,10 @@ export async function processAutoSuggest(context, opportunity, site) {
     const codeInfo = (isAutoFixEnabled && site) ? await getCodeInfo(site, 'cwv', context) : null;
     const hasCodeInfo = codeInfo && codeInfo.codeBucket && codeInfo.codePath !== undefined;
 
+    if (suggestions.length === 0) {
+      log.info(`[audit-worker-cwv] siteId: ${siteId} | No suggestions found for CWV auto-suggest, opportunityId: ${opportunityId}`);
+    }
+
     // Send one SQS message per suggestion that needs auto-suggest
     for (const suggestion of suggestions) {
       // Skip suggestions that don't need auto-suggest
