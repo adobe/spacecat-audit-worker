@@ -1,3 +1,45 @@
+# [1.353.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.352.1...v1.353.0) (2026-03-11)
+
+
+### Features
+
+* send isDecorativeAgentEnabled feature flag to mystique for alt-text audit ([#2115](https://github.com/adobe/spacecat-audit-worker/issues/2115)) ([5aa3ddf](https://github.com/adobe/spacecat-audit-worker/commit/5aa3ddf5451587c282ac988a74cb8c46ce74a486))
+
+## [1.352.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.352.0...v1.352.1) (2026-03-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.15.1 ([#2114](https://github.com/adobe/spacecat-audit-worker/issues/2114)) ([f51621f](https://github.com/adobe/spacecat-audit-worker/commit/f51621f7b1aea69476aac2d9bfe20402c252092d))
+
+# [1.352.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.351.1...v1.352.0) (2026-03-11)
+
+
+### Features
+
+* sites-39442 - [enhancement] add preflight audit for image-alt text ([#2028](https://github.com/adobe/spacecat-audit-worker/issues/2028)) ([d71707e](https://github.com/adobe/spacecat-audit-worker/commit/d71707eadd2b867c275e3629d5a95f51784800a1))
+
+## [1.351.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.351.0...v1.351.1) (2026-03-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.15.0 ([#2111](https://github.com/adobe/spacecat-audit-worker/issues/2111)) ([f5fa4ce](https://github.com/adobe/spacecat-audit-worker/commit/f5fa4ce3ed013df243877f06ab7d9588aac72e33))
+
+# [1.351.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.350.1...v1.351.0) (2026-03-11)
+
+
+### Features
+
+* added top pages offset for alt-text audits with no suggestions ([#2098](https://github.com/adobe/spacecat-audit-worker/issues/2098)) ([f83d5ab](https://github.com/adobe/spacecat-audit-worker/commit/f83d5abe7e44e684ee6f68b48b25f5573cb4b3bb))
+
+## [1.350.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.350.0...v1.350.1) (2026-03-11)
+
+
+### Bug Fixes
+
+* preserve requiresValidation from context.site in step-audit ([#2106](https://github.com/adobe/spacecat-audit-worker/issues/2106)) ([9f5f07f](https://github.com/adobe/spacecat-audit-worker/commit/9f5f07fee9814e32c1097fb089c06ee58f3ee274))
+
 # [1.350.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.349.5...v1.350.0) (2026-03-10)
 
 
