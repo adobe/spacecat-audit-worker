@@ -1,3 +1,10 @@
+# [1.353.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.352.1...v1.353.0) (2026-03-11)
+
+
+### Features
+
+* send isDecorativeAgentEnabled feature flag to mystique for alt-text audit ([#2115](https://github.com/adobe/spacecat-audit-worker/issues/2115)) ([5aa3ddf](https://github.com/adobe/spacecat-audit-worker/commit/5aa3ddf5451587c282ac988a74cb8c46ce74a486))
+
 ## [1.352.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.352.0...v1.352.1) (2026-03-11)
 
 
