@@ -1,3 +1,17 @@
+# [1.352.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.351.1...v1.352.0) (2026-03-11)
+
+
+### Features
+
+* sites-39442 - [enhancement] add preflight audit for image-alt text ([#2028](https://github.com/adobe/spacecat-audit-worker/issues/2028)) ([d71707e](https://github.com/adobe/spacecat-audit-worker/commit/d71707eadd2b867c275e3629d5a95f51784800a1))
+
+## [1.351.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.351.0...v1.351.1) (2026-03-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.15.0 ([#2111](https://github.com/adobe/spacecat-audit-worker/issues/2111)) ([f5fa4ce](https://github.com/adobe/spacecat-audit-worker/commit/f5fa4ce3ed013df243877f06ab7d9588aac72e33))
+
 # [1.351.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.350.1...v1.351.0) (2026-03-11)
 
 
