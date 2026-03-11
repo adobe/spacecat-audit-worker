@@ -418,11 +418,61 @@ describe('dom-selector.js', () => {
         ],
       });
     });
+
+    it('should flatten nested arrays from getDomElementSelector results', () => {
+      const selectors = [
+        ['h1#main-title', 'cq[data-path="/content/page/title"]'],
+        'div.plain-selector',
+        ['a.link', 'cq[data-path="/content/page/nav"]'],
+      ];
+      expect(toElementTargets(selectors)).to.deep.equal({
+        elements: [
+          { selector: 'h1#main-title' },
+          { selector: 'cq[data-path="/content/page/title"]' },
+          { selector: 'div.plain-selector' },
+          { selector: 'a.link' },
+          { selector: 'cq[data-path="/content/page/nav"]' },
+        ],
+      });
+    });
+
+    it('should deduplicate after flattening nested arrays', () => {
+      const selectors = [
+        ['h1#title', 'cq[data-path="/content/page/title"]'],
+        ['h1#title', 'cq[data-path="/content/page/title"]'],
+      ];
+      expect(toElementTargets(selectors)).to.deep.equal({
+        elements: [
+          { selector: 'h1#title' },
+          { selector: 'cq[data-path="/content/page/title"]' },
+        ],
+      });
+    });
   });
 
   describe('Cloud Service Context', () => {
     describe('getDomElementSelector - AEM Cloud Service', () => {
-      it('should detect and use cq[data-path] for Cloud Service context', () => {
+      it('should return [idSelector, cqSelector] for element with ID inside cq context', () => {
+        const html = `
+          <body>
+            <div class="container">
+              <cq data-path="/content/wknd/en/jcr:content/root/container/title" data-config="..."></cq>
+              <div class="title-wrapper">
+                <h1 id="page-title">Hello World</h1>
+              </div>
+            </div>
+          </body>
+        `;
+        const $cs = cheerioLoad(html);
+        const h1 = $cs('h1').get(0);
+        const result = getDomElementSelector(h1);
+
+        expect(result).to.be.an('array').with.lengthOf(2);
+        expect(result[0]).to.equal('h1#page-title');
+        expect(result[1]).to.equal('cq[data-path="/content/wknd/en/jcr:content/root/container/title"]');
+      });
+
+      it('should return [cssSelector, cqSelector] for Cloud Service context', () => {
         const html = `
           <body>
             <div class="container">
@@ -439,12 +489,14 @@ describe('dom-selector.js', () => {
         `;
         const $cs = cheerioLoad(html);
         const link = $cs('a').get(0);
-        const selector = getDomElementSelector(link);
+        const result = getDomElementSelector(link);
 
-        expect(selector).to.equal('cq[data-path="/content/wknd/en/adventures/surf-camp-costa-rica/jcr:content/root/container/breadcrumb"]');
+        expect(result).to.be.an('array').with.lengthOf(2);
+        expect(result[0]).to.include('a');
+        expect(result[1]).to.equal('cq[data-path="/content/wknd/en/adventures/surf-camp-costa-rica/jcr:content/root/container/breadcrumb"]');
       });
 
-      it('should find nearest cq[data-path] when element is deeply nested', () => {
+      it('should return [cssSelector, nearest cqSelector] when element is deeply nested', () => {
         const html = `
           <body>
             <cq data-path="/content/wknd/en/jcr:content/root/container" data-config="..."></cq>
@@ -460,13 +512,15 @@ describe('dom-selector.js', () => {
         `;
         const $cs = cheerioLoad(html);
         const img = $cs('img').get(0);
-        const selector = getDomElementSelector(img);
+        const result = getDomElementSelector(img);
 
+        expect(result).to.be.an('array').with.lengthOf(2);
+        expect(result[0]).to.include('img');
         // Should use the nearest cq element (carousel, not container)
-        expect(selector).to.equal('cq[data-path="/content/wknd/en/jcr:content/root/container/carousel"]');
+        expect(result[1]).to.equal('cq[data-path="/content/wknd/en/jcr:content/root/container/carousel"]');
       });
 
-      it('should use cq parent when cq is an actual parent element', () => {
+      it('should return [cssSelector, cqSelector] when cq is an actual parent element', () => {
         const html = `
           <body>
             <cq data-path="/content/wknd/en/jcr:content/root/container">
@@ -478,10 +532,11 @@ describe('dom-selector.js', () => {
         `;
         const $cs = cheerioLoad(html);
         const p = $cs('p').get(0);
-        const selector = getDomElementSelector(p);
+        const result = getDomElementSelector(p);
 
-        // Should use the cq parent
-        expect(selector).to.equal('cq[data-path="/content/wknd/en/jcr:content/root/container"]');
+        expect(result).to.be.an('array').with.lengthOf(2);
+        expect(result[0]).to.include('p');
+        expect(result[1]).to.equal('cq[data-path="/content/wknd/en/jcr:content/root/container"]');
       });
 
       it('should fall back to standard selectors when no cq[data-path] found', () => {
@@ -589,14 +644,17 @@ describe('dom-selector.js', () => {
 
         const $cs = cheerioLoad(html);
         const breadcrumbLink = $cs('.cmp-breadcrumb__item-link').get(0);
-        const selector = getDomElementSelector(breadcrumbLink);
-        const targets = toElementTargets(selector);
+        const result = getDomElementSelector(breadcrumbLink);
+        const targets = toElementTargets(result);
 
-        expect(selector).to.include('cq[data-path=');
-        expect(selector).to.include('/content/wknd/language-masters/en/adventures/surf-camp-costa-rica');
+        expect(result).to.be.an('array').with.lengthOf(2);
+        expect(result[0]).to.include('a.cmp-breadcrumb__item-link');
+        expect(result[1]).to.include('cq[data-path=');
+        expect(result[1]).to.include('/content/wknd/language-masters/en/adventures/surf-camp-costa-rica');
         expect(targets).to.have.property('elements');
-        expect(targets.elements).to.be.an('array').with.lengthOf(1);
-        expect(targets.elements[0]).to.deep.equal({ selector });
+        expect(targets.elements).to.be.an('array').with.lengthOf(2);
+        expect(targets.elements[0]).to.deep.equal({ selector: result[0] });
+        expect(targets.elements[1]).to.deep.equal({ selector: result[1] });
       });
     });
   });

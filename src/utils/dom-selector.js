@@ -91,11 +91,16 @@ function findNearestCqDataPath(element) {
  * Generates a unique-ish CSS selector for any DOM element.
  * Strategy mirrors the Heading audit logic and limits depth for readability.
  * Priority order:
- * 1. Cloud Service: cq[data-path] (AEM CS context)
- * 2. Universal Editor: data-aue-* attributes
- * 3. Standard CSS: id, classes, nth-of-type
+ * 1. Universal Editor: data-aue-* attributes
+ * 2. Standard CSS: id, classes, nth-of-type
+ *
+ * When a Cloud Service cq[data-path] ancestor is found, both the granular CSS
+ * selector AND the component-level cq selector are returned (CSS first) so the
+ * MFE can try the specific element first and fall back to the component.
+ *
  * @param {Element} element
- * @returns {string|null}
+ * @returns {string|string[]|null} A single selector string, an array
+ *   [cssSelector, cqSelector] when AEM CS context is detected, or null.
  */
 export function getDomElementSelector(element) {
   // Works with cheerio elements only
@@ -107,11 +112,9 @@ export function getDomElementSelector(element) {
   const tag = name.toLowerCase();
   let selectors = [tag];
 
-  // 1. Check for Cloud Service <cq data-path> (highest priority for AEM CS)
+  // 1. Check for Cloud Service <cq data-path> — save for later, don't return early
   const cqDataPath = findNearestCqDataPath(element);
-  if (cqDataPath) {
-    return `cq[data-path="${cqDataPath}"]`;
-  }
+  const cqSelector = cqDataPath ? `cq[data-path="${cqDataPath}"]` : null;
 
   // 2. Check for Universal Editor data attributes
   const aueResource = attribs?.['data-aue-resource'];
@@ -128,7 +131,8 @@ export function getDomElementSelector(element) {
   // 3. Check for ID (most specific - return immediately)
   const id = attribs?.id;
   if (id) {
-    return `${tag}#${cssEscape(id)}`;
+    const idSelector = `${tag}#${cssEscape(id)}`;
+    return cqSelector ? [idSelector, cqSelector] : idSelector;
   }
 
   // 4. Add classes if available
@@ -206,7 +210,8 @@ export function getDomElementSelector(element) {
   }
 
   // 7. Join with '>' (direct child combinator)
-  return pathParts.join(' > ');
+  const cssSelector = pathParts.join(' > ');
+  return cqSelector ? [cssSelector, cqSelector] : cssSelector;
 }
 
 /**
@@ -214,11 +219,12 @@ export function getDomElementSelector(element) {
  * Returns a unified format for spreading into opportunity objects
  * across all selector types (Cloud Service, Universal Editor, or standard).
  *
- * Cloud Service: { elements: [{ selector: "cq[data-path=\"...\"]" }, ...] }
- * Universal Editor: { elements: [{ selector: "div[data-aue-resource=\"...\"]" }, ...] }
- * Standard CSS: { elements: [{ selector: "body > div.content > a" }, ...] }
+ * Accepts plain strings, arrays of strings, or nested arrays (as returned by
+ * getDomElementSelector when AEM CS context is detected). Nested arrays are
+ * flattened so that each individual selector becomes its own element entry,
+ * with the most specific selector first.
  *
- * @param {string|string[]} selectors
+ * @param {string|string[]|Array<string|string[]>} selectors
  * @param {number} [limit=Infinity]
  * @returns {{elements?: Array<{selector: string}>}}
  */
@@ -226,7 +232,7 @@ export function toElementTargets(selectors, limit = Infinity) {
   if (!selectors) {
     return {};
   }
-  const raw = Array.isArray(selectors) ? selectors : [selectors];
+  const raw = Array.isArray(selectors) ? selectors.flat() : [selectors];
   const unique = [];
   raw.forEach((selector) => {
     if (selector && !unique.includes(selector)) {
@@ -240,6 +246,5 @@ export function toElementTargets(selectors, limit = Infinity) {
     return {};
   }
 
-  // Always return unified format: { elements: [{ selector: "..." }, ...] }
   return { elements: limited.map((selector) => ({ selector })) };
 }
