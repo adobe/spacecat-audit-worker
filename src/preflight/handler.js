@@ -250,9 +250,20 @@ export const preflightAudit = async (context) => {
         }
 
         if (loremIpsumEnabled && /lorem ipsum/i.test(textContent)) {
-          const loremElements = $('p, div, span, li, section, article, h1, h2, h3, h4, h5, h6')
+          const allLoremElements = $('p, div, span, li, section, article, h1, h2, h3, h4, h5, h6')
             .toArray()
             .filter((el) => /lorem ipsum/i.test($(el).text()));
+          const loremElements = allLoremElements.filter(
+            (el) => !allLoremElements.some((other) => {
+              if (other === el) return false;
+              let cursor = other.parent;
+              while (cursor) {
+                if (cursor === el) return true;
+                cursor = cursor.parent;
+              }
+              return false;
+            }),
+          );
           const loremSelectors = loremElements.map(
             (el) => getDomElementSelector(el),
           ).filter(Boolean);

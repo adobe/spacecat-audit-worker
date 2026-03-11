@@ -420,184 +420,123 @@ describe('dom-selector.js', () => {
     });
   });
 
-  describe('Cloud Service Context', () => {
-    describe('getDomElementSelector - AEM Cloud Service', () => {
-      it('should detect and use cq[data-path] for Cloud Service context', () => {
-        const html = `
-          <body>
-            <div class="container">
-              <cq data-path="/content/wknd/en/adventures/surf-camp-costa-rica/jcr:content/root/container/breadcrumb" data-config="..."></cq>
+  describe('AEM Cloud Service Context (cq elements ignored)', () => {
+    it('should return only CSS selector for element with ID near cq sibling', () => {
+      const html = `
+        <body>
+          <div class="container">
+            <cq data-path="/content/wknd/en/jcr:content/root/container/title" data-config="..."></cq>
+            <div class="title-wrapper">
+              <h1 id="page-title">Hello World</h1>
+            </div>
+          </div>
+        </body>
+      `;
+      const $cs = cheerioLoad(html);
+      const h1 = $cs('h1').get(0);
+      const result = getDomElementSelector(h1);
+
+      expect(result).to.be.a('string');
+      expect(result).to.equal('h1#page-title');
+    });
+
+    it('should return only CSS selector even when cq siblings exist', () => {
+      const html = `
+        <body>
+          <div class="container">
+            <cq data-path="/content/wknd/en/jcr:content/root/container/breadcrumb" data-config="..."></cq>
+            <div class="breadcrumb">
+              <nav>
+                <ol>
+                  <li><a href="/adventures">Adventures</a></li>
+                </ol>
+              </nav>
+            </div>
+          </div>
+        </body>
+      `;
+      const $cs = cheerioLoad(html);
+      const link = $cs('a').get(0);
+      const result = getDomElementSelector(link);
+
+      expect(result).to.be.a('string');
+      expect(result).to.include('a');
+      expect(result).to.not.include('cq[data-path=');
+    });
+
+    it('should return only CSS selector for deeply nested element near cq', () => {
+      const html = `
+        <body>
+          <cq data-path="/content/wknd/en/jcr:content/root/container" data-config="..."></cq>
+          <div class="container">
+            <cq data-path="/content/wknd/en/jcr:content/root/container/carousel" data-config="..."></cq>
+            <div class="carousel">
+              <div class="carousel-item">
+                <img src="/image.jpg" alt="Image">
+              </div>
+            </div>
+          </div>
+        </body>
+      `;
+      const $cs = cheerioLoad(html);
+      const img = $cs('img').get(0);
+      const result = getDomElementSelector(img);
+
+      expect(result).to.be.a('string');
+      expect(result).to.include('img');
+      expect(result).to.not.include('cq[data-path=');
+    });
+
+    it('should return CSS selector when cq is an actual parent element', () => {
+      const html = `
+        <body>
+          <cq data-path="/content/wknd/en/jcr:content/root/container">
+            <div class="content">
+              <p>Some text</p>
+            </div>
+          </cq>
+        </body>
+      `;
+      const $cs = cheerioLoad(html);
+      const p = $cs('p').get(0);
+      const result = getDomElementSelector(p);
+
+      expect(result).to.be.a('string');
+      expect(result).to.include('p');
+      expect(result).to.not.include('cq[data-path=');
+    });
+
+    it('should produce CSS-only selector from real-world AEM CS HTML', () => {
+      const html = `
+        <body>
+          <div class="root container responsivegrid">
+            <div class="container responsivegrid">
+              <cq data-path="/content/wknd/language-masters/en/adventures/surf-camp-costa-rica/jcr:content/root/container/breadcrumb"></cq>
               <div class="breadcrumb">
-                <nav>
-                  <ol>
-                    <li><a href="/adventures">Adventures</a></li>
+                <nav class="cmp-breadcrumb">
+                  <ol class="cmp-breadcrumb__list">
+                    <li class="cmp-breadcrumb__item">
+                      <a class="cmp-breadcrumb__item-link" href="/adventures">Adventures</a>
+                    </li>
                   </ol>
                 </nav>
               </div>
             </div>
-          </body>
-        `;
-        const $cs = cheerioLoad(html);
-        const link = $cs('a').get(0);
-        const selector = getDomElementSelector(link);
+          </div>
+        </body>
+      `;
 
-        expect(selector).to.equal('cq[data-path="/content/wknd/en/adventures/surf-camp-costa-rica/jcr:content/root/container/breadcrumb"]');
-      });
+      const $cs = cheerioLoad(html);
+      const breadcrumbLink = $cs('.cmp-breadcrumb__item-link').get(0);
+      const result = getDomElementSelector(breadcrumbLink);
+      const targets = toElementTargets(result);
 
-      it('should find nearest cq[data-path] when element is deeply nested', () => {
-        const html = `
-          <body>
-            <cq data-path="/content/wknd/en/jcr:content/root/container" data-config="..."></cq>
-            <div class="container">
-              <cq data-path="/content/wknd/en/jcr:content/root/container/carousel" data-config="..."></cq>
-              <div class="carousel">
-                <div class="carousel-item">
-                  <img src="/image.jpg" alt="Image">
-                </div>
-              </div>
-            </div>
-          </body>
-        `;
-        const $cs = cheerioLoad(html);
-        const img = $cs('img').get(0);
-        const selector = getDomElementSelector(img);
-
-        // Should use the nearest cq element (carousel, not container)
-        expect(selector).to.equal('cq[data-path="/content/wknd/en/jcr:content/root/container/carousel"]');
-      });
-
-      it('should use cq parent when cq is an actual parent element', () => {
-        const html = `
-          <body>
-            <cq data-path="/content/wknd/en/jcr:content/root/container">
-              <div class="content">
-                <p>Some text</p>
-              </div>
-            </cq>
-          </body>
-        `;
-        const $cs = cheerioLoad(html);
-        const p = $cs('p').get(0);
-        const selector = getDomElementSelector(p);
-
-        // Should use the cq parent
-        expect(selector).to.equal('cq[data-path="/content/wknd/en/jcr:content/root/container"]');
-      });
-
-      it('should fall back to standard selectors when no cq[data-path] found', () => {
-        const html = `
-          <body>
-            <div id="main">
-              <h1>Title</h1>
-            </div>
-          </body>
-        `;
-        const $cs = cheerioLoad(html);
-        const h1 = $cs('h1').get(0);
-        const selector = getDomElementSelector(h1);
-
-        expect(selector).to.not.include('cq[data-path=');
-        expect(selector).to.include('h1');
-      });
-    });
-
-    describe('toElementTargets - Unified format for all contexts', () => {
-      it('should return unified format for cq[data-path] selectors', () => {
-        const selectors = [
-          'cq[data-path="/content/wknd/en/jcr:content/root/container/breadcrumb"]',
-          'cq[data-path="/content/wknd/en/jcr:content/root/container/carousel"]',
-        ];
-
-        const result = toElementTargets(selectors);
-
-        expect(result).to.be.an('object');
-        expect(result).to.have.property('elements');
-        expect(result.elements).to.be.an('array');
-        expect(result.elements).to.have.lengthOf(2);
-        expect(result.elements[0]).to.deep.equal({ selector: selectors[0] });
-        expect(result.elements[1]).to.deep.equal({ selector: selectors[1] });
-      });
-
-      it('should handle single CS selector', () => {
-        const selector = 'cq[data-path="/content/wknd/en/jcr:content/root/container/title"]';
-
-        const result = toElementTargets(selector);
-
-        expect(result).to.be.an('object');
-        expect(result.elements).to.be.an('array');
-        expect(result.elements).to.have.lengthOf(1);
-        expect(result.elements[0]).to.deep.equal({ selector });
-      });
-
-      it('should deduplicate CS selectors', () => {
-        const selectors = [
-          'cq[data-path="/content/wknd/en/jcr:content/root/container/title"]',
-          'cq[data-path="/content/wknd/en/jcr:content/root/container/title"]',
-          'cq[data-path="/content/wknd/en/jcr:content/root/container/image"]',
-        ];
-
-        const result = toElementTargets(selectors);
-
-        expect(result.elements).to.have.lengthOf(2);
-      });
-
-      it('should respect limit for CS selectors', () => {
-        const selectors = [
-          'cq[data-path="/content/wknd/en/jcr:content/root/container/title"]',
-          'cq[data-path="/content/wknd/en/jcr:content/root/container/image"]',
-          'cq[data-path="/content/wknd/en/jcr:content/root/container/text"]',
-        ];
-
-        const result = toElementTargets(selectors, 2);
-
-        expect(result.elements).to.have.lengthOf(2);
-      });
-
-      it('should return unified format for Universal Editor selectors', () => {
-        const selectors = [
-          'div[data-aue-resource="urn:aemconnection:/content/test"]',
-          'h1[data-aue-prop="title"]',
-        ];
-
-        const result = toElementTargets(selectors);
-
-        expect(result).to.have.property('elements');
-        expect(result.elements).to.have.lengthOf(2);
-        expect(result.elements[0]).to.deep.equal({ selector: selectors[0] });
-        expect(result.elements[1]).to.deep.equal({ selector: selectors[1] });
-      });
-
-      it('should extract and format CS selectors from real-world HTML', () => {
-        const html = `
-          <body>
-            <div class="root container responsivegrid">
-              <div class="container responsivegrid">
-                <cq data-path="/content/wknd/language-masters/en/adventures/surf-camp-costa-rica/jcr:content/root/container/breadcrumb"></cq>
-                <div class="breadcrumb">
-                  <nav class="cmp-breadcrumb">
-                    <ol class="cmp-breadcrumb__list">
-                      <li class="cmp-breadcrumb__item">
-                        <a class="cmp-breadcrumb__item-link" href="/adventures">Adventures</a>
-                      </li>
-                    </ol>
-                  </nav>
-                </div>
-              </div>
-            </div>
-          </body>
-        `;
-
-        const $cs = cheerioLoad(html);
-        const breadcrumbLink = $cs('.cmp-breadcrumb__item-link').get(0);
-        const selector = getDomElementSelector(breadcrumbLink);
-        const targets = toElementTargets(selector);
-
-        expect(selector).to.include('cq[data-path=');
-        expect(selector).to.include('/content/wknd/language-masters/en/adventures/surf-camp-costa-rica');
-        expect(targets).to.have.property('elements');
-        expect(targets.elements).to.be.an('array').with.lengthOf(1);
-        expect(targets.elements[0]).to.deep.equal({ selector });
-      });
+      expect(result).to.be.a('string');
+      expect(result).to.include('a.cmp-breadcrumb__item-link');
+      expect(result).to.not.include('cq[data-path=');
+      expect(targets).to.have.property('elements');
+      expect(targets.elements).to.be.an('array').with.lengthOf(1);
+      expect(targets.elements[0]).to.deep.equal({ selector: result });
     });
   });
 });

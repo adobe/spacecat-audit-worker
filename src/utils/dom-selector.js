@@ -61,41 +61,13 @@ function cssEscape(value) {
 }
 
 /**
- * Helper function to find the nearest <cq> element with data-path attribute.
- * In AEM Cloud Service, <cq> elements are typically siblings that follow the content.
- * @param {Element} element
- * @returns {string|null} The data-path value or null
- */
-function findNearestCqDataPath(element) {
-  // First check parents
-  let current = element.parent;
-  while (current) {
-    // Look for cq sibling in current level
-    if (current.children) {
-      const cqSibling = current.children.find(
-        (child) => child.type === 'tag' && child.name === 'cq' && child.attribs?.['data-path'],
-      );
-      if (cqSibling) {
-        return cqSibling.attribs['data-path'];
-      }
-    }
-
-    // Move up to parent
-    current = current.parent;
-  }
-
-  return null;
-}
-
-/**
- * Generates a unique-ish CSS selector for any DOM element.
- * Strategy mirrors the Heading audit logic and limits depth for readability.
+ * Generates a unique CSS selector for any DOM element.
  * Priority order:
- * 1. Cloud Service: cq[data-path] (AEM CS context)
- * 2. Universal Editor: data-aue-* attributes
- * 3. Standard CSS: id, classes, nth-of-type
+ * 1. Universal Editor: data-aue-* attributes
+ * 2. Standard CSS: id, classes, nth-of-type, parent chain (max 3 levels)
+ *
  * @param {Element} element
- * @returns {string|null}
+ * @returns {string|null} A CSS selector string, or null.
  */
 export function getDomElementSelector(element) {
   // Works with cheerio elements only
@@ -107,13 +79,7 @@ export function getDomElementSelector(element) {
   const tag = name.toLowerCase();
   let selectors = [tag];
 
-  // 1. Check for Cloud Service <cq data-path> (highest priority for AEM CS)
-  const cqDataPath = findNearestCqDataPath(element);
-  if (cqDataPath) {
-    return `cq[data-path="${cqDataPath}"]`;
-  }
-
-  // 2. Check for Universal Editor data attributes
+  // 1. Check for Universal Editor data attributes
   const aueResource = attribs?.['data-aue-resource'];
   if (aueResource) {
     return `${tag}[data-aue-resource="${aueResource}"]`;
@@ -125,13 +91,13 @@ export function getDomElementSelector(element) {
     return `${tag}[data-aue-prop="${aueProp}"]`;
   }
 
-  // 3. Check for ID (most specific - return immediately)
+  // 2. Check for ID (most specific - return immediately)
   const id = attribs?.id;
   if (id) {
     return `${tag}#${cssEscape(id)}`;
   }
 
-  // 4. Add classes if available
+  // 3. Add classes if available
   const className = attribs?.class;
   if (className && typeof className === 'string') {
     const classes = className.trim().split(/\s+/).filter(Boolean);
@@ -141,7 +107,7 @@ export function getDomElementSelector(element) {
     }
   }
 
-  // 5. Add nth-of-type if multiple siblings of same tag exist
+  // 4. Add nth-of-type if multiple siblings of same tag exist
   if (parent && parent.children) {
     const siblingsOfSameTag = parent.children.filter(
       (child) => child.type === 'tag' && child.name === name,
@@ -155,7 +121,7 @@ export function getDomElementSelector(element) {
 
   const selector = selectors.join('');
 
-  // 6. Build path with parent selectors for more specificity (max 3 levels)
+  // 5. Build path with parent selectors for more specificity (max 3 levels)
   const pathParts = [selector];
   let current = parent;
   let levels = 0;
@@ -205,18 +171,14 @@ export function getDomElementSelector(element) {
     levels += 1;
   }
 
-  // 7. Join with '>' (direct child combinator)
+  // 6. Join with '>' (direct child combinator)
   return pathParts.join(' > ');
 }
 
 /**
  * Normalizes selector(s) into the payload expected by consumers.
  * Returns a unified format for spreading into opportunity objects
- * across all selector types (Cloud Service, Universal Editor, or standard).
- *
- * Cloud Service: { elements: [{ selector: "cq[data-path=\"...\"]" }, ...] }
- * Universal Editor: { elements: [{ selector: "div[data-aue-resource=\"...\"]" }, ...] }
- * Standard CSS: { elements: [{ selector: "body > div.content > a" }, ...] }
+ * across all selector types (Universal Editor or standard CSS).
  *
  * @param {string|string[]} selectors
  * @param {number} [limit=Infinity]
@@ -240,6 +202,5 @@ export function toElementTargets(selectors, limit = Infinity) {
     return {};
   }
 
-  // Always return unified format: { elements: [{ selector: "..." }, ...] }
   return { elements: limited.map((selector) => ({ selector })) };
 }
