@@ -422,8 +422,47 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
       expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
+      // CWV suggestions include jiraLink (empty until user saves URL in UI)
+      suggestionsArg.forEach((s) => expect(s.data).to.have.property('jiraLink', ''));
     });
 
+    it('handles audit result with only group entries for maxOrganicForUrls coverage', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      const auditResultWithGroupsOnly = {
+        cwv: [
+          {
+            type: 'group',
+            pattern: 'https://example.com/*',
+            name: 'Some pages',
+            pageviews: 5000,
+            organic: 3000,
+            metrics: [],
+          },
+        ],
+        auditContext: { interval: 7 },
+      };
+      const mockAuditGroupsOnly = {
+        getSiteId: () => 'site-id',
+        getId: () => 'audit-id',
+        getAuditType: () => Audit.AUDIT_TYPES.CWV,
+        getAuditResult: () => auditResultWithGroupsOnly,
+        getFullAuditRef: () => auditUrl,
+        getAuditedAt: () => '2023-11-27T12:34:56.789Z',
+      };
+
+      const stepContext = { ...context, site, audit: mockAuditGroupsOnly, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+      expect(oppty.addSuggestions).to.have.been.calledOnce;
+      const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
+      expect(suggestionsArg).to.have.lengthOf(1);
+      expect(suggestionsArg[0].data.type).to.equal('group');
+      expect(suggestionsArg[0].data).to.have.property('jiraLink', '');
+    });
     it('creating a new opportunity object fails', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.rejects(new Error('big error happened'));
