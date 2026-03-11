@@ -26,3 +26,7 @@ export const PREFLIGHT_ALT_TEXT_OBSERVATION = 'Missing or low-quality alt text o
 export const MAX_ALT_TEXT_LENGTH = 125;
 
 export const MYSTIQUE_BATCH_SIZE = 10;
+
+// Page limits for alt-text audit
+export const SUMMIT_PLG_PAGE_LIMIT = 20;
+export const DEFAULT_PAGE_LIMIT = 100;

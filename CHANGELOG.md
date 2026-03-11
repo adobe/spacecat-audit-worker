@@ -1,3 +1,24 @@
+# [1.351.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.350.1...v1.351.0) (2026-03-11)
+
+
+### Features
+
+* added top pages offset for alt-text audits with no suggestions ([#2098](https://github.com/adobe/spacecat-audit-worker/issues/2098)) ([f83d5ab](https://github.com/adobe/spacecat-audit-worker/commit/f83d5abe7e44e684ee6f68b48b25f5573cb4b3bb))
+
+## [1.350.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.350.0...v1.350.1) (2026-03-11)
+
+
+### Bug Fixes
+
+* preserve requiresValidation from context.site in step-audit ([#2106](https://github.com/adobe/spacecat-audit-worker/issues/2106)) ([9f5f07f](https://github.com/adobe/spacecat-audit-worker/commit/9f5f07fee9814e32c1097fb089c06ee58f3ee274))
+
+# [1.350.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.349.5...v1.350.0) (2026-03-10)
+
+
+### Features
+
+* broken backline delivery config update ([#2069](https://github.com/adobe/spacecat-audit-worker/issues/2069)) ([7fa03fe](https://github.com/adobe/spacecat-audit-worker/commit/7fa03fe4c55232f15a3d6c5b4526af11901272cc))
+
 ## [1.349.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.349.4...v1.349.5) (2026-03-10)
 
 
