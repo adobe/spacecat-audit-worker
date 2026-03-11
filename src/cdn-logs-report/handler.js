@@ -35,7 +35,6 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   const { s3Client } = awsRuntime;
   const s3Config = await getS3Config(site, context);
   log.debug(`Starting CDN logs report audit for ${url}`);
-
   const sharepointClient = await createLLMOSharepointClient(
     context,
     auditContext?.sharepointOptions,

@@ -113,11 +113,36 @@ export async function resolveCdnBucketName(site, context) {
   const {
     s3Client, log, env,
   } = context;
+  const resolveClientRegion = async () => {
+    const region = s3Client?.config?.region;
+    return typeof region === 'function' ? region() : region;
+  };
+  const logBucketRegionError = async (error, bucket) => {
+    const statusCode = error?.$metadata?.httpStatusCode;
+    const bucketRegionHint = error?.$response?.headers?.['x-amz-bucket-region'];
+
+    if (statusCode === 301) {
+      const clientRegion = await resolveClientRegion();
+      log.error(`Bucket ${bucket} is in region ${bucketRegionHint || 'unknown'} but client is using ${clientRegion}.`, {
+        bucket,
+        configuredRegion: site.getConfig()?.getLlmoCdnBucketConfig?.()?.region,
+        runtimeRegion: env?.AWS_REGION,
+        clientRegion,
+        bucketRegionHint,
+        requestId: error?.$metadata?.requestId,
+      });
+    }
+  };
 
   // If the bucket name is configured, use it
   const { bucketName } = site.getConfig()?.getLlmoCdnBucketConfig() || {};
   if (bucketName) {
-    await s3Client.send(new HeadBucketCommand({ Bucket: bucketName }));
+    try {
+      await s3Client.send(new HeadBucketCommand({ Bucket: bucketName }));
+    } catch (error) {
+      await logBucketRegionError(error, bucketName);
+      throw error;
+    }
     return bucketName;
   }
 
@@ -129,6 +154,7 @@ export async function resolveCdnBucketName(site, context) {
       await s3Client.send(new HeadBucketCommand({ Bucket: standardBucket }));
       return standardBucket;
     } catch (error) {
+      await logBucketRegionError(error, standardBucket);
       log.info(`Standardized bucket ${standardBucket} not found`, error);
     }
   }
