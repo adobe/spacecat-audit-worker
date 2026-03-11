@@ -167,7 +167,7 @@ describe('enrichUrlsWithTopicData', () => {
             subPrompts: [],
           },
           {
-            url: 'https://www.youtube.com/watch?v=test1234',
+            url: 'https://www.youtube.com/watch?v=test123',
             category: 'video',
             timesCited: 2,
             subPrompts: ['p1'],

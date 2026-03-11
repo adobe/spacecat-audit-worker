@@ -20,7 +20,7 @@ import { DATA_SOURCES } from '../common/constants.js';
  */
 export function createOpportunityData({ opportunityData } = {}) {
   return {
-    runbook: opportunityData?.runbook || 'https://adobe.sharepoint.com/sites/youtube-sentiment-analysis',
+    runbook: opportunityData?.runbook || '',
     origin: opportunityData?.origin || 'AUTOMATION',
     type: opportunityData?.type || 'youtube-analysis',
     title: opportunityData?.title || 'Youtube presence: Improve brand sentiment and visibility',

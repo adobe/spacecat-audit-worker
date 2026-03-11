@@ -24,7 +24,7 @@ describe('YouTube Analysis Opportunity Data Mapper', () => {
       expect(result.type).to.equal('youtube-analysis');
       expect(result.status).to.equal('NEW');
       expect(result.runbook).to.equal('');
-      expect(result.title).to.equal('YouTube presence: Improve brand sentiment and visibility');
+      expect(result.title).to.equal('Youtube presence: Improve brand sentiment and visibility');
     });
 
     it('should use values from opportunityData when provided', () => {
@@ -43,7 +43,7 @@ describe('YouTube Analysis Opportunity Data Mapper', () => {
       expect(result.description).to.equal(opportunityData.description);
       expect(result.runbook).to.equal(opportunityData.runbook);
       expect(result.status).to.equal(opportunityData.status);
-      expect(result.tags).to.deep.equal(['Video Content', 'Youtube', 'isElmo', 'social', 'Social Media']);
+      expect(result.tags).to.deep.equal(['Video Content', 'Youtube']);
       expect(result.data.dataSources).to.deep.equal(['Site', 'Page']);
       expect(result.origin).to.equal('AUTOMATION');
       expect(result.type).to.equal('youtube-analysis');
@@ -52,8 +52,8 @@ describe('YouTube Analysis Opportunity Data Mapper', () => {
     it('should include correct default title and description', () => {
       const result = createOpportunityData({});
 
-      expect(result.title).to.equal('YouTube presence: Improve brand sentiment and visibility');
-      expect(result.description).to.include('YouTube');
+      expect(result.title).to.equal('Youtube presence: Improve brand sentiment and visibility');
+      expect(result.description).to.include('Youtube');
       expect(result.description).to.include('brand sentiment');
     });
 
@@ -64,8 +64,7 @@ describe('YouTube Analysis Opportunity Data Mapper', () => {
       expect(result.tags).to.include('isElmo');
       expect(result.tags).to.include('Video Content');
       expect(result.tags).to.include('social');
-      expect(result.tags).to.include('Youtube');
-      expect(result.tags).to.include('Social Media');
+      expect(result.tags).to.deep.equal(['Video Content', 'social', 'isElmo']);
     });
 
     it('should include default data sources', () => {
@@ -87,14 +86,14 @@ describe('YouTube Analysis Opportunity Data Mapper', () => {
       expect(result.data.dataSources).to.deep.equal(['Site', 'Page']);
     });
 
-    it('should deduplicate tags when opportunityData contains defaults', () => {
+    it('should use provided tags when opportunityData contains tags', () => {
       const opportunityData = {
         tags: ['isElmo', 'Video Content', 'social', 'custom'],
       };
 
       const result = createOpportunityData({ opportunityData });
 
-      expect(result.tags).to.deep.equal(['isElmo', 'Video Content', 'social', 'custom', 'Youtube', 'Social Media']);
+      expect(result.tags).to.deep.equal(['isElmo', 'Video Content', 'social', 'custom']);
     });
 
     it('should deduplicate dataSources when opportunityData contains defaults', () => {
