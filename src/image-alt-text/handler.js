@@ -22,6 +22,19 @@ const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
 
 /**
+ * Checks if the decorative agent classification is enabled.
+ * Enabled when alt-text-decorative-agent handler has no enabled.sites (empty = enabled for all).
+ * @param {Object} context - Lambda context with dataAccess
+ * @returns {Promise<boolean>}
+ */
+export async function isDecorativeAgentEnabled(context) {
+  const { Configuration } = context.dataAccess;
+  const configuration = await Configuration.findLatest();
+  const enabledSites = configuration.getEnabledSiteIdsForHandler('alt-text-decorative-agent');
+  return !enabledSites.length;
+}
+
+/**
  * Determines the page limit for alt-text audit based on summit-plg configuration
  * @param {Object} site - Site object
  * @param {Object} context - Lambda context with log and dataAccess
@@ -358,6 +371,8 @@ export async function processAltTextWithMystique(context) {
       log.debug(`[${AUDIT_TYPE}]: Created new opportunity with ID ${altTextOppty.getId()}`);
     }
 
+    const decorativeAgentEnabled = await isDecorativeAgentEnabled(context);
+
     await sendAltTextOpportunityToMystique(
       site.getBaseURL(),
       pageUrls,
@@ -366,6 +381,7 @@ export async function processAltTextWithMystique(context) {
       context,
       imageUrlsWithAltText,
       isSummitPlg,
+      decorativeAgentEnabled,
     );
 
     log.debug(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);

@@ -87,6 +87,11 @@ describe('Image Alt Text Handler', () => {
               getType: sandbox.stub().returns('alt-text'),
             }),
           },
+          Configuration: {
+            findLatest: sandbox.stub().resolves({
+              getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
+            }),
+          },
         },
         imsHost: 'test-ims-host',
         clientId: 'test-client-id',
@@ -115,6 +120,28 @@ describe('Image Alt Text Handler', () => {
         type: 'top-pages',
         siteId: 'site-id',
       });
+    });
+  });
+
+  describe('isDecorativeAgentEnabled', () => {
+    it('should return true when enabled sites is empty', async () => {
+      context.dataAccess.Configuration = {
+        findLatest: sandbox.stub().resolves({
+          getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
+        }),
+      };
+      const result = await handlerModule.isDecorativeAgentEnabled(context);
+      expect(result).to.be.true;
+    });
+
+    it('should return false when enabled sites is non-empty', async () => {
+      context.dataAccess.Configuration = {
+        findLatest: sandbox.stub().resolves({
+          getEnabledSiteIdsForHandler: sandbox.stub().returns(['site-1']),
+        }),
+      };
+      const result = await handlerModule.isDecorativeAgentEnabled(context);
+      expect(result).to.be.false;
     });
   });
 
@@ -1017,6 +1044,11 @@ describe('Image Alt Text Handler', () => {
                 getType: sandbox.stub().returns('alt-text'),
               }),
             },
+            Configuration: {
+              findLatest: sandbox.stub().resolves({
+                getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
+              }),
+            },
           },
         })
         .build();
@@ -1172,6 +1204,11 @@ describe('Image Alt Text Handler', () => {
             },
             Suggestion: {
               bulkUpdateStatus: bulkUpdateStatusStub,
+            },
+            Configuration: {
+              findLatest: sandbox.stub().resolves({
+                getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
+              }),
             },
           },
         })
