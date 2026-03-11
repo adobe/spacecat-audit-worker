@@ -1,3 +1,10 @@
+# [1.351.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.350.1...v1.351.0) (2026-03-11)
+
+
+### Features
+
+* added top pages offset for alt-text audits with no suggestions ([#2098](https://github.com/adobe/spacecat-audit-worker/issues/2098)) ([f83d5ab](https://github.com/adobe/spacecat-audit-worker/commit/f83d5abe7e44e684ee6f68b48b25f5573cb4b3bb))
+
 ## [1.350.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.350.0...v1.350.1) (2026-03-11)
 
 
