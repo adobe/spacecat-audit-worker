@@ -107,7 +107,10 @@ export class StepAudit extends BaseAudit {
 
     try {
       const site = await this.siteProvider(siteId, context);
-
+      // Preserve requiresValidation from index.js - siteProvider returns a fresh site
+      if (context.site?.requiresValidation !== undefined) {
+        site.requiresValidation = context.site.requiresValidation;
+      }
       if (!(await isAuditEnabledForSite(type, site, context))) {
         log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
         return ok();

@@ -19,3 +19,7 @@ export const ALT_TEXT_GUIDANCE_TYPE = 'guidance:missing-alt-text';
 export const ALT_TEXT_OBSERVATION = 'Missing alt text on images';
 
 export const MYSTIQUE_BATCH_SIZE = 10;
+
+// Page limits for alt-text audit
+export const SUMMIT_PLG_PAGE_LIMIT = 20;
+export const DEFAULT_PAGE_LIMIT = 100;

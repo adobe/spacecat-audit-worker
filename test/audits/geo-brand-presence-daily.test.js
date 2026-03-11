@@ -16,7 +16,6 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import { parquetWriteBuffer } from 'hyparquet-writer';
 import {
   keywordPromptsImportStep,
   loadPromptsAndSendDetection,
@@ -174,8 +173,7 @@ describe('Geo Brand Presence Daily Handler', () => {
   });
 
   it('should send daily detection message in step 1 with date field', async () => {
-    // Mock S3 client method used by getStoredMetrics (AWS SDK v3 style)
-    fakeParquetS3Response(fakeData());
+    fakeConfigS3Response(fakeAiTopicsConfig());
 
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
@@ -186,7 +184,6 @@ describe('Geo Brand Presence Daily Handler', () => {
       brandPresenceCadence: 'daily',
       auditContext: {
         referenceDate,
-        parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
 
@@ -212,7 +209,7 @@ describe('Geo Brand Presence Daily Handler', () => {
   });
 
   it('should calculate correct ISO week for dates at year boundaries in step 1', async () => {
-    fakeParquetS3Response(fakeData());
+    fakeConfigS3Response(fakeAiTopicsConfig());
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
     // Test December 30, 2024 (Monday of Week 1, 2025)
@@ -223,7 +220,6 @@ describe('Geo Brand Presence Daily Handler', () => {
       brandPresenceCadence: 'daily',
       auditContext: {
         referenceDate,
-        parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
 
@@ -234,11 +230,9 @@ describe('Geo Brand Presence Daily Handler', () => {
   });
 
   it('should NOT send detection message when no prompts available', async () => {
-    fakeParquetS3Response([]);
-    
-    // Mock empty config (no human prompts)
+    // Mock empty config (no prompts)
     fakeConfigS3Response(llmoConfig.defaultConfig());
-    
+
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
     await loadPromptsAndSendDetection({
@@ -246,7 +240,6 @@ describe('Geo Brand Presence Daily Handler', () => {
       brandPresenceCadence: 'daily',
       auditContext: {
         referenceDate: new Date('2025-10-02T12:00:00Z'),
-        parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
 
@@ -255,15 +248,13 @@ describe('Geo Brand Presence Daily Handler', () => {
   });
 
   it('should use current date when referenceDate is not provided in step 1', async () => {
-    fakeParquetS3Response(fakeData());
+    fakeConfigS3Response(fakeAiTopicsConfig());
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
     await loadPromptsAndSendDetection({
       ...context,
       brandPresenceCadence: 'daily',
-      auditContext: {
-        parquetFiles: ['some/parquet/file/data.parquet'],
-      },
+      auditContext: {},
     }, getPresignedUrl);
 
     // Step 1 should send only categorization message
@@ -302,83 +293,39 @@ describe('Geo Brand Presence Daily Handler', () => {
     });
   }
 
-  function fakeParquetS3Response(response) {
-    const columnData = {
-      prompt: { data: [], name: 'prompt', type: 'STRING' },
-      region: { data: [], name: 'region', type: 'STRING' },
-      category: { data: [], name: 'category', type: 'STRING' },
-      topic: { data: [], name: 'topic', type: 'STRING' },
-      url: { data: [], name: 'url', type: 'STRING' },
-      keyword: { data: [], name: 'keyword', type: 'STRING' },
-      keywordImportTime: { data: [], name: 'keywordImportTime', type: 'TIMESTAMP' },
-      volume: { data: [], name: 'volume', type: 'INT32' },
-      volumeImportTime: { data: [], name: 'volumeImportTime', type: 'TIMESTAMP' },
-      source: { data: [], name: 'source', type: 'STRING' },
-    };
-    const keys = Object.keys(columnData);
-    for (const x of response) {
-      for (const key of keys) {
-        columnData[key].data.push(x[key]);
-      }
-    }
-
-    const buffer = parquetWriteBuffer({ columnData: Object.values(columnData) });
-
-    s3Client.send.withArgs(
-      matchS3Cmd(
-        'GetObjectCommand',
-        { Key: sinon.match(/[/]data[.]parquet$/) },
-      ),
-    ).resolves({
-      Body: {
-        async transformToByteArray() {
-          return new Uint8Array(buffer);
+  function fakeAiTopicsConfig() {
+    const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+    const cat2 = '2a2f9b39-126b-411e-af0b-ad2a48dfd9b1';
+    return {
+      ...llmoConfig.defaultConfig(),
+      categories: {
+        [cat1]: { name: 'adobe', region: ['us'] },
+        [cat2]: { name: 'photoshop', region: ['us'] },
+      },
+      aiTopics: {
+        'a1a1a1a1-1111-4111-a111-111111111111': {
+          name: 'general',
+          category: cat1,
+          prompts: [
+            { prompt: 'what is adobe?', regions: ['us'], origin: 'ai', source: 'drs' },
+          ],
+        },
+        'b2b2b2b2-2222-4222-a222-222222222222': {
+          name: 'pricing',
+          category: cat1,
+          prompts: [
+            { prompt: 'adobe pricing', regions: ['us'], origin: 'ai', source: 'drs' },
+          ],
+        },
+        'c3c3c3c3-3333-4333-a333-333333333333': {
+          name: 'usage',
+          category: cat2,
+          prompts: [
+            { prompt: 'how to use photoshop?', regions: ['us'], origin: 'ai', source: 'drs' },
+          ],
         },
       },
-    });
-  }
-
-  function fakeData(mapFn) {
-    const data = [
-      {
-        prompt: 'what is adobe?',
-        region: 'us',
-        category: 'adobe',
-        topic: 'general',
-        url: 'https://adobe.com/page1',
-        keyword: 'adobe',
-        keywordImportTime: new Date('2024-05-01T00:00:00Z'),
-        volume: 1000,
-        volumeImportTime: new Date('2025-10-01T14:00:00.000Z'),
-        source: 'ahrefs',
-      },
-      {
-        prompt: 'adobe pricing',
-        region: 'us',
-        category: 'adobe',
-        topic: 'pricing',
-        url: 'https://adobe.com/page1',
-        keyword: 'adobe',
-        keywordImportTime: new Date('2024-05-01T00:00:00Z'),
-        volume: 1000,
-        volumeImportTime: new Date('2025-10-01T14:00:00.000Z'),
-        source: 'ahrefs',
-      },
-      {
-        prompt: 'how to use photoshop?',
-        region: 'us',
-        category: 'photoshop',
-        topic: 'usage',
-        url: 'https://adobe.com/page2',
-        keyword: 'photoshop',
-        keywordImportTime: new Date('2024-05-01T00:00:00Z'),
-        volume: 5000,
-        volumeImportTime: new Date('2025-10-01T14:00:00.000Z'),
-        source: 'ahrefs',
-      },
-    ];
-
-    return mapFn ? data.map(mapFn) : data;
+    };
   }
 });
 

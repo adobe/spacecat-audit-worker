@@ -343,6 +343,94 @@ describe('DRS Config Writer', () => {
     expect(cat.region.sort()).to.deep.equal(['de', 'uk', 'us']);
   });
 
+  it('preserves the type field (branded/unbranded) from DRS prompts', async () => {
+    configClient.readConfig.resolves({
+      config: { categories: {}, aiTopics: {} },
+    });
+
+    const drsPrompts = [
+      {
+        prompt: 'What is Adobe?',
+        region: 'us',
+        category: 'brand',
+        topic: 'general',
+        type: 'branded',
+      },
+      {
+        prompt: 'Best PDF editor?',
+        region: 'us',
+        category: 'brand',
+        topic: 'general',
+        type: 'unbranded',
+      },
+    ];
+
+    await writeDrsPromptsToLlmoConfig({
+      drsPrompts, siteId: 'site-1', s3Client, s3Bucket: 'bucket', log, configClient,
+    });
+
+    const writtenConfig = configClient.writeConfig.firstCall.args[1];
+    const [, topic] = Object.entries(writtenConfig.aiTopics)[0];
+
+    expect(topic.prompts).to.have.lengthOf(2);
+    const branded = topic.prompts.find((p) => p.prompt === 'What is Adobe?');
+    const unbranded = topic.prompts.find((p) => p.prompt === 'Best PDF editor?');
+    expect(branded.type).to.equal('branded');
+    expect(unbranded.type).to.equal('unbranded');
+  });
+
+  it('omits type field when prompt has no type', async () => {
+    configClient.readConfig.resolves({
+      config: { categories: {}, aiTopics: {} },
+    });
+
+    const drsPrompts = [
+      {
+        prompt: 'No type prompt', region: 'us', category: 'cat', topic: 'topic',
+      },
+      {
+        prompt: 'Empty type prompt', region: 'us', category: 'cat', topic: 'topic', type: '',
+      },
+    ];
+
+    await writeDrsPromptsToLlmoConfig({
+      drsPrompts, siteId: 'site-1', s3Client, s3Bucket: 'bucket', log, configClient,
+    });
+
+    const writtenConfig = configClient.writeConfig.firstCall.args[1];
+    const [, topic] = Object.entries(writtenConfig.aiTopics)[0];
+
+    topic.prompts.forEach((p) => {
+      expect(p).to.not.have.property('type');
+    });
+  });
+
+  it('preserves type from first prompt when duplicates are merged across regions', async () => {
+    configClient.readConfig.resolves({
+      config: { categories: {}, aiTopics: {} },
+    });
+
+    const drsPrompts = [
+      {
+        prompt: 'Same question', region: 'us', category: 'cat', topic: 'topic', type: 'branded',
+      },
+      {
+        prompt: 'Same question', region: 'de', category: 'cat', topic: 'topic', type: 'branded',
+      },
+    ];
+
+    await writeDrsPromptsToLlmoConfig({
+      drsPrompts, siteId: 'site-1', s3Client, s3Bucket: 'bucket', log, configClient,
+    });
+
+    const writtenConfig = configClient.writeConfig.firstCall.args[1];
+    const [, topic] = Object.entries(writtenConfig.aiTopics)[0];
+
+    expect(topic.prompts).to.have.lengthOf(1);
+    expect(topic.prompts[0].type).to.equal('branded');
+    expect(topic.prompts[0].regions.sort()).to.deep.equal(['de', 'us']);
+  });
+
   it('creates separate categories for different category names', async () => {
     configClient.readConfig.resolves({
       config: { categories: {}, aiTopics: {} },
