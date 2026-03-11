@@ -46,6 +46,7 @@ const CWV_AUTO_FIX_FEATURE_TOGGLE = 'cwv-auto-fix';
  * - Already have guidance (data.issues with non-empty values)
  *
  * @param {Object} suggestion - Suggestion object
+ * @param {Object} [log] - Optional logger (e.g. context.log); if missing, no logging
  * @returns {boolean} True if suggestion should receive auto-suggest
  */
 export function shouldSendAutoSuggestForSuggestion(suggestion, log) {
@@ -53,7 +54,7 @@ export function shouldSendAutoSuggestForSuggestion(suggestion, log) {
 
   // Only send for NEW suggestions
   if (status !== 'NEW') {
-    log.info(`[audit-worker-cwv] suggestion ${suggestion.getId()} is not NEW, skipping`);
+    if (log?.info) log.info(`[audit-worker-cwv] suggestion ${suggestion.getId()} is not NEW, skipping`);
     return false;
   }
 
@@ -67,9 +68,7 @@ export function shouldSendAutoSuggestForSuggestion(suggestion, log) {
 
   // If any issue has empty value, send for auto-suggest
   const shouldSend = issues.some((issue) => !issue.value || !issue.value.trim());
-  if (shouldSend) {
-    log.info(`[audit-worker-cwv] suggestion ${suggestion.getId()} has empty value, sending for auto-suggest`);
-  }
+  if (shouldSend && log?.info) log.info(`[audit-worker-cwv] suggestion ${suggestion.getId()} has empty value, sending for auto-suggest`);
   return shouldSend;
 }
 

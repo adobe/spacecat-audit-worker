@@ -500,5 +500,22 @@ describe('CWV Auto-Suggest', () => {
       const result = shouldSendAutoSuggestForSuggestion(suggestion);
       expect(result).to.be.true;
     });
+
+    it('should call log.info when log is provided and suggestion has empty guidance value', () => {
+      const log = { info: sinon.stub() };
+      const suggestion = {
+        getId: () => 'sugg-123',
+        getStatus: () => 'NEW',
+        getData: () => ({
+          issues: [{ type: 'lcp', value: '' }],
+        }),
+      };
+
+      const result = shouldSendAutoSuggestForSuggestion(suggestion, log);
+      expect(result).to.be.true;
+      expect(log.info.calledOnce).to.be.true;
+      expect(log.info.firstCall.args[0]).to.include('sugg-123');
+      expect(log.info.firstCall.args[0]).to.include('empty value, sending for auto-suggest');
+    });
   });
 });
