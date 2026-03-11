@@ -121,24 +121,26 @@ export async function processAutoSuggest(context, opportunity, site) {
 
     // Send one SQS message per suggestion that needs auto-suggest
     for (const suggestion of suggestions) {
-      // Skip suggestions that don't need auto-suggest
-      if (!shouldSendAutoSuggestForSuggestion(suggestion)) {
-        // eslint-disable-next-line no-continue
-        continue;
-      }
-
       const suggestionId = suggestion.getId();
       const suggestionData = suggestion.getData();
-
-      // Skip groups - only process URL-type suggestions
-      if (suggestionData.type === 'group') {
-        // eslint-disable-next-line no-continue
-        continue;
-      }
 
       // Extract URL and metrics from suggestion data
       const { url } = suggestionData;
       const metrics = suggestionData.metrics?.[0] || {};
+
+      // Skip suggestions that don't need auto-suggest
+      if (!shouldSendAutoSuggestForSuggestion(suggestion)) {
+        log.info(`[audit-worker-cwv] siteId: ${siteId} | Skipping suggestion ${suggestion.getId()} for CWV auto-suggest, suggestionId: ${suggestionId}, url: ${url}`);
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      // Skip groups - only process URL-type suggestions
+      if (suggestionData.type === 'group') {
+        log.info(`[audit-worker-cwv] siteId: ${siteId} | Skipping group suggestion ${suggestionId} for CWV auto-suggest`);
+        // eslint-disable-next-line no-continue
+        continue;
+      }
 
       log.debug(`[audit-worker-cwv] siteId: ${siteId} | Sending CWV suggestion for auto-suggest, suggestionId: ${suggestionId}, url: ${url}`);
 
