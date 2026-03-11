@@ -64,7 +64,7 @@ export const GUIDELINE_TYPES = {
 };
 
 /**
-Store Client class for accessing URL, Content, and Guidelines stores
+ * Store Client class for accessing URL, Content, and Guidelines stores
  * Uses spacecat-api-service endpoints
  */
 export default class StoreClient {

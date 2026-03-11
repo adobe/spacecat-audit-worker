@@ -17,11 +17,13 @@ describe('enrichUrlsWithTopicData', () => {
   const redditUrl1 = 'https://www.reddit.com/r/france/comments/abc123/post_title';
   const redditUrl2 = 'https://www.reddit.com/r/travel/comments/def456/another_post';
   const redditUrl3 = 'https://www.reddit.com/r/finance/comments/ghi789/finance_post';
+  const ytUrl1 = 'https://www.youtube.com/watch?v=test';
 
   it('should enrich urls with categories, timesCited, and prompts from topics', () => {
     const urls = [
       { url: redditUrl1, siteId: 'site-1' },
       { url: redditUrl2, siteId: 'site-1' },
+      { url: ytUrl1, siteId: 'site-1' },
     ];
 
     const topics = [
@@ -34,6 +36,12 @@ describe('enrichUrlsWithTopicData', () => {
             category: 'pet-insurance',
             timesCited: 3,
             subPrompts: ['prompt-a', 'prompt-b'],
+          },
+          {
+            url: ytUrl1,
+            category: 'insurance-video',
+            timesCited: 2,
+            subPrompts: ['prompt-a'],
           },
         ],
       },
@@ -52,6 +60,12 @@ describe('enrichUrlsWithTopicData', () => {
             category: 'travel',
             timesCited: 5,
             subPrompts: ['prompt-d'],
+          },
+          {
+            url: ytUrl1,
+            category: 'travel-video',
+            timesCited: 3,
+            subPrompts: ['prompt-b', 'prompt-e'],
           },
         ],
       },
@@ -73,6 +87,14 @@ describe('enrichUrlsWithTopicData', () => {
       categories: ['travel'],
       timesCited: 5,
       prompts: ['prompt-d'],
+    });
+
+    expect(result[2]).to.deep.equal({
+      url: ytUrl1,
+      siteId: 'site-1',
+      categories: ['insurance-video', 'travel-video'],
+      timesCited: 5,
+      prompts: ['prompt-a', 'prompt-b', 'prompt-e'],
     });
   });
 
@@ -130,7 +152,10 @@ describe('enrichUrlsWithTopicData', () => {
   });
 
   it('should match urls case-insensitively', () => {
-    const urls = [{ url: 'https://WWW.Reddit.com/r/France/comments/ABC123/Post_Title' }];
+    const urls = [
+      { url: 'https://WWW.Reddit.com/r/France/comments/ABC123/Post_Title' },
+      { url: 'https://WWW.YouTube.com/watch?v=test123' },
+    ];
     const topics = [
       {
         topicId: 'topic-1',
@@ -141,6 +166,12 @@ describe('enrichUrlsWithTopicData', () => {
             timesCited: 1,
             subPrompts: [],
           },
+          {
+            url: 'https://www.youtube.com/watch?v=test1234',
+            category: 'video',
+            timesCited: 2,
+            subPrompts: ['p1'],
+          },
         ],
       },
     ];
@@ -149,6 +180,8 @@ describe('enrichUrlsWithTopicData', () => {
 
     expect(result[0].categories).to.deep.equal(['fr']);
     expect(result[0].timesCited).to.equal(1);
+    expect(result[1].categories).to.deep.equal(['video']);
+    expect(result[1].timesCited).to.equal(2);
   });
 
   it('should return original urls when topics is empty', () => {
@@ -303,21 +336,37 @@ describe('enrichUrlsWithTopicData', () => {
   });
 
   it('should preserve existing url item properties', () => {
-    const urls = [{
-      url: redditUrl1,
-      siteId: 'site-1',
-      audits: ['reddit-analysis'],
-      byCustomer: false,
-    }];
+    const urls = [
+      {
+        url: redditUrl1,
+        siteId: 'site-1',
+        audits: ['reddit-analysis'],
+        byCustomer: false,
+      },
+      {
+        url: ytUrl1,
+        siteId: 'site-2',
+        audits: ['youtube-analysis'],
+        byCustomer: true,
+      },
+    ];
     const topics = [
       {
         topicId: 'topic-1',
-        urls: [{
-          url: redditUrl1,
-          category: 'cat',
-          timesCited: 1,
-          subPrompts: ['p1'],
-        }],
+        urls: [
+          {
+            url: redditUrl1,
+            category: 'cat',
+            timesCited: 1,
+            subPrompts: ['p1'],
+          },
+          {
+            url: ytUrl1,
+            category: 'video-cat',
+            timesCited: 2,
+            subPrompts: ['p2'],
+          },
+        ],
       },
     ];
 
@@ -327,115 +376,9 @@ describe('enrichUrlsWithTopicData', () => {
     expect(result[0].audits).to.deep.equal(['reddit-analysis']);
     expect(result[0].byCustomer).to.equal(false);
     expect(result[0].categories).to.deep.equal(['cat']);
-  });
-
-  describe('YouTube URLs', () => {
-    const ytUrl1 = 'https://www.youtube.com/watch?v=abc123';
-    const ytUrl2 = 'https://youtube.com/watch?v=def456';
-
-    it('should enrich YouTube URLs with topic data', () => {
-      const urls = [
-        { url: ytUrl1, siteId: 'site-1' },
-        { url: ytUrl2, siteId: 'site-1' },
-      ];
-
-      const topics = [
-        {
-          topicId: 'topic-1',
-          name: 'Product Reviews',
-          urls: [
-            {
-              url: ytUrl1,
-              category: 'product-demo',
-              timesCited: 2,
-              subPrompts: ['prompt-a', 'prompt-b'],
-            },
-          ],
-        },
-        {
-          topicId: 'topic-2',
-          name: 'Tutorials',
-          urls: [
-            {
-              url: ytUrl1,
-              category: 'how-to',
-              timesCited: 2,
-              subPrompts: ['prompt-b', 'prompt-c'],
-            },
-            {
-              url: ytUrl2,
-              category: 'tutorial',
-              timesCited: 1,
-              subPrompts: ['prompt-d'],
-            },
-          ],
-        },
-      ];
-
-      const result = enrichUrlsWithTopicData(urls, topics);
-
-      expect(result[0]).to.deep.equal({
-        url: ytUrl1,
-        siteId: 'site-1',
-        categories: ['product-demo', 'how-to'],
-        timesCited: 4,
-        prompts: ['prompt-a', 'prompt-b', 'prompt-c'],
-      });
-
-      expect(result[1]).to.deep.equal({
-        url: ytUrl2,
-        siteId: 'site-1',
-        categories: ['tutorial'],
-        timesCited: 1,
-        prompts: ['prompt-d'],
-      });
-    });
-
-    it('should match YouTube URLs case-insensitively', () => {
-      const urls = [{ url: 'https://WWW.YouTube.com/watch?v=ABC123' }];
-      const topics = [
-        {
-          topicId: 'topic-1',
-          urls: [{
-            url: 'https://www.youtube.com/watch?v=abc123',
-            category: 'brand',
-            timesCited: 1,
-            subPrompts: [],
-          }],
-        },
-      ];
-
-      const result = enrichUrlsWithTopicData(urls, topics);
-
-      expect(result[0].categories).to.deep.equal(['brand']);
-      expect(result[0].timesCited).to.equal(1);
-    });
-
-    it('should preserve existing url item properties for YouTube URLs', () => {
-      const urls = [{
-        url: ytUrl1,
-        siteId: 'site-1',
-        audits: ['youtube-analysis'],
-        byCustomer: false,
-      }];
-      const topics = [
-        {
-          topicId: 'topic-1',
-          urls: [{
-            url: ytUrl1,
-            category: 'brand-mention',
-            timesCited: 1,
-            subPrompts: ['p1'],
-          }],
-        },
-      ];
-
-      const result = enrichUrlsWithTopicData(urls, topics);
-
-      expect(result[0].siteId).to.equal('site-1');
-      expect(result[0].audits).to.deep.equal(['youtube-analysis']);
-      expect(result[0].byCustomer).to.equal(false);
-      expect(result[0].categories).to.deep.equal(['brand-mention']);
-    });
+    expect(result[1].siteId).to.equal('site-2');
+    expect(result[1].audits).to.deep.equal(['youtube-analysis']);
+    expect(result[1].byCustomer).to.equal(true);
+    expect(result[1].categories).to.deep.equal(['video-cat']);
   });
 });
