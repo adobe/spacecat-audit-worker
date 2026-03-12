@@ -282,7 +282,7 @@ export async function addAltTextSuggestions({ opportunity, newSuggestionDTOs, lo
  * @param {Object} log - Logger
  * @returns {Promise<void>}
  */
-export async function cleanupOutdatedSuggestions(opportunity, log) {
+export async function cleanupOutdatedSuggestions(opportunity, log, Suggestion) {
   try {
     const allSuggestions = await opportunity.getSuggestions();
     const outdatedSuggestions = allSuggestions.filter(
@@ -290,7 +290,7 @@ export async function cleanupOutdatedSuggestions(opportunity, log) {
     );
 
     if (outdatedSuggestions.length > 0) {
-      await Promise.all(outdatedSuggestions.map((suggestion) => suggestion.remove()));
+      await Suggestion.removeByIds(outdatedSuggestions.map((s) => s.getId()));
       log.debug(`[${AUDIT_TYPE}]: Cleaned up ${outdatedSuggestions.length} OUTDATED suggestions`);
     } else {
       log.debug(`[${AUDIT_TYPE}]: No OUTDATED suggestions to clean up`);

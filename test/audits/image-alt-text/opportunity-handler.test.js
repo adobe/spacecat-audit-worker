@@ -773,29 +773,28 @@ describe('cleanupOutdatedSuggestions', () => {
   it('should cleanup OUTDATED suggestions successfully', async () => {
     const mockSuggestions = [
       {
+        getId: () => 'sugg-1',
         getStatus: () => 'OUTDATED',
-        remove: sinon.stub().resolves(),
       },
       {
+        getId: () => 'sugg-2',
         getStatus: () => 'OUTDATED',
-        remove: sinon.stub().resolves(),
       },
       {
+        getId: () => 'sugg-3',
         getStatus: () => 'NEW',
-        remove: sinon.stub().resolves(),
       },
     ];
 
     const mockOpportunity = {
       getSuggestions: sinon.stub().resolves(mockSuggestions),
     };
+    const SuggestionMock = { removeByIds: sinon.stub().resolves() };
 
-    await cleanupOutdatedSuggestions(mockOpportunity, logStub);
+    await cleanupOutdatedSuggestions(mockOpportunity, logStub, SuggestionMock);
 
     // Should remove only OUTDATED suggestions
-    expect(mockSuggestions[0].remove).to.have.been.called;
-    expect(mockSuggestions[1].remove).to.have.been.called;
-    expect(mockSuggestions[2].remove).to.not.have.been.called;
+    expect(SuggestionMock.removeByIds).to.have.been.calledWith(['sugg-1', 'sugg-2']);
 
     expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: Cleaned up 2 OUTDATED suggestions',
@@ -805,24 +804,24 @@ describe('cleanupOutdatedSuggestions', () => {
   it('should handle case when no OUTDATED suggestions exist', async () => {
     const mockSuggestions = [
       {
+        getId: () => 'sugg-1',
         getStatus: () => 'NEW',
-        remove: sinon.stub().resolves(),
       },
       {
+        getId: () => 'sugg-2',
         getStatus: () => 'SKIPPED',
-        remove: sinon.stub().resolves(),
       },
     ];
 
     const mockOpportunity = {
       getSuggestions: sinon.stub().resolves(mockSuggestions),
     };
+    const SuggestionMock = { removeByIds: sinon.stub().resolves() };
 
-    await cleanupOutdatedSuggestions(mockOpportunity, logStub);
+    await cleanupOutdatedSuggestions(mockOpportunity, logStub, SuggestionMock);
 
     // Should not remove any suggestions
-    expect(mockSuggestions[0].remove).to.not.have.been.called;
-    expect(mockSuggestions[1].remove).to.not.have.been.called;
+    expect(SuggestionMock.removeByIds).to.not.have.been.called;
 
     expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: No OUTDATED suggestions to clean up',
@@ -834,8 +833,9 @@ describe('cleanupOutdatedSuggestions', () => {
     const mockOpportunity = {
       getSuggestions: sinon.stub().rejects(error),
     };
+    const SuggestionMock = { removeByIds: sinon.stub().resolves() };
 
-    await cleanupOutdatedSuggestions(mockOpportunity, logStub);
+    await cleanupOutdatedSuggestions(mockOpportunity, logStub, SuggestionMock);
 
     expect(logStub.error).to.have.been.calledWith(
       '[alt-text]: Failed to cleanup OUTDATED suggestions: Remove failed',

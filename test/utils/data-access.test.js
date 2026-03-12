@@ -1824,6 +1824,7 @@ describe('data-access', () => {
   describe('reconcileDisappearedSuggestions', () => {
     let mockLogger;
     let mockOpportunity;
+    let mockSuggestionCollection;
 
     beforeEach(() => {
       mockLogger = {
@@ -1835,6 +1836,9 @@ describe('data-access', () => {
       mockOpportunity = {
         getId: sinon.stub().returns('opp-id'),
         addFixEntities: sinon.stub().resolves({ createdItems: [], errorItems: [] }),
+      };
+      mockSuggestionCollection = {
+        saveMany: sinon.stub().resolves(),
       };
     });
 
@@ -1863,10 +1867,11 @@ describe('data-access', () => {
           status: 'PUBLISHED',
           suggestions: [s.getId()],
         }),
+        Suggestion: mockSuggestionCollection,
       });
 
       expect(suggestion.setStatus).to.have.been.calledWith(SuggestionDataAccess.STATUSES.FIXED);
-      expect(suggestion.save).to.have.been.called;
+      expect(mockSuggestionCollection.saveMany).to.have.been.called;
       expect(mockOpportunity.addFixEntities).to.have.been.called;
     });
 
@@ -1915,6 +1920,7 @@ describe('data-access', () => {
         isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
         buildFixEntityPayload: buildFixEntityPayloadStub,
         isAuthorOnly: true,
+        Suggestion: mockSuggestionCollection,
       });
 
       expect(buildFixEntityPayloadStub).to.have.been.calledWith(
@@ -1924,14 +1930,17 @@ describe('data-access', () => {
       );
     });
 
-    it('should log warning when suggestion.save() throws', async () => {
+    it('should log warning when Suggestion.saveMany() throws', async () => {
       const suggestion = {
         getId: sinon.stub().returns('sugg-1'),
         getData: sinon.stub().returns({ key: '1' }),
         getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
         setStatus: sinon.stub(),
         setUpdatedBy: sinon.stub(),
-        save: sinon.stub().rejects(new Error('DB error')),
+      };
+
+      const failingSuggestionCollection = {
+        saveMany: sinon.stub().rejects(new Error('DB error')),
       };
 
       await reconcileDisappearedSuggestions({
@@ -1940,6 +1949,7 @@ describe('data-access', () => {
         log: mockLogger,
         isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
         buildFixEntityPayload: sinon.stub(),
+        Suggestion: failingSuggestionCollection,
       });
 
       expect(mockLogger.warn).to.have.been.calledWith(
@@ -1963,6 +1973,7 @@ describe('data-access', () => {
         log: mockLogger,
         isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
         buildFixEntityPayload: sinon.stub().throws(new Error('Payload error')),
+        Suggestion: mockSuggestionCollection,
       });
 
       expect(mockLogger.warn).to.have.been.calledWith(
@@ -1977,7 +1988,6 @@ describe('data-access', () => {
         getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
         setStatus: sinon.stub(),
         setUpdatedBy: sinon.stub(),
-        save: sinon.stub().resolves(),
       };
 
       mockOpportunity.addFixEntities.rejects(new Error('Add fix entities error'));
@@ -1988,6 +1998,7 @@ describe('data-access', () => {
         log: mockLogger,
         isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
         buildFixEntityPayload: sinon.stub().returns({ id: 'fix-1' }),
+        Suggestion: mockSuggestionCollection,
       });
 
       expect(mockLogger.warn).to.have.been.calledWith(

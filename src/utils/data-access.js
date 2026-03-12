@@ -501,12 +501,7 @@ export async function reconcileDisappearedSuggestions({
     });
 
     try {
-      if (Suggestion) {
-        await Suggestion.saveMany(fixedSuggestions);
-      } else {
-        // Fallback: save individually if Suggestion collection not available
-        await Promise.all(fixedSuggestions.map((s) => s.save?.()));
-      }
+      await Suggestion.saveMany(fixedSuggestions);
     } catch (e) {
       log.warn(`Failed to mark ${fixedSuggestions.length} suggestions as FIXED: ${e.message}`);
       return;
