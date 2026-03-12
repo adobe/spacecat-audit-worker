@@ -1,4 +1,4 @@
-# Ad Intent Mismatch — Enhanced Prefiltering Plan
+# Ad Intent Mismatch — Enhanced Prefiltering Plan (v2 — post-review)
 
 ## Relationship to the Mystique Ad Intent Gap Plan
 
@@ -24,6 +24,8 @@ Ahrefs paid-pages data (CPC, sumTraffic, topKeyword, serpTitle) exists in two pl
 Mystique's `_get_paid_pages_data()` already fetches this data from the SpaceCat API (via `PaidPagesTool`) for use as **LLM analysis context** — it feeds into the CrewAI gap analysis prompt alongside scraped content and visual headlines. The crew uses topKeyword, serpTitle, sumTraffic, and CPC to assess keyword-to-page alignment and estimate business impact.
 
 This plan proposes that the audit-worker **also** reads the same data from S3, for a different purpose: **CPC-based priority scoring (WSIS)**, which estimates wasted ad spend to rank pages before the LLM call. This is NOT a duplication of Mystique's work — the audit-worker uses CPC/traffic for cost-based triage, while Mystique uses it for semantic analysis context. Both reads are necessary because they serve different stages of the pipeline.
+
+**Ahrefs data is mandatory for this audit.** If Ahrefs data is unavailable, the audit terminates with an error (see Section 4).
 
 ---
 
@@ -105,11 +107,11 @@ p70Scroll: parseFloat(item.p70_scroll || 0),
 // ADD filter in runPaidKeywordAnalysisStep (handler.js)
 const cwvQualifyingPages = qualifyingPages.filter(page => {
   if (page.p70Lcp > 4000) {
-    log.info(`Excluding ${page.url}: LCP ${page.p70Lcp}ms > 4000ms (performance issue, not alignment)`);
+    log.debug(`Excluding ${page.url}: LCP ${page.p70Lcp}ms > 4000ms (performance issue, not alignment)`);
     return false;
   }
   if (page.p70Cls > 0.25) {
-    log.info(`Excluding ${page.url}: CLS ${page.p70Cls} > 0.25 (layout shift issue, not alignment)`);
+    log.debug(`Excluding ${page.url}: CLS ${page.p70Cls} > 0.25 (layout shift issue, not alignment)`);
     return false;
   }
   return true;
@@ -121,6 +123,8 @@ const cwvQualifyingPages = qualifyingPages.filter(page => {
 - CLS > 0.25 = "Poor" CLS. Bounces from frustration, not misalignment.
 - **Not routing to separate opportunity** — CWV issues are handled by the existing `guidance:cwv` audit.
 
+**Known limitation:** Pages with co-existing CWV and alignment issues will not receive alignment analysis until their CWV metrics improve below the threshold. Once the CWV issue is resolved (e.g., by the `guidance:cwv` audit), the page will naturally re-enter the alignment pipeline in the next audit run.
+
 **Estimated pages excluded:** ~10-15% of predominantly-paid pages.
 
 ### 3. URL Pattern Exclusion
@@ -128,11 +132,17 @@ const cwvQualifyingPages = qualifyingPages.filter(page => {
 **Change:** Skip page types where high bounce rate is expected and NOT an alignment issue.
 
 ```javascript
+// Patterns match path SEGMENTS (bounded by /), not substrings.
+// e.g., /account/ is excluded but /account-management-software/ is NOT.
 const EXCLUDE_URL_PATTERNS = [
-  /\/(blog|articles|news|press-releases)\//i,     // Informational — bounce is normal
-  /\/(help|support|faq|docs|documentation)\//i,    // Support — users get answer and leave
-  /\/(cart|checkout|order|payment)\//i,             // Checkout — wrong funnel stage for this audit
-  /\/(legal|privacy|terms|cookie-policy)\//i,       // Legal — not a landing page
+  /\/(help|support|faq|docs|documentation)\//i,               // Support — users get answer and leave
+  /\/(cart|checkout|order|payment)\//i,                        // Checkout — wrong funnel stage
+  /\/(legal|privacy|terms|cookie-policy)\//i,                  // Legal — not a landing page
+  /\/(login|signin|register|signup|account)\//i,               // Auth — bounce is expected
+  /\/(search|search-results|results)\//i,                      // Internal search — wrong page type
+  /\/(download|thank-you|confirmation)\//i,                    // Post-conversion — user completed action
+  /\/(404|error|not-found)\//i,                                // Error pages
+  /\/(unsubscribe|preferences|manage-subscription)\//i,        // Email preference pages
 ];
 
 function isExcludedPageType(url) {
@@ -140,19 +150,15 @@ function isExcludedPageType(url) {
 }
 ```
 
+**Note:** Blog/articles/news pages are intentionally NOT excluded. Some companies run paid traffic to content pages as a top-of-funnel strategy. The WSIS scoring (Section 5) naturally deprioritizes low-CPC blog pages while retaining high-CPC ones.
+
 **Estimated pages excluded:** ~10-20% of qualifying pages.
 
-### 4. Ahrefs Data Enrichment (for Prefiltering, Not Analysis)
+### 4. Ahrefs Data Enrichment (Mandatory)
 
 **Change:** Read Ahrefs paid-pages data from S3 (already imported in Step 1) to get CPC/keyword per page.
 
-**Why the audit-worker needs this data when Mystique already fetches it:**
-
-Mystique's `_get_paid_pages_data()` fetches Ahrefs data via the SpaceCat API (`PaidPagesTool`) to provide **analysis context** — the topKeyword, serpTitle, sumTraffic, and CPC feed into the CrewAI gap analysis prompt so the LLM can assess keyword-to-page alignment. That fetch happens *during* the LLM analysis, after the page has already been selected.
-
-The audit-worker needs the same data *before* the LLM call for a different purpose: **CPC-based priority scoring**. The Wasted Spend Impact Score (Section 5) requires CPC to estimate dollar-value impact of each page's bounce rate. Without CPC, the audit-worker cannot distinguish between a page wasting $500/month in ad spend (high priority) and one wasting $5/month (low priority). This prefiltering step prevents sending low-value pages to the expensive LLM pipeline.
-
-The two reads serve different pipeline stages and cannot be consolidated without coupling the audit-worker to Mystique's internal data flow.
+**Ahrefs data is required for this audit.** Without CPC data, the audit-worker cannot compute the WSIS priority score and cannot distinguish between a page wasting $500/month in ad spend (high priority) and one wasting $5/month (low priority). If Ahrefs data is unavailable, the audit terminates.
 
 ```javascript
 // NEW function following ahrefs-cpc.js pattern from paid-cookie-consent
@@ -161,33 +167,45 @@ async function fetchPaidPagesFromS3(context, siteId) {
   const bucketName = env.S3_IMPORTER_BUCKET_NAME;
   const key = `metrics/${siteId}/ahrefs/paid-pages.json`;
 
-  try {
-    const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
-    const response = await s3Client.send(command);
-    const bodyString = await response.Body.transformToString();
-    const pages = JSON.parse(bodyString);
+  const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
+  const response = await s3Client.send(command);
+  const bodyString = await response.Body.transformToString();
+  const pages = JSON.parse(bodyString);
 
-    // Build URL -> Ahrefs data map for O(1) lookups
-    const map = new Map();
-    for (const page of pages) {
-      map.set(page.url, {
-        topKeyword: page.topKeyword,
-        cpc: page.cpc || 0,
-        sumTraffic: page.sum_traffic || 0,
-        serpTitle: page.topKeywordBestPositionTitle,
-      });
-    }
-    return map;
-  } catch (error) {
-    log.warn(`Failed to fetch paid pages data: ${error.message}. Proceeding without enrichment.`);
-    return new Map();
+  // Build URL -> Ahrefs data map for O(1) lookups
+  const map = new Map();
+  for (const page of pages) {
+    map.set(page.url, {
+      topKeyword: page.topKeyword,
+      cpc: page.cpc || 0,
+      sumTraffic: page.sum_traffic || 0,
+      serpTitle: page.topKeywordBestPositionTitle,
+    });
   }
+
+  if (map.size === 0) {
+    throw new Error(`Ahrefs paid-pages data is empty for site ${siteId} (key: ${key})`);
+  }
+
+  return map;
 }
 ```
 
-**Cost:** One S3 GET per audit run (not per page). Negligible.
+**Error handling:** If `fetchPaidPagesFromS3` throws (S3 error, parse error, empty data), the audit logs an error and terminates — no pages are sent to Mystique.
 
-**Graceful degradation:** If the S3 file is missing or unreadable, the function returns an empty Map. Priority scoring (Section 5) falls back to CPC=0, which still produces a score based on bounce rate and engagement — just without the cost-weighting component. No pages are dropped solely because Ahrefs data is unavailable.
+```javascript
+let ahrefsMap;
+try {
+  ahrefsMap = await fetchPaidPagesFromS3(context, siteId);
+} catch (error) {
+  log.error(`Ad-intent-mismatch audit terminated: Ahrefs data unavailable for site ${siteId}. Reason: ${error.message}`);
+  return; // Terminate audit — no Mystique execution
+}
+```
+
+Similarly, if Athena returns empty or invalid traffic-analysis data, the audit terminates with an error log.
+
+**Cost:** One S3 GET per audit run (not per page). Negligible.
 
 ### 5. Composite Priority Score (WSIS)
 
@@ -200,9 +218,9 @@ function computePriorityScore(page, ahrefsData) {
   // Business impact: estimated monthly wasted spend ($)
   const wastedSpend = cpc * page.pageViews * page.bounceRate;
 
-  // Alignment signal: high bounce + low scroll = likely alignment issue
-  // High scroll + high bounce = CTA problem, not alignment
-  const alignmentProbability = page.bounceRate * (1 - (page.engagedScrollRate || 0));
+  // Alignment signal: low scroll engagement = likely alignment issue
+  // High scroll + high bounce = CTA problem, not alignment — deprioritize
+  const alignmentSignal = 1 - (page.engagedScrollRate || 0);
 
   // CWV penalty: reduce priority if borderline CWV contributes to bounces
   let cwvAdjustment = 1.0;
@@ -211,24 +229,28 @@ function computePriorityScore(page, ahrefsData) {
   if (page.p70Cls > 0.25) cwvAdjustment *= 0.7;
   if (page.p70Inp > 500) cwvAdjustment *= 0.8;
 
-  return (wastedSpend / 1000) * alignmentProbability * cwvAdjustment;
+  return (wastedSpend / 1000) * alignmentSignal * cwvAdjustment;
 }
 ```
 
 **Interpretation:**
 - A page with CPC=$2, 5000 PVs, 50% bounce, 10% scroll engagement, good CWV:
-  `(2*5000*0.5/1000) * (0.5*0.9) * 1.0 = 5.0 * 0.45 * 1.0 = 2.25`
+  `(2*5000*0.5/1000) * 0.9 * 1.0 = 5.0 * 0.9 = 4.50`
 - Same page but 70% scroll engagement:
-  `5.0 * (0.5*0.3) * 1.0 = 5.0 * 0.15 * 1.0 = 0.75` (much lower — alignment is less likely)
+  `5.0 * 0.3 * 1.0 = 1.50` (much lower — alignment is less likely, user reads but doesn't convert)
 - Same page but CPC=$0.10:
-  `(0.1*5000*0.5/1000) * 0.45 * 1.0 = 0.25 * 0.45 = 0.11` (low business impact)
+  `(0.1*5000*0.5/1000) * 0.9 * 1.0 = 0.25 * 0.9 = 0.225` (low business impact)
+
+**Note on formula design:** `bounceRate` drives the dollar estimate (wastedSpend) while `engagedScrollRate` drives the alignment probability. These are independent signals — bounceRate measures overall disengagement, while engagedScrollRate specifically measures whether users scrolled deep into the page (≥10,000px). High bounce + low scroll = likely alignment issue. High bounce + high scroll = CTA/conversion problem.
+
+**Post-deployment:** Log WSIS scores alongside LLM severity outcomes to validate correlation. The formula may be recalibrated based on data. The `/1000` divisor is normalization — only relative ordering matters, not absolute score values.
 
 ### 6. Page Cap
 
 **Change:** Send only top N pages by priority score, configurable via env var.
 
 ```javascript
-const MAX_PAGES_PER_AUDIT = parseInt(env.MAX_AD_INTENT_PAGES || '10', 10);
+const MAX_PAGES_PER_AUDIT = parseInt(env.AD_INTENT_MAX_PAGES || '10', 10);
 
 const rankedPages = enrichedPages
   .map(page => ({ ...page, priorityScore: computePriorityScore(page, ahrefsMap.get(page.url)) }))
@@ -237,7 +259,21 @@ const rankedPages = enrichedPages
   .slice(0, MAX_PAGES_PER_AUDIT);
 ```
 
-### 7. Enriched SQS Message (Optional Optimization)
+`AD_INTENT_MAX_PAGES` is the only configurable value (default 10). Set to 0 for unlimited (not recommended).
+
+### 7. Pipeline Summary Log
+
+**Change:** Add an info-level summary log per audit run showing the funnel at each filter stage.
+
+```javascript
+log.info(`Ad-intent-mismatch filter pipeline for site ${siteId}: `
+  + `${searchPages} search pages → ${paidPages} paid-dominant → ${cwvPages} CWV-pass `
+  + `→ ${urlPages} URL-pass → ${bouncePages} bounce-pass → ${rankedPages.length} after scoring+cap`);
+```
+
+Additionally, debug-level logs at each filter stage show which specific pages were excluded and why (already shown in Sections 2 and 3 code examples).
+
+### 8. Enriched SQS Message
 
 **Change:** Include additional data fields in the SQS message to Mystique.
 
@@ -262,28 +298,26 @@ const rankedPages = enrichedPages
 }
 ```
 
-**Important context:** This is an **optional optimization**, not a requirement. Mystique currently fetches Ahrefs data (topKeyword, serpTitle, sumTraffic, CPC) independently via the SpaceCat API as part of its `_collect_data()` flow in `ad_intent_gap_analyzer.py`. That existing path works correctly and must remain functional.
+**Backward compatibility:** Mystique's Pydantic models use `extra='ignore'` (Pydantic v2 default, verified). Unknown fields are silently dropped. Mystique will be updated (coordinated change) to integrate these fields into `AdIntentGapRequestMessageData` and `AdIntentGapOpportunityData` so they are available for analysis context.
 
-**If enriched SQS data is present**, Mystique *could* skip the SpaceCat API call and use the SQS-provided Ahrefs data instead, saving ~1-2s per page. However, this optimization belongs in the Mystique plan, not here. Mystique should treat SQS-provided Ahrefs data as a cache hint — if present and valid, use it; if absent, fall back to the SpaceCat API call as it does today.
-
-**Backward compatibility:** Unknown fields in the SQS message are ignored by Mystique's current message parser. Adding these fields is safe and does not require coordinated deployment.
-
-**The `priorityScore` field** is worth sending to Mystique even without the Ahrefs optimization. It could inform severity calibration or be included in opportunity metadata for downstream consumers (e.g., the backoffice UI could display estimated wasted spend).
+The `priorityScore` field is included for downstream consumers (e.g., the backoffice UI could display estimated wasted spend impact).
 
 ---
 
 ## Proposed Filter Pipeline (Complete)
 
 ```
-1. Athena: trf_channel = 'search'                     (unchanged)
-2. Athena: HAVING SUM(pageviews) >= 1000               (unchanged)
-3. Post-query: paid/total >= 80%                       (unchanged)
-4. CWV hard exclusion: LCP > 4000ms OR CLS > 0.25     (NEW)
-5. URL pattern exclusion: blog, support, checkout, legal (NEW)
-6. bounceRate >= 0.50                                  (CHANGED from 0.30)
-7. Ahrefs enrichment: fetch CPC/keyword from S3        (NEW)
-8. Priority score + cap: compute WSIS, send top N      (NEW)
-9. Response-side: severity != low/none                 (unchanged)
+1. Athena: trf_channel = 'search'                                 (unchanged)
+2. Athena: HAVING SUM(pageviews) >= 1000                           (unchanged)
+3. Post-query: paid/total >= 80%                                   (unchanged)
+4. Ahrefs enrichment: fetch CPC/keyword from S3 (mandatory)       (NEW — audit terminates on failure)
+5. CWV hard exclusion: LCP > 4000ms OR CLS > 0.25                 (NEW)
+6. URL pattern exclusion: support, checkout, legal, auth,          (NEW)
+   search, post-conversion, error, email-prefs
+7. bounceRate >= 0.50                                              (CHANGED from 0.30)
+8. Priority score + cap: compute WSIS, send top N                  (NEW)
+9. Pipeline summary log                                            (NEW)
+10. Response-side: severity != low/none                            (unchanged)
 ```
 
 ---
@@ -301,67 +335,37 @@ const rankedPages = enrichedPages
 
 ## Implementation Approach
 
-### Phase 1: Extract + Filter (audit-worker only)
+All changes ship as a single implementation — no feature flags, no phased rollout. The only configurable value is `AD_INTENT_MAX_PAGES` (env var, default 10).
 
 1. Modify `transformResultItem()` to extract CWV fields
-2. Add CWV hard exclusion filter
-3. Add URL pattern exclusion filter
-4. Change `CUT_OFF_BOUNCE_RATE` to 0.5 (coordinated with Mystique plan Phase 4A)
-5. Write tests (100% coverage required)
-
-### Phase 2: Ahrefs Enrichment + Scoring (audit-worker only)
-
-1. Add `fetchPaidPagesFromS3()` (follow `ahrefs-cpc.js` pattern)
-2. Add `computePriorityScore()` function
-3. Add page cap with `MAX_AD_INTENT_PAGES` env var
-4. Enrich `buildMystiqueMessage()` with all available data
-5. Write tests
-
-### Feature Flags
-
-| Flag | Default | Purpose |
-|------|---------|---------|
-| `AD_INTENT_ENABLE_CWV_FILTER` | `false` | Enable CWV hard exclusion |
-| `AD_INTENT_ENABLE_AHREFS_ENRICHMENT` | `false` | Enable Ahrefs S3 fetch |
-| `AD_INTENT_ENABLE_PRIORITY_SCORING` | `false` | Enable WSIS scoring + ranking |
-| `AD_INTENT_MAX_PAGES` | `0` (unlimited) | Cap on pages sent per audit |
+2. Add `fetchPaidPagesFromS3()` (mandatory — follows `ahrefs-cpc.js` pattern)
+3. Add CWV hard exclusion filter
+4. Add URL pattern exclusion filter
+5. Change `CUT_OFF_BOUNCE_RATE` to 0.5
+6. Add `computePriorityScore()` function
+7. Add page cap with `AD_INTENT_MAX_PAGES` env var
+8. Add pipeline summary log
+9. Enrich `buildMystiqueMessage()` with all available data
+10. Write tests (100% coverage required)
 
 ---
 
 ## Cross-Plan Integration Points
 
-The following items affect the Mystique plan and should be considered when implementing its Phase 4 and beyond. They are documented here for traceability but owned by the Mystique plan.
+The following items affect the Mystique plan and should be considered when implementing its phases. They are documented here for traceability but owned by the Mystique plan.
 
-### 1. SQS-Provided Ahrefs Data as Cache Hint
-
-When this plan's Phase 2 ships, SQS messages will include `topKeyword`, `serpTitle`, `sumTraffic`, and `cpc` in the `data` payload. The Mystique plan could add an optional optimization in `_collect_data()`:
-
-```python
-# In ad_intent_gap_analyzer.py _collect_data():
-# If SQS message carried Ahrefs data, use it instead of calling SpaceCat API
-if sqs_data.get('topKeyword') and sqs_data.get('cpc') is not None:
-    # Use SQS-provided data (saves ~1-2s SpaceCat API call)
-    top_keyword = sqs_data['topKeyword']
-    ...
-else:
-    # Fall back to SpaceCat API (existing path, always works)
-    paid_pages = self._get_paid_pages_data(url, country)
-```
-
-This is strictly optional. Mystique must always retain the SpaceCat API fallback for backward compatibility and for cases where the audit-worker's Ahrefs S3 file was missing.
-
-### 2. Priority Score in Opportunity Metadata
+### 1. Priority Score in Opportunity Metadata
 
 The `priorityScore` (WSIS) sent in the SQS message could be:
 - Stored in the opportunity's `data` field by the guidance handler
 - Displayed in the backoffice UI as "Estimated Wasted Spend Impact"
 - Used by Mystique for severity calibration (a page with high WSIS and medium alignment gap might warrant higher severity than one with low WSIS)
 
-### 3. CWV Data for Content Validation Context
+### 2. CWV Data for Content Validation Context
 
 The CWV fields (`p70Lcp`, `p70Cls`) in the SQS message could give Mystique additional context for content validation (Phase 2 of the Mystique plan). A page with borderline LCP (2500-4000ms) that also triggers bot-protection detection might indicate a slow-loading legitimate page rather than an actual CAPTCHA wall.
 
-### 4. Bounce Rate Threshold Coordination
+### 3. Bounce Rate Threshold Coordination
 
 Both plans change `CUT_OFF_BOUNCE_RATE` from 0.3 to 0.5. The Mystique plan's Phase 4A specifies this same change. These are the same change in the same file — implementation should happen once, not twice.
 
@@ -371,8 +375,9 @@ Both plans change `CUT_OFF_BOUNCE_RATE` from 0.3 to 0.5. The Mystique plan's Pha
 
 | File | Changes |
 |------|---------|
-| `src/paid-keyword-optimizer/handler.js` | `transformResultItem` (extract CWV), new filters, new `fetchPaidPagesFromS3()`, new `computePriorityScore()`, enriched `buildMystiqueMessage`, page cap |
+| `src/paid-keyword-optimizer/handler.js` | `transformResultItem` (extract CWV), `CUT_OFF_BOUNCE_RATE = 0.5`, new filters (CWV, URL pattern), new `fetchPaidPagesFromS3()`, new `computePriorityScore()`, pipeline summary log, enriched `buildMystiqueMessage`, page cap |
 | `src/paid-keyword-optimizer/queries.js` | No changes needed (CWV fields already returned by Athena query) |
+| `src/paid-keyword-optimizer/guidance-handler.js` | Eviction-based capping (from Mystique plan Phase 4B) |
 | `src/paid-cookie-consent/ahrefs-cpc.js` | Reference pattern for S3 data fetching (read-only) |
 
 ## Verification
@@ -385,19 +390,21 @@ Both plans change `CUT_OFF_BOUNCE_RATE` from 0.3 to 0.5. The Mystique plan's Pha
 - **Test cases for new/changed branches:**
   - `transformResultItem` extracts p70_lcp, p70_cls, p70_inp, p70_scroll
   - CWV exclusion: LCP 3999 passes, LCP 4001 excluded; CLS 0.24 passes, CLS 0.26 excluded
-  - CWV exclusion with feature flag off: all pages pass regardless of CWV values
-  - URL pattern exclusion: `/blog/post-1` excluded, `/products/widget` passes
-  - URL pattern exclusion: case-insensitive (`/Blog/Post-1` also excluded)
-  - `fetchPaidPagesFromS3` returns Map when S3 file exists
-  - `fetchPaidPagesFromS3` returns empty Map when S3 file missing (graceful degradation)
-  - `fetchPaidPagesFromS3` returns empty Map when JSON parse fails
+  - URL pattern exclusion: `/support/article-1` excluded, `/products/widget` passes
+  - URL pattern exclusion: case-insensitive (`/Support/Article-1` also excluded)
+  - URL pattern exclusion: path segment matching — `/account/settings` excluded, `/account-management-software/` NOT excluded
+  - URL pattern exclusion: all groups tested (auth, search, post-conversion, error, email-prefs, support, checkout, legal)
+  - `fetchPaidPagesFromS3` returns Map when S3 file exists with valid data
+  - `fetchPaidPagesFromS3` throws when S3 file missing → audit terminates with error log
+  - `fetchPaidPagesFromS3` throws when JSON parse fails → audit terminates with error log
+  - `fetchPaidPagesFromS3` throws when data is empty → audit terminates with error log
+  - Empty Athena traffic data → audit terminates with error log
   - `computePriorityScore` with good CWV, poor CWV, zero CPC, high/low engagement
-  - `computePriorityScore` with no Ahrefs data (ahrefsData is undefined) returns score based on bounce/engagement only
-  - Page cap: MAX_AD_INTENT_PAGES=5 with 10 qualifying pages -> only 5 sent
-  - Page cap: MAX_AD_INTENT_PAGES=0 (unlimited) -> all qualifying pages sent
+  - `computePriorityScore` alignment signal uses `(1 - engagedScrollRate)`, NOT `bounceRate * (1 - engagedScrollRate)`
+  - Page cap: AD_INTENT_MAX_PAGES=5 with 10 qualifying pages → only 5 sent
+  - Page cap: AD_INTENT_MAX_PAGES=0 (unlimited) → all qualifying pages sent
   - Priority sorting: highest WSIS sent first
-  - Feature flags: each filter skipped when flag is `false`
-  - `buildMystiqueMessage` includes enriched fields when Ahrefs data available
-  - `buildMystiqueMessage` omits enriched fields when Ahrefs data unavailable (backward compat)
+  - `buildMystiqueMessage` includes enriched fields (cpc, sumTraffic, topKeyword, serpTitle, CWV, engagedScrollRate, priorityScore)
   - Bounce rate threshold: 0.49 filtered, 0.50 passes, 0.51 passes
-  - Full pipeline integration: pages pass through CWV -> URL pattern -> bounce rate -> scoring -> cap in correct order
+  - Pipeline summary log emitted with correct counts at each stage
+  - Full pipeline integration: pages pass through Ahrefs fetch → CWV → URL pattern → bounce rate → scoring → cap in correct order
