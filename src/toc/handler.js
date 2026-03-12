@@ -118,15 +118,19 @@ async function getTocDetails($, url, pageTags, log, context, scrapedAt) {
       const placement = determineTocPlacement($, getHeadingSelector);
       const headingsData = extractTocData($, getHeadingSelector);
 
-      result.suggestedPlacement = placement;
-      result.transformRules = {
-        action: placement.action,
-        selector: placement.selector,
-        value: headingsData,
-        valueFormat: 'html',
-        scrapedAt: new Date(scrapedAt).toISOString(),
-      };
-      log.debug(`[TOC Detection] Suggested TOC placement for ${url}: ${placement.reasoning}`);
+      if (headingsData.length === 0) {
+        log.debug(`[TOC Detection] No headings found for TOC suggestion for ${url}, skipping`);
+      } else {
+        result.suggestedPlacement = placement;
+        result.transformRules = {
+          action: placement.action,
+          selector: placement.selector,
+          value: headingsData,
+          valueFormat: 'html',
+          scrapedAt: new Date(scrapedAt).toISOString(),
+        };
+        log.debug(`[TOC Detection] Suggested TOC placement for ${url}: ${placement.reasoning}`);
+      }
     }
 
     return result;

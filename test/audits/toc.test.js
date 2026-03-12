@@ -28,6 +28,10 @@ import {
   normalizeHeadingTextForMatch,
   isExcludedConsentHeadingText,
   isHeadingInExcludedContainer,
+  getSurroundingText,
+  getFollowingStructure,
+  getParentSectionContext,
+  getHeadingContext,
   extractTocData,
   tocArrayToHast,
   determineTocPlacement,
@@ -178,6 +182,178 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(tocIssue.transformRules.selector).to.include('h1');
       expect(tocIssue.tocConfidence).to.equal(8);
       expect(tocIssue.tocReasoning).to.equal('No TOC structure found');
+    });
+  });
+
+  describe('Empty TOC Prevention', () => {
+    it('skips suggestion when AI says TOC is missing but all headings are inside nav containers', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":8,"reasoning":"No TOC found"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {});
+
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
+        },
+      };
+
+      // All headings are inside nav/header/footer — extractTocData will return []
+      s3Client.send.callsFake((command) => {
+        if (command instanceof ListObjectsV2Command) {
+          return Promise.resolve({
+            Contents: allKeys.map((key) => ({ Key: key })),
+            NextContinuationToken: undefined,
+          });
+        }
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<header><h1>Site Brand</h1></header><nav><h2>Home</h2><h2>About</h2></nav><footer><h2>Contact</h2></footer>',
+                  tags: { title: 'Page Title', description: 'Desc', h1: ['Site Brand'] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+
+      // No suggestion should be created — result should show no toc issues
+      expect(result.auditResult).to.exist;
+      const tocResult = result.auditResult.toc;
+      // Either empty toc (success) or the toc check key has no urls
+      const hasNoSuggestions = !tocResult || Object.keys(tocResult).length === 0
+        || !tocResult.toc || tocResult.toc.urls?.length === 0;
+      expect(hasNoSuggestions).to.equal(true);
+    });
+
+    it('skips suggestion when AI says TOC is missing but headings only in header', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":7,"reasoning":"No TOC"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {});
+
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
+        },
+      };
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof ListObjectsV2Command) {
+          return Promise.resolve({
+            Contents: allKeys.map((key) => ({ Key: key })),
+            NextContinuationToken: undefined,
+          });
+        }
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<header><h1>Site Title</h1><h2>Tagline</h2></header><p>Some content with no headings</p>',
+                  tags: { title: 'Page Title', description: 'Desc', h1: ['Site Title'] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+
+      expect(result.auditResult).to.exist;
+      // toc should be empty — no valid headings to build a TOC from
+      expect(result.auditResult.toc).to.deep.equal({});
+    });
+
+    it('still creates suggestion when some headings exist outside navigation', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":8,"reasoning":"No TOC"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {});
+
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
+        },
+      };
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof ListObjectsV2Command) {
+          return Promise.resolve({
+            Contents: allKeys.map((key) => ({ Key: key })),
+            NextContinuationToken: undefined,
+          });
+        }
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<nav><h2>Site Navigation</h2></nav><h1 id="title">Article Title</h1><h2 id="sec1">Section 1</h2>',
+                  tags: { title: 'Page Title', description: 'Desc', h1: ['Article Title'] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+
+      // A suggestion SHOULD be created since there are valid content headings
+      expect(result.auditResult).to.exist;
+      expect(result.auditResult.toc).to.exist;
+      expect(result.auditResult.toc.toc).to.exist;
+      const tocIssue = result.auditResult.toc.toc.urls[0];
+      expect(tocIssue.transformRules).to.exist;
+      // transformRules value should only contain the non-nav headings
+      expect(tocIssue.transformRules.value.map((h) => h.text)).to.not.include('Site Navigation');
+      expect(tocIssue.transformRules.value.map((h) => h.text)).to.include('Article Title');
     });
   });
 
@@ -2159,6 +2335,18 @@ describe('TOC (Table of Contents) Audit', () => {
         expect(TOC_EXCLUDED_HEADING_PHRASES).to.include('privacy preference center');
         expect(TOC_EXCLUDED_HEADING_PHRASES).to.include('cookie settings');
       });
+      it('TOC_EXCLUDED_CONTAINER_SELECTORS includes navigation-related selectors', () => {
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('nav');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[role="navigation"]');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('header');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('footer');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[class*="nav-"]');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[class*="navigation"]');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[class*="sidebar"]');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[id*="sidebar"]');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[class*="menu"]');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[id*="nav"]');
+      });
     });
 
     describe('normalizeHeadingTextForMatch', () => {
@@ -2226,6 +2414,38 @@ describe('TOC (Table of Contents) Audit', () => {
         expect(isHeadingInExcludedContainer($('h1')[0], $)).to.equal(false);
         expect(isHeadingInExcludedContainer($('h2')[0], $)).to.equal(false);
       });
+      it('returns true when heading is inside a nav element', () => {
+        const $ = cheerioLoad('<nav><h2>Main Menu</h2></nav>');
+        expect(isHeadingInExcludedContainer($('h2')[0], $)).to.equal(true);
+      });
+      it('returns true when heading is inside an element with role="navigation"', () => {
+        const $ = cheerioLoad('<div role="navigation"><h2>Navigation Links</h2></div>');
+        expect(isHeadingInExcludedContainer($('h2')[0], $)).to.equal(true);
+      });
+      it('returns true when heading is inside a header element', () => {
+        const $ = cheerioLoad('<header><h1>Site Name</h1></header>');
+        expect(isHeadingInExcludedContainer($('h1')[0], $)).to.equal(true);
+      });
+      it('returns true when heading is inside a footer element', () => {
+        const $ = cheerioLoad('<footer><h2>Footer Links</h2></footer>');
+        expect(isHeadingInExcludedContainer($('h2')[0], $)).to.equal(true);
+      });
+      it('returns true when heading is inside a sidebar element', () => {
+        const $ = cheerioLoad('<div class="sidebar"><h2>Related Articles</h2></div>');
+        expect(isHeadingInExcludedContainer($('h2')[0], $)).to.equal(true);
+      });
+      it('returns true when heading is inside an element with nav- class prefix', () => {
+        const $ = cheerioLoad('<div class="nav-panel"><h2>Nav Section</h2></div>');
+        expect(isHeadingInExcludedContainer($('h2')[0], $)).to.equal(true);
+      });
+      it('returns true when heading is inside an element with navigation class', () => {
+        const $ = cheerioLoad('<div class="site-navigation"><h2>Browse</h2></div>');
+        expect(isHeadingInExcludedContainer($('h2')[0], $)).to.equal(true);
+      });
+      it('returns true when heading is deeply nested inside a nav element', () => {
+        const $ = cheerioLoad('<nav><ul><li><div><h2>Nested Nav Heading</h2></div></li></ul></nav>');
+        expect(isHeadingInExcludedContainer($('h2')[0], $)).to.equal(true);
+      });
     });
 
     describe('extractTocData', () => {
@@ -2271,6 +2491,64 @@ describe('TOC (Table of Contents) Audit', () => {
       });
       it('returns empty array when all headings are excluded', () => {
         const $ = cheerioLoad('<body><div id="cookie-banner"><h1>Cookie Settings</h1><h2>Manage preferences</h2></div></body>');
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.deep.equal([]);
+      });
+      it('excludes headings inside nav elements', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<nav><h2>Site Navigation</h2></nav>'
+          + '<h1 id="title">Page Title</h1>'
+          + '<h2 id="sec1">Section 1</h2>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Page Title', 'Section 1']);
+      });
+      it('excludes headings inside header and footer', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<header><h1>Site Logo</h1></header>'
+          + '<main><h1 id="title">Article Title</h1><h2 id="sec1">Section 1</h2></main>'
+          + '<footer><h2>Footer Links</h2></footer>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Article Title', 'Section 1']);
+      });
+      it('excludes headings inside sidebar', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<div class="sidebar"><h2>Related Articles</h2></div>'
+          + '<h1 id="title">Main Content Title</h1>'
+          + '<h2 id="sec1">Section 1</h2>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Main Content Title', 'Section 1']);
+      });
+      it('excludes headings inside role="navigation" element', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<div role="navigation"><h2>Browse Topics</h2></div>'
+          + '<h1 id="title">Article Title</h1>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(1);
+        expect(result[0].text).to.equal('Article Title');
+      });
+      it('returns empty array when all headings are inside navigation containers', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<header><h1>Brand Name</h1></header>'
+          + '<nav><h2>Home</h2><h2>About</h2></nav>'
+          + '<footer><h2>Contact</h2></footer>'
+          + '</body>',
+        );
         const result = extractTocData($, stubGetHeadingSelector);
         expect(result).to.deep.equal([]);
       });
@@ -2332,6 +2610,207 @@ describe('TOC (Table of Contents) Audit', () => {
       it('strips trailing slash from pathname', () => {
         expect(getScrapeJsonPath('https://example.com/products/', 'site-1'))
           .to.equal('scrapes/site-1/products/scrape.json');
+      });
+    });
+
+    describe('getSurroundingText', () => {
+      it('returns empty strings when heading has no siblings', () => {
+        const $ = cheerioLoad('<div><h2>Heading</h2></div>');
+        const h2 = $('h2')[0];
+        const result = getSurroundingText(h2, $);
+        expect(result.before).to.equal('');
+        expect(result.after).to.equal('');
+      });
+
+      it('returns before and after text from siblings', () => {
+        const $ = cheerioLoad('<div><p>Before paragraph</p><h2>Heading</h2><p>After paragraph</p></div>');
+        const h2 = $('h2')[0];
+        const result = getSurroundingText(h2, $);
+        expect(result.before).to.include('Before paragraph');
+        expect(result.after).to.include('After paragraph');
+      });
+
+      it('truncates after text to charLimit using slice', () => {
+        const longAfter = 'B'.repeat(200);
+        const $ = cheerioLoad(`<div><h2>Heading</h2><p>${longAfter}</p></div>`);
+        const h2 = $('h2')[0];
+        const result = getSurroundingText(h2, $, 150);
+        expect(result.after.length).to.be.at.most(150);
+      });
+
+      it('truncates before text to charLimit using slice', () => {
+        const longBefore = 'A'.repeat(200);
+        const $ = cheerioLoad(`<div><p>${longBefore}</p><h2>Heading</h2></div>`);
+        const h2 = $('h2')[0];
+        const result = getSurroundingText(h2, $, 150);
+        expect(result.before.length).to.be.at.most(150);
+      });
+
+      it('breaks after-text loop when accumulated text reaches charLimit mid-loop', () => {
+        // First sibling is under the limit; second pushes it over — triggers inner break
+        const text1 = 'A'.repeat(12);
+        const text2 = 'B'.repeat(12);
+        const text3 = 'C'.repeat(12);
+        const $ = cheerioLoad(
+          `<div><h2>Heading</h2><p>${text1}</p><p>${text2}</p><p>${text3}</p></div>`,
+        );
+        const h2 = $('h2')[0];
+        const result = getSurroundingText(h2, $, 20);
+        expect(result.after.length).to.be.at.most(20);
+      });
+
+      it('breaks before-text loop when accumulated text reaches charLimit mid-loop', () => {
+        const text1 = 'A'.repeat(12);
+        const text2 = 'B'.repeat(12);
+        const text3 = 'C'.repeat(12);
+        const $ = cheerioLoad(
+          `<div><p>${text3}</p><p>${text2}</p><p>${text1}</p><h2>Heading</h2></div>`,
+        );
+        const h2 = $('h2')[0];
+        const result = getSurroundingText(h2, $, 20);
+        expect(result.before.length).to.be.at.most(20);
+      });
+
+      it('skips siblings with no text content', () => {
+        const $ = cheerioLoad('<div><p></p><p>Real before</p><h2>Heading</h2><p></p><p>Real after</p></div>');
+        const h2 = $('h2')[0];
+        const result = getSurroundingText(h2, $);
+        expect(result.before).to.include('Real before');
+        expect(result.after).to.include('Real after');
+      });
+    });
+
+    describe('getFollowingStructure', () => {
+      it('returns isEmpty: true when heading has no following sibling', () => {
+        const $ = cheerioLoad('<div><h2>Heading</h2></div>');
+        const h2 = $('h2')[0];
+        const result = getFollowingStructure(h2, $);
+        expect(result.isEmpty).to.equal(true);
+        expect(result.firstElement).to.equal(null);
+        expect(result.firstText).to.equal('');
+      });
+
+      it('returns element info for a following paragraph', () => {
+        const $ = cheerioLoad('<div><h2>Heading</h2><p>Following text content here</p></div>');
+        const h2 = $('h2')[0];
+        const result = getFollowingStructure(h2, $);
+        expect(result.isEmpty).to.equal(false);
+        expect(result.firstElement).to.equal('p');
+        expect(result.hasImages).to.equal(false);
+        expect(result.hasLinks).to.equal(false);
+        expect(result.isList).to.equal(false);
+        expect(result.firstText).to.include('Following text content');
+      });
+
+      it('detects images inside the following element', () => {
+        const $ = cheerioLoad('<div><h2>Heading</h2><div><img src="test.jpg"/></div></div>');
+        const h2 = $('h2')[0];
+        const result = getFollowingStructure(h2, $);
+        expect(result.hasImages).to.equal(true);
+      });
+
+      it('detects links inside the following element', () => {
+        const $ = cheerioLoad('<div><h2>Heading</h2><p><a href="/link">Click here</a></p></div>');
+        const h2 = $('h2')[0];
+        const result = getFollowingStructure(h2, $);
+        expect(result.hasLinks).to.equal(true);
+      });
+
+      it('detects an unordered list as isList', () => {
+        const $ = cheerioLoad('<div><h2>Heading</h2><ul><li>Item 1</li><li>Item 2</li></ul></div>');
+        const h2 = $('h2')[0];
+        const result = getFollowingStructure(h2, $);
+        expect(result.isList).to.equal(true);
+        expect(result.firstElement).to.equal('ul');
+      });
+
+      it('detects an ordered list as isList', () => {
+        const $ = cheerioLoad('<div><h2>Heading</h2><ol><li>Step 1</li><li>Step 2</li></ol></div>');
+        const h2 = $('h2')[0];
+        const result = getFollowingStructure(h2, $);
+        expect(result.isList).to.equal(true);
+        expect(result.firstElement).to.equal('ol');
+      });
+    });
+
+    describe('getParentSectionContext', () => {
+      it('finds nearest semantic parent (article) with class and id', () => {
+        const $ = cheerioLoad('<article class="main-article" id="art-1"><h2>Heading</h2></article>');
+        const h2 = $('h2')[0];
+        const result = getParentSectionContext(h2, $, [h2], 0);
+        expect(result.parentTag).to.equal('article');
+        expect(result.parentId).to.equal('art-1');
+        expect(result.parentClasses).to.include('main-article');
+        expect(result.precedingHeading).to.equal(null);
+      });
+
+      it('finds nearest semantic parent (section) with no class or id', () => {
+        const $ = cheerioLoad('<section><h2>Heading</h2></section>');
+        const h2 = $('h2')[0];
+        const result = getParentSectionContext(h2, $, [h2], 0);
+        expect(result.parentTag).to.equal('section');
+        expect(result.parentClasses).to.deep.equal([]);
+        expect(result.parentId).to.equal(null);
+      });
+
+      it('finds a preceding higher-level heading', () => {
+        const $ = cheerioLoad('<main><h1>Page Title</h1><section><h2>Subsection</h2></section></main>');
+        const h1 = $('h1')[0];
+        const h2 = $('h2')[0];
+        const result = getParentSectionContext(h2, $, [h1, h2], 1);
+        expect(result.precedingHeading).to.not.equal(null);
+        expect(result.precedingHeading.level).to.equal('h1');
+        expect(result.precedingHeading.text).to.equal('Page Title');
+      });
+
+      it('returns null precedingHeading when no preceding heading has a lower level', () => {
+        const $ = cheerioLoad('<main><h2>Section A</h2><h2>Section B</h2></main>');
+        const h2s = $('h2').toArray();
+        const result = getParentSectionContext(h2s[1], $, h2s, 1);
+        expect(result.precedingHeading).to.equal(null);
+      });
+
+      it('falls back to heading.parent when no semantic ancestor found', () => {
+        const $ = cheerioLoad('<div class="wrapper" id="wrap"><h2>Heading</h2></div>');
+        const h2 = $('h2')[0];
+        const result = getParentSectionContext(h2, $, [h2], 0);
+        expect(result.parentTag).to.equal('div');
+        expect(result.parentId).to.equal('wrap');
+        expect(result.parentClasses).to.include('wrapper');
+      });
+
+      it('falls back to heading.parent with no class (empty parentClasses)', () => {
+        const $ = cheerioLoad('<div><h2>Heading</h2></div>');
+        const h2 = $('h2')[0];
+        const result = getParentSectionContext(h2, $, [h2], 0);
+        expect(result.parentTag).to.equal('div');
+        expect(result.parentClasses).to.deep.equal([]);
+        expect(result.parentId).to.equal(null);
+      });
+
+      it('skips preceding headings with empty text and uses the first with text', () => {
+        const $ = cheerioLoad('<main><h1></h1><h1>Real Title</h1><h2>Section</h2></main>');
+        const h1s = $('h1').toArray();
+        const h2 = $('h2')[0];
+        const allHeadings = [...h1s, h2];
+        const result = getParentSectionContext(h2, $, allHeadings, 2);
+        expect(result.precedingHeading).to.not.equal(null);
+        expect(result.precedingHeading.text).to.equal('Real Title');
+      });
+    });
+
+    describe('getHeadingContext', () => {
+      it('returns surroundingText, followingStructure, and parentSection', () => {
+        const $ = cheerioLoad('<article><p>Before</p><h2>Heading</h2><p>After</p></article>');
+        const h2 = $('h2')[0];
+        const result = getHeadingContext(h2, $, [h2], 0);
+        expect(result).to.have.property('surroundingText');
+        expect(result).to.have.property('followingStructure');
+        expect(result).to.have.property('parentSection');
+        expect(result.surroundingText.before).to.include('Before');
+        expect(result.surroundingText.after).to.include('After');
+        expect(result.followingStructure.firstElement).to.equal('p');
+        expect(result.parentSection.parentTag).to.equal('article');
       });
     });
   });
