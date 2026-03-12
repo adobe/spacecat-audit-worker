@@ -18,6 +18,7 @@ import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 import { filterBrandPresenceFiles } from '../../src/offsite-brand-presence/handler.js';
 import * as handlerConstants from '../../src/offsite-brand-presence/constants.js';
+import { SCRAPE_DATASET_IDS } from '@adobe/spacecat-shared-drs-client';
 
 const {
   DRS_TOP_URLS_LIMIT,
@@ -74,11 +75,7 @@ describe('Offsite Brand Presence Handler', () => {
           }),
         },
         SCRAPE_DATASET_IDS: {
-          YOUTUBE_VIDEOS: 'youtube_videos',
-          YOUTUBE_COMMENTS: 'youtube_comments',
-          REDDIT_POSTS: 'reddit_posts',
-          REDDIT_COMMENTS: 'reddit_comments',
-          WIKIPEDIA: 'wikipedia',
+          ...SCRAPE_DATASET_IDS,
         },
       },
     };
@@ -1024,6 +1021,31 @@ describe('Offsite Brand Presence Handler', () => {
       expect(topCitedCalls[0].args[0].url).to.equal('https://example.com/page');
     });
 
+    it('should trigger DRS scraping for top-cited URLs', async () => {
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData(['https://example.com/page1;https://other.com/page2']);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const topCitedJob = result.auditResult.drsJobs.find(
+        (j) => j.datasetId === SCRAPE_DATASET_IDS.TOP_CITED,
+      );
+      expect(topCitedJob).to.deep.include({
+        domain: 'top-cited',
+        datasetId: SCRAPE_DATASET_IDS.TOP_CITED,
+        status: 'success',
+      });
+      expect(mockSubmitScrapeJob).to.have.been.calledWith(sinon.match({
+        datasetId: SCRAPE_DATASET_IDS.TOP_CITED,
+        siteId: SITE_ID,
+        urls: ['https://example.com/page1', 'https://other.com/page2'],
+      }));
+    });
+
     it('should respect TOP_CITED_URLS_LIMIT', async () => {
       const urls = [];
       const totalUrls = TOP_CITED_URLS_LIMIT + 10;
@@ -1062,22 +1084,22 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.drsJobs).to.have.lengthOf(4);
       expect(result.auditResult.drsJobs[0]).to.deep.include({
         domain: 'youtube.com',
-        datasetId: 'youtube_videos',
+        datasetId: SCRAPE_DATASET_IDS.YOUTUBE_VIDEOS,
         status: 'success',
       });
       expect(result.auditResult.drsJobs[1]).to.deep.include({
         domain: 'youtube.com',
-        datasetId: 'youtube_comments',
+        datasetId: SCRAPE_DATASET_IDS.YOUTUBE_COMMENTS,
         status: 'success',
       });
       expect(result.auditResult.drsJobs[2]).to.deep.include({
         domain: 'reddit.com',
-        datasetId: 'reddit_posts',
+        datasetId: SCRAPE_DATASET_IDS.REDDIT_POSTS,
         status: 'success',
       });
       expect(result.auditResult.drsJobs[3]).to.deep.include({
         domain: 'reddit.com',
-        datasetId: 'reddit_comments',
+        datasetId: SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
         status: 'success',
       });
     });
@@ -1095,11 +1117,11 @@ describe('Offsite Brand Presence Handler', () => {
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       const videosCall = mockSubmitScrapeJob.getCalls().find(
-        (c) => c.args[0].datasetId === 'youtube_videos',
+        (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.YOUTUBE_VIDEOS,
       );
       expect(videosCall).to.exist;
       expect(videosCall.args[0]).to.deep.include({
-        datasetId: 'youtube_videos',
+        datasetId: SCRAPE_DATASET_IDS.YOUTUBE_VIDEOS,
         siteId: SITE_ID,
       });
       expect(videosCall.args[0].urls).to.deep.equal(['https://youtu.be/x']);
@@ -1119,13 +1141,13 @@ describe('Offsite Brand Presence Handler', () => {
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       const commentsCall = mockSubmitScrapeJob.getCalls().find(
-        (c) => c.args[0].datasetId === 'reddit_comments',
+        (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS,
       );
       expect(commentsCall).to.exist;
       expect(commentsCall.args[0].daysBack).to.equal(REDDIT_COMMENTS_DAYS_BACK);
 
       const postsCall = mockSubmitScrapeJob.getCalls().find(
-        (c) => c.args[0].datasetId === 'reddit_posts',
+        (c) => c.args[0].datasetId === SCRAPE_DATASET_IDS.REDDIT_POSTS,
       );
       expect(postsCall).to.exist;
       expect(postsCall.args[0]).to.not.have.property('daysBack');
@@ -1145,7 +1167,7 @@ describe('Offsite Brand Presence Handler', () => {
 
       expect(mockSubmitScrapeJob).to.have.been.calledOnce;
       expect(mockSubmitScrapeJob.firstCall.args[0]).to.deep.include({
-        datasetId: 'wikipedia',
+        datasetId: SCRAPE_DATASET_IDS.WIKIPEDIA,
         siteId: SITE_ID,
       });
       expect(mockSubmitScrapeJob.firstCall.args[0].urls[0]).to.include('wikipedia.org');
@@ -1237,13 +1259,20 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(2);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
       expect(result.auditResult.urlCounts['wikipedia.org']).to.equal(1);
-      expect(result.auditResult.drsJobs).to.have.lengthOf(5);
+      expect(result.auditResult.drsJobs).to.have.lengthOf(6);
       expect(result.fullAuditRef).to.equal(FINAL_URL);
 
       const createCalls = dataAccess.AuditUrl.create.getCalls();
       const topCitedCalls = createCalls.filter((c) => c.args[0].audits[0] === 'top-cited-analysis');
       expect(topCitedCalls).to.have.lengthOf(1);
       expect(topCitedCalls[0].args[0].url).to.equal('https://example.com/unrelated');
+
+      const topCitedJob = result.auditResult.drsJobs.find((j) => j.datasetId === SCRAPE_DATASET_IDS.TOP_CITED);
+      expect(topCitedJob).to.deep.include({
+        domain: 'top-cited',
+        datasetId: SCRAPE_DATASET_IDS.TOP_CITED,
+        status: 'success',
+      });
     });
 
     it('should include week (zero-padded) and year in the audit result', async () => {

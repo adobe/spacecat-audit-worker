@@ -23,7 +23,7 @@ import {
   REDDIT_COMMENTS_DAYS_BACK,
   OFFSITE_DOMAINS,
   PROVIDERS_SET,
-  TOP_CITED_AUDIT_TYPE,
+  TOP_CITED_DRS_CONFIG,
   TOP_CITED_URLS_LIMIT,
 } from './constants.js';
 
@@ -335,7 +335,7 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
     log.info(`${LOG_PREFIX} Selected top ${urls.length} ${domain} URLs (limit ${DRS_TOP_URLS_LIMIT})`);
   }
   for (const url of topCited) {
-    entries.push({ url, audits: [TOP_CITED_AUDIT_TYPE] });
+    entries.push({ url, audits: [TOP_CITED_DRS_CONFIG.auditType] });
   }
   log.info(`${LOG_PREFIX} Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${TOP_CITED_URLS_LIMIT})`);
   log.info(`${LOG_PREFIX} Adding ${entries.length} URLs to URL store`);
@@ -368,16 +368,17 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
   for (const domain of Object.keys(OFFSITE_DOMAINS)) {
     storedByDomain[domain] = topByDomain[domain].filter((url) => storedUrls.has(url));
   }
+  storedByDomain['top-cited'] = topCited.filter((url) => storedUrls.has(url));
 
   return storedByDomain;
 }
 
 /**
  * Triggers DRS (Data Retrieval Service) scraping jobs for the collected URLs.
- * For each domain, one job is created per dataset_id defined in OFFSITE_DOMAINS
- * (e.g. YouTube gets youtube_videos + youtube_comments).
+ * For each domain, one job is created per dataset_id defined in OFFSITE_DOMAINS.
+ * Top-cited URLs use TOP_CITED_DRS_CONFIG for their dataset configuration.
  *
- * @param {object} urlsByDomain - Map of domain to array of URL strings
+ * @param {object} urlsByDomain - Map of domain/bucket to array of URL strings
  * @param {string} siteId - The site ID
  * @param {object} context - Context with env and log
  * @returns {Promise<Array>} Results of DRS job creation
@@ -400,7 +401,7 @@ async function triggerDrsScraping(urlsByDomain, siteId, context) {
       continue;
     }
 
-    const { datasetIds } = OFFSITE_DOMAINS[domain];
+    const { datasetIds } = OFFSITE_DOMAINS[domain] || TOP_CITED_DRS_CONFIG;
 
     for (const datasetId of datasetIds) {
       const params = { datasetId, siteId, urls: urlList };
