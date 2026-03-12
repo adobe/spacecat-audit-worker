@@ -18,7 +18,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import { calculateCitabilityScore } from './analyzer.js';
 import {
-  extractCustomerDomain,
+  getS3Config,
   getCdnAwsRuntime,
   buildDateFilter,
   buildUserAgentFilter,
@@ -33,24 +33,6 @@ const LOG_PREFIX = '[PageCitability]';
 const PAGE_CITABILITY_SCRAPE_OPTIONS = {
   hideConsentBanners: true,
 };
-
-export async function getS3Config(site, context) {
-  const customerDomain = extractCustomerDomain(site);
-  const domainParts = customerDomain.split(/[._]/);
-  /* c8 ignore next */
-  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const { region, bucket } = getCdnAwsRuntime(site, context);
-
-  return {
-    bucket,
-    region,
-    customerName,
-    customerDomain,
-    databaseName: `cdn_logs_${customerDomain}`,
-    tableName: `aggregated_logs_${customerDomain}_consolidated`,
-    getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
-  };
-}
 
 const createEmptyResult = (baseURL, siteId) => ({
   auditResult: { urlCount: 0 },
@@ -91,7 +73,7 @@ export async function extractUrls(context) {
     skipJoinPath = true;
   } else {
     const awsRuntime = getCdnAwsRuntime(site, context);
-    const s3Config = await getS3Config(site, context);
+    const s3Config = getS3Config(site, context);
     const athenaClient = awsRuntime.createAthenaClient(s3Config.getAthenaTempLocation());
     const filters = site.getConfig().getLlmoCdnlogsFilter();
 

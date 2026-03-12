@@ -28,6 +28,7 @@ import {
   mapServiceToCdnProvider,
   resolveConsolidatedBucketName,
   resolveSiteCdnRegion,
+  getS3Config,
 } from '../../src/utils/cdn-utils.js';
 
 use(sinonChai);
@@ -340,6 +341,37 @@ describe('CDN Utils', () => {
 
       expect(resolveConsolidatedBucketName(context))
         .to.equal('spacecat-dev-cdn-logs-aggregates-us-west-1');
+    });
+  });
+
+  describe('getS3Config', () => {
+    it('builds shared CDN config from site and context', () => {
+      const site = {
+        getBaseURL: () => 'https://www.example.com',
+        getId: () => 'site-123',
+        getConfig: () => ({
+          getLlmoCdnBucketConfig: () => ({ region: 'eu-west-1' }),
+        }),
+      };
+      const context = {
+        env: {
+          AWS_ENV: 'test',
+          AWS_REGION: 'us-east-1',
+        },
+      };
+
+      const config = getS3Config(site, context);
+
+      expect(config.region).to.equal('eu-west-1');
+      expect(config.bucket).to.equal('spacecat-test-cdn-logs-aggregates-eu-west-1');
+      expect(config.customerName).to.equal('example');
+      expect(config.customerDomain).to.equal('example_com');
+      expect(config.databaseName).to.equal('cdn_logs_example_com');
+      expect(config.tableName).to.equal('aggregated_logs_example_com_consolidated');
+      expect(config.referralTableName).to.equal('aggregated_referral_logs_example_com_consolidated');
+      expect(config.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/aggregated/site-123/');
+      expect(config.aggregatedReferralLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/aggregated-referral/site-123/');
+      expect(config.getAthenaTempLocation()).to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/temp/athena-results/');
     });
   });
 

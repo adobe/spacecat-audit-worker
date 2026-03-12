@@ -22,7 +22,7 @@ use(sinonChai);
 describe('agentic-urls', () => {
   let sandbox;
   let mockAthenaClient;
-  let mockExtractCustomerDomain;
+  let mockGetS3Config;
   let mockGetCdnAwsRuntime;
   let mockGenerateReportingPeriods;
   let mockWeeklyBreakdownQueries;
@@ -35,10 +35,16 @@ describe('agentic-urls', () => {
       query: sandbox.stub(),
     };
 
-    mockExtractCustomerDomain = sandbox.stub().returns('example_com');
-    mockGetCdnAwsRuntime = sandbox.stub().returns({
+    mockGetS3Config = sandbox.stub().returns({
       region: 'us-east-1',
       bucket: 'test-bucket',
+      customerName: 'example',
+      customerDomain: 'example_com',
+      databaseName: 'cdn_logs_example_com',
+      getAthenaTempLocation: () => 's3://test-bucket/temp/athena-results/',
+    });
+    mockGetCdnAwsRuntime = sandbox.stub().returns({
+      region: 'us-east-1',
       createAthenaClient: sandbox.stub().returns(mockAthenaClient),
     });
 
@@ -59,7 +65,7 @@ describe('agentic-urls', () => {
 
     const module = await esmock('../../src/utils/agentic-urls.js', {
       '../../src/utils/cdn-utils.js': {
-        extractCustomerDomain: mockExtractCustomerDomain,
+        getS3Config: mockGetS3Config,
         getCdnAwsRuntime: mockGetCdnAwsRuntime,
       },
       '../../src/cdn-logs-report/utils/report-utils.js': {
@@ -268,7 +274,7 @@ describe('agentic-urls', () => {
 
       await getTopAgenticUrlsFromAthena(site, context);
 
-      expect(mockExtractCustomerDomain).to.have.been.calledWith(site);
+      expect(mockGetS3Config).to.have.been.calledWith(site, context);
       expect(mockGetCdnAwsRuntime).to.have.been.calledWith(site, context);
     });
 
@@ -278,13 +284,20 @@ describe('agentic-urls', () => {
 
       // Test the www prefix handling - returns www_example_com, which splits to
       //  ['www', 'example', 'com']
-      mockExtractCustomerDomain.returns('www_example_com');
+      mockGetS3Config.returns({
+        region: 'us-east-1',
+        bucket: 'test-bucket',
+        customerName: 'example',
+        customerDomain: 'www_example_com',
+        databaseName: 'cdn_logs_www_example_com',
+        getAthenaTempLocation: () => 's3://test-bucket/temp/athena-results/',
+      });
       mockAthenaClient.query.resolves([]);
 
       await getTopAgenticUrlsFromAthena(site, context);
 
       // The S3 config should use 'example' as customerName (second part when first is 'www')
-      expect(mockExtractCustomerDomain).to.have.been.calledWith(site);
+      expect(mockGetS3Config).to.have.been.calledWith(site, context);
     });
 
     it('should use first week from reporting periods', async () => {

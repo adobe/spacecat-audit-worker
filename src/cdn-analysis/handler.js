@@ -22,6 +22,7 @@ import {
   mapServiceToCdnProvider,
   CDN_TYPES,
   SERVICE_PROVIDER_TYPES,
+  getS3Config,
   getCdnAwsRuntime,
   pathHasData,
   shouldRecreateTable,
@@ -73,16 +74,6 @@ async function ensureTable(client, database, table, location, sql, log) {
     const msg = `[Athena Query] Create table ${database}.${table}`;
     await client.execute(sql, database, msg);
   }
-}
-
-/**
- * Returns aggregated table names based on customer domain and mode.
- */
-function getAggregatedTableNames(customerDomain) {
-  return {
-    aggregatedTable: `aggregated_logs_${customerDomain}_consolidated`,
-    aggregatedReferralTable: `aggregated_referral_logs_${customerDomain}_consolidated`,
-  };
 }
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -243,14 +234,16 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
 
   log.info(`Processing ${serviceProviders.length} service provider(s) in bucket: ${bucketName}`);
 
-  const database = `cdn_logs_${customerDomain}`;
-  const { aggregatedTable, aggregatedReferralTable } = getAggregatedTableNames(
-    customerDomain,
-  );
-  const consolidatedBucket = awsRuntime.bucket;
+  const s3Config = getS3Config(site, context);
+  const {
+    bucket: consolidatedBucket,
+    databaseName: database,
+    tableName: aggregatedTable,
+    referralTableName: aggregatedReferralTable,
+  } = s3Config;
   const siteId = site.getId();
   const athenaClient = awsRuntime.createAthenaClient(
-    `s3://${consolidatedBucket}/temp/athena-results/`,
+    s3Config.getAthenaTempLocation(),
     { maxPollAttempts: 500 },
   );
 

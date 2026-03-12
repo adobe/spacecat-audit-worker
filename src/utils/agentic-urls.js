@@ -11,7 +11,7 @@
  */
 
 import {
-  extractCustomerDomain,
+  getS3Config,
   getCdnAwsRuntime,
 } from './cdn-utils.js';
 import { generateReportingPeriods } from '../cdn-logs-report/utils/report-utils.js';
@@ -43,29 +43,6 @@ export const EXCLUDED_URL_SUFFIXES = [
 ];
 
 /**
- * Builds S3 config for Athena queries.
- * @param {Object} site - Site object
- * @param {Object} context - Context with env
- * @returns {Promise<Object>} S3 config object
- */
-async function getS3Config(site, context) {
-  const customerDomain = extractCustomerDomain(site);
-  const domainParts = customerDomain.split(/[._]/);
-  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const { region, bucket } = getCdnAwsRuntime(site, context);
-
-  return {
-    bucket,
-    region,
-    customerName,
-    customerDomain,
-    databaseName: `cdn_logs_${customerDomain}`,
-    tableName: `aggregated_logs_${customerDomain}_consolidated`,
-    getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
-  };
-}
-
-/**
  * Fetch top Agentic URLs using Athena.
  * Find last week's top agentic URLs, filters out pooled 'Other',
  * groups by URL, and returns the top URLs by total hits.
@@ -87,7 +64,7 @@ export async function getTopAgenticUrlsFromAthena(
     : context.finalUrl || site.getBaseURL();
   try {
     const awsRuntime = getCdnAwsRuntime(site, context);
-    const s3Config = await getS3Config(site, context);
+    const s3Config = getS3Config(site, context);
     const periods = generateReportingPeriods();
     const recentWeeks = periods.weeks;
     const oneWeekPeriods = { weeks: [recentWeeks[0]] };

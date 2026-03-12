@@ -13,7 +13,6 @@
 
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
-  getS3Config,
   loadSql,
   generateReportingPeriods,
   fetchRemotePatterns,
@@ -21,6 +20,7 @@ import {
 } from './utils/report-utils.js';
 import {
   pathHasData,
+  getS3Config,
   getCdnAwsRuntime,
 } from '../utils/cdn-utils.js';
 import { runWeeklyReport } from './utils/report-runner.js';
@@ -33,7 +33,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   const { log } = context;
   const awsRuntime = getCdnAwsRuntime(site, context);
   const { s3Client } = awsRuntime;
-  const s3Config = await getS3Config(site, context);
+  const s3Config = getS3Config(site, context);
   log.debug(`Starting CDN logs report audit for ${url}`);
   const sharepointClient = await createLLMOSharepointClient(
     context,
