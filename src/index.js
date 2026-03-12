@@ -116,6 +116,7 @@ import frescopaDataGeneration from './frescopa-data-generation/handler.js';
 import semanticValueVisibility from './semantic-value-visibility/handler.js';
 import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
 import drsPromptGeneration from './drs-prompt-generation/handler.js';
+import offsiteBrandPresence from './offsite-brand-presence/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -226,6 +227,7 @@ const HANDLERS = {
   'semantic-value-visibility': semanticValueVisibility,
   'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
   'drs:prompt_generation_base_url': drsPromptGeneration,
+  'offsite-brand-presence': offsiteBrandPresence,
   dummy: (message) => ok(message),
 };
 

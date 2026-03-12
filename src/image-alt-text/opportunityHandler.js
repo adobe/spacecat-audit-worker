@@ -143,6 +143,7 @@ export const chunkArray = (array, chunkSize) => {
  * @param {Array<string>} imageUrlsWithAltText - Image URLs from existing NEW suggestions
  *   (empty array if no opportunity exists)
  * @param {boolean} isSummitPlg - Whether the site has summit-plg enabled
+ * @param {boolean} decorativeAgentEnabled - Whether decorative agent classification is enabled
  * @returns {Promise<void>}
  */
 export async function sendAltTextOpportunityToMystique(
@@ -153,6 +154,7 @@ export async function sendAltTextOpportunityToMystique(
   context,
   imageUrlsWithAltText = [],
   isSummitPlg = false,
+  decorativeAgentEnabled = false,
 ) {
   const {
     sqs, env, log, dataAccess,
@@ -182,6 +184,7 @@ export async function sendAltTextOpportunityToMystique(
           pageUrls: batch,
           imageUrlsWithAltText,
           isSummitPlg,
+          decorativeAgentEnabled,
         },
       };
       // eslint-disable-next-line no-await-in-loop
