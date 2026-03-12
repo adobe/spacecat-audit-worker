@@ -14,14 +14,13 @@ import {
   badRequest, notFound, ok, noContent,
 } from '@adobe/spacecat-shared-http-utils';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
-// import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 
-// TODO: switch back to `Audit.AUDIT_TYPES.REDDIT_ANALYSIS` once native ui is ready
-const AUDIT_TYPE = 'reddit-analysis-generic';
+const AUDIT_TYPE = Audit.AUDIT_TYPES.REDDIT_ANALYSIS;
 
 /**
  * Gets rank based on priority
