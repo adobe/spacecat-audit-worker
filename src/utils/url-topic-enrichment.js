@@ -49,7 +49,7 @@ export function enrichUrlsWithTopicData(urls, topics) {
     )];
 
     const timesCited = matches.reduce(
-      (sum, m) => sum + (Number(m.timesCited) || 0),
+      (max, m) => Math.max(max, Number(m.timesCited) || 0),
       0,
     );
 
