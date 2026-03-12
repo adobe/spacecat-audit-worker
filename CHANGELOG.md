@@ -1,3 +1,10 @@
+## [1.353.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.353.0...v1.353.1) (2026-03-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-drs-client to v1.3.0 ([#2117](https://github.com/adobe/spacecat-audit-worker/issues/2117)) ([49a97e8](https://github.com/adobe/spacecat-audit-worker/commit/49a97e8c94d740e1f55100a66e9326fe4b9a779b))
+
 # [1.353.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.352.1...v1.353.0) (2026-03-11)
 
 
