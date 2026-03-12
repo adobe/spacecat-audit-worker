@@ -1,3 +1,17 @@
+## [1.355.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.355.0...v1.355.1) (2026-03-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.18.0 ([#2122](https://github.com/adobe/spacecat-audit-worker/issues/2122)) ([f5606be](https://github.com/adobe/spacecat-audit-worker/commit/f5606bed4a8a23049de249ed3ed49190149981aa))
+
+# [1.355.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.354.1...v1.355.0) (2026-03-12)
+
+
+### Features
+
+* migrate vulnerabilities flow to starfish-auto-code ([#2120](https://github.com/adobe/spacecat-audit-worker/issues/2120)) ([a5c1945](https://github.com/adobe/spacecat-audit-worker/commit/a5c1945b1264dfbbdbfdb77a0286eb7d4740cc8e))
+
 ## [1.354.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.354.0...v1.354.1) (2026-03-12)
 
 
