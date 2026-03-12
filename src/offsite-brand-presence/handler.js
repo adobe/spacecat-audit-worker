@@ -24,7 +24,6 @@ import {
   OFFSITE_DOMAINS,
   PROVIDERS_SET,
   TOP_CITED_DRS_CONFIG,
-  TOP_CITED_URLS_LIMIT,
 } from './constants.js';
 
 const LOG_PREFIX = '[OffsiteBrandPresence]';
@@ -337,7 +336,7 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
   for (const url of topCited) {
     entries.push({ url, audits: [TOP_CITED_DRS_CONFIG.auditType] });
   }
-  log.info(`${LOG_PREFIX} Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${TOP_CITED_URLS_LIMIT})`);
+  log.info(`${LOG_PREFIX} Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${DRS_TOP_URLS_LIMIT})`);
   log.info(`${LOG_PREFIX} Adding ${entries.length} URLs to URL store`);
 
   const results = await Promise.all(
@@ -477,12 +476,11 @@ async function fetchAndAggregateUrls(siteId, matchedFiles, env, log) {
  * buckets and a top-cited bucket in a single pass.
  *
  * @param {Map<string, {count: number, domain: string|null}>} allUrls - Unified URL map
- * @param {number} limitPerDomain - Max URLs to select per offsite domain
- * @param {number} topCitedLimit - Max URLs for the top-cited bucket
+ * @param {number} maxUrlsPerBucket - Max URLs to select per bucket (domain or top-cited)
  * @param {string[]} excludedFromTopCited - Domains to exclude from top-cited results
  * @returns {{ topByDomain: Object<string, string[]>, topCited: string[] }}
  */
-function selectTopUrls(allUrls, limitPerDomain, topCitedLimit, excludedFromTopCited) {
+function selectTopUrls(allUrls, maxUrlsPerBucket, excludedFromTopCited) {
   const excluded = new Set(excludedFromTopCited);
   const sorted = [...allUrls.entries()].sort((a, b) => b[1].count - a[1].count);
 
@@ -494,10 +492,10 @@ function selectTopUrls(allUrls, limitPerDomain, topCitedLimit, excludedFromTopCi
 
   for (const [url, info] of sorted) {
     const domainBucket = info.domain !== null ? topByDomain[info.domain] : undefined;
-    if (domainBucket !== undefined && domainBucket.length < limitPerDomain) {
+    if (domainBucket !== undefined && domainBucket.length < maxUrlsPerBucket) {
       domainBucket.push(url);
     }
-    if (!excluded.has(info.domain) && topCited.length < topCitedLimit) {
+    if (!excluded.has(info.domain) && topCited.length < maxUrlsPerBucket) {
       topCited.push(url);
     }
   }
@@ -587,7 +585,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
   const excludedFromTopCited = Object.keys(OFFSITE_DOMAINS);
   const {
     topByDomain, topCited,
-  } = selectTopUrls(allUrls, DRS_TOP_URLS_LIMIT, TOP_CITED_URLS_LIMIT, excludedFromTopCited);
+  } = selectTopUrls(allUrls, DRS_TOP_URLS_LIMIT, excludedFromTopCited);
 
   const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
   const drsResults = await triggerDrsScraping(storedByDomain, siteId, context);

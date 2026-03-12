@@ -26,7 +26,6 @@ const {
   INCLUDE_COLUMNS,
   PROVIDERS,
   REDDIT_COMMENTS_DAYS_BACK,
-  TOP_CITED_URLS_LIMIT,
 } = handlerConstants;
 
 use(sinonChai);
@@ -1046,9 +1045,9 @@ describe('Offsite Brand Presence Handler', () => {
       }));
     });
 
-    it('should respect TOP_CITED_URLS_LIMIT', async () => {
+    it('should respect DRS_TOP_URLS_LIMIT for top-cited URLs', async () => {
       const urls = [];
-      const totalUrls = TOP_CITED_URLS_LIMIT + 10;
+      const totalUrls = DRS_TOP_URLS_LIMIT + 10;
       for (let i = 0; i < totalUrls; i += 1) {
         urls.push(`https://example${i}.com/page`);
       }
@@ -1063,7 +1062,7 @@ describe('Offsite Brand Presence Handler', () => {
 
       const createCalls = dataAccess.AuditUrl.create.getCalls();
       const topCitedCalls = createCalls.filter((c) => c.args[0].audits[0] === 'top-cited-analysis');
-      expect(topCitedCalls).to.have.lengthOf(TOP_CITED_URLS_LIMIT);
+      expect(topCitedCalls).to.have.lengthOf(DRS_TOP_URLS_LIMIT);
     });
   });
 

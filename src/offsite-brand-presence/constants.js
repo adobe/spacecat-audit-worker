@@ -50,7 +50,6 @@ export const FETCH_PAGE_SIZE = 80000;
 export const FETCH_TIMEOUT_MS = 60000;
 export const INCLUDE_COLUMNS = ['Sources', 'Region', 'answer_contains_brandname', 'Mentions', 'Citations', 'Prompt'].join(',');
 export const REDDIT_COMMENTS_DAYS_BACK = 30;
-export const TOP_CITED_URLS_LIMIT = 100;
 export const TOP_CITED_DRS_CONFIG = Object.freeze({
   auditType: 'top-cited-analysis',
   datasetIds: [SCRAPE_DATASET_IDS.TOP_CITED],
