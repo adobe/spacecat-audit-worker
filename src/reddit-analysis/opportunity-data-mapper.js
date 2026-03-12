@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
 
 /**
@@ -24,7 +25,7 @@ export function createOpportunityData({ opportunityData } = {}) {
   return {
     runbook: opportunityData?.runbook || '',
     origin: 'AUTOMATION',
-    type: 'reddit-analysis',
+    type: opportunityData?.type || Audit.AUDIT_TYPES.REDDIT_ANALYSIS,
     title: opportunityData?.title || 'Reddit presence: Improve brand sentiment and visibility',
     description: opportunityData?.description
       || 'Enhance your company\'s Reddit presence to improve brand sentiment and visibility. '
