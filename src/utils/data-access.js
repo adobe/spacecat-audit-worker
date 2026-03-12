@@ -352,27 +352,30 @@ export async function syncSuggestions({
   log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
   // Update existing suggestions - O(N) with Map lookup
-  await Promise.all(
-    existingSuggestions
-      .filter((existing) => {
-        const existingKey = buildKey(existing.getData());
-        return newDataKeys.has(existingKey);
-      })
-      .map((existing) => {
-        const existingKey = buildKey(existing.getData());
-        const newDataItem = newDataByKey.get(existingKey);
-        existing.setData(mergeDataFunction(existing.getData(), newDataItem));
+  const { Suggestion } = context.dataAccess;
+  const toUpdate = existingSuggestions
+    .filter((existing) => {
+      const existingKey = buildKey(existing.getData());
+      return newDataKeys.has(existingKey);
+    });
 
-        // Use the merge status function to determine if status should change
-        const newStatus = mergeStatusFunction(existing, newDataItem, context);
-        // null indicates to keep existing status
-        if (newStatus !== null) {
-          existing.setStatus(newStatus);
-        }
-        existing.setUpdatedBy('system');
-        return existing.save();
-      }),
-  );
+  toUpdate.forEach((existing) => {
+    const existingKey = buildKey(existing.getData());
+    const newDataItem = newDataByKey.get(existingKey);
+    existing.setData(mergeDataFunction(existing.getData(), newDataItem));
+
+    // Use the merge status function to determine if status should change
+    const newStatus = mergeStatusFunction(existing, newDataItem, context);
+    // null indicates to keep existing status
+    if (newStatus !== null) {
+      existing.setStatus(newStatus);
+    }
+    existing.setUpdatedBy('system');
+  });
+
+  if (toUpdate.length > 0) {
+    await Suggestion.saveMany(toUpdate);
+  }
   log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
   // Prepare new suggestions - O(N) with Set lookup

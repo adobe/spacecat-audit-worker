@@ -333,7 +333,8 @@ describe('data-access', () => {
 
       expect(existingSuggestions[0].setStatus).to.have.been
         .calledWith(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
-      expect(existingSuggestions[0].save).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
     });
 
     it('should update OUTDATED suggestions to NEW when site does not require validation', async () => {
@@ -369,7 +370,8 @@ describe('data-access', () => {
 
       expect(existingSuggestions[0].setStatus).to.have
         .been.calledWith(SuggestionDataAccess.STATUSES.NEW);
-      expect(existingSuggestions[0].save).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
     });
 
     it('should preserve REJECTED status when same suggestion appears again with no data changes', async () => {
@@ -406,8 +408,9 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       // Verify that debug log is called with the correct message
       expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-      // Verify that save is called
-      expect(existingSuggestions[0].save).to.have.been.called;
+      // Verify that saveMany is called with the updated suggestion
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
       // Verify that setData is called to update the data
       expect(existingSuggestions[0].setData).to.have.been.called;
     });
@@ -446,8 +449,9 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       // Verify that debug log is called with the correct message
       expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-      // Verify that save is called
-      expect(existingSuggestions[0].save).to.have.been.called;
+      // Verify that saveMany is called with the updated suggestion
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
       // Verify that setData is called to update the data
       expect(existingSuggestions[0].setData).to.have.been.called;
     });
@@ -491,8 +495,9 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       // Verify that debug log is called with the correct message
       expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-      // Verify that save is called
-      expect(existingSuggestions[0].save).to.have.been.called;
+      // Verify that saveMany is called with the updated suggestion
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
       // Verify that setData is called to update the data
       expect(existingSuggestions[0].setData).to.have.been.called;
     });
@@ -534,7 +539,8 @@ describe('data-access', () => {
       // Verify that REJECTED status is NOT changed (setStatus should not be called)
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-      expect(existingSuggestions[0].save).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
       expect(existingSuggestions[0].setData).to.have.been.called;
     });
 
@@ -768,7 +774,8 @@ describe('data-access', () => {
 
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
       expect(existingSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
-      expect(existingSuggestions[0].save).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been
         .calledOnceWith([existingSuggestions[1]], 'OUTDATED');
     });
@@ -805,7 +812,8 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setStatus).to.have.been
         .calledOnceWith(SuggestionDataAccess.STATUSES.NEW);
       expect(mockLogger.warn).to.have.been.calledOnceWith('Outdated suggestion found in audit. Possible regression.');
-      expect(existingSuggestions[0].save).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
     });
 
     it('should log errors if there are items with errors', async () => {
@@ -1639,7 +1647,8 @@ describe('data-access', () => {
       expect(mockOpportunity.getSuggestions).to.not.have.been.called;
       // Verify the pre-fetched suggestions were used
       expect(prefetchedSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
-      expect(prefetchedSuggestions[0].save).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith(prefetchedSuggestions);
     });
   });
 
@@ -2295,6 +2304,7 @@ describe('data-access', () => {
         dataAccess: {
           Suggestion: {
             bulkUpdateStatus: sinon.stub().resolves(),
+            saveMany: sinon.stub().resolves(),
             getFixEntitiesBySuggestionId: sinon.stub().resolves({ data: [] }),
           },
           FixEntity: {
