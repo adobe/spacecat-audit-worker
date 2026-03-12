@@ -1943,7 +1943,7 @@ describe('data-access', () => {
       });
 
       expect(mockLogger.warn).to.have.been.calledWith(
-        'Failed to mark suggestion sugg-1 as FIXED: DB error',
+        'Failed to mark 1 suggestions as FIXED: DB error',
       );
     });
 
@@ -2051,6 +2051,7 @@ describe('data-access', () => {
       mockDataAccess = {
         FixEntity: {
           allByOpportunityIdAndStatus: sinon.stub().resolves([]),
+          saveMany: sinon.stub().resolves(),
         },
         Suggestion: {
           getFixEntitiesBySuggestionId: sinon.stub().resolves({ data: [] }),
@@ -2235,11 +2236,11 @@ describe('data-access', () => {
       });
 
       expect(fixEntity.setStatus).to.have.been.called;
-      expect(fixEntity.save).to.have.been.called;
+      expect(mockDataAccess.FixEntity.saveMany).to.have.been.called;
       expect(mockLogger.info).to.have.been.calledWith('Published fix entity fix-5');
     });
 
-    it('should log debug when fixEntity.save() throws', async () => {
+    it('should log debug when FixEntity.saveMany() throws', async () => {
       const suggestion = {
         getData: sinon.stub().returns({ key: 'resolved-key' }),
       };
@@ -2248,10 +2249,11 @@ describe('data-access', () => {
         getId: sinon.stub().returns('fix-6'),
         getSuggestionIds: sinon.stub().returns(['sugg-1']),
         setStatus: sinon.stub(),
-        save: sinon.stub().rejects(new Error('Save error')),
+        save: sinon.stub().resolves(),
       };
 
       mockDataAccess.FixEntity.allByOpportunityIdAndStatus.resolves([fixEntity]);
+      mockDataAccess.FixEntity.saveMany.rejects(new Error('Save error'));
       mockDataAccess.Suggestion.getFixEntitiesBySuggestionId.resolves({ data: [suggestion] });
 
       await publishDeployedFixEntities({
@@ -2260,7 +2262,7 @@ describe('data-access', () => {
         isIssueResolvedOnProduction: sinon.stub().resolves(true),
       });
 
-      expect(mockLogger.debug).to.have.been.calledWith('Failed to save fix entity: Save error');
+      expect(mockLogger.debug).to.have.been.calledWith('Failed to save fix entities: Save error');
     });
 
     it('should log warning on outer catch when unexpected error occurs', async () => {

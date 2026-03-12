@@ -463,6 +463,7 @@ export async function reconcileDisappearedSuggestions({
   isIssueFixedWithAISuggestion,
   buildFixEntityPayload,
   isAuthorOnly = false,
+  Suggestion,
 }) {
   try {
     const newStatus = SuggestionDataAccess?.STATUSES?.NEW;
@@ -488,23 +489,33 @@ export async function reconcileDisappearedSuggestions({
     const checkResults = await limitConcurrencyAllSettled(checkTasks, MAX_CONCURRENT_CHECKS);
     const fixedSuggestions = checkResults.filter((r) => r?.isFixed).map((r) => r.suggestion);
 
-    const fixEntityObjects = [];
+    if (fixedSuggestions.length === 0) {
+      return;
+    }
 
-    // Process fixed suggestions (DB operations are fast, no concurrency limit needed)
-    for (const suggestion of fixedSuggestions) {
+    // Batch-save all fixed suggestions instead of individual saves
+    fixedSuggestions.forEach((suggestion) => {
       log.debug(`[reconcileDisappearedSuggestions] Marking suggestion ${suggestion?.getId?.()} as FIXED`);
-      let suggestionMarkedFixed = false;
-      try {
-        suggestion.setStatus?.(SuggestionDataAccess.STATUSES.FIXED);
-        suggestion.setUpdatedBy?.('system');
-        // eslint-disable-next-line no-await-in-loop
-        await suggestion.save?.();
-        suggestionMarkedFixed = true;
-      } catch (e) {
-        log.warn(`Failed to mark suggestion ${suggestion?.getId?.()} as FIXED: ${e.message}`);
-      }
+      suggestion.setStatus?.(SuggestionDataAccess.STATUSES.FIXED);
+      suggestion.setUpdatedBy?.('system');
+    });
 
-      if (suggestionMarkedFixed && typeof buildFixEntityPayload === 'function') {
+    try {
+      if (Suggestion) {
+        await Suggestion.saveMany(fixedSuggestions);
+      } else {
+        // Fallback: save individually if Suggestion collection not available
+        await Promise.all(fixedSuggestions.map((s) => s.save?.()));
+      }
+    } catch (e) {
+      log.warn(`Failed to mark ${fixedSuggestions.length} suggestions as FIXED: ${e.message}`);
+      return;
+    }
+
+    // Build fix entities for all successfully saved suggestions
+    const fixEntityObjects = [];
+    if (typeof buildFixEntityPayload === 'function') {
+      for (const suggestion of fixedSuggestions) {
         try {
           const fixEntity = buildFixEntityPayload(suggestion, opportunity, isAuthorOnly);
           if (fixEntity) {
@@ -620,17 +631,22 @@ export async function publishDeployedFixEntities({
     const fixEntityTasks = deployedFixEntities.map((fe) => async () => checkFixEntity(fe));
     const results = await limitConcurrencyAllSettled(fixEntityTasks, MAX_CONCURRENT_CHECKS);
 
-    // Update resolved fix entities
-    for (const result of results) {
-      if (result?.allResolved) {
-        try {
-          result.fixEntity.setStatus?.(publishedStatus);
-          // eslint-disable-next-line no-await-in-loop
-          await result.fixEntity.save?.();
-          log.info(`Published fix entity ${result.fixEntity.getId?.()}`);
-        } catch (e) {
-          log.debug(`Failed to save fix entity: ${e.message}`);
-        }
+    // Batch-save all resolved fix entities instead of individual saves
+    const fixEntitiesToPublish = results
+      .filter((r) => r?.allResolved)
+      .map((r) => {
+        r.fixEntity.setStatus?.(publishedStatus);
+        return r.fixEntity;
+      });
+
+    if (fixEntitiesToPublish.length > 0) {
+      try {
+        await FixEntity.saveMany(fixEntitiesToPublish);
+        fixEntitiesToPublish.forEach((fe) => {
+          log.info(`Published fix entity ${fe.getId?.()}`);
+        });
+      } catch (e) {
+        log.debug(`Failed to save fix entities: ${e.message}`);
       }
     }
   } catch (e) {
@@ -696,6 +712,7 @@ export async function syncSuggestionsWithPublishDetection({
       isIssueFixedWithAISuggestion,
       buildFixEntityPayload,
       isAuthorOnly,
+      Suggestion: context.dataAccess?.Suggestion,
     });
   }
 

@@ -31,7 +31,9 @@ const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
  * @param {Object} params.log - Logger object for error reporting.
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
-export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, log }) {
+export async function syncAltTextSuggestions({
+  opportunity, newSuggestionDTOs, log, Suggestion,
+}) {
   const existingSuggestions = await opportunity.getSuggestions();
 
   const IGNORED_STATUSES = [SuggestionModel.STATUSES.SKIPPED, SuggestionModel.STATUSES.FIXED];
@@ -41,11 +43,12 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, l
   const ignoredSuggestionIds = ignoredSuggestions.map((s) => s.getData().recommendations[0].id);
 
   // Remove existing suggestions that were not ignored
-  await Promise.all(existingSuggestions
-    .filter(
-      (suggestion) => !ignoredSuggestionIds.includes(suggestion.getData().recommendations[0].id),
-    )
-    .map((suggestion) => suggestion.remove()));
+  const suggestionsToRemove = existingSuggestions.filter(
+    (suggestion) => !ignoredSuggestionIds.includes(suggestion.getData().recommendations[0].id),
+  );
+  if (suggestionsToRemove.length > 0) {
+    await Suggestion.removeByIds(suggestionsToRemove.map((s) => s.getId()));
+  }
 
   const suggestionsToAdd = newSuggestionDTOs.filter(
     (s) => !ignoredSuggestionIds.includes(s.data.recommendations[0].id),
@@ -209,7 +212,7 @@ export async function sendAltTextOpportunityToMystique(
  * @param {Object} params.log - Logger object for error reporting.
  * @returns {Promise<void>} - Resolves when the cleanup is complete.
  */
-export async function clearAltTextSuggestions({ opportunity, log }) {
+export async function clearAltTextSuggestions({ opportunity, log, Suggestion }) {
   if (!opportunity) {
     log.debug(`[${AUDIT_TYPE}]: No opportunity found, skipping suggestion cleanup`);
     return;
@@ -234,7 +237,7 @@ export async function clearAltTextSuggestions({ opportunity, log }) {
   );
 
   if (suggestionsToRemove.length > 0) {
-    await Promise.all(suggestionsToRemove.map((suggestion) => suggestion.remove()));
+    await Suggestion.removeByIds(suggestionsToRemove.map((s) => s.getId()));
     log.info(`[${AUDIT_TYPE}]: Cleared ${suggestionsToRemove.length} existing suggestions (preserved ${ignoredSuggestions.length} ignored suggestions)`);
   } else {
     log.debug(`[${AUDIT_TYPE}]: No suggestions to clear (all ${existingSuggestions.length} suggestions are ignored)`);

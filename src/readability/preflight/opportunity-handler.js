@@ -54,7 +54,7 @@ export async function addReadabilitySuggestions({ opportunity, newSuggestionDTOs
  * @param {Object} params.log - Logger object for error reporting.
  * @returns {Promise<void>} - Resolves when the cleanup is complete.
  */
-export async function clearReadabilitySuggestions({ opportunity, log }) {
+export async function clearReadabilitySuggestions({ opportunity, log, Suggestion }) {
   if (!opportunity) {
     log.debug('[READABILITY]: No opportunity found, skipping suggestion cleanup');
     return;
@@ -79,7 +79,7 @@ export async function clearReadabilitySuggestions({ opportunity, log }) {
   );
 
   if (suggestionsToRemove.length > 0) {
-    await Promise.all(suggestionsToRemove.map((suggestion) => suggestion.remove()));
+    await Suggestion.removeByIds(suggestionsToRemove.map((s) => s.getId()));
     log.info(`[READABILITY]: Cleared ${suggestionsToRemove.length} existing suggestions (preserved ${ignoredSuggestions.length} ignored suggestions)`);
   } else {
     log.debug(`[READABILITY]: No suggestions to clear (all ${existingSuggestions.length} suggestions are ignored)`);

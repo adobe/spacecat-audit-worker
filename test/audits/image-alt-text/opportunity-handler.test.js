@@ -38,16 +38,19 @@ describe('clearAltTextSuggestions', () => {
   it('should clear existing suggestions except ignored ones', async () => {
     const mockSuggestions = [
       {
+        getId: () => 'sugg-id-1',
         getStatus: () => 'NEW',
         getData: () => ({ recommendations: [{ id: 'suggestion-1' }] }),
         remove: sinon.stub().resolves(),
       },
       {
+        getId: () => 'sugg-id-2',
         getStatus: () => 'SKIPPED',
         getData: () => ({ recommendations: [{ id: 'suggestion-2' }] }),
         remove: sinon.stub().resolves(),
       },
       {
+        getId: () => 'sugg-id-3',
         getStatus: () => 'NEW',
         getData: () => ({ recommendations: [{ id: 'suggestion-3' }] }),
         remove: sinon.stub().resolves(),
@@ -58,12 +61,16 @@ describe('clearAltTextSuggestions', () => {
       getSuggestions: sinon.stub().resolves(mockSuggestions),
     };
 
-    await clearAltTextSuggestions({ opportunity: mockOpportunity, log: logStub });
+    const SuggestionMock = {
+      removeByIds: sinon.stub().resolves(),
+    };
+
+    await clearAltTextSuggestions({
+      opportunity: mockOpportunity, log: logStub, Suggestion: SuggestionMock,
+    });
 
     // Should remove non-ignored suggestions (suggestion-1 and suggestion-3)
-    expect(mockSuggestions[0].remove).to.have.been.called;
-    expect(mockSuggestions[1].remove).to.not.have.been.called; // SKIPPED should not be removed
-    expect(mockSuggestions[2].remove).to.have.been.called;
+    expect(SuggestionMock.removeByIds).to.have.been.calledWith(['sugg-id-1', 'sugg-id-3']);
 
     expect(logStub.info).to.have.been.calledWith(
       '[alt-text]: Cleared 2 existing suggestions (preserved 1 ignored suggestions)',
@@ -494,17 +501,23 @@ describe('syncAltTextSuggestions', () => {
       getSiteId: () => 'test-site-id',
       getSuggestions: sinon.stub().resolves([
         {
+          getId: () => 'sugg-id-1',
           getStatus: () => 'NEW',
           getData: () => ({ recommendations: [{ id: 'suggestion-1' }] }),
           remove: sinon.stub().resolves(),
         },
         {
+          getId: () => 'sugg-id-2',
           getStatus: () => 'SKIPPED',
           getData: () => ({ recommendations: [{ id: 'suggestion-2' }] }),
           remove: sinon.stub().resolves(),
         },
       ]),
       addSuggestions: sinon.stub().resolves({ createdItems: [1], errorItems: [] }),
+    };
+
+    const SuggestionMock = {
+      removeByIds: sinon.stub().resolves(),
     };
 
     const newSuggestionDTOs = [
@@ -515,7 +528,9 @@ describe('syncAltTextSuggestions', () => {
       },
     ];
 
-    await syncAltTextSuggestions({ opportunity: mockOpportunity, newSuggestionDTOs, log: logStub });
+    await syncAltTextSuggestions({
+      opportunity: mockOpportunity, newSuggestionDTOs, log: logStub, Suggestion: SuggestionMock,
+    });
 
     expect(mockOpportunity.getSuggestions).to.have.been.called;
     expect(mockOpportunity.addSuggestions).to.have.been.calledWith(newSuggestionDTOs);

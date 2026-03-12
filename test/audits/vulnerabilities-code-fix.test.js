@@ -91,6 +91,8 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
           },
           Suggestion: {
             findById: sandbox.stub().resolves(suggestion),
+            batchGetByKeys: sandbox.stub().resolves({ data: [suggestion] }),
+            saveMany: sandbox.stub().resolves(),
           },
         },
         s3Client: { send: sandbox.stub().resolves() },
@@ -170,7 +172,7 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
 
     expect(response.status).to.equal(200);
     expect(context.log.warn).to.have.been.calledWith(sinon.match(/Empty updates array/));
-    expect(context.dataAccess.Suggestion.findById).to.not.have.been.called;
+    expect(context.dataAccess.Suggestion.batchGetByKeys).to.not.have.been.called;
   });
 
   it('skips updates when suggestionId is missing', async () => {
@@ -179,12 +181,12 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
     const response = await handler(message, context);
 
     expect(response.status).to.equal(200);
-    expect(context.dataAccess.Suggestion.findById).to.not.have.been.called;
+    expect(context.dataAccess.Suggestion.batchGetByKeys).to.not.have.been.called;
     expect(context.log.error).to.have.been.calledWith(sinon.match(/No suggestionId/));
   });
 
   it('skips updates when suggestion is not found', async () => {
-    context.dataAccess.Suggestion.findById.resolves(null);
+    context.dataAccess.Suggestion.batchGetByKeys.resolves({ data: [] });
 
     const response = await handler(message, context);
 
@@ -260,7 +262,7 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
       patchContent: 'diff-content',
       isCodeChangeAvailable: true,
     });
-    expect(suggestion.save).to.have.been.calledOnce;
+    expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
   });
 
   it('skips fix when S3_STARFISH_BUCKET_NAME is not set and no code_fix_bucket provided', async () => {
@@ -291,7 +293,7 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
       patchContent: 'json-diff',
       isCodeChangeAvailable: true,
     });
-    expect(suggestion.save).to.have.been.calledOnce;
+    expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
   });
 });
 

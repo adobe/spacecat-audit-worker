@@ -253,10 +253,14 @@ describe('Opportunity Handler Tests', () => {
   describe('clearReadabilitySuggestions', () => {
     let mockOpportunity;
     let mockSuggestions;
+    let SuggestionMock;
 
     beforeEach(() => {
       mockOpportunity = {
         getSuggestions: sinon.stub(),
+      };
+      SuggestionMock = {
+        removeByIds: sinon.stub().resolves(),
       };
 
       mockSuggestions = [
@@ -329,15 +333,11 @@ describe('Opportunity Handler Tests', () => {
       await clearReadabilitySuggestions({
         opportunity: mockOpportunity,
         log,
+        Suggestion: SuggestionMock,
       });
 
-      // Should remove pending suggestions (suggestion-1 and suggestion-4)
-      expect(mockSuggestions[0].remove).to.have.been.called;
-      expect(mockSuggestions[3].remove).to.have.been.called;
-
-      // Should NOT remove skipped/fixed suggestions (suggestion-2 and suggestion-3)
-      expect(mockSuggestions[1].remove).not.to.have.been.called;
-      expect(mockSuggestions[2].remove).not.to.have.been.called;
+      // Should remove pending suggestions (suggestion-1 and suggestion-4) via removeByIds
+      expect(SuggestionMock.removeByIds).to.have.been.calledWith(['suggestion-1', 'suggestion-4']);
 
       expect(log.info).to.have.been.calledWith('[READABILITY]: Cleared 2 existing suggestions (preserved 2 ignored suggestions)');
     });
@@ -394,12 +394,11 @@ describe('Opportunity Handler Tests', () => {
       await clearReadabilitySuggestions({
         opportunity: mockOpportunity,
         log,
+        Suggestion: SuggestionMock,
       });
 
-      // Should remove all suggestions
-      expect(removableSuggestions[0].remove).to.have.been.called;
-      expect(removableSuggestions[1].remove).to.have.been.called;
-      expect(removableSuggestions[2].remove).to.have.been.called;
+      // Should remove all suggestions via removeByIds
+      expect(SuggestionMock.removeByIds).to.have.been.calledWith(['suggestion-1', 'suggestion-2', 'suggestion-3']);
 
       expect(log.info).to.have.been.calledWith('[READABILITY]: Cleared 3 existing suggestions (preserved 0 ignored suggestions)');
     });
@@ -438,21 +437,16 @@ describe('Opportunity Handler Tests', () => {
       await clearReadabilitySuggestions({
         opportunity: mockOpportunity,
         log,
+        Suggestion: SuggestionMock,
       });
 
-      // Should preserve skipped/fixed (suggestions 1, 3, 5)
-      expect(mixedSuggestions[0].remove).not.to.have.been.called;
-      expect(mixedSuggestions[2].remove).not.to.have.been.called;
-      expect(mixedSuggestions[4].remove).not.to.have.been.called;
-
-      // Should remove others (suggestions 2, 4)
-      expect(mixedSuggestions[1].remove).to.have.been.called;
-      expect(mixedSuggestions[3].remove).to.have.been.called;
+      // Should remove non-ignored suggestions (2, 4) via removeByIds
+      expect(SuggestionMock.removeByIds).to.have.been.calledWith(['suggestion-2', 'suggestion-4']);
 
       expect(log.info).to.have.been.calledWith('[READABILITY]: Cleared 2 existing suggestions (preserved 3 ignored suggestions)');
     });
 
-    it('should handle Promise.all for multiple removals', async () => {
+    it('should handle batch removal for multiple suggestions', async () => {
       const largeSuggestionSet = Array.from({ length: 10 }, (_, i) => ({
         getId: () => `suggestion-${i}`,
         getStatus: () => 'pending', // All should be removed
@@ -464,12 +458,12 @@ describe('Opportunity Handler Tests', () => {
       await clearReadabilitySuggestions({
         opportunity: mockOpportunity,
         log,
+        Suggestion: SuggestionMock,
       });
 
-      // All should be removed
-      largeSuggestionSet.forEach((suggestion) => {
-        expect(suggestion.remove).to.have.been.called;
-      });
+      // All should be removed via single removeByIds call
+      const expectedIds = Array.from({ length: 10 }, (_, i) => `suggestion-${i}`);
+      expect(SuggestionMock.removeByIds).to.have.been.calledWith(expectedIds);
 
       expect(log.info).to.have.been.calledWith('[READABILITY]: Cleared 10 existing suggestions (preserved 0 ignored suggestions)');
     });
