@@ -1,3 +1,10 @@
+# [1.355.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.354.1...v1.355.0) (2026-03-12)
+
+
+### Features
+
+* migrate vulnerabilities flow to starfish-auto-code ([#2120](https://github.com/adobe/spacecat-audit-worker/issues/2120)) ([a5c1945](https://github.com/adobe/spacecat-audit-worker/commit/a5c1945b1264dfbbdbfdb77a0286eb7d4740cc8e))
+
 ## [1.354.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.354.0...v1.354.1) (2026-03-12)
 
 
