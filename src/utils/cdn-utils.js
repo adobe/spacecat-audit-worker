@@ -364,10 +364,31 @@ export function resolveConsolidatedBucketName(context, region) {
   return `spacecat-${environment}-cdn-logs-aggregates-${resolvedRegion}`;
 }
 
+export function getS3Config(site, context) {
+  const region = resolveSiteCdnRegion(site, context);
+  const customerDomain = extractCustomerDomain(site);
+  const domainParts = customerDomain.split(/[._]/);
+  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
+  const bucket = resolveConsolidatedBucketName(context, region);
+  const siteId = site?.getId?.();
+  return {
+    bucket,
+    region,
+    siteId,
+    customerName,
+    customerDomain,
+    databaseName: `cdn_logs_${customerDomain}`,
+    tableName: `aggregated_logs_${customerDomain}_consolidated`,
+    referralTableName: `aggregated_referral_logs_${customerDomain}_consolidated`,
+    aggregatedLocation: siteId ? `s3://${bucket}/aggregated/${siteId}/` : undefined,
+    aggregatedReferralLocation: siteId ? `s3://${bucket}/aggregated-referral/${siteId}/` : undefined,
+    getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
+  };
+}
+
 export function getCdnAwsRuntime(site, context) {
   const region = resolveSiteCdnRegion(site, context);
   const runtimeRegion = context?.env?.AWS_REGION || 'us-east-1';
-  const bucket = resolveConsolidatedBucketName(context, region);
   const s3Client = region === runtimeRegion ? context.s3Client : new S3Client({ region });
   const athenaContext = region === runtimeRegion
     ? context
@@ -382,7 +403,6 @@ export function getCdnAwsRuntime(site, context) {
 
   return {
     region,
-    bucket,
     s3Client,
     createAthenaClient: (tempLocation, opts = {}) => AWSAthenaClient.fromContext(
       athenaContext,

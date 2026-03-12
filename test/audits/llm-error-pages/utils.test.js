@@ -33,7 +33,7 @@ import {
   downloadExistingCdnSheet,
   matchErrorsWithCdnData,
 } from '../../../src/llm-error-pages/utils.js';
-import { extractCustomerDomain } from '../../../src/utils/cdn-utils.js';
+import { extractCustomerDomain, getS3Config } from '../../../src/utils/cdn-utils.js';
 
 use(sinonChai);
 
@@ -609,161 +609,74 @@ describe('LLM Error Pages Utils', () => {
   });
 
   describe('getS3Config', () => {
-    it('should return config with resolved bucket name', async () => {
+    it('should return shared config with resolved bucket name', () => {
       const mockSite = {
         getConfig: () => ({}),
         getBaseURL: () => 'https://www.example.com',
         getId: () => 'test-site-id',
       };
-
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          extractCustomerDomain: () => 'example_com',
-          getCdnAwsRuntime: () => ({
-            region: 'us-east-1',
-            bucket: 'resolved-bucket',
-          }),
+      const context = {
+        env: {
+          AWS_ENV: 'test',
+          AWS_REGION: 'us-east-1',
         },
-      });
+      };
 
-      const result = await mockedUtils.getS3Config(mockSite, {});
-      expect(result.bucket).to.equal('resolved-bucket');
+      const result = getS3Config(mockSite, context);
+      expect(result.bucket).to.equal('spacecat-test-cdn-logs-aggregates-us-east-1');
       expect(result.customerName).to.equal('example');
       expect(result.customerDomain).to.equal('example_com');
-      expect(result.aggregatedLocation).to.equal('s3://resolved-bucket/aggregated/test-site-id/');
+      expect(result.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated/test-site-id/');
       expect(result.databaseName).to.equal('cdn_logs_example_com');
       expect(result.tableName).to.equal('aggregated_logs_example_com_consolidated');
+      expect(result.referralTableName).to.equal('aggregated_referral_logs_example_com_consolidated');
     });
 
-    it('should use resolveConsolidatedBucketName by default', async () => {
+    it('should use site region when configured', () => {
       const mockSite = {
-        getConfig: () => ({}),
+        getConfig: () => ({
+          getLlmoCdnBucketConfig: () => ({ region: 'eu-west-1' }),
+        }),
         getBaseURL: () => 'https://www.example.com',
         getId: () => 'test-site-id',
       };
-
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          extractCustomerDomain: () => 'example_com',
-          getCdnAwsRuntime: () => ({
-            region: 'us-east-1',
-            bucket: 'resolved-bucket-name',
-          }),
+      const context = {
+        env: {
+          AWS_ENV: 'test',
+          AWS_REGION: 'us-east-1',
         },
-      });
-
-      const result = await mockedUtils.getS3Config(mockSite, {});
-      expect(result.bucket).to.equal('resolved-bucket-name');
-      expect(result.customerName).to.equal('example');
-      expect(result.customerDomain).to.equal('example_com');
-    });
-
-    it('should return config with callable getAthenaTempLocation function', async () => {
-      const mockSite = {
-        getBaseURL: () => 'https://test.example.com',
-        getConfig: () => ({}),
-        getId: () => 'test-site-id',
       };
 
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          extractCustomerDomain: () => 'test_example_com',
-          getCdnAwsRuntime: () => ({
-            region: 'us-east-1',
-            bucket: 'custom-bucket',
-          }),
-        },
-      });
-
-      const result = await mockedUtils.getS3Config(mockSite, {});
-
-      expect(result.getAthenaTempLocation).to.be.a('function');
-      expect(result.getAthenaTempLocation()).to.equal('s3://custom-bucket/temp/athena-results/');
+      const result = getS3Config(mockSite, context);
+      expect(result.bucket).to.equal('spacecat-test-cdn-logs-aggregates-eu-west-1');
+      expect(result.region).to.equal('eu-west-1');
+      expect(result.getAthenaTempLocation()).to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/temp/athena-results/');
     });
 
-    it('should throw error when resolver fails', async () => {
-      const mockSite = {
-        getBaseURL: () => 'https://www.example.com',
-        getConfig: () => ({}),
-        getId: () => 'test-site-id',
-      };
-
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          extractCustomerDomain: () => 'example_com',
-          getCdnAwsRuntime: () => { throw new Error('boom'); },
-        },
-      });
-
-      try {
-        await mockedUtils.getS3Config(mockSite, {});
-        expect.fail('Should have thrown error');
-      } catch (error) {
-        expect(error.message).to.equal('boom');
-      }
-    });
-
-    it('should include siteId in aggregatedLocation for consolidated bucket', async () => {
-      const mockSite = {
-        getConfig: () => ({}),
-        getBaseURL: () => 'https://www.example.com',
-        getId: () => 'test-site-id',
-      };
-
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          extractCustomerDomain: () => 'example_com',
-          getCdnAwsRuntime: () => ({
-            region: 'us-east-1',
-            bucket: 'spacecat-test-cdn-logs-aggregates-us-east-1',
-          }),
-        },
-      });
-
-      const result = await mockedUtils.getS3Config(mockSite, {});
-      expect(result.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated/test-site-id/');
-    });
-
-    it('should use siteId in aggregatedLocation regardless of config', async () => {
-      const mockSite = {
+    it('should include siteId in aggregatedLocation', () => {
+      const result = getS3Config({
         getConfig: () => ({}),
         getBaseURL: () => 'https://www.example.com',
         getId: () => 'another-site-id',
-      };
-
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          extractCustomerDomain: () => 'example_com',
-          getCdnAwsRuntime: () => ({
-            region: 'us-east-1',
-            bucket: 'spacecat-test-cdn-logs-aggregates-us-east-1',
-          }),
+      }, {
+        env: {
+          AWS_ENV: 'test',
+          AWS_REGION: 'us-east-1',
         },
       });
 
-      const result = await mockedUtils.getS3Config(mockSite, {});
       expect(result.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated/another-site-id/');
+      expect(result.aggregatedReferralLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated-referral/another-site-id/');
     });
 
-    it('should always use siteId in aggregatedLocation', async () => {
-      const mockSite = {
+    it('should throw when site base URL resolution fails', () => {
+      const badSite = {
         getConfig: () => ({}),
-        getBaseURL: () => 'https://www.example.com',
-        getId: () => 'final-site-id',
+        getBaseURL: () => { throw new Error('boom'); },
+        getId: () => 'test-site-id',
       };
 
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          extractCustomerDomain: () => 'example_com',
-          getCdnAwsRuntime: () => ({
-            region: 'us-east-1',
-            bucket: 'spacecat-test-cdn-logs-aggregates-us-east-1',
-          }),
-        },
-      });
-
-      const result = await mockedUtils.getS3Config(mockSite, {});
-      expect(result.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated/final-site-id/');
+      expect(() => getS3Config(badSite, {})).to.throw('boom');
     });
   });
 

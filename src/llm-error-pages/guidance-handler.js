@@ -18,10 +18,10 @@ import {
 import {
   generateReportingPeriods,
   generatePeriodIdentifier,
-  getS3Config,
   toPathOnly,
   SPREADSHEET_COLUMNS,
 } from './utils.js';
+import { getS3Config } from '../utils/cdn-utils.js';
 
 /**
  * Handles Mystique responses for LLM error pages and updates suggestions with AI data
@@ -42,7 +42,7 @@ export default async function handler(message, context) {
     log.error(`Site not found for siteId: ${siteId}`);
     return notFound('Site not found');
   }
-  const s3Config = await getS3Config(site, context);
+  const s3Config = getS3Config(site, context);
 
   const audit = await Audit.findById(auditId);
   if (!audit) {
