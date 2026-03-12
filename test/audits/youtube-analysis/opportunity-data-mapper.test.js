@@ -106,6 +106,16 @@ describe('YouTube Analysis Opportunity Data Mapper', () => {
       expect(result.data.dataSources).to.deep.equal(['Site', 'Page', 'GSC']);
     });
 
+    it('should use type from opportunityData when provided', () => {
+      const opportunityData = {
+        type: 'youtube-analysis-generic',
+      };
+
+      const result = createOpportunityData({ opportunityData });
+
+      expect(result.type).to.equal('youtube-analysis-generic');
+    });
+
     it('should handle empty call gracefully', () => {
       const result = createOpportunityData();
 
