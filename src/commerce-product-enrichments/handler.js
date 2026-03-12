@@ -170,16 +170,23 @@ async function sendEnrichment(productPages, commerceConfig, site, env, log) {
     return null;
   }
 
+  const handlerConfig = site.getConfig()?.getHandlers()?.[AUDIT_TYPE];
+  const preFetchConfig = handlerConfig?.preFetch || {};
+
   const enrichmentPayload = {
     siteId: site.getId(),
     environmentId: commerceConfig.headers['Magento-Environment-Id'],
     websiteCode: commerceConfig.headers['Magento-Website-Code'],
     storeCode: commerceConfig.headers['Magento-Store-Code'],
     storeViewCode: commerceConfig.headers['Magento-Store-View-Code'],
-    scrapes: productPages.map((page) => ({
-      sku: page.sku,
-      key: page.location,
-    })),
+    scrapes: productPages.map((page) => {
+      const scrape = { sku: page.sku, key: page.location };
+      const preFetch = preFetchConfig[page.sku];
+      if (preFetch) {
+        scrape.preFetch = preFetch;
+      }
+      return scrape;
+    }),
   };
 
   log.info(`${LOG_PREFIX} Step 3: Sending enrichment to ${enrichmentEndpoint} with ${enrichmentPayload.scrapes.length} scrapes`);
