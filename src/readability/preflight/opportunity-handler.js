@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 
 /**
@@ -43,45 +42,4 @@ export async function addReadabilitySuggestions({ opportunity, newSuggestionDTOs
   }
 
   log.info(`[READABILITY]: Added ${newSuggestionDTOs.length} new readability suggestions`);
-}
-
-/**
- * Clears all existing readability suggestions except those that are ignored/skipped
- * This should be called once at the beginning of the readability audit process
- *
- * @param {Object} params - The parameters for the cleanup operation.
- * @param {Object} params.opportunity - The opportunity object to clear suggestions for.
- * @param {Object} params.log - Logger object for error reporting.
- * @returns {Promise<void>} - Resolves when the cleanup is complete.
- */
-export async function clearReadabilitySuggestions({ opportunity, log, Suggestion }) {
-  if (!opportunity) {
-    log.debug('[READABILITY]: No opportunity found, skipping suggestion cleanup');
-    return;
-  }
-
-  const existingSuggestions = await opportunity.getSuggestions();
-
-  if (!existingSuggestions || existingSuggestions.length === 0) {
-    log.debug('[READABILITY]: No existing suggestions to clear');
-    return;
-  }
-
-  const IGNORED_STATUSES = [SuggestionModel.STATUSES.SKIPPED, SuggestionModel.STATUSES.FIXED];
-  const ignoredSuggestions = existingSuggestions.filter(
-    (s) => IGNORED_STATUSES.includes(s.getStatus()),
-  );
-  const ignoredSuggestionIds = ignoredSuggestions.map((s) => s.getId());
-
-  // Remove existing suggestions that were not ignored
-  const suggestionsToRemove = existingSuggestions.filter(
-    (suggestion) => !ignoredSuggestionIds.includes(suggestion.getId()),
-  );
-
-  if (suggestionsToRemove.length > 0) {
-    await Suggestion.removeByIds(suggestionsToRemove.map((s) => s.getId()));
-    log.info(`[READABILITY]: Cleared ${suggestionsToRemove.length} existing suggestions (preserved ${ignoredSuggestions.length} ignored suggestions)`);
-  } else {
-    log.debug(`[READABILITY]: No suggestions to clear (all ${existingSuggestions.length} suggestions are ignored)`);
-  }
 }
