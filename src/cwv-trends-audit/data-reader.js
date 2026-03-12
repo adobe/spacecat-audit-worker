@@ -24,7 +24,7 @@ export function subtractDays(date, days) {
 }
 
 function buildS3Key(dateStr) {
-  return `${S3_BASE_PATH}/cwv-trends-daily-${dateStr}/cwv-trends-daily-${dateStr}.json`;
+  return `${S3_BASE_PATH}/cwv-trends-daily-${dateStr}.json`;
 }
 
 /**

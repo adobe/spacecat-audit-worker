@@ -178,6 +178,7 @@ function buildUrlDetails(dailyData, deviceType, log) {
     const detail = {
       id: String(index + 1),
       url: url.url,
+      status: categorizeUrl(url.lcp, url.cls, url.inp),
     };
 
     for (const field of fields) {

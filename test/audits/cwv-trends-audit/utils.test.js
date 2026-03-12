@@ -18,7 +18,7 @@ import esmock from 'esmock';
 
 use(sinonChai);
 
-describe('CWV Trends Audit Runner (lib.js)', () => {
+describe('CWV Trends Audit Runner (utils.js)', () => {
   let sandbox;
   let cwvTrendsRunner;
   let readTrendDataStub;
@@ -71,7 +71,7 @@ describe('CWV Trends Audit Runner (lib.js)', () => {
     readTrendDataStub = sandbox.stub();
     log = { info: sandbox.spy(), warn: sandbox.spy(), error: sandbox.spy() };
 
-    const module = await esmock('../../../src/cwv-trends-audit/lib.js', {
+    const module = await esmock('../../../src/cwv-trends-audit/utils.js', {
       '../../../src/cwv-trends-audit/data-reader.js': {
         readTrendData: readTrendDataStub,
         formatDate: (d) => d.toISOString().split('T')[0],
@@ -181,6 +181,33 @@ describe('CWV Trends Audit Runner (lib.js)', () => {
     expect(result.auditResult.urlDetails[1].id).to.equal('2');
     expect(result.auditResult.urlDetails[2].url).to.equal('https://ex.com/low');
     expect(result.auditResult.urlDetails[2].id).to.equal('3');
+  });
+
+  it('includes CWV status (good/needsImprovement/poor) per URL in urlDetails', async () => {
+    const urls = [
+      buildUrl('https://ex.com/good', 'mobile', { pageviews: 5000, lcp: 2000, cls: 0.05, inp: 100 }),
+      buildUrl('https://ex.com/ni', 'mobile', { pageviews: 4000, lcp: 3000, cls: 0.15, inp: 300 }),
+      buildUrl('https://ex.com/poor', 'mobile', { pageviews: 3000, lcp: 5000, cls: 0.30, inp: 600 }),
+    ];
+    readTrendDataStub.resolves(buildDays(['2025-11-28'], urls));
+
+    const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
+    const details = result.auditResult.urlDetails;
+
+    expect(details[0].status).to.equal('good');
+    expect(details[1].status).to.equal('needsImprovement');
+    expect(details[2].status).to.equal('poor');
+  });
+
+  it('sets status to null when all CWV metrics are null', async () => {
+    const urls = [buildUrl('https://ex.com/p', 'mobile', {
+      pageviews: 5000, lcp: null, cls: null, inp: null,
+    })];
+    readTrendDataStub.resolves(buildDays(['2025-11-28'], urls));
+
+    const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
+
+    expect(result.auditResult.urlDetails[0].status).to.be.null;
   });
 
   it('converts bounceRate, engagement, clickRate to percentages', async () => {

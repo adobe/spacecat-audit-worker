@@ -13,15 +13,18 @@
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { AUDIT_TYPE } from './constants.js';
+import { AUDIT_TYPE, OPPORTUNITY_TITLES } from './constants.js';
 
 /**
  * Post-processor that creates/updates the opportunity and syncs suggestions.
- * The opportunity title is determined by the deviceType in the audit result.
+ * Matches existing opportunities by title so mobile and desktop remain separate.
  */
 export default async function opportunityHandler(finalUrl, auditData, context) {
   const { auditResult } = auditData;
   const { deviceType } = auditResult.metadata;
+
+  const expectedTitle = OPPORTUNITY_TITLES[deviceType] || OPPORTUNITY_TITLES.mobile;
+  const comparisonFn = (oppty) => oppty.getTitle() === expectedTitle;
 
   const opportunity = await convertToOpportunity(
     finalUrl,
@@ -30,6 +33,7 @@ export default async function opportunityHandler(finalUrl, auditData, context) {
     createOpportunityData,
     AUDIT_TYPE,
     { deviceType },
+    comparisonFn,
   );
 
   await syncSuggestions({
@@ -39,7 +43,7 @@ export default async function opportunityHandler(finalUrl, auditData, context) {
     buildKey: (data) => data.url,
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
-      type: 'CODE_CHANGE',
+      type: 'CONTENT_UPDATE',
       rank: entry.pageviews,
       data: { ...entry },
     }),

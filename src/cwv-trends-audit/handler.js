@@ -12,7 +12,7 @@
 
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
-import cwvTrendsRunner from './lib.js';
+import cwvTrendsRunner from './utils.js';
 import opportunityHandler from './opportunity-handler.js';
 
 export default new AuditBuilder()

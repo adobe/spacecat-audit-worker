@@ -119,7 +119,7 @@ describe('CWV Trends Data Reader', () => {
       await readTrendData('s3', 'bucket', new Date('2025-11-28T00:00:00Z'), 1, log);
       expect(getObjectFromKeyStub).to.have.been.calledWith(
         's3', 'bucket',
-        'metrics/cwv-trends/cwv-trends-daily-2025-11-28/cwv-trends-daily-2025-11-28.json',
+        'metrics/cwv-trends/cwv-trends-daily-2025-11-28.json',
         log,
       );
     });

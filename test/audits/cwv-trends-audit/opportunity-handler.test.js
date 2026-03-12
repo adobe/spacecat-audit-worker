@@ -41,7 +41,7 @@ describe('CWV Trends Opportunity Handler', () => {
 
   afterEach(() => { sandbox.restore(); });
 
-  it('calls convertToOpportunity with correct audit type and device type', async () => {
+  it('calls convertToOpportunity with correct audit type, device type, and comparisonFn', async () => {
     const auditData = {
       auditResult: {
         metadata: { deviceType: 'mobile' },
@@ -53,9 +53,57 @@ describe('CWV Trends Opportunity Handler', () => {
     await opportunityHandler('https://ex.com', auditData, context);
 
     expect(convertToOpportunityStub).to.have.been.calledOnce;
-    const [, , , , auditType, props] = convertToOpportunityStub.firstCall.args;
+    const [, , , , auditType, props, comparisonFn] = convertToOpportunityStub.firstCall.args;
     expect(auditType).to.equal('cwv-trends-audit');
     expect(props).to.deep.equal({ deviceType: 'mobile' });
+    expect(comparisonFn).to.be.a('function');
+  });
+
+  it('comparisonFn matches by opportunity title for mobile', async () => {
+    const auditData = {
+      auditResult: {
+        metadata: { deviceType: 'mobile' },
+        urlDetails: [],
+      },
+    };
+    const context = { dataAccess: {}, log: { info: sinon.spy() } };
+
+    await opportunityHandler('https://ex.com', auditData, context);
+
+    const comparisonFn = convertToOpportunityStub.firstCall.args[6];
+    expect(comparisonFn({ getTitle: () => 'Mobile Web Performance Trends Report' })).to.be.true;
+    expect(comparisonFn({ getTitle: () => 'Desktop Web Performance Trends Report' })).to.be.false;
+  });
+
+  it('comparisonFn matches by opportunity title for desktop', async () => {
+    const auditData = {
+      auditResult: {
+        metadata: { deviceType: 'desktop' },
+        urlDetails: [],
+      },
+    };
+    const context = { dataAccess: {}, log: { info: sinon.spy() } };
+
+    await opportunityHandler('https://ex.com', auditData, context);
+
+    const comparisonFn = convertToOpportunityStub.firstCall.args[6];
+    expect(comparisonFn({ getTitle: () => 'Desktop Web Performance Trends Report' })).to.be.true;
+    expect(comparisonFn({ getTitle: () => 'Mobile Web Performance Trends Report' })).to.be.false;
+  });
+
+  it('comparisonFn defaults to mobile title for unknown device type', async () => {
+    const auditData = {
+      auditResult: {
+        metadata: { deviceType: 'unknown' },
+        urlDetails: [],
+      },
+    };
+    const context = { dataAccess: {}, log: { info: sinon.spy() } };
+
+    await opportunityHandler('https://ex.com', auditData, context);
+
+    const comparisonFn = convertToOpportunityStub.firstCall.args[6];
+    expect(comparisonFn({ getTitle: () => 'Mobile Web Performance Trends Report' })).to.be.true;
   });
 
   it('syncs suggestions with urlDetails', async () => {
@@ -84,7 +132,7 @@ describe('CWV Trends Opportunity Handler', () => {
     const { mapNewSuggestion, buildKey } = syncSuggestionsStub.firstCall.args[0];
     const suggestion = mapNewSuggestion(urlDetails[0]);
     expect(suggestion.opportunityId).to.equal('opp-123');
-    expect(suggestion.type).to.equal('CODE_CHANGE');
+    expect(suggestion.type).to.equal('CONTENT_UPDATE');
     expect(suggestion.rank).to.equal(5000);
     expect(buildKey(urlDetails[0])).to.equal('https://ex.com/p1');
   });
