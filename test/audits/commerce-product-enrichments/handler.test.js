@@ -1693,6 +1693,323 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
     });
   });
 
+  it('attaches preFetch to scrape entry when SKU matches config', async () => {
+    const preFetchRules = [
+      { type: 'commerce-catalog-search', params: { filters: [{ attribute: 'categoryPath', eq: 'sactionals' }], pageSize: 10 } },
+    ];
+
+    site.getConfig.returns({
+      getIncludedURLs: sinon.stub().resolves([]),
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({
+        'commerce-product-enrichments': {
+          instanceType: 'ACCS',
+          preFetch: { 'TEST-SKU-123': preFetchRules },
+        },
+      }),
+    });
+
+    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve(validACCSConfig),
+    });
+
+    fetchStub.withArgs('https://test-enrichment-endpoint/catalog-enrichment', sinon.match.any).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve({ status: 'accepted' }),
+    });
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            scrapeResult: {
+              structuredData: {
+                jsonld: { Product: [{ name: 'Test Product', sku: 'TEST-SKU-123' }] },
+              },
+            },
+          })),
+        },
+      }),
+    };
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-prefetch-1' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
+        IMS_HOST: 'ims-na1.adobelogin.com',
+        IMS_CLIENT_ID: 'test-client-id',
+        IMS_CLIENT_CODE: 'test-client-code',
+        IMS_CLIENT_SECRET: 'test-client-secret',
+      },
+      scrapeResultPaths: new Map([
+        ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
+      ]),
+    };
+
+    await runAuditWithIms(context);
+
+    const enrichmentCall = fetchStub.getCalls().find((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
+    expect(enrichmentCall).to.exist;
+
+    const payload = JSON.parse(enrichmentCall.args[1].body);
+    expect(payload.scrapes).to.have.lengthOf(1);
+    expect(payload.scrapes[0].sku).to.equal('TEST-SKU-123');
+    expect(payload.scrapes[0].preFetch).to.deep.equal(preFetchRules);
+  });
+
+  it('does not attach preFetch when SKU does not match config', async () => {
+    site.getConfig.returns({
+      getIncludedURLs: sinon.stub().resolves([]),
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({
+        'commerce-product-enrichments': {
+          instanceType: 'ACCS',
+          preFetch: { 'DIFFERENT-SKU': [{ type: 'commerce-catalog-search', params: {} }] },
+        },
+      }),
+    });
+
+    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve(validACCSConfig),
+    });
+
+    fetchStub.withArgs('https://test-enrichment-endpoint/catalog-enrichment', sinon.match.any).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve({ status: 'accepted' }),
+    });
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            scrapeResult: {
+              structuredData: {
+                jsonld: { Product: [{ name: 'Test Product', sku: 'TEST-SKU-123' }] },
+              },
+            },
+          })),
+        },
+      }),
+    };
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-prefetch-2' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
+        IMS_HOST: 'ims-na1.adobelogin.com',
+        IMS_CLIENT_ID: 'test-client-id',
+        IMS_CLIENT_CODE: 'test-client-code',
+        IMS_CLIENT_SECRET: 'test-client-secret',
+      },
+      scrapeResultPaths: new Map([
+        ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
+      ]),
+    };
+
+    await runAuditWithIms(context);
+
+    const enrichmentCall = fetchStub.getCalls().find((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
+    expect(enrichmentCall).to.exist;
+
+    const payload = JSON.parse(enrichmentCall.args[1].body);
+    expect(payload.scrapes[0]).to.deep.equal({
+      sku: 'TEST-SKU-123',
+      key: 'scrapes/site-1/product-1/scrape.json',
+    });
+    expect(payload.scrapes[0]).to.not.have.property('preFetch');
+  });
+
+  it('attaches preFetch only to matching SKUs in mixed batch', async () => {
+    const preFetchRules = [
+      { type: 'commerce-catalog-search', params: { filters: [{ attribute: 'categoryPath', eq: 'sactionals' }], pageSize: 10 } },
+    ];
+
+    site.getConfig.returns({
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({
+        'commerce-product-enrichments': {
+          instanceType: 'ACCS',
+          preFetch: { 'SKU-001': preFetchRules },
+        },
+      }),
+    });
+
+    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve(validACCSConfig),
+    });
+
+    fetchStub.withArgs('https://test-enrichment-endpoint/catalog-enrichment', sinon.match.any).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve({ status: 'accepted', jobId: 'job-789' }),
+    });
+
+    const s3Client = { send: sinon.stub() };
+
+    s3Client.send.onCall(0).resolves({
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sinon.stub().resolves(JSON.stringify({
+          scrapeResult: {
+            structuredData: {
+              jsonld: { Product: [{ name: 'Product 1', sku: 'SKU-001' }] },
+            },
+          },
+        })),
+      },
+    });
+
+    s3Client.send.onCall(1).resolves({
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sinon.stub().resolves(JSON.stringify({
+          scrapeResult: {
+            structuredData: {
+              jsonld: { Product: [{ name: 'Product 2', sku: 'SKU-002' }] },
+            },
+          },
+        })),
+      },
+    });
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-prefetch-3' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
+        IMS_HOST: 'ims-na1.adobelogin.com',
+        IMS_CLIENT_ID: 'test-client-id',
+        IMS_CLIENT_CODE: 'test-client-code',
+        IMS_CLIENT_SECRET: 'test-client-secret',
+      },
+      scrapeResultPaths: new Map([
+        ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
+        ['https://example.com/product-2', 'scrapes/site-1/product-2/scrape.json'],
+      ]),
+    };
+
+    await runAuditWithIms(context);
+
+    const enrichmentCall = fetchStub.getCalls().find((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
+    expect(enrichmentCall).to.exist;
+
+    const payload = JSON.parse(enrichmentCall.args[1].body);
+    expect(payload.scrapes).to.have.lengthOf(2);
+
+    const scrape1 = payload.scrapes.find((s) => s.sku === 'SKU-001');
+    const scrape2 = payload.scrapes.find((s) => s.sku === 'SKU-002');
+
+    expect(scrape1.preFetch).to.deep.equal(preFetchRules);
+    expect(scrape2).to.not.have.property('preFetch');
+  });
+
+  it('does not attach preFetch when preFetch config is empty object', async () => {
+    site.getConfig.returns({
+      getIncludedURLs: sinon.stub().resolves([]),
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({
+        'commerce-product-enrichments': {
+          instanceType: 'ACCS',
+          preFetch: {},
+        },
+      }),
+    });
+
+    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve(validACCSConfig),
+    });
+
+    fetchStub.withArgs('https://test-enrichment-endpoint/catalog-enrichment', sinon.match.any).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve({ status: 'accepted' }),
+    });
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            scrapeResult: {
+              structuredData: {
+                jsonld: { Product: [{ name: 'Test Product', sku: 'TEST-SKU-123' }] },
+              },
+            },
+          })),
+        },
+      }),
+    };
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-prefetch-4' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
+        IMS_HOST: 'ims-na1.adobelogin.com',
+        IMS_CLIENT_ID: 'test-client-id',
+        IMS_CLIENT_CODE: 'test-client-code',
+        IMS_CLIENT_SECRET: 'test-client-secret',
+      },
+      scrapeResultPaths: new Map([
+        ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
+      ]),
+    };
+
+    await runAuditWithIms(context);
+
+    const enrichmentCall = fetchStub.getCalls().find((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
+    expect(enrichmentCall).to.exist;
+
+    const payload = JSON.parse(enrichmentCall.args[1].body);
+    expect(payload.scrapes[0]).to.deep.equal({
+      sku: 'TEST-SKU-123',
+      key: 'scrapes/site-1/product-1/scrape.json',
+    });
+    expect(payload.scrapes[0]).to.not.have.property('preFetch');
+  });
+
   it('handles enrichment API failure gracefully', async () => {
     fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
       ok: true,
