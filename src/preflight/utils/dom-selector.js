@@ -91,19 +91,18 @@ export function getDomElementSelector(element) {
     return `${tag}[data-aue-prop="${aueProp}"]`;
   }
 
-  // 2. Check for ID (most specific - return immediately)
+  // 2. Build element-level selector from ID or classes
   const id = attribs?.id;
   if (id) {
-    return `${tag}#${cssEscape(id)}`;
-  }
-
-  // 3. Add classes if available
-  const className = attribs?.class;
-  if (className && typeof className === 'string') {
-    const classes = className.trim().split(/\s+/).filter(Boolean);
-    if (classes.length > 0) {
-      const classSelector = classes.slice(0, 2).map((c) => cssEscape(c)).join('.');
-      selectors = [`${tag}.${classSelector}`];
+    selectors = [`${tag}#${cssEscape(id)}`];
+  } else {
+    const className = attribs?.class;
+    if (className && typeof className === 'string') {
+      const classes = className.trim().split(/\s+/).filter(Boolean);
+      if (classes.length > 0) {
+        const classSelector = classes.slice(0, 2).map((c) => cssEscape(c)).join('.');
+        selectors = [`${tag}.${classSelector}`];
+      }
     }
   }
 
@@ -121,12 +120,12 @@ export function getDomElementSelector(element) {
 
   const selector = selectors.join('');
 
-  // 5. Build path with parent selectors for more specificity (max 3 levels)
+  // 5. Build path with parent selectors for more specificity (max 5 levels)
   const pathParts = [selector];
   let current = parent;
   let levels = 0;
 
-  while (current && current.name && current.name.toLowerCase() !== 'html' && levels < 3) {
+  while (current && current.name && current.name.toLowerCase() !== 'html' && levels < 5) {
     let parentSelector = current.name.toLowerCase();
 
     // If parent has Universal Editor attribute, use it and stop
@@ -136,20 +135,18 @@ export function getDomElementSelector(element) {
       break;
     }
 
-    // If parent has ID, use it and stop (ID is unique enough)
+    // Add parent ID or classes
     const parentId = current.attribs?.id;
     if (parentId) {
-      pathParts.unshift(`#${cssEscape(parentId)}`);
-      break;
-    }
-
-    // Add parent classes (limit to first 2 for readability)
-    const parentClassName = current.attribs?.class;
-    if (parentClassName && typeof parentClassName === 'string') {
-      const classes = parentClassName.trim().split(/\s+/).filter(Boolean);
-      if (classes.length > 0) {
-        const classSelector = classes.slice(0, 2).map((c) => cssEscape(c)).join('.');
-        parentSelector = `${parentSelector}.${classSelector}`;
+      parentSelector = `${parentSelector}#${cssEscape(parentId)}`;
+    } else {
+      const parentClassName = current.attribs?.class;
+      if (parentClassName && typeof parentClassName === 'string') {
+        const classes = parentClassName.trim().split(/\s+/).filter(Boolean);
+        if (classes.length > 0) {
+          const classSelector = classes.slice(0, 2).map((c) => cssEscape(c)).join('.');
+          parentSelector = `${parentSelector}.${classSelector}`;
+        }
       }
     }
 

@@ -12,7 +12,7 @@
 
 import { expect } from 'chai';
 import { load as cheerioLoad } from 'cheerio';
-import { getDomElementSelector, toElementTargets } from '../../src/utils/dom-selector.js';
+import { getDomElementSelector, toElementTargets } from '../../../src/preflight/utils/dom-selector.js';
 
 describe('dom-selector.js', () => {
   let $;
@@ -82,7 +82,7 @@ describe('dom-selector.js', () => {
     it('should generate a selector with ID if available', () => {
       const element = $('#main-title').get(0);
       const selector = getDomElementSelector(element);
-      expect(selector).to.equal('h1#main-title');
+      expect(selector).to.equal('body > header > h1#main-title');
     });
 
     it('should generate a selector with classes if no ID', () => {
@@ -97,7 +97,7 @@ describe('dom-selector.js', () => {
       expect(selector2).to.include(':nth-of-type(2)');
     });
 
-    it('should generate a selector with parent context up to 3 levels', () => {
+    it('should generate a selector with parent context up to 5 levels', () => {
       const element = $('h3').get(0);
       const selector = getDomElementSelector(element);
       expect(selector).to.include('main');
@@ -105,10 +105,10 @@ describe('dom-selector.js', () => {
       expect(selector).to.include('h3:nth-of-type(1)');
     });
 
-    it('should stop at parent with ID', () => {
+    it('should include parent context even when element has ID', () => {
       const element = $('#unique-heading').get(0);
       const selector = getDomElementSelector(element);
-      expect(selector).to.equal('h2#unique-heading');
+      expect(selector).to.equal('body > main > section:nth-of-type(2) > h2#unique-heading');
     });
 
     it('should handle elements without classes or ID', () => {
@@ -139,8 +139,8 @@ describe('dom-selector.js', () => {
       $('h1').addClass('extra-class another-class');
       const element = $('h1').get(0);
       const selector = getDomElementSelector(element);
-      // Should still use ID
-      expect(selector).to.equal('h1#main-title');
+      // ID takes precedence over classes, but parent chain is still included
+      expect(selector).to.equal('body > header > h1#main-title');
     });
 
     it('should stop at parent with data-aue-resource attribute', () => {
@@ -250,7 +250,7 @@ describe('dom-selector.js', () => {
       mockElement.parent.children = [mockElement];
       const selector = getDomElementSelector(mockElement);
       // The NULL should be replaced with the replacement character
-      expect(selector).to.equal('div#my\uFFFDid');
+      expect(selector).to.equal('body > div#my\uFFFDid');
     });
 
     it('should escape control characters (U+0001-U+001F) in IDs - line 35', () => {
@@ -271,7 +271,7 @@ describe('dom-selector.js', () => {
       mockElement.parent.children = [mockElement];
       const selector = getDomElementSelector(mockElement);
       // Control char 0x1F = 31 in decimal = "1f" in hex, escaped as \1f followed by space
-      expect(selector).to.equal('div#test\\1f id');
+      expect(selector).to.equal('body > div#test\\1f id');
     });
 
     it('should escape DEL character (U+007F) in class names - line 35', () => {
@@ -297,11 +297,11 @@ describe('dom-selector.js', () => {
 
     it('should escape single hyphen as identifier - line 40', () => {
       // A single hyphen at the start (and only character) should be escaped
-      const html = '<div id="-">Content</div>';
+      const html = '<body><div id="-">Content</div></body>';
       const $test = cheerioLoad(html);
       const element = $test('div').get(0);
       const selector = getDomElementSelector(element);
-      expect(selector).to.equal('div#\\-');
+      expect(selector).to.equal('body > div#\\-');
     });
 
     it('should escape special characters like @ and ! - lines 55-57', () => {
@@ -420,6 +420,54 @@ describe('dom-selector.js', () => {
     });
   });
 
+  describe('Duplicate ID handling', () => {
+    it('should produce distinct selectors for elements under parents with duplicate IDs', () => {
+      const html = `
+        <body>
+          <div class="grid">
+            <div class="teaser-wrapper">
+              <div id="featured-teaser" class="cmp-teaser">
+                <div class="cmp-teaser__content">
+                  <h1>Lorem Ipsum</h1>
+                </div>
+              </div>
+            </div>
+            <div class="teaser-wrapper">
+              <div id="featured-teaser" class="cmp-teaser">
+                <div class="cmp-teaser__content">
+                  <h1>Lorem Ipsum</h1>
+                </div>
+              </div>
+            </div>
+          </div>
+        </body>
+      `;
+      const $dup = cheerioLoad(html);
+      const h1Elements = $dup('h1').get();
+      const selector1 = getDomElementSelector(h1Elements[0]);
+      const selector2 = getDomElementSelector(h1Elements[1]);
+
+      expect(selector1).to.not.equal(selector2);
+      expect(selector1).to.include('teaser-wrapper:nth-of-type(1)');
+      expect(selector2).to.include('teaser-wrapper:nth-of-type(2)');
+    });
+
+    it('should include parent chain even when element itself has an ID', () => {
+      const html = `
+        <body>
+          <div class="wrapper">
+            <h1 id="title">Title</h1>
+          </div>
+        </body>
+      `;
+      const $test = cheerioLoad(html);
+      const element = $test('h1').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.include('h1#title');
+      expect(selector).to.include('div.wrapper');
+    });
+  });
+
   describe('AEM Cloud Service Context (cq elements ignored)', () => {
     it('should return only CSS selector for element with ID near cq sibling', () => {
       const html = `
@@ -437,7 +485,7 @@ describe('dom-selector.js', () => {
       const result = getDomElementSelector(h1);
 
       expect(result).to.be.a('string');
-      expect(result).to.equal('h1#page-title');
+      expect(result).to.equal('body > div.container > div.title-wrapper > h1#page-title');
     });
 
     it('should return only CSS selector even when cq siblings exist', () => {

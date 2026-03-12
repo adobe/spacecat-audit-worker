@@ -26,7 +26,7 @@ import {
   MIN_TEXT_LENGTH,
   MAX_CHARACTERS_DISPLAY,
 } from '../shared/constants.js';
-import { getDomElementSelector, toElementTargets } from '../../utils/dom-selector.js';
+import { getDomElementSelector, toElementTargets } from '../../preflight/utils/dom-selector.js';
 
 export const PREFLIGHT_READABILITY = 'readability';
 

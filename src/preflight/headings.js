@@ -20,7 +20,7 @@ import {
 import { getBrandGuidelines } from '../headings/shared-utils.js';
 import { saveIntermediateResults } from './utils.js';
 import SeoChecks from '../metatags/seo-checks.js';
-import { getDomElementSelector, toElementTargets } from '../utils/dom-selector.js';
+import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
 
 export const PREFLIGHT_HEADINGS = 'headings';
 

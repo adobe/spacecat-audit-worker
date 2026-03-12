@@ -12,7 +12,7 @@
 
 import { stripTrailingSlash, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { load as cheerioLoad } from 'cheerio';
-import { getDomElementSelector, toElementTargets } from '../utils/dom-selector.js';
+import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
 
 /**
  * Helper function to check if a link is broken
