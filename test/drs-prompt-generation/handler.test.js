@@ -198,6 +198,7 @@ describe('DRS Prompt Generation Handler', () => {
     expect(sentMessage.siteId).to.equal('site-456');
     expect(sentMessage.auditContext.drsJobId).to.equal('job-4');
     expect(sentMessage.auditContext.resultLocation).to.equal(PRESIGNED_URL);
+    expect(sentMessage.auditContext.configVersion).to.equal('v1');
     expect(sentMessage.auditContext).to.not.have.property('drsJsonKey');
     expect(sentMessage.auditContext).to.not.have.property('drsParquetKey');
   });
@@ -241,6 +242,8 @@ describe('DRS Prompt Generation Handler', () => {
       sinon.match('DRS result processing failed for job job-5'),
     );
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+    expect(sentMessage.auditContext).to.not.have.property('configVersion');
     expect(mockPostMessageSafe).to.have.been.calledOnce;
   });
 
@@ -360,6 +363,7 @@ describe('DRS Prompt Generation Handler', () => {
     expect(sentMessage).to.have.property('siteId', 'site-789');
     expect(sentMessage.auditContext).to.have.property('drsJobId', 'job-7');
     expect(sentMessage.auditContext).to.have.property('resultLocation', PRESIGNED_URL);
+    expect(sentMessage.auditContext).to.have.property('configVersion', 'v1');
     expect(sentMessage.auditContext).to.not.have.property('source');
     expect(sentMessage.auditContext).to.not.have.property('drsEventType');
   });
