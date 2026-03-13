@@ -2577,6 +2577,12 @@ describe('Product MetaTags', () => {
             }),
           },
         },
+        '../../src/support/utils.js': {
+          calculateCPCValue: sinon.stub().resolves(2.5),
+        },
+        '../../src/common/index.js': {
+          wwwUrlResolver: sinon.stub().resolves('https://example.com'),
+        },
       });
 
       const {

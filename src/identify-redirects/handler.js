@@ -16,7 +16,7 @@ import { hasText } from '@adobe/spacecat-shared-utils';
 import { postMessageSafe } from '../utils/slack-utils.js';
 import { createSplunkClient } from '../support/splunk-client-loader.js';
 
-const DEFAULT_MINUTES = 60;
+const DEFAULT_MINUTES = 3000; // 50 hours
 
 const DEFAULT_SPLUNK_FIELDS = {
   envField: 'aem_envId',
@@ -114,6 +114,7 @@ function withMatchExtraction(search, {
   return `${search} | rex field=_raw "(?<${MATCH_FIELD}>${matchRegex})" | where isnotnull(${MATCH_FIELD}) | table ${tableFields} | head ${headLimit}`;
 }
 
+// build out the splunk queries to look for logs related to redirects
 function buildQueries(params) {
   const { pathField } = params;
   return [
@@ -122,7 +123,7 @@ function buildQueries(params) {
       confidence: CONFIDENCE.acsredirectmanager,
       // IMPORTANT: naive /conf/ matching causes false positives. We require redirect context.
       search: withMatchExtraction(
-        `${buildBaseSearch(params)} "/conf/" (redirect OR "acs-commons") NOT "/settings/wcm/templates/"`,
+        `${buildBaseSearch(params)} "/conf/" (redirect OR "acs-commons") NOT "/settings/wcm/templates/" 200`,
         { matchRegex: `/conf/${RX_ANY_TAIL}`, pathField },
       ),
     },
@@ -130,7 +131,7 @@ function buildQueries(params) {
       id: 'acsredirectmapmanager',
       confidence: CONFIDENCE.acsredirectmapmanager,
       search: withMatchExtraction(
-        `${buildBaseSearch(params)} "/etc/acs-commons/redirect-maps"`,
+        `${buildBaseSearch(params)} "/etc/acs-commons/redirect-maps" 200`,
         { matchRegex: `/etc/acs-commons/redirect-maps${RX_ANY_TAIL}`, pathField },
       ),
     },
@@ -252,6 +253,9 @@ function formatSlackMessage({
 
 export default async function identifyRedirects(message, context) {
   const { log } = context;
+  const { Site } = context.dataAccess;
+  const siteId = message?.siteId;
+  const site = hasText(siteId) ? await Site.findById(siteId) : null;
   const {
     baseURL,
     programId,
@@ -259,6 +263,7 @@ export default async function identifyRedirects(message, context) {
     minutes = DEFAULT_MINUTES,
     slackContext,
     splunkFields = {},
+    updateRedirects = false,
   } = message || {};
 
   const channelId = slackContext?.channelId;
@@ -305,6 +310,7 @@ export default async function identifyRedirects(message, context) {
     programId,
   };
 
+  // [ acsredirectmanager, acsredirectmapmanager, redirectmapTxt, damredirectmgr ]
   const queries = buildQueries(queryParams);
 
   let settled;
@@ -388,6 +394,33 @@ export default async function identifyRedirects(message, context) {
     threadTs,
     ...(slackTarget && { target: slackTarget }),
   });
+
+  if (updateRedirects && winner !== null) {
+    if (!site) {
+      const reason = !hasText(siteId) ? 'missing siteId' : 'site not found';
+      log.warn(`[identify-redirects] Skipping config update: ${reason}`);
+      await postMessageSafe(
+        context,
+        channelId,
+        `:warning: Could not update delivery config for *${baseURL}* (${reason}).`,
+        { threadTs, ...(slackTarget && { target: slackTarget }) },
+      );
+    } else {
+      let redirectsSource = 'none';
+      const redirectsMode = winner.id;
+
+      if (redirectsMode !== 'vanityurlmgr') {
+        [redirectsSource] = winner.examples || ['none'];
+      }
+
+      site.setDeliveryConfig({
+        ...site.getDeliveryConfig(),
+        redirectsSource,
+        redirectsMode,
+      });
+      await site.save();
+    }
+  }
 
   return ok({ status: 'ok' });
 }

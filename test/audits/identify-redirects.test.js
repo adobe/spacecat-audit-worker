@@ -58,12 +58,18 @@ async function loadHandler({ loginImpl, oneshotImpl } = {}) {
   };
 }
 
+// identify-redirects handler tests group
 describe('identify-redirects handler', () => {
   let sandbox;
   let context;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
+    const siteStub = {
+      getDeliveryConfig: sandbox.stub().returns({}),
+      setDeliveryConfig: sandbox.stub().returnsThis(),
+      save: sandbox.stub().resolves(),
+    };
     context = {
       log: {
         info: sandbox.spy(),
@@ -76,6 +82,12 @@ describe('identify-redirects handler', () => {
         SPLUNK_API_USER: 'user',
         SPLUNK_API_PASS: 'pass',
       },
+      dataAccess: {
+        Site: {
+          findById: sandbox.stub().resolves(siteStub),
+        },
+      },
+      _siteStub: siteStub,
     };
   });
 
@@ -565,5 +577,143 @@ describe('identify-redirects handler', () => {
     const text = loaded.postMessageSafe.secondCall.args[2];
     expect(text).to.include('*Queries run*');
     expect(text).to.include('acsredirectmapmanager:');
+  });
+
+  it('updates site delivery config and saves when updateRedirects is true and there is a winner', async () => {
+    const loaded = await loadHandler();
+    const examplePath = '/etc/acs-commons/redirect-maps/my-map';
+    loaded.oneshotSearch
+      .onCall(0).resolves({
+        results: [
+          { matched_path: examplePath, url: examplePath },
+          { matched_path: '/etc/acs-commons/redirect-maps/other', url: '/etc/acs-commons/redirect-maps/other' },
+        ],
+      })
+      .onCall(1).resolves({ results: [] })
+      .onCall(2).resolves({ results: [] })
+      .onCall(3).resolves({ results: [] });
+
+    await loaded.identifyRedirects({
+      siteId: 'site-123',
+      baseURL: 'https://example.com',
+      programId: 'p1',
+      environmentId: 'e1',
+      updateRedirects: true,
+      slackContext: { channelId: 'C1', threadTs: '123.456' },
+    }, context);
+
+    expect(context.dataAccess.Site.findById).to.have.been.calledOnceWith('site-123');
+    expect(context._siteStub.getDeliveryConfig).to.have.been.called;
+    expect(context._siteStub.setDeliveryConfig).to.have.been.calledOnce;
+    expect(context._siteStub.setDeliveryConfig.firstCall.args[0]).to.include({
+      redirectsSource: examplePath,
+      redirectsMode: 'acsredirectmanager',
+    });
+    expect(context._siteStub.save).to.have.been.calledOnce;
+  });
+
+  it('sets redirectsSource to "none" when updateRedirects is true and winner has no examples', async () => {
+    const loaded = await loadHandler();
+    // First query returns one row but no matched_path/url → winner.examples is null → [redirectsSource] = ['none']
+    loaded.oneshotSearch
+      .onCall(0).resolves({ results: [ {} ] })
+      .onCall(1).resolves({ results: [] })
+      .onCall(2).resolves({ results: [] })
+      .onCall(3).resolves({ results: [] });
+
+    await loaded.identifyRedirects({
+      siteId: 'site-123',
+      baseURL: 'https://example.com',
+      programId: 'p1',
+      environmentId: 'e1',
+      updateRedirects: true,
+      slackContext: { channelId: 'C1', threadTs: '123.456' },
+    }, context);
+
+    expect(context._siteStub.setDeliveryConfig).to.have.been.calledOnce;
+    expect(context._siteStub.setDeliveryConfig.firstCall.args[0]).to.include({
+      redirectsSource: 'none',
+      redirectsMode: 'acsredirectmanager',
+    });
+    expect(context._siteStub.save).to.have.been.calledOnce;
+  });
+
+  it('posts warning and skips config update when updateRedirects is true, winner exists, but siteId is missing', async () => {
+    const loaded = await loadHandler();
+    loaded.oneshotSearch
+      .onCall(0).resolves({ results: [{}] })
+      .onCall(1).resolves({ results: [] })
+      .onCall(2).resolves({ results: [] })
+      .onCall(3).resolves({ results: [] });
+
+    await loaded.identifyRedirects({
+      baseURL: 'https://example.com',
+      programId: 'p1',
+      environmentId: 'e1',
+      updateRedirects: true,
+      slackContext: { channelId: 'C1', threadTs: '123.456' },
+    }, context);
+
+    expect(context.dataAccess.Site.findById).to.not.have.been.called;
+    expect(context.log.warn).to.have.been.calledWithMatch('Skipping config update: missing siteId');
+    expect(loaded.postMessageSafe).to.have.been.calledThrice;
+    const configMsg = loaded.postMessageSafe.thirdCall.args[2];
+    expect(configMsg).to.include('Could not update delivery config');
+    expect(configMsg).to.include('missing siteId');
+    expect(configMsg).to.include('https://example.com');
+    expect(context._siteStub.setDeliveryConfig).to.not.have.been.called;
+    expect(context._siteStub.save).to.not.have.been.called;
+  });
+
+  it('posts warning and skips config update when updateRedirects is true, winner exists, but site is not found', async () => {
+    const loaded = await loadHandler();
+    context.dataAccess.Site.findById.resolves(null);
+    loaded.oneshotSearch
+      .onCall(0).resolves({ results: [{}] })
+      .onCall(1).resolves({ results: [] })
+      .onCall(2).resolves({ results: [] })
+      .onCall(3).resolves({ results: [] });
+
+    await loaded.identifyRedirects({
+      siteId: 'site-123',
+      baseURL: 'https://example.com',
+      programId: 'p1',
+      environmentId: 'e1',
+      updateRedirects: true,
+      slackContext: { channelId: 'C1', threadTs: '123.456' },
+    }, context);
+
+    expect(context.dataAccess.Site.findById).to.have.been.calledOnceWith('site-123');
+    expect(context.log.warn).to.have.been.calledWithMatch('Skipping config update: site not found');
+    expect(loaded.postMessageSafe).to.have.been.calledThrice;
+    const configMsg = loaded.postMessageSafe.thirdCall.args[2];
+    expect(configMsg).to.include('Could not update delivery config');
+    expect(configMsg).to.include('site not found');
+    expect(configMsg).to.include('https://example.com');
+    expect(context._siteStub.setDeliveryConfig).to.not.have.been.called;
+    expect(context._siteStub.save).to.not.have.been.called;
+  });
+
+  it('includes slack target in "Could not update delivery config" message when site missing and target provided', async () => {
+    const loaded = await loadHandler();
+    loaded.oneshotSearch
+      .onCall(0).resolves({ results: [{}] })
+      .onCall(1).resolves({ results: [] })
+      .onCall(2).resolves({ results: [] })
+      .onCall(3).resolves({ results: [] });
+
+    await loaded.identifyRedirects({
+      baseURL: 'https://example.com',
+      programId: 'p1',
+      environmentId: 'e1',
+      updateRedirects: true,
+      slackContext: { channelId: 'C1', threadTs: '123.456', target: 'WORKSPACE_EXTERNAL' },
+    }, context);
+
+    expect(loaded.postMessageSafe).to.have.been.calledThrice;
+    expect(loaded.postMessageSafe.thirdCall.args[3]).to.deep.include({
+      threadTs: '123.456',
+      target: 'WORKSPACE_EXTERNAL',
+    });
   });
 });
