@@ -1,3 +1,10 @@
+## [1.356.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.356.2...v1.356.3) (2026-03-13)
+
+
+### Bug Fixes
+
+* eliminate N+1 query patterns across all audit handlers ([#2125](https://github.com/adobe/spacecat-audit-worker/issues/2125)) ([61e5450](https://github.com/adobe/spacecat-audit-worker/commit/61e545099776c53c1a6f18c88379142df3fb0064))
+
 ## [1.356.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.356.1...v1.356.2) (2026-03-13)
 
 
