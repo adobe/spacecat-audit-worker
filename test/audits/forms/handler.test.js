@@ -709,6 +709,7 @@ describe('skipAudit - sendExistingOpportunitiesToMystique', () => {
     const [queueUrl, message] = sqsSendMessageStub.firstCall.args;
     expect(queueUrl).to.equal('https://sqs.example.com/mystique');
     expect(message.type).to.equal(`guidance:${FORM_OPPORTUNITY_TYPES.LOW_CONVERSION}`);
+    expect(message.skipGuidance).to.be.true;
   });
 
   it('skips a11y type opportunities', async () => {

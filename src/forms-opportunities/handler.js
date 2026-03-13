@@ -80,7 +80,7 @@ export async function sendExistingOpportunitiesToMystique(context) {
 
   for (const opportunity of eligibleOpportunities) {
     // eslint-disable-next-line no-await-in-loop
-    await sendMessageToMystiqueForGuidance(context, opportunity);
+    await sendMessageToMystiqueForGuidance(context, opportunity, { skipGuidance: true });
     log.debug(`[Form Opportunity] [Site Id: ${siteId}] skipAudit: sent ${opportunity.getType()} opportunity ${opportunity.getId()} to Mystique`);
   }
 
