@@ -64,7 +64,7 @@ async function readCodeChangeReport(s3Client, bucketName, reportKey, log) {
 }
 
 /**
- * Handler for processing vulnerabilities code fix responses from Mystique
+ * Handler for processing vulnerabilities code fix responses from starfish-auto-code
  *
  * This handler receives code fix results and updates suggestions with the generated fixes.
  *
@@ -139,7 +139,7 @@ export default async function handler(message, context) {
     return badRequest('Site ID mismatch');
   }
 
-  const defaultBucketName = env.S3_MYSTIQUE_BUCKET_NAME;
+  const defaultBucketName = env.S3_STARFISH_BUCKET_NAME;
 
   // Process updates
   if (!isNonEmptyArray(updates)) {
@@ -177,6 +177,11 @@ export default async function handler(message, context) {
     const { code_fix_path: codeFixPath, code_fix_bucket: codeFixBucket } = fixes[0];
 
     const bucketName = codeFixBucket || defaultBucketName;
+
+    if (!bucketName) {
+      log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] No S3 bucket configured (S3_STARFISH_BUCKET_NAME) and no code_fix_bucket provided for suggestion: ${suggestionId}`);
+      return;
+    }
 
     // Retrieve code-fix
     const reportData = await readCodeChangeReport(

@@ -41,6 +41,7 @@ function mapMystiqueSuggestionsToSuggestionDTOs(mystiquesuggestions, opportunity
           xpath: suggestion.xpath,
           language: suggestion.language,
           hasAltAttribute: suggestion.hasAltAttribute,
+          isDecorativeByAgent: suggestion.isDecorativeByAgent ?? false,
         }],
       },
       rank: 1,
