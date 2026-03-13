@@ -283,7 +283,7 @@ async function compareHtmlContent(url, context) {
     return {
       url,
       ...analysis,
-      isPrerenderEnabled: metadata?.isPrerenderEnabled ?? false,
+      isDeployedAtEdge: metadata?.isDeployedAtEdge ?? false,
       hasScrapeMetadata, // Track if scrape.json exists on S3
       scrapeForbidden, // Track if original scrape was forbidden (403)
       /* c8 ignore next */
@@ -295,7 +295,7 @@ async function compareHtmlContent(url, context) {
       url,
       error: true,
       needsPrerender: false,
-      isPrerenderEnabled: metadata?.isPrerenderEnabled ?? false,
+      isDeployedAtEdge: metadata?.isDeployedAtEdge ?? false,
       hasScrapeMetadata,
       scrapeForbidden,
       scrapeError: metadata?.error,
@@ -1116,12 +1116,12 @@ export async function processContentAndGenerateOpportunities(context) {
     // Build prerender status map from scrape metadata for suggestion verification
     const prerenderStatusMap = new Map(
       /* c8 ignore next */
-      comparisonResults.map((result) => [result.url, result.isPrerenderEnabled ?? false]),
+      comparisonResults.map((result) => [result.url, result.isDeployedAtEdge ?? false]),
     );
 
     // Remove internal tracking fields from results before storing
     // eslint-disable-next-line
-    const cleanResults = comparisonResults.map(({ hasScrapeMetadata, scrapeForbidden, isPrerenderEnabled, ...result }) => result);
+    const cleanResults = comparisonResults.map(({ hasScrapeMetadata, scrapeForbidden, isDeployedAtEdge, ...result }) => result);
 
     const urlsNotNeedingPrerender = successfulComparisons.length - urlsNeedingPrerender.length;
 

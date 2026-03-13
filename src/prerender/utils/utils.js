@@ -121,11 +121,11 @@ export async function isPaidLLMOCustomer(context) {
 
 /**
  * Verifies NEW suggestions for prerender opportunity and marks them as FIXED
- * using the isPrerenderEnabled status captured during content scraping.
+ * using the isDeployedAtEdge status captured during content scraping.
  *
  * @param {Object} opportunity - The opportunity object containing suggestions
  * @param {Object} context - Context with log
- * @param {Map<string, boolean>} prerenderStatusMap - Map of URL to isPrerenderEnabled
+ * @param {Map<string, boolean>} prerenderStatusMap - Map of URL to isDeployedAtEdge
  * @returns {Promise<number>} - Number of suggestions marked as fixed
  */
 export async function verifyAndMarkFixedSuggestions(opportunity, context, prerenderStatusMap) {
