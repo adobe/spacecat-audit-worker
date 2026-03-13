@@ -46,6 +46,109 @@ const parseNonNegativeInt = (value, fallback) => {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 };
 
+const DEFAULT_ITEM_TYPE = 'link';
+
+function normalizeHostname(url) {
+  return new URL(url).hostname.replace(/^www\./, '');
+}
+
+function isSameHost(hostname, baseHostname) {
+  return hostname === baseHostname;
+}
+
+function isInternalAssetHost(hostname, baseHostname) {
+  return hostname === baseHostname || hostname.endsWith(`.${baseHostname}`);
+}
+
+function buildBrokenLinkKey(link) {
+  return `${link.urlFrom}|${link.urlTo}|${link.itemType || DEFAULT_ITEM_TYPE}`;
+}
+
+function getSourceItemType(parentTag) {
+  if (parentTag === 'picture') return 'image';
+  if (parentTag === 'video') return 'video';
+  if (parentTag === 'audio') return 'audio';
+  return 'media';
+}
+
+function resolveUrlCandidates(rawValue, pageUrl) {
+  if (!rawValue) return [];
+
+  return rawValue
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => entry.split(/\s+/)[0])
+    .filter((entry) => entry && !entry.startsWith('data:') && !entry.startsWith('#'))
+    .map((entry) => new URL(entry, pageUrl).toString());
+}
+
+function pushResolvedReference({
+  references,
+  rawUrl,
+  pageUrl,
+  baseHostname,
+  log,
+  type,
+  anchorText,
+  allowSubdomains = false,
+}) {
+  if (!rawUrl || rawUrl.startsWith('#')) return;
+
+  try {
+    const absoluteUrl = new URL(rawUrl, pageUrl).toString();
+    const hostname = normalizeHostname(absoluteUrl);
+    const isAllowedHost = allowSubdomains
+      ? isInternalAssetHost(hostname, baseHostname)
+      : isSameHost(hostname, baseHostname);
+
+    if (isAllowedHost) {
+      references.push({
+        url: absoluteUrl,
+        anchorText,
+        type,
+      });
+    }
+    /* c8 ignore next 3 - Defensive: URL parsing rarely fails with valid HTML */
+  } catch (urlError) {
+    log.debug(`Skipping invalid ${type} reference on ${pageUrl}: ${rawUrl}`);
+  }
+}
+
+function pushResolvedSrcsetReferences({
+  references,
+  rawSrcset,
+  pageUrl,
+  baseHostname,
+  log,
+  type,
+  anchorText,
+  allowSubdomains = false,
+}) {
+  if (!rawSrcset) return;
+
+  try {
+    const candidates = resolveUrlCandidates(rawSrcset, pageUrl);
+    candidates.forEach((absoluteUrl) => {
+      const hostname = normalizeHostname(absoluteUrl);
+      const isAllowedHost = allowSubdomains
+        ? isInternalAssetHost(hostname, baseHostname)
+        : isSameHost(hostname, baseHostname);
+
+      if (isAllowedHost) {
+        references.push({
+          url: absoluteUrl,
+          anchorText,
+          type,
+        });
+      }
+    });
+    /* c8 ignore next 3 - Defensive: URL parsing rarely fails with valid HTML */
+  } catch (urlError) {
+    log.debug(`Skipping invalid ${type} srcset on ${pageUrl}: ${rawSrcset}`);
+  }
+}
+
 /**
  * Extracts internal links from HTML using cheerio
  * @param {Object} $ - Cheerio instance
@@ -76,6 +179,28 @@ function extractInternalLinks($, pageUrl, baseHostname, log) {
       }
     } catch (urlError) {
       log.debug(`Skipping invalid href on ${pageUrl}: ${href}`);
+    }
+  });
+
+  // Extract links from image map areas
+  $('area[href]').each((_, el) => {
+    const $area = $(el);
+    const href = $area.attr('href');
+    if (!href || href.startsWith('#')) return;
+
+    try {
+      const absoluteUrl = new URL(href, pageUrl).toString();
+      const linkHostname = normalizeHostname(absoluteUrl);
+
+      if (isSameHost(linkHostname, baseHostname)) {
+        internalLinks.push({
+          url: absoluteUrl,
+          anchorText: $area.attr('alt')?.trim() || '[image map area]',
+          type: DEFAULT_ITEM_TYPE,
+        });
+      }
+    } catch (urlError) {
+      log.debug(`Skipping invalid area href on ${pageUrl}: ${href}`);
     }
   });
 
@@ -165,13 +290,14 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
 
     try {
       const absoluteUrl = new URL(src, pageUrl).toString();
-      const assetHostname = new URL(absoluteUrl).hostname.replace(/^www\./, '');
+      const assetHostname = normalizeHostname(absoluteUrl);
 
-      if (assetHostname === baseHostname || assetHostname.endsWith(`.${baseHostname}`)) {
+      if (isInternalAssetHost(assetHostname, baseHostname)) {
         const path = new URL(absoluteUrl).pathname.toLowerCase();
         const type = path.endsWith('.svg') ? 'svg' : 'image';
         assetReferences.push({
           url: absoluteUrl,
+          anchorText: '[img src]',
           type,
         });
       }
@@ -181,46 +307,133 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
     }
   });
 
+  $('img[srcset]').each((_, el) => {
+    pushResolvedSrcsetReferences({
+      references: assetReferences,
+      rawSrcset: $(el).attr('srcset'),
+      pageUrl,
+      baseHostname,
+      log,
+      type: 'image',
+      anchorText: '[img srcset]',
+      allowSubdomains: true,
+    });
+  });
+
+  $('source[srcset]').each((_, el) => {
+    const $source = $(el);
+    const parentTag = $source.parent()?.prop('tagName')?.toLowerCase();
+    const type = getSourceItemType(parentTag);
+    const anchorText = `[${parentTag || 'source'} srcset]`;
+
+    pushResolvedSrcsetReferences({
+      references: assetReferences,
+      rawSrcset: $source.attr('srcset'),
+      pageUrl,
+      baseHostname,
+      log,
+      type,
+      anchorText,
+      allowSubdomains: true,
+    });
+  });
+
   // CSS files
   $('link[rel="stylesheet"][href]').each((_, el) => {
-    const href = $(el).attr('href');
-    if (!href || href.startsWith('#')) return;
-
-    try {
-      const absoluteUrl = new URL(href, pageUrl).toString();
-      const assetHostname = new URL(absoluteUrl).hostname.replace(/^www\./, '');
-
-      if (assetHostname === baseHostname || assetHostname.endsWith(`.${baseHostname}`)) {
-        assetReferences.push({
-          url: absoluteUrl,
-          type: 'css',
-        });
-      }
-      /* c8 ignore next 3 - Defensive: URL parsing rarely fails with valid HTML */
-    } catch (urlError) {
-      log.debug(`Skipping invalid link href on ${pageUrl}: ${href}`);
-    }
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: $(el).attr('href'),
+      pageUrl,
+      baseHostname,
+      log,
+      type: 'css',
+      anchorText: '[stylesheet href]',
+      allowSubdomains: true,
+    });
   });
 
   // JavaScript files
   $('script[src]').each((_, el) => {
-    const src = $(el).attr('src');
-    if (!src || src.startsWith('#')) return;
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: $(el).attr('src'),
+      pageUrl,
+      baseHostname,
+      log,
+      type: 'js',
+      anchorText: '[script src]',
+      allowSubdomains: true,
+    });
+  });
 
-    try {
-      const absoluteUrl = new URL(src, pageUrl).toString();
-      const assetHostname = new URL(absoluteUrl).hostname.replace(/^www\./, '');
+  $('iframe[src]').each((_, el) => {
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: $(el).attr('src'),
+      pageUrl,
+      baseHostname,
+      log,
+      type: 'iframe',
+      anchorText: '[iframe src]',
+      allowSubdomains: true,
+    });
+  });
 
-      if (assetHostname === baseHostname || assetHostname.endsWith(`.${baseHostname}`)) {
-        assetReferences.push({
-          url: absoluteUrl,
-          type: 'js',
-        });
-      }
-      /* c8 ignore next 3 - Defensive: URL parsing rarely fails with valid HTML */
-    } catch (urlError) {
-      log.debug(`Skipping invalid script src on ${pageUrl}: ${src}`);
-    }
+  $('video[src]').each((_, el) => {
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: $(el).attr('src'),
+      pageUrl,
+      baseHostname,
+      log,
+      type: 'video',
+      anchorText: '[video src]',
+      allowSubdomains: true,
+    });
+  });
+
+  $('audio[src]').each((_, el) => {
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: $(el).attr('src'),
+      pageUrl,
+      baseHostname,
+      log,
+      type: 'audio',
+      anchorText: '[audio src]',
+      allowSubdomains: true,
+    });
+  });
+
+  $('source[src]').each((_, el) => {
+    const $source = $(el);
+    const parentTag = $source.parent()?.prop('tagName')?.toLowerCase();
+    const type = getSourceItemType(parentTag);
+    const anchorText = `[${parentTag || 'source'} src]`;
+
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: $source.attr('src'),
+      pageUrl,
+      baseHostname,
+      log,
+      type,
+      anchorText,
+      allowSubdomains: true,
+    });
+  });
+
+  $('video[poster]').each((_, el) => {
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: $(el).attr('poster'),
+      pageUrl,
+      baseHostname,
+      log,
+      type: 'image',
+      anchorText: '[video poster]',
+      allowSubdomains: true,
+    });
   });
 
   return assetReferences;
@@ -431,7 +644,7 @@ export async function detectBrokenLinksFromCrawlBatch({
       );
 
       brokenLinks.forEach((link) => {
-        const key = `${link.urlFrom}|${link.urlTo}`;
+        const key = buildBrokenLinkKey(link);
         if (!brokenLinksMap.has(key)) brokenLinksMap.set(key, link);
       });
     } catch (error) {
@@ -508,13 +721,13 @@ export function mergeAndDeduplicate(firstLinks, secondLinks, log) {
 
   // Add second batch of links first (priority links - RUM has traffic data)
   secondLinks.forEach((link) => {
-    linkMap.set(`${link.urlFrom}|${link.urlTo}`, link);
+    linkMap.set(buildBrokenLinkKey(link), link);
   });
 
   let firstOnlyCount = 0;
   let bothSourcesCount = 0;
   firstLinks.forEach((link) => {
-    const key = `${link.urlFrom}|${link.urlTo}`;
+    const key = buildBrokenLinkKey(link);
     if (!linkMap.has(key)) {
       // First-only link
       linkMap.set(key, link);

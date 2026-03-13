@@ -18,6 +18,7 @@ export function createInternalLinksOrchestration({
   auditType,
   pagesPerBatch,
   createContextLogger,
+  createConfigResolver,
   calculatePriority,
   mergeAndDeduplicate,
   detectBrokenLinksFromCrawlBatch,
@@ -37,10 +38,12 @@ export function createInternalLinksOrchestration({
   updateAuditResult,
   opportunityAndSuggestionsStep,
   filterByStatusIfNeeded,
+  filterByItemTypes,
 }) {
   const finalizeCrawlDetection = createFinalizeCrawlDetection({
     auditType,
     createContextLogger,
+    createConfigResolver,
     calculatePriority,
     mergeAndDeduplicate,
     loadFinalResults,
@@ -49,6 +52,7 @@ export function createInternalLinksOrchestration({
     updateAuditResult,
     opportunityAndSuggestionsStep,
     filterByStatusIfNeeded,
+    filterByItemTypes,
   });
 
   const {

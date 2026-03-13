@@ -70,7 +70,7 @@ const AUDIT_RESULT_DATA_WITH_PRIORITY = [
     priority: 'high',
     detectionSource: 'rum',
     httpStatus: 404,
-    statusBucket: '4xx',
+    statusBucket: 'not_found_404',
     contentType: 'text/html; charset=utf-8',
   },
   {
@@ -80,7 +80,7 @@ const AUDIT_RESULT_DATA_WITH_PRIORITY = [
     priority: 'medium',
     detectionSource: 'rum',
     httpStatus: 404,
-    statusBucket: '4xx',
+    statusBucket: 'not_found_404',
     contentType: 'text/html; charset=utf-8',
   },
   {
@@ -90,7 +90,7 @@ const AUDIT_RESULT_DATA_WITH_PRIORITY = [
     priority: 'low',
     detectionSource: 'rum',
     httpStatus: 404,
-    statusBucket: '4xx',
+    statusBucket: 'not_found_404',
     contentType: 'text/html; charset=utf-8',
   },
 ];
@@ -330,7 +330,7 @@ describe('Broken internal links audit', () => {
           if (url === 'https://www.example.com/catastrophic-error') {
             throw new Error('Database connection failed');
           }
-          return { isBroken: true, httpStatus: 404, statusBucket: '4xx', contentType: 'text/html' };
+          return { isBroken: true, httpStatus: 404, statusBucket: 'not_found_404', contentType: 'text/html' };
         },
         calculatePriority: (links) => links.map((l) => ({ ...l, priority: 'high' })),
         calculateKpiDeltasForAudit: () => ({ projectedTrafficLost: 0, projectedTrafficValue: 0 }),
@@ -3515,6 +3515,8 @@ describe('runCrawlDetectionBatch - Coverage Tests', () => {
       urlFrom: `https://example.com/p${i}`,
       urlTo: 'https://example.com/broken',
       anchorText: 'link',
+      itemType: 'link',
+      statusBucket: 'not_found_404',
       trafficDomain: 100 - i,
     }));
 

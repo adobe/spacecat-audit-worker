@@ -23,6 +23,36 @@ const BRIGHT_DATA_REQUEST_DELAY_MS = 'BRIGHT_DATA_REQUEST_DELAY_MS';
 const DEFAULT_LINKCHECKER_LOOKBACK_MINUTES = 1440;
 const DEFAULT_LINKCHECKER_MAX_JOB_DURATION_MINUTES = 60;
 const allowedWaitUntilValues = ['load', 'domcontentloaded', 'networkidle0', 'networkidle2'];
+const DEFAULT_INCLUDED_STATUS_BUCKETS = [
+  'not_found_404',
+  'gone_410',
+  'forbidden_or_blocked',
+  'server_error_5xx',
+  'timeout_or_network',
+  'redirect_chain_excessive',
+  'soft_404',
+  'masked_by_linkchecker',
+];
+const DEFAULT_INCLUDED_ITEM_TYPES = [
+  'link',
+  'form',
+  'image',
+  'svg',
+  'css',
+  'js',
+  'iframe',
+  'video',
+  'audio',
+  'media',
+];
+const DEFAULT_MYSTIQUE_ITEM_TYPES = [
+  'link',
+  'form',
+  'image',
+  'svg',
+  'css',
+  'js',
+];
 
 function getEnvBool(env, key, defaultValue) {
   if (env?.[key] === undefined) return defaultValue;
@@ -52,6 +82,23 @@ function getBooleanConfig(value, fallback) {
 
 function getEnumConfig(value, allowedValues, fallback) {
   return allowedValues.includes(value) ? value : fallback;
+}
+
+function getStringListConfig(value, fallback) {
+  if (Array.isArray(value)) {
+    const filtered = value.filter((entry) => hasText(entry)).map((entry) => entry.trim());
+    return filtered.length > 0 ? filtered : fallback;
+  }
+
+  if (typeof value === 'string') {
+    const filtered = value
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    return filtered.length > 0 ? filtered : fallback;
+  }
+
+  return fallback;
 }
 
 export class InternalLinksConfigResolver {
@@ -144,6 +191,27 @@ export class InternalLinksConfigResolver {
 
   getMaxAlternativeUrlsToSend() {
     return getPositiveIntConfig(this.handlerConfig.maxAlternativeUrlsToSend, 200);
+  }
+
+  getIncludedStatusBuckets() {
+    return getStringListConfig(
+      this.handlerConfig.includedStatusBuckets,
+      DEFAULT_INCLUDED_STATUS_BUCKETS,
+    );
+  }
+
+  getIncludedItemTypes() {
+    return getStringListConfig(
+      this.handlerConfig.includedItemTypes,
+      DEFAULT_INCLUDED_ITEM_TYPES,
+    );
+  }
+
+  getMystiqueItemTypes() {
+    return getStringListConfig(
+      this.handlerConfig.mystiqueItemTypes,
+      DEFAULT_MYSTIQUE_ITEM_TYPES,
+    );
   }
 
   getBrightDataConfig() {

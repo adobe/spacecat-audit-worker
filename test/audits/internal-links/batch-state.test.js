@@ -634,6 +634,39 @@ describe('Batch State Module - Hybrid Storage', () => {
       expect(results).to.have.lengthOf(1);
       expect(results[0].urlTo).to.equal('broken1');
     });
+
+    it('should preserve same url pair when itemType differs across batches', async () => {
+      const batch0 = {
+        batchNum: 0,
+        results: [{ urlFrom: 'page1', urlTo: 'broken1', itemType: 'link' }],
+      };
+      const batch1 = {
+        batchNum: 1,
+        results: [{ urlFrom: 'page1', urlTo: 'broken1', itemType: 'image' }],
+      };
+
+      mockS3Client.send.onCall(0).resolves({
+        Contents: [
+          { Key: 'broken-internal-links/batch-state/test-audit-123/batches/batch-0.json' },
+          { Key: 'broken-internal-links/batch-state/test-audit-123/batches/batch-1.json' },
+        ],
+      });
+      mockS3Client.send.onCall(1).resolves({
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify(batch0)),
+        },
+      });
+      mockS3Client.send.onCall(2).resolves({
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify(batch1)),
+        },
+      });
+
+      const results = await loadFinalResults(TEST_AUDIT_ID, mockContext, Date.now());
+
+      expect(results).to.have.lengthOf(2);
+      expect(results.map((entry) => entry.itemType)).to.have.members(['link', 'image']);
+    });
   });
 
   describe('BATCH_TIMEOUT_CONFIG', () => {

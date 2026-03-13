@@ -20,6 +20,16 @@ const LINK_TIMEOUT = 5000;
 export const CPC_DEFAULT_VALUE = 1;
 export const TRAFFIC_MULTIPLIER = 0.01; // 1%
 export const MAX_LINKS_TO_CONSIDER = 10;
+export const STATUS_BUCKETS = {
+  NOT_FOUND_404: 'not_found_404',
+  GONE_410: 'gone_410',
+  FORBIDDEN_OR_BLOCKED: 'forbidden_or_blocked',
+  SERVER_ERROR_5XX: 'server_error_5xx',
+  TIMEOUT_OR_NETWORK: 'timeout_or_network',
+  REDIRECT_CHAIN_EXCESSIVE: 'redirect_chain_excessive',
+  SOFT_404: 'soft_404',
+  MASKED_BY_LINKCHECKER: 'masked_by_linkchecker',
+};
 
 /**
  * Resolve Cost per click (CPC) value
@@ -82,6 +92,37 @@ function isTimeoutError(error) {
     || code === 'esockettimedout';
 }
 
+function isRedirectChainError(error) {
+  const message = error?.message?.toLowerCase() || '';
+  const code = error?.code?.toLowerCase() || '';
+  return (
+    message.includes('redirect')
+    && (
+      message.includes('too many')
+      || message.includes('maximum')
+      || message.includes('max')
+    )
+  ) || code.includes('redirect');
+}
+
+export function classifyStatusBucket(status, error = null) {
+  if (error) {
+    if (isTimeoutError(error)) return STATUS_BUCKETS.TIMEOUT_OR_NETWORK;
+    if (isRedirectChainError(error)) return STATUS_BUCKETS.REDIRECT_CHAIN_EXCESSIVE;
+    return STATUS_BUCKETS.TIMEOUT_OR_NETWORK;
+  }
+
+  if (status === 404) return STATUS_BUCKETS.NOT_FOUND_404;
+  if (status === 410) return STATUS_BUCKETS.GONE_410;
+  if (status === 401 || status === 403 || status === 429 || status === 451) {
+    return STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED;
+  }
+  if (status === 408) return STATUS_BUCKETS.TIMEOUT_OR_NETWORK;
+  if (status >= 500) return STATUS_BUCKETS.SERVER_ERROR_5XX;
+
+  return null;
+}
+
 /**
  * Checks if a URL points to a static asset
  * @param {string} url - The URL to check
@@ -108,31 +149,28 @@ async function checkLinkWithHead(url, log) {
     });
     const { status } = headResponse;
     const contentType = headResponse.headers.get('content-type') || null;
+    const statusBucket = classifyStatusBucket(status);
 
-    if (status < 400) {
+    if (status === 405) {
+      return null;
+    }
+
+    if (statusBucket === null) {
       return {
-        isBroken: false, httpStatus: status, statusBucket: '2xx-3xx', contentType,
+        isBroken: false, httpStatus: status, statusBucket: null, contentType,
       };
     }
 
-    if (status === 404) {
-      log.info(`✗ BROKEN LINK FOUND: ${url} (HEAD ${status})`);
+    if (statusBucket !== STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED) {
+      log.info(`✗ BROKEN LINK FOUND: ${url} (HEAD ${status}, bucket=${statusBucket})`);
       return {
-        isBroken: true, httpStatus: status, statusBucket: '4xx', contentType,
+        isBroken: true, httpStatus: status, statusBucket, contentType,
       };
     }
 
-    // For auth errors (401, 403), return null to trigger GET verification
+    // For auth errors, return null to trigger GET verification before classifying.
     return null;
   } catch (headError) {
-    // Timeout could be rate limiting, treat as accessible
-    if (isTimeoutError(headError)) {
-      log.info(`⏱ TIMEOUT: ${url} (HEAD request timed out after ${LINK_TIMEOUT}ms, assuming accessible)`);
-      return {
-        isBroken: false, httpStatus: 'timeout', statusBucket: 'timeout', contentType: null,
-      };
-    }
-
     return null;
   }
 }
@@ -162,41 +200,18 @@ async function checkLinkWithGet(url, isAsset, log) {
     });
     const { status } = getResponse;
     const contentType = getResponse.headers.get('content-type') || null;
+    const statusBucket = classifyStatusBucket(status);
 
-    let statusBucket;
-    if (status >= 500) {
-      statusBucket = '5xx';
-    } else if (status >= 400) {
-      statusBucket = '4xx';
-    } else {
-      statusBucket = '2xx-3xx';
-    }
-
-    if (status < 400) {
+    if (statusBucket === null) {
       return {
-        isBroken: false, httpStatus: status, statusBucket, contentType,
+        isBroken: false, httpStatus: status, statusBucket: null, contentType,
       };
     }
 
-    if (status >= 400 && status < 500 && status !== 404) {
-      log.warn(`⚠ WARNING: ${url} returned client error ${status}`);
-    }
-
-    const isBroken = status === 404;
-    if (isBroken) {
-      log.info(`✗ BROKEN LINK FOUND: ${url} (GET ${status})`);
-    }
     return {
-      isBroken, httpStatus: status, statusBucket, contentType,
+      isBroken: true, httpStatus: status, statusBucket, contentType,
     };
   } catch (getError) {
-    if (isTimeoutError(getError)) {
-      log.info(`⏱ TIMEOUT: ${url} (GET request timed out after ${LINK_TIMEOUT}ms, assuming accessible)`);
-      return {
-        isBroken: false, httpStatus: 'timeout', statusBucket: 'timeout', contentType: null,
-      };
-    }
-
     let errorMessage = getError.message || 'Unknown error';
 
     if (getError.code) {
@@ -209,18 +224,18 @@ async function checkLinkWithGet(url, isAsset, log) {
       errorMessage = `${errorMessage} (errno: ${getError.errno})`;
     }
 
-    log.error(`✗ BROKEN LINK FOUND: ${url} (ERROR: ${errorMessage})`);
+    const statusBucket = classifyStatusBucket(null, getError);
+    log.error(`✗ BROKEN LINK FOUND: ${url} (ERROR: ${errorMessage}, bucket=${statusBucket})`);
     return {
-      isBroken: true, httpStatus: 'error', statusBucket: 'network-error', contentType: null,
+      isBroken: true, httpStatus: null, statusBucket, contentType: null,
     };
   }
 }
 
 /**
  * Checks if a URL is inaccessible by attempting to fetch it.
- * Returns validation object with metadata when statusCode is 404 or GET request throws
- * (network/other error). Other 4xx (401, 403, 410) and 5xx are not reported as broken;
- * timeouts are treated as accessible.
+ * Returns validation metadata for SEO-relevant broken conditions including:
+ * 404, 410, blocked/forbidden, 5xx, timeouts/network failures, and excessive redirects.
  *
  * Strategy: HEAD first (faster), fallback to GET if inconclusive.
  * Static assets skip HEAD (often fail) and use GET with Range header.

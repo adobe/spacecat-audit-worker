@@ -23,6 +23,8 @@ import {
   CPC_DEFAULT_VALUE,
   isLinkInaccessible,
   calculatePriority,
+  classifyStatusBucket,
+  STATUS_BUCKETS,
 } from '../../../src/internal-links/helpers.js';
 import { auditData } from '../../fixtures/internal-links-data.js';
 
@@ -87,6 +89,26 @@ describe('calculateKpiDeltasForAudit', () => {
   });
 });
 
+describe('classifyStatusBucket', () => {
+  it('classifies SEO-relevant HTTP statuses and network errors', () => {
+    expect(classifyStatusBucket(404)).to.equal(STATUS_BUCKETS.NOT_FOUND_404);
+    expect(classifyStatusBucket(410)).to.equal(STATUS_BUCKETS.GONE_410);
+    expect(classifyStatusBucket(403)).to.equal(STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED);
+    expect(classifyStatusBucket(429)).to.equal(STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED);
+    expect(classifyStatusBucket(451)).to.equal(STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED);
+    expect(classifyStatusBucket(408)).to.equal(STATUS_BUCKETS.TIMEOUT_OR_NETWORK);
+    expect(classifyStatusBucket(503)).to.equal(STATUS_BUCKETS.SERVER_ERROR_5XX);
+    expect(classifyStatusBucket(200)).to.equal(null);
+
+    const timeoutError = new Error('request timeout');
+    timeoutError.code = 'ETIMEDOUT';
+    expect(classifyStatusBucket(null, timeoutError)).to.equal(STATUS_BUCKETS.TIMEOUT_OR_NETWORK);
+
+    const redirectError = new Error('Too many redirects');
+    expect(classifyStatusBucket(null, redirectError)).to.equal(STATUS_BUCKETS.REDIRECT_CHAIN_EXCESSIVE);
+  });
+});
+
 describe('isLinkInaccessible', () => {
   let mockLog;
 
@@ -128,7 +150,7 @@ describe('isLinkInaccessible', () => {
     expect(result.isBroken).to.be.true;
   });
 
-  it('should return false and log warning for non-404 client errors (only 404 reported as broken)', async function call() {
+  it('should classify forbidden responses as broken for SEO purposes', async function call() {
     this.timeout(6000);
     nock('https://example.com')
       .head('/forbidden')
@@ -137,13 +159,37 @@ describe('isLinkInaccessible', () => {
       .reply(403);
 
     const result = await isLinkInaccessible('https://example.com/forbidden', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.false;
-    expect(mockLog.warn.calledWith(
-      sinon.match(/⚠ WARNING: https:\/\/example\.com\/forbidden returned client error 403/),
-    )).to.be.true;
+    expect(result.isBroken).to.be.true;
+    expect(result.statusBucket).to.equal(STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED);
   });
 
-  it('should return false for 5xx server errors (not treated as broken)', async function call() {
+  it('should classify rate limiting responses as blocked for SEO purposes', async function call() {
+    this.timeout(6000);
+    nock('https://example.com')
+      .head('/rate-limited')
+      .reply(429)
+      .get('/rate-limited')
+      .reply(429);
+
+    const result = await isLinkInaccessible('https://example.com/rate-limited', mockLog, 'test-site-id');
+    expect(result.isBroken).to.be.true;
+    expect(result.statusBucket).to.equal(STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED);
+  });
+
+  it('should fallback to GET when HEAD is not allowed', async function call() {
+    this.timeout(6000);
+    nock('https://example.com')
+      .head('/head-blocked')
+      .reply(405)
+      .get('/head-blocked')
+      .reply(404);
+
+    const result = await isLinkInaccessible('https://example.com/head-blocked', mockLog, 'test-site-id');
+    expect(result.isBroken).to.be.true;
+    expect(result.statusBucket).to.equal(STATUS_BUCKETS.NOT_FOUND_404);
+  });
+
+  it('should classify 5xx server errors as broken', async function call() {
     this.timeout(6000);
     nock('https://example.com')
       .head('/server-error')
@@ -152,9 +198,20 @@ describe('isLinkInaccessible', () => {
       .reply(503);
 
     const result = await isLinkInaccessible('https://example.com/server-error', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.false;
+    expect(result.isBroken).to.be.true;
     expect(result.httpStatus).to.equal(503);
-    expect(result.statusBucket).to.equal('5xx');
+    expect(result.statusBucket).to.equal(STATUS_BUCKETS.SERVER_ERROR_5XX);
+  });
+
+  it('should classify 410 responses as gone', async function call() {
+    this.timeout(6000);
+    nock('https://example.com')
+      .head('/gone')
+      .reply(410);
+
+    const result = await isLinkInaccessible('https://example.com/gone', mockLog, 'test-site-id');
+    expect(result.isBroken).to.be.true;
+    expect(result.statusBucket).to.equal(STATUS_BUCKETS.GONE_410);
   });
 
   it('should return true for network errors and log error', async function call() {
@@ -283,22 +340,20 @@ describe('isLinkInaccessible', () => {
     // Should use 'Unknown error' as fallback
   });
 
-  it('should treat HEAD timeout as accessible and skip GET request', async function call() {
+  it('should classify HEAD and GET timeout as timeout_or_network', async function call() {
     this.timeout(15000);
     const timeoutError = new Error('Request timeout after 10000ms');
     timeoutError.code = 'ETIMEDOUT';
 
     nock('https://example.com')
       .head('/timeout-url')
+      .replyWithError(timeoutError)
+      .get('/timeout-url')
       .replyWithError(timeoutError);
 
     const result = await isLinkInaccessible('https://example.com/timeout-url', mockLog, 'test-site-id');
-    
-    // Should return false (treat as accessible)
-    expect(result.isBroken).to.be.false;
-    expect(mockLog.info.calledWith(
-      sinon.match(/\[auditType=broken-internal-links\].*\[siteId=test-site-id\].*⏱ TIMEOUT.*HEAD request timed out/),
-    )).to.be.true;
+    expect(result.isBroken).to.be.true;
+    expect(result.statusBucket).to.equal(STATUS_BUCKETS.TIMEOUT_OR_NETWORK);
   });
 
   it('should recognize timeout error with lowercase "timeout" in message', async function call() {
@@ -307,10 +362,12 @@ describe('isLinkInaccessible', () => {
 
     nock('https://example.com')
       .head('/timeout-msg')
+      .replyWithError(timeoutError)
+      .get('/timeout-msg')
       .replyWithError(timeoutError);
 
     const result = await isLinkInaccessible('https://example.com/timeout-msg', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.false;
+    expect(result.isBroken).to.be.true;
   });
 
   it('should recognize timeout error with "ETIMEDOUT" in code', async function call() {
@@ -320,10 +377,12 @@ describe('isLinkInaccessible', () => {
 
     nock('https://example.com')
       .head('/timeout-code')
+      .replyWithError(timeoutError)
+      .get('/timeout-code')
       .replyWithError(timeoutError);
 
     const result = await isLinkInaccessible('https://example.com/timeout-code', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.false;
+    expect(result.isBroken).to.be.true;
   });
 
   it('should recognize timeout error with "ESOCKETTIMEDOUT" in code', async function call() {
@@ -333,10 +392,12 @@ describe('isLinkInaccessible', () => {
 
     nock('https://example.com')
       .head('/socket-timeout')
+      .replyWithError(timeoutError)
+      .get('/socket-timeout')
       .replyWithError(timeoutError);
 
     const result = await isLinkInaccessible('https://example.com/socket-timeout', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.false;
+    expect(result.isBroken).to.be.true;
   });
 
   it('should recognize timeout error with "timeout" in code field', async function call() {
@@ -346,10 +407,12 @@ describe('isLinkInaccessible', () => {
 
     nock('https://example.com')
       .head('/timeout-in-code')
+      .replyWithError(timeoutError)
+      .get('/timeout-in-code')
       .replyWithError(timeoutError);
 
     const result = await isLinkInaccessible('https://example.com/timeout-in-code', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.false;
+    expect(result.isBroken).to.be.true;
   });
 
   it('should not treat non-timeout errors as timeout', async function call() {
@@ -381,11 +444,8 @@ describe('isLinkInaccessible', () => {
 
     const result = await isLinkInaccessible('https://example.com/get-timeout', mockLog, 'test-site-id');
     
-    // Should return false (treat as accessible) when GET times out
-    expect(result.isBroken).to.be.false;
-    expect(mockLog.info.calledWith(
-      sinon.match(/\[siteId=test-site-id\].*⏱ TIMEOUT.*GET request timed out/),
-    )).to.be.true;
+    expect(result.isBroken).to.be.true;
+    expect(result.statusBucket).to.equal(STATUS_BUCKETS.TIMEOUT_OR_NETWORK);
   });
 });
 

@@ -54,6 +54,7 @@ export function createOpportunityAndSuggestionsStep({
     const brightDataBatchSize = config.getBrightDataBatchSize();
     const maxAlternativeUrlsToSend = config.getMaxAlternativeUrlsToSend();
     const brightDataConfig = config.getBrightDataConfig();
+    const mystiqueItemTypes = new Set(config.getMystiqueItemTypes());
 
     const auditResultToUse = updatedAuditResult || audit.getAuditResult();
     const { brokenInternalLinks, success } = auditResultToUse;
@@ -165,11 +166,20 @@ export function createOpportunityAndSuggestionsStep({
       .map((suggestion) => ({
         urlFrom: suggestion?.getData()?.urlFrom,
         urlTo: suggestion?.getData()?.urlTo,
+        itemType: suggestion?.getData()?.itemType || 'link',
         suggestionId: suggestion?.getId(),
       }))
       .filter((link) => link.urlFrom && link.urlTo && link.suggestionId);
 
-    if (brokenLinks.length === 0) {
+    const brokenLinksForConfiguredItemTypes = brokenLinks.filter(
+      (link) => mystiqueItemTypes.has(link.itemType || 'link'),
+    );
+
+    if (brokenLinksForConfiguredItemTypes.length < brokenLinks.length) {
+      log.info(`Filtered out ${brokenLinks.length - brokenLinksForConfiguredItemTypes.length} suggestion items due to Mystique itemType filtering`);
+    }
+
+    if (brokenLinksForConfiguredItemTypes.length === 0) {
       log.warn('No valid broken links to process. Skipping.');
       return { status: 'complete' };
     }
@@ -180,8 +190,8 @@ export function createOpportunityAndSuggestionsStep({
     const brightDataRequestDelayMs = brightDataConfig.requestDelayMs;
 
     const resolvedByBrightData = new Set();
-    if (useBrightData && brokenLinks.length > 0) {
-      log.info(`Bright Data enabled. Resolving ${brokenLinks.length} broken links (maxResults=${brightDataMaxResults}).`);
+    if (useBrightData && brokenLinksForConfiguredItemTypes.length > 0) {
+      log.info(`Bright Data enabled. Resolving ${brokenLinksForConfiguredItemTypes.length} broken links (maxResults=${brightDataMaxResults}).`);
       const brightDataClient = BrightDataClient.createFrom(context);
 
       const processBrokenLink = async (brokenLink) => {
@@ -238,8 +248,8 @@ export function createOpportunityAndSuggestionsStep({
         resolvedByBrightData.add(brokenLink.suggestionId);
       };
 
-      for (let i = 0; i < brokenLinks.length; i += brightDataBatchSize) {
-        const batch = brokenLinks.slice(i, i + brightDataBatchSize);
+      for (let i = 0; i < brokenLinksForConfiguredItemTypes.length; i += brightDataBatchSize) {
+        const batch = brokenLinksForConfiguredItemTypes.slice(i, i + brightDataBatchSize);
         // eslint-disable-next-line no-await-in-loop
         await Promise.allSettled(batch.map((brokenLink) => processBrokenLink(brokenLink)
           .catch((error) => {
@@ -254,7 +264,7 @@ export function createOpportunityAndSuggestionsStep({
       }
     }
 
-    const brokenLinksForMystique = brokenLinks.filter(
+    const brokenLinksForMystique = brokenLinksForConfiguredItemTypes.filter(
       (link) => !resolvedByBrightData.has(link.suggestionId),
     );
 

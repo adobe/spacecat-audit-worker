@@ -57,6 +57,7 @@ import { createSplunkClient } from '../support/splunk-client-loader.js';
 import {
   MAX_BROKEN_LINKS_REPORTED,
   filterByStatusIfNeeded,
+  filterByItemTypes,
   isCanonicalOrHreflangLink,
   createUpdateAuditResult,
 } from './result-utils.js';
@@ -64,6 +65,7 @@ import { createInternalLinksRumSteps } from './rum-detection.js';
 import { createSubmitForScraping } from './scrape-submission.js';
 import { createOpportunityAndSuggestionsStep } from './opportunity-suggestions.js';
 import { createInternalLinksOrchestration } from './orchestration.js';
+import { createInternalLinksConfigResolver } from './config.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30;
@@ -129,6 +131,7 @@ export const {
   auditType: AUDIT_TYPE,
   pagesPerBatch: PAGES_PER_BATCH,
   createContextLogger,
+  createConfigResolver: createInternalLinksConfigResolver,
   calculatePriority,
   mergeAndDeduplicate,
   detectBrokenLinksFromCrawlBatch,
@@ -148,6 +151,7 @@ export const {
   updateAuditResult,
   opportunityAndSuggestionsStep,
   filterByStatusIfNeeded,
+  filterByItemTypes,
 });
 
 export default new AuditBuilder()

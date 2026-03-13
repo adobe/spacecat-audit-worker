@@ -15,6 +15,7 @@ import { createInternalLinksStepLogger } from './logging.js';
 export function createFinalizeCrawlDetection({
   auditType,
   createContextLogger,
+  createConfigResolver,
   calculatePriority,
   mergeAndDeduplicate,
   loadFinalResults,
@@ -23,6 +24,7 @@ export function createFinalizeCrawlDetection({
   updateAuditResult,
   opportunityAndSuggestionsStep,
   filterByStatusIfNeeded,
+  filterByItemTypes,
 }) {
   return async function finalizeCrawlDetection(
     context,
@@ -32,6 +34,7 @@ export function createFinalizeCrawlDetection({
     const {
       log: baseLog, site, audit, dataAccess,
     } = context;
+    const config = createConfigResolver(site, context.env);
     const auditId = audit.getId();
     const log = createInternalLinksStepLogger({
       createContextLogger,
@@ -84,7 +87,7 @@ export function createFinalizeCrawlDetection({
           detectionSource: 'linkchecker',
           trafficDomain: 0,
           httpStatus: lc.httpStatus,
-          statusBucket: lc.httpStatus === '404' || lc.httpStatus === 404 ? '4xx' : 'unknown',
+          statusBucket: 'masked_by_linkchecker',
         })).filter((link) => link.urlFrom && link.urlTo);
         /* c8 ignore stop */
 
@@ -99,7 +102,17 @@ export function createFinalizeCrawlDetection({
         log.info('No crawl results to merge, using RUM-only results');
       }
 
-      finalLinks = filterByStatusIfNeeded(finalLinks);
+      const beforeStatusFilter = finalLinks.length;
+      finalLinks = filterByStatusIfNeeded(finalLinks, config.getIncludedStatusBuckets());
+      if (finalLinks.length < beforeStatusFilter) {
+        log.info(`Filtered out ${beforeStatusFilter - finalLinks.length} links due to status bucket filtering`);
+      }
+
+      const beforeItemTypeFilter = finalLinks.length;
+      finalLinks = filterByItemTypes(finalLinks, config.getIncludedItemTypes());
+      if (finalLinks.length < beforeItemTypeFilter) {
+        log.info(`Filtered out ${beforeItemTypeFilter - finalLinks.length} links due to itemType filtering`);
+      }
 
       const prioritizedLinks = calculatePriority(finalLinks);
       const highPriority = prioritizedLinks.filter((link) => link.priority === 'high').length;

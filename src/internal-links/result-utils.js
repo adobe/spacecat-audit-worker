@@ -13,17 +13,33 @@
 import { isContextLogger } from '../common/context-logger.js';
 
 export const MAX_BROKEN_LINKS_REPORTED = 500;
+const DEFAULT_LINK_ITEM_TYPE = 'link';
 
 /** itemTypes excluded from broken-internal-links (handled by canonical/hreflang audits) */
 const EXCLUDED_ITEM_TYPES = new Set(['canonical', 'alternate']);
 
 /**
- * No filtering applied - includes all broken links (404, 5xx, timeouts, network errors).
+ * Filters broken links to configured SEO-relevant status buckets.
  * @param {Array} links - Array of broken links
- * @returns {Array} Unfiltered links
+ * @param {Array<string>} allowedStatusBuckets - Buckets to retain
+ * @returns {Array} Filtered links
  */
-export function filterByStatusIfNeeded(links) {
-  return links;
+export function filterByStatusIfNeeded(links, allowedStatusBuckets = []) {
+  if (!Array.isArray(allowedStatusBuckets) || allowedStatusBuckets.length === 0) {
+    return links;
+  }
+
+  const allowed = new Set(allowedStatusBuckets);
+  return links.filter((link) => link?.statusBucket && allowed.has(link.statusBucket));
+}
+
+export function filterByItemTypes(links, allowedItemTypes = []) {
+  if (!Array.isArray(allowedItemTypes) || allowedItemTypes.length === 0) {
+    return links;
+  }
+
+  const allowed = new Set(allowedItemTypes);
+  return links.filter((link) => allowed.has(link?.itemType || DEFAULT_LINK_ITEM_TYPE));
 }
 
 /**

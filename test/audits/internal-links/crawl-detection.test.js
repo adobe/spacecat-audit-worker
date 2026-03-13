@@ -935,6 +935,134 @@ describe('Crawl Detection Module', () => {
       expect(result.results[0].itemType).to.equal('svg');
     });
 
+    it('should extract responsive images, iframe, and media references', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      const htmlWithExtendedAssets = `
+        <html>
+          <body>
+            <main>
+              <img srcset="/hero-small.jpg 480w, /hero-large.jpg 1200w" alt="Hero">
+              <picture>
+                <source srcset="/picture.webp 1x, /picture@2x.webp 2x" type="image/webp">
+              </picture>
+              <iframe src="/embedded/page"></iframe>
+              <video src="/videos/intro.mp4" poster="/videos/poster.jpg">
+                <source src="/videos/fallback.mp4" type="video/mp4">
+              </video>
+              <audio src="/audio/theme.mp3">
+                <source src="/audio/theme.ogg" type="audio/ogg">
+              </audio>
+            </main>
+          </body>
+        </html>
+      `;
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: { rawBody: htmlWithExtendedAssets },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub.withArgs('https://example.com/hero-small.jpg').resolves(createValidationResponse(true));
+      isLinkInaccessibleStub.withArgs('https://example.com/hero-large.jpg').resolves(createValidationResponse(false));
+      isLinkInaccessibleStub.withArgs('https://example.com/picture.webp').resolves(createValidationResponse(false));
+      isLinkInaccessibleStub.withArgs('https://example.com/picture@2x.webp').resolves(createValidationResponse(false));
+      isLinkInaccessibleStub.withArgs('https://example.com/embedded/page').resolves(createValidationResponse(true));
+      isLinkInaccessibleStub.withArgs('https://example.com/videos/intro.mp4').resolves(createValidationResponse(true));
+      isLinkInaccessibleStub.withArgs('https://example.com/videos/poster.jpg').resolves(createValidationResponse(true));
+      isLinkInaccessibleStub.withArgs('https://example.com/videos/fallback.mp4').resolves(createValidationResponse(false));
+      isLinkInaccessibleStub.withArgs('https://example.com/audio/theme.mp3').resolves(createValidationResponse(true));
+      isLinkInaccessibleStub.withArgs('https://example.com/audio/theme.ogg').resolves(createValidationResponse(false));
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      expect(result.results.some((entry) => entry.urlTo === 'https://example.com/hero-small.jpg' && entry.itemType === 'image')).to.equal(true);
+      expect(result.results.some((entry) => entry.urlTo === 'https://example.com/embedded/page' && entry.itemType === 'iframe')).to.equal(true);
+      expect(result.results.some((entry) => entry.urlTo === 'https://example.com/videos/intro.mp4' && entry.itemType === 'video')).to.equal(true);
+      expect(result.results.some((entry) => entry.urlTo === 'https://example.com/videos/poster.jpg' && entry.itemType === 'image')).to.equal(true);
+      expect(result.results.some((entry) => entry.urlTo === 'https://example.com/audio/theme.mp3' && entry.itemType === 'audio')).to.equal(true);
+    });
+
+    it('should extract area href links as navigational links', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      const htmlWithImageMap = `
+        <html>
+          <body>
+            <map name="site-map">
+              <area shape="rect" coords="0,0,10,10" href="/mapped-link" alt="Mapped Link">
+            </map>
+          </body>
+        </html>
+      `;
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: { rawBody: htmlWithImageMap },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub.withArgs('https://example.com/mapped-link').resolves(createValidationResponse(true));
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      expect(result.results).to.have.lengthOf(1);
+      expect(result.results[0]).to.deep.include({
+        urlTo: 'https://example.com/mapped-link',
+        itemType: 'link',
+        anchorText: 'Mapped Link',
+      });
+    });
+
+    it('should keep separate broken results for the same target when itemType differs', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      const htmlWithSharedTarget = `
+        <html>
+          <body>
+            <a href="/shared-target">Read more</a>
+            <img src="/shared-target" alt="Shared asset">
+          </body>
+        </html>
+      `;
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: { rawBody: htmlWithSharedTarget },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub.withArgs('https://example.com/shared-target').resolves(createValidationResponse(true));
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      expect(result.results).to.have.lengthOf(2);
+      expect(result.results.some((entry) => entry.urlTo === 'https://example.com/shared-target' && entry.itemType === 'link')).to.equal(true);
+      expect(result.results.some((entry) => entry.urlTo === 'https://example.com/shared-target' && entry.itemType === 'image')).to.equal(true);
+    });
+
     it('should skip images with data URLs', async () => {
       const scrapeResultPaths = new Map([
         ['https://example.com/page1', 'scrapes/page1.json'],
@@ -1272,7 +1400,7 @@ describe('Crawl Detection Module', () => {
           urlFrom: 'https://example.com/page1',
           urlTo: 'https://example.com/broken1',
           anchorText: 'RUM Anchor',
-          itemType: 'rum-type',
+          itemType: 'link',
           trafficDomain: 100,
           detectionSource: 'rum',
         },
@@ -1292,7 +1420,7 @@ describe('Crawl Detection Module', () => {
 
       expect(result).to.have.lengthOf(1);
       expect(result[0].anchorText).to.equal('RUM Anchor'); // Fallback to RUM
-      expect(result[0].itemType).to.equal('rum-type'); // Fallback to RUM
+      expect(result[0].itemType).to.equal('link'); // Fallback to RUM
       expect(result[0].detectionSource).to.equal('crawl+rum');
     });
 
@@ -1305,6 +1433,7 @@ describe('Crawl Detection Module', () => {
         {
           urlFrom: 'https://example.com/page1',
           urlTo: 'https://example.com/broken1',
+          itemType: 'link',
           trafficDomain: 100,
         },
       ];
@@ -1313,6 +1442,7 @@ describe('Crawl Detection Module', () => {
         {
           urlFrom: 'https://example.com/page1',
           urlTo: 'https://example.com/broken1',
+          itemType: 'link',
           detectionSource: 'crawl',
           anchorText: 'Anchor',
         },
@@ -1334,6 +1464,7 @@ describe('Crawl Detection Module', () => {
         {
           urlFrom: 'https://example.com/page1',
           urlTo: 'https://example.com/broken1',
+          itemType: 'link',
           trafficDomain: 100,
           detectionSource: 'rum',
         },
@@ -1343,6 +1474,7 @@ describe('Crawl Detection Module', () => {
         {
           urlFrom: 'https://example.com/page1',
           urlTo: 'https://example.com/broken1',
+          itemType: 'link',
           anchorText: 'Anchor',
         },
       ];
@@ -1352,6 +1484,37 @@ describe('Crawl Detection Module', () => {
       expect(result).to.have.lengthOf(1);
       expect(result[0].detectionSource).to.equal('rum+unknown');
       expect(result[0].anchorText).to.equal('Anchor');
+    });
+
+    it('should preserve separate entries when same URL pair has different item types', () => {
+      const mockLog = {
+        info: sinon.stub(),
+      };
+
+      const secondLinks = [
+        {
+          urlFrom: 'https://example.com/page1',
+          urlTo: 'https://example.com/shared-target',
+          itemType: 'link',
+          detectionSource: 'rum',
+          trafficDomain: 100,
+        },
+      ];
+
+      const firstLinks = [
+        {
+          urlFrom: 'https://example.com/page1',
+          urlTo: 'https://example.com/shared-target',
+          itemType: 'image',
+          detectionSource: 'crawl',
+          trafficDomain: 0,
+        },
+      ];
+
+      const result = mergeAndDeduplicate(firstLinks, secondLinks, mockLog);
+
+      expect(result).to.have.lengthOf(2);
+      expect(result.map((entry) => entry.itemType)).to.have.members(['link', 'image']);
     });
   });
 

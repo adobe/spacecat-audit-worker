@@ -39,6 +39,36 @@ describe('internal-links config resolver', () => {
       maxPollAttempts: 10,
       pollIntervalMs: 60000,
     });
+    expect(resolver.getIncludedStatusBuckets()).to.deep.equal([
+      'not_found_404',
+      'gone_410',
+      'forbidden_or_blocked',
+      'server_error_5xx',
+      'timeout_or_network',
+      'redirect_chain_excessive',
+      'soft_404',
+      'masked_by_linkchecker',
+    ]);
+    expect(resolver.getIncludedItemTypes()).to.deep.equal([
+      'link',
+      'form',
+      'image',
+      'svg',
+      'css',
+      'js',
+      'iframe',
+      'video',
+      'audio',
+      'media',
+    ]);
+    expect(resolver.getMystiqueItemTypes()).to.deep.equal([
+      'link',
+      'form',
+      'image',
+      'svg',
+      'css',
+      'js',
+    ]);
     expect(resolver.getScraperOptions()).to.include({
       enableJavascript: true,
       waitUntil: 'networkidle2',
@@ -141,5 +171,21 @@ describe('internal-links config resolver', () => {
       screenshotTypes: ['fullpage', 'viewport'],
       hideConsentBanners: false,
     });
+  });
+
+  it('parses configurable item types and status buckets', () => {
+    const resolver = new InternalLinksConfigResolver(createSite({
+      includedStatusBuckets: 'not_found_404, gone_410, masked_by_linkchecker',
+      includedItemTypes: ['link', 'image'],
+      mystiqueItemTypes: 'link,form',
+    }), {});
+
+    expect(resolver.getIncludedStatusBuckets()).to.deep.equal([
+      'not_found_404',
+      'gone_410',
+      'masked_by_linkchecker',
+    ]);
+    expect(resolver.getIncludedItemTypes()).to.deep.equal(['link', 'image']);
+    expect(resolver.getMystiqueItemTypes()).to.deep.equal(['link', 'form']);
   });
 });

@@ -23,6 +23,11 @@ const BATCH_STATE_PREFIX = 'broken-internal-links/batch-state';
 const LAMBDA_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 const TIMEOUT_BUFFER_MS = 2 * 60 * 1000; // 2 minute buffer
 const SAFE_PROCESSING_TIME_MS = LAMBDA_TIMEOUT_MS - TIMEOUT_BUFFER_MS; // 13 minutes
+const DEFAULT_ITEM_TYPE = 'link';
+
+function buildBrokenLinkKey(link) {
+  return `${link.urlFrom}|${link.urlTo}|${link.itemType || DEFAULT_ITEM_TYPE}`;
+}
 
 /**
  * Check if we're approaching Lambda timeout
@@ -354,11 +359,11 @@ export async function loadAllBatchResults(auditId, context, startTime) {
   // Sort by batch number for consistent ordering
   batches.sort((a, b) => a.batchNum - b.batchNum);
 
-  // Merge and deduplicate by urlFrom|urlTo
+  // Merge and deduplicate by urlFrom|urlTo|itemType so asset/link collisions do not overwrite.
   const resultsMap = new Map();
   batches.forEach((batch) => {
     batch.results.forEach((link) => {
-      const key = `${link.urlFrom}|${link.urlTo}`;
+      const key = buildBrokenLinkKey(link);
       resultsMap.set(key, link);
     });
   });
