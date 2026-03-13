@@ -385,7 +385,7 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
       const hasRawData = await pathHasData(context.s3Client, rawDataPath);
 
       if (!hasRawData) {
-        log.info(`${auditType} no raw logs found for siteId=${siteId}, serviceProvider=${serviceProvider}, cdnType=${cdnType} at path=${rawDataPath}`);
+        log.info(`${auditType} no raw logs found for siteId=${siteId}, siteUrl=${host}, serviceProvider=${serviceProvider}, cdnType=${cdnType} at path=${rawDataPath}`);
         // eslint-disable-next-line no-continue
         continue;
       }
