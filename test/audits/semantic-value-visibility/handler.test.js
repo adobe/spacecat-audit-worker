@@ -53,9 +53,6 @@ describe('Semantic Value Visibility Handler', () => {
       env: {
         QUEUE_SPACECAT_TO_MYSTIQUE: 'spacecat-to-mystique-queue',
       },
-      audit: {
-        getId: () => 'audit-456',
-      },
     };
   });
 
@@ -79,7 +76,7 @@ describe('Semantic Value Visibility Handler', () => {
 
   describe('sendToMystique', () => {
     it('should send message to Mystique with auditId and data', async () => {
-      const auditData = { auditResult: { siteId } };
+      const auditData = { id: 'audit-456', auditResult: { siteId } };
 
       const result = await sendToMystique(auditUrl, auditData, context, site);
 
@@ -116,9 +113,7 @@ describe('Semantic Value Visibility Handler', () => {
       );
     });
 
-    it('should handle missing audit gracefully', async () => {
-      context.audit = undefined;
-
+    it('should handle missing auditData id gracefully', async () => {
       await sendToMystique(auditUrl, {}, context, site);
 
       const message = sqsStub.sendMessage.getCall(0).args[1];

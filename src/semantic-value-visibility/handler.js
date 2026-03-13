@@ -23,10 +23,10 @@ export async function auditRunner(auditUrl, context, site) {
 
 export async function sendToMystique(auditUrl, auditData, context, site) {
   const {
-    log, sqs, env, audit,
+    log, sqs, env,
   } = context;
   const siteId = site.getId();
-  const auditId = audit?.getId?.();
+  const auditId = auditData.id;
 
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, {
     type: GUIDANCE_TYPE,
