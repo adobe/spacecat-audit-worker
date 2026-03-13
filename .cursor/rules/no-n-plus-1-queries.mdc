@@ -1,0 +1,67 @@
+---
+description: Prevent N+1 database query patterns that exhaust the PostgREST connection pool
+globs: src/**/*.js
+alwaysApply: false
+---
+
+# No N+1 Database Query Patterns
+
+The data-access layer talks to PostgreSQL via PostgREST with a **200-connection pool** (10 ECS tasks × 20). N+1 patterns fire one HTTP request per entity and can exhaust the pool, causing cascading failures across all services.
+
+## Rules
+
+### 1. Never use `Promise.all(items.map(i => i.save()))`
+
+Use `Collection.saveMany(items)` instead. It chunks internally into bulk upserts.
+
+```js
+// BAD
+await Promise.all(suggestions.map((s) => s.save()));
+
+// GOOD
+await Suggestion.saveMany(suggestionsToSave);
+```
+
+### 2. Never use N × `findById()` in a loop
+
+Use `Collection.batchGetByKeys(keys)` for a single `.in()` query, then build a Map for O(1) lookup.
+
+```js
+// BAD
+for (const id of ids) {
+  const suggestion = await Suggestion.findById(id);
+}
+
+// GOOD
+const keys = ids.map((id) => ({ suggestionId: id }));
+const { data: suggestions } = await Suggestion.batchGetByKeys(keys);
+const suggestionMap = new Map(suggestions.map((s) => [s.getId(), s]));
+```
+
+### 3. Never use `Promise.all(items.map(i => i.remove()))`
+
+Use `Collection.removeByIds(ids)` for a single `DELETE ... WHERE id IN (...)`.
+
+```js
+// BAD
+await Promise.all(suggestions.map((s) => s.remove()));
+
+// GOOD
+await Suggestion.removeByIds(suggestionsToRemove.map((s) => s.getId()));
+```
+
+## Quick Reference
+
+| Instead of | Use |
+|------------|-----|
+| `Promise.all(items.map(i => i.save()))` | `Collection.saveMany(items)` |
+| N × `Collection.findById(id)` | `Collection.batchGetByKeys(keys)` + Map |
+| `Promise.all(items.map(i => i.remove()))` | `Collection.removeByIds(ids)` |
+
+## Hot Spots
+
+Watch for these patterns especially in:
+- `src/utils/data-access.js` (syncSuggestions, reconcile, publish)
+- Guidance handlers updating suggestions from AI responses
+- Code-fix handlers applying patch data to suggestions
+- Any loop over entities calling `.save()`, `.remove()`, or `findById()`

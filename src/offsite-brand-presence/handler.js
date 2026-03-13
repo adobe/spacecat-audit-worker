@@ -16,7 +16,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import {
   BRAND_PRESENCE_REGEX,
-  DRS_TOP_URLS_LIMIT,
+  DRS_URLS_LIMIT,
   FETCH_PAGE_SIZE,
   FETCH_TIMEOUT_MS,
   INCLUDE_COLUMNS,
@@ -358,12 +358,12 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
     for (const url of urls) {
       entries.push({ url, audits: [config.auditType] });
     }
-    log.info(`${LOG_PREFIX} Selected top ${urls.length} ${domain} URLs (limit ${DRS_TOP_URLS_LIMIT})`);
+    log.info(`${LOG_PREFIX} Selected top ${urls.length} ${domain} URLs (limit ${DRS_URLS_LIMIT})`);
   }
   for (const url of topCited) {
     entries.push({ url, audits: [TOP_CITED_DRS_CONFIG.auditType] });
   }
-  log.info(`${LOG_PREFIX} Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${DRS_TOP_URLS_LIMIT})`);
+  log.info(`${LOG_PREFIX} Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${DRS_URLS_LIMIT})`);
   log.info(`${LOG_PREFIX} Adding ${entries.length} URLs to URL store`);
 
   const results = await Promise.all(
@@ -692,7 +692,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
   const excludedFromTopCited = Object.keys(OFFSITE_DOMAINS);
   const {
     topByDomain, topCited,
-  } = selectTopUrls(allUrls, DRS_TOP_URLS_LIMIT, excludedFromTopCited);
+  } = selectTopUrls(allUrls, DRS_URLS_LIMIT, excludedFromTopCited);
 
   const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
   const drsResults = await triggerDrsScraping(storedByDomain, siteId, context);

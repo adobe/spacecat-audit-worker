@@ -45,7 +45,7 @@ export const OFFSITE_DOMAINS = Object.freeze({
   },
 });
 
-export const DRS_TOP_URLS_LIMIT = 100;
+export const DRS_URLS_LIMIT = 100;
 export const FETCH_PAGE_SIZE = 80000;
 export const FETCH_TIMEOUT_MS = 60000;
 export const INCLUDE_COLUMNS = ['Sources', 'Region', 'answer_contains_brandname', 'Mentions', 'Citations', 'Prompt', 'Topic', 'Category'].join(',');

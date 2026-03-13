@@ -337,6 +337,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
       context.dataAccess.Suggestion = {
         bulkUpdateStatus: sandbox.stub(),
+        saveMany: sinon.stub().resolves(),
       };
 
       context.sqs = {
@@ -471,7 +472,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
       // make sure that 1 existing suggestion is updated
       expect(existingSuggestions[1].setData).to.have.been.calledOnce;
       expect(existingSuggestions[1].setData.firstCall.args[0]).to.deep.equal(suggestions[1].data);
-      expect(existingSuggestions[1].save).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
 
       // make sure that 3 new suggestions are created
       expect(oppty.addSuggestions).to.have.been.calledOnce;

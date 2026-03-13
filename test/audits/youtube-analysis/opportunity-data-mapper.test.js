@@ -13,27 +13,27 @@
 /* eslint-env mocha */
 
 import { expect } from 'chai';
-import { createOpportunityData } from '../../../src/reddit-analysis/opportunity-data-mapper.js';
+import { createOpportunityData } from '../../../src/youtube-analysis/opportunity-data-mapper.js';
 
-describe('Reddit Analysis Opportunity Data Mapper', () => {
+describe('YouTube Analysis Opportunity Data Mapper', () => {
   describe('createOpportunityData', () => {
     it('should create opportunity data with defaults when no opportunityData provided', () => {
       const result = createOpportunityData({});
 
       expect(result.origin).to.equal('AUTOMATION');
-      expect(result.type).to.equal('reddit-analysis');
+      expect(result.type).to.equal('youtube-analysis');
       expect(result.status).to.equal('NEW');
       expect(result.runbook).to.equal('');
-      expect(result.title).to.equal('Reddit presence: Improve brand sentiment and visibility');
+      expect(result.title).to.equal('Youtube presence: Improve brand sentiment and visibility');
     });
 
     it('should use values from opportunityData when provided', () => {
       const opportunityData = {
-        title: '[ʙᴇᴛᴀ] Reddit Sentiment Analysis - Cited',
+        title: '[ʙᴇᴛᴀ] Cited YouTube Sentiment Analysis',
         description: 'Custom description',
-        runbook: 'https://adobe.sharepoint.com/sites/reddit-analysis',
+        runbook: 'https://adobe.sharepoint.com/sites/youtube-sentiment-analysis',
         status: 'IN_PROGRESS',
-        tags: ['Reddit', 'Social Media'],
+        tags: ['Video Content', 'Youtube'],
         data: { dataSources: ['Site'] },
       };
 
@@ -43,17 +43,17 @@ describe('Reddit Analysis Opportunity Data Mapper', () => {
       expect(result.description).to.equal(opportunityData.description);
       expect(result.runbook).to.equal(opportunityData.runbook);
       expect(result.status).to.equal(opportunityData.status);
-      expect(result.tags).to.deep.equal(['Reddit', 'Social Media', 'isElmo', 'social']);
+      expect(result.tags).to.deep.equal(['Video Content', 'Youtube']);
       expect(result.data.dataSources).to.deep.equal(['Site', 'Page']);
       expect(result.origin).to.equal('AUTOMATION');
-      expect(result.type).to.equal('reddit-analysis');
+      expect(result.type).to.equal('youtube-analysis');
     });
 
     it('should include correct default title and description', () => {
       const result = createOpportunityData({});
 
-      expect(result.title).to.equal('Reddit presence: Improve brand sentiment and visibility');
-      expect(result.description).to.include('Reddit');
+      expect(result.title).to.equal('Youtube presence: Improve brand sentiment and visibility');
+      expect(result.description).to.include('Youtube');
       expect(result.description).to.include('brand sentiment');
     });
 
@@ -62,8 +62,9 @@ describe('Reddit Analysis Opportunity Data Mapper', () => {
 
       expect(result.tags).to.be.an('array');
       expect(result.tags).to.include('isElmo');
-      expect(result.tags).to.include('Reddit');
+      expect(result.tags).to.include('Video Content');
       expect(result.tags).to.include('social');
+      expect(result.tags).to.deep.equal(['Video Content', 'social', 'isElmo']);
     });
 
     it('should include default data sources', () => {
@@ -85,14 +86,14 @@ describe('Reddit Analysis Opportunity Data Mapper', () => {
       expect(result.data.dataSources).to.deep.equal(['Site', 'Page']);
     });
 
-    it('should deduplicate tags when opportunityData contains defaults', () => {
+    it('should use provided tags when opportunityData contains tags', () => {
       const opportunityData = {
-        tags: ['isElmo', 'Reddit', 'social', 'custom'],
+        tags: ['isElmo', 'Video Content', 'social', 'custom'],
       };
 
       const result = createOpportunityData({ opportunityData });
 
-      expect(result.tags).to.deep.equal(['isElmo', 'Reddit', 'social', 'custom']);
+      expect(result.tags).to.deep.equal(['isElmo', 'Video Content', 'social', 'custom']);
     });
 
     it('should deduplicate dataSources when opportunityData contains defaults', () => {
@@ -119,7 +120,7 @@ describe('Reddit Analysis Opportunity Data Mapper', () => {
       const result = createOpportunityData();
 
       expect(result.origin).to.equal('AUTOMATION');
-      expect(result.type).to.equal('reddit-analysis');
+      expect(result.type).to.equal('youtube-analysis');
       expect(result.status).to.equal('NEW');
     });
   });

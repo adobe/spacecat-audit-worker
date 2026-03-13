@@ -14,24 +14,21 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
 
 /**
- * Creates opportunity data for Reddit analysis.
- * When a BO JSON opportunity object is provided (from Mystique), uses its values.
- * Otherwise falls back to defaults.
+ * Creates opportunity data for YouTube analysis from the Mystique payload.
  * @param {Object} props - The props object from convertToOpportunity
- * @param {Object} [props.opportunityData] - The opportunity object from the BO JSON
+ * @param {Object} [props.opportunityData] - The opportunity object from the analysis payload
  * @returns {Object} Opportunity data
  */
 export function createOpportunityData({ opportunityData } = {}) {
   return {
     runbook: opportunityData?.runbook || '',
-    origin: 'AUTOMATION',
-    type: opportunityData?.type || Audit.AUDIT_TYPES.REDDIT_ANALYSIS,
-    title: opportunityData?.title || 'Reddit presence: Improve brand sentiment and visibility',
-    description: opportunityData?.description
-      || 'Enhance your company\'s Reddit presence to improve brand sentiment and visibility. '
-      + 'A well-managed Reddit presence can influence how your brand is perceived in community discussions.',
+    origin: opportunityData?.origin || 'AUTOMATION',
+    type: opportunityData?.type || Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS,
+    title: opportunityData?.title || 'Youtube presence: Improve brand sentiment and visibility',
+    description: opportunityData?.description || 'Enhance your company\'s Youtube presence to improve brand sentiment and visibility. '
+      + 'A well-managed Youtube presence can influence how your brand is perceived in community discussions.',
     status: opportunityData?.status || 'NEW',
-    tags: [...new Set([...(opportunityData?.tags || []), 'isElmo', 'Reddit', 'social'])],
+    tags: opportunityData?.tags || ['Video Content', 'social', 'isElmo'],
     data: {
       ...(opportunityData?.data || {}),
       dataSources: [...new Set([

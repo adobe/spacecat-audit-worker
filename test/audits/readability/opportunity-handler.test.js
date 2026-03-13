@@ -21,8 +21,6 @@ use(sinonChai);
 
 describe('Opportunity Handler Tests', () => {
   let addReadabilitySuggestions;
-  let clearReadabilitySuggestions;
-  let mockSuggestionModel;
   let mockIsNonEmptyArray;
   let log;
 
@@ -35,15 +33,6 @@ describe('Opportunity Handler Tests', () => {
       debug: sinon.stub(),
     };
 
-    // Mock SuggestionModel
-    mockSuggestionModel = {
-      STATUSES: {
-        SKIPPED: 'skipped',
-        FIXED: 'fixed',
-        PENDING: 'pending',
-      },
-    };
-
     // Mock isNonEmptyArray utility
     mockIsNonEmptyArray = sinon.stub();
 
@@ -52,9 +41,6 @@ describe('Opportunity Handler Tests', () => {
       '../../../src/readability/preflight/opportunity-handler.js',
       {},
       {
-        '@adobe/spacecat-shared-data-access': {
-          Suggestion: mockSuggestionModel,
-        },
         '@adobe/spacecat-shared-utils': {
           isNonEmptyArray: mockIsNonEmptyArray,
         },
@@ -62,7 +48,6 @@ describe('Opportunity Handler Tests', () => {
     );
 
     addReadabilitySuggestions = opportunityHandler.addReadabilitySuggestions;
-    clearReadabilitySuggestions = opportunityHandler.clearReadabilitySuggestions;
   });
 
   afterEach(() => {
@@ -247,231 +232,6 @@ describe('Opportunity Handler Tests', () => {
 
       expect(log.error).not.to.have.been.called;
       expect(log.info).to.have.been.calledWith('[READABILITY]: Added 1 new readability suggestions');
-    });
-  });
-
-  describe('clearReadabilitySuggestions', () => {
-    let mockOpportunity;
-    let mockSuggestions;
-
-    beforeEach(() => {
-      mockOpportunity = {
-        getSuggestions: sinon.stub(),
-      };
-
-      mockSuggestions = [
-        {
-          getId: () => 'suggestion-1',
-          getStatus: () => 'pending',
-          remove: sinon.stub().resolves(),
-        },
-        {
-          getId: () => 'suggestion-2',
-          getStatus: () => 'skipped',
-          remove: sinon.stub().resolves(),
-        },
-        {
-          getId: () => 'suggestion-3',
-          getStatus: () => 'fixed',
-          remove: sinon.stub().resolves(),
-        },
-        {
-          getId: () => 'suggestion-4',
-          getStatus: () => 'pending',
-          remove: sinon.stub().resolves(),
-        },
-      ];
-    });
-
-    it('should skip when no opportunity is provided', async () => {
-      await clearReadabilitySuggestions({
-        opportunity: null,
-        log,
-      });
-
-      expect(log.debug).to.have.been.calledWith('[READABILITY]: No opportunity found, skipping suggestion cleanup');
-    });
-
-    it('should skip when opportunity is undefined', async () => {
-      await clearReadabilitySuggestions({
-        opportunity: undefined,
-        log,
-      });
-
-      expect(log.debug).to.have.been.calledWith('[READABILITY]: No opportunity found, skipping suggestion cleanup');
-    });
-
-    it('should skip when no existing suggestions found', async () => {
-      mockOpportunity.getSuggestions.resolves([]);
-
-      await clearReadabilitySuggestions({
-        opportunity: mockOpportunity,
-        log,
-      });
-
-      expect(log.debug).to.have.been.calledWith('[READABILITY]: No existing suggestions to clear');
-    });
-
-    it('should skip when existing suggestions is null', async () => {
-      mockOpportunity.getSuggestions.resolves(null);
-
-      await clearReadabilitySuggestions({
-        opportunity: mockOpportunity,
-        log,
-      });
-
-      expect(log.debug).to.have.been.calledWith('[READABILITY]: No existing suggestions to clear');
-    });
-
-    it('should clear non-ignored suggestions and preserve ignored ones', async () => {
-      mockOpportunity.getSuggestions.resolves(mockSuggestions);
-
-      await clearReadabilitySuggestions({
-        opportunity: mockOpportunity,
-        log,
-      });
-
-      // Should remove pending suggestions (suggestion-1 and suggestion-4)
-      expect(mockSuggestions[0].remove).to.have.been.called;
-      expect(mockSuggestions[3].remove).to.have.been.called;
-
-      // Should NOT remove skipped/fixed suggestions (suggestion-2 and suggestion-3)
-      expect(mockSuggestions[1].remove).not.to.have.been.called;
-      expect(mockSuggestions[2].remove).not.to.have.been.called;
-
-      expect(log.info).to.have.been.calledWith('[READABILITY]: Cleared 2 existing suggestions (preserved 2 ignored suggestions)');
-    });
-
-    it('should handle when all suggestions are ignored', async () => {
-      const ignoredSuggestions = [
-        {
-          getId: () => 'suggestion-1',
-          getStatus: () => 'skipped',
-          remove: sinon.stub().resolves(),
-        },
-        {
-          getId: () => 'suggestion-2',
-          getStatus: () => 'fixed',
-          remove: sinon.stub().resolves(),
-        },
-      ];
-
-      mockOpportunity.getSuggestions.resolves(ignoredSuggestions);
-
-      await clearReadabilitySuggestions({
-        opportunity: mockOpportunity,
-        log,
-      });
-
-      // Should not remove any suggestions
-      expect(ignoredSuggestions[0].remove).not.to.have.been.called;
-      expect(ignoredSuggestions[1].remove).not.to.have.been.called;
-
-      expect(log.debug).to.have.been.calledWith('[READABILITY]: No suggestions to clear (all 2 suggestions are ignored)');
-    });
-
-    it('should handle when all suggestions need to be removed', async () => {
-      const removableSuggestions = [
-        {
-          getId: () => 'suggestion-1',
-          getStatus: () => 'pending',
-          remove: sinon.stub().resolves(),
-        },
-        {
-          getId: () => 'suggestion-2',
-          getStatus: () => 'active',
-          remove: sinon.stub().resolves(),
-        },
-        {
-          getId: () => 'suggestion-3',
-          getStatus: () => 'draft',
-          remove: sinon.stub().resolves(),
-        },
-      ];
-
-      mockOpportunity.getSuggestions.resolves(removableSuggestions);
-
-      await clearReadabilitySuggestions({
-        opportunity: mockOpportunity,
-        log,
-      });
-
-      // Should remove all suggestions
-      expect(removableSuggestions[0].remove).to.have.been.called;
-      expect(removableSuggestions[1].remove).to.have.been.called;
-      expect(removableSuggestions[2].remove).to.have.been.called;
-
-      expect(log.info).to.have.been.calledWith('[READABILITY]: Cleared 3 existing suggestions (preserved 0 ignored suggestions)');
-    });
-
-    it('should handle mixed statuses correctly', async () => {
-      const mixedSuggestions = [
-        {
-          getId: () => 'suggestion-1',
-          getStatus: () => 'skipped', // Should be preserved
-          remove: sinon.stub().resolves(),
-        },
-        {
-          getId: () => 'suggestion-2',
-          getStatus: () => 'pending', // Should be removed
-          remove: sinon.stub().resolves(),
-        },
-        {
-          getId: () => 'suggestion-3',
-          getStatus: () => 'fixed', // Should be preserved
-          remove: sinon.stub().resolves(),
-        },
-        {
-          getId: () => 'suggestion-4',
-          getStatus: () => 'active', // Should be removed
-          remove: sinon.stub().resolves(),
-        },
-        {
-          getId: () => 'suggestion-5',
-          getStatus: () => 'skipped', // Should be preserved
-          remove: sinon.stub().resolves(),
-        },
-      ];
-
-      mockOpportunity.getSuggestions.resolves(mixedSuggestions);
-
-      await clearReadabilitySuggestions({
-        opportunity: mockOpportunity,
-        log,
-      });
-
-      // Should preserve skipped/fixed (suggestions 1, 3, 5)
-      expect(mixedSuggestions[0].remove).not.to.have.been.called;
-      expect(mixedSuggestions[2].remove).not.to.have.been.called;
-      expect(mixedSuggestions[4].remove).not.to.have.been.called;
-
-      // Should remove others (suggestions 2, 4)
-      expect(mixedSuggestions[1].remove).to.have.been.called;
-      expect(mixedSuggestions[3].remove).to.have.been.called;
-
-      expect(log.info).to.have.been.calledWith('[READABILITY]: Cleared 2 existing suggestions (preserved 3 ignored suggestions)');
-    });
-
-    it('should handle Promise.all for multiple removals', async () => {
-      const largeSuggestionSet = Array.from({ length: 10 }, (_, i) => ({
-        getId: () => `suggestion-${i}`,
-        getStatus: () => 'pending', // All should be removed
-        remove: sinon.stub().resolves(),
-      }));
-
-      mockOpportunity.getSuggestions.resolves(largeSuggestionSet);
-
-      await clearReadabilitySuggestions({
-        opportunity: mockOpportunity,
-        log,
-      });
-
-      // All should be removed
-      largeSuggestionSet.forEach((suggestion) => {
-        expect(suggestion.remove).to.have.been.called;
-      });
-
-      expect(log.info).to.have.been.calledWith('[READABILITY]: Cleared 10 existing suggestions (preserved 0 ignored suggestions)');
     });
   });
 });

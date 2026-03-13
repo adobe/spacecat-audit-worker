@@ -21,7 +21,7 @@ import * as handlerConstants from '../../src/offsite-brand-presence/constants.js
 import { SCRAPE_DATASET_IDS } from '@adobe/spacecat-shared-drs-client';
 
 const {
-  DRS_TOP_URLS_LIMIT,
+  DRS_URLS_LIMIT,
   FETCH_PAGE_SIZE,
   INCLUDE_COLUMNS,
   PROVIDERS,
@@ -928,7 +928,7 @@ describe('Offsite Brand Presence Handler', () => {
   describe('Top URLs Per Domain', () => {
     it('should limit both DRS and URL store to top-N URLs per domain', async () => {
       const urls = [];
-      const urlCount = DRS_TOP_URLS_LIMIT + 10;
+      const urlCount = DRS_URLS_LIMIT + 10;
       for (let i = 0; i < urlCount; i += 1) {
         urls.push(`https://youtube.com/shorts/vid${i}`);
       }
@@ -949,8 +949,8 @@ describe('Offsite Brand Presence Handler', () => {
       const videosCall = mockSubmitScrapeJob.getCalls().find(
         (c) => c.args[0].datasetId === 'youtube_videos',
       );
-      expect(videosCall.args[0].urls).to.have.lengthOf(DRS_TOP_URLS_LIMIT);
-      expect(dataAccess.AuditUrl.create.callCount).to.equal(DRS_TOP_URLS_LIMIT);
+      expect(videosCall.args[0].urls).to.have.lengthOf(DRS_URLS_LIMIT);
+      expect(dataAccess.AuditUrl.create.callCount).to.equal(DRS_URLS_LIMIT);
     });
 
     it('should select most frequent URLs for DRS when counts differ', async () => {
@@ -1053,9 +1053,9 @@ describe('Offsite Brand Presence Handler', () => {
       }));
     });
 
-    it('should respect DRS_TOP_URLS_LIMIT for top-cited URLs', async () => {
+    it('should respect DRS_URLS_LIMIT for top-cited URLs', async () => {
       const urls = [];
-      const totalUrls = DRS_TOP_URLS_LIMIT + 10;
+      const totalUrls = DRS_URLS_LIMIT + 10;
       for (let i = 0; i < totalUrls; i += 1) {
         urls.push(`https://example${i}.com/page`);
       }
@@ -1070,7 +1070,7 @@ describe('Offsite Brand Presence Handler', () => {
 
       const createCalls = dataAccess.AuditUrl.create.getCalls();
       const topCitedCalls = createCalls.filter((c) => c.args[0].audits[0] === 'top-cited-analysis');
-      expect(topCitedCalls).to.have.lengthOf(DRS_TOP_URLS_LIMIT);
+      expect(topCitedCalls).to.have.lengthOf(DRS_URLS_LIMIT);
     });
   });
 

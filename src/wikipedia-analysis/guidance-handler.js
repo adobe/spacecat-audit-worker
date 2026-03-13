@@ -15,7 +15,6 @@ import {
 } from '@adobe/spacecat-shared-http-utils';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
-
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';

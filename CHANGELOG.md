@@ -1,3 +1,94 @@
+## [1.356.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.356.6...v1.356.7) (2026-03-13)
+
+
+### Bug Fixes
+
+* LLMO-3628 Remove isElmo flag and control LLMO meta-tags visibili… ([#2137](https://github.com/adobe/spacecat-audit-worker/issues/2137)) ([b6b00ad](https://github.com/adobe/spacecat-audit-worker/commit/b6b00ad1f8c89bae9e26678a9bc1520a46b5e0e1))
+
+## [1.356.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.356.5...v1.356.6) (2026-03-13)
+
+
+### Bug Fixes
+
+* **cdn-analysis:** add site URL to no raw logs found log ([#2135](https://github.com/adobe/spacecat-audit-worker/issues/2135)) ([d2ad7ca](https://github.com/adobe/spacecat-audit-worker/commit/d2ad7ca8447663036caf4ba5a176ea47260d43ca))
+
+## [1.356.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.356.4...v1.356.5) (2026-03-13)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.20.0 ([#2134](https://github.com/adobe/spacecat-audit-worker/issues/2134)) ([6e53618](https://github.com/adobe/spacecat-audit-worker/commit/6e536189edc73d10347a0100a8ba8d5bcc2d7707))
+
+## [1.356.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.356.3...v1.356.4) (2026-03-13)
+
+
+### Bug Fixes
+
+* **semantic-value-visibility:** include auditId in Mystique SQS message ([#2126](https://github.com/adobe/spacecat-audit-worker/issues/2126)) ([342d2d9](https://github.com/adobe/spacecat-audit-worker/commit/342d2d9c7d9433931f0a1fe4f8701be762725741))
+
+## [1.356.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.356.2...v1.356.3) (2026-03-13)
+
+
+### Bug Fixes
+
+* eliminate N+1 query patterns across all audit handlers ([#2125](https://github.com/adobe/spacecat-audit-worker/issues/2125)) ([61e5450](https://github.com/adobe/spacecat-audit-worker/commit/61e545099776c53c1a6f18c88379142df3fb0064))
+
+## [1.356.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.356.1...v1.356.2) (2026-03-13)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2132](https://github.com/adobe/spacecat-audit-worker/issues/2132)) ([2890918](https://github.com/adobe/spacecat-audit-worker/commit/2890918d2e47de224aa94e300ccaf0f54d849965))
+
+## [1.356.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.356.0...v1.356.1) (2026-03-13)
+
+
+### Bug Fixes
+
+* **test:** update opportunityData type in reddit-analysis tests ([#2131](https://github.com/adobe/spacecat-audit-worker/issues/2131)) ([e73e649](https://github.com/adobe/spacecat-audit-worker/commit/e73e649dd85b8441d68e784486466f8c6e0886ad))
+
+# [1.356.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.355.1...v1.356.0) (2026-03-13)
+
+
+### Features
+
+* add skipAudit option to forms-opportunities audit ([#2129](https://github.com/adobe/spacecat-audit-worker/issues/2129)) ([ccb4d63](https://github.com/adobe/spacecat-audit-worker/commit/ccb4d635d6ef26ea063e708d199a189ffd2d4aa0))
+
+## [1.355.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.355.0...v1.355.1) (2026-03-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.18.0 ([#2122](https://github.com/adobe/spacecat-audit-worker/issues/2122)) ([f5606be](https://github.com/adobe/spacecat-audit-worker/commit/f5606bed4a8a23049de249ed3ed49190149981aa))
+
+# [1.355.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.354.1...v1.355.0) (2026-03-12)
+
+
+### Features
+
+* migrate vulnerabilities flow to starfish-auto-code ([#2120](https://github.com/adobe/spacecat-audit-worker/issues/2120)) ([a5c1945](https://github.com/adobe/spacecat-audit-worker/commit/a5c1945b1264dfbbdbfdb77a0286eb7d4740cc8e))
+
+## [1.354.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.354.0...v1.354.1) (2026-03-12)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2118](https://github.com/adobe/spacecat-audit-worker/issues/2118)) ([1b22ff6](https://github.com/adobe/spacecat-audit-worker/commit/1b22ff614514eb85af1fe36128650eb3d4c1d6ab))
+
+# [1.354.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.353.2...v1.354.0) (2026-03-12)
+
+
+### Features
+
+* **LLMO-3074:** add offsite-brand-presence audit ([#2002](https://github.com/adobe/spacecat-audit-worker/issues/2002)) ([19071f7](https://github.com/adobe/spacecat-audit-worker/commit/19071f7fb73da2aa8630738610f6c2c2e755c0c4))
+
+## [1.353.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.353.1...v1.353.2) (2026-03-12)
+
+
+### Bug Fixes
+
+* code fix ([#2116](https://github.com/adobe/spacecat-audit-worker/issues/2116)) ([cdb9944](https://github.com/adobe/spacecat-audit-worker/commit/cdb994409c1e595c961f8026a9bd5a489b4394b5))
+
 ## [1.353.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.353.0...v1.353.1) (2026-03-12)
 
 
