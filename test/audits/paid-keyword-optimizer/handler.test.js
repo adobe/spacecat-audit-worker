@@ -26,7 +26,11 @@ import {
   importTrafficAnalysisWeekStep1,
   importTrafficAnalysisWeekStep2,
   importTrafficAnalysisWeekStep3,
-  importTrafficAnalysisWeekStep4,
+  isExcludedPageType,
+  fetchPaidPagesFromS3,
+  computePriorityScore,
+  buildMystiqueMessage,
+  getConfig,
 } from '../../../src/paid-keyword-optimizer/handler.js';
 
 use(sinonChai);
@@ -66,6 +70,19 @@ function getSite(sandbox, overrides = {}) {
     setConfig: sandbox.stub(),
     save: sandbox.stub().resolves(),
     ...overrides,
+  };
+}
+
+/**
+ * Creates a mock S3 client that returns the given data as JSON
+ */
+function createMockS3Client(sandbox, data) {
+  return {
+    send: sandbox.stub().resolves({
+      Body: {
+        transformToString: () => JSON.stringify(data),
+      },
+    }),
   };
 }
 
@@ -141,6 +158,24 @@ describe('Paid Keyword Optimizer Audit', () => {
       ]),
     };
 
+    // Default Ahrefs S3 data
+    const ahrefsData = [
+      {
+        url: 'https://example.com/page1',
+        topKeyword: 'keyword1',
+        cpc: 2.5,
+        sum_traffic: 5000,
+        topKeywordBestPositionTitle: 'SERP Title 1',
+      },
+      {
+        url: 'https://example.com/page2',
+        topKeyword: 'keyword2',
+        cpc: 1.8,
+        sum_traffic: 3000,
+        topKeywordBestPositionTitle: 'SERP Title 2',
+      },
+    ];
+
     context = {
       runtime: { name: 'aws-lambda', region: 'us-east-1' },
       func: { package: 'spacecat-services', version: 'ci', name: 'test' },
@@ -154,7 +189,7 @@ describe('Paid Keyword Optimizer Audit', () => {
       },
       site,
       log: logStub,
-      s3Client: {},
+      s3Client: createMockS3Client(sandbox, ahrefsData),
       sqs: {
         sendMessage: sandbox.stub().resolves(),
       },
@@ -174,6 +209,349 @@ describe('Paid Keyword Optimizer Audit', () => {
   afterEach(() => {
     nock.cleanAll();
     sandbox.restore();
+  });
+
+  describe('getConfig', () => {
+    it('should return config with PAGE_VIEW_THRESHOLD of 5000', () => {
+      const config = getConfig({ S3_IMPORTER_BUCKET_NAME: 'bucket' });
+      expect(config.pageViewThreshold).to.equal(5000);
+    });
+
+    it('should throw when S3_IMPORTER_BUCKET_NAME is missing', () => {
+      expect(() => getConfig({})).to.throw('S3_IMPORTER_BUCKET_NAME must be provided');
+    });
+
+    it('should use default database and table names when not provided', () => {
+      const config = getConfig({ S3_IMPORTER_BUCKET_NAME: 'bucket' });
+      expect(config.rumMetricsDatabase).to.equal('rum_metrics');
+      expect(config.rumMetricsCompactTable).to.equal('compact_metrics');
+    });
+
+    it('should use provided database and table names', () => {
+      const config = getConfig({
+        S3_IMPORTER_BUCKET_NAME: 'bucket',
+        RUM_METRICS_DATABASE: 'custom_db',
+        RUM_METRICS_COMPACT_TABLE: 'custom_table',
+      });
+      expect(config.rumMetricsDatabase).to.equal('custom_db');
+      expect(config.rumMetricsCompactTable).to.equal('custom_table');
+    });
+  });
+
+  describe('isExcludedPageType', () => {
+    it('should exclude help/support/faq/docs URLs', () => {
+      expect(isExcludedPageType('https://example.com/help/topic')).to.be.true;
+      expect(isExcludedPageType('https://example.com/support/article')).to.be.true;
+      expect(isExcludedPageType('https://example.com/faq/question')).to.be.true;
+      expect(isExcludedPageType('https://example.com/docs/guide')).to.be.true;
+      expect(isExcludedPageType('https://example.com/documentation/api')).to.be.true;
+    });
+
+    it('should exclude cart/checkout/order/payment URLs', () => {
+      expect(isExcludedPageType('https://example.com/cart/items')).to.be.true;
+      expect(isExcludedPageType('https://example.com/checkout/step1')).to.be.true;
+      expect(isExcludedPageType('https://example.com/order/confirm')).to.be.true;
+      expect(isExcludedPageType('https://example.com/payment/process')).to.be.true;
+    });
+
+    it('should exclude legal/privacy/terms/cookie-policy URLs', () => {
+      expect(isExcludedPageType('https://example.com/legal/notice')).to.be.true;
+      expect(isExcludedPageType('https://example.com/privacy/policy')).to.be.true;
+      expect(isExcludedPageType('https://example.com/terms/of-service')).to.be.true;
+      expect(isExcludedPageType('https://example.com/cookie-policy/details')).to.be.true;
+    });
+
+    it('should exclude login/signin/register/signup/account URLs', () => {
+      expect(isExcludedPageType('https://example.com/login/page')).to.be.true;
+      expect(isExcludedPageType('https://example.com/signin/sso')).to.be.true;
+      expect(isExcludedPageType('https://example.com/register/new')).to.be.true;
+      expect(isExcludedPageType('https://example.com/signup/step1')).to.be.true;
+      expect(isExcludedPageType('https://example.com/account/settings')).to.be.true;
+    });
+
+    it('should exclude search/search-results/results URLs', () => {
+      expect(isExcludedPageType('https://example.com/search/query')).to.be.true;
+      expect(isExcludedPageType('https://example.com/search-results/page')).to.be.true;
+      expect(isExcludedPageType('https://example.com/results/filtered')).to.be.true;
+    });
+
+    it('should exclude thank-you/confirmation URLs', () => {
+      expect(isExcludedPageType('https://example.com/thank-you/order')).to.be.true;
+      expect(isExcludedPageType('https://example.com/confirmation/code')).to.be.true;
+    });
+
+    it('should exclude 404/error/not-found URLs', () => {
+      expect(isExcludedPageType('https://example.com/404/page')).to.be.true;
+      expect(isExcludedPageType('https://example.com/error/500')).to.be.true;
+      expect(isExcludedPageType('https://example.com/not-found/resource')).to.be.true;
+    });
+
+    it('should exclude unsubscribe/preferences/manage-subscription URLs', () => {
+      expect(isExcludedPageType('https://example.com/unsubscribe/email')).to.be.true;
+      expect(isExcludedPageType('https://example.com/preferences/update')).to.be.true;
+      expect(isExcludedPageType('https://example.com/manage-subscription/cancel')).to.be.true;
+    });
+
+    it('should exclude api/webhook URLs', () => {
+      expect(isExcludedPageType('https://example.com/api/v1')).to.be.true;
+      expect(isExcludedPageType('https://example.com/webhook/handler')).to.be.true;
+    });
+
+    it('should exclude status/system-status URLs', () => {
+      expect(isExcludedPageType('https://example.com/status/check')).to.be.true;
+      expect(isExcludedPageType('https://example.com/system-status/live')).to.be.true;
+    });
+
+    it('should be case insensitive', () => {
+      expect(isExcludedPageType('https://example.com/HELP/topic')).to.be.true;
+      expect(isExcludedPageType('https://example.com/Login/page')).to.be.true;
+      expect(isExcludedPageType('https://example.com/FAQ/question')).to.be.true;
+    });
+
+    it('should NOT exclude URLs that contain excluded words as substrings (not path segments)', () => {
+      // /account-management-software/ should NOT match /account/ because account
+      // is not a standalone path segment in this URL
+      expect(isExcludedPageType('https://example.com/account-management-software/')).to.be.false;
+      expect(isExcludedPageType('https://example.com/helpful-resources/')).to.be.false;
+      expect(isExcludedPageType('https://example.com/search-engine-optimization/')).to.be.false;
+    });
+
+    it('should NOT exclude normal landing pages', () => {
+      expect(isExcludedPageType('https://example.com/products/widget')).to.be.false;
+      expect(isExcludedPageType('https://example.com/pricing')).to.be.false;
+      expect(isExcludedPageType('https://example.com/about-us')).to.be.false;
+      expect(isExcludedPageType('https://example.com/blog/post')).to.be.false;
+    });
+
+    it('should require path segments with leading slash', () => {
+      // The pattern requires /segment/ (leading and trailing slashes)
+      expect(isExcludedPageType('https://example.com/my-help')).to.be.false;
+      expect(isExcludedPageType('https://example.com/helpdesk')).to.be.false;
+    });
+  });
+
+  describe('fetchPaidPagesFromS3', () => {
+    it('should fetch and parse Ahrefs data from S3', async () => {
+      const ahrefsPages = [
+        {
+          url: 'https://example.com/page1',
+          topKeyword: 'kw1',
+          cpc: 1.5,
+          sum_traffic: 1000,
+          topKeywordBestPositionTitle: 'Title 1',
+        },
+        {
+          url: 'https://example.com/page2',
+          topKeyword: 'kw2',
+          cpc: 2.0,
+          sum_traffic: 2000,
+          topKeywordBestPositionTitle: 'Title 2',
+        },
+      ];
+      const mockS3 = createMockS3Client(sandbox, ahrefsPages);
+      const ctx = {
+        s3Client: mockS3,
+        env: { S3_IMPORTER_BUCKET_NAME: 'test-bucket' },
+        log: logStub,
+      };
+
+      const result = await fetchPaidPagesFromS3(ctx, 'site-123');
+
+      expect(result).to.be.instanceOf(Map);
+      expect(result.size).to.equal(2);
+      expect(result.get('https://example.com/page1')).to.deep.equal({
+        topKeyword: 'kw1',
+        cpc: 1.5,
+        sumTraffic: 1000,
+        serpTitle: 'Title 1',
+      });
+      expect(result.get('https://example.com/page2')).to.deep.equal({
+        topKeyword: 'kw2',
+        cpc: 2.0,
+        sumTraffic: 2000,
+        serpTitle: 'Title 2',
+      });
+    });
+
+    it('should default cpc to 0 and sumTraffic to 0 when missing', async () => {
+      const ahrefsPages = [
+        {
+          url: 'https://example.com/page1',
+          topKeyword: 'kw1',
+          topKeywordBestPositionTitle: 'Title',
+        },
+      ];
+      const mockS3 = createMockS3Client(sandbox, ahrefsPages);
+      const ctx = {
+        s3Client: mockS3,
+        env: { S3_IMPORTER_BUCKET_NAME: 'test-bucket' },
+        log: logStub,
+      };
+
+      const result = await fetchPaidPagesFromS3(ctx, 'site-123');
+
+      expect(result.get('https://example.com/page1').cpc).to.equal(0);
+      expect(result.get('https://example.com/page1').sumTraffic).to.equal(0);
+    });
+
+    it('should throw when S3 request fails', async () => {
+      const mockS3 = {
+        send: sandbox.stub().rejects(new Error('S3 access denied')),
+      };
+      const ctx = {
+        s3Client: mockS3,
+        env: { S3_IMPORTER_BUCKET_NAME: 'test-bucket' },
+        log: logStub,
+      };
+
+      await expect(fetchPaidPagesFromS3(ctx, 'site-123'))
+        .to.be.rejectedWith('S3 access denied');
+    });
+
+    it('should throw when JSON parsing fails', async () => {
+      const mockS3 = {
+        send: sandbox.stub().resolves({
+          Body: {
+            transformToString: () => 'invalid-json{',
+          },
+        }),
+      };
+      const ctx = {
+        s3Client: mockS3,
+        env: { S3_IMPORTER_BUCKET_NAME: 'test-bucket' },
+        log: logStub,
+      };
+
+      await expect(fetchPaidPagesFromS3(ctx, 'site-123'))
+        .to.be.rejected;
+    });
+
+    it('should throw when data is empty array', async () => {
+      const mockS3 = createMockS3Client(sandbox, []);
+      const ctx = {
+        s3Client: mockS3,
+        env: { S3_IMPORTER_BUCKET_NAME: 'test-bucket' },
+        log: logStub,
+      };
+
+      await expect(fetchPaidPagesFromS3(ctx, 'site-123'))
+        .to.be.rejectedWith(/Ahrefs paid-pages data is empty/);
+    });
+  });
+
+  describe('computePriorityScore', () => {
+    it('should compute WSIS score correctly', () => {
+      const page = { pageViews: 1000, bounceRate: 0.6, engagedScrollRate: 0.2 };
+      const ahrefsData = { cpc: 2.0 };
+      // wastedSpend = 2.0 * 1000 * 0.6 = 1200
+      // alignmentSignal = max(0.1, 1 - 0.2) = 0.8
+      // score = (1200 / 1000) * 0.8 = 0.96
+      const score = computePriorityScore(page, ahrefsData);
+      expect(score).to.be.closeTo(0.96, 0.001);
+    });
+
+    it('should handle zero CPC (score is 0)', () => {
+      const page = { pageViews: 1000, bounceRate: 0.6, engagedScrollRate: 0.2 };
+      const ahrefsData = { cpc: 0 };
+      const score = computePriorityScore(page, ahrefsData);
+      expect(score).to.equal(0);
+    });
+
+    it('should handle null ahrefsData (cpc defaults to 0)', () => {
+      const page = { pageViews: 1000, bounceRate: 0.6, engagedScrollRate: 0.2 };
+      const score = computePriorityScore(page, null);
+      expect(score).to.equal(0);
+    });
+
+    it('should handle null engagedScrollRate (defaults to 0.5 neutral)', () => {
+      const page = { pageViews: 1000, bounceRate: 0.6, engagedScrollRate: null };
+      const ahrefsData = { cpc: 2.0 };
+      // wastedSpend = 2.0 * 1000 * 0.6 = 1200
+      // alignmentSignal = max(0.1, 1 - 0.5) = 0.5
+      // score = (1200 / 1000) * 0.5 = 0.6
+      const score = computePriorityScore(page, ahrefsData);
+      expect(score).to.be.closeTo(0.6, 0.001);
+    });
+
+    it('should handle undefined engagedScrollRate (defaults to 0.5 neutral)', () => {
+      const page = { pageViews: 1000, bounceRate: 0.6 };
+      const ahrefsData = { cpc: 2.0 };
+      const score = computePriorityScore(page, ahrefsData);
+      // alignmentSignal = max(0.1, 1 - 0.5) = 0.5
+      expect(score).to.be.closeTo(0.6, 0.001);
+    });
+
+    it('should handle engagedScrollRate=0 (alignmentSignal is 1.0)', () => {
+      const page = { pageViews: 1000, bounceRate: 0.6, engagedScrollRate: 0 };
+      const ahrefsData = { cpc: 2.0 };
+      // wastedSpend = 1200
+      // alignmentSignal = max(0.1, 1 - 0) = 1.0
+      // score = 1.2 * 1.0 = 1.2
+      const score = computePriorityScore(page, ahrefsData);
+      expect(score).to.be.closeTo(1.2, 0.001);
+    });
+
+    it('should clamp engagedScrollRate=1.0 (alignmentSignal is 0.1)', () => {
+      const page = { pageViews: 1000, bounceRate: 0.6, engagedScrollRate: 1.0 };
+      const ahrefsData = { cpc: 2.0 };
+      // wastedSpend = 1200
+      // alignmentSignal = max(0.1, 1 - 1.0) = max(0.1, 0) = 0.1
+      // score = 1.2 * 0.1 = 0.12
+      const score = computePriorityScore(page, ahrefsData);
+      expect(score).to.be.closeTo(0.12, 0.001);
+    });
+
+    it('should handle high engagement scenario', () => {
+      const page = { pageViews: 500, bounceRate: 0.8, engagedScrollRate: 0.9 };
+      const ahrefsData = { cpc: 5.0 };
+      // wastedSpend = 5.0 * 500 * 0.8 = 2000
+      // alignmentSignal = max(0.1, 1 - 0.9) = max(0.1, 0.1) = 0.1
+      // score = (2000 / 1000) * 0.1 = 0.2
+      const score = computePriorityScore(page, ahrefsData);
+      expect(score).to.be.closeTo(0.2, 0.001);
+    });
+  });
+
+  describe('buildMystiqueMessage', () => {
+    it('should include all enriched fields', () => {
+      const mockSite = {
+        getId: () => 'site-1',
+        getDeliveryType: () => 'aem-edge',
+      };
+      const page = {
+        url: 'https://example.com/page1',
+        bounceRate: 0.6,
+        pageViews: 1000,
+        trafficLoss: 500,
+        priorityScore: 0.96,
+        cpc: 2.5,
+        sumTraffic: 5000,
+        topKeyword: 'keyword1',
+        serpTitle: 'SERP Title',
+        engagedScrollRate: 0.15,
+      };
+
+      const msg = buildMystiqueMessage(mockSite, 'audit-123', page);
+
+      expect(msg.type).to.equal('guidance:paid-ad-intent-gap');
+      expect(msg.observation).to.equal('Low-performing paid search pages detected with high bounce rates');
+      expect(msg.siteId).to.equal('site-1');
+      expect(msg.url).to.equal('https://example.com/page1');
+      expect(msg.auditId).to.equal('audit-123');
+      expect(msg.deliveryType).to.equal('aem-edge');
+      expect(msg.time).to.be.a('string');
+      expect(msg.data).to.deep.equal({
+        bounceRate: 0.6,
+        pageViews: 1000,
+        trafficLoss: 500,
+        priorityScore: 0.96,
+        cpc: 2.5,
+        sumTraffic: 5000,
+        topKeyword: 'keyword1',
+        serpTitle: 'SERP Title',
+        engagedScrollRate: 0.15,
+      });
+    });
   });
 
   describe('triggerPaidPagesImportStep', () => {
@@ -343,13 +721,12 @@ describe('Paid Keyword Optimizer Audit', () => {
     });
   });
 
-  describe('importTrafficAnalysisWeekSteps 1-4', () => {
-    it('steps 1-4 should NOT call enableImport', async () => {
+  describe('importTrafficAnalysisWeekSteps 1-3', () => {
+    it('steps 1-3 should NOT call enableImport', async () => {
       const steps = [
         importTrafficAnalysisWeekStep1,
         importTrafficAnalysisWeekStep2,
         importTrafficAnalysisWeekStep3,
-        importTrafficAnalysisWeekStep4,
       ];
 
       for (const step of steps) {
@@ -369,12 +746,11 @@ describe('Paid Keyword Optimizer Audit', () => {
       }
     });
 
-    it('steps 1-4 should return correct structure with week/year', async () => {
+    it('steps 1-3 should return correct structure with week/year', async () => {
       const steps = [
         importTrafficAnalysisWeekStep1,
         importTrafficAnalysisWeekStep2,
         importTrafficAnalysisWeekStep3,
-        importTrafficAnalysisWeekStep4,
       ];
 
       for (const step of steps) {
@@ -395,13 +771,12 @@ describe('Paid Keyword Optimizer Audit', () => {
       }
     });
 
-    it('all 5 steps should return different weeks (uniqueness check)', async () => {
+    it('all 4 steps should return different weeks (uniqueness check)', async () => {
       const steps = [
         importTrafficAnalysisWeekStep0,
         importTrafficAnalysisWeekStep1,
         importTrafficAnalysisWeekStep2,
         importTrafficAnalysisWeekStep3,
-        importTrafficAnalysisWeekStep4,
       ];
 
       const weekKeys = [];
@@ -418,26 +793,31 @@ describe('Paid Keyword Optimizer Audit', () => {
       }
 
       const uniqueKeys = new Set(weekKeys);
-      expect(uniqueKeys.size).to.equal(5);
+      expect(uniqueKeys.size).to.equal(4);
     });
   });
 
   describe('runPaidKeywordAnalysisStep', () => {
-    it('should run analysis and persist audit', async () => {
-      const mockAudit = {
+    let mockAudit;
+    let stepContext;
+
+    beforeEach(() => {
+      mockAudit = {
         getId: () => 'test-audit-id',
         getAuditType: () => 'ad-intent-mismatch',
         getFullAuditRef: () => 'www.test.com',
       };
 
-      const stepContext = {
+      stepContext = {
         ...context,
         site,
         finalUrl: auditUrl,
         audit: mockAudit,
         auditContext: {},
       };
+    });
 
+    it('should run analysis and persist audit', async () => {
       const result = await runPaidKeywordAnalysisStep(stepContext);
 
       expect(result).to.deep.equal({});
@@ -445,21 +825,7 @@ describe('Paid Keyword Optimizer Audit', () => {
     });
 
     it('should disable import if it was enabled in step 1', async () => {
-      const mockAudit = {
-        getId: () => 'test-audit-id',
-        getAuditType: () => 'ad-intent-mismatch',
-        getFullAuditRef: () => 'www.test.com',
-      };
-
-      const stepContext = {
-        ...context,
-        site,
-        finalUrl: auditUrl,
-        audit: mockAudit,
-        auditContext: {
-          importWasEnabled: true,
-        },
-      };
+      stepContext.auditContext = { importWasEnabled: true };
 
       await runPaidKeywordAnalysisStep(stepContext);
 
@@ -474,21 +840,8 @@ describe('Paid Keyword Optimizer Audit', () => {
         save: sandbox.stub().rejects(new Error('Database connection failed')),
       });
 
-      const mockAudit = {
-        getId: () => 'test-audit-id',
-        getAuditType: () => 'ad-intent-mismatch',
-        getFullAuditRef: () => 'www.test.com',
-      };
-
-      const stepContext = {
-        ...context,
-        site: siteWithSaveError,
-        finalUrl: auditUrl,
-        audit: mockAudit,
-        auditContext: {
-          importWasEnabled: true,
-        },
-      };
+      stepContext.site = siteWithSaveError;
+      stepContext.auditContext = { importWasEnabled: true };
 
       // Should not throw - audit should complete even if disable fails
       const result = await runPaidKeywordAnalysisStep(stepContext);
@@ -499,21 +852,7 @@ describe('Paid Keyword Optimizer Audit', () => {
     });
 
     it('should not disable import if it was not enabled in step 1', async () => {
-      const mockAudit = {
-        getId: () => 'test-audit-id',
-        getAuditType: () => 'ad-intent-mismatch',
-        getFullAuditRef: () => 'www.test.com',
-      };
-
-      const stepContext = {
-        ...context,
-        site,
-        finalUrl: auditUrl,
-        audit: mockAudit,
-        auditContext: {
-          importWasEnabled: false,
-        },
-      };
+      stepContext.auditContext = { importWasEnabled: false };
 
       await runPaidKeywordAnalysisStep(stepContext);
 
@@ -521,20 +860,6 @@ describe('Paid Keyword Optimizer Audit', () => {
     });
 
     it('should persist audit with analysis results', async () => {
-      const mockAudit = {
-        getId: () => 'test-audit-id',
-        getAuditType: () => 'ad-intent-mismatch',
-        getFullAuditRef: () => 'www.test.com',
-      };
-
-      const stepContext = {
-        ...context,
-        site,
-        finalUrl: auditUrl,
-        audit: mockAudit,
-        auditContext: {},
-      };
-
       await runPaidKeywordAnalysisStep(stepContext);
 
       const createCall = context.dataAccess.Audit.create.getCall(0).args[0];
@@ -544,24 +869,10 @@ describe('Paid Keyword Optimizer Audit', () => {
       expect(createCall.auditResult).to.have.property('predominantlyPaidCount');
     });
 
-    it('should send one message per qualifying page to mystique', async () => {
-      const mockAudit = {
-        getId: () => 'test-audit-id',
-        getAuditType: () => 'ad-intent-mismatch',
-        getFullAuditRef: () => 'www.test.com',
-      };
-
-      const stepContext = {
-        ...context,
-        site,
-        finalUrl: auditUrl,
-        audit: mockAudit,
-        auditContext: {},
-      };
-
+    it('should send enriched messages with WSIS scoring to mystique', async () => {
       await runPaidKeywordAnalysisStep(stepContext);
 
-      // Both pages have bounce rate > 0.3 threshold, so 2 messages should be sent
+      // Both pages have bounce rate >= 0.5 threshold, so 2 messages should be sent
       expect(context.sqs.sendMessage.callCount).to.equal(2);
 
       const message1 = context.sqs.sendMessage.getCall(0).args[1];
@@ -570,16 +881,17 @@ describe('Paid Keyword Optimizer Audit', () => {
       expect(message1.type).to.equal('guidance:paid-ad-intent-gap');
       expect(message2.type).to.equal('guidance:paid-ad-intent-gap');
 
-      // Each message should have a single url and page-specific data
-      expect(message1.url).to.equal('https://example.com/page1');
+      // Each message should have enriched fields
       expect(message1.data).to.have.property('bounceRate');
       expect(message1.data).to.have.property('pageViews');
+      expect(message1.data).to.have.property('priorityScore');
+      expect(message1.data).to.have.property('cpc');
+      expect(message1.data).to.have.property('sumTraffic');
+      expect(message1.data).to.have.property('topKeyword');
+      expect(message1.data).to.have.property('serpTitle');
+      expect(message1.data).to.have.property('engagedScrollRate');
 
-      expect(message2.url).to.equal('https://example.com/page2');
-      expect(message2.data).to.have.property('bounceRate');
-      expect(message2.data).to.have.property('pageViews');
-
-      // Messages must use the NEW audit ID (from AuditModel.create), not the step-1 audit ID
+      // Messages must use the NEW audit ID
       expect(message1.auditId).to.equal('new-audit-id');
       expect(message2.auditId).to.equal('new-audit-id');
     });
@@ -590,18 +902,10 @@ describe('Paid Keyword Optimizer Audit', () => {
 
       context.dataAccess.Audit.create.resolves({ getId: () => newAuditId });
 
-      const mockAudit = {
+      stepContext.audit = {
         getId: () => step1AuditId,
         getAuditType: () => 'ad-intent-mismatch',
         getFullAuditRef: () => 'www.test.com',
-      };
-
-      const stepContext = {
-        ...context,
-        site,
-        finalUrl: auditUrl,
-        audit: mockAudit,
-        auditContext: {},
       };
 
       await runPaidKeywordAnalysisStep(stepContext);
@@ -614,36 +918,341 @@ describe('Paid Keyword Optimizer Audit', () => {
       }
     });
 
-    it('should not send to mystique when no qualifying pages', async () => {
-      // Override to return pages with low bounce rate
+    it('should return empty when Ahrefs data fetch fails (audit terminates)', async () => {
+      context.s3Client.send.rejects(new Error('S3 not found'));
+
+      const result = await runPaidKeywordAnalysisStep(stepContext);
+
+      expect(result).to.deep.equal({});
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(logStub.error).to.have.been.calledWithMatch(/Audit terminated: Ahrefs data unavailable/);
+    });
+
+    it('should not send to mystique when no predominantly paid pages found', async () => {
+      // Override to return no paid pages
+      context.athenaClient.query.resolves([]);
+
+      const result = await runPaidKeywordAnalysisStep(stepContext);
+
+      expect(result).to.deep.equal({});
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(logStub.info).to.have.been.calledWithMatch(/No predominantly paid pages found/);
+    });
+
+    it('should filter out excluded URL patterns', async () => {
       context.athenaClient.query.resolves([
         {
-          path: '/page1',
+          path: '/help/article',
           trf_type: 'paid',
           trf_channel: 'search',
           pageviews: '1000',
-          bounce_rate: '0.1', // Below 0.3 threshold
+          bounce_rate: '0.7',
+          traffic_loss: '700',
+          engaged_scroll_rate: '0.1',
+        },
+        {
+          path: '/products/widget',
+          trf_type: 'paid',
+          trf_channel: 'search',
+          pageviews: '1000',
+          bounce_rate: '0.7',
+          traffic_loss: '700',
+          engaged_scroll_rate: '0.1',
         },
       ]);
 
-      const mockAudit = {
-        getId: () => 'test-audit-id',
-        getAuditType: () => 'ad-intent-mismatch',
-        getFullAuditRef: () => 'www.test.com',
-      };
-
-      const stepContext = {
-        ...context,
-        site,
-        finalUrl: auditUrl,
-        audit: mockAudit,
-        auditContext: {},
-      };
+      const ahrefsPages = [
+        {
+          url: 'https://example.com/help/article',
+          topKeyword: 'kw1',
+          cpc: 2.0,
+          sum_traffic: 1000,
+          topKeywordBestPositionTitle: 'Title',
+        },
+        {
+          url: 'https://example.com/products/widget',
+          topKeyword: 'kw2',
+          cpc: 2.0,
+          sum_traffic: 1000,
+          topKeywordBestPositionTitle: 'Title',
+        },
+      ];
+      stepContext.s3Client = createMockS3Client(sandbox, ahrefsPages);
 
       await runPaidKeywordAnalysisStep(stepContext);
 
+      // Only the products page should be sent (help is excluded)
+      expect(context.sqs.sendMessage.callCount).to.equal(1);
+      const sentMsg = context.sqs.sendMessage.getCall(0).args[1];
+      expect(sentMsg.url).to.equal('https://example.com/products/widget');
+    });
+
+    it('should filter pages below bounce rate threshold (0.5)', async () => {
+      context.athenaClient.query.resolves([
+        {
+          path: '/page-high-bounce',
+          trf_type: 'paid',
+          trf_channel: 'search',
+          pageviews: '1000',
+          bounce_rate: '0.7', // above 0.5
+          traffic_loss: '700',
+          engaged_scroll_rate: '0.15',
+        },
+        {
+          path: '/page-low-bounce',
+          trf_type: 'paid',
+          trf_channel: 'search',
+          pageviews: '1000',
+          bounce_rate: '0.3', // below 0.5
+          traffic_loss: '300',
+          engaged_scroll_rate: '0.15',
+        },
+      ]);
+
+      const ahrefsPages = [
+        {
+          url: 'https://example.com/page-high-bounce',
+          topKeyword: 'kw1',
+          cpc: 2.0,
+          sum_traffic: 1000,
+          topKeywordBestPositionTitle: 'Title',
+        },
+        {
+          url: 'https://example.com/page-low-bounce',
+          topKeyword: 'kw2',
+          cpc: 2.0,
+          sum_traffic: 1000,
+          topKeywordBestPositionTitle: 'Title',
+        },
+      ];
+      stepContext.s3Client = createMockS3Client(sandbox, ahrefsPages);
+
+      await runPaidKeywordAnalysisStep(stepContext);
+
+      // Only the high-bounce page should be sent
+      expect(context.sqs.sendMessage.callCount).to.equal(1);
+      const sentMsg = context.sqs.sendMessage.getCall(0).args[1];
+      expect(sentMsg.url).to.equal('https://example.com/page-high-bounce');
+    });
+
+    it('should cap pages to AD_INTENT_MAX_PAGES when set', async () => {
+      // Create 10 paid pages
+      const athenaRows = [];
+      const ahrefsPages = [];
+      for (let i = 0; i < 10; i += 1) {
+        athenaRows.push({
+          path: `/page${i}`,
+          trf_type: 'paid',
+          trf_channel: 'search',
+          pageviews: '1000',
+          bounce_rate: '0.7',
+          traffic_loss: '700',
+          engaged_scroll_rate: '0.1',
+        });
+        ahrefsPages.push({
+          url: `https://example.com/page${i}`,
+          topKeyword: `kw${i}`,
+          cpc: 2.0 + i * 0.1,
+          sum_traffic: 1000 + i * 100,
+          topKeywordBestPositionTitle: `Title ${i}`,
+        });
+      }
+      context.athenaClient.query.resolves(athenaRows);
+      stepContext.s3Client = createMockS3Client(sandbox, ahrefsPages);
+      context.env.AD_INTENT_MAX_PAGES = '5';
+
+      await runPaidKeywordAnalysisStep(stepContext);
+
+      expect(context.sqs.sendMessage.callCount).to.equal(5);
+    });
+
+    it('should send all pages when AD_INTENT_MAX_PAGES is 0 (unlimited)', async () => {
+      // Create 10 paid pages
+      const athenaRows = [];
+      const ahrefsPages = [];
+      for (let i = 0; i < 10; i += 1) {
+        athenaRows.push({
+          path: `/page${i}`,
+          trf_type: 'paid',
+          trf_channel: 'search',
+          pageviews: '1000',
+          bounce_rate: '0.7',
+          traffic_loss: '700',
+          engaged_scroll_rate: '0.1',
+        });
+        ahrefsPages.push({
+          url: `https://example.com/page${i}`,
+          topKeyword: `kw${i}`,
+          cpc: 2.0,
+          sum_traffic: 1000,
+          topKeywordBestPositionTitle: `Title ${i}`,
+        });
+      }
+      context.athenaClient.query.resolves(athenaRows);
+      stepContext.s3Client = createMockS3Client(sandbox, ahrefsPages);
+      context.env.AD_INTENT_MAX_PAGES = '0';
+
+      await runPaidKeywordAnalysisStep(stepContext);
+
+      expect(context.sqs.sendMessage.callCount).to.equal(10);
+    });
+
+    it('should emit pipeline summary log', async () => {
+      await runPaidKeywordAnalysisStep(stepContext);
+
+      expect(logStub.info).to.have.been.calledWithMatch(/Filter pipeline for site/);
+      expect(logStub.info).to.have.been.calledWithMatch(/paid pages.*URL-pass.*bounce-pass.*after scoring\+cap/);
+    });
+
+    it('should filter out pages with very low priority score (<=0.01)', async () => {
+      context.athenaClient.query.resolves([
+        {
+          path: '/low-score-page',
+          trf_type: 'paid',
+          trf_channel: 'search',
+          pageviews: '1000',
+          bounce_rate: '0.5',
+          traffic_loss: '500',
+          engaged_scroll_rate: '0.99',
+        },
+      ]);
+
+      // Very low CPC to get a very low score
+      const ahrefsPages = [
+        {
+          url: 'https://example.com/low-score-page',
+          topKeyword: 'kw',
+          cpc: 0.001,
+          sum_traffic: 10,
+          topKeywordBestPositionTitle: 'Title',
+        },
+      ];
+      context.s3Client = createMockS3Client(sandbox, ahrefsPages);
+
+      await runPaidKeywordAnalysisStep(stepContext);
+
+      // Score is very small, should be filtered by > 0.01 check
       expect(context.sqs.sendMessage).to.not.have.been.called;
-      expect(logStub.info).to.have.been.calledWithMatch(/No pages with bounce rate/);
+      expect(logStub.info).to.have.been.calledWithMatch(/No pages passed pipeline/);
+    });
+
+    it('should sort pages by priority score descending', async () => {
+      context.athenaClient.query.resolves([
+        {
+          path: '/low-cpc',
+          trf_type: 'paid',
+          trf_channel: 'search',
+          pageviews: '1000',
+          bounce_rate: '0.7',
+          traffic_loss: '700',
+          engaged_scroll_rate: '0.2',
+        },
+        {
+          path: '/high-cpc',
+          trf_type: 'paid',
+          trf_channel: 'search',
+          pageviews: '1000',
+          bounce_rate: '0.7',
+          traffic_loss: '700',
+          engaged_scroll_rate: '0.2',
+        },
+      ]);
+
+      const ahrefsPages = [
+        {
+          url: 'https://example.com/low-cpc',
+          topKeyword: 'kw1',
+          cpc: 1.0,
+          sum_traffic: 500,
+          topKeywordBestPositionTitle: 'Low CPC',
+        },
+        {
+          url: 'https://example.com/high-cpc',
+          topKeyword: 'kw2',
+          cpc: 10.0,
+          sum_traffic: 5000,
+          topKeywordBestPositionTitle: 'High CPC',
+        },
+      ];
+      stepContext.s3Client = createMockS3Client(sandbox, ahrefsPages);
+
+      await runPaidKeywordAnalysisStep(stepContext);
+
+      expect(context.sqs.sendMessage.callCount).to.equal(2);
+      const msg1 = context.sqs.sendMessage.getCall(0).args[1];
+      const msg2 = context.sqs.sendMessage.getCall(1).args[1];
+      // Higher CPC page should be first (higher priority score)
+      expect(msg1.url).to.equal('https://example.com/high-cpc');
+      expect(msg2.url).to.equal('https://example.com/low-cpc');
+    });
+
+    it('should enrich pages with Ahrefs data defaults when URL not in Ahrefs map', async () => {
+      context.athenaClient.query.resolves([
+        {
+          path: '/unknown-page',
+          trf_type: 'paid',
+          trf_channel: 'search',
+          pageviews: '1000',
+          bounce_rate: '0.7',
+          traffic_loss: '700',
+          engaged_scroll_rate: '0.1',
+        },
+      ]);
+
+      // Ahrefs has data for a different URL
+      const ahrefsPages = [
+        {
+          url: 'https://example.com/other-page',
+          topKeyword: 'kw',
+          cpc: 2.0,
+          sum_traffic: 1000,
+          topKeywordBestPositionTitle: 'Title',
+        },
+      ];
+      context.s3Client = createMockS3Client(sandbox, ahrefsPages);
+
+      await runPaidKeywordAnalysisStep(stepContext);
+
+      // Page with no ahrefs data has cpc=0, so priorityScore=0 and gets filtered out
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('should handle full pipeline integration: Ahrefs fetch -> URL filter -> bounce -> score -> cap', async () => {
+      // 5 pages: 1 excluded URL, 1 low bounce, 1 no ahrefs match, 2 good
+      context.athenaClient.query.resolves([
+        {
+          path: '/help/article', trf_type: 'paid', trf_channel: 'search', pageviews: '1000', bounce_rate: '0.8', traffic_loss: '800', engaged_scroll_rate: '0.1',
+        },
+        {
+          path: '/low-bounce', trf_type: 'paid', trf_channel: 'search', pageviews: '1000', bounce_rate: '0.2', traffic_loss: '200', engaged_scroll_rate: '0.1',
+        },
+        {
+          path: '/no-ahrefs', trf_type: 'paid', trf_channel: 'search', pageviews: '1000', bounce_rate: '0.8', traffic_loss: '800', engaged_scroll_rate: '0.1',
+        },
+        {
+          path: '/good-page1', trf_type: 'paid', trf_channel: 'search', pageviews: '2000', bounce_rate: '0.7', traffic_loss: '1400', engaged_scroll_rate: '0.2',
+        },
+        {
+          path: '/good-page2', trf_type: 'paid', trf_channel: 'search', pageviews: '1500', bounce_rate: '0.6', traffic_loss: '900', engaged_scroll_rate: '0.3',
+        },
+      ]);
+
+      const ahrefsPages = [
+        { url: 'https://example.com/help/article', topKeyword: 'kw', cpc: 3.0, sum_traffic: 2000, topKeywordBestPositionTitle: 'T' },
+        { url: 'https://example.com/low-bounce', topKeyword: 'kw', cpc: 2.0, sum_traffic: 1000, topKeywordBestPositionTitle: 'T' },
+        // /no-ahrefs is not in this list
+        { url: 'https://example.com/good-page1', topKeyword: 'kw1', cpc: 5.0, sum_traffic: 5000, topKeywordBestPositionTitle: 'Good 1' },
+        { url: 'https://example.com/good-page2', topKeyword: 'kw2', cpc: 3.0, sum_traffic: 3000, topKeywordBestPositionTitle: 'Good 2' },
+      ];
+      stepContext.s3Client = createMockS3Client(sandbox, ahrefsPages);
+
+      await runPaidKeywordAnalysisStep(stepContext);
+
+      // Only 2 good pages should pass the pipeline
+      expect(context.sqs.sendMessage.callCount).to.equal(2);
+      // good-page1 has higher score so it's first
+      const msg1 = context.sqs.sendMessage.getCall(0).args[1];
+      expect(msg1.url).to.equal('https://example.com/good-page1');
     });
   });
 
@@ -895,7 +1504,6 @@ describe('Paid Keyword Optimizer Audit', () => {
     });
 
     it('should handle path not in traffic map when getting paid row', async () => {
-      // Create a predominantly paid page but the traffic map doesn't have the path when trying to get paid row
       context.athenaClient.query.resolves([
         {
           path: '/page1',
@@ -919,12 +1527,12 @@ describe('Paid Keyword Optimizer Audit', () => {
       expect(result.auditResult.predominantlyPaidCount).to.equal(1);
     });
 
-    it('should use 5-week temporal condition', async () => {
+    it('should use 4-week temporal condition (numSeries: 4)', async () => {
       const result = await paidKeywordOptimizerRunner(auditUrl, context, site);
 
-      // The temporalCondition should contain at least 5 week clauses
+      // The temporalCondition should contain at least 4 week clauses
       const weekClauses = result.auditResult.temporalCondition.split(' OR ');
-      expect(weekClauses.length).to.be.at.least(5);
+      expect(weekClauses.length).to.be.at.least(4);
     });
   });
 
@@ -937,14 +1545,14 @@ describe('Paid Keyword Optimizer Audit', () => {
             {
               path: '/page1',
               url: 'https://example.com/page1',
-              bounceRate: 0.5, // Above 0.3 threshold
+              bounceRate: 0.6, // Above 0.5 threshold
               pageViews: 1000,
               trafficLoss: 500,
             },
             {
               path: '/page2',
               url: 'https://example.com/page2',
-              bounceRate: 0.4, // Above 0.3 threshold
+              bounceRate: 0.5, // At 0.5 threshold
               pageViews: 800,
               trafficLoss: 320,
             },
@@ -962,16 +1570,16 @@ describe('Paid Keyword Optimizer Audit', () => {
 
       expect(message1.type).to.equal('guidance:paid-ad-intent-gap');
       expect(message1.url).to.equal('https://example.com/page1');
-      expect(message1.data.bounceRate).to.equal(0.5);
+      expect(message1.data.bounceRate).to.equal(0.6);
       expect(message1.data.pageViews).to.equal(1000);
 
       expect(message2.type).to.equal('guidance:paid-ad-intent-gap');
       expect(message2.url).to.equal('https://example.com/page2');
-      expect(message2.data.bounceRate).to.equal(0.4);
+      expect(message2.data.bounceRate).to.equal(0.5);
       expect(message2.data.pageViews).to.equal(800);
     });
 
-    it('should filter pages by bounce rate threshold', async () => {
+    it('should filter pages by bounce rate threshold (0.5)', async () => {
       const auditData = {
         id: 'test-audit-id',
         auditResult: {
@@ -979,14 +1587,14 @@ describe('Paid Keyword Optimizer Audit', () => {
             {
               path: '/high-bounce',
               url: 'https://example.com/high-bounce',
-              bounceRate: 0.5, // Above 0.3 threshold
+              bounceRate: 0.6, // Above 0.5 threshold
               pageViews: 1000,
               trafficLoss: 500,
             },
             {
               path: '/low-bounce',
               url: 'https://example.com/low-bounce',
-              bounceRate: 0.2, // Below 0.3 threshold
+              bounceRate: 0.3, // Below 0.5 threshold
               pageViews: 800,
               trafficLoss: 160,
             },
@@ -1001,7 +1609,7 @@ describe('Paid Keyword Optimizer Audit', () => {
 
       const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
       expect(sentMessage.url).to.equal('https://example.com/high-bounce');
-      expect(sentMessage.data.bounceRate).to.equal(0.5);
+      expect(sentMessage.data.bounceRate).to.equal(0.6);
     });
 
     it('should not send message when no pages exceed bounce rate threshold', async () => {
@@ -1012,7 +1620,7 @@ describe('Paid Keyword Optimizer Audit', () => {
             {
               path: '/low-bounce',
               url: 'https://example.com/low-bounce',
-              bounceRate: 0.2, // Below 0.3 threshold
+              bounceRate: 0.3, // Below 0.5 threshold
               pageViews: 800,
               trafficLoss: 160,
             },
@@ -1058,7 +1666,7 @@ describe('Paid Keyword Optimizer Audit', () => {
             {
               path: '/page1',
               url: 'https://example.com/page1',
-              bounceRate: 0.5,
+              bounceRate: 0.6,
               pageViews: 1000,
               trafficLoss: 500,
             },
@@ -1081,7 +1689,7 @@ describe('Paid Keyword Optimizer Audit', () => {
             {
               path: '/page1',
               url: 'https://example.com/page1',
-              bounceRate: 0.5,
+              bounceRate: 0.6,
               pageViews: 1000,
               trafficLoss: 500,
             },
@@ -1098,7 +1706,7 @@ describe('Paid Keyword Optimizer Audit', () => {
       expect(sentMessage.url).to.equal('https://example.com/page1');
       expect(sentMessage.auditId).to.equal('test-audit-id');
       expect(sentMessage.deliveryType).to.equal('aem-edge');
-      expect(sentMessage.data).to.have.property('bounceRate', 0.5);
+      expect(sentMessage.data).to.have.property('bounceRate', 0.6);
       expect(sentMessage.data).to.have.property('pageViews', 1000);
       expect(sentMessage.data).to.have.property('trafficLoss', 500);
     });
@@ -1111,7 +1719,7 @@ describe('Paid Keyword Optimizer Audit', () => {
             {
               path: '/page1',
               url: 'https://example.com/page1',
-              bounceRate: 0.5,
+              bounceRate: 0.6,
               pageViews: 1000,
               trafficLoss: 500,
             },
@@ -1125,7 +1733,7 @@ describe('Paid Keyword Optimizer Audit', () => {
       expect(logStub.info).to.have.been.calledWithMatch(/Completed mystique evaluation step/);
     });
 
-    it('should handle pages with bounce rate exactly at threshold', async () => {
+    it('should handle pages with bounce rate exactly at threshold (0.5)', async () => {
       const auditData = {
         id: 'test-audit-id',
         auditResult: {
@@ -1133,7 +1741,7 @@ describe('Paid Keyword Optimizer Audit', () => {
             {
               path: '/page1',
               url: 'https://example.com/page1',
-              bounceRate: 0.3, // Exactly at threshold
+              bounceRate: 0.5, // Exactly at threshold
               pageViews: 1000,
               trafficLoss: 300,
             },
@@ -1146,7 +1754,7 @@ describe('Paid Keyword Optimizer Audit', () => {
       expect(context.sqs.sendMessage.callCount).to.equal(1);
       const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
       expect(sentMessage.url).to.equal('https://example.com/page1');
-      expect(sentMessage.data.bounceRate).to.equal(0.3);
+      expect(sentMessage.data.bounceRate).to.equal(0.5);
     });
   });
 });

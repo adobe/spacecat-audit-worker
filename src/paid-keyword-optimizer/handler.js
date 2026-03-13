@@ -15,6 +15,7 @@ import {
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import { getWeekInfo, getTemporalCondition, getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getLowPerformingPaidPagesTemplate } from './queries.js';
@@ -22,9 +23,9 @@ import { getLowPerformingPaidPagesTemplate } from './queries.js';
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 // Configurable thresholds
-const CUT_OFF_BOUNCE_RATE = 0.3;
+const CUT_OFF_BOUNCE_RATE = 0.5;
 const PREDOMINANT_TRAFFIC_PCT = 80;
-const PAGE_VIEW_THRESHOLD = 1000;
+const PAGE_VIEW_THRESHOLD = 5000;
 
 // Import type constant
 const IMPORT_AHREF_PAID_PAGES = 'ahref-paid-pages';
@@ -34,6 +35,74 @@ const AUDIT_CONSTANTS = {
   GUIDANCE_TYPE: 'guidance:paid-ad-intent-gap',
   OBSERVATION: 'Low-performing paid search pages detected with high bounce rates',
 };
+
+const EXCLUDE_URL_PATTERNS = [
+  /\/(help|support|faq|docs|documentation)\//i,
+  /\/(cart|checkout|order|payment)\//i,
+  /\/(legal|privacy|terms|cookie-policy)\//i,
+  /\/(login|signin|register|signup|account)\//i,
+  /\/(search|search-results|results)\//i,
+  /\/(thank-you|confirmation)\//i,
+  /\/(404|error|not-found)\//i,
+  /\/(unsubscribe|preferences|manage-subscription)\//i,
+  /\/(api|webhook)\//i,
+  /\/(status|system-status)\//i,
+];
+
+/**
+ * Checks if a URL matches any excluded page type pattern
+ * @param {string} url - URL to check
+ * @returns {boolean} True if the URL should be excluded
+ */
+function isExcludedPageType(url) {
+  return EXCLUDE_URL_PATTERNS.some((pattern) => pattern.test(url));
+}
+
+/**
+ * Fetches Ahrefs paid-pages data from S3 and returns a Map keyed by URL
+ * @param {Object} context - Execution context with s3Client, env, and log
+ * @param {string} siteId - Site ID
+ * @returns {Promise<Map>} Map of URL to Ahrefs data
+ */
+async function fetchPaidPagesFromS3(context, siteId) {
+  const { s3Client, env } = context;
+  const bucketName = env.S3_IMPORTER_BUCKET_NAME;
+  const key = `metrics/${siteId}/ahrefs/paid-pages.json`;
+
+  const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
+  const response = await s3Client.send(command);
+  const bodyString = await response.Body.transformToString();
+  const pages = JSON.parse(bodyString);
+
+  const map = new Map();
+  for (const page of pages) {
+    map.set(page.url, {
+      topKeyword: page.topKeyword,
+      cpc: page.cpc || 0,
+      sumTraffic: page.sum_traffic || 0,
+      serpTitle: page.topKeywordBestPositionTitle,
+    });
+  }
+
+  if (map.size === 0) {
+    throw new Error(`Ahrefs paid-pages data is empty for site ${siteId} (key: ${key})`);
+  }
+
+  return map;
+}
+
+/**
+ * Computes a Wasted-Spend Intent Score (WSIS) for a page
+ * @param {Object} page - Page data with pageViews, bounceRate, engagedScrollRate
+ * @param {Object} ahrefsData - Ahrefs data with cpc
+ * @returns {number} Priority score
+ */
+function computePriorityScore(page, ahrefsData) {
+  const cpc = ahrefsData?.cpc || 0;
+  const wastedSpend = cpc * page.pageViews * page.bounceRate;
+  const alignmentSignal = Math.max(0.1, 1 - (page.engagedScrollRate ?? 0.5));
+  return (wastedSpend / 1000) * alignmentSignal;
+}
 
 /**
  * Checks if a specific import type is enabled for the site
@@ -79,7 +148,6 @@ function getConfig(env) {
     RUM_METRICS_DATABASE: rumMetricsDatabase,
     RUM_METRICS_COMPACT_TABLE: rumMetricsCompactTable,
     S3_IMPORTER_BUCKET_NAME: bucketName,
-    PAID_DATA_THRESHOLD: paidDataThreshold,
   } = env;
 
   if (!bucketName) {
@@ -90,7 +158,7 @@ function getConfig(env) {
     rumMetricsDatabase: rumMetricsDatabase ?? 'rum_metrics',
     rumMetricsCompactTable: rumMetricsCompactTable ?? 'compact_metrics',
     bucketName,
-    pageViewThreshold: paidDataThreshold ?? PAGE_VIEW_THRESHOLD,
+    pageViewThreshold: PAGE_VIEW_THRESHOLD,
     athenaTemp: `s3://${bucketName}/rum-metrics-compact/temp/out`,
   };
 }
@@ -247,15 +315,21 @@ function buildMystiqueMessage(site, auditId, page) {
       bounceRate: page.bounceRate,
       pageViews: page.pageViews,
       trafficLoss: page.trafficLoss,
+      priorityScore: page.priorityScore,
+      cpc: page.cpc,
+      sumTraffic: page.sumTraffic,
+      topKeyword: page.topKeyword,
+      serpTitle: page.serpTitle,
+      engagedScrollRate: page.engagedScrollRate,
     },
   };
 }
 
 /**
  * Factory function that creates a traffic-analysis import step for a specific week index.
- * Week index 0 = oldest week in the 5-week lookback, index 4 = most recent.
+ * Week index 0 = oldest week in the 4-week lookback, index 3 = most recent.
  * Only weekIndex 0 enables the traffic-analysis import on the site config.
- * @param {number} weekIndex - Index into the getLastNumberOfWeeks(5) array
+ * @param {number} weekIndex - Index into the getLastNumberOfWeeks(4) array
  * @returns {Function} Step handler function
  */
 function createTrafficAnalysisImportStep(weekIndex) {
@@ -263,11 +337,11 @@ function createTrafficAnalysisImportStep(weekIndex) {
     const { site, finalUrl, log } = context;
     const siteId = site.getId();
 
-    const weeks = getLastNumberOfWeeks(5);
+    const weeks = getLastNumberOfWeeks(4);
     const { week, year } = weeks[weekIndex];
 
     log.info(
-      `[ad-intent-mismatch] [Site: ${finalUrl}] Import step ${weekIndex + 1}/5: `
+      `[ad-intent-mismatch] [Site: ${finalUrl}] Import step ${weekIndex + 1}/4: `
       + `Triggering traffic-analysis import for week ${week}/${year}`,
     );
 
@@ -305,7 +379,6 @@ export const importTrafficAnalysisWeekStep0 = createTrafficAnalysisImportStep(0)
 export const importTrafficAnalysisWeekStep1 = createTrafficAnalysisImportStep(1);
 export const importTrafficAnalysisWeekStep2 = createTrafficAnalysisImportStep(2);
 export const importTrafficAnalysisWeekStep3 = createTrafficAnalysisImportStep(3);
-export const importTrafficAnalysisWeekStep4 = createTrafficAnalysisImportStep(4);
 
 /**
  * Main audit runner for paid keyword optimizer (used by step 2)
@@ -324,9 +397,9 @@ export async function paidKeywordOptimizerRunner(auditUrl, context, site) {
     `[ad-intent-mismatch] [Site: ${auditUrl}] Querying Athena metrics for low-performing paid pages (siteId: ${siteId})`,
   );
 
-  // Get temporal parameters (5 weeks back from current week)
+  // Get temporal parameters (4 weeks back from current week)
   const { week, year } = getWeekInfo();
-  const temporalCondition = getTemporalCondition({ week, year, numSeries: 5 });
+  const temporalCondition = getTemporalCondition({ week, year, numSeries: 4 });
 
   const athenaClient = AWSAthenaClient.fromContext(context, `${config.athenaTemp}/ad-intent-mismatch/${siteId}-${Date.now()}`);
 
@@ -437,7 +510,12 @@ export async function triggerPaidPagesImportStep(context) {
  * 1. Disables the import if it was enabled in step 1
  * 2. Runs Athena analysis
  * 3. Updates the audit with results
- * 4. Sends qualifying pages to Mystique
+ * 4. Fetches Ahrefs data from S3 (mandatory)
+ * 5. Applies URL pattern exclusion
+ * 6. Applies bounce rate filter
+ * 7. Computes WSIS priority score
+ * 8. Caps to top N pages
+ * 9. Sends enriched messages to Mystique
  * @param {Object} context - Step context
  * @returns {Promise<Object>} Step result
  */
@@ -477,34 +555,71 @@ export async function runPaidKeywordAnalysisStep(context) {
 
   log.debug(`[ad-intent-mismatch] [Site: ${finalUrl}] Audit updated with analysis results`);
 
-  // Send qualifying pages to Mystique
   const { auditResult } = result;
-  /* c8 ignore next 2 - defensive fallback: paidKeywordOptimizerRunner always returns an array */
-  const qualifyingPages = (auditResult.predominantlyPaidPages || [])
-    .filter((page) => page.bounceRate >= CUT_OFF_BOUNCE_RATE);
+  const searchPages = auditResult.predominantlyPaidPages || [];
 
-  if (qualifyingPages.length === 0) {
-    log.info(
-      `[ad-intent-mismatch] [Site: ${finalUrl}] No pages with bounce rate >= ${CUT_OFF_BOUNCE_RATE} found; skipping mystique`,
-    );
+  // Fetch Ahrefs data (mandatory — terminate if fails)
+  let ahrefsMap;
+  try {
+    ahrefsMap = await fetchPaidPagesFromS3(context, siteId);
+  } catch (error) {
+    log.error(`[ad-intent-mismatch] [Site: ${finalUrl}] Audit terminated: Ahrefs data unavailable for site ${siteId}. Reason: ${error.message}`);
     return {};
   }
 
-  log.info(
-    `[ad-intent-mismatch] [Site: ${finalUrl}] Found ${qualifyingPages.length} pages with high bounce rate`,
+  // Check for empty traffic data
+  if (searchPages.length === 0) {
+    log.info(`[ad-intent-mismatch] [Site: ${finalUrl}] No predominantly paid pages found; skipping mystique`);
+    return {};
+  }
+
+  // URL pattern exclusion
+  const urlFilteredPages = searchPages.filter((page) => !isExcludedPageType(page.url));
+
+  // Bounce rate filter
+  const bounceFilteredPages = urlFilteredPages.filter(
+    (page) => page.bounceRate >= CUT_OFF_BOUNCE_RATE,
   );
 
-  // Send one message per qualifying page
-  await Promise.all(qualifyingPages.map((page) => {
+  // Enrich with Ahrefs data and compute priority score
+  const MAX_PAGES = parseInt(env.AD_INTENT_MAX_PAGES || '10', 10);
+
+  const rankedPages = bounceFilteredPages
+    .map((page) => {
+      const ahrefs = ahrefsMap.get(page.url) || {};
+      return {
+        ...page,
+        cpc: ahrefs.cpc || 0,
+        sumTraffic: ahrefs.sumTraffic || 0,
+        topKeyword: ahrefs.topKeyword || '',
+        serpTitle: ahrefs.serpTitle || '',
+        priorityScore: computePriorityScore(page, ahrefs),
+      };
+    })
+    .filter((page) => page.priorityScore > 0.01)
+    .sort((a, b) => b.priorityScore - a.priorityScore)
+    .slice(0, MAX_PAGES > 0 ? MAX_PAGES : undefined);
+
+  // Pipeline summary log
+  log.info(
+    `[ad-intent-mismatch] Filter pipeline for site ${siteId}: `
+    + `${searchPages.length} paid pages → ${urlFilteredPages.length} URL-pass `
+    + `→ ${bounceFilteredPages.length} bounce-pass → ${rankedPages.length} after scoring+cap`,
+  );
+
+  if (rankedPages.length === 0) {
+    log.info(`[ad-intent-mismatch] [Site: ${finalUrl}] No pages passed pipeline; skipping mystique`);
+    return {};
+  }
+
+  // Send enriched messages
+  await Promise.all(rankedPages.map((page) => {
     const mystiqueMessage = buildMystiqueMessage(site, newAuditId, page);
-    log.info(
-      `[ad-intent-mismatch] [Site: ${finalUrl}] Sending message for ${page.url} to mystique: `
-      + `${JSON.stringify(mystiqueMessage, null, 2)}`,
-    );
+    log.info(`[ad-intent-mismatch] [Site: ${finalUrl}] Sending message for ${page.url}`);
     return sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
   }));
 
-  log.info(`[ad-intent-mismatch] [Site: ${finalUrl}] Step 2 complete - sent ${qualifyingPages.length} messages`);
+  log.info(`[ad-intent-mismatch] [Site: ${finalUrl}] Step complete - sent ${rankedPages.length} messages`);
 
   return {};
 }
@@ -542,6 +657,19 @@ export async function sendToMystique(auditUrl, auditData, context, site) {
   log.info(`[ad-intent-mismatch] [Site: ${auditUrl}] Completed mystique evaluation step - sent ${qualifyingPages.length} messages`);
 }
 
+export {
+  isExcludedPageType,
+  fetchPaidPagesFromS3,
+  computePriorityScore,
+  buildMystiqueMessage,
+  buildPathTrafficMap,
+  isPredominantlyPaid,
+  getPaidTrafficRow,
+  transformResultItem,
+  getConfig,
+  EXCLUDE_URL_PATTERNS,
+};
+
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .addStep('triggerPaidPagesImportStep', triggerPaidPagesImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
@@ -549,6 +677,5 @@ export default new AuditBuilder()
   .addStep('importTrafficAnalysisWeekStep1', importTrafficAnalysisWeekStep1, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('importTrafficAnalysisWeekStep2', importTrafficAnalysisWeekStep2, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('importTrafficAnalysisWeekStep3', importTrafficAnalysisWeekStep3, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('importTrafficAnalysisWeekStep4', importTrafficAnalysisWeekStep4, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('runPaidKeywordAnalysisStep', runPaidKeywordAnalysisStep)
   .build();
