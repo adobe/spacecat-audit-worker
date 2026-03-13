@@ -20,7 +20,7 @@ import { load as cheerioLoad } from 'cheerio';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
 
-import { generateSuggestions, slimTocAuditResult } from '../../src/toc/handler.js';
+import { generateSuggestions, slimTocAuditResult, hasTocInDom } from '../../src/toc/handler.js';
 import {
   getHeadingLevel,
   TOC_EXCLUDED_CONTAINER_SELECTORS,
@@ -2307,6 +2307,396 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(logSpy.info).to.have.been.calledWith(
         sinon.match(/no issues, skipping opportunity creation/)
       );
+    });
+  });
+
+  describe('hasTocInDom (DOM heuristic TOC detection)', () => {
+    describe('Signal 1: anchor link lists', () => {
+      it('returns true when ul has 2+ internal anchor links', () => {
+        const $ = cheerioLoad(
+          '<ul><li><a href="#s1">Section 1</a></li><li><a href="#s2">Section 2</a></li></ul>',
+        );
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true when ol has 2+ internal anchor links', () => {
+        const $ = cheerioLoad(
+          '<ol><li><a href="#s1">Section 1</a></li><li><a href="#s2">Section 2</a></li></ol>',
+        );
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for Repsol-style anchor__list with 2+ href="#" links', () => {
+        const $ = cheerioLoad(
+          '<ul class="anchor__list">'
+          + '<li><a href="#como-funciona">¿Cómo funciona?</a></li>'
+          + '<li><a href="#descuento-particulares">Descuento particulares</a></li>'
+          + '</ul>',
+        );
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns false when list has only 1 internal anchor link', () => {
+        const $ = cheerioLoad('<ul><li><a href="#s1">Section 1</a></li></ul>');
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns false when list links do not start with #', () => {
+        const $ = cheerioLoad(
+          '<ul>'
+          + '<li><a href="https://example.com/s1">Section 1</a></li>'
+          + '<li><a href="https://example.com/s2">Section 2</a></li>'
+          + '</ul>',
+        );
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns false when nav menu has links without # anchors', () => {
+        const $ = cheerioLoad(
+          '<nav><ul>'
+          + '<li><a href="/home">Home</a></li>'
+          + '<li><a href="/about">About</a></li>'
+          + '<li><a href="/contact">Contact</a></li>'
+          + '</ul></nav>',
+        );
+        expect(hasTocInDom($)).to.equal(false);
+      });
+    });
+
+    describe('Signal 2: TOC-related class/id names', () => {
+      it('returns true for element with class containing "toc"', () => {
+        const $ = cheerioLoad('<nav class="toc"><ul><li>Item</li></ul></nav>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with id containing "toc"', () => {
+        const $ = cheerioLoad('<div id="toc-container"><ul><li>Item</li></ul></div>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class containing "table-of-contents"', () => {
+        const $ = cheerioLoad('<div class="table-of-contents"><ul><li>Item</li></ul></div>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class containing "tableofcontents"', () => {
+        const $ = cheerioLoad('<div class="tableofcontents"><ul><li>Item</li></ul></div>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class containing "anchor-list"', () => {
+        const $ = cheerioLoad('<ul class="anchor-list"><li>Item</li></ul>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class containing "anchor__list"', () => {
+        const $ = cheerioLoad('<ul class="anchor__list"><li>Item</li></ul>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with id containing "table-of-contents"', () => {
+        const $ = cheerioLoad('<nav id="table-of-contents"><ul><li>Item</li></ul></nav>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+    });
+
+    describe('no TOC signals', () => {
+      it('returns false when page has no TOC signals', () => {
+        const $ = cheerioLoad(
+          '<body><h1>Title</h1><h2>Section 1</h2><p>Content</p></body>',
+        );
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns false for empty page', () => {
+        const $ = cheerioLoad('');
+        expect(hasTocInDom($)).to.equal(false);
+      });
+    });
+  });
+
+  describe('TOC Detection — Phase 1 (DOM heuristic) integration', () => {
+    it('skips AI call and returns no issues when DOM heuristic finds anchor list TOC', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = { fetchChatCompletion: sinon.stub() };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {});
+
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
+        },
+      };
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof ListObjectsV2Command) {
+          return Promise.resolve({
+            Contents: allKeys.map((key) => ({ Key: key })),
+            NextContinuationToken: undefined,
+          });
+        }
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<body><main>'
+                    + '<h1>Page Title</h1>'
+                    + '<ul class="anchor__list">'
+                    + '<li><a href="#section-1">Section 1</a></li>'
+                    + '<li><a href="#section-2">Section 2</a></li>'
+                    + '</ul>'
+                    + '<h2 id="section-1">Section 1</h2><p>Content</p>'
+                    + '<h2 id="section-2">Section 2</h2><p>Content</p>'
+                    + '</main></body>',
+                  tags: { title: 'Page Title', description: 'Desc', h1: ['Page Title'] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+
+      // AI should NOT have been called — DOM heuristic handled it
+      expect(mockClient.fetchChatCompletion.callCount).to.equal(0);
+      // No TOC issue should be reported
+      expect(result.auditResult.toc).to.deep.equal({});
+    });
+
+    it('skips AI call and returns no issues when DOM heuristic finds TOC class', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = { fetchChatCompletion: sinon.stub() };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {});
+
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
+        },
+      };
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof ListObjectsV2Command) {
+          return Promise.resolve({
+            Contents: allKeys.map((key) => ({ Key: key })),
+            NextContinuationToken: undefined,
+          });
+        }
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<body><nav class="toc"><ul><li><a href="#s1">S1</a></li></ul></nav>'
+                    + '<h1>Title</h1><h2 id="s1">Section</h2></body>',
+                  tags: { title: 'Page Title', description: 'Desc', h1: ['Title'] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+
+      expect(mockClient.fetchChatCompletion.callCount).to.equal(0);
+      expect(result.auditResult.toc).to.deep.equal({});
+    });
+  });
+
+  describe('TOC Detection — Phase 2 (AI with main/body content) integration', () => {
+    it('uses <main> element content (not body boilerplate) when calling AI', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      // Build a raw body where the first 3000 chars is pure boilerplate
+      // and the real content (with headings) is only inside <main>
+      const boilerplate = '<!-- boilerplate -->'.repeat(200); // ~4000 chars before main
+      const rawBody = `<body>${boilerplate}<main><h1>Real Title</h1><h2>Section 1</h2></main></body>`;
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":7,"reasoning":"No TOC in main"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {});
+
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
+        },
+      };
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof ListObjectsV2Command) {
+          return Promise.resolve({
+            Contents: allKeys.map((key) => ({ Key: key })),
+            NextContinuationToken: undefined,
+          });
+        }
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody,
+                  tags: { title: 'Page', description: 'Desc', h1: ['Real Title'] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+
+      // AI was called (Phase 1 found nothing)
+      expect(mockClient.fetchChatCompletion.callCount).to.be.at.least(1);
+      // The prompt sent to AI should contain main content, not just the boilerplate
+      const promptArg = mockClient.fetchChatCompletion.getCall(0).args[0];
+      expect(promptArg).to.include('Real Title');
+      // Audit correctly identifies missing TOC
+      expect(result.auditResult.toc).to.exist;
+      expect(result.auditResult.toc.toc).to.exist;
+    });
+
+    it('falls back to empty string when <main> element exists but is empty', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":5,"reasoning":"No content"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {});
+
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
+        },
+      };
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof ListObjectsV2Command) {
+          return Promise.resolve({
+            Contents: allKeys.map((key) => ({ Key: key })),
+            NextContinuationToken: undefined,
+          });
+        }
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  // <main> exists but is completely empty — mainEl.html() returns ''
+                  rawBody: '<body><main></main></body>',
+                  tags: { title: 'Empty Page', description: 'Desc', h1: [] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+
+      // AI was called — Phase 1 found nothing, Phase 2 used empty main (fallback to '')
+      expect(mockClient.fetchChatCompletion.callCount).to.be.at.least(1);
+      // No TOC headings to build from — result should show no issues
+      expect(result.auditResult.toc).to.deep.equal({});
+    });
+
+    it('falls back to body content when no <main> element exists', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":6,"reasoning":"No TOC"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {});
+
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
+        },
+      };
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof ListObjectsV2Command) {
+          return Promise.resolve({
+            Contents: allKeys.map((key) => ({ Key: key })),
+            NextContinuationToken: undefined,
+          });
+        }
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<body><div><h1 id="t">Title</h1><h2 id="s1">Section 1</h2></div></body>',
+                  tags: { title: 'Page', description: 'Desc', h1: ['Title'] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+
+      // AI was called with body content (no main present)
+      expect(mockClient.fetchChatCompletion.callCount).to.be.at.least(1);
+      const promptArg = mockClient.fetchChatCompletion.getCall(0).args[0];
+      expect(promptArg).to.include('Title');
+      // Audit identifies missing TOC from body content
+      expect(result.auditResult.toc.toc).to.exist;
     });
   });
 
