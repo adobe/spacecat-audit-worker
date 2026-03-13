@@ -293,7 +293,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
   const generateSuggestions = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-suggest', site);
   if (!generateSuggestions) {
     log.debug(
-      `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with mystique, because 
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with starfish-auto-code, because
       'security-vulnerabilities-auto-suggest' not configured.`,
     );
     return { status: 'complete' };
@@ -302,8 +302,16 @@ export const opportunityAndSuggestionsStep = async (context) => {
   const codeInfo = extractCodeInfo(data);
   if (!codeInfo) {
     log.debug(
-      `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with mystique, because
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with starfish-auto-code, because
       import worker could not get code.`,
+    );
+    return { status: 'complete' };
+  }
+
+  if (!sqs || !env?.QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE) {
+    log.warn(
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with starfish-auto-code, because
+      QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE is not configured.`,
     );
     return { status: 'complete' };
   }
@@ -329,8 +337,8 @@ export const opportunityAndSuggestionsStep = async (context) => {
     },
   };
 
-  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] sending message to Mystique for code fix generation: ${JSON.stringify(message)}`);
-  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] sending message to starfish-auto-code for code fix generation: ${JSON.stringify(message)}`);
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE, message);
   return { status: 'complete' };
 };
 

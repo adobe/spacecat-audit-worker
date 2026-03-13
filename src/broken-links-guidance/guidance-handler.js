@@ -60,11 +60,30 @@ export default async function handler(message, context) {
     return ok();
   }
 
+  // Batch-fetch all suggestions in a single query instead of N individual findById calls
+  const suggestionIds = brokenLinks
+    .map((bl) => bl.suggestionId)
+    .filter(Boolean);
+
+  const { data: existingSuggestions = [] } = suggestionIds.length > 0
+    ? await Suggestion.batchGetByKeys(suggestionIds.map((id) => ({ suggestionId: id })))
+    : { data: [] };
+
+  const suggestionMap = new Map(existingSuggestions.map((s) => [s.getId(), s]));
+
+  // Filter and validate suggested URLs configured for the site
+  const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
+  const effectiveBaseURL = (overrideBaseURL && isValidUrl(overrideBaseURL))
+    ? overrideBaseURL
+    : site.getBaseURL();
+
+  const toSave = [];
+  // Process each broken link (URL filtering is async but not a DB call)
   await Promise.all(brokenLinks.map(async (brokenLink) => {
-    const suggestion = await Suggestion.findById(brokenLink.suggestionId);
+    const suggestion = suggestionMap.get(brokenLink.suggestionId);
     if (!suggestion) {
       log.error(`[${opportunity.getType()}] Suggestion not found for ID: ${brokenLink.suggestionId}`);
-      return {};
+      return;
     }
 
     const suggestedUrls = brokenLink.suggestedUrls || [];
@@ -76,13 +95,6 @@ export default async function handler(message, context) {
         + `Expected array, got: ${typeof suggestedUrls}. Available fields: ${Object.keys(brokenLink).join(', ')}`,
       );
     }
-
-    // Filter and validate suggested URLs
-    // Use overrideBaseURL if configured to ensure consistency with data collection
-    const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
-    const effectiveBaseURL = (overrideBaseURL && isValidUrl(overrideBaseURL))
-      ? overrideBaseURL
-      : site.getBaseURL();
 
     const validSuggestedUrls = Array.isArray(suggestedUrls) ? suggestedUrls : [];
     const filteredSuggestedUrls = await filterBrokenSuggestedUrls(
@@ -108,9 +120,12 @@ export default async function handler(message, context) {
       urlsSuggested: filteredSuggestedUrls,
       aiRationale,
     });
-
-    return suggestion.save();
+    toSave.push(suggestion);
   }));
+
+  if (toSave.length > 0) {
+    await Suggestion.saveMany(toSave);
+  }
 
   return ok();
 }

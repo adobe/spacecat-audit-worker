@@ -23,6 +23,7 @@ import {
   processOpportunityStep,
   runAuditAndSendUrlsForScrapingStep,
   sendA11yUrlsForScrapingStep,
+  sendExistingOpportunitiesToMystique,
 } from '../../../src/forms-opportunities/handler.js';
 import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
 import { MockContextBuilder } from '../../shared.js';
@@ -643,6 +644,174 @@ describe('audit and send scraping step', () => {
 
     // Should NOT include auditContext property at all
     expect(result).to.not.have.property('auditContext');
+  });
+});
+
+describe('skipAudit - sendExistingOpportunitiesToMystique', () => {
+  const siteId = 'test-site-id';
+  let context;
+  let sqsSendMessageStub;
+
+  beforeEach(() => {
+    sqsSendMessageStub = sinon.stub().resolves();
+
+    context = new MockContextBuilder()
+      .withSandbox(sandbox)
+      .withOverrides({
+        runtime: { name: 'aws-lambda', region: 'us-east-1' },
+        func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+        site: {
+          getId: sinon.stub().returns(siteId),
+          getBaseURL: sinon.stub().returns('https://example.com'),
+          getDeliveryType: sinon.stub().returns('aem_cs'),
+        },
+        sqs: {
+          sendMessage: sqsSendMessageStub,
+        },
+        env: {
+          QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.example.com/mystique',
+        },
+      })
+      .build();
+  });
+
+  afterEach(() => {
+    nock.cleanAll();
+    sinon.restore();
+  });
+
+  it('sends guidance message for each eligible opportunity', async () => {
+    const mockOpportunity = {
+      getId: () => 'oppty-1',
+      getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+      getData: () => ({
+        form: 'https://example.com/contact',
+        formsource: 'form.contact',
+        trackedFormKPIValue: 0.05,
+      }),
+      siteId: siteId,
+      auditId: 'audit-1',
+      opportunityId: 'oppty-1',
+      type: FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+      data: {
+        form: 'https://example.com/contact',
+        formsource: 'form.contact',
+        trackedFormKPIValue: 0.05,
+      },
+    };
+
+    context.dataAccess.Opportunity.allBySiteId = sinon.stub().resolves([mockOpportunity]);
+
+    const result = await sendExistingOpportunitiesToMystique(context);
+
+    expect(result).to.deep.equal({ status: 'complete' });
+    expect(sqsSendMessageStub).to.have.been.calledOnce;
+    const [queueUrl, message] = sqsSendMessageStub.firstCall.args;
+    expect(queueUrl).to.equal('https://sqs.example.com/mystique');
+    expect(message.type).to.equal(`guidance:${FORM_OPPORTUNITY_TYPES.LOW_CONVERSION}`);
+    expect(message.skipGuidance).to.be.true;
+  });
+
+  it('skips a11y type opportunities', async () => {
+    const a11yOpportunity = {
+      getId: () => 'oppty-a11y',
+      getType: () => FORM_OPPORTUNITY_TYPES.FORM_A11Y,
+      getData: () => ({ form: 'https://example.com/form' }),
+    };
+    const lowConvOpportunity = {
+      getId: () => 'oppty-conv',
+      getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+      getData: () => ({
+        form: 'https://example.com/contact',
+        formsource: 'form.contact',
+      }),
+      siteId: siteId,
+      auditId: 'audit-1',
+      opportunityId: 'oppty-conv',
+      type: FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+      data: {
+        form: 'https://example.com/contact',
+        formsource: 'form.contact',
+      },
+    };
+
+    context.dataAccess.Opportunity.allBySiteId = sinon.stub().resolves([
+      a11yOpportunity,
+      lowConvOpportunity,
+    ]);
+
+    const result = await sendExistingOpportunitiesToMystique(context);
+
+    expect(result).to.deep.equal({ status: 'complete' });
+    expect(sqsSendMessageStub).to.have.been.calledOnce;
+  });
+
+  it('handles multiple opportunity types correctly', async () => {
+    const opportunities = [
+      {
+        getId: () => 'oppty-conv',
+        getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+        getData: () => ({ form: 'https://example.com/contact', formsource: 'form.contact' }),
+        siteId, auditId: 'audit-1', opportunityId: 'oppty-conv', type: FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+        data: { form: 'https://example.com/contact', formsource: 'form.contact' },
+      },
+      {
+        getId: () => 'oppty-nav',
+        getType: () => FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION,
+        getData: () => ({ form: 'https://example.com/register', formsource: 'form.register' }),
+        siteId, auditId: 'audit-2', opportunityId: 'oppty-nav', type: FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION,
+        data: { form: 'https://example.com/register', formsource: 'form.register' },
+      },
+      {
+        getId: () => 'oppty-views',
+        getType: () => FORM_OPPORTUNITY_TYPES.LOW_VIEWS,
+        getData: () => ({ form: 'https://example.com/quote', formsource: 'form.quote' }),
+        siteId, auditId: 'audit-3', opportunityId: 'oppty-views', type: FORM_OPPORTUNITY_TYPES.LOW_VIEWS,
+        data: { form: 'https://example.com/quote', formsource: 'form.quote' },
+      },
+    ];
+
+    context.dataAccess.Opportunity.allBySiteId = sinon.stub().resolves(opportunities);
+
+    const result = await sendExistingOpportunitiesToMystique(context);
+
+    expect(result).to.deep.equal({ status: 'complete' });
+    expect(sqsSendMessageStub).to.have.been.calledThrice;
+  });
+
+  it('handles no opportunities gracefully', async () => {
+    context.dataAccess.Opportunity.allBySiteId = sinon.stub().resolves([]);
+
+    const result = await sendExistingOpportunitiesToMystique(context);
+
+    expect(result).to.deep.equal({ status: 'complete' });
+    expect(sqsSendMessageStub).not.to.have.been.called;
+  });
+
+  it('is triggered when data option is skipAudit', async () => {
+    context.dataAccess.Opportunity.allBySiteId = sinon.stub().resolves([]);
+    context.data = 'skipAudit';
+    context.finalUrl = 'www.example.com';
+
+    const result = await runAuditAndSendUrlsForScrapingStep(context);
+
+    expect(result).to.deep.equal({ status: 'complete' });
+    expect(sqsSendMessageStub).not.to.have.been.called;
+  });
+
+  it('skips opportunities with unknown types', async () => {
+    const unknownTypeOpportunity = {
+      getId: () => 'oppty-unknown',
+      getType: () => 'some-unknown-type',
+      getData: () => ({ form: 'https://example.com/unknown' }),
+    };
+
+    context.dataAccess.Opportunity.allBySiteId = sinon.stub().resolves([unknownTypeOpportunity]);
+
+    const result = await sendExistingOpportunitiesToMystique(context);
+
+    expect(result).to.deep.equal({ status: 'complete' });
+    expect(sqsSendMessageStub).not.to.have.been.called;
   });
 });
 
