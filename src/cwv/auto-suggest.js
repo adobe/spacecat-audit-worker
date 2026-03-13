@@ -113,7 +113,7 @@ export async function processAutoSuggest(context, opportunity, site) {
 
     // Get code repository information only if auto-fix is enabled
     const codeInfo = (isAutoFixEnabled && site) ? await getCodeInfo(site, 'cwv', context) : null;
-    const hasCodeInfo = codeInfo && codeInfo.codeBucket && codeInfo.codePath !== undefined;
+    const hasCodeInfo = codeInfo && codeInfo.codeBucket && codeInfo.codePath && String(codeInfo.codePath).trim() !== '';
 
     // Send one SQS message per suggestion that needs auto-suggest
     for (const suggestion of suggestions) {
@@ -160,8 +160,7 @@ export async function processAutoSuggest(context, opportunity, site) {
 
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, sqsMessage);
-      log.debug(`[audit-worker-cwv] siteId: ${siteId} | CWV suggestion sent to Mystique, suggestionId: ${suggestionId}, url: ${url}`);
-      log.info(`[audit-worker-cwv] siteId: ${siteId} | CWV suggestion message sent to Mystique (suggestionId: ${suggestionId}):\n${JSON.stringify(sqsMessage, null, 2)}`);
+      log.info(`[audit-worker-cwv] siteId: ${siteId} | CWV suggestion message sent to Mystique (opportunityId: ${opportunityId}, suggestionId: ${suggestionId}, url: ${url}), message: \n${JSON.stringify(sqsMessage, null, 2)}`);
     }
 
     log.info(`[audit-worker-cwv] siteId: ${siteId} | Completed sending CWV auto-suggest messages, opportunityId: ${opportunityId}`);

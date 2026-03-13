@@ -94,7 +94,7 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
           },
         },
         s3Client: { send: sandbox.stub().resolves() },
-        env: { S3_MYSTIQUE_BUCKET_NAME: defaultBucketName },
+        env: { S3_STARFISH_BUCKET_NAME: defaultBucketName },
       })
       .build();
   });
@@ -261,6 +261,17 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
       isCodeChangeAvailable: true,
     });
     expect(suggestion.save).to.have.been.calledOnce;
+  });
+
+  it('skips fix when S3_STARFISH_BUCKET_NAME is not set and no code_fix_bucket provided', async () => {
+    context.env = {};
+
+    const response = await handler(message, context);
+
+    expect(response.status).to.equal(200);
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/No S3 bucket configured/));
+    expect(getObjectFromKey).to.not.have.been.called;
+    expect(suggestion.setData).to.not.have.been.called;
   });
 
   it('parses report JSON strings and uses default bucket name', async () => {

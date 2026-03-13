@@ -515,6 +515,126 @@ describe('Step-based Audit Tests', () => {
       expect(capturedScrapeResultPaths.get('https://space.cat/page1')).to.equal('s3://bucket/path2.json');
       expect(capturedScrapeResultPaths.get('https://space.cat/page2')).to.equal('s3://bucket/path3.json');
     });
+
+    it('preserves requiresValidation from context.site onto site when defined (lines 113-115)', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      const siteFromProvider = {
+        getId: () => '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        getBaseURL: () => baseURL,
+        getIsLive: () => true,
+      };
+      context.dataAccess.Site.findById.resolves(siteFromProvider);
+
+      let capturedSite;
+      const requiresValidationAudit = new AuditBuilder()
+        .addStep('prepare', async (stepContext) => {
+          capturedSite = stepContext.site;
+          return {
+            auditResult: { status: 'preparing' },
+            fullAuditRef: 's3://test/123',
+            urls: [{ url: baseURL }],
+            siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+          };
+        }, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+        .addStep('final', async () => ({ status: 'complete' }))
+        .build();
+
+      context.site = { ...siteFromProvider, requiresValidation: true };
+
+      await requiresValidationAudit.run(message, context);
+
+      expect(capturedSite.requiresValidation).to.equal(true);
+    });
+
+    it('does not overwrite site when context.site.requiresValidation is undefined', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      const siteFromProvider = {
+        getId: () => '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        getBaseURL: () => baseURL,
+        getIsLive: () => true,
+      };
+      context.dataAccess.Site.findById.resolves(siteFromProvider);
+
+      let capturedSite;
+      const noRequiresValidationAudit = new AuditBuilder()
+        .addStep('prepare', async (stepContext) => {
+          capturedSite = stepContext.site;
+          return {
+            auditResult: { status: 'preparing' },
+            fullAuditRef: 's3://test/123',
+            urls: [{ url: baseURL }],
+            siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+          };
+        }, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+        .addStep('final', async () => ({ status: 'complete' }))
+        .build();
+
+      delete context.site;
+
+      await noRequiresValidationAudit.run(message, context);
+
+      expect(capturedSite.requiresValidation).to.be.undefined;
+    });
+
+    it('preserves requiresValidation false from context.site', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      const siteFromProvider = {
+        getId: () => '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        getBaseURL: () => baseURL,
+        getIsLive: () => true,
+      };
+      context.dataAccess.Site.findById.resolves(siteFromProvider);
+
+      let capturedSite;
+      const requiresValidationFalseAudit = new AuditBuilder()
+        .addStep('prepare', async (stepContext) => {
+          capturedSite = stepContext.site;
+          return {
+            auditResult: { status: 'preparing' },
+            fullAuditRef: 's3://test/123',
+            urls: [{ url: baseURL }],
+            siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+          };
+        }, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+        .addStep('final', async () => ({ status: 'complete' }))
+        .build();
+
+      context.site = { ...siteFromProvider, requiresValidation: false };
+
+      await requiresValidationFalseAudit.run(message, context);
+
+      expect(capturedSite.requiresValidation).to.equal(false);
+    });
   });
 
   describe('SQS Abort Signal Handling', () => {
