@@ -1029,6 +1029,92 @@ describe('Crawl Detection Module', () => {
       });
     });
 
+    it('should classify generic source tags as media and skip invalid area hrefs gracefully', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      const htmlWithGenericSourceAndInvalidArea = `
+        <html>
+          <body>
+            <map name="site-map">
+              <area href="http://%zz" alt="Broken Area">
+            </map>
+            <div>
+              <source src="/downloads/fallback.bin">
+            </div>
+          </body>
+        </html>
+      `;
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: { rawBody: htmlWithGenericSourceAndInvalidArea },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub.withArgs('https://example.com/downloads/fallback.bin').resolves(createValidationResponse(true));
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      expect(result.results).to.have.lengthOf(1);
+      expect(result.results[0]).to.deep.include({
+        urlTo: 'https://example.com/downloads/fallback.bin',
+        itemType: 'media',
+      });
+      expect(mockContext.log.debug).to.have.been.calledWith(
+        sinon.match(/Skipping invalid area href/),
+      );
+    });
+
+    it('should skip empty srcset values and use fallback anchor text for area elements without alt text', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      const htmlWithEdgeCases = `
+        <html>
+          <body>
+            <map name="site-map">
+              <area shape="rect" coords="0,0,10,10" href="/mapped-no-alt">
+              <area shape="rect" coords="0,0,10,10" href="#">
+            </map>
+            <picture>
+              <source srcset="">
+            </picture>
+          </body>
+        </html>
+      `;
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: { rawBody: htmlWithEdgeCases },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub.withArgs('https://example.com/mapped-no-alt').resolves(createValidationResponse(true));
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      expect(result.results).to.have.lengthOf(1);
+      expect(result.results[0]).to.deep.include({
+        urlTo: 'https://example.com/mapped-no-alt',
+        itemType: 'link',
+        anchorText: '[image map area]',
+      });
+      expect(isLinkInaccessibleStub.calledOnce).to.equal(true);
+    });
+
     it('should keep separate broken results for the same target when itemType differs', async () => {
       const scrapeResultPaths = new Map([
         ['https://example.com/page1', 'scrapes/page1.json'],

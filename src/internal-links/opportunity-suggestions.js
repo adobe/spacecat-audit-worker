@@ -172,7 +172,7 @@ export function createOpportunityAndSuggestionsStep({
       .filter((link) => link.urlFrom && link.urlTo && link.suggestionId);
 
     const brokenLinksForConfiguredItemTypes = brokenLinks.filter(
-      (link) => mystiqueItemTypes.has(link.itemType || 'link'),
+      (link) => mystiqueItemTypes.has(link.itemType),
     );
 
     if (brokenLinksForConfiguredItemTypes.length < brokenLinks.length) {

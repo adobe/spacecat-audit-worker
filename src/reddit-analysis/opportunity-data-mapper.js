@@ -13,6 +13,8 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
 
+const REDDIT_ANALYSIS_TYPE = Audit.AUDIT_TYPES?.REDDIT_ANALYSIS || 'reddit-analysis';
+
 /**
  * Creates opportunity data for Reddit analysis.
  * When a BO JSON opportunity object is provided (from Mystique), uses its values.
@@ -25,7 +27,7 @@ export function createOpportunityData({ opportunityData } = {}) {
   return {
     runbook: opportunityData?.runbook || '',
     origin: 'AUTOMATION',
-    type: opportunityData?.type || Audit.AUDIT_TYPES.REDDIT_ANALYSIS,
+    type: opportunityData?.type || REDDIT_ANALYSIS_TYPE,
     title: opportunityData?.title || 'Reddit presence: Improve brand sentiment and visibility',
     description: opportunityData?.description
       || 'Enhance your company\'s Reddit presence to improve brand sentiment and visibility. '

@@ -107,6 +107,11 @@ describe('classifyStatusBucket', () => {
     const redirectError = new Error('Too many redirects');
     expect(classifyStatusBucket(null, redirectError)).to.equal(STATUS_BUCKETS.REDIRECT_CHAIN_EXCESSIVE);
   });
+
+  it('classifies redirect chain errors when message mentions max redirects', () => {
+    const redirectError = new Error('Max redirects reached while fetching URL');
+    expect(classifyStatusBucket(null, redirectError)).to.equal(STATUS_BUCKETS.REDIRECT_CHAIN_EXCESSIVE);
+  });
 });
 
 describe('isLinkInaccessible', () => {

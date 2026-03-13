@@ -72,9 +72,7 @@ function getSourceItemType(parentTag) {
 }
 
 function resolveUrlCandidates(rawValue, pageUrl) {
-  if (!rawValue) return [];
-
-  return rawValue
+  return String(rawValue)
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean)
@@ -91,16 +89,13 @@ function pushResolvedReference({
   log,
   type,
   anchorText,
-  allowSubdomains = false,
 }) {
   if (!rawUrl || rawUrl.startsWith('#')) return;
 
   try {
     const absoluteUrl = new URL(rawUrl, pageUrl).toString();
     const hostname = normalizeHostname(absoluteUrl);
-    const isAllowedHost = allowSubdomains
-      ? isInternalAssetHost(hostname, baseHostname)
-      : isSameHost(hostname, baseHostname);
+    const isAllowedHost = isInternalAssetHost(hostname, baseHostname);
 
     if (isAllowedHost) {
       references.push({
@@ -123,7 +118,6 @@ function pushResolvedSrcsetReferences({
   log,
   type,
   anchorText,
-  allowSubdomains = false,
 }) {
   if (!rawSrcset) return;
 
@@ -131,9 +125,7 @@ function pushResolvedSrcsetReferences({
     const candidates = resolveUrlCandidates(rawSrcset, pageUrl);
     candidates.forEach((absoluteUrl) => {
       const hostname = normalizeHostname(absoluteUrl);
-      const isAllowedHost = allowSubdomains
-        ? isInternalAssetHost(hostname, baseHostname)
-        : isSameHost(hostname, baseHostname);
+      const isAllowedHost = isInternalAssetHost(hostname, baseHostname);
 
       if (isAllowedHost) {
         references.push({
@@ -324,6 +316,7 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
     const $source = $(el);
     const parentTag = $source.parent()?.prop('tagName')?.toLowerCase();
     const type = getSourceItemType(parentTag);
+    /* c8 ignore next - cheerio HTML mode always attaches source elements to a parent */
     const anchorText = `[${parentTag || 'source'} srcset]`;
 
     pushResolvedSrcsetReferences({
@@ -334,7 +327,6 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
       log,
       type,
       anchorText,
-      allowSubdomains: true,
     });
   });
 
@@ -348,7 +340,6 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
       log,
       type: 'css',
       anchorText: '[stylesheet href]',
-      allowSubdomains: true,
     });
   });
 
@@ -362,7 +353,6 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
       log,
       type: 'js',
       anchorText: '[script src]',
-      allowSubdomains: true,
     });
   });
 
@@ -375,7 +365,6 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
       log,
       type: 'iframe',
       anchorText: '[iframe src]',
-      allowSubdomains: true,
     });
   });
 
@@ -388,7 +377,6 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
       log,
       type: 'video',
       anchorText: '[video src]',
-      allowSubdomains: true,
     });
   });
 
@@ -401,7 +389,6 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
       log,
       type: 'audio',
       anchorText: '[audio src]',
-      allowSubdomains: true,
     });
   });
 
@@ -409,6 +396,7 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
     const $source = $(el);
     const parentTag = $source.parent()?.prop('tagName')?.toLowerCase();
     const type = getSourceItemType(parentTag);
+    /* c8 ignore next - cheerio HTML mode always attaches source elements to a parent */
     const anchorText = `[${parentTag || 'source'} src]`;
 
     pushResolvedReference({
@@ -419,7 +407,6 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
       log,
       type,
       anchorText,
-      allowSubdomains: true,
     });
   });
 
@@ -432,7 +419,6 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
       log,
       type: 'image',
       anchorText: '[video poster]',
-      allowSubdomains: true,
     });
   });
 

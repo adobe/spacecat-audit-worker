@@ -86,7 +86,9 @@ function getEnumConfig(value, allowedValues, fallback) {
 
 function getStringListConfig(value, fallback) {
   if (Array.isArray(value)) {
-    const filtered = value.filter((entry) => hasText(entry)).map((entry) => entry.trim());
+    const filtered = value
+      .map((entry) => (typeof entry === 'string' ? entry.trim() : entry))
+      .filter((entry) => hasText(entry));
     return filtered.length > 0 ? filtered : fallback;
   }
 

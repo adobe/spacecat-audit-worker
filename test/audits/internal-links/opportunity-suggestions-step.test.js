@@ -128,4 +128,104 @@ describe('internal-links opportunity suggestions step', () => {
     expect(payload.data.brokenLinks).to.have.lengthOf(1);
     expect(payload.data.brokenLinks[0].urlTo).to.equal('https://example.com/broken-link');
   });
+
+  it('treats missing itemType as link for Mystique filtering', async () => {
+    const sqs = { sendMessage: sinon.stub().resolves() };
+    const opportunity = {
+      getId: () => 'oppty-1',
+    };
+
+    const step = createOpportunityAndSuggestionsStep({
+      auditType: 'broken-internal-links',
+      opptyStatuses: { NEW: 'NEW', RESOLVED: 'RESOLVED' },
+      suggestionStatuses: { NEW: 'NEW', OUTDATED: 'OUTDATED' },
+      isNonEmptyArray: (value) => Array.isArray(value) && value.length > 0,
+      createContextLogger: (log) => log,
+      calculateKpiDeltasForAudit: sinon.stub().returns({}),
+      convertToOpportunity: sinon.stub().resolves(opportunity),
+      createOpportunityData: sinon.stub(),
+      syncBrokenInternalLinksSuggestions: sinon.stub().resolves(),
+      filterByAuditScope: (pages) => pages,
+      extractPathPrefix: () => null,
+      isUnscrapeable: () => false,
+      filterBrokenSuggestedUrls: sinon.stub().resolves([]),
+      BrightDataClient: { createFrom: sinon.stub() },
+      buildLocaleSearchUrl: sinon.stub(),
+      extractLocaleFromUrl: sinon.stub(),
+      localesMatch: sinon.stub(),
+      sleep: sinon.stub().resolves(),
+      updateAuditResult: sinon.stub().resolves(),
+      isCanonicalOrHreflangLink: () => false,
+    });
+
+    const context = {
+      log: {
+        info: sinon.stub(),
+        warn: sinon.stub(),
+        error: sinon.stub(),
+        debug: sinon.stub(),
+      },
+      site: {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://example.com',
+        getDeliveryType: () => 'aem_edge',
+        getConfig: () => ({
+          getHandlers: () => ({
+            'broken-internal-links': {
+              config: {
+                mystiqueItemTypes: ['link'],
+              },
+            },
+          }),
+          getIncludedURLs: () => [],
+        }),
+      },
+      finalUrl: 'https://example.com',
+      sqs,
+      env: {},
+      dataAccess: {
+        Suggestion: {
+          allByOpportunityIdAndStatus: sinon.stub().resolves([
+            {
+              getData: () => ({
+                urlFrom: 'https://example.com/source',
+                urlTo: 'https://example.com/broken-link',
+              }),
+              getId: () => 'suggestion-1',
+            },
+          ]),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+            { getUrl: () => 'https://example.com/alt-1' },
+          ]),
+        },
+        Opportunity: {
+          allBySiteIdAndStatus: sinon.stub().resolves([]),
+        },
+      },
+      audit: {
+        getId: () => 'audit-1',
+        getAuditResult: () => ({
+          brokenInternalLinks: [
+            { urlFrom: 'https://example.com/source', urlTo: 'https://example.com/broken-link' },
+          ],
+          success: true,
+        }),
+      },
+      updatedAuditResult: {
+        brokenInternalLinks: [
+          { urlFrom: 'https://example.com/source', urlTo: 'https://example.com/broken-link' },
+        ],
+        success: true,
+      },
+    };
+
+    await step(context);
+
+    expect(sqs.sendMessage.calledOnce).to.equal(true);
+    const payload = sqs.sendMessage.firstCall.args[1];
+    expect(payload.data.brokenLinks).to.have.lengthOf(1);
+    expect(payload.data.brokenLinks[0].urlTo).to.equal('https://example.com/broken-link');
+  });
 });

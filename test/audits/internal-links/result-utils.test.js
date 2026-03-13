@@ -32,6 +32,13 @@ describe('internal-links result utils', () => {
     ]);
   });
 
+  it('returns original links when no status bucket filter is configured', () => {
+    const links = [{ urlTo: '/a', statusBucket: 'not_found_404' }];
+
+    expect(filterByStatusIfNeeded(links, [])).to.equal(links);
+    expect(filterByStatusIfNeeded(links, null)).to.equal(links);
+  });
+
   it('filters links by configured item types treating missing itemType as link', () => {
     const links = [
       { urlTo: '/a' },
@@ -43,6 +50,13 @@ describe('internal-links result utils', () => {
       { urlTo: '/a' },
       { urlTo: '/c', itemType: 'form' },
     ]);
+  });
+
+  it('returns original links when no itemType filter is configured', () => {
+    const links = [{ urlTo: '/a' }];
+
+    expect(filterByItemTypes(links, [])).to.equal(links);
+    expect(filterByItemTypes(links, undefined)).to.equal(links);
   });
 
   it('identifies canonical and alternate links for exclusion', () => {

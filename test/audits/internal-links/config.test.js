@@ -142,6 +142,15 @@ describe('internal-links config resolver', () => {
     expect(resolver.getLinkCheckerEnvironmentId()).to.equal('handler-env');
   });
 
+  it('returns raw handler and delivery config objects', () => {
+    const handlerConfig = { isLinkcheckerEnabled: true, batchSize: 25 };
+    const deliveryConfig = { programId: 'delivery-program', environmentId: 'delivery-env' };
+    const resolver = new InternalLinksConfigResolver(createSite(handlerConfig, deliveryConfig), {});
+
+    expect(resolver.getHandlerConfig()).to.equal(handlerConfig);
+    expect(resolver.getDeliveryConfig()).to.equal(deliveryConfig);
+  });
+
   it('normalizes scraper options and supports scroll duration alias', () => {
     const resolver = new InternalLinksConfigResolver(createSite({
       enableJavascript: false,
@@ -188,4 +197,43 @@ describe('internal-links config resolver', () => {
     expect(resolver.getIncludedItemTypes()).to.deep.equal(['link', 'image']);
     expect(resolver.getMystiqueItemTypes()).to.deep.equal(['link', 'form']);
   });
+
+  it('falls back to defaults when configured string lists are empty after trimming', () => {
+    const resolver = new InternalLinksConfigResolver(createSite({
+      includedStatusBuckets: ' ,  , ',
+      includedItemTypes: ['  ', ''],
+    }), {});
+
+    expect(resolver.getIncludedStatusBuckets()).to.deep.equal([
+      'not_found_404',
+      'gone_410',
+      'forbidden_or_blocked',
+      'server_error_5xx',
+      'timeout_or_network',
+      'redirect_chain_excessive',
+      'soft_404',
+      'masked_by_linkchecker',
+    ]);
+    expect(resolver.getIncludedItemTypes()).to.deep.equal([
+      'link',
+      'form',
+      'image',
+      'svg',
+      'css',
+      'js',
+      'iframe',
+      'video',
+      'audio',
+      'media',
+    ]);
+  });
+
+  it('ignores non-string entries in array-based list config values', () => {
+    const resolver = new InternalLinksConfigResolver(createSite({
+      includedStatusBuckets: ['not_found_404', 410],
+    }), {});
+
+    expect(resolver.getIncludedStatusBuckets()).to.deep.equal(['not_found_404']);
+  });
+
 });

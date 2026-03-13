@@ -181,7 +181,7 @@ describe('Broken internal links audit', () => {
         isLinkInaccessible: sinon.stub().resolves({
           isBroken: true,
           httpStatus: 404,
-          statusBucket: '4xx',
+          statusBucket: 'not_found_404',
           contentType: 'text/html; charset=utf-8',
         }),
       },
