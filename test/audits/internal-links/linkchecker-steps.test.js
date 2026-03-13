@@ -78,6 +78,7 @@ describe('LinkChecker Steps Tests', function () {
         site: {
           getId: () => 'site123',
           getBaseURL: () => 'https://example.com',
+          getDeliveryConfig: () => ({}),
           getConfig: () => ({
             getHandlers: () => ({
               'broken-internal-links': {
@@ -189,6 +190,52 @@ describe('LinkChecker Steps Tests', function () {
       const result = await fetchLinkCheckerLogsStep(context);
 
       expect(context.log.warn).to.have.been.calledWith(sinon.match('Missing AEM programId or environmentId'));
+    });
+
+    it('should use deliveryConfig programId and environmentId when present', async () => {
+      context.site.getDeliveryConfig = () => ({
+        programId: 'delivery-program',
+        environmentId: 'delivery-env',
+      });
+      context.site.getConfig = () => ({
+        getHandlers: () => ({
+          'broken-internal-links': {
+            config: {
+              isLinkcheckerEnabled: true,
+              aemProgramId: 'handler-program',
+              aemEnvironmentId: 'handler-env',
+            },
+          },
+        }),
+      });
+
+      mockSplunkClient.fetchAPI
+        .onFirstCall().resolves({
+          status: 201,
+          json: sandbox.stub().resolves({ sid: 'job-123' }),
+        })
+        .onSecondCall().resolves({
+          status: 200,
+          json: sandbox.stub().resolves({
+            entry: [{
+              content: {
+                isDone: true,
+                dispatchState: 'DONE',
+                resultCount: 0,
+              },
+            }],
+          }),
+        })
+        .onThirdCall().resolves({
+          status: 200,
+          json: sandbox.stub().resolves({ results: [] }),
+        });
+
+      await fetchLinkCheckerLogsStep(context);
+
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match('Starting LinkChecker detection: programId=delivery-program, environmentId=delivery-env'),
+      );
     });
 
     it('should submit Splunk job and fetch results when job completes quickly', async () => {

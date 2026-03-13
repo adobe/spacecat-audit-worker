@@ -59,10 +59,15 @@ export class InternalLinksConfigResolver {
     this.site = site;
     this.env = env;
     this.handlerConfig = site?.getConfig?.()?.getHandlers?.()?.['broken-internal-links']?.config || {};
+    this.deliveryConfig = site?.getDeliveryConfig?.() || {};
   }
 
   getHandlerConfig() {
     return this.handlerConfig;
+  }
+
+  getDeliveryConfig() {
+    return this.deliveryConfig;
   }
 
   isLinkCheckerEnabled() {
@@ -70,11 +75,11 @@ export class InternalLinksConfigResolver {
   }
 
   getLinkCheckerProgramId() {
-    return this.handlerConfig.aemProgramId;
+    return this.deliveryConfig.programId || this.handlerConfig.aemProgramId;
   }
 
   getLinkCheckerEnvironmentId() {
-    return this.handlerConfig.aemEnvironmentId;
+    return this.deliveryConfig.environmentId || this.handlerConfig.aemEnvironmentId;
   }
 
   getLinkCheckerLookbackMinutes() {

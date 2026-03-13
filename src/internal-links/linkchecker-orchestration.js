@@ -37,7 +37,6 @@ export function createLinkCheckerOrchestration({
     const config = createInternalLinksConfigResolver(site, env);
 
     const auditId = audit.getId();
-    const internalLinksConfig = config.getHandlerConfig();
     const isLinkcheckerEnabled = config.isLinkCheckerEnabled();
     const log = createInternalLinksStepLogger({
       createContextLogger,
@@ -56,11 +55,11 @@ export function createLinkCheckerOrchestration({
       return finalizeCrawlDetection(context, { skipCrawlDetection }, startTime);
     }
 
-    const programId = internalLinksConfig.aemProgramId;
-    const environmentId = internalLinksConfig.aemEnvironmentId;
+    const programId = config.getLinkCheckerProgramId();
+    const environmentId = config.getLinkCheckerEnvironmentId();
 
     if (!programId || !environmentId) {
-      log.warn('Missing AEM programId or environmentId in site config, skipping LinkChecker detection');
+      log.warn('Missing AEM programId or environmentId, skipping LinkChecker detection');
       return finalizeCrawlDetection(context, { skipCrawlDetection }, startTime);
     }
 

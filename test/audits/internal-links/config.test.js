@@ -15,7 +15,7 @@
 import { expect } from 'chai';
 import { InternalLinksConfigResolver } from '../../../src/internal-links/config.js';
 
-function createSite(config = {}) {
+function createSite(config = {}, deliveryConfig = {}) {
   return {
     getConfig: () => ({
       getHandlers: () => ({
@@ -24,6 +24,7 @@ function createSite(config = {}) {
         },
       }),
     }),
+    getDeliveryConfig: () => deliveryConfig,
   };
 }
 
@@ -75,7 +76,7 @@ describe('internal-links config resolver', () => {
     expect(resolver.getLinkCheckerEnvironmentId()).to.equal(undefined);
   });
 
-  it('returns explicit LinkChecker program and environment IDs', () => {
+  it('returns explicit LinkChecker program and environment IDs from handler config', () => {
     const resolver = new InternalLinksConfigResolver(createSite({
       aemProgramId: 'program-123',
       aemEnvironmentId: 'env-456',
@@ -83,6 +84,32 @@ describe('internal-links config resolver', () => {
 
     expect(resolver.getLinkCheckerProgramId()).to.equal('program-123');
     expect(resolver.getLinkCheckerEnvironmentId()).to.equal('env-456');
+  });
+
+  it('prefers deliveryConfig program and environment IDs over handler config', () => {
+    const resolver = new InternalLinksConfigResolver(createSite({
+      aemProgramId: 'handler-program',
+      aemEnvironmentId: 'handler-env',
+    }, {
+      programId: 'delivery-program',
+      environmentId: 'delivery-env',
+    }), {});
+
+    expect(resolver.getLinkCheckerProgramId()).to.equal('delivery-program');
+    expect(resolver.getLinkCheckerEnvironmentId()).to.equal('delivery-env');
+  });
+
+  it('falls back to handler config when deliveryConfig IDs are missing', () => {
+    const resolver = new InternalLinksConfigResolver(createSite({
+      aemProgramId: 'handler-program',
+      aemEnvironmentId: 'handler-env',
+    }, {
+      programId: '',
+      environmentId: null,
+    }), {});
+
+    expect(resolver.getLinkCheckerProgramId()).to.equal('handler-program');
+    expect(resolver.getLinkCheckerEnvironmentId()).to.equal('handler-env');
   });
 
   it('normalizes scraper options and supports scroll duration alias', () => {
