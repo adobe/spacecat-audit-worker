@@ -147,12 +147,10 @@ describe('Image Alt Text Handler', () => {
 
   describe('processAltTextWithMystique', () => {
     let sendAltTextOpportunityToMystiqueStub;
-    let clearAltTextSuggestionsStub;
     let isAuditEnabledForSiteStub;
 
     beforeEach(async () => {
       sendAltTextOpportunityToMystiqueStub = sandbox.stub().resolves();
-      clearAltTextSuggestionsStub = sandbox.stub().resolves();
       isAuditEnabledForSiteStub = sandbox.stub().resolves(false); // Default to 100 page limit
       // Mock the module with our stubs
       handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
@@ -160,7 +158,6 @@ describe('Image Alt Text Handler', () => {
         '../../../src/image-alt-text/opportunityHandler.js': {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
-          clearAltTextSuggestions: clearAltTextSuggestionsStub,
         },
         '../../../src/common/audit-utils.js': {
           isAuditEnabledForSite: isAuditEnabledForSiteStub,
@@ -244,8 +241,6 @@ describe('Image Alt Text Handler', () => {
 
       await handlerModule.processAltTextWithMystique(context);
 
-      // Should NOT call clearAltTextSuggestions anymore
-      expect(clearAltTextSuggestionsStub).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith(
         '[alt-text]: Updating opportunity for new audit run',
       );
@@ -302,7 +297,6 @@ describe('Image Alt Text Handler', () => {
 
       await handlerModule.processAltTextWithMystique(context);
 
-      expect(clearAltTextSuggestionsStub).to.not.have.been.called;
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Creating new opportunity for site site-id',
       );

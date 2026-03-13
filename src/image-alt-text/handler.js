@@ -385,14 +385,6 @@ export async function processAltTextWithMystique(context) {
     );
 
     log.debug(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);
-
-    // Clean up outdated suggestions
-    // Small delay to ensure no concurrent operations
-    // comment for now to avoid having empty optty in case M blows up
-    // await new Promise((resolve) => {
-    //   setTimeout(resolve, 1000);
-    // });
-    // await cleanupOutdatedSuggestions(altTextOppty, log);
   } catch (error) {
     log.error(`[${AUDIT_TYPE}]: Failed to process with Mystique: ${error.message}`);
     throw error;
