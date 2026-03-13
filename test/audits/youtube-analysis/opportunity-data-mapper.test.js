@@ -108,12 +108,12 @@ describe('YouTube Analysis Opportunity Data Mapper', () => {
 
     it('should use type from opportunityData when provided', () => {
       const opportunityData = {
-        type: 'youtube-analysis-generic',
+        type: 'generic-opportunity',
       };
 
       const result = createOpportunityData({ opportunityData });
 
-      expect(result.type).to.equal('youtube-analysis-generic');
+      expect(result.type).to.equal('generic-opportunity');
     });
 
     it('should handle empty call gracefully', () => {
