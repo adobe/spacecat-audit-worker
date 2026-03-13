@@ -1,3 +1,10 @@
+## [1.356.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.356.3...v1.356.4) (2026-03-13)
+
+
+### Bug Fixes
+
+* **semantic-value-visibility:** include auditId in Mystique SQS message ([#2126](https://github.com/adobe/spacecat-audit-worker/issues/2126)) ([342d2d9](https://github.com/adobe/spacecat-audit-worker/commit/342d2d9c7d9433931f0a1fe4f8701be762725741))
+
 ## [1.356.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.356.2...v1.356.3) (2026-03-13)
 
 
