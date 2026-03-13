@@ -1,3 +1,10 @@
+## [1.356.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.356.5...v1.356.6) (2026-03-13)
+
+
+### Bug Fixes
+
+* **cdn-analysis:** add site URL to no raw logs found log ([#2135](https://github.com/adobe/spacecat-audit-worker/issues/2135)) ([d2ad7ca](https://github.com/adobe/spacecat-audit-worker/commit/d2ad7ca8447663036caf4ba5a176ea47260d43ca))
+
 ## [1.356.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.356.4...v1.356.5) (2026-03-13)
 
 
