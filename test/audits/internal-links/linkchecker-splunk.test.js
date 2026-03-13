@@ -75,9 +75,9 @@ describe('linkchecker-splunk', () => {
       expect(query).to.include('latest=@m');
       expect(query).to.include('aem_program_id="program123"');
       expect(query).to.include('aem_envId="env456"');
-      expect(query).to.include('"linkchecker.broken_internal_link"');
+      expect(query).to.include('"linkchecker.removed_internal_link"');
       expect(query).to.include('| spath');
-      expect(query).to.include('| rename linkchecker.broken_internal_link.urlFrom as urlFrom');
+      expect(query).to.include('| rename linkchecker.removed_internal_link.urlFrom as urlFrom');
       expect(query).to.include('| where isnotnull(urlFrom) AND isnotnull(urlTo)');
       expect(query).to.include('| head 10000');
     });
@@ -119,12 +119,16 @@ describe('linkchecker-splunk', () => {
     });
 
     it('throws error if submission fails', async () => {
+      const clock = sandbox.useFakeTimers();
       mockClient.fetchAPI.resolves({
         status: 500,
         text: sandbox.stub().resolves('Internal Server Error'),
       });
 
-      await expect(submitSplunkJob(mockClient, 'search query', mockLog))
+      const promise = submitSplunkJob(mockClient, 'search query', mockLog);
+      await clock.tickAsync(3000);
+
+      await expect(promise)
         .to.be.rejectedWith('Splunk job submission failed. Status: 500');
     });
 
@@ -150,6 +154,30 @@ describe('linkchecker-splunk', () => {
 
       await expect(submitSplunkJob(mockClient, 'search query', mockLog))
         .to.be.rejectedWith('Authentication timeout');
+    });
+
+    it('retries transient submission failures before succeeding', async () => {
+      const clock = sandbox.useFakeTimers();
+      mockClient.fetchAPI
+        .onFirstCall().resolves({
+          status: 503,
+          text: sandbox.stub().resolves('Service unavailable'),
+        })
+        .onSecondCall().resolves({
+          status: 201,
+          json: sandbox.stub().resolves({ sid: 'job-id-123' }),
+        });
+
+      const promise = submitSplunkJob(mockClient, 'search query', mockLog);
+      await clock.tickAsync(1000);
+
+      const sid = await promise;
+
+      expect(sid).to.equal('job-id-123');
+      expect(mockClient.fetchAPI).to.have.been.calledTwice;
+      expect(mockLog.warn).to.have.been.calledWith(
+        sinon.match(/Splunk job submission returned transient status 503; retrying in 1000ms/),
+      );
     });
   });
 
@@ -325,6 +353,39 @@ describe('linkchecker-splunk', () => {
 
       expect(status.resultCount).to.equal(0);
     });
+
+    it('retries transient status check failures before succeeding', async () => {
+      const clock = sandbox.useFakeTimers();
+      mockClient.fetchAPI
+        .onFirstCall().resolves({
+          status: 429,
+          text: sandbox.stub().resolves('Rate limited'),
+        })
+        .onSecondCall().resolves({
+          status: 200,
+          json: sandbox.stub().resolves({
+            entry: [{
+              content: {
+                isDone: true,
+                dispatchState: 'DONE',
+                resultCount: 5,
+              },
+            }],
+          }),
+        });
+
+      const promise = pollJobStatus(mockClient, 'job-id-123', mockLog);
+      await clock.tickAsync(1000);
+
+      const status = await promise;
+
+      expect(status.isDone).to.be.true;
+      expect(status.resultCount).to.equal(5);
+      expect(mockClient.fetchAPI).to.have.been.calledTwice;
+      expect(mockLog.warn).to.have.been.calledWith(
+        sinon.match(/Splunk job status check for sid=job-id-123 returned transient status 429; retrying in 1000ms/),
+      );
+    });
   });
 
   describe('fetchJobResults', () => {
@@ -354,13 +415,17 @@ describe('linkchecker-splunk', () => {
       const results = await fetchJobResults(mockClient, 'job-id-123', mockLog);
 
       expect(results).to.have.lengthOf(2);
-      expect(results[0]).to.deep.equal({
+      expect(results[0]).to.include({
         urlFrom: 'https://example.com/page1',
         urlTo: 'https://example.com/broken',
+        validity: 'UNKNOWN',
+        elementName: 'a',
+        attributeName: 'href',
         anchorText: 'Click here',
         itemType: 'link',
         httpStatus: '404',
       });
+      expect(results[0].timestamp).to.be.a('number');
       expect(mockLog.info).to.have.been.calledWith(sinon.match('Fetched 2 results'));
     });
 
@@ -390,22 +455,63 @@ describe('linkchecker-splunk', () => {
 
       const results = await fetchJobResults(mockClient, 'job-id-123', mockLog);
 
-      expect(results[0]).to.deep.equal({
+      expect(results[0]).to.include({
         urlFrom: 'https://example.com/page1',
         urlTo: 'https://example.com/broken',
+        validity: 'UNKNOWN',
+        elementName: 'a',
+        attributeName: 'href',
         anchorText: '[no text]',
         itemType: 'link',
         httpStatus: 'unknown',
       });
+      expect(results[0].timestamp).to.be.a('number');
+    });
+
+    it('handles missing URLs and parses provided timestamp', async () => {
+      mockClient.fetchAPI.resolves({
+        status: 200,
+        json: sandbox.stub().resolves({
+          results: [
+            {
+              validity: 'INVALID',
+              elementName: 'img',
+              attributeName: 'src',
+              itemType: 'image',
+              anchorText: 'Preview',
+              httpStatus: '410',
+              timestamp: '1773315797682',
+            },
+          ],
+        }),
+      });
+
+      const results = await fetchJobResults(mockClient, 'job-id-123', mockLog);
+
+      expect(results[0]).to.deep.equal({
+        urlFrom: '',
+        urlTo: '',
+        validity: 'INVALID',
+        elementName: 'img',
+        attributeName: 'src',
+        itemType: 'image',
+        anchorText: 'Preview',
+        httpStatus: '410',
+        timestamp: 1773315797682,
+      });
     });
 
     it('throws error if fetch fails', async () => {
+      const clock = sandbox.useFakeTimers();
       mockClient.fetchAPI.resolves({
         status: 500,
         text: sandbox.stub().resolves('Internal error'),
       });
 
-      await expect(fetchJobResults(mockClient, 'job-id-123', mockLog))
+      const promise = fetchJobResults(mockClient, 'job-id-123', mockLog);
+      await clock.tickAsync(3000);
+
+      await expect(promise)
         .to.be.rejectedWith('Splunk job results fetch failed. Status: 500');
     });
 
@@ -424,6 +530,37 @@ describe('linkchecker-splunk', () => {
       mockClient.loginObj = { error: new Error('Session expired') };
       await expect(fetchJobResults(mockClient, 'job-id-123', mockLog))
         .to.be.rejectedWith('Session expired');
+    });
+
+    it('retries transient network errors before fetching results', async () => {
+      const clock = sandbox.useFakeTimers();
+      mockClient.fetchAPI
+        .onFirstCall().rejects(new Error('socket hang up'))
+        .onSecondCall().resolves({
+          status: 200,
+          json: sandbox.stub().resolves({
+            results: [
+              {
+                urlFrom: 'https://example.com/page1',
+                urlTo: 'https://example.com/broken',
+                anchorText: 'Click here',
+                itemType: 'link',
+                httpStatus: '404',
+              },
+            ],
+          }),
+        });
+
+      const promise = fetchJobResults(mockClient, 'job-id-123', mockLog);
+      await clock.tickAsync(1000);
+
+      const results = await promise;
+
+      expect(results).to.have.lengthOf(1);
+      expect(mockClient.fetchAPI).to.have.been.calledTwice;
+      expect(mockLog.warn).to.have.been.calledWith(
+        sinon.match(/Splunk job results fetch for sid=job-id-123 failed with transient error: socket hang up; retrying in 1000ms/),
+      );
     });
   });
 

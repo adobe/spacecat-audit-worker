@@ -14,10 +14,52 @@ import { createSplunkClient } from '../support/splunk-client-loader.js';
 
 const DEFAULT_LOOKBACK_MINUTES = 1440; // 24 hours
 const DEFAULT_MAX_RESULTS = 10000;
+const TRANSIENT_SPLUNK_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+const SPLUNK_REQUEST_MAX_RETRIES = 3;
+const SPLUNK_RETRY_BASE_DELAY_MS = 1000;
+
+const sleep = (ms) => new Promise((resolve) => {
+  setTimeout(resolve, ms);
+});
+
+async function fetchSplunkAPIWithRetry(client, request, log) {
+  const { url, options, operation } = request;
+  const runAttempt = async (attempt) => {
+    try {
+      const response = await client.fetchAPI(url, options);
+
+      if (
+        TRANSIENT_SPLUNK_STATUS_CODES.has(response.status)
+        && attempt < SPLUNK_REQUEST_MAX_RETRIES
+      ) {
+        const delayMs = SPLUNK_RETRY_BASE_DELAY_MS * attempt;
+        log.warn(
+          `[linkchecker-splunk] ${operation} returned transient status ${response.status}; retrying in ${delayMs}ms (attempt ${attempt}/${SPLUNK_REQUEST_MAX_RETRIES})`,
+        );
+        await sleep(delayMs);
+        return runAttempt(attempt + 1);
+      }
+
+      return response;
+    } catch (error) {
+      if (attempt === SPLUNK_REQUEST_MAX_RETRIES) {
+        throw error;
+      }
+
+      const delayMs = SPLUNK_RETRY_BASE_DELAY_MS * attempt;
+      log.warn(`[linkchecker-splunk] ${operation} failed with transient error: ${error.message}; retrying in ${delayMs}ms (attempt ${attempt}/${SPLUNK_REQUEST_MAX_RETRIES})`);
+      await sleep(delayMs);
+      return runAttempt(attempt + 1);
+    }
+  };
+
+  return runAttempt(1);
+}
 
 /**
  * Build Splunk search query for LinkChecker broken internal links.
  * Searches for log entries where LinkChecker removed internal links from rendering.
+ * Requires AEM feature toggle FT_SITES-39847 to be enabled.
  *
  * @param {object} params - Query parameters
  * @param {string} params.programId - AEM program ID
@@ -35,7 +77,7 @@ export function buildLinkCheckerQuery({
   // Query structure:
   // 1. Base index and time range
   // 2. Filter by program and environment (automatically logged by AEM)
-  // 3. Filter for LinkChecker internal link removal events
+  // 3. Filter for LinkChecker internal link removal events (FT_SITES-39847)
   // 4. Parse JSON structure
   // 5. Extract fields and limit results
   return [
@@ -45,15 +87,19 @@ export function buildLinkCheckerQuery({
     'latest=@m',
     `aem_program_id="${programId}"`,
     `aem_envId="${environmentId}"`,
-    '"linkchecker.broken_internal_link"', // Feature toggle ensures this field exists
+    '"linkchecker.removed_internal_link"', // FT_SITES-39847 ensures this field exists
     '| spath', // Parse JSON structure
-    '| rename linkchecker.broken_internal_link.urlFrom as urlFrom',
-    '| rename linkchecker.broken_internal_link.urlTo as urlTo',
-    '| rename linkchecker.broken_internal_link.anchorText as anchorText',
-    '| rename linkchecker.broken_internal_link.itemType as itemType',
-    '| rename linkchecker.broken_internal_link.httpStatus as httpStatus',
+    '| rename linkchecker.removed_internal_link.urlFrom as urlFrom',
+    '| rename linkchecker.removed_internal_link.urlTo as urlTo',
+    '| rename linkchecker.removed_internal_link.validity as validity',
+    '| rename linkchecker.removed_internal_link.elementName as elementName',
+    '| rename linkchecker.removed_internal_link.attributeName as attributeName',
+    '| rename linkchecker.removed_internal_link.itemType as itemType',
+    '| rename linkchecker.removed_internal_link.anchorText as anchorText',
+    '| rename linkchecker.removed_internal_link.httpStatus as httpStatus',
+    '| rename linkchecker.removed_internal_link.timestamp as timestamp',
     '| where isnotnull(urlFrom) AND isnotnull(urlTo)',
-    '| table urlFrom, urlTo, anchorText, itemType, httpStatus',
+    '| table urlFrom, urlTo, validity, elementName, attributeName, itemType, anchorText, httpStatus, timestamp',
     `| head ${maxResults}`,
   ].join(' ');
 }
@@ -84,15 +130,19 @@ export async function submitSplunkJob(client, searchQuery, log) {
   });
 
   const url = `${client.apiBaseUrl}/servicesNS/admin/search/search/jobs`;
-  const response = await client.fetchAPI(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Authorization: `Splunk ${loginObj.sessionId}`,
-      Cookie: loginObj.cookie,
+  const response = await fetchSplunkAPIWithRetry(client, {
+    url,
+    operation: 'Splunk job submission',
+    options: {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: `Splunk ${loginObj.sessionId}`,
+        Cookie: loginObj.cookie,
+      },
+      body: queryBody,
     },
-    body: queryBody,
-  });
+  }, log);
 
   if (response.status !== 201) {
     const body = await response.text();
@@ -134,13 +184,17 @@ export async function pollJobStatus(client, sid, log) {
   }
 
   const url = `${client.apiBaseUrl}/servicesNS/admin/search/search/jobs/${encodeURIComponent(sid)}?output_mode=json`;
-  const response = await client.fetchAPI(url, {
-    method: 'GET',
-    headers: {
-      Authorization: `Splunk ${loginObj.sessionId}`,
-      Cookie: loginObj.cookie,
+  const response = await fetchSplunkAPIWithRetry(client, {
+    url,
+    operation: `Splunk job status check for sid=${sid}`,
+    options: {
+      method: 'GET',
+      headers: {
+        Authorization: `Splunk ${loginObj.sessionId}`,
+        Cookie: loginObj.cookie,
+      },
     },
-  });
+  }, log);
 
   if (response.status !== 200) {
     const body = await response.text();
@@ -180,9 +234,13 @@ export async function pollJobStatus(client, sid, log) {
  * @returns {Promise<Array<object>>} Array of result objects with fields:
  *   - urlFrom {string} - Source page URL
  *   - urlTo {string} - Broken link destination URL
- *   - anchorText {string} - Link anchor text
- *   - itemType {string} - Link type (link, image, etc.)
- *   - httpStatus {string|number} - HTTP status code
+ *   - validity {string} - Link validity: INVALID, EXPIRED, PREDATED, or UNKNOWN
+ *   - elementName {string} - HTML element type: a, img, script, link, etc.
+ *   - attributeName {string} - Link attribute: href, src, action
+ *   - itemType {string} - Semantic type: link, image, script, stylesheet, etc.
+ *   - anchorText {string} - Link anchor text (currently empty string)
+ *   - httpStatus {string|number} - HTTP status code (currently "404")
+ *   - timestamp {number} - Unix timestamp in milliseconds
  * @throws {Error} If fetch fails
  */
 export async function fetchJobResults(client, sid, log) {
@@ -196,13 +254,17 @@ export async function fetchJobResults(client, sid, log) {
   }
 
   const url = `${client.apiBaseUrl}/servicesNS/admin/search/search/jobs/${encodeURIComponent(sid)}/results?output_mode=json&count=0`;
-  const response = await client.fetchAPI(url, {
-    method: 'GET',
-    headers: {
-      Authorization: `Splunk ${loginObj.sessionId}`,
-      Cookie: loginObj.cookie,
+  const response = await fetchSplunkAPIWithRetry(client, {
+    url,
+    operation: `Splunk job results fetch for sid=${sid}`,
+    options: {
+      method: 'GET',
+      headers: {
+        Authorization: `Splunk ${loginObj.sessionId}`,
+        Cookie: loginObj.cookie,
+      },
     },
-  });
+  }, log);
 
   if (response.status !== 200) {
     const body = await response.text();
@@ -215,12 +277,15 @@ export async function fetchJobResults(client, sid, log) {
   log.info(`[linkchecker-splunk] Fetched ${results.length} results`);
 
   return results.map((r) => ({
-    /* c8 ignore next 2 - defensive defaults for malformed rows */
     urlFrom: r.urlFrom || '',
     urlTo: r.urlTo || '',
-    anchorText: r.anchorText || '[no text]',
+    validity: r.validity || 'UNKNOWN',
+    elementName: r.elementName || 'a',
+    attributeName: r.attributeName || 'href',
     itemType: r.itemType || 'link',
+    anchorText: r.anchorText || '[no text]',
     httpStatus: r.httpStatus || 'unknown',
+    timestamp: r.timestamp ? parseInt(r.timestamp, 10) : Date.now(),
   }));
 }
 

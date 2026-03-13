@@ -82,7 +82,7 @@ describe('LinkChecker Steps Tests', function () {
             getHandlers: () => ({
               'broken-internal-links': {
                 config: {
-                  enableLinkCheckerDetection: true,
+                  isLinkcheckerEnabled: true,
                   linkCheckerLookbackMinutes: 1440,
                   aemProgramId: 'program123',
                   aemEnvironmentId: 'env456',
@@ -144,7 +144,7 @@ describe('LinkChecker Steps Tests', function () {
         getHandlers: () => ({
           'broken-internal-links': {
             config: {
-              enableLinkCheckerDetection: false,
+              isLinkcheckerEnabled: false,
             },
           },
         }),
@@ -162,7 +162,7 @@ describe('LinkChecker Steps Tests', function () {
         getHandlers: () => ({
           'broken-internal-links': {
             config: {
-              enableLinkCheckerDetection: true,
+              isLinkcheckerEnabled: true,
               aemEnvironmentId: 'env456',
             },
           },
@@ -179,7 +179,7 @@ describe('LinkChecker Steps Tests', function () {
         getHandlers: () => ({
           'broken-internal-links': {
             config: {
-              enableLinkCheckerDetection: true,
+              isLinkcheckerEnabled: true,
               aemProgramId: 'program123',
             },
           },
@@ -354,7 +354,7 @@ describe('LinkChecker Steps Tests', function () {
         getHandlers: () => ({
           'broken-internal-links': {
             config: {
-              enableLinkCheckerDetection: true,
+              isLinkcheckerEnabled: true,
               linkCheckerLookbackMinutes: 720, // 12 hours
               aemProgramId: 'program123',
               aemEnvironmentId: 'env456',
@@ -398,7 +398,7 @@ describe('LinkChecker Steps Tests', function () {
         getHandlers: () => ({
           'broken-internal-links': {
             config: {
-              enableLinkCheckerDetection: false,
+              isLinkcheckerEnabled: false,
             },
           },
         }),

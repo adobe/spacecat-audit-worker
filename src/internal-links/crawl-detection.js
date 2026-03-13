@@ -13,7 +13,7 @@
 import { load as cheerioLoad } from 'cheerio';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import { isWithinAuditScope } from './subpath-filter.js';
-import { createAuditLogger } from '../common/context-logger.js';
+import { createAuditLogger, isContextLogger } from '../common/context-logger.js';
 import { isLinkInaccessible } from './helpers.js';
 
 const AUDIT_TYPE = 'broken-internal-links';
@@ -243,8 +243,9 @@ async function validateLinksWithCache(
   brokenUrlsCache,
   workingUrlsCache,
   baseURL,
-  baseLog,
+  log,
   siteId,
+  auditId,
 ) {
   return Promise.all(
     links.map(async (link) => {
@@ -268,7 +269,7 @@ async function validateLinksWithCache(
         return { type: 'cache-hit-working' };
       }
 
-      const validation = await isLinkInaccessible(link.url, baseLog, siteId);
+      const validation = await isLinkInaccessible(link.url, log, siteId, auditId);
       if (validation.isBroken) {
         brokenUrlsCache.add(link.url);
         return {
@@ -321,7 +322,10 @@ export async function detectBrokenLinksFromCrawlBatch({
   const {
     s3Client, env, log: baseLog, site,
   } = context;
-  const log = createAuditLogger(baseLog, AUDIT_TYPE, site.getId());
+  const auditId = context.audit?.getId?.() || null;
+  const log = isContextLogger(baseLog)
+    ? baseLog
+    : createAuditLogger(baseLog, AUDIT_TYPE, site.getId(), auditId);
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   const baseURL = site.getBaseURL();
   const baseHostname = new URL(baseURL).hostname.replace(/^www\./, '');
@@ -408,8 +412,9 @@ export async function detectBrokenLinksFromCrawlBatch({
           brokenUrlsCache,
           workingUrlsCache,
           baseURL,
-          baseLog,
+          log,
           site.getId(),
+          auditId,
         );
 
         allValidationResults.push(...batchResults);

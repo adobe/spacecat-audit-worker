@@ -3333,6 +3333,40 @@ describe('Product MetaTags', () => {
       pagesSet = new Set(['scrapes/site123/page1/scrape.json']);
     });
 
+    const loadRunAuditHandler = () => esmock('../../src/product-metatags/handler.js', {
+      '../../src/product-metatags/product-metatags-auto-suggest.js': {
+        default: sinon.stub().resolves({}),
+      },
+      '../../src/common/opportunity.js': {
+        convertToOpportunity: sinon.stub().resolves({
+          getId: () => 'opp-id',
+          getSiteId: () => 'site123',
+          getData: () => ({}),
+          setData: sinon.stub(),
+          save: sinon.stub().resolves(),
+        }),
+      },
+      '../../src/utils/data-access.js': {
+        syncSuggestions: sinon.stub().resolves({ errorItems: [], createdItems: [] }),
+      },
+      '../../src/utils/saas.js': {
+        getCommerceConfig: sinon.stub().resolves({}),
+      },
+      '@adobe/spacecat-shared-rum-api-client': {
+        default: {
+          createFrom: () => ({
+            query: sinon.stub().resolves([]),
+          }),
+        },
+      },
+      '../../src/support/utils.js': {
+        calculateCPCValue: sinon.stub().resolves(0),
+      },
+      '../../src/common/index.js': {
+        wwwUrlResolver: sinon.stub().resolves('https://example.com'),
+      },
+    });
+
     // Test for lines 323-324: Null check in Promise.all processing
     it(
       'should handle null metadata in Promise.all processing',
@@ -4145,25 +4179,7 @@ describe('Product MetaTags', () => {
     });
 
     it('should cover line 700 branch when scrapeResultPaths is undefined', async () => {
-      const mockRunAudit = esmock('../../src/product-metatags/handler.js', {
-        '../../src/product-metatags/handler.js': {
-          productMetatagsAutoDetect: sinon.stub().resolves({
-            seoChecks: { getFewHealthyTags: sinon.stub().returns({}) },
-            detectedTags: {},
-            extractedTags: {},
-          }),
-          calculateProjectedTraffic: sinon.stub().resolves({
-            projectedTrafficLost: 0,
-            projectedTrafficValue: 0,
-          }),
-        },
-        '../../src/product-metatags/product-metatags-auto-suggest.js': {
-          default: sinon.stub().resolves({}),
-        },
-        '../../src/utils/data-access.js': {
-          syncSuggestions: sinon.stub().resolves({ errorItems: [], createdItems: [] }),
-        },
-      });
+      const mockRunAudit = loadRunAuditHandler();
 
       const { runAuditAndGenerateSuggestions: mockedRunAudit } = await mockRunAudit;
 
@@ -4197,25 +4213,7 @@ describe('Product MetaTags', () => {
     });
 
     it('should cover line 700 branch when scrapeResultPaths has a size', async () => {
-      const mockRunAudit = esmock('../../src/product-metatags/handler.js', {
-        '../../src/product-metatags/handler.js': {
-          productMetatagsAutoDetect: sinon.stub().resolves({
-            seoChecks: { getFewHealthyTags: sinon.stub().returns({}) },
-            detectedTags: {},
-            extractedTags: {},
-          }),
-          calculateProjectedTraffic: sinon.stub().resolves({
-            projectedTrafficLost: 0,
-            projectedTrafficValue: 0,
-          }),
-        },
-        '../../src/product-metatags/product-metatags-auto-suggest.js': {
-          default: sinon.stub().resolves({}),
-        },
-        '../../src/utils/data-access.js': {
-          syncSuggestions: sinon.stub().resolves({ errorItems: [], createdItems: [] }),
-        },
-      });
+      const mockRunAudit = loadRunAuditHandler();
 
       const { runAuditAndGenerateSuggestions: mockedRunAudit } = await mockRunAudit;
 
@@ -4250,25 +4248,7 @@ describe('Product MetaTags', () => {
     });
 
     it('should cover line 700 || 0 fallback branch when scrapeResultPaths size is 0', async () => {
-      const mockRunAudit = esmock('../../src/product-metatags/handler.js', {
-        '../../src/product-metatags/handler.js': {
-          productMetatagsAutoDetect: sinon.stub().resolves({
-            seoChecks: { getFewHealthyTags: sinon.stub().returns({}) },
-            detectedTags: {},
-            extractedTags: {},
-          }),
-          calculateProjectedTraffic: sinon.stub().resolves({
-            projectedTrafficLost: 0,
-            projectedTrafficValue: 0,
-          }),
-        },
-        '../../src/product-metatags/product-metatags-auto-suggest.js': {
-          default: sinon.stub().resolves({}),
-        },
-        '../../src/utils/data-access.js': {
-          syncSuggestions: sinon.stub().resolves({ errorItems: [], createdItems: [] }),
-        },
-      });
+      const mockRunAudit = loadRunAuditHandler();
 
       const { runAuditAndGenerateSuggestions: mockedRunAudit } = await mockRunAudit;
 

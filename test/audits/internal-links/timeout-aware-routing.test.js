@@ -83,7 +83,7 @@ describe('Timeout-Aware Routing Tests', function () {
             getHandlers: () => ({
               'broken-internal-links': {
                 config: {
-                  enableLinkCheckerDetection: false, // Disabled to test routing only
+                  isLinkcheckerEnabled: false, // Disabled to test routing only
                 },
               },
             }),

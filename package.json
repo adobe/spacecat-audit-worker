@@ -23,6 +23,7 @@
     "deploy": "hedy -v --deploy --aws-deploy-bucket=spacecat-prod-deploy --pkgVersion=latest",
     "deploy-stage": "hedy -v --deploy --aws-deploy-bucket=spacecat-stage-deploy --pkgVersion=latest",
     "deploy-dev": "hedy -v --deploy --pkgVersion=ci$CI_BUILD_NUM -l latest --aws-deploy-bucket=spacecat-dev-deploy --cleanup-ci=24h",
+    "deploy-dev-alias": "bash ./scripts/deploy-dev-alias.sh",
     "deploy-secrets": "hedy --aws-update-secrets --params-file=secrets/secrets.env",
     "prepare": "husky",
     "local-build": "sam build",

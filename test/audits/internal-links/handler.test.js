@@ -175,7 +175,19 @@ describe('Broken internal links audit', () => {
   });
 
   it('broken-internal-links audit runs rum api client 404 query', async () => {
-    const result = await internalLinksAuditRunner(
+    const { internalLinksAuditRunner: deterministicRunner } = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/helpers.js': {
+        ...(await import('../../../src/internal-links/helpers.js')),
+        isLinkInaccessible: sinon.stub().resolves({
+          isBroken: true,
+          httpStatus: 404,
+          statusBucket: '4xx',
+          contentType: 'text/html; charset=utf-8',
+        }),
+      },
+    });
+
+    const result = await deterministicRunner(
       'www.example.com',
       context,
       site,
@@ -244,6 +256,36 @@ describe('Broken internal links audit', () => {
     expect(resolverStub).to.have.been.calledOnceWith(site, contextWithoutFinalUrl);
     expect(rumQueryStub).to.have.been.calledOnce;
     expect(result.auditResult.finalUrl).to.equal(resolvedFinalUrl);
+    expect(result.auditResult.success).to.equal(true);
+    expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
+  }).timeout(5000);
+
+  it('broken-internal-links audit works without audit context for logger enrichment', async () => {
+    const contextWithoutAudit = {
+      ...context,
+      audit: undefined,
+      rumApiClient: {
+        query: sinon.stub().resolves([]),
+      },
+    };
+
+    const result = await internalLinksAuditRunner('www.example.com', contextWithoutAudit, site);
+
+    expect(result.auditResult.success).to.equal(true);
+    expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
+  }).timeout(5000);
+
+  it('broken-internal-links audit works when audit context has no getId method', async () => {
+    const contextWithoutAuditId = {
+      ...context,
+      audit: {},
+      rumApiClient: {
+        query: sinon.stub().resolves([]),
+      },
+    };
+
+    const result = await internalLinksAuditRunner('www.example.com', contextWithoutAuditId, site);
+
     expect(result.auditResult.success).to.equal(true);
     expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
   }).timeout(5000);
@@ -355,6 +397,38 @@ describe('Broken internal links audit', () => {
     // The ?. operator and || 0 handles undefined, null, or empty array cases
     expect(result.type).to.equal('top-pages');
     expect(result.siteId).to.equal(site.getId());
+  }).timeout(10000);
+
+  it('runAuditAndImportTopPagesStep should work without audit context for logger enrichment', async () => {
+    const contextWithoutAudit = {
+      ...context,
+      audit: undefined,
+      rumApiClient: {
+        query: sinon.stub().resolves([]),
+      },
+    };
+
+    const result = await runAuditAndImportTopPagesStep(contextWithoutAudit);
+
+    expect(result.type).to.equal('top-pages');
+    expect(result.siteId).to.equal(site.getId());
+    expect(result.auditResult.success).to.equal(true);
+  }).timeout(10000);
+
+  it('runAuditAndImportTopPagesStep should work when audit context has no getId method', async () => {
+    const contextWithoutAuditId = {
+      ...context,
+      audit: {},
+      rumApiClient: {
+        query: sinon.stub().resolves([]),
+      },
+    };
+
+    const result = await runAuditAndImportTopPagesStep(contextWithoutAuditId);
+
+    expect(result.type).to.equal('top-pages');
+    expect(result.siteId).to.equal(site.getId());
+    expect(result.auditResult.success).to.equal(true);
   }).timeout(10000);
 
   it('submitForScraping should merge database top pages + includedURLs and submit', async () => {
@@ -1030,7 +1104,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     ).to.be.rejectedWith('Failed to fetch opportunities for siteId site-id-1: read error happened');
 
     expect(context.log.error).to.have.been.calledWith(
-      '[auditType=broken-internal-links] [siteId=site-id-1] Fetching opportunities failed with error: read error happened',
+      '[auditType=broken-internal-links] [siteId=site-id-1] [auditId=audit-id-1] [step=opportunity-and-suggestions] Fetching opportunities failed with error: read error happened',
     );
   }).timeout(5000);
 
@@ -1381,7 +1455,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     expect(context.log.error).to.have.been.calledOnceWith(
-      'Fetching opportunities for siteId site-id-1 failed with error: some-error',
+      '[auditType=broken-internal-links] [siteId=site-id-1] [auditId=audit-id-1] [step=opportunity-and-suggestions] Fetching opportunities for siteId site-id-1 failed with error: some-error',
     );
 
     // make sure that no new suggestions are added
@@ -1405,7 +1479,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     expect(context.log.error).to.have.been.calledOnceWith(
-      '[auditType=broken-internal-links] [siteId=site-id-1] Fetching opportunities failed with error: some-error',
+      '[auditType=broken-internal-links] [siteId=site-id-1] [auditId=audit-id-1] [step=opportunity-and-suggestions] Fetching opportunities failed with error: some-error',
     );
 
     // make sure that no new suggestions are added
@@ -3166,6 +3240,37 @@ describe('runCrawlDetectionBatch - Coverage Tests', () => {
     expect(mockLog.info).to.have.been.calledWith(sinon.match(/RUM detection results: 0 broken links/));
   });
 
+  it('should return already-finalized when workflow completion marker exists', async function () {
+    const mockLog = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    const mockContext = {
+      log: mockLog,
+      site: {
+        getId: () => 'site-finalized',
+      },
+      audit: {
+        getId: () => 'audit-finalized',
+        getAuditResult: () => ({
+          internalLinksWorkflowCompletedAt: '2026-03-12T12:00:00.000Z',
+          brokenInternalLinks: [{ urlFrom: 'https://example.com/a', urlTo: 'https://example.com/b' }],
+        }),
+      },
+      dataAccess: {},
+    };
+
+    const result = await finalizeCrawlDetection(mockContext, { skipCrawlDetection: true });
+
+    expect(result).to.deep.equal({ status: 'already-finalized' });
+    expect(mockLog.info).to.have.been.calledWith(
+      sinon.match(/Audit already finalized at 2026-03-12T12:00:00.000Z/),
+    );
+  });
+
   it('should handle missing scrapeResultPaths (line 581)', async function () {
     this.timeout(15000);
 
@@ -3229,6 +3334,93 @@ describe('runCrawlDetectionBatch - Coverage Tests', () => {
     // Should use fallback Map() and skip crawl detection
     expect(mockLog.info).to.have.been.calledWith(sinon.match(/No scraped content available/));
     expect(result).to.have.property('status');
+  });
+
+  it('should fallback to updatedAuditResult when audit.getAuditResult returns null after merge', async function () {
+    this.timeout(15000);
+
+    const mockLog = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    const getAuditResultStub = sandbox.stub()
+      .onFirstCall().returns({ brokenInternalLinks: [] })
+      .onSecondCall().returns(null);
+    let currentAuditResult = { brokenInternalLinks: [], success: true };
+    const setAuditResultStub = sandbox.stub().callsFake((nextResult) => {
+      currentAuditResult = nextResult;
+    });
+
+    const mockContext = {
+      log: mockLog,
+      site: {
+        getId: () => 'site-fallback-audit-result',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({ getIncludedURLs: () => [] }),
+      },
+      audit: {
+        getId: () => 'audit-fallback-audit-result',
+        getAuditType: () => AUDIT_TYPE,
+        getFullAuditRef: () => 'site/audit-fallback-audit-result',
+        getAuditResult: getAuditResultStub,
+        setAuditResult: setAuditResultStub,
+        save: sandbox.stub().resolves(),
+      },
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: {
+        send: sandbox.stub()
+          .onCall(0).resolves({
+            Contents: [
+              { Key: 'broken-internal-links/batch-state/audit-fallback-audit-result/batches/batch-0.json' },
+            ],
+          })
+          .onCall(1).resolves({
+            Body: {
+              transformToString: async () => JSON.stringify({
+                batchNum: 0,
+                results: [],
+                pagesProcessed: 0,
+              }),
+            },
+          })
+          .onCall(2).resolves({ Contents: [] })
+          .resolves(),
+      },
+      dataAccess: {
+        Audit: {
+          findById: sandbox.stub().resolves({
+            getId: () => 'audit-fallback-audit-result',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          }),
+        },
+        Opportunity: {
+          allByAuditId: sandbox.stub().resolves([]),
+          allBySiteIdAndStatus: sandbox.stub().resolves([]),
+          create: sandbox.stub().resolves({
+            getId: () => 'opp-fallback-audit-result',
+            getSuggestions: sandbox.stub().resolves([]),
+            addSuggestions: sandbox.stub().resolves({ length: 0, createdItems: [], errorItems: [] }),
+          }),
+        },
+        Suggestion: {
+          allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    await finalizeCrawlDetection(mockContext, { skipCrawlDetection: false });
+
+    const finalAuditResult = setAuditResultStub.lastCall.args[0];
+    expect(finalAuditResult).to.have.property('internalLinksWorkflowCompletedAt');
   });
 
   it('should cover cleanup failure path (lines 556-561)', async function () {
@@ -3326,7 +3518,10 @@ describe('runCrawlDetectionBatch - Coverage Tests', () => {
       trafficDomain: 100 - i,
     }));
 
-    const setAuditResultStub = sandbox.stub();
+    let currentAuditResult = { brokenInternalLinks: [], success: true };
+    const setAuditResultStub = sandbox.stub().callsFake((nextResult) => {
+      currentAuditResult = nextResult;
+    });
     const mockContext = {
       log: mockLog,
       site: {
@@ -3338,7 +3533,7 @@ describe('runCrawlDetectionBatch - Coverage Tests', () => {
         getId: () => 'audit-cap',
         getAuditType: () => AUDIT_TYPE,
         getFullAuditRef: () => 'site/audit-cap',
-        getAuditResult: () => ({ brokenInternalLinks: [], success: true }),
+        getAuditResult: () => currentAuditResult,
         setAuditResult: setAuditResultStub,
         save: sandbox.stub().resolves(),
       },
@@ -3395,11 +3590,12 @@ describe('runCrawlDetectionBatch - Coverage Tests', () => {
 
     await finalizeCrawlDetection(mockContext, { skipCrawlDetection: false });
 
-    // Cap is applied in opportunityAndSuggestionsStep (single place); last update is the capped one
+    // Cap is applied in opportunityAndSuggestionsStep and preserved through final completion update.
     const expectedMsg = new RegExp(`Capping reported broken links from ${overLimit} to ${MAX_BROKEN_LINKS_REPORTED} \\(priority order\\)`);
     expect(mockLog.warn).to.have.been.calledWith(sinon.match(expectedMsg));
     const updatedResult = setAuditResultStub.lastCall.args[0];
     expect(updatedResult.brokenInternalLinks).to.have.lengthOf(MAX_BROKEN_LINKS_REPORTED);
+    expect(updatedResult).to.have.property('internalLinksWorkflowCompletedAt');
   });
 
   it('should skip batch processing when batchStartIndex >= totalPages', async () => {
@@ -3812,7 +4008,7 @@ describe('runCrawlDetectionBatch - Coverage Tests', () => {
         getFullAuditRef: () => 'site/audit-type/audit-123',
         getAuditResult: () => ({
           brokenInternalLinks: [],
-          internalLinksFinalizedAt: '2026-03-10T00:00:00.000Z',
+          internalLinksWorkflowCompletedAt: '2026-03-10T00:00:00.000Z',
         }),
         setAuditResult: sandbox.stub(),
         save: sandbox.stub().resolves(),
