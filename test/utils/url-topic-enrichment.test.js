@@ -40,7 +40,7 @@ describe('enrichUrlsWithTopicData', () => {
           {
             url: ytUrl1,
             category: 'insurance-video',
-            timesCited: 2,
+            timesCited: 3,
             subPrompts: ['prompt-a'],
           },
         ],
@@ -52,7 +52,7 @@ describe('enrichUrlsWithTopicData', () => {
           {
             url: redditUrl1,
             category: 'travel-insurance',
-            timesCited: 2,
+            timesCited: 3,
             subPrompts: ['prompt-b', 'prompt-c'],
           },
           {
@@ -93,7 +93,7 @@ describe('enrichUrlsWithTopicData', () => {
       url: ytUrl1,
       siteId: 'site-1',
       categories: ['insurance-video', 'travel-video'],
-      timesCited: 5,
+      timesCited: 3,
       prompts: ['prompt-a', 'prompt-b', 'prompt-e'],
     });
   });
