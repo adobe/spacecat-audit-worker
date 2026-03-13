@@ -39,18 +39,20 @@ async function loadHandler({ loginImpl, oneshotImpl } = {}) {
     oneshotSearch,
   };
 
-  const createSplunkClient = sinon.stub().resolves(splunkClient);
+  const SplunkAPIClient = {
+    createFrom: sinon.stub().returns(splunkClient),
+  };
 
   const postMessageSafe = sinon.stub().resolves({ success: true });
 
   const identifyRedirects = (await esmock('../../src/identify-redirects/handler.js', {
-    '../../src/support/splunk-client-loader.js': { createSplunkClient },
+    '@adobe/spacecat-shared-splunk-client': { default: SplunkAPIClient },
     '../../src/utils/slack-utils.js': { postMessageSafe },
   })).default;
 
   return {
     identifyRedirects,
-    createSplunkClient,
+    SplunkAPIClient,
     splunkClient,
     login,
     oneshotSearch,
@@ -398,11 +400,13 @@ describe('identify-redirects handler', () => {
       login,
     };
 
-    const createSplunkClient = sinon.stub().resolves(splunkClient);
+    const SplunkAPIClient = {
+      createFrom: sinon.stub().returns(splunkClient),
+    };
     const postMessageSafe = sinon.stub().resolves({ success: true });
 
     const identifyRedirects = (await esmock('../../src/identify-redirects/handler.js', {
-      '../../src/support/splunk-client-loader.js': { createSplunkClient },
+      '@adobe/spacecat-shared-splunk-client': { default: SplunkAPIClient },
       '../../src/utils/slack-utils.js': { postMessageSafe },
     })).default;
 
@@ -443,11 +447,13 @@ describe('identify-redirects handler', () => {
       login,
     };
 
-    const createSplunkClient = sinon.stub().resolves(splunkClient);
+    const SplunkAPIClient = {
+      createFrom: sinon.stub().returns(splunkClient),
+    };
     const postMessageSafe = sinon.stub().resolves({ success: true });
 
     const identifyRedirects = (await esmock('../../src/identify-redirects/handler.js', {
-      '../../src/support/splunk-client-loader.js': { createSplunkClient },
+      '@adobe/spacecat-shared-splunk-client': { default: SplunkAPIClient },
       '../../src/utils/slack-utils.js': { postMessageSafe },
     })).default;
 
@@ -472,11 +478,13 @@ describe('identify-redirects handler', () => {
       login,
     };
 
-    const createSplunkClient = sinon.stub().resolves(splunkClient);
+    const SplunkAPIClient = {
+      createFrom: sinon.stub().returns(splunkClient),
+    };
     const postMessageSafe = sinon.stub().resolves({ success: true });
 
     const identifyRedirects = (await esmock('../../src/identify-redirects/handler.js', {
-      '../../src/support/splunk-client-loader.js': { createSplunkClient },
+      '@adobe/spacecat-shared-splunk-client': { default: SplunkAPIClient },
       '../../src/utils/slack-utils.js': { postMessageSafe },
     })).default;
 
@@ -501,11 +509,13 @@ describe('identify-redirects handler', () => {
       login,
     };
 
-    const createSplunkClient = sinon.stub().resolves(splunkClient);
+    const SplunkAPIClient = {
+      createFrom: sinon.stub().returns(splunkClient),
+    };
     const postMessageSafe = sinon.stub().resolves({ success: true });
 
     const identifyRedirects = (await esmock('../../src/identify-redirects/handler.js', {
-      '../../src/support/splunk-client-loader.js': { createSplunkClient },
+      '@adobe/spacecat-shared-splunk-client': { default: SplunkAPIClient },
       '../../src/utils/slack-utils.js': { postMessageSafe },
     })).default;
 
@@ -540,11 +550,13 @@ describe('identify-redirects handler', () => {
       login,
     };
 
-    const createSplunkClient = sinon.stub().resolves(splunkClient);
+    const SplunkAPIClient = {
+      createFrom: sinon.stub().returns(splunkClient),
+    };
     const postMessageSafe = sinon.stub().resolves({ success: true });
 
     const identifyRedirects = (await esmock('../../src/identify-redirects/handler.js', {
-      '../../src/support/splunk-client-loader.js': { createSplunkClient },
+      '@adobe/spacecat-shared-splunk-client': { default: SplunkAPIClient },
       '../../src/utils/slack-utils.js': { postMessageSafe },
     })).default;
 
@@ -717,3 +729,4 @@ describe('identify-redirects handler', () => {
     });
   });
 });
+

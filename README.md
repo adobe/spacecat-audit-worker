@@ -20,25 +20,6 @@ $ npm install @adobe/spacecat-audit-worker
 
 See the [API documentation](docs/API.md).
 
-### Broken Internal Links Config
-
-`broken-internal-links` site configuration lives at:
-
-- `config.handlers["broken-internal-links"].config`
-- `config.handlers["broken-internal-links"].includedURLs`
-
-Internal-links forwards only the supported scraper runtime scrolling options:
-
-- `scrollToBottom` (default: `true`)
-- `maxScrollDurationMs` (default: `30000`)
-- `scrollMaxDurationMs` (alias for `maxScrollDurationMs`)
-- `clickLoadMore` (default: `true`)
-- `loadMoreSelector` (optional, no default)
-
-For full examples and all internal-links knobs, see:
-
-- [docs/runbooks/internal-links-config.md](docs/runbooks/internal-links-config.md)
-
 ## Development
 
 ### Build
@@ -840,3 +821,4 @@ Here's how messages flow between workers in a step-based audit:
 ```
 
 Each message preserves the `auditContext` to maintain the step chain. The `next` field determines which step runs next, while `auditId` and `fullAuditRef` track the audit state across workers.
+

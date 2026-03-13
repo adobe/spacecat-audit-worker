@@ -12,9 +12,9 @@
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { hasText } from '@adobe/spacecat-shared-utils';
+import SplunkAPIClient from '@adobe/spacecat-shared-splunk-client';
 
 import { postMessageSafe } from '../utils/slack-utils.js';
-import { createSplunkClient } from '../support/splunk-client-loader.js';
 
 const DEFAULT_MINUTES = 3000; // 50 hours
 
@@ -289,7 +289,7 @@ export default async function identifyRedirects(message, context) {
 
   const { envField, programField, pathField } = { ...DEFAULT_SPLUNK_FIELDS, ...splunkFields };
 
-  const client = await createSplunkClient(context);
+  const client = SplunkAPIClient.createFrom(context);
 
   await postMessageSafe(
     context,
