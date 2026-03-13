@@ -400,8 +400,32 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
 }
 
 /**
+ * Fetches all existing SentimentTopic entities for a site and indexes them by topic name.
+ * This handles paginated results so reconciliation sees the full current topic set.
+ *
+ * @param {string} siteId - The site ID
+ * @param {object} SentimentTopic - SentimentTopic collection from data access
+ * @returns {Promise<Map<string, object>>} Existing topics keyed by name
+ */
+async function fetchExistingTopicsByName(siteId, SentimentTopic) {
+  const existingByName = new Map();
+  let cursor = null;
+
+  do {
+    // eslint-disable-next-line no-await-in-loop
+    const result = await SentimentTopic.allBySiteId(siteId, cursor ? { cursor } : {});
+    for (const topic of (result.data || [])) {
+      existingByName.set(topic.getName(), topic);
+    }
+    cursor = result.cursor || null;
+  } while (cursor);
+
+  return existingByName;
+}
+
+/**
  * Persists topic data to the guideline store as SentimentTopic entities.
- * Replaces existing topics (matched by name) or creates new ones.
+ * Updates existing topics (matched by name) or creates new ones.
  * The timesCited for each URL is taken from the global allUrls map.
  *
  * @param {string} siteId - The site ID
@@ -412,12 +436,7 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
  */
 async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, log) {
   const { SentimentTopic } = dataAccess;
-
-  const existingResult = await SentimentTopic.allBySiteId(siteId);
-  const existingByName = new Map();
-  for (const topic of (existingResult.data || [])) {
-    existingByName.set(topic.getName(), topic);
-  }
+  const existingByName = await fetchExistingTopicsByName(siteId, SentimentTopic);
 
   const entries = [...topicMap.entries()];
   log.info(`${LOG_PREFIX} Persisting ${entries.length} topics to guideline store (${existingByName.size} existing)`);
@@ -435,7 +454,12 @@ async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, 
 
         const existing = existingByName.get(name);
         if (existing) {
-          await existing.remove();
+          existing.setDescription('');
+          existing.setUrls(urls);
+          existing.setEnabled(true);
+          existing.setUpdatedBy('system');
+          await existing.save();
+          return 'updated';
         }
 
         await SentimentTopic.create({
@@ -446,7 +470,7 @@ async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, 
           enabled: true,
           createdBy: 'system',
         });
-        return existing ? 'replaced' : 'created';
+        return 'created';
       } catch (error) {
         log.warn(`${LOG_PREFIX} Failed to save topic ${name}: ${error.message}`);
         return 'error';
@@ -455,10 +479,10 @@ async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, 
   );
 
   const created = results.filter((r) => r === 'created').length;
-  const replaced = results.filter((r) => r === 'replaced').length;
+  const updated = results.filter((r) => r === 'updated').length;
   const failed = results.filter((r) => r === 'error').length;
 
-  log.info(`${LOG_PREFIX} Guideline store complete: ${created} created, ${replaced} replaced, ${failed} failed`);
+  log.info(`${LOG_PREFIX} Guideline store complete: ${created} created, ${updated} updated, ${failed} failed`);
 }
 
 /**

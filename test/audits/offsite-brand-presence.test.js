@@ -1143,10 +1143,14 @@ describe('Offsite Brand Presence Handler', () => {
       expect(names).to.include('Topic B');
     });
 
-    it('should replace existing topics by removing and recreating', async () => {
+    it('should update existing topics in place', async () => {
       const mockExistingTopic = {
         getName: () => 'Existing Topic',
-        remove: sandbox.stub().resolves(),
+        setDescription: sandbox.stub(),
+        setUrls: sandbox.stub(),
+        setEnabled: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
       };
       dataAccess.SentimentTopic.allBySiteId.resolves({ data: [mockExistingTopic] });
 
@@ -1158,10 +1162,61 @@ describe('Offsite Brand Presence Handler', () => {
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      expect(mockExistingTopic.remove).to.have.been.calledOnce;
-      expect(dataAccess.SentimentTopic.create).to.have.been.calledOnce;
-      const createArg = dataAccess.SentimentTopic.create.firstCall.args[0];
-      expect(createArg.name).to.equal('Existing Topic');
+      expect(mockExistingTopic.setDescription).to.have.been.calledOnceWith('');
+      expect(mockExistingTopic.setUrls).to.have.been.calledOnceWith([
+        {
+          url: 'https://example.com/page1',
+          timesCited: 1,
+          category: 'Cat1',
+          subPrompts: ['Prompt 1'],
+        },
+      ]);
+      expect(mockExistingTopic.setEnabled).to.have.been.calledOnceWith(true);
+      expect(mockExistingTopic.setUpdatedBy).to.have.been.calledOnceWith('system');
+      expect(mockExistingTopic.save).to.have.been.calledOnce;
+      expect(dataAccess.SentimentTopic.create).to.not.have.been.called;
+    });
+
+    it('should load existing topics across all pages when matching by name', async () => {
+      const pageOneTopic = {
+        getName: () => 'Other Topic',
+        setDescription: sandbox.stub(),
+        setUrls: sandbox.stub(),
+        setEnabled: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+      const pagedTopic = {
+        getName: () => 'Paged Topic',
+        setDescription: sandbox.stub(),
+        setUrls: sandbox.stub(),
+        setEnabled: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+      dataAccess.SentimentTopic.allBySiteId
+        .onFirstCall()
+        .resolves({ data: [pageOneTopic], cursor: 'next-page' });
+      dataAccess.SentimentTopic.allBySiteId
+        .onSecondCall()
+        .resolves({ data: [pagedTopic], cursor: null });
+
+      stubWithTopicRows([
+        {
+          Sources: 'https://example.com/page1', Topic: 'Paged Topic', Category: 'Cat1', Prompt: 'Prompt 1',
+        },
+      ]);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(dataAccess.SentimentTopic.allBySiteId.firstCall).to.have.been.calledWithExactly(SITE_ID, {});
+      expect(dataAccess.SentimentTopic.allBySiteId.secondCall).to.have.been.calledWithExactly(SITE_ID, { cursor: 'next-page' });
+      expect(pageOneTopic.save).to.not.have.been.called;
+      expect(pagedTopic.setDescription).to.have.been.calledOnceWith('');
+      expect(pagedTopic.setEnabled).to.have.been.calledOnceWith(true);
+      expect(pagedTopic.setUpdatedBy).to.have.been.calledOnceWith('system');
+      expect(pagedTopic.save).to.have.been.calledOnce;
+      expect(dataAccess.SentimentTopic.create).to.not.have.been.called;
     });
 
     it('should deduplicate subPrompts across providers', async () => {
@@ -1227,6 +1282,32 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(log.warn).to.have.been.calledWith(
         sinon.match(/Failed to save topic Failing Topic/),
+      );
+    });
+
+    it('should handle topic save failure gracefully for existing topics', async () => {
+      const mockExistingTopic = {
+        getName: () => 'Existing Topic',
+        setDescription: sandbox.stub(),
+        setUrls: sandbox.stub(),
+        setEnabled: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().rejects(new Error('DynamoDB error')),
+      };
+      dataAccess.SentimentTopic.allBySiteId.resolves({ data: [mockExistingTopic] });
+      stubWithTopicRows([
+        {
+          Sources: 'https://example.com/page1', Topic: 'Existing Topic', Category: 'Cat1', Prompt: 'Prompt 1',
+        },
+      ]);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(mockExistingTopic.save).to.have.been.calledOnce;
+      expect(dataAccess.SentimentTopic.create).to.not.have.been.called;
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to save topic Existing Topic/),
       );
     });
 
