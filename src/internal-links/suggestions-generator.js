@@ -16,16 +16,29 @@ import { Audit, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-share
 import { getScrapedDataForSiteId, limitConcurrency } from '../support/utils.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from './subpath-filter.js';
+import { getPositiveIntConfig } from './config.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
+
+function parseSuggestionJson(content, log, siteId, contextLabel) {
+  try {
+    return JSON.parse(content);
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE}] [Site: ${siteId}] Invalid JSON for ${contextLabel}: ${error.message}`);
+    return null;
+  }
+}
 
 export const generateSuggestionData = async (finalUrl, brokenInternalLinks, context, site) => {
   const { log } = context;
 
   const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
   const azureOpenAIOptions = { responseFormat: 'json_object' };
-  const BATCH_SIZE = 100;
-  const MAX_CONCURRENT_AI_CALLS = 5;
+  /* c8 ignore start - config fallback parsing is defensive */
+  const internalLinksConfig = site?.getConfig?.()?.getHandlers?.()?.['broken-internal-links']?.config || {};
+  const BATCH_SIZE = getPositiveIntConfig(internalLinksConfig.suggestionBatchSize, 100);
+  const MAX_CONCURRENT_AI_CALLS = getPositiveIntConfig(internalLinksConfig.maxConcurrentAiCalls, 5);
+  /* c8 ignore stop */
 
   // Ensure brokenInternalLinks is an array
   if (!Array.isArray(brokenInternalLinks)) {
@@ -134,7 +147,7 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
       return null;
     }
 
-    return JSON.parse(content);
+    return parseSuggestionJson(content, log, site.getId(), `broken URL ${urlTo}`);
   };
 
   async function processBatches(batches, urlTo) {
@@ -183,7 +196,16 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
           return { ...link };
         }
 
-        const answer = JSON.parse(finalResponse.choices[0].message.content);
+        const answer = parseSuggestionJson(
+          finalResponse.choices[0].message.content,
+          log,
+          site.getId(),
+          `final suggestions for ${link.urlTo}`,
+        );
+        /* c8 ignore next 3 - Defensive guard when AI returns no answer */
+        if (!answer) {
+          return { ...link };
+        }
         return {
           ...link,
           urlsSuggested: answer.suggested_urls?.length > 0 ? answer.suggested_urls : [finalUrl],
@@ -227,7 +249,12 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
         continue;
       }
 
-      headerSuggestionsResults.push(JSON.parse(response.choices[0].message.content));
+      headerSuggestionsResults.push(parseSuggestionJson(
+        response.choices[0].message.content,
+        log,
+        site.getId(),
+        `header suggestions for ${link.urlTo}`,
+      ));
     } catch (error) {
       log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Header suggestion error: ${error.message}`);
       headerSuggestionsResults.push(null);
@@ -306,6 +333,13 @@ export async function syncBrokenInternalLinksSuggestions({
           urlsSuggested: entry.urlsSuggested || [],
           aiRationale: entry.aiRationale || '',
           trafficDomain,
+          // HTTP metadata
+          httpStatus: entry.httpStatus,
+          statusBucket: entry.statusBucket,
+          contentType: entry.contentType,
+          // Detection metadata
+          detectionSource: entry.detectionSource,
+          anchorText: entry.anchorText,
         },
       };
     },

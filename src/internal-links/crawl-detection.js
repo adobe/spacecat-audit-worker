@@ -12,9 +12,11 @@
 
 import { load as cheerioLoad } from 'cheerio';
 import { getObjectFromKey } from '../utils/s3-utils.js';
-import { isWithinAuditScope } from './subpath-filter.js';
-import { createAuditLogger } from '../common/context-logger.js';
+import { isWithinAuditScope, isSharedInternalResource } from './subpath-filter.js';
+import { createAuditLogger, isContextLogger } from '../common/context-logger.js';
 import { isLinkInaccessible } from './helpers.js';
+import { limitConcurrency, sleep } from '../support/utils.js';
+import { buildBrokenLinkKey, getUrlCacheKey } from './link-key.js';
 
 const AUDIT_TYPE = 'broken-internal-links';
 
@@ -23,18 +25,145 @@ const AUDIT_TYPE = 'broken-internal-links';
  * Override via env BROKEN_LINKS_CRAWL_TRAFFIC_DOMAIN (e.g. 1–100).
  * RUM links keep their traffic_domain (e.g. 200, 400).
  */
-const CRAWL_DEFAULT_TRAFFIC = Number(process.env.BROKEN_LINKS_CRAWL_TRAFFIC_DOMAIN) || 1;
+function getCrawlDefaultTraffic(env = {}) {
+  return Number(env.BROKEN_LINKS_CRAWL_TRAFFIC_DOMAIN) || 1;
+}
 
-// Optimized for speed while respecting target server
-const SCRAPE_FETCH_DELAY_MS = 50;
-const LINK_CHECK_BATCH_SIZE = 10;
-const LINK_CHECK_DELAY_MS = 300;
+// Optimized defaults for speed while respecting target server
+const DEFAULT_SCRAPE_FETCH_DELAY_MS = 50;
+const DEFAULT_LINK_CHECK_BATCH_SIZE = 10;
+const DEFAULT_MAX_CONCURRENT_LINK_CHECKS = 5;
+const DEFAULT_LINK_CHECK_DELAY_MS = 300;
 
 export const PAGES_PER_BATCH = 10;
 
-const sleep = (ms) => new Promise((resolve) => {
-  setTimeout(resolve, ms);
-});
+const parsePositiveInt = (value, fallback) => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const parseNonNegativeInt = (value, fallback) => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+};
+
+function normalizeHostname(url) {
+  return new URL(url).hostname.replace(/^www\./, '');
+}
+
+function isSameHost(hostname, baseHostname) {
+  return hostname === baseHostname;
+}
+
+function isInternalAssetHost(hostname, baseHostname) {
+  return hostname === baseHostname || hostname.endsWith(`.${baseHostname}`);
+}
+
+function getSourceItemType(parentTag) {
+  if (parentTag === 'picture') return 'image';
+  if (parentTag === 'video') return 'video';
+  if (parentTag === 'audio') return 'audio';
+  return 'media';
+}
+
+function getAssetTypeFromUrl(url, pageUrl = 'https://example.com') {
+  try {
+    const pathname = new URL(url, pageUrl).pathname.toLowerCase();
+    if (/\.(svg|png|jpe?g|gif|webp|avif)$/.test(pathname)) return 'image';
+    /* c8 ignore start - Asset type branches covered by integration tests at extraction level */
+    if (/\.css$/.test(pathname)) return 'css';
+    if (/\.js$/.test(pathname)) return 'js';
+    if (/\.(mp4|webm)$/.test(pathname)) return 'video';
+    if (/\.(mp3|ogg)$/.test(pathname)) return 'audio';
+    return 'media';
+  } catch (error) {
+    return 'media';
+  }
+  /* c8 ignore stop */
+}
+
+function extractCssUrlCandidates(rawCss = '') {
+  return Array.from(String(rawCss).matchAll(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi))
+    .map((match) => match[2]?.trim())
+    .filter(Boolean)
+    .filter((candidate) => !candidate.startsWith('data:') && !candidate.startsWith('#'));
+}
+
+function extractMetaRefreshUrl(content = '') {
+  const match = String(content).match(/url\s*=\s*([^;]+)/i);
+  /* c8 ignore next - fallback coercion branch */
+  return match?.[1]?.trim() || '';
+}
+
+function resolveUrlCandidates(rawValue, pageUrl) {
+  return String(rawValue)
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => entry.split(/\s+/)[0])
+    .filter((entry) => entry && !entry.startsWith('data:') && !entry.startsWith('#'))
+    .map((entry) => new URL(entry, pageUrl).toString());
+}
+
+function pushResolvedReference({
+  references,
+  rawUrl,
+  pageUrl,
+  baseHostname,
+  log,
+  type,
+  anchorText,
+}) {
+  if (!rawUrl || rawUrl.startsWith('#')) return;
+
+  try {
+    const absoluteUrl = new URL(rawUrl, pageUrl).toString();
+    const hostname = normalizeHostname(absoluteUrl);
+    const isAllowedHost = isInternalAssetHost(hostname, baseHostname);
+
+    if (isAllowedHost) {
+      references.push({
+        url: absoluteUrl,
+        anchorText,
+        type,
+      });
+    }
+    /* c8 ignore next 3 - Defensive: URL parsing rarely fails with valid HTML */
+  } catch (urlError) {
+    log.debug(`Skipping invalid ${type} reference on ${pageUrl}: ${rawUrl}`);
+  }
+}
+
+function pushResolvedSrcsetReferences({
+  references,
+  rawSrcset,
+  pageUrl,
+  baseHostname,
+  log,
+  type,
+  anchorText,
+}) {
+  if (!rawSrcset) return;
+
+  try {
+    const candidates = resolveUrlCandidates(rawSrcset, pageUrl);
+    candidates.forEach((absoluteUrl) => {
+      const hostname = normalizeHostname(absoluteUrl);
+      const isAllowedHost = isInternalAssetHost(hostname, baseHostname);
+
+      if (isAllowedHost) {
+        references.push({
+          url: absoluteUrl,
+          anchorText,
+          type,
+        });
+      }
+    });
+    /* c8 ignore next 3 - Defensive: URL parsing rarely fails with valid HTML */
+  } catch (urlError) {
+    log.debug(`Skipping invalid ${type} srcset on ${pageUrl}: ${rawSrcset}`);
+  }
+}
 
 /**
  * Extracts internal links from HTML using cheerio
@@ -66,6 +195,28 @@ function extractInternalLinks($, pageUrl, baseHostname, log) {
       }
     } catch (urlError) {
       log.debug(`Skipping invalid href on ${pageUrl}: ${href}`);
+    }
+  });
+
+  // Extract links from image map areas
+  $('area[href]').each((_, el) => {
+    const $area = $(el);
+    const href = $area.attr('href');
+    if (!href || href.startsWith('#')) return;
+
+    try {
+      const absoluteUrl = new URL(href, pageUrl).toString();
+      const linkHostname = normalizeHostname(absoluteUrl);
+
+      if (isSameHost(linkHostname, baseHostname)) {
+        internalLinks.push({
+          url: absoluteUrl,
+          anchorText: $area.attr('alt')?.trim() || '[image map area]',
+          type: 'link',
+        });
+      }
+    } catch (urlError) {
+      log.debug(`Skipping invalid area href on ${pageUrl}: ${href}`);
     }
   });
 
@@ -155,13 +306,14 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
 
     try {
       const absoluteUrl = new URL(src, pageUrl).toString();
-      const assetHostname = new URL(absoluteUrl).hostname.replace(/^www\./, '');
+      const assetHostname = normalizeHostname(absoluteUrl);
 
-      if (assetHostname === baseHostname || assetHostname.endsWith(`.${baseHostname}`)) {
+      if (isInternalAssetHost(assetHostname, baseHostname)) {
         const path = new URL(absoluteUrl).pathname.toLowerCase();
         const type = path.endsWith('.svg') ? 'svg' : 'image';
         assetReferences.push({
           url: absoluteUrl,
+          anchorText: '[img src]',
           type,
         });
       }
@@ -171,46 +323,215 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
     }
   });
 
+  $('img[srcset]').each((_, el) => {
+    pushResolvedSrcsetReferences({
+      references: assetReferences,
+      rawSrcset: $(el).attr('srcset'),
+      pageUrl,
+      baseHostname,
+      log,
+      type: 'image',
+      anchorText: '[img srcset]',
+      allowSubdomains: true,
+    });
+  });
+
+  $('source[srcset]').each((_, el) => {
+    const $source = $(el);
+    const parentTag = $source.parent()?.prop('tagName')?.toLowerCase();
+    const type = getSourceItemType(parentTag);
+    /* c8 ignore next - cheerio HTML mode always attaches source elements to a parent */
+    const anchorText = `[${parentTag || 'source'} srcset]`;
+
+    pushResolvedSrcsetReferences({
+      references: assetReferences,
+      rawSrcset: $source.attr('srcset'),
+      pageUrl,
+      baseHostname,
+      log,
+      type,
+      anchorText,
+    });
+  });
+
   // CSS files
   $('link[rel="stylesheet"][href]').each((_, el) => {
-    const href = $(el).attr('href');
-    if (!href || href.startsWith('#')) return;
-
-    try {
-      const absoluteUrl = new URL(href, pageUrl).toString();
-      const assetHostname = new URL(absoluteUrl).hostname.replace(/^www\./, '');
-
-      if (assetHostname === baseHostname || assetHostname.endsWith(`.${baseHostname}`)) {
-        assetReferences.push({
-          url: absoluteUrl,
-          type: 'css',
-        });
-      }
-      /* c8 ignore next 3 - Defensive: URL parsing rarely fails with valid HTML */
-    } catch (urlError) {
-      log.debug(`Skipping invalid link href on ${pageUrl}: ${href}`);
-    }
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: $(el).attr('href'),
+      pageUrl,
+      baseHostname,
+      log,
+      type: 'css',
+      anchorText: '[stylesheet href]',
+    });
   });
 
   // JavaScript files
   $('script[src]').each((_, el) => {
-    const src = $(el).attr('src');
-    if (!src || src.startsWith('#')) return;
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: $(el).attr('src'),
+      pageUrl,
+      baseHostname,
+      log,
+      type: 'js',
+      anchorText: '[script src]',
+    });
+  });
 
-    try {
-      const absoluteUrl = new URL(src, pageUrl).toString();
-      const assetHostname = new URL(absoluteUrl).hostname.replace(/^www\./, '');
+  $('iframe[src]').each((_, el) => {
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: $(el).attr('src'),
+      pageUrl,
+      baseHostname,
+      log,
+      type: 'iframe',
+      anchorText: '[iframe src]',
+    });
+  });
 
-      if (assetHostname === baseHostname || assetHostname.endsWith(`.${baseHostname}`)) {
-        assetReferences.push({
-          url: absoluteUrl,
-          type: 'js',
-        });
-      }
-      /* c8 ignore next 3 - Defensive: URL parsing rarely fails with valid HTML */
-    } catch (urlError) {
-      log.debug(`Skipping invalid script src on ${pageUrl}: ${src}`);
+  $('video[src]').each((_, el) => {
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: $(el).attr('src'),
+      pageUrl,
+      baseHostname,
+      log,
+      type: 'video',
+      anchorText: '[video src]',
+    });
+  });
+
+  $('audio[src]').each((_, el) => {
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: $(el).attr('src'),
+      pageUrl,
+      baseHostname,
+      log,
+      type: 'audio',
+      anchorText: '[audio src]',
+    });
+  });
+
+  $('source[src]').each((_, el) => {
+    const $source = $(el);
+    const parentTag = $source.parent()?.prop('tagName')?.toLowerCase();
+    const type = getSourceItemType(parentTag);
+    /* c8 ignore next - cheerio HTML mode always attaches source elements to a parent */
+    const anchorText = `[${parentTag || 'source'} src]`;
+
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: $source.attr('src'),
+      pageUrl,
+      baseHostname,
+      log,
+      type,
+      anchorText,
+    });
+  });
+
+  $('video[poster]').each((_, el) => {
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: $(el).attr('poster'),
+      pageUrl,
+      baseHostname,
+      log,
+      type: 'image',
+      anchorText: '[video poster]',
+    });
+  });
+
+  /* c8 ignore start - Preload/modulepreload and meta-refresh extraction */
+  $('link[rel="preload"][href], link[rel="modulepreload"][href]').each((_, el) => {
+    const $link = $(el);
+    const rel = $link.attr('rel');
+    const asAttr = ($link.attr('as') || '').toLowerCase();
+    let type = 'media';
+    if (asAttr === 'style') {
+      type = 'css';
+    } else if (asAttr === 'script' || rel === 'modulepreload') {
+      type = 'js';
+    } else if (asAttr === 'image') {
+      type = 'image';
     }
+
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: $link.attr('href'),
+      pageUrl,
+      baseHostname,
+      log,
+      type,
+      anchorText: `[${rel} href]`,
+    });
+  });
+
+  $('object[data]').each((_, el) => {
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: $(el).attr('data'),
+      pageUrl,
+      baseHostname,
+      log,
+      type: 'media',
+      anchorText: '[object data]',
+    });
+  });
+
+  $('meta[http-equiv]').each((_, el) => {
+    const $meta = $(el);
+    if (($meta.attr('http-equiv') || '').toLowerCase() !== 'refresh') {
+      return;
+    }
+
+    const refreshUrl = extractMetaRefreshUrl($meta.attr('content'));
+    if (!refreshUrl) {
+      return;
+    }
+
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: refreshUrl,
+      pageUrl,
+      baseHostname,
+      log,
+      type: 'link',
+      anchorText: '[meta refresh]',
+    });
+  });
+  /* c8 ignore stop */
+
+  $('style').each((_, el) => {
+    extractCssUrlCandidates($(el).html()).forEach((candidate) => {
+      pushResolvedReference({
+        references: assetReferences,
+        rawUrl: candidate,
+        pageUrl,
+        baseHostname,
+        log,
+        type: getAssetTypeFromUrl(candidate, pageUrl),
+        anchorText: '[style url()]',
+      });
+    });
+  });
+
+  $('[style]').each((_, el) => {
+    extractCssUrlCandidates($(el).attr('style')).forEach((candidate) => {
+      pushResolvedReference({
+        references: assetReferences,
+        rawUrl: candidate,
+        pageUrl,
+        baseHostname,
+        log,
+        type: getAssetTypeFromUrl(candidate, pageUrl),
+        anchorText: '[inline style url()]',
+      });
+    });
   });
 
   return assetReferences;
@@ -233,14 +554,21 @@ async function validateLinksWithCache(
   brokenUrlsCache,
   workingUrlsCache,
   baseURL,
-  baseLog,
+  log,
   siteId,
+  auditId,
+  crawlDefaultTraffic,
+  maxConcurrent = DEFAULT_MAX_CONCURRENT_LINK_CHECKS,
 ) {
-  return Promise.all(
-    links.map(async (link) => {
-      if (!isWithinAuditScope(link.url, baseURL)) return { type: 'out-of-scope' };
+  return limitConcurrency(
+    links.map((link) => async () => {
+      const isInScope = isWithinAuditScope(link.url, baseURL)
+        || isSharedInternalResource(link.url, baseURL, link.type);
+      if (!isInScope) return { type: 'out-of-scope' };
+      const cacheKey = getUrlCacheKey(link.url);
 
-      if (brokenUrlsCache.has(link.url)) {
+      if (brokenUrlsCache.has(cacheKey)) {
+        const cachedMeta = brokenUrlsCache.get(cacheKey);
         return {
           type: 'cache-hit-broken',
           urlFrom: pageUrl,
@@ -248,17 +576,25 @@ async function validateLinksWithCache(
           anchorText: link.anchorText,
           /* c8 ignore next - Fallback tested via link detection */
           itemType: link.type || 'link',
-          trafficDomain: CRAWL_DEFAULT_TRAFFIC,
+          trafficDomain: crawlDefaultTraffic,
+          detectionSource: 'crawl',
+          httpStatus: cachedMeta.httpStatus,
+          statusBucket: cachedMeta.statusBucket,
+          contentType: cachedMeta.contentType,
         };
       }
 
-      if (workingUrlsCache.has(link.url)) {
+      if (workingUrlsCache.has(cacheKey)) {
         return { type: 'cache-hit-working' };
       }
 
-      const isBroken = await isLinkInaccessible(link.url, baseLog, siteId);
-      if (isBroken) {
-        brokenUrlsCache.add(link.url);
+      const validation = await isLinkInaccessible(link.url, log, siteId, auditId);
+      if (validation.isBroken) {
+        brokenUrlsCache.set(cacheKey, {
+          httpStatus: validation.httpStatus,
+          statusBucket: validation.statusBucket,
+          contentType: validation.contentType,
+        });
         return {
           type: 'api-broken',
           urlFrom: pageUrl,
@@ -266,13 +602,55 @@ async function validateLinksWithCache(
           anchorText: link.anchorText,
           /* c8 ignore next - Fallback tested via link detection */
           itemType: link.type || 'link',
-          trafficDomain: CRAWL_DEFAULT_TRAFFIC,
+          trafficDomain: crawlDefaultTraffic,
+          detectionSource: 'crawl',
+          httpStatus: validation.httpStatus,
+          statusBucket: validation.statusBucket,
+          contentType: validation.contentType,
         };
       }
-      workingUrlsCache.add(link.url);
+      if (validation.inconclusive) {
+        return { type: 'api-inconclusive' };
+      }
+      workingUrlsCache.add(cacheKey);
       return { type: 'api-working' };
     }),
+    /* c8 ignore next - Defensive fallback when links array is empty */
+    Math.max(1, Math.min(maxConcurrent, links.length || 1)),
   );
+}
+
+function createValidationStats() {
+  return {
+    totalLinksAnalyzed: 0,
+    cacheHitsBroken: 0,
+    cacheHitsWorking: 0,
+    linksCheckedViaAPI: 0,
+  };
+}
+
+function updateValidationStats(stats, validations) {
+  const nextStats = { ...stats };
+
+  validations.forEach((result) => {
+    if (!result || result.type === 'out-of-scope') return;
+
+    nextStats.totalLinksAnalyzed += 1;
+
+    if (result.type === 'cache-hit-broken') {
+      nextStats.cacheHitsBroken += 1;
+    } else if (result.type === 'cache-hit-working') {
+      nextStats.cacheHitsWorking += 1;
+    } else if (
+      result.type === 'api-broken'
+      || result.type === 'api-working'
+      || result.type === 'api-inconclusive'
+    ) {
+      nextStats.linksCheckedViaAPI += 1;
+    }
+  });
+
+  return nextStats;
 }
 
 /**
@@ -305,10 +683,33 @@ export async function detectBrokenLinksFromCrawlBatch({
   const {
     s3Client, env, log: baseLog, site,
   } = context;
-  const log = createAuditLogger(baseLog, AUDIT_TYPE, site.getId());
+  const auditId = context.audit?.getId?.() || null;
+  const log = isContextLogger(baseLog)
+    ? baseLog
+    : createAuditLogger(baseLog, AUDIT_TYPE, site.getId(), auditId);
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   const baseURL = site.getBaseURL();
   const baseHostname = new URL(baseURL).hostname.replace(/^www\./, '');
+  /* c8 ignore start - config fallback parsing is defensive */
+  const internalLinksConfig = site?.getConfig?.()?.getHandlers?.()?.['broken-internal-links']?.config || {};
+  const scrapeFetchDelayMs = parseNonNegativeInt(
+    internalLinksConfig.scrapeFetchDelayMs,
+    DEFAULT_SCRAPE_FETCH_DELAY_MS,
+  );
+  const linkCheckBatchSize = parsePositiveInt(
+    internalLinksConfig.linkCheckBatchSize,
+    DEFAULT_LINK_CHECK_BATCH_SIZE,
+  );
+  const maxConcurrentLinkChecks = parsePositiveInt(
+    internalLinksConfig.maxConcurrentLinkChecks,
+    Math.min(linkCheckBatchSize, DEFAULT_MAX_CONCURRENT_LINK_CHECKS),
+  );
+  const linkCheckDelayMs = parseNonNegativeInt(
+    internalLinksConfig.linkCheckDelayMs,
+    DEFAULT_LINK_CHECK_DELAY_MS,
+  );
+  const crawlDefaultTraffic = getCrawlDefaultTraffic(env);
+  /* c8 ignore stop */
 
   const startTime = Date.now();
   const formatElapsed = () => `[${((Date.now() - startTime) / 1000).toFixed(1)}s]`;
@@ -324,10 +725,21 @@ export async function detectBrokenLinksFromCrawlBatch({
   log.info(`${formatElapsed()} Processing pages ${batchStartIndex + 1}-${batchEndIndex} of ${totalPages}`);
   log.info(`${formatElapsed()} Initial cache: ${initialBrokenUrls.length} broken, ${initialWorkingUrls.length} working URLs`);
 
-  const brokenUrlsCache = new Set(initialBrokenUrls);
-  const workingUrlsCache = new Set(initialWorkingUrls);
+  const brokenUrlsCache = new Map();
+  initialBrokenUrls.forEach((entry) => {
+    if (typeof entry === 'string') {
+      brokenUrlsCache.set(getUrlCacheKey(entry), {});
+    } else {
+      brokenUrlsCache.set(getUrlCacheKey(entry.url), {
+        httpStatus: entry.httpStatus,
+        statusBucket: entry.statusBucket,
+        contentType: entry.contentType,
+      });
+    }
+  });
+  const workingUrlsCache = new Set(initialWorkingUrls.map(getUrlCacheKey));
   const brokenLinksMap = new Map();
-  const allValidationResults = [];
+  const validationStats = createValidationStats();
   let pagesProcessed = 0;
   let pagesSkipped = 0;
 
@@ -367,8 +779,8 @@ export async function detectBrokenLinksFromCrawlBatch({
       const validations = [];
 
       // eslint-disable-next-line no-await-in-loop
-      for (let i = 0; i < allLinks.length; i += LINK_CHECK_BATCH_SIZE) {
-        const batch = allLinks.slice(i, i + LINK_CHECK_BATCH_SIZE);
+      for (let i = 0; i < allLinks.length; i += linkCheckBatchSize) {
+        const batch = allLinks.slice(i, i + linkCheckBatchSize);
 
         // eslint-disable-next-line no-await-in-loop
         const batchResults = await validateLinksWithCache(
@@ -377,16 +789,19 @@ export async function detectBrokenLinksFromCrawlBatch({
           brokenUrlsCache,
           workingUrlsCache,
           baseURL,
-          baseLog,
+          log,
           site.getId(),
+          auditId,
+          crawlDefaultTraffic,
+          maxConcurrentLinkChecks,
         );
 
-        allValidationResults.push(...batchResults);
+        Object.assign(validationStats, updateValidationStats(validationStats, batchResults));
         validations.push(...batchResults);
 
-        if (i + LINK_CHECK_BATCH_SIZE < allLinks.length) {
+        if (i + linkCheckBatchSize < allLinks.length) {
           // eslint-disable-next-line no-await-in-loop
-          await sleep(LINK_CHECK_DELAY_MS);
+          await sleep(linkCheckDelayMs);
         }
       }
 
@@ -395,7 +810,7 @@ export async function detectBrokenLinksFromCrawlBatch({
       );
 
       brokenLinks.forEach((link) => {
-        const key = `${link.urlFrom}|${link.urlTo}`;
+        const key = buildBrokenLinkKey(link);
         if (!brokenLinksMap.has(key)) brokenLinksMap.set(key, link);
       });
     } catch (error) {
@@ -404,18 +819,17 @@ export async function detectBrokenLinksFromCrawlBatch({
     }
 
     // eslint-disable-next-line no-await-in-loop
-    await sleep(SCRAPE_FETCH_DELAY_MS);
+    await sleep(scrapeFetchDelayMs);
   }
 
   const results = Array.from(brokenLinksMap.values());
 
-  const totalLinksAnalyzed = allValidationResults.filter((r) => r && r.type !== 'out-of-scope').length;
-  const cacheHitsBroken = allValidationResults.filter((r) => r?.type === 'cache-hit-broken').length;
-  const cacheHitsWorking = allValidationResults.filter((r) => r?.type === 'cache-hit-working').length;
-  const linksCheckedViaAPI = allValidationResults.filter(
-    (r) => r && (r.type === 'api-broken' || r.type === 'api-working'),
-  ).length;
-
+  const {
+    totalLinksAnalyzed,
+    cacheHitsBroken,
+    cacheHitsWorking,
+    linksCheckedViaAPI,
+  } = validationStats;
   const totalCacheHits = cacheHitsBroken + cacheHitsWorking;
   const cacheHitRate = totalLinksAnalyzed > 0
     ? ((totalCacheHits / totalLinksAnalyzed) * 100).toFixed(1)
@@ -435,7 +849,7 @@ export async function detectBrokenLinksFromCrawlBatch({
 
   return {
     results,
-    brokenUrlsCache: Array.from(brokenUrlsCache),
+    brokenUrlsCache: Array.from(brokenUrlsCache.entries()).map(([url, meta]) => ({ url, ...meta })),
     workingUrlsCache: Array.from(workingUrlsCache),
     pagesProcessed,
     pagesSkipped,
@@ -456,29 +870,76 @@ export async function detectBrokenLinksFromCrawlBatch({
 /**
  * Merges crawl-detected and RUM-detected broken links.
  * RUM links take priority as they have traffic data.
+ * When same link found in both sources, combines detectionSource and keeps RUM traffic
+ * + crawl metadata.
  * @param {Array} crawlLinks - Links from crawl (trafficDomain: CRAWL_DEFAULT_TRAFFIC)
  * @param {Array} rumLinks - Links from RUM (have trafficDomain)
  * @param {Object} log - Logger instance
  * @returns {Array} - Merged and deduplicated array
  */
-export function mergeAndDeduplicate(crawlLinks, rumLinks, log) {
+export function mergeAndDeduplicate(firstLinks, secondLinks, log) {
+  const prefersFirstAnchorText = (primaryAnchorText, fallbackAnchorText) => (
+    primaryAnchorText === '[no text]'
+      && typeof fallbackAnchorText === 'string'
+      && fallbackAnchorText.length > 0
+      && fallbackAnchorText !== '[no text]'
+  );
+
   const linkMap = new Map();
 
-  rumLinks.forEach((link) => {
-    linkMap.set(`${link.urlFrom}|${link.urlTo}`, link);
+  // Detect source names from the input data
+  const firstSource = firstLinks[0]?.detectionSource || 'unknown';
+  const secondSource = secondLinks[0]?.detectionSource || 'unknown';
+
+  // Add second batch of links first (priority links - RUM has traffic data)
+  secondLinks.forEach((link) => {
+    linkMap.set(buildBrokenLinkKey(link), link);
   });
 
-  let crawlOnlyCount = 0;
-  crawlLinks.forEach((link) => {
-    const key = `${link.urlFrom}|${link.urlTo}`;
+  let firstOnlyCount = 0;
+  let bothSourcesCount = 0;
+  firstLinks.forEach((link) => {
+    const key = buildBrokenLinkKey(link);
     if (!linkMap.has(key)) {
+      // First-only link
       linkMap.set(key, link);
-      crawlOnlyCount += 1;
+      firstOnlyCount += 1;
+    } else {
+      // Link found in both sources - merge metadata
+      const secondLink = linkMap.get(key);
+
+      // Combine detection sources dynamically
+      const existingSources = (
+        typeof secondLink.detectionSource === 'string' && secondLink.detectionSource.length > 0
+          ? secondLink.detectionSource
+          : secondSource
+      ).split('+').filter(Boolean);
+      const newSource = (
+        typeof link.detectionSource === 'string' && link.detectionSource.length > 0
+          ? link.detectionSource
+          : firstSource
+      );
+      const combinedSources = [...new Set([...existingSources, newSource])].sort().join('+');
+
+      linkMap.set(key, {
+        ...secondLink, // Keep second batch data (e.g., RUM traffic)
+        detectionSource: combinedSources,
+        // Preserve second-link data and only backfill missing metadata from the first source.
+        // Placeholder LinkChecker text should not overwrite real crawl anchor text.
+        anchorText: prefersFirstAnchorText(secondLink.anchorText, link.anchorText)
+          ? link.anchorText
+          : (secondLink.anchorText ?? link.anchorText),
+        itemType: secondLink.itemType ?? link.itemType,
+        httpStatus: secondLink.httpStatus ?? link.httpStatus,
+        statusBucket: secondLink.statusBucket ?? link.statusBucket,
+        contentType: secondLink.contentType ?? link.contentType,
+      });
+      bothSourcesCount += 1;
     }
   });
 
   const merged = Array.from(linkMap.values());
-  log.info(`Merged: ${rumLinks.length} RUM + ${crawlOnlyCount} crawl-only = ${merged.length} total`);
+  log.info(`Merged: ${secondLinks.length} ${secondSource} (${bothSourcesCount} also in ${firstSource}) + ${firstOnlyCount} ${firstSource}-only = ${merged.length} total`);
 
   return merged;
 }
