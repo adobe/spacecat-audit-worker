@@ -44,6 +44,8 @@ export class ContentAIClient {
     this.env = context.env;
     this.log = context.log;
     this.tokenResponse = null;
+    this.siteConfigCache = null;
+    this.siteConfigFetchPromise = null;
   }
 
   /**
@@ -57,6 +59,7 @@ export class ContentAIClient {
         ...this.env,
         IMS_HOST: this.env.CONTENTAI_IMS_HOST,
         IMS_CLIENT_ID: this.env.CONTENTAI_CLIENT_ID,
+        IMS_CLIENT_CODE: this.env.CONTENTAI_CLIENT_CODE || this.env.IMS_CLIENT_CODE,
         IMS_CLIENT_SECRET: this.env.CONTENTAI_CLIENT_SECRET,
         IMS_SCOPE: this.env.CONTENTAI_CLIENT_SCOPE,
       },
@@ -84,20 +87,25 @@ export class ContentAIClient {
     let allItems = [];
     let cursor = null;
 
+    this.log?.info('Getting configurations from ContentAI');
     do {
       const url = cursor
         ? `${this.env.CONTENTAI_ENDPOINT}/configurations?cursor=${cursor}`
         : `${this.env.CONTENTAI_ENDPOINT}/configurations`;
 
+      const headers = {
+        Accept: 'application/json',
+        Authorization: this.getAuthHeader(),
+        'x-api-key': this.env.CONTENTAI_CLIENT_ID,
+      };
+
       // eslint-disable-next-line no-await-in-loop
       const response = await fetch(url, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: this.getAuthHeader(),
-        },
+        headers,
       });
 
       if (!response.ok) {
+        // eslint-disable-next-line no-await-in-loop
         throw new Error(`Failed to get configurations from ContentAI: ${response.status} ${response.statusText}`);
       }
 
@@ -107,6 +115,12 @@ export class ContentAIClient {
         allItems = allItems.concat(json.items);
       }
       cursor = json.cursor;
+
+      // Add small delay between pagination requests to avoid overwhelming the API
+      if (cursor) {
+        // eslint-disable-next-line no-await-in-loop, max-statements-per-line
+        await new Promise((resolve) => { setTimeout(resolve, 50); });
+      }
     } while (cursor);
 
     return allItems;
@@ -118,14 +132,14 @@ export class ContentAIClient {
    * @param {string} type - The query type (e.g., 'vector')
    * @param {string} indexName - The index name to search
    * @param {Object} options - Optional search parameters
-   * @param {number} options.limit - Number of results to return (default: 1)
    * @param {number} options.numCandidates - Number of candidates for vector search (default: 3)
    * @param {number} options.boost - Boost factor for the query (default: 1)
    * @param {string} options.vectorSpace - Vector space selection (default: 'semantic')
    * @param {string} options.lexicalSpace - Lexical space selection (default: 'fulltext')
+   * @param {number} limit - The number of results to return (default: 1)
    * @returns {Promise<Response>} The fetch response object
    */
-  async runSemanticSearch(text, type, indexName, options = {}, pageLimit = 1) {
+  async runSemanticSearch(text, type, indexName, options = {}, limit = 1) {
     const requestBody = {
       searchIndexConfig: {
         indexes: [
@@ -141,7 +155,7 @@ export class ContentAIClient {
       },
       queryOptions: {
         pagination: {
-          limit: pageLimit,
+          limit,
         },
       },
     };
@@ -149,11 +163,48 @@ export class ContentAIClient {
     const searchResponse = await fetch(`${this.env.CONTENTAI_ENDPOINT}/search`, {
       method: 'POST',
       headers: {
+        Accept: 'application/json',
         'Content-Type': 'application/json',
         Authorization: this.getAuthHeader(),
+        'x-api-key': this.env.CONTENTAI_CLIENT_ID,
       },
       body: JSON.stringify(requestBody),
     });
+
+    return searchResponse;
+  }
+
+  /**
+   * Runs a generative search query against Content AI
+   * @param {string} prompt - The prompt to search
+   * @param {Object} site - The site object
+   * @returns {Promise<Response>} The fetch response object
+   */
+  async runGenerativeSearch(prompt, site) {
+    const configuration = await this.getConfigurationForSite(site);
+    if (!configuration) {
+      throw new Error('ContentAI configuration not found');
+    }
+    const { uid: integratorId } = configuration;
+    const requestBody = {
+      query: prompt,
+      integratorId,
+    };
+
+    const searchResponse = await fetch(`${this.env.CONTENTAI_ENDPOINT}/gensearch`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: this.getAuthHeader(),
+        'x-api-key': this.env.CONTENTAI_CLIENT_ID,
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!searchResponse.ok) {
+      throw new Error(`Failed to run generative search for site ${site.getId()}: ${searchResponse.status} ${searchResponse.statusText}`);
+    }
 
     return searchResponse;
   }
@@ -164,19 +215,60 @@ export class ContentAIClient {
    * @returns {Promise<Object|null>} The configuration object or null if not found
    */
   async getConfigurationForSite(site) {
-    const configurations = await this.getConfigurations();
+    const siteId = site.getId();
 
-    const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
-    const baseURL = site.getBaseURL();
+    // Return cached config if same site (audit runs for one site per invocation)
+    if (this.siteConfigCache?.siteId === siteId) {
+      return this.siteConfigCache.config;
+    }
 
-    const existingConf = configurations.find(
-      (conf) => conf.steps?.find(
-        (step) => step.baseUrl === baseURL
-          || (!!overrideBaseURL && step.baseUrl === overrideBaseURL),
-      ),
-    );
+    // If already fetching configurations, wait for that promise to avoid parallel fetches
+    if (this.siteConfigFetchPromise) {
+      const cached = await this.siteConfigFetchPromise;
+      return cached.config;
+    }
 
-    return existingConf || null;
+    // Start fetching (only one concurrent fetch per client instance)
+    this.siteConfigFetchPromise = (async () => {
+      const configurations = await this.getConfigurations();
+
+      const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
+      const baseURL = site.getBaseURL();
+
+      // Normalize URLs by removing www. subdomain for comparison
+      const normalizeUrl = (url) => url?.replace(/^(https?:\/\/)(www\.)?/, '$1');
+      const normalizedBaseURL = normalizeUrl(baseURL);
+      const normalizedOverrideURL = normalizeUrl(overrideBaseURL);
+      this.log?.info(`Found ${configurations.length} total ContentAI configurations`);
+
+      const existingConf = configurations.find(
+        (conf) => conf.steps?.find(
+          (step) => {
+            const normalizedStepUrl = normalizeUrl(step.baseUrl);
+            return normalizedStepUrl === normalizedBaseURL
+              || (!!normalizedOverrideURL && normalizedStepUrl === normalizedOverrideURL);
+          },
+        ),
+      );
+
+      if (!existingConf) {
+        this.log?.warn(`No ContentAI configuration found for site ${siteId} with baseURL ${baseURL}`);
+      } else {
+        this.log?.info(`Found ContentAI configuration for site ${siteId}: ${existingConf.uid}`);
+      }
+
+      // Cache the result as an immutable object
+      this.siteConfigCache = Object.freeze({
+        siteId,
+        config: existingConf || null,
+      });
+
+      this.siteConfigFetchPromise = null;
+      return this.siteConfigCache;
+    })();
+
+    const cached = await this.siteConfigFetchPromise;
+    return cached.config;
   }
 
   /**
@@ -243,8 +335,10 @@ export class ContentAIClient {
       method: 'POST',
       body: JSON.stringify(contentAiData),
       headers: {
+        Accept: 'application/json',
         'Content-Type': 'application/json',
         Authorization: this.getAuthHeader(),
+        'User-Agent': 'PostmanRuntime/7.51.1',
       },
     });
 

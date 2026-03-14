@@ -61,6 +61,8 @@ import llmBlocked from './llm-blocked/handler.js';
 import geoBrandPresence from './geo-brand-presence/handler.js';
 import detectGeoBrandPresence from './geo-brand-presence/detect-geo-brand-presence-handler.js';
 import { handleCategorizationResponseHandler } from './geo-brand-presence/categorization-response-handler.js';
+import handleJsonEnrichment from './brand-data-enrichment/handler.js';
+import { BRAND_DATA_ENRICHMENT_TYPE } from './brand-data-enrichment/util.js';
 import geoBrandPresenceDaily from './geo-brand-presence-daily/handler.js';
 import detectGeoBrandPresenceDaily from './geo-brand-presence-daily/detect-geo-brand-presence-handler.js';
 import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
@@ -164,6 +166,7 @@ const HANDLERS = {
   'category:geo-brand-presence': handleCategorizationResponseHandler,
   'detect:geo-brand-presence': detectGeoBrandPresence,
   'refresh:geo-brand-presence': detectGeoBrandPresence,
+  [BRAND_DATA_ENRICHMENT_TYPE]: handleJsonEnrichment,
   'geo-brand-presence-daily': geoBrandPresenceDaily,
   'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,
   'detect:geo-brand-presence-daily': detectGeoBrandPresenceDaily,
