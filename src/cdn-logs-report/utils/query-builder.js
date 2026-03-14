@@ -109,6 +109,35 @@ async function createAgenticReportQuery(options) {
   });
 }
 
+async function createAgenticDailyReportQuery(options) {
+  const {
+    trafficDate, databaseName, tableName, site,
+  } = options;
+
+  const filters = site.getConfig().getLlmoCdnlogsFilter();
+  const siteFilters = buildSiteFilters(filters, site);
+  const year = trafficDate.getUTCFullYear().toString();
+  const month = (trafficDate.getUTCMonth() + 1).toString().padStart(2, '0');
+  const day = trafficDate.getUTCDate().toString().padStart(2, '0');
+  const whereClause = buildWhereClause(
+    [`(year = '${year}' AND month = '${month}' AND day = '${day}')`],
+    siteFilters,
+  );
+
+  const remotePatterns = await fetchRemotePatterns(site);
+
+  return loadSql('agentic-traffic-daily-report', {
+    agentTypeClassification: buildAgentTypeClassificationSQL(),
+    userAgentDisplay: buildUserAgentDisplaySQL(),
+    countryExtraction: buildCountryExtractionSQL(),
+    topicExtraction: buildTopicExtractionSQL(remotePatterns),
+    pageCategoryClassification: generatePageTypeClassification(remotePatterns),
+    databaseName,
+    tableName,
+    whereClause,
+  });
+}
+
 function buildWhereClauseReferral(conditions = [], siteFilters = []) {
   const allConditions = [...conditions];
 
@@ -214,6 +243,7 @@ async function createTopUrlsQueryWithLimit(options) {
 
 export const weeklyBreakdownQueries = {
   createAgenticReportQuery,
+  createAgenticDailyReportQuery,
   createReferralReportQuery,
   createTopUrlsQuery,
   createTopUrlsQueryWithLimit,
