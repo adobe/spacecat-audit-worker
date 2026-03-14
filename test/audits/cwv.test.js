@@ -82,10 +82,13 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
   beforeEach(() => {
     context.rumApiClient.query = sandbox.stub().resolves(rumData);
+    // Stub fetch so 4xx filter does not remove URLs (HEAD returns 200)
+    sandbox.stub(globalThis, 'fetch').resolves({ status: 200 });
   });
 
   afterEach(() => {
     nock.cleanAll();
+    sandbox.restore();
     sinon.restore();
     site.getDeliveryConfig.reset();
   });
@@ -284,7 +287,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
     expect(homepageInResult.pageviews).to.equal(50);
   });
 
-  it('does not treat grouped URLs as homepage', async () => {
+    it('does not treat grouped URLs as homepage', async () => {
     const groupedData = {
       type: 'group', // Not 'url' - should not match homepage logic
       // url field is absent for grouped entries (they have pattern instead)
@@ -423,6 +426,43 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
       expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
+    });
+
+    it('handles audit result with only group entries for maxOrganicForUrls coverage', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      const auditResultWithGroupsOnly = {
+        cwv: [
+          {
+            type: 'group',
+            pattern: 'https://example.com/*',
+            name: 'Some pages',
+            pageviews: 5000,
+            organic: 3000,
+            metrics: [],
+          },
+        ],
+        auditContext: { interval: 7 },
+      };
+      const mockAuditGroupsOnly = {
+        getSiteId: () => 'site-id',
+        getId: () => 'audit-id',
+        getAuditType: () => Audit.AUDIT_TYPES.CWV,
+        getAuditResult: () => auditResultWithGroupsOnly,
+        getFullAuditRef: () => auditUrl,
+        getAuditedAt: () => '2023-11-27T12:34:56.789Z',
+      };
+
+      const stepContext = { ...context, site, audit: mockAuditGroupsOnly, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+      expect(oppty.addSuggestions).to.have.been.calledOnce;
+      const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
+      expect(suggestionsArg).to.have.lengthOf(1);
+      expect(suggestionsArg[0].data.type).to.equal('group');
     });
 
     it('creating a new opportunity object fails', async () => {
