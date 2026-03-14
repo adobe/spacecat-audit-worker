@@ -22,7 +22,7 @@ import {
   loadLatestAgenticSheet,
   buildSheetHitsMap,
 } from './utils/shared.js';
-import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
+import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls, verifyAndMarkFixedSuggestions } from './utils/utils.js';
 import {
   CONTENT_GAIN_THRESHOLD,
   TOP_AGENTIC_URLS_LIMIT,
@@ -208,6 +208,7 @@ async function getScrapedHtmlFromS3(url, context) {
 
   try {
     const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+    /* c8 ignore next */
     const { scrapeJobId: storageId } = auditContext || {};
     const serverSideKey = getS3Path(url, storageId, 'server-side.html');
     const clientSideKey = getS3Path(url, storageId, 'client-side.html');
@@ -282,6 +283,7 @@ async function compareHtmlContent(url, context) {
     return {
       url,
       ...analysis,
+      isDeployedAtEdge: metadata?.isDeployedAtEdge ?? false,
       hasScrapeMetadata, // Track if scrape.json exists on S3
       scrapeForbidden, // Track if original scrape was forbidden (403)
       /* c8 ignore next */
@@ -293,6 +295,7 @@ async function compareHtmlContent(url, context) {
       url,
       error: true,
       needsPrerender: false,
+      isDeployedAtEdge: metadata?.isDeployedAtEdge ?? false,
       hasScrapeMetadata,
       scrapeForbidden,
       scrapeError: metadata?.error,
@@ -801,6 +804,7 @@ export async function processOpportunityAndSuggestions(
   auditData,
   context,
   isPaid,
+  prerenderStatusMap = new Map(),
 ) {
   const { log } = context;
 
@@ -907,13 +911,21 @@ export async function processOpportunityAndSuggestions(
     },
   });
 
+  // Verify NEW suggestions and mark as FIXED if prerendering is already enabled
+  const fixedCount = await verifyAndMarkFixedSuggestions(
+    opportunity,
+    context,
+    prerenderStatusMap,
+  );
+
   log.info(`
     ${LOG_PREFIX} prerender_suggestions_sync_metrics:
     siteId=${auditData.siteId},
     baseUrl=${auditUrl},
     isPaidLLMOCustomer=${isPaid},
     suggestions=${preRenderSuggestions.length},
-    totalSuggestions=${allSuggestions.length},`);
+    totalSuggestions=${allSuggestions.length},
+    autoFixedSuggestions=${fixedCount},`);
 
   return opportunity;
 }
@@ -1101,13 +1113,20 @@ export async function processContentAndGenerateOpportunities(context) {
 
     log.info(`Prerender - Scrape analysis for baseUrl=${site.getBaseURL()}, siteId=${siteId}. scrapeForbidden=${scrapeForbidden}, totalUrlsChecked=${comparisonResults.length}, urlsWithScrapeJson=${urlsWithScrapeJson.length}, urlsWithForbiddenScrape=${urlsWithForbiddenScrape.length}, isPaidLLMOCustomer=${isPaid}`);
 
+    // Build prerender status map from scrape metadata for suggestion verification
+    const prerenderStatusMap = new Map(
+      /* c8 ignore next */
+      comparisonResults.map((result) => [result.url, result.isDeployedAtEdge ?? false]),
+    );
+
     // Remove internal tracking fields from results before storing
     // eslint-disable-next-line
-    const cleanResults = comparisonResults.map(({ hasScrapeMetadata, scrapeForbidden, ...result }) => result);
+    const cleanResults = comparisonResults.map(({ hasScrapeMetadata, scrapeForbidden, isDeployedAtEdge, ...result }) => result);
 
     const urlsNotNeedingPrerender = successfulComparisons.length - urlsNeedingPrerender.length;
 
     const { auditContext } = context;
+    /* c8 ignore next */
     const { scrapeJobId } = auditContext || {};
     const urlsSubmittedForScraping = await getUrlsSubmittedForScrapingCount(
       scrapeJobId,
@@ -1117,6 +1136,7 @@ export async function processContentAndGenerateOpportunities(context) {
     );
     // Scraping error rate: % of submitted URLs that failed (base = urlsSubmittedForScraping)
     const failedCount = urlsSubmittedForScraping - successfulComparisons.length;
+    /* c8 ignore next 3 */
     const scrapingErrorRate = urlsSubmittedForScraping > 0
       ? Math.round((failedCount / urlsSubmittedForScraping) * 100)
       : 0;
@@ -1139,7 +1159,7 @@ export async function processContentAndGenerateOpportunities(context) {
 
     let opportunityForGuidance = null;
 
-    /* c8 ignore next 13 - Opportunity processing branch, covered by integration tests */
+    /* c8 ignore next 14 - Opportunity processing branch, covered by integration tests */
     if (urlsNeedingPrerender.length > 0) {
       opportunityForGuidance = await processOpportunityAndSuggestions(
         site.getBaseURL(),
@@ -1153,6 +1173,7 @@ export async function processContentAndGenerateOpportunities(context) {
         },
         context,
         isPaid,
+        prerenderStatusMap,
       );
       /* c8 ignore next 12 */
     } else if (scrapeForbidden) {

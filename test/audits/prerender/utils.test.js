@@ -70,6 +70,12 @@ describe('Prerender Utils', () => {
       },
       '@adobe/spacecat-shared-data-access': {
         Entitlement: EntitlementStub,
+        Suggestion: {
+          STATUSES: {
+            NEW: 'NEW',
+            FIXED: 'FIXED',
+          },
+        },
       },
     });
   });
@@ -393,6 +399,217 @@ describe('Prerender Utils', () => {
       expect(result.urls).to.have.lengthOf(1);
       expect(result.urls[0]).to.equal('https://example.com/page');
       expect(result.filteredCount).to.equal(3);
+    });
+  });
+
+  describe('verifyAndMarkFixedSuggestions', () => {
+    let mockOpportunity;
+    let mockSuggestion1;
+    let mockSuggestion2;
+    let mockDomainWideSuggestion;
+
+    beforeEach(() => {
+      mockSuggestion1 = {
+        getStatus: sandbox.stub().returns('NEW'),
+        getData: sandbox.stub().returns({ url: 'https://example.com/page1' }),
+        setStatus: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      mockSuggestion2 = {
+        getStatus: sandbox.stub().returns('NEW'),
+        getData: sandbox.stub().returns({ url: 'https://example.com/page2' }),
+        setStatus: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      mockDomainWideSuggestion = {
+        getStatus: sandbox.stub().returns('NEW'),
+        getData: sandbox.stub().returns({ key: 'domain-wide', data: {} }),
+        setStatus: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      mockOpportunity = {
+        getSuggestions: sandbox.stub().resolves([]),
+      };
+
+      log = {
+        debug: sandbox.stub(),
+        info: sandbox.stub(),
+        warn: sandbox.stub(),
+        error: sandbox.stub(),
+      };
+    });
+
+    it('should mark suggestions as FIXED when prerenderStatusMap has true for the URL', async () => {
+      mockOpportunity.getSuggestions.resolves([mockSuggestion1, mockSuggestion2]);
+
+      const prerenderStatusMap = new Map([
+        ['https://example.com/page1', true],
+        ['https://example.com/page2', false],
+      ]);
+
+      const context = { log };
+      const result = await utils.verifyAndMarkFixedSuggestions(
+        mockOpportunity,
+        context,
+        prerenderStatusMap,
+      );
+
+      expect(result).to.equal(1);
+      expect(mockSuggestion1.setStatus).to.have.been.calledWith('FIXED');
+      expect(mockSuggestion1.save).to.have.been.calledOnce;
+      expect(mockSuggestion2.setStatus).to.not.have.been.called;
+      expect(mockSuggestion2.save).to.not.have.been.called;
+    });
+
+    it('should skip domain-wide aggregate suggestions', async () => {
+      mockOpportunity.getSuggestions.resolves([mockSuggestion1, mockDomainWideSuggestion]);
+
+      const prerenderStatusMap = new Map([
+        ['https://example.com/page1', true],
+      ]);
+
+      const context = { log };
+      const result = await utils.verifyAndMarkFixedSuggestions(
+        mockOpportunity,
+        context,
+        prerenderStatusMap,
+      );
+
+      expect(result).to.equal(1);
+      expect(mockSuggestion1.setStatus).to.have.been.calledWith('FIXED');
+      expect(mockDomainWideSuggestion.setStatus).to.not.have.been.called;
+    });
+
+    it('should skip suggestions that are not in NEW status', async () => {
+      const approvedSuggestion = {
+        getStatus: sandbox.stub().returns('APPROVED'),
+        getData: sandbox.stub().returns({ url: 'https://example.com/approved' }),
+        setStatus: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      mockOpportunity.getSuggestions.resolves([approvedSuggestion, mockSuggestion1]);
+
+      const prerenderStatusMap = new Map([
+        ['https://example.com/approved', true],
+        ['https://example.com/page1', true],
+      ]);
+
+      const context = { log };
+      const result = await utils.verifyAndMarkFixedSuggestions(
+        mockOpportunity,
+        context,
+        prerenderStatusMap,
+      );
+
+      expect(result).to.equal(1);
+      expect(approvedSuggestion.setStatus).to.not.have.been.called;
+      expect(mockSuggestion1.setStatus).to.have.been.calledWith('FIXED');
+    });
+
+    it('should return 0 when there are no NEW suggestions', async () => {
+      mockOpportunity.getSuggestions.resolves([]);
+
+      const prerenderStatusMap = new Map();
+      const context = { log };
+      const result = await utils.verifyAndMarkFixedSuggestions(
+        mockOpportunity,
+        context,
+        prerenderStatusMap,
+      );
+
+      expect(result).to.equal(0);
+    });
+
+    it('should mark all suggestions as FIXED when all URLs are prerender-enabled', async () => {
+      mockOpportunity.getSuggestions.resolves([mockSuggestion1, mockSuggestion2]);
+
+      const prerenderStatusMap = new Map([
+        ['https://example.com/page1', true],
+        ['https://example.com/page2', true],
+      ]);
+
+      const context = { log };
+      const result = await utils.verifyAndMarkFixedSuggestions(
+        mockOpportunity,
+        context,
+        prerenderStatusMap,
+      );
+
+      expect(result).to.equal(2);
+      expect(mockSuggestion1.setStatus).to.have.been.calledWith('FIXED');
+      expect(mockSuggestion2.setStatus).to.have.been.calledWith('FIXED');
+    });
+
+    it('should not mark any suggestions when no URLs are prerender-enabled', async () => {
+      mockOpportunity.getSuggestions.resolves([mockSuggestion1, mockSuggestion2]);
+
+      const prerenderStatusMap = new Map([
+        ['https://example.com/page1', false],
+        ['https://example.com/page2', false],
+      ]);
+
+      const context = { log };
+      const result = await utils.verifyAndMarkFixedSuggestions(
+        mockOpportunity,
+        context,
+        prerenderStatusMap,
+      );
+
+      expect(result).to.equal(0);
+      expect(mockSuggestion1.setStatus).to.not.have.been.called;
+      expect(mockSuggestion2.setStatus).to.not.have.been.called;
+    });
+
+    it('should handle URLs not present in prerenderStatusMap as not fixed', async () => {
+      mockOpportunity.getSuggestions.resolves([mockSuggestion1]);
+
+      const prerenderStatusMap = new Map();
+
+      const context = { log };
+      const result = await utils.verifyAndMarkFixedSuggestions(
+        mockOpportunity,
+        context,
+        prerenderStatusMap,
+      );
+
+      expect(result).to.equal(0);
+      expect(mockSuggestion1.setStatus).to.not.have.been.called;
+    });
+
+    it('should return 0 when only domain-wide suggestions exist', async () => {
+      mockOpportunity.getSuggestions.resolves([mockDomainWideSuggestion]);
+
+      const prerenderStatusMap = new Map();
+      const context = { log };
+      const result = await utils.verifyAndMarkFixedSuggestions(
+        mockOpportunity,
+        context,
+        prerenderStatusMap,
+      );
+
+      expect(result).to.equal(0);
+    });
+
+    it('should return 0 and log error when getSuggestions throws', async () => {
+      mockOpportunity.getSuggestions.rejects(new Error('Database error'));
+
+      const prerenderStatusMap = new Map();
+      const context = { log };
+      const result = await utils.verifyAndMarkFixedSuggestions(
+        mockOpportunity,
+        context,
+        prerenderStatusMap,
+      );
+
+      expect(result).to.equal(0);
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/verification error.*Database error/),
+        sinon.match.instanceOf(Error),
+      );
     });
   });
 });
