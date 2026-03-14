@@ -308,6 +308,7 @@ describe('CDN Logs Report Handler', function test() {
       // Verify Athena interactions
       expect(context.athenaClient.execute).to.have.been.callCount(1);
       expect(context.athenaClient.query).to.have.been.callCount(2);
+      expect(result.dailyAgenticExport).to.equal(undefined);
     });
 
     it('handles different weekOffset values', async () => {
@@ -366,6 +367,75 @@ describe('CDN Logs Report Handler', function test() {
 
       clock.restore();
       expect(context.athenaClient.query).to.have.been.callCount(2);
+    });
+
+    it('runs additional daily export for allowlisted site id', async () => {
+      const clock = sinon.useFakeTimers({
+        now: new Date('2025-01-07T12:00:00Z'),
+        toFake: ['Date'],
+      });
+
+      site.getId = () => '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3';
+      context.athenaClient.query.resetHistory();
+
+      const auditContext = createAuditContext(sandbox);
+      const result = await handler.runner('https://example.com', context, site, auditContext);
+
+      clock.restore();
+
+      expect(context.athenaClient.query).to.have.been.callCount(3);
+      expect(result).to.have.property('dailyAgenticExport');
+      expect(result.dailyAgenticExport).to.include({
+        enabled: true,
+        success: true,
+        siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+        trafficDate: '2025-01-06',
+      });
+      expect(result.dailyAgenticExport).to.have.property('delivery');
+      expect(result.dailyAgenticExport.delivery).to.deep.equal({
+        s3Upload: { status: 'todo', key: null },
+        sqsDispatch: { status: 'todo', queue: null, messageId: null },
+      });
+    });
+
+    it('isolates daily export failures and keeps weekly results', async () => {
+      const clock = sinon.useFakeTimers({
+        now: new Date('2025-01-07T12:00:00Z'),
+        toFake: ['Date'],
+      });
+
+      site.getId = () => '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3';
+      context.athenaClient.query = sandbox.stub().callsFake((query, database, description) => {
+        if (description.includes('agentic_daily_flat_data')) {
+          return Promise.reject(new Error('Daily query failed'));
+        }
+        if (description.includes('agentic')) {
+          return Promise.resolve(MOCK_AGENTIC_DATA);
+        }
+        if (description.includes('referral')) {
+          return Promise.resolve(MOCK_REFERRAL_DATA);
+        }
+        return Promise.resolve([]);
+      });
+
+      const auditContext = createAuditContext(sandbox);
+      const result = await handler.runner('https://example.com', context, site, auditContext);
+
+      clock.restore();
+
+      expect(result.auditResult).to.be.an('array').and.to.have.length.greaterThan(0);
+      expect(result).to.have.property('dailyAgenticExport');
+      expect(result.dailyAgenticExport).to.include({
+        enabled: true,
+        success: false,
+        siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+        trafficDate: '2025-01-06',
+      });
+      expect(result.dailyAgenticExport.error).to.equal('Daily query failed');
+      expect(result.dailyAgenticExport.delivery).to.deep.equal({
+        s3Upload: { status: 'todo', key: null },
+        sqsDispatch: { status: 'todo', queue: null, messageId: null },
+      });
     });
 
     it('handles bulk publish errors gracefully', async () => {
