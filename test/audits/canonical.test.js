@@ -3513,9 +3513,15 @@ describe('Canonical URL Tests', () => {
             Opportunity: {
               allBySiteId: sinon.stub().resolves([]),
               allBySiteIdAndStatus: sinon.stub().resolves([]),
+              create: sinon.stub().resolves({
+                getId: () => 'test-oppty-id',
+                getSuggestions: sinon.stub().resolves([]),
+                addSuggestions: sinon.stub().resolves({ createdItems: [] }),
+              }),
             },
             Suggestion: {
               allByOpportunityId: sinon.stub().resolves([]),
+              bulkCreate: sinon.stub().resolves({ createdItems: [], errors: [] }),
             },
           },
         };
@@ -3649,7 +3655,7 @@ describe('Canonical URL Tests', () => {
           message: 'No canonical issues detected',
         });
         expect(context.log.info).to.have.been.calledWith(
-          '[canonical] Skipping https://example.com/secure-page - redirected to auth page: https://example.com/login',
+          '[canonical] Skipping https://example.com/login - auth page',
         );
       });
 
@@ -3702,7 +3708,7 @@ describe('Canonical URL Tests', () => {
           message: 'No canonical issues detected',
         });
         expect(context.log.info).to.have.been.calledWith(
-          '[canonical] Skipping https://example.com/document - redirected to PDF: https://example.com/files/document.pdf',
+          '[canonical] Skipping https://example.com/files/document.pdf - PDF',
         );
       });
 
