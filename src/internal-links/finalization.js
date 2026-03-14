@@ -87,11 +87,15 @@ export function createFinalizeCrawlDetection({
       for (let j = 0; j < results.length; j += 1) {
         const result = results[j];
         if (result.status === 'fulfilled') {
-          if (result.value.validation.isBroken) {
+          if (result.value.validation.isBroken || result.value.validation.inconclusive) {
             validated.push({
               ...result.value.link,
-              httpStatus: result.value.validation.httpStatus ?? result.value.link.httpStatus,
-              statusBucket: result.value.validation.statusBucket ?? result.value.link.statusBucket,
+              httpStatus: result.value.validation.inconclusive
+                ? result.value.link.httpStatus
+                : (result.value.validation.httpStatus ?? result.value.link.httpStatus),
+              statusBucket: result.value.validation.inconclusive
+                ? result.value.link.statusBucket
+                : (result.value.validation.statusBucket ?? result.value.link.statusBucket),
             });
           }
         } else {

@@ -102,6 +102,7 @@ export function createInternalLinksRumSteps({
             link,
             validation,
             inaccessible: validation.isBroken,
+            inconclusive: validation.inconclusive === true,
           };
         },
       );
@@ -117,9 +118,15 @@ export function createInternalLinksRumSteps({
         .map((result) => result.value);
 
       const stillBroken = accessibilityResults.filter((r) => r.inaccessible).length;
-      const nowFixed = accessibilityResults.filter((r) => !r.inaccessible).length;
+      const inconclusive = accessibilityResults.filter((r) => r.inconclusive).length;
+      const nowFixed = accessibilityResults
+        .filter((r) => !r.inaccessible && !r.inconclusive)
+        .length;
       const failed = accessibilitySettled.filter((r) => r.status === 'rejected').length;
-      log.info(`Validation results: ${stillBroken} still broken, ${nowFixed} now fixed${failed > 0 ? `, ${failed} failed` : ''}`);
+      const summary = `Validation results: ${stillBroken} still broken, ${nowFixed} now fixed`;
+      log.info(
+        `${summary}${inconclusive > 0 ? `, ${inconclusive} inconclusive` : ''}${failed > 0 ? `, ${failed} failed` : ''}`,
+      );
 
       const inaccessibleLinks = accessibilityResults
         .filter((result) => result.inaccessible)

@@ -28,7 +28,6 @@ const DEFAULT_INCLUDED_STATUS_BUCKETS = [
   'gone_410',
   'forbidden_or_blocked',
   'server_error_5xx',
-  'timeout_or_network',
   'redirect_chain_excessive',
   'soft_404',
   'masked_by_linkchecker',

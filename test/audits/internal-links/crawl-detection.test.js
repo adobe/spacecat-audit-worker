@@ -85,11 +85,12 @@ describe('Crawl Detection Module', () => {
   });
 
   // Helper to create validation response objects
-  const createValidationResponse = (isBroken, httpStatus = null, statusBucket = null) => ({
+  const createValidationResponse = (isBroken, httpStatus = null, statusBucket = null, extra = {}) => ({
     isBroken,
     httpStatus: httpStatus || (isBroken ? 404 : 200),
     statusBucket: statusBucket || (isBroken ? '4xx' : '2xx-3xx'),
     contentType: 'text/html',
+    ...extra,
   });
 
   describe('detectBrokenLinksFromCrawlBatch', () => {
@@ -305,6 +306,43 @@ describe('Crawl Detection Module', () => {
       expect(brokenUrls).to.include('https://example.com/broken1');
       expect(result.workingUrlsCache).to.include('https://example.com/prev-working');
       expect(result.workingUrlsCache).to.include('https://example.com/working1');
+    });
+
+    it('should not report or cache inconclusive transport errors as working', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          rawBody: createMockHtml([
+            { href: '/timeout-link', text: 'Timeout Link' },
+          ]),
+        },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub.withArgs('https://example.com/timeout-link').resolves(
+        createValidationResponse(false, null, null, {
+          httpStatus: null,
+          statusBucket: null,
+          contentType: null,
+          inconclusive: true,
+        }),
+      );
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      expect(result.results).to.deep.equal([]);
+      expect(result.workingUrlsCache).to.not.include('https://example.com/timeout-link');
+      expect(result.brokenUrlsCache.map((entry) => entry.url)).to.not.include('https://example.com/timeout-link');
+      expect(result.stats.linksCheckedViaAPI).to.equal(1);
     });
 
     it('should handle initialBrokenUrls as objects with metadata', async () => {

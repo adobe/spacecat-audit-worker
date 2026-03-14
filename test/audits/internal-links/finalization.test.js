@@ -698,6 +698,34 @@ describe('internal-links finalization', () => {
       expect(linkCheckerLinks).to.have.lengthOf(1);
     });
 
+    it('should keep LinkChecker links when re-validation is inconclusive', async () => {
+      mockIsLinkInaccessible.resolves({
+        isBroken: false,
+        inconclusive: true,
+        httpStatus: null,
+        statusBucket: null,
+      });
+
+      const updateAuditResult = sinon.stub().resolves({});
+      const finalize = buildFinalize({ updateAuditResult });
+
+      await finalize(buildContext([
+        {
+          urlFrom: 'https://example.com/page',
+          urlTo: 'https://example.com/link',
+          itemType: 'link',
+          httpStatus: 404,
+          statusBucket: 'not_found_404',
+        },
+      ]), { skipCrawlDetection: false });
+
+      const reportedLinks = updateAuditResult.firstCall.args[2];
+      const linkCheckerLinks = reportedLinks.filter((l) => l.detectionSource === 'linkchecker');
+      expect(linkCheckerLinks).to.have.lengthOf(1);
+      expect(linkCheckerLinks[0].httpStatus).to.equal(404);
+      expect(linkCheckerLinks[0].statusBucket).to.equal('not_found_404');
+    });
+
     it('should skip re-validation when insufficient time remains', async () => {
       const updateAuditResult = sinon.stub().resolves({});
       const getTimeoutStatus = sinon.stub().returns({

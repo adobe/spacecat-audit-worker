@@ -609,6 +609,9 @@ async function validateLinksWithCache(
           contentType: validation.contentType,
         };
       }
+      if (validation.inconclusive) {
+        return { type: 'api-inconclusive' };
+      }
       workingUrlsCache.add(cacheKey);
       return { type: 'api-working' };
     }),
@@ -638,7 +641,11 @@ function updateValidationStats(stats, validations) {
       nextStats.cacheHitsBroken += 1;
     } else if (result.type === 'cache-hit-working') {
       nextStats.cacheHitsWorking += 1;
-    } else if (result.type === 'api-broken' || result.type === 'api-working') {
+    } else if (
+      result.type === 'api-broken'
+      || result.type === 'api-working'
+      || result.type === 'api-inconclusive'
+    ) {
       nextStats.linksCheckedViaAPI += 1;
     }
   });

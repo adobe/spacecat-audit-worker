@@ -102,7 +102,7 @@ describe('classifyStatusBucket', () => {
 
     const timeoutError = new Error('request timeout');
     timeoutError.code = 'ETIMEDOUT';
-    expect(classifyStatusBucket(null, timeoutError)).to.equal(STATUS_BUCKETS.TIMEOUT_OR_NETWORK);
+    expect(classifyStatusBucket(null, timeoutError)).to.equal(null);
 
     const redirectError = new Error('Too many redirects');
     expect(classifyStatusBucket(null, redirectError)).to.equal(STATUS_BUCKETS.REDIRECT_CHAIN_EXCESSIVE);
@@ -219,7 +219,7 @@ describe('isLinkInaccessible', () => {
     expect(result.statusBucket).to.equal(STATUS_BUCKETS.GONE_410);
   });
 
-  it('should return true for network errors and log error', async function call() {
+  it('should treat network errors as inconclusive and not report them as broken', async function call() {
     this.timeout(15000);
     nock('https://example.com')
       .head('/network-error')
@@ -228,8 +228,10 @@ describe('isLinkInaccessible', () => {
       .replyWithError(new Error('Network failure'));
 
     const result = await isLinkInaccessible('https://example.com/network-error', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.true;
-    expect(mockLog.error.calledOnce).to.be.true;
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.true;
+    expect(mockLog.warn.calledOnce).to.be.true;
+    expect(mockLog.error.called).to.be.false;
   });
 
   it('should handle error with code property', async function call() {
@@ -244,7 +246,8 @@ describe('isLinkInaccessible', () => {
       .replyWithError(codeError);
 
     const result = await isLinkInaccessible('https://example.com/code-err', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.true;
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.true;
   });
 
   it('should handle error with type property', async function call() {
@@ -259,7 +262,8 @@ describe('isLinkInaccessible', () => {
       .replyWithError(typeError);
 
     const result = await isLinkInaccessible('https://example.com/type-err', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.true;
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.true;
   });
 
   it('should handle error with errno property', async function call() {
@@ -274,7 +278,8 @@ describe('isLinkInaccessible', () => {
       .replyWithError(errnoError);
 
     const result = await isLinkInaccessible('https://example.com/errno-err', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.true;
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.true;
   });
 
   it('should handle error with empty message', async function call() {
@@ -288,7 +293,8 @@ describe('isLinkInaccessible', () => {
       .replyWithError(emptyMsgError);
 
     const result = await isLinkInaccessible('https://example.com/empty-msg', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.true;
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.true;
   });
 
   it('should handle error with all properties for join path', async function call() {
@@ -305,7 +311,8 @@ describe('isLinkInaccessible', () => {
       .replyWithError(fullError);
 
     const result = await isLinkInaccessible('https://example.com/full-err', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.true;
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.true;
   });
 
   it('should handle error with only message for single property path', async function call() {
@@ -325,7 +332,8 @@ describe('isLinkInaccessible', () => {
       .replyWithError(simpleError);
 
     const result = await isLinkInaccessible('https://example.com/simple-err', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.true;
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.true;
     // This should log just "Just message" without any colons/joining
   });
 
@@ -341,11 +349,12 @@ describe('isLinkInaccessible', () => {
       .replyWithError(emptyError);
 
     const result = await isLinkInaccessible('https://example.com/empty-err', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.true;
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.true;
     // Should use 'Unknown error' as fallback
   });
 
-  it('should classify HEAD and GET timeout as timeout_or_network', async function call() {
+  it('should treat HEAD and GET timeout as inconclusive', async function call() {
     this.timeout(15000);
     const timeoutError = new Error('Request timeout after 10000ms');
     timeoutError.code = 'ETIMEDOUT';
@@ -357,8 +366,9 @@ describe('isLinkInaccessible', () => {
       .replyWithError(timeoutError);
 
     const result = await isLinkInaccessible('https://example.com/timeout-url', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.true;
-    expect(result.statusBucket).to.equal(STATUS_BUCKETS.TIMEOUT_OR_NETWORK);
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.true;
+    expect(result.statusBucket).to.equal(null);
   });
 
   it('should recognize timeout error with lowercase "timeout" in message', async function call() {
@@ -372,7 +382,8 @@ describe('isLinkInaccessible', () => {
       .replyWithError(timeoutError);
 
     const result = await isLinkInaccessible('https://example.com/timeout-msg', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.true;
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.true;
   });
 
   it('should recognize timeout error with "ETIMEDOUT" in code', async function call() {
@@ -387,7 +398,8 @@ describe('isLinkInaccessible', () => {
       .replyWithError(timeoutError);
 
     const result = await isLinkInaccessible('https://example.com/timeout-code', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.true;
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.true;
   });
 
   it('should recognize timeout error with "ESOCKETTIMEDOUT" in code', async function call() {
@@ -402,7 +414,8 @@ describe('isLinkInaccessible', () => {
       .replyWithError(timeoutError);
 
     const result = await isLinkInaccessible('https://example.com/socket-timeout', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.true;
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.true;
   });
 
   it('should recognize timeout error with "timeout" in code field', async function call() {
@@ -417,10 +430,11 @@ describe('isLinkInaccessible', () => {
       .replyWithError(timeoutError);
 
     const result = await isLinkInaccessible('https://example.com/timeout-in-code', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.true;
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.true;
   });
 
-  it('should not treat non-timeout errors as timeout', async function call() {
+  it('should treat non-timeout fetch errors as inconclusive', async function call() {
     this.timeout(15000);
     const networkError = new Error('ECONNREFUSED');
     networkError.code = 'ECONNREFUSED';
@@ -432,11 +446,11 @@ describe('isLinkInaccessible', () => {
       .replyWithError(networkError);
 
     const result = await isLinkInaccessible('https://example.com/conn-refused', mockLog, 'test-site-id');
-    // Should be true (broken) and should have tried GET
-    expect(result.isBroken).to.be.true;
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.true;
   });
 
-  it('should handle GET timeout after HEAD succeeds with client error', async function call() {
+  it('should treat GET timeout after HEAD client error as inconclusive', async function call() {
     this.timeout(15000);
     const getTimeoutError = new Error('GET request timeout');
     getTimeoutError.code = 'ETIMEDOUT';
@@ -448,9 +462,28 @@ describe('isLinkInaccessible', () => {
       .replyWithError(getTimeoutError); // GET times out
 
     const result = await isLinkInaccessible('https://example.com/get-timeout', mockLog, 'test-site-id');
-    
-    expect(result.isBroken).to.be.true;
-    expect(result.statusBucket).to.equal(STATUS_BUCKETS.TIMEOUT_OR_NETWORK);
+
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.true;
+    expect(result.statusBucket).to.equal(null);
+  });
+
+  it('should treat HTTP/2 stream errors as inconclusive', async function call() {
+    this.timeout(15000);
+    const streamError = new Error('Stream error in the HTTP/2 framing layer');
+    streamError.code = 'ERR_HTTP2_STREAM_ERROR';
+    streamError.type = 'system';
+
+    nock('https://example.com')
+      .head('/http2-stream-error')
+      .replyWithError(streamError)
+      .get('/http2-stream-error')
+      .replyWithError(streamError);
+
+    const result = await isLinkInaccessible('https://example.com/http2-stream-error', mockLog, 'test-site-id');
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.true;
+    expect(mockLog.error.called).to.be.false;
   });
 
   it('should classify soft 404 pages returned with HTTP 200', async function call() {
@@ -629,7 +662,8 @@ describe('isLinkInaccessible - Asset Handling', () => {
       .replyWithError(error);
 
     const result = await isLinkInaccessible('https://example.com/error-with-type', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.true;
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.true;
   });
 
   it('should handle GET error with errno field', async function call() {
@@ -644,7 +678,8 @@ describe('isLinkInaccessible - Asset Handling', () => {
       .replyWithError(error);
 
     const result = await isLinkInaccessible('https://example.com/error-with-errno', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.true;
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.true;
   });
 
   it('should handle GET success with 3xx redirect status', async function call() {

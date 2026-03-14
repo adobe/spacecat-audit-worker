@@ -82,21 +82,6 @@ export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
   };
 };
 
-/**
- * Checks if an error is a timeout error
- * @param {Error} error - The error to check
- * @returns {boolean} True if it's a timeout error
- */
-function isTimeoutError(error) {
-  const message = error?.message?.toLowerCase() || '';
-  const code = error?.code?.toLowerCase() || '';
-  return message.includes('timeout')
-    || message.includes('etimedout')
-    || code.includes('timeout')
-    || code === 'etimedout'
-    || code === 'esockettimedout';
-}
-
 function isRedirectChainError(error) {
   const message = error?.message?.toLowerCase() || '';
   const code = error?.code?.toLowerCase() || '';
@@ -112,9 +97,8 @@ function isRedirectChainError(error) {
 
 export function classifyStatusBucket(status, error = null) {
   if (error) {
-    if (isTimeoutError(error)) return STATUS_BUCKETS.TIMEOUT_OR_NETWORK;
     if (isRedirectChainError(error)) return STATUS_BUCKETS.REDIRECT_CHAIN_EXCESSIVE;
-    return STATUS_BUCKETS.TIMEOUT_OR_NETWORK;
+    return null;
   }
 
   if (status === 404) return STATUS_BUCKETS.NOT_FOUND_404;
@@ -307,9 +291,20 @@ async function checkLinkWithGet(url, isAsset, log) {
     }
 
     const statusBucket = classifyStatusBucket(null, getError);
+    if (statusBucket === null) {
+      log.warn(`Skipping inconclusive link validation for ${url} (ERROR: ${errorMessage})`);
+      return {
+        isBroken: false,
+        inconclusive: true,
+        httpStatus: null,
+        statusBucket: null,
+        contentType: null,
+      };
+    }
+
     log.error(`✗ BROKEN LINK FOUND: ${url} (ERROR: ${errorMessage}, bucket=${statusBucket})`);
     return {
-      isBroken: true, httpStatus: null, statusBucket, contentType: null,
+      isBroken: true, inconclusive: false, httpStatus: null, statusBucket, contentType: null,
     };
   /* c8 ignore next 2 - Finally branch always runs; c8 tracks try/catch path split */
   } finally {
@@ -320,7 +315,8 @@ async function checkLinkWithGet(url, isAsset, log) {
 /**
  * Checks if a URL is inaccessible by attempting to fetch it.
  * Returns validation metadata for SEO-relevant broken conditions including:
- * 404, 410, blocked/forbidden, 5xx, timeouts/network failures, and excessive redirects.
+ * 404, 410, blocked/forbidden, 5xx, and excessive redirects.
+ * Transport failures are treated as inconclusive so they do not get reported as broken.
  *
  * Strategy: HEAD first (faster), fallback to GET if inconclusive.
  * Static assets skip HEAD (often fail) and use GET with Range header.
@@ -329,7 +325,7 @@ async function checkLinkWithGet(url, isAsset, log) {
  * @param {Object} baseLog - Base logger object
  * @param {string} siteId - Site ID for logging context
  * @returns {Promise<Object>} Validation result with
- *   { isBroken, httpStatus, statusBucket, contentType }
+ *   { isBroken, inconclusive, httpStatus, statusBucket, contentType }
  */
 export async function isLinkInaccessible(url, baseLog, siteId, auditId = null) {
   const log = isContextLogger(baseLog)
