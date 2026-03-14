@@ -9,7 +9,8 @@ CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
   statusCode        string,
   referer           string,
   rspContentType    string,
-  timeToFirstByte   string
+  timeToFirstByte   string,
+  requestType       string
 )
 PARTITIONED BY (
   year  string,
@@ -25,7 +26,7 @@ WITH SERDEPROPERTIES (
 )
 LOCATION '{{rawLocation}}'
 TBLPROPERTIES (
-  'schema_version'            = '1',
+  'schema_version'            = '1.1',
   'projection.enabled'        = 'true',
   'storage.location.template' = '{{rawLocation}}${year}/${month}/${day}/${hour}/',
   'projection.year.type'      = 'integer',
