@@ -156,10 +156,10 @@ describe('isLinkInaccessible', () => {
     expect(mockLog.error.calledOnce).to.be.true;
   });
 
-  it('should handle error with code property', async function call() {
+  it('should handle error with code property (non-transient code reported as broken)', async function call() {
     this.timeout(15000);
     const codeError = new Error('Connection failed');
-    codeError.code = 'ECONNRESET';
+    codeError.code = 'ENOTFOUND';
 
     nock('https://example.com')
       .head('/code-err')
@@ -371,6 +371,72 @@ describe('isLinkInaccessible', () => {
     expect(result).to.be.false;
     expect(mockLog.info.calledWith(
       sinon.match(/\[siteId=test-site-id\].*⏱ TIMEOUT.*GET request timed out/),
+    )).to.be.true;
+  });
+
+  it('should treat HTTP/2 stream error (NGHTTP2_REFUSED_STREAM) as accessible', async function call() {
+    this.timeout(15000);
+    const http2Error = new Error('Stream closed with error code NGHTTP2_REFUSED_STREAM');
+    http2Error.code = 'ERR_HTTP2_STREAM_ERROR';
+    http2Error.type = 'system';
+
+    nock('https://example.com')
+      .get('/image.jpg')
+      .replyWithError(http2Error);
+
+    const result = await isLinkInaccessible('https://example.com/image.jpg', mockLog, 'test-site-id');
+    expect(result).to.be.false;
+    expect(mockLog.info.calledWith(
+      sinon.match(/\[siteId=test-site-id\].*⏱ TRANSIENT.*assuming accessible/),
+    )).to.be.true;
+  });
+
+  it('should treat GET error with NGHTTP2_REFUSED_STREAM in message as accessible', async function call() {
+    this.timeout(15000);
+    const http2Error = new Error('Stream closed with error code NGHTTP2_REFUSED_STREAM');
+
+    nock('https://example.com')
+      .get('/asset.png')
+      .replyWithError(http2Error);
+
+    const result = await isLinkInaccessible('https://example.com/asset.png', mockLog, 'test-site-id');
+    expect(result).to.be.false;
+    expect(mockLog.info.calledWith(
+      sinon.match(/⏱ TRANSIENT.*assuming accessible/),
+    )).to.be.true;
+  });
+
+  it('should treat ECONNRESET as transient (assume accessible)', async function call() {
+    this.timeout(15000);
+    const resetError = new Error('read ECONNRESET');
+    resetError.code = 'ECONNRESET';
+
+    nock('https://example.com')
+      .get('/page.html')
+      .replyWithError(resetError);
+
+    const result = await isLinkInaccessible('https://example.com/page.html', mockLog, 'test-site-id');
+    expect(result).to.be.false;
+    expect(mockLog.info.calledWith(
+      sinon.match(/⏱ TRANSIENT.*assuming accessible/),
+    )).to.be.true;
+  });
+
+  it('should treat HPE_INVALID_HEADER_TOKEN as transient (assume accessible)', async function call() {
+    this.timeout(15000);
+    const parseError = new Error('Parse Error: Invalid header token');
+    parseError.code = 'HPE_INVALID_HEADER_TOKEN';
+
+    nock('https://example.com')
+      .head('/casino-credit-application.html')
+      .reply(403)
+      .get('/casino-credit-application.html')
+      .replyWithError(parseError);
+
+    const result = await isLinkInaccessible('https://example.com/casino-credit-application.html', mockLog, 'test-site-id');
+    expect(result).to.be.false;
+    expect(mockLog.info.calledWith(
+      sinon.match(/⏱ TRANSIENT.*assuming accessible/),
     )).to.be.true;
   });
 });
