@@ -15,7 +15,6 @@ import {
 } from '@adobe/spacecat-shared-utils';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
-import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import {
@@ -169,23 +168,6 @@ export async function triggerCdnLogsReport(context, site) {
   log.info('Successfully triggered cdn-logs-report audit');
 }
 
-async function triggerBrandPresenceViaDrs(context, site, log, triggeredSteps) {
-  const drsClient = DrsClient.createFrom(context);
-  if (!drsClient.isConfigured()) {
-    log.warn('DRS client not configured, skipping brand presence trigger via DRS');
-    return;
-  }
-
-  const siteId = site.getSiteId();
-  try {
-    await drsClient.triggerBrandDetection(siteId);
-    triggeredSteps.push('drs-brand-detection');
-    log.info(`Triggered DRS brand detection for site ${siteId}`);
-  } catch (error) {
-    log.error(`Failed to trigger DRS brand detection for site ${siteId}: ${error.message}`);
-  }
-}
-
 export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditContext = {}) {
   const {
     env, log, s3Client,
@@ -262,16 +244,15 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     log.info('Domain has no OpTel data available; skipping referral traffic import');
   }
 
-  // If no config version provided, trigger brand presence via DRS
+  // If no config version provided, skip config comparison (no config to compare)
   if (!configVersion) {
-    log.info('No config version provided; triggering brand presence via DRS');
-    await triggerBrandPresenceViaDrs(context, site, log, triggeredSteps);
+    log.info('No config version provided; skipping config comparison');
 
     return {
       auditResult: {
         status: 'completed',
-        configChangesDetected: true,
-        message: 'All audits triggered (no config version provided)',
+        configChangesDetected: false,
+        message: 'Audits enabled (no config version provided, skipping config comparison)',
         triggeredSteps,
         previousConfigVersion,
         configVersion,
@@ -346,8 +327,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     && (changes.brands || changes.competitors);
 
   if (hasBrandPresenceChanges || needsBrandPresenceRefresh) {
-    log.info('LLMO config changes detected affecting brand presence; triggering DRS brand detection');
-    await triggerBrandPresenceViaDrs(context, site, log, triggeredSteps);
+    log.info('LLMO config changes detected affecting brand presence; geo-brand-presence audits will pick up changes on next scheduled run');
   }
 
   if (triggeredSteps.length > 0) {
