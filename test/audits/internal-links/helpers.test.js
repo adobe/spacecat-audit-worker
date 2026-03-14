@@ -452,6 +452,36 @@ describe('isLinkInaccessible', () => {
     expect(result.isBroken).to.be.true;
     expect(result.statusBucket).to.equal(STATUS_BUCKETS.TIMEOUT_OR_NETWORK);
   });
+
+  it('should classify soft 404 pages returned with HTTP 200', async function call() {
+    this.timeout(6000);
+    nock('https://example.com')
+      .head('/soft-404')
+      .reply(405)
+      .get('/soft-404')
+      .reply(200, '<html><body><h1>Page Not Found</h1><p>Sorry, we can\'t find that page.</p></body></html>', {
+        'Content-Type': 'text/html',
+      });
+
+    const result = await isLinkInaccessible('https://example.com/soft-404', mockLog, 'test-site-id');
+    expect(result.isBroken).to.be.true;
+    expect(result.statusBucket).to.equal(STATUS_BUCKETS.SOFT_404);
+  });
+
+  it('should not classify empty HTML as soft 404 when the body has no text', async function call() {
+    this.timeout(6000);
+    nock('https://example.com')
+      .head('/empty-page')
+      .reply(405)
+      .get('/empty-page')
+      .reply(200, '<html><body><script>noop()</script><style>.x{}</style></body></html>', {
+        'Content-Type': 'text/html',
+      });
+
+    const result = await isLinkInaccessible('https://example.com/empty-page', mockLog, 'test-site-id');
+    expect(result.isBroken).to.be.false;
+    expect(result.statusBucket).to.be.null;
+  });
 });
 
 describe('calculatePriority', () => {
@@ -563,6 +593,17 @@ describe('isLinkInaccessible - Asset Handling', () => {
       .reply(200, 'js content');
 
     const result = await isLinkInaccessible('https://example.com/app.js', mockLog, 'test-site-id');
+    expect(result.isBroken).to.be.false;
+  });
+
+  it('should treat pdf links as static assets', async function call() {
+    this.timeout(6000);
+    nock('https://example.com')
+      .get('/brochure.pdf')
+      .matchHeader('Range', 'bytes=0-0')
+      .reply(200);
+
+    const result = await isLinkInaccessible('https://example.com/brochure.pdf', mockLog, 'test-site-id');
     expect(result.isBroken).to.be.false;
   });
 

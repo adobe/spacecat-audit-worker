@@ -12,6 +12,21 @@
 
 import { createInternalLinksStepLogger } from './logging.js';
 
+const RUM_VALIDATION_CONCURRENCY = 10;
+
+async function mapSettledInBatches(items, batchSize, mapper) {
+  const settledResults = [];
+
+  for (let index = 0; index < items.length; index += batchSize) {
+    const batch = items.slice(index, index + batchSize);
+    // eslint-disable-next-line no-await-in-loop
+    const batchResults = await Promise.allSettled(batch.map((item) => mapper(item)));
+    settledResults.push(...batchResults);
+  }
+
+  return settledResults;
+}
+
 export function createInternalLinksRumSteps({
   auditType,
   interval,
@@ -67,17 +82,28 @@ export function createInternalLinksRumSteps({
         };
       }
 
-      log.info(`Validating ${internal404Links.length} links to confirm they are still broken...`);
+      const baseURL = site.getBaseURL();
+      const scopedInternal404Links = internal404Links.filter((link) => (
+        isWithinAuditScope(link.url_from, baseURL)
+        && isWithinAuditScope(link.url_to, baseURL)
+      ));
+      if (scopedInternal404Links.length < internal404Links.length) {
+        log.info(`Filtered out ${internal404Links.length - scopedInternal404Links.length} RUM links outside the audit scope before validation`);
+      }
 
-      const accessibilitySettled = await Promise.allSettled(
-        internal404Links.map(async (link) => {
+      log.info(`Validating ${scopedInternal404Links.length} scoped links to confirm they are still broken...`);
+
+      const accessibilitySettled = await mapSettledInBatches(
+        scopedInternal404Links,
+        RUM_VALIDATION_CONCURRENCY,
+        async (link) => {
           const validation = await isLinkInaccessible(link.url_to, log, site.getId(), auditId);
           return {
             link,
             validation,
             inaccessible: validation.isBroken,
           };
-        }),
+        },
       );
 
       const accessibilityResults = accessibilitySettled
@@ -95,13 +121,8 @@ export function createInternalLinksRumSteps({
       const failed = accessibilitySettled.filter((r) => r.status === 'rejected').length;
       log.info(`Validation results: ${stillBroken} still broken, ${nowFixed} now fixed${failed > 0 ? `, ${failed} failed` : ''}`);
 
-      const baseURL = site.getBaseURL();
       const inaccessibleLinks = accessibilityResults
         .filter((result) => result.inaccessible)
-        .filter((result) => (
-          isWithinAuditScope(result.link.url_from, baseURL)
-          && isWithinAuditScope(result.link.url_to, baseURL)
-        ))
         .map((result) => ({
           urlFrom: result.link.url_from,
           urlTo: result.link.url_to,

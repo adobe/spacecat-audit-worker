@@ -11,6 +11,8 @@
  */
 
 import { createSplunkClient } from '../support/splunk-client-loader.js';
+import { getTimeoutStatus } from './batch-state.js';
+import { sleep } from '../support/utils.js';
 
 const DEFAULT_LOOKBACK_MINUTES = 1440; // 24 hours
 const DEFAULT_MAX_RESULTS = 10000;
@@ -18,9 +20,21 @@ const TRANSIENT_SPLUNK_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
 const SPLUNK_REQUEST_MAX_RETRIES = 3;
 const SPLUNK_RETRY_BASE_DELAY_MS = 1000;
 
-const sleep = (ms) => new Promise((resolve) => {
-  setTimeout(resolve, ms);
-});
+function escapeSplunkString(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function getSplunkSearchNamespace(context = {}) {
+  const configuredNamespace = context?.env?.SPLUNK_SEARCH_NAMESPACE;
+  /* c8 ignore next - fallback coercion branch */
+  const normalizedNamespace = String(configuredNamespace || '').replace(/^\/+|\/+$/g, '');
+
+  if (!normalizedNamespace) {
+    throw new Error('SPLUNK_SEARCH_NAMESPACE must be configured for internal-links LinkChecker');
+  }
+
+  return normalizedNamespace;
+}
 
 async function fetchSplunkAPIWithRetry(client, request, log) {
   const { url, options, operation } = request;
@@ -85,8 +99,8 @@ export function buildLinkCheckerQuery({
     'index=dx_aem_engineering',
     `earliest=-${lookbackMinutes}m@m`,
     'latest=@m',
-    `aem_program_id="${programId}"`,
-    `aem_envId="${environmentId}"`,
+    `aem_program_id="${escapeSplunkString(programId)}"`,
+    `aem_envId="${escapeSplunkString(environmentId)}"`,
     '"linkchecker.removed_internal_link"', // FT_SITES-39847 ensures this field exists
     '| spath', // Parse JSON structure
     '| rename linkchecker.removed_internal_link.urlFrom as urlFrom',
@@ -99,6 +113,7 @@ export function buildLinkCheckerQuery({
     '| rename linkchecker.removed_internal_link.httpStatus as httpStatus',
     '| rename linkchecker.removed_internal_link.timestamp as timestamp',
     '| where isnotnull(urlFrom) AND isnotnull(urlTo)',
+    '| dedup urlFrom, urlTo, itemType',
     '| table urlFrom, urlTo, validity, elementName, attributeName, itemType, anchorText, httpStatus, timestamp',
     `| head ${maxResults}`,
   ].join(' ');
@@ -129,7 +144,8 @@ export async function submitSplunkJob(client, searchQuery, log) {
     output_mode: 'json',
   });
 
-  const url = `${client.apiBaseUrl}/servicesNS/admin/search/search/jobs`;
+  const namespace = getSplunkSearchNamespace({ env: client.env });
+  const url = `${client.apiBaseUrl}/servicesNS/${namespace}/search/search/jobs`;
   const response = await fetchSplunkAPIWithRetry(client, {
     url,
     operation: 'Splunk job submission',
@@ -183,7 +199,8 @@ export async function pollJobStatus(client, sid, log) {
     throw (err instanceof Error ? err : new Error(String(err)));
   }
 
-  const url = `${client.apiBaseUrl}/servicesNS/admin/search/search/jobs/${encodeURIComponent(sid)}?output_mode=json`;
+  const namespace = getSplunkSearchNamespace({ env: client.env });
+  const url = `${client.apiBaseUrl}/servicesNS/${namespace}/search/search/jobs/${encodeURIComponent(sid)}?output_mode=json`;
   const response = await fetchSplunkAPIWithRetry(client, {
     url,
     operation: `Splunk job status check for sid=${sid}`,
@@ -253,7 +270,8 @@ export async function fetchJobResults(client, sid, log) {
     throw (err instanceof Error ? err : new Error(String(err)));
   }
 
-  const url = `${client.apiBaseUrl}/servicesNS/admin/search/search/jobs/${encodeURIComponent(sid)}/results?output_mode=json&count=0`;
+  const namespace = getSplunkSearchNamespace({ env: client.env });
+  const url = `${client.apiBaseUrl}/servicesNS/${namespace}/search/search/jobs/${encodeURIComponent(sid)}/results?output_mode=json&count=0`;
   const response = await fetchSplunkAPIWithRetry(client, {
     url,
     operation: `Splunk job results fetch for sid=${sid}`,
@@ -311,6 +329,7 @@ export async function fetchLinkCheckerLogs({
 
   // Dynamic import to avoid loading external dependency at module load time
   const client = await createSplunkClient(context);
+  client.env = context?.env;
   await client.login();
 
   const searchQuery = buildLinkCheckerQuery({
@@ -326,8 +345,15 @@ export async function fetchLinkCheckerLogs({
   // Poll until done (with timeout)
   const maxPollAttempts = 30; // 30 attempts * 2 seconds = 1 minute max
   const pollIntervalMs = 2000;
+  const lambdaStartTime = context?.lambdaStartTime;
 
   for (let attempt = 1; attempt <= maxPollAttempts; attempt += 1) {
+    if (lambdaStartTime !== undefined
+      && lambdaStartTime !== null
+      && getTimeoutStatus(lambdaStartTime, context).isApproachingTimeout) {
+      throw new Error(`Splunk job polling aborted due to Lambda timeout guard. sid=${sid}`);
+    }
+
     // eslint-disable-next-line no-await-in-loop
     const status = await pollJobStatus(client, sid, log);
 
@@ -344,9 +370,7 @@ export async function fetchLinkCheckerLogs({
 
     log.info(`[linkchecker-splunk] Job not ready, waiting ${pollIntervalMs}ms before retry (attempt ${attempt}/${maxPollAttempts})`);
     // eslint-disable-next-line no-await-in-loop
-    await new Promise((resolve) => {
-      setTimeout(resolve, pollIntervalMs);
-    });
+    await sleep(pollIntervalMs);
   }
 
   throw new Error(`Splunk job polling timeout after ${maxPollAttempts} attempts. sid=${sid}`);

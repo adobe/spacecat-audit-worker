@@ -29,6 +29,7 @@ describe('Crawl Detection Module', () => {
   let getObjectFromKeyStub;
   let isLinkInaccessibleStub;
   let isWithinAuditScopeStub;
+  let isSharedInternalResourceStub;
 
   const mockSite = {
     getBaseURL: () => 'https://example.com',
@@ -53,6 +54,7 @@ describe('Crawl Detection Module', () => {
     getObjectFromKeyStub = sandbox.stub();
     isLinkInaccessibleStub = sandbox.stub();
     isWithinAuditScopeStub = sandbox.stub().returns(true);
+    isSharedInternalResourceStub = sandbox.stub().returns(false);
 
     const module = await esmock('../../../src/internal-links/crawl-detection.js', {
       '../../../src/utils/s3-utils.js': {
@@ -63,6 +65,7 @@ describe('Crawl Detection Module', () => {
       },
       '../../../src/internal-links/subpath-filter.js': {
         isWithinAuditScope: isWithinAuditScopeStub,
+        isSharedInternalResource: isSharedInternalResourceStub,
       },
     });
 
@@ -182,6 +185,33 @@ describe('Crawl Detection Module', () => {
       expect(result.results[0].urlTo).to.equal('https://example.com/already-broken');
     });
 
+    it('should normalize cached URLs when matching trailing slash variants', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          rawBody: createMockHtml([
+            { href: '/already-broken', text: 'Already Broken' },
+          ]),
+        },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: ['https://example.com/already-broken/'],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      expect(isLinkInaccessibleStub).to.not.have.been.called;
+      expect(result.results).to.have.lengthOf(1);
+      expect(result.results[0].urlTo).to.equal('https://example.com/already-broken');
+    });
+
     it('should return hasMorePages=false when all pages processed', async () => {
       const scrapeResultPaths = new Map([
         ['https://example.com/page1', 'scrapes/page1.json'],
@@ -270,10 +300,44 @@ describe('Crawl Detection Module', () => {
       }, mockContext);
 
       // Should include both initial and new caches
-      expect(result.brokenUrlsCache).to.include('https://example.com/prev-broken');
-      expect(result.brokenUrlsCache).to.include('https://example.com/broken1');
+      const brokenUrls = result.brokenUrlsCache.map((e) => e.url);
+      expect(brokenUrls).to.include('https://example.com/prev-broken');
+      expect(brokenUrls).to.include('https://example.com/broken1');
       expect(result.workingUrlsCache).to.include('https://example.com/prev-working');
       expect(result.workingUrlsCache).to.include('https://example.com/working1');
+    });
+
+    it('should handle initialBrokenUrls as objects with metadata', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          rawBody: createMockHtml([
+            { href: '/working1', text: 'Working 1' },
+          ]),
+        },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub.withArgs('https://example.com/working1').resolves(createValidationResponse(false));
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [
+          { url: 'https://example.com/prev-broken', httpStatus: 404, statusBucket: '4xx', contentType: 'text/html' },
+        ],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      const brokenUrls = result.brokenUrlsCache.map((e) => e.url);
+      expect(brokenUrls).to.include('https://example.com/prev-broken');
+      const prevBroken = result.brokenUrlsCache.find((e) => e.url === 'https://example.com/prev-broken');
+      expect(prevBroken.httpStatus).to.equal(404);
+      expect(prevBroken.statusBucket).to.equal('4xx');
     });
 
     it('should handle empty scrapeResultPaths', async () => {
@@ -636,6 +700,49 @@ describe('Crawl Detection Module', () => {
       // Link should be skipped, no broken links found
       expect(result.results).to.be.an('array').that.is.empty;
       expect(isLinkInaccessibleStub).to.not.have.been.called;
+    });
+
+    it('should allow shared same-host assets outside the scoped subpath', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/uk/page1', 'scrapes/page1.json'],
+      ]);
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          rawBody: `
+            <html><body><main>
+              <script src="/etc.clientlibs/site/app.js"></script>
+              <img src="/content/dam/shared/hero.png">
+            </main></body></html>
+          `,
+        },
+        finalUrl: 'https://example.com/uk/page1',
+      });
+
+      isWithinAuditScopeStub.callsFake((url) => url.startsWith('https://example.com/uk'));
+      isSharedInternalResourceStub.callsFake((url, baseURL, itemType) => (
+        baseURL === 'https://example.com/uk'
+          && ['js', 'image'].includes(itemType)
+          && (url.includes('/etc.clientlibs/') || url.includes('/content/dam/'))
+      ));
+      isLinkInaccessibleStub.resolves(createValidationResponse(false));
+
+      await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, {
+        ...mockContext,
+        site: {
+          ...mockSite,
+          getBaseURL: () => 'https://example.com/uk',
+        },
+      });
+
+      expect(isLinkInaccessibleStub).to.have.been.calledWith('https://example.com/etc.clientlibs/site/app.js');
+      expect(isLinkInaccessibleStub).to.have.been.calledWith('https://example.com/content/dam/shared/hero.png');
     });
 
     it('should skip pages with missing rawBody and increment pagesSkipped', async () => {
@@ -1399,6 +1506,84 @@ describe('Crawl Detection Module', () => {
       expect(result.pagesProcessed).to.equal(1);
       expect(result.hasMorePages).to.equal(false);
     });
+
+    it('should use env-based crawl traffic defaults for crawl-only broken links', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          rawBody: createMockHtml([
+            { href: '/broken-link', text: 'Broken Link' },
+          ]),
+        },
+        finalUrl: 'https://example.com/page1',
+      });
+      isLinkInaccessibleStub.resolves(createValidationResponse(true, 404, 'not_found_404'));
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, {
+        ...mockContext,
+        env: {
+          ...mockContext.env,
+          BROKEN_LINKS_CRAWL_TRAFFIC_DOMAIN: '7',
+        },
+      });
+
+      expect(result.results).to.have.lengthOf(1);
+      expect(result.results[0].trafficDomain).to.equal(7);
+    });
+
+    it('should extract object data, meta refresh, and CSS url() references', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          rawBody: `<html><body><main>
+            <object data="/embedded/brochure.pdf"></object>
+            <meta http-equiv="refresh" content="0;url=/redirected-page">
+            <style>.hero { background-image: url('/styles/hero-bg.jpg'); }</style>
+            <div style="background-image: url('/inline/cta-bg.png')"></div>
+          </main></body></html>`,
+        },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub.callsFake(async (url) => {
+        if ([
+          'https://example.com/embedded/brochure.pdf',
+          'https://example.com/redirected-page',
+          'https://example.com/styles/hero-bg.jpg',
+          'https://example.com/inline/cta-bg.png',
+        ].includes(url)) {
+          return createValidationResponse(true, 404, 'not_found_404');
+        }
+        return createValidationResponse(false);
+      });
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      expect(result.results.map((link) => link.urlTo)).to.include.members([
+        'https://example.com/embedded/brochure.pdf',
+        'https://example.com/redirected-page',
+        'https://example.com/styles/hero-bg.jpg',
+        'https://example.com/inline/cta-bg.png',
+      ]);
+    });
   });
 
   describe('mergeAndDeduplicate - uncovered branches', () => {
@@ -1476,7 +1661,7 @@ describe('Crawl Detection Module', () => {
       expect(mockLog.info).to.have.been.calledWith('Merged: 1 rum (1 also in crawl) + 0 crawl-only = 1 total');
     });
 
-    it('should use RUM fallback values when crawl link is missing anchorText or itemType', () => {
+    it('should use RUM fallback values when crawl link is nullish for anchorText or itemType', () => {
       const mockLog = {
         info: sinon.stub(),
       };
@@ -1496,7 +1681,7 @@ describe('Crawl Detection Module', () => {
         {
           urlFrom: 'https://example.com/page1',
           urlTo: 'https://example.com/broken1',
-          anchorText: '', // Empty string - should fallback to RUM
+          anchorText: null, // Null - should fallback to RUM
           itemType: null, // Null - should fallback to RUM
           detectionSource: 'crawl',
         },
@@ -1508,6 +1693,47 @@ describe('Crawl Detection Module', () => {
       expect(result[0].anchorText).to.equal('RUM Anchor'); // Fallback to RUM
       expect(result[0].itemType).to.equal('link'); // Fallback to RUM
       expect(result[0].detectionSource).to.equal('crawl+rum');
+    });
+
+    it('should preserve second-source metadata even when first-source values are explicit empty or zero values', () => {
+      const mockLog = {
+        info: sinon.stub(),
+      };
+
+      const rumLinks = [
+        {
+          urlFrom: 'https://example.com/page1',
+          urlTo: 'https://example.com/broken1',
+          anchorText: 'RUM Anchor',
+          itemType: 'link',
+          trafficDomain: 100,
+          httpStatus: 404,
+          statusBucket: 'not_found_404',
+          contentType: 'text/html',
+          detectionSource: 'rum',
+        },
+      ];
+
+      const crawlLinks = [
+        {
+          urlFrom: 'https://example.com/page1',
+          urlTo: 'https://example.com/broken1',
+          anchorText: '',
+          itemType: 'link',
+          httpStatus: 0,
+          statusBucket: '',
+          contentType: '',
+          detectionSource: 'crawl',
+        },
+      ];
+
+      const result = mergeAndDeduplicate(crawlLinks, rumLinks, mockLog);
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].anchorText).to.equal('RUM Anchor');
+      expect(result[0].httpStatus).to.equal(404);
+      expect(result[0].statusBucket).to.equal('not_found_404');
+      expect(result[0].contentType).to.equal('text/html');
     });
 
     it('should merge safely when detectionSource is missing', () => {
@@ -1871,7 +2097,7 @@ describe('Crawl Detection Module', () => {
       expect(finalMerged[0].detectionSource).to.equal('crawl+linkchecker+rum'); // Alphabetically sorted
       expect(finalMerged[0].trafficDomain).to.equal(500); // RUM traffic
       expect(finalMerged[0].anchorText).to.equal('Crawl Text'); // Crawl metadata
-      expect(finalMerged[0].httpStatus).to.equal(404);
+      expect(finalMerged[0].httpStatus).to.equal('404');
     });
   });
 

@@ -29,6 +29,7 @@ describe('internal-links result utils', () => {
 
     expect(filterByStatusIfNeeded(links, ['not_found_404'])).to.deep.equal([
       { urlTo: '/a', statusBucket: 'not_found_404' },
+      { urlTo: '/c', statusBucket: null },
     ]);
   });
 

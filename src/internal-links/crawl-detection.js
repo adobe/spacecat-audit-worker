@@ -12,9 +12,11 @@
 
 import { load as cheerioLoad } from 'cheerio';
 import { getObjectFromKey } from '../utils/s3-utils.js';
-import { isWithinAuditScope } from './subpath-filter.js';
+import { isWithinAuditScope, isSharedInternalResource } from './subpath-filter.js';
 import { createAuditLogger, isContextLogger } from '../common/context-logger.js';
 import { isLinkInaccessible } from './helpers.js';
+import { limitConcurrency, sleep } from '../support/utils.js';
+import { buildBrokenLinkKey, getUrlCacheKey } from './link-key.js';
 
 const AUDIT_TYPE = 'broken-internal-links';
 
@@ -23,18 +25,17 @@ const AUDIT_TYPE = 'broken-internal-links';
  * Override via env BROKEN_LINKS_CRAWL_TRAFFIC_DOMAIN (e.g. 1–100).
  * RUM links keep their traffic_domain (e.g. 200, 400).
  */
-const CRAWL_DEFAULT_TRAFFIC = Number(process.env.BROKEN_LINKS_CRAWL_TRAFFIC_DOMAIN) || 1;
+function getCrawlDefaultTraffic(env = {}) {
+  return Number(env.BROKEN_LINKS_CRAWL_TRAFFIC_DOMAIN) || 1;
+}
 
 // Optimized defaults for speed while respecting target server
 const DEFAULT_SCRAPE_FETCH_DELAY_MS = 50;
 const DEFAULT_LINK_CHECK_BATCH_SIZE = 10;
+const DEFAULT_MAX_CONCURRENT_LINK_CHECKS = 5;
 const DEFAULT_LINK_CHECK_DELAY_MS = 300;
 
 export const PAGES_PER_BATCH = 10;
-
-const sleep = (ms) => new Promise((resolve) => {
-  setTimeout(resolve, ms);
-});
 
 const parsePositiveInt = (value, fallback) => {
   const parsed = Number.parseInt(value, 10);
@@ -45,8 +46,6 @@ const parseNonNegativeInt = (value, fallback) => {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 };
-
-const DEFAULT_ITEM_TYPE = 'link';
 
 function normalizeHostname(url) {
   return new URL(url).hostname.replace(/^www\./, '');
@@ -60,15 +59,40 @@ function isInternalAssetHost(hostname, baseHostname) {
   return hostname === baseHostname || hostname.endsWith(`.${baseHostname}`);
 }
 
-function buildBrokenLinkKey(link) {
-  return `${link.urlFrom}|${link.urlTo}|${link.itemType || DEFAULT_ITEM_TYPE}`;
-}
-
 function getSourceItemType(parentTag) {
   if (parentTag === 'picture') return 'image';
   if (parentTag === 'video') return 'video';
   if (parentTag === 'audio') return 'audio';
   return 'media';
+}
+
+function getAssetTypeFromUrl(url, pageUrl = 'https://example.com') {
+  try {
+    const pathname = new URL(url, pageUrl).pathname.toLowerCase();
+    if (/\.(svg|png|jpe?g|gif|webp|avif)$/.test(pathname)) return 'image';
+    /* c8 ignore start - Asset type branches covered by integration tests at extraction level */
+    if (/\.css$/.test(pathname)) return 'css';
+    if (/\.js$/.test(pathname)) return 'js';
+    if (/\.(mp4|webm)$/.test(pathname)) return 'video';
+    if (/\.(mp3|ogg)$/.test(pathname)) return 'audio';
+    return 'media';
+  } catch (error) {
+    return 'media';
+  }
+  /* c8 ignore stop */
+}
+
+function extractCssUrlCandidates(rawCss = '') {
+  return Array.from(String(rawCss).matchAll(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi))
+    .map((match) => match[2]?.trim())
+    .filter(Boolean)
+    .filter((candidate) => !candidate.startsWith('data:') && !candidate.startsWith('#'));
+}
+
+function extractMetaRefreshUrl(content = '') {
+  const match = String(content).match(/url\s*=\s*([^;]+)/i);
+  /* c8 ignore next - fallback coercion branch */
+  return match?.[1]?.trim() || '';
 }
 
 function resolveUrlCandidates(rawValue, pageUrl) {
@@ -188,7 +212,7 @@ function extractInternalLinks($, pageUrl, baseHostname, log) {
         internalLinks.push({
           url: absoluteUrl,
           anchorText: $area.attr('alt')?.trim() || '[image map area]',
-          type: DEFAULT_ITEM_TYPE,
+          type: 'link',
         });
       }
     } catch (urlError) {
@@ -422,6 +446,94 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
     });
   });
 
+  /* c8 ignore start - Preload/modulepreload and meta-refresh extraction */
+  $('link[rel="preload"][href], link[rel="modulepreload"][href]').each((_, el) => {
+    const $link = $(el);
+    const rel = $link.attr('rel');
+    const asAttr = ($link.attr('as') || '').toLowerCase();
+    let type = 'media';
+    if (asAttr === 'style') {
+      type = 'css';
+    } else if (asAttr === 'script' || rel === 'modulepreload') {
+      type = 'js';
+    } else if (asAttr === 'image') {
+      type = 'image';
+    }
+
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: $link.attr('href'),
+      pageUrl,
+      baseHostname,
+      log,
+      type,
+      anchorText: `[${rel} href]`,
+    });
+  });
+
+  $('object[data]').each((_, el) => {
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: $(el).attr('data'),
+      pageUrl,
+      baseHostname,
+      log,
+      type: 'media',
+      anchorText: '[object data]',
+    });
+  });
+
+  $('meta[http-equiv]').each((_, el) => {
+    const $meta = $(el);
+    if (($meta.attr('http-equiv') || '').toLowerCase() !== 'refresh') {
+      return;
+    }
+
+    const refreshUrl = extractMetaRefreshUrl($meta.attr('content'));
+    if (!refreshUrl) {
+      return;
+    }
+
+    pushResolvedReference({
+      references: assetReferences,
+      rawUrl: refreshUrl,
+      pageUrl,
+      baseHostname,
+      log,
+      type: 'link',
+      anchorText: '[meta refresh]',
+    });
+  });
+  /* c8 ignore stop */
+
+  $('style').each((_, el) => {
+    extractCssUrlCandidates($(el).html()).forEach((candidate) => {
+      pushResolvedReference({
+        references: assetReferences,
+        rawUrl: candidate,
+        pageUrl,
+        baseHostname,
+        log,
+        type: getAssetTypeFromUrl(candidate, pageUrl),
+        anchorText: '[style url()]',
+      });
+    });
+  });
+
+  $('[style]').each((_, el) => {
+    extractCssUrlCandidates($(el).attr('style')).forEach((candidate) => {
+      pushResolvedReference({
+        references: assetReferences,
+        rawUrl: candidate,
+        pageUrl,
+        baseHostname,
+        log,
+        type: getAssetTypeFromUrl(candidate, pageUrl),
+        anchorText: '[inline style url()]',
+      });
+    });
+  });
+
   return assetReferences;
 }
 
@@ -445,12 +557,18 @@ async function validateLinksWithCache(
   log,
   siteId,
   auditId,
+  crawlDefaultTraffic,
+  maxConcurrent = DEFAULT_MAX_CONCURRENT_LINK_CHECKS,
 ) {
-  return Promise.all(
-    links.map(async (link) => {
-      if (!isWithinAuditScope(link.url, baseURL)) return { type: 'out-of-scope' };
+  return limitConcurrency(
+    links.map((link) => async () => {
+      const isInScope = isWithinAuditScope(link.url, baseURL)
+        || isSharedInternalResource(link.url, baseURL, link.type);
+      if (!isInScope) return { type: 'out-of-scope' };
+      const cacheKey = getUrlCacheKey(link.url);
 
-      if (brokenUrlsCache.has(link.url)) {
+      if (brokenUrlsCache.has(cacheKey)) {
+        const cachedMeta = brokenUrlsCache.get(cacheKey);
         return {
           type: 'cache-hit-broken',
           urlFrom: pageUrl,
@@ -458,19 +576,25 @@ async function validateLinksWithCache(
           anchorText: link.anchorText,
           /* c8 ignore next - Fallback tested via link detection */
           itemType: link.type || 'link',
-          trafficDomain: CRAWL_DEFAULT_TRAFFIC,
+          trafficDomain: crawlDefaultTraffic,
           detectionSource: 'crawl',
-          // No HTTP metadata for cache hits (not validated this time)
+          httpStatus: cachedMeta.httpStatus,
+          statusBucket: cachedMeta.statusBucket,
+          contentType: cachedMeta.contentType,
         };
       }
 
-      if (workingUrlsCache.has(link.url)) {
+      if (workingUrlsCache.has(cacheKey)) {
         return { type: 'cache-hit-working' };
       }
 
       const validation = await isLinkInaccessible(link.url, log, siteId, auditId);
       if (validation.isBroken) {
-        brokenUrlsCache.add(link.url);
+        brokenUrlsCache.set(cacheKey, {
+          httpStatus: validation.httpStatus,
+          statusBucket: validation.statusBucket,
+          contentType: validation.contentType,
+        });
         return {
           type: 'api-broken',
           urlFrom: pageUrl,
@@ -478,17 +602,48 @@ async function validateLinksWithCache(
           anchorText: link.anchorText,
           /* c8 ignore next - Fallback tested via link detection */
           itemType: link.type || 'link',
-          trafficDomain: CRAWL_DEFAULT_TRAFFIC,
+          trafficDomain: crawlDefaultTraffic,
           detectionSource: 'crawl',
           httpStatus: validation.httpStatus,
           statusBucket: validation.statusBucket,
           contentType: validation.contentType,
         };
       }
-      workingUrlsCache.add(link.url);
+      workingUrlsCache.add(cacheKey);
       return { type: 'api-working' };
     }),
+    /* c8 ignore next - Defensive fallback when links array is empty */
+    Math.max(1, Math.min(maxConcurrent, links.length || 1)),
   );
+}
+
+function createValidationStats() {
+  return {
+    totalLinksAnalyzed: 0,
+    cacheHitsBroken: 0,
+    cacheHitsWorking: 0,
+    linksCheckedViaAPI: 0,
+  };
+}
+
+function updateValidationStats(stats, validations) {
+  const nextStats = { ...stats };
+
+  validations.forEach((result) => {
+    if (!result || result.type === 'out-of-scope') return;
+
+    nextStats.totalLinksAnalyzed += 1;
+
+    if (result.type === 'cache-hit-broken') {
+      nextStats.cacheHitsBroken += 1;
+    } else if (result.type === 'cache-hit-working') {
+      nextStats.cacheHitsWorking += 1;
+    } else if (result.type === 'api-broken' || result.type === 'api-working') {
+      nextStats.linksCheckedViaAPI += 1;
+    }
+  });
+
+  return nextStats;
 }
 
 /**
@@ -538,10 +693,15 @@ export async function detectBrokenLinksFromCrawlBatch({
     internalLinksConfig.linkCheckBatchSize,
     DEFAULT_LINK_CHECK_BATCH_SIZE,
   );
+  const maxConcurrentLinkChecks = parsePositiveInt(
+    internalLinksConfig.maxConcurrentLinkChecks,
+    Math.min(linkCheckBatchSize, DEFAULT_MAX_CONCURRENT_LINK_CHECKS),
+  );
   const linkCheckDelayMs = parseNonNegativeInt(
     internalLinksConfig.linkCheckDelayMs,
     DEFAULT_LINK_CHECK_DELAY_MS,
   );
+  const crawlDefaultTraffic = getCrawlDefaultTraffic(env);
   /* c8 ignore stop */
 
   const startTime = Date.now();
@@ -558,10 +718,21 @@ export async function detectBrokenLinksFromCrawlBatch({
   log.info(`${formatElapsed()} Processing pages ${batchStartIndex + 1}-${batchEndIndex} of ${totalPages}`);
   log.info(`${formatElapsed()} Initial cache: ${initialBrokenUrls.length} broken, ${initialWorkingUrls.length} working URLs`);
 
-  const brokenUrlsCache = new Set(initialBrokenUrls);
-  const workingUrlsCache = new Set(initialWorkingUrls);
+  const brokenUrlsCache = new Map();
+  initialBrokenUrls.forEach((entry) => {
+    if (typeof entry === 'string') {
+      brokenUrlsCache.set(getUrlCacheKey(entry), {});
+    } else {
+      brokenUrlsCache.set(getUrlCacheKey(entry.url), {
+        httpStatus: entry.httpStatus,
+        statusBucket: entry.statusBucket,
+        contentType: entry.contentType,
+      });
+    }
+  });
+  const workingUrlsCache = new Set(initialWorkingUrls.map(getUrlCacheKey));
   const brokenLinksMap = new Map();
-  const allValidationResults = [];
+  const validationStats = createValidationStats();
   let pagesProcessed = 0;
   let pagesSkipped = 0;
 
@@ -614,9 +785,11 @@ export async function detectBrokenLinksFromCrawlBatch({
           log,
           site.getId(),
           auditId,
+          crawlDefaultTraffic,
+          maxConcurrentLinkChecks,
         );
 
-        allValidationResults.push(...batchResults);
+        Object.assign(validationStats, updateValidationStats(validationStats, batchResults));
         validations.push(...batchResults);
 
         if (i + linkCheckBatchSize < allLinks.length) {
@@ -644,13 +817,12 @@ export async function detectBrokenLinksFromCrawlBatch({
 
   const results = Array.from(brokenLinksMap.values());
 
-  const totalLinksAnalyzed = allValidationResults.filter((r) => r && r.type !== 'out-of-scope').length;
-  const cacheHitsBroken = allValidationResults.filter((r) => r?.type === 'cache-hit-broken').length;
-  const cacheHitsWorking = allValidationResults.filter((r) => r?.type === 'cache-hit-working').length;
-  const linksCheckedViaAPI = allValidationResults.filter(
-    (r) => r && (r.type === 'api-broken' || r.type === 'api-working'),
-  ).length;
-
+  const {
+    totalLinksAnalyzed,
+    cacheHitsBroken,
+    cacheHitsWorking,
+    linksCheckedViaAPI,
+  } = validationStats;
   const totalCacheHits = cacheHitsBroken + cacheHitsWorking;
   const cacheHitRate = totalLinksAnalyzed > 0
     ? ((totalCacheHits / totalLinksAnalyzed) * 100).toFixed(1)
@@ -670,7 +842,7 @@ export async function detectBrokenLinksFromCrawlBatch({
 
   return {
     results,
-    brokenUrlsCache: Array.from(brokenUrlsCache),
+    brokenUrlsCache: Array.from(brokenUrlsCache.entries()).map(([url, meta]) => ({ url, ...meta })),
     workingUrlsCache: Array.from(workingUrlsCache),
     pagesProcessed,
     pagesSkipped,
@@ -699,6 +871,13 @@ export async function detectBrokenLinksFromCrawlBatch({
  * @returns {Array} - Merged and deduplicated array
  */
 export function mergeAndDeduplicate(firstLinks, secondLinks, log) {
+  const prefersFirstAnchorText = (primaryAnchorText, fallbackAnchorText) => (
+    primaryAnchorText === '[no text]'
+      && typeof fallbackAnchorText === 'string'
+      && fallbackAnchorText.length > 0
+      && fallbackAnchorText !== '[no text]'
+  );
+
   const linkMap = new Map();
 
   // Detect source names from the input data
@@ -738,12 +917,15 @@ export function mergeAndDeduplicate(firstLinks, secondLinks, log) {
       linkMap.set(key, {
         ...secondLink, // Keep second batch data (e.g., RUM traffic)
         detectionSource: combinedSources,
-        // Add metadata from first batch if available
-        anchorText: link.anchorText || secondLink.anchorText,
-        itemType: link.itemType || secondLink.itemType,
-        httpStatus: link.httpStatus || secondLink.httpStatus,
-        statusBucket: link.statusBucket || secondLink.statusBucket,
-        contentType: link.contentType || secondLink.contentType,
+        // Preserve second-link data and only backfill missing metadata from the first source.
+        // Placeholder LinkChecker text should not overwrite real crawl anchor text.
+        anchorText: prefersFirstAnchorText(secondLink.anchorText, link.anchorText)
+          ? link.anchorText
+          : (secondLink.anchorText ?? link.anchorText),
+        itemType: secondLink.itemType ?? link.itemType,
+        httpStatus: secondLink.httpStatus ?? link.httpStatus,
+        statusBucket: secondLink.statusBucket ?? link.statusBucket,
+        contentType: secondLink.contentType ?? link.contentType,
       });
       bothSourcesCount += 1;
     }

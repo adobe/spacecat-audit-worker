@@ -1237,6 +1237,58 @@ describe('generateSuggestionData', async function test() {
     expect(context.log.error).to.have.been.calledWithMatch(/Empty response content for/);
   });
 
+  it('should handle malformed JSON response content', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site1/scrape.json' },
+      ],
+      IsTruncated: false,
+      NextContinuationToken: 'token',
+    });
+    context.s3Client.send.resolves(mockFileResponse);
+    configuration.isHandlerEnabledForSite.returns(true);
+
+    let callCount = 0;
+    azureOpenAIClient.fetchChatCompletion.callsFake(async () => {
+      callCount += 1;
+      if (callCount <= 2) {
+        return {
+          choices: [{
+            message: {
+              content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
+            },
+            finish_reason: 'stop',
+          }],
+        };
+      }
+
+      if (callCount === 3) {
+        return {
+          choices: [{
+            message: {
+              content: '{"suggested_urls":',
+            },
+            finish_reason: 'stop',
+          }],
+        };
+      }
+
+      return {
+        choices: [{
+          message: {
+            content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
+          },
+          finish_reason: 'stop',
+        }],
+      };
+    });
+
+    const result = await generateSuggestionData('https://example.com', brokenInternalLinksData, context, site);
+
+    expect(result).to.have.lengthOf(2);
+    expect(context.log.error).to.have.been.calledWithMatch(/Invalid JSON for broken URL/);
+  });
+
   it('should handle final response with no choices', async () => {
     context.s3Client.send.onCall(0).resolves({
       Contents: [

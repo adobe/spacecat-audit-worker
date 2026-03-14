@@ -30,7 +30,7 @@ export function filterByStatusIfNeeded(links, allowedStatusBuckets = []) {
   }
 
   const allowed = new Set(allowedStatusBuckets);
-  return links.filter((link) => link?.statusBucket && allowed.has(link.statusBucket));
+  return links.filter((link) => !link?.statusBucket || allowed.has(link.statusBucket));
 }
 
 export function filterByItemTypes(links, allowedItemTypes = []) {
@@ -61,10 +61,12 @@ export function createUpdateAuditResult({ auditType, createAuditLogger }) {
     dataAccess,
     log,
     siteId,
+    extraFields = {},
   ) {
     const updatedAuditResult = {
       ...auditResult,
       brokenInternalLinks: prioritizedLinks,
+      ...extraFields,
     };
     const auditId = audit.getId ? audit.getId() : audit.id;
     const contextLog = isContextLogger(log)
@@ -92,6 +94,7 @@ export function createUpdateAuditResult({ auditType, createAuditLogger }) {
       }
     } catch (error) {
       contextLog.error(`Failed to update audit result: ${error.message}`);
+      throw error;
     }
 
     return updatedAuditResult;

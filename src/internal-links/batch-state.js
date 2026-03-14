@@ -16,6 +16,8 @@ import {
   DeleteObjectCommand,
   ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
+import { sleep } from '../support/utils.js';
+import { buildBrokenLinkKey } from './link-key.js';
 
 const BATCH_STATE_PREFIX = 'broken-internal-links/batch-state';
 
@@ -23,33 +25,108 @@ const BATCH_STATE_PREFIX = 'broken-internal-links/batch-state';
 const LAMBDA_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 const TIMEOUT_BUFFER_MS = 2 * 60 * 1000; // 2 minute buffer
 const SAFE_PROCESSING_TIME_MS = LAMBDA_TIMEOUT_MS - TIMEOUT_BUFFER_MS; // 13 minutes
-const DEFAULT_ITEM_TYPE = 'link';
+const S3_BATCH_OPERATION_SIZE = 10;
+const BATCH_CLAIM_TTL_MS = LAMBDA_TIMEOUT_MS + TIMEOUT_BUFFER_MS;
+const DISPATCH_RESERVATION_TTL_MS = 5 * 60 * 1000;
+const FINALIZATION_LOCK_TTL_MS = LAMBDA_TIMEOUT_MS;
+const EXECUTION_LOCK_TTL_MS = LAMBDA_TIMEOUT_MS + TIMEOUT_BUFFER_MS;
 
-function buildBrokenLinkKey(link) {
-  return `${link.urlFrom}|${link.urlTo}|${link.itemType || DEFAULT_ITEM_TYPE}`;
+function isConditionalWriteConflict(error) {
+  const errorName = error?.name || '';
+  const errorCode = error?.Code || error?.code || '';
+  const statusCode = error?.$metadata?.httpStatusCode;
+  const message = error?.message || '';
+
+  return errorName === 'PreconditionFailed'
+    || errorName === 'ConditionalCheckFailedException'
+    || errorCode === 'PreconditionFailed'
+    || errorCode === 'ConditionalCheckFailedException'
+    || statusCode === 412
+    || message.includes('PreconditionFailed');
 }
 
-/**
- * Check if we're approaching Lambda timeout
- * @param {number} startTime - Timestamp when Lambda started
- * @param {Object} log - Logger
- * @returns {boolean} True if we should stop processing
- */
-function isApproachingTimeout(startTime, log) {
-  const elapsed = Date.now() - startTime;
-  if (elapsed > SAFE_PROCESSING_TIME_MS) {
-    log.warn(`[batch-state] Approaching Lambda timeout: ${elapsed}ms elapsed, ${LAMBDA_TIMEOUT_MS - elapsed}ms remaining`);
-    return true;
+function resolveRemainingTime(runtimeContext) {
+  const directRemainingTime = runtimeContext?.getRemainingTimeInMillis;
+  if (typeof directRemainingTime === 'function') {
+    return directRemainingTime.call(runtimeContext);
   }
-  return false;
+
+  const nestedRemainingTime = runtimeContext?.lambdaContext?.getRemainingTimeInMillis;
+  if (typeof nestedRemainingTime === 'function') {
+    return nestedRemainingTime.call(runtimeContext.lambdaContext);
+  }
+
+  return null;
 }
 
-/**
- * Sleep utility
- */
-const sleep = (ms) => new Promise((resolve) => {
-  setTimeout(resolve, ms);
-});
+function resolveLeaseExpiry(runtimeContext, fallbackMs, bufferMs = 0) {
+  const runtimeRemaining = resolveRemainingTime(runtimeContext);
+  /* c8 ignore next 2 - Branch depends on Lambda runtime context presence */
+  const leaseDurationMs = Number.isFinite(runtimeRemaining)
+    ? Math.max(runtimeRemaining, 0) + bufferMs
+    : fallbackMs;
+  return new Date(Date.now() + leaseDurationMs).toISOString();
+}
+
+function buildTimeoutStatus(startTime, runtimeContext) {
+  const elapsed = Date.now() - startTime;
+  const runtimeRemaining = resolveRemainingTime(runtimeContext);
+  const remaining = Number.isFinite(runtimeRemaining)
+    ? runtimeRemaining
+    : LAMBDA_TIMEOUT_MS - elapsed;
+  const safeTimeRemaining = remaining - TIMEOUT_BUFFER_MS;
+
+  return {
+    elapsed,
+    remaining,
+    safeTimeRemaining,
+    isApproachingTimeout: safeTimeRemaining <= 0,
+    percentUsed: (elapsed / LAMBDA_TIMEOUT_MS) * 100,
+  };
+}
+
+async function listAllObjects({ s3Client, bucketName, prefix }) {
+  const contents = [];
+  let continuationToken;
+
+  do {
+    // eslint-disable-next-line no-await-in-loop
+    const response = await s3Client.send(new ListObjectsV2Command({
+      Bucket: bucketName,
+      Prefix: prefix,
+      ContinuationToken: continuationToken,
+    }));
+
+    if (Array.isArray(response.Contents)) {
+      contents.push(...response.Contents);
+    }
+
+    continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+  } while (continuationToken);
+
+  return contents;
+}
+
+async function mapInBatches(items, batchSize, mapper) {
+  const results = [];
+
+  for (let index = 0; index < items.length; index += batchSize) {
+    const batch = items.slice(index, index + batchSize);
+    // eslint-disable-next-line no-await-in-loop
+    const batchResults = await Promise.all(batch.map((item) => mapper(item)));
+    results.push(...batchResults);
+  }
+
+  return results;
+}
+
+async function forEachInBatches(items, batchSize, action) {
+  for (let index = 0; index < items.length; index += batchSize) {
+    const batch = items.slice(index, index + batchSize);
+    // eslint-disable-next-line no-await-in-loop
+    await Promise.all(batch.map((item) => action(item)));
+  }
+}
 
 /**
  * Save batch results to unique file (idempotent - safe to overwrite)
@@ -78,10 +155,16 @@ export async function saveBatchResults(auditId, batchNum, results, pagesProcesse
       Key: key,
       Body: JSON.stringify(data),
       ContentType: 'application/json',
+      IfNoneMatch: '*',
     }));
 
     log.info(`[batch-state] Saved batch ${batchNum}: ${results.length} results, ${pagesProcessed} pages`);
   } catch (error) {
+    /* c8 ignore next 4 - Concurrent worker already saved this batch */
+    if (isConditionalWriteConflict(error)) {
+      log.info(`[batch-state] Batch ${batchNum} results already saved by another worker, skipping overwrite`);
+      return;
+    }
     log.error(`[batch-state] Failed to save batch ${batchNum}: ${error.message}`);
     throw error;
   }
@@ -143,9 +226,22 @@ export async function updateCache(auditId, newBroken, newWorking, context, maxRe
       // eslint-disable-next-line no-await-in-loop
       const currentCache = await loadCacheWithETag(auditId, context);
 
-      // Merge (union of sets - deduplication)
+      // Merge broken entries by URL, preserving HTTP metadata (newer entries take precedence)
+      const brokenMap = new Map();
+      [...currentCache.broken, ...newBroken].forEach((entry) => {
+        if (typeof entry === 'string') {
+          if (!brokenMap.has(entry)) brokenMap.set(entry, {});
+        } else {
+          brokenMap.set(entry.url, {
+            httpStatus: entry.httpStatus,
+            statusBucket: entry.statusBucket,
+            contentType: entry.contentType,
+          });
+        }
+      });
+
       const merged = {
-        broken: [...new Set([...currentCache.broken, ...newBroken])],
+        broken: Array.from(brokenMap.entries()).map(([url, meta]) => ({ url, ...meta })),
         working: [...new Set([...currentCache.working, ...newWorking])],
         lastUpdated: new Date().toISOString(),
       };
@@ -158,9 +254,10 @@ export async function updateCache(auditId, newBroken, newWorking, context, maxRe
         ContentType: 'application/json',
       };
 
-      // Only use IfMatch if we have an ETag (not first time)
       if (currentCache.etag) {
         putParams.IfMatch = currentCache.etag;
+      } else {
+        putParams.IfNoneMatch = '*';
       }
 
       // eslint-disable-next-line no-await-in-loop
@@ -169,11 +266,9 @@ export async function updateCache(auditId, newBroken, newWorking, context, maxRe
       log.info(`[batch-state] Cache updated (attempt ${attempt + 1}): ${merged.broken.length} broken, ${merged.working.length} working`);
       return; // Success
     } catch (error) {
-      if (error.name === 'PreconditionFailed' && attempt < maxRetries - 1) {
-        // Conflict - another batch updated cache
+      if (isConditionalWriteConflict(error) && attempt < maxRetries - 1) {
         log.warn(`[batch-state] Cache conflict (attempt ${attempt + 1}), retrying with merge...`);
 
-        // Exponential backoff with jitter to prevent thundering herd
         const baseDelay = 100 * 2 ** attempt;
         const jitter = baseDelay * (0.5 + Math.random());
         // eslint-disable-next-line no-await-in-loop
@@ -244,6 +339,518 @@ async function loadCompletedWithETag(auditId, context) {
   }
 }
 
+async function loadBatchClaimWithETag(auditId, batchNum, context) {
+  const { s3Client, env } = context;
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  const key = `${BATCH_STATE_PREFIX}/${auditId}/claims/batch-${batchNum}.json`;
+
+  try {
+    const response = await s3Client.send(new GetObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+    }));
+    const body = await response.Body.transformToString();
+    const claim = JSON.parse(body);
+
+    return {
+      claimStartedAt: claim.claimStartedAt || null,
+      expiresAt: claim.expiresAt || null,
+      status: claim.status || 'active',
+      etag: response.ETag,
+    };
+  } catch (error) {
+    if (error.name === 'NoSuchKey') {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function loadDispatchWithETag(auditId, dispatchKey, context) {
+  const { s3Client, env } = context;
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  const key = `${BATCH_STATE_PREFIX}/${auditId}/dispatch/${dispatchKey}.json`;
+
+  try {
+    const response = await s3Client.send(new GetObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+    }));
+    const body = await response.Body.transformToString();
+    const dispatch = JSON.parse(body);
+
+    return {
+      data: dispatch,
+      etag: response.ETag,
+      key,
+    };
+  } catch (error) {
+    if (error.name === 'NoSuchKey') {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function loadExecutionLockWithETag(auditId, lockKey, context) {
+  const { s3Client, env } = context;
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  const key = `${BATCH_STATE_PREFIX}/${auditId}/execution-locks/${lockKey}.json`;
+
+  try {
+    const response = await s3Client.send(new GetObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+    }));
+    const body = await response.Body.transformToString();
+    const lock = JSON.parse(body);
+
+    /* c8 ignore next 5 - Fallback coercion branches for missing lock fields */
+    return {
+      lockStartedAt: lock.lockStartedAt || null,
+      expiresAt: lock.expiresAt || null,
+      status: lock.status || 'active',
+      etag: response.ETag,
+      key,
+    };
+  /* c8 ignore next */
+  } catch (error) {
+    /* c8 ignore next 3 - NoSuchKey when claim deleted between conflict and load */
+    if (error.name === 'NoSuchKey') return null;
+    throw error;
+  }
+}
+
+function isClaimReclaimable(claimData) {
+  /* c8 ignore next 3 - Defensive: caller always null-checks before calling */
+  if (!claimData) {
+    return true;
+  }
+
+  if (claimData.status === 'released') {
+    return true;
+  }
+
+  /* c8 ignore next 5 - Claim expiry branch; tested via TTL-based reclaim */
+  if (claimData.expiresAt) {
+    const expiresAtMs = Date.parse(claimData.expiresAt);
+    if (Number.isNaN(expiresAtMs)) return true;
+    return Date.now() > expiresAtMs;
+  }
+
+  const { claimStartedAt } = claimData;
+  if (!claimStartedAt) {
+    return true;
+  }
+
+  const startedAtMs = Date.parse(claimStartedAt);
+  if (Number.isNaN(startedAtMs)) {
+    return true;
+  }
+
+  return (Date.now() - startedAtMs) > BATCH_CLAIM_TTL_MS;
+}
+
+function isDispatchReservationStale(updatedAt, ttlMs = DISPATCH_RESERVATION_TTL_MS) {
+  if (!updatedAt) {
+    return true;
+  }
+
+  const updatedAtMs = Date.parse(updatedAt);
+  if (Number.isNaN(updatedAtMs)) {
+    return true;
+  }
+
+  return (Date.now() - updatedAtMs) > ttlMs;
+}
+
+function isDispatchReservationReclaimable(dispatchData, ttlMs = DISPATCH_RESERVATION_TTL_MS) {
+  /* c8 ignore next */
+  if (!dispatchData) return true;
+
+  if (dispatchData.status === 'cleared') {
+    return true;
+  }
+
+  return isDispatchReservationStale(dispatchData.updatedAt, ttlMs);
+}
+
+function isExecutionLockReclaimable(lockData, ttlMs = EXECUTION_LOCK_TTL_MS) {
+  /* c8 ignore next */
+  if (!lockData) return true;
+
+  /* c8 ignore next */
+  if (lockData.status === 'released') return true;
+
+  /* c8 ignore start - Execution lock expiresAt and lockStartedAt fallback branches */
+  if (lockData.expiresAt) {
+    const expiresAtMs = Date.parse(lockData.expiresAt);
+    if (Number.isNaN(expiresAtMs)) return true;
+    return Date.now() > expiresAtMs;
+  }
+
+  const { lockStartedAt } = lockData;
+  if (!lockStartedAt) return true;
+  /* c8 ignore stop */
+
+  const startedAtMs = Date.parse(lockStartedAt);
+  /* c8 ignore next */
+  if (Number.isNaN(startedAtMs)) return true;
+
+  return (Date.now() - startedAtMs) > ttlMs;
+}
+
+/**
+ * Attempt to claim a batch for processing.
+ * @returns {Promise<string|null>} Claim ETag on success, null if already claimed
+ */
+export async function tryStartBatchProcessing(auditId, batchNum, context) {
+  const { s3Client, env, log } = context;
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  const key = `${BATCH_STATE_PREFIX}/${auditId}/claims/batch-${batchNum}.json`;
+  const claimBody = JSON.stringify({
+    auditId,
+    batchNum,
+    status: 'active',
+    claimStartedAt: new Date().toISOString(),
+    expiresAt: resolveLeaseExpiry(context, BATCH_CLAIM_TTL_MS),
+  });
+
+  try {
+    const response = await s3Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+      Body: claimBody,
+      ContentType: 'application/json',
+      IfNoneMatch: '*',
+    }));
+    log.debug(`[batch-state] Claimed batch ${batchNum} for processing`);
+    return response.ETag;
+  } catch (error) {
+    if (!isConditionalWriteConflict(error)) {
+      throw error;
+    }
+  }
+
+  const existingClaim = await loadBatchClaimWithETag(auditId, batchNum, context);
+  if (!existingClaim) {
+    return null;
+  }
+
+  if (!isClaimReclaimable(existingClaim)) {
+    log.info(`[batch-state] Batch ${batchNum} already claimed by another worker`);
+    return null;
+  }
+
+  try {
+    const response = await s3Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+      Body: claimBody,
+      ContentType: 'application/json',
+      IfMatch: existingClaim.etag,
+    }));
+    log.warn(`[batch-state] Reclaimed stale batch ${batchNum} claim`);
+    return response.ETag;
+  } catch (error) {
+    if (isConditionalWriteConflict(error) || error.name === 'NoSuchKey') {
+      log.info(`[batch-state] Lost reclaim race for batch ${batchNum}`);
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Release a batch processing claim using conditional overwrite.
+ * Marks the claim as "released" only if the ETag still matches (our claim
+ * hasn't been reclaimed by another worker). Prevents accidentally deleting
+ * another worker's active claim.
+ * @param {string} auditId - The audit ID
+ * @param {number} batchNum - Batch number
+ * @param {string|null} claimEtag - ETag from tryStartBatchProcessing
+ * @param {Object} context - Context with s3Client, env, log
+ */
+export async function releaseBatchProcessingClaim(auditId, batchNum, claimEtag, context) {
+  const { s3Client, env, log } = context;
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  const key = `${BATCH_STATE_PREFIX}/${auditId}/claims/batch-${batchNum}.json`;
+
+  try {
+    if (claimEtag) {
+      await s3Client.send(new PutObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+        Body: JSON.stringify({
+          status: 'released',
+          releasedAt: new Date().toISOString(),
+        }),
+        ContentType: 'application/json',
+        IfMatch: claimEtag,
+      }));
+    } else {
+      await s3Client.send(new DeleteObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+      }));
+    }
+    log.debug(`[batch-state] Released batch ${batchNum} claim`);
+  } catch (error) {
+    if (isConditionalWriteConflict(error)) {
+      log.info(`[batch-state] Batch ${batchNum} claim was reclaimed by another worker, skipping release`);
+      return;
+    }
+    log.warn(`[batch-state] Failed to release batch ${batchNum} claim: ${error.message}`);
+  }
+}
+
+export async function reserveWorkflowDispatch(
+  auditId,
+  dispatchKey,
+  context,
+  metadata = {},
+  ttlMs = DISPATCH_RESERVATION_TTL_MS,
+) {
+  const { s3Client, env, log } = context;
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  const key = `${BATCH_STATE_PREFIX}/${auditId}/dispatch/${dispatchKey}.json`;
+  const reservationBody = JSON.stringify({
+    status: 'pending',
+    dispatchKey,
+    updatedAt: new Date().toISOString(),
+    ...metadata,
+  });
+
+  try {
+    await s3Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+      Body: reservationBody,
+      ContentType: 'application/json',
+      IfNoneMatch: '*',
+    }));
+    log.debug(`[batch-state] Reserved workflow dispatch ${dispatchKey}`);
+    return { acquired: true, state: 'acquired' };
+  } catch (error) {
+    if (!isConditionalWriteConflict(error)) {
+      throw error;
+    }
+  }
+
+  const existingDispatch = await loadDispatchWithETag(auditId, dispatchKey, context);
+  if (!existingDispatch) {
+    return { acquired: false, state: 'unknown' };
+  }
+
+  if (existingDispatch.data?.status === 'sent') {
+    log.info(`[batch-state] Workflow dispatch ${dispatchKey} already sent`);
+    return { acquired: false, state: 'sent' };
+  }
+
+  if (!isDispatchReservationReclaimable(existingDispatch.data, ttlMs)) {
+    log.info(`[batch-state] Workflow dispatch ${dispatchKey} already reserved`);
+    return { acquired: false, state: 'pending' };
+  }
+
+  try {
+    await s3Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+      Body: reservationBody,
+      ContentType: 'application/json',
+      IfMatch: existingDispatch.etag,
+    }));
+    log.warn(`[batch-state] Reclaimed stale workflow dispatch ${dispatchKey}`);
+    return { acquired: true, state: 'acquired' };
+  } catch (error) {
+    if (isConditionalWriteConflict(error) || error.name === 'NoSuchKey') {
+      log.info(`[batch-state] Lost workflow dispatch reservation race for ${dispatchKey}`);
+      return { acquired: false, state: 'pending' };
+    }
+    throw error;
+  }
+}
+
+export async function tryAcquireExecutionLock(
+  auditId,
+  lockKey,
+  context,
+  ttlMs = EXECUTION_LOCK_TTL_MS,
+) {
+  const { s3Client, env, log } = context;
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  const key = `${BATCH_STATE_PREFIX}/${auditId}/execution-locks/${lockKey}.json`;
+  const lockBody = JSON.stringify({
+    lockKey,
+    status: 'active',
+    lockStartedAt: new Date().toISOString(),
+    expiresAt: resolveLeaseExpiry(context, EXECUTION_LOCK_TTL_MS),
+  });
+
+  try {
+    const response = await s3Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+      Body: lockBody,
+      ContentType: 'application/json',
+      IfNoneMatch: '*',
+    }));
+    log.debug(`[batch-state] Acquired execution lock ${lockKey}`);
+    return response.ETag;
+  } catch (error) {
+    /* c8 ignore next 2 - Non-conflict S3 errors during lock acquisition */
+    if (!isConditionalWriteConflict(error)) throw error;
+  }
+
+  const existingLock = await loadExecutionLockWithETag(auditId, lockKey, context);
+  /* c8 ignore next */
+  if (!existingLock) return null;
+
+  if (!isExecutionLockReclaimable(existingLock, ttlMs)) {
+    log.info(`[batch-state] Execution lock ${lockKey} already held`);
+    return null;
+  }
+  /* c8 ignore start - Stale execution lock reclaim; requires concurrent-worker timing */
+  try {
+    const response = await s3Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+      Body: lockBody,
+      ContentType: 'application/json',
+      IfMatch: existingLock.etag,
+    }));
+    log.warn(`[batch-state] Reclaimed stale execution lock ${lockKey}`);
+    return response.ETag;
+  } catch (error) {
+    if (isConditionalWriteConflict(error) || error.name === 'NoSuchKey') {
+      log.info(`[batch-state] Lost execution lock reclaim race for ${lockKey}`);
+      return null;
+    }
+    throw error;
+  }
+  /* c8 ignore stop */
+}
+
+export async function releaseExecutionLock(auditId, lockKey, lockEtag, context) {
+  const { s3Client, env, log } = context;
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  const key = `${BATCH_STATE_PREFIX}/${auditId}/execution-locks/${lockKey}.json`;
+
+  try {
+    if (lockEtag) {
+      await s3Client.send(new PutObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+        Body: JSON.stringify({
+          status: 'released',
+          releasedAt: new Date().toISOString(),
+        }),
+        ContentType: 'application/json',
+        IfMatch: lockEtag,
+      }));
+    /* c8 ignore start - Execution lock release edge cases */
+    } else {
+      await s3Client.send(new DeleteObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+      }));
+    }
+    log.debug(`[batch-state] Released execution lock ${lockKey}`);
+  } catch (error) {
+    if (isConditionalWriteConflict(error)) {
+      log.info(`[batch-state] Execution lock ${lockKey} was reclaimed by another worker, skipping release`);
+      return;
+    }
+    log.warn(`[batch-state] Failed to release execution lock ${lockKey}: ${error.message}`);
+  }
+  /* c8 ignore stop */
+}
+
+export async function markWorkflowDispatchSent(auditId, dispatchKey, context, metadata = {}) {
+  const { s3Client, env, log } = context;
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  const key = `${BATCH_STATE_PREFIX}/${auditId}/dispatch/${dispatchKey}.json`;
+
+  await s3Client.send(new PutObjectCommand({
+    Bucket: bucketName,
+    Key: key,
+    Body: JSON.stringify({
+      status: 'sent',
+      dispatchKey,
+      updatedAt: new Date().toISOString(),
+      ...metadata,
+    }),
+    ContentType: 'application/json',
+  }));
+  log.debug(`[batch-state] Marked workflow dispatch ${dispatchKey} as sent`);
+}
+
+const MARK_DISPATCH_MAX_RETRIES = 3;
+
+/**
+ * Retry-safe wrapper for markWorkflowDispatchSent.
+ * Since the SQS message is already sent when this is called, callers must
+ * decide whether to fail the invocation or preserve the reservation after
+ * this helper throws. Silent success here reopens duplicate-dispatch races.
+ */
+export async function markWorkflowDispatchSentWithRetry(
+  auditId,
+  dispatchKey,
+  context,
+  metadata = {},
+) {
+  const { log } = context;
+  for (let attempt = 1; attempt <= MARK_DISPATCH_MAX_RETRIES; attempt += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await markWorkflowDispatchSent(auditId, dispatchKey, context, metadata);
+      return;
+    } catch (error) {
+      if (attempt < MARK_DISPATCH_MAX_RETRIES) {
+        log.warn(`[batch-state] Failed to mark dispatch ${dispatchKey} as sent (attempt ${attempt}): ${error.message}, retrying...`);
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(100 * 2 ** (attempt - 1));
+      } else {
+        log.error(`[batch-state] ALERT: Failed to mark dispatch ${dispatchKey} as sent after ${MARK_DISPATCH_MAX_RETRIES} attempts: ${error.message}. Duplicate delivery possible when reservation TTL (${DISPATCH_RESERVATION_TTL_MS}ms) expires.`);
+        throw new Error(`Failed to mark dispatch ${dispatchKey} as sent after ${MARK_DISPATCH_MAX_RETRIES} attempts: ${error.message}`);
+      }
+    }
+  }
+  /* c8 ignore next */
+}
+
+export async function clearWorkflowDispatchReservation(auditId, dispatchKey, context) {
+  const { s3Client, env, log } = context;
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  const key = `${BATCH_STATE_PREFIX}/${auditId}/dispatch/${dispatchKey}.json`;
+
+  try {
+    const existingDispatch = await loadDispatchWithETag(auditId, dispatchKey, context);
+    if (!existingDispatch || existingDispatch.data?.status === 'sent') {
+      return;
+    }
+
+    await s3Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+      Body: JSON.stringify({
+        status: 'cleared',
+        dispatchKey,
+        updatedAt: new Date().toISOString(),
+      }),
+      ContentType: 'application/json',
+      IfMatch: existingDispatch.etag,
+    }));
+    log.debug(`[batch-state] Cleared workflow dispatch reservation ${dispatchKey}`);
+  } catch (error) {
+    if (isConditionalWriteConflict(error) || error.name === 'NoSuchKey') {
+      log.info(`[batch-state] Workflow dispatch reservation ${dispatchKey} was updated by another worker before clear`);
+      return;
+    }
+    log.warn(`[batch-state] Failed to clear workflow dispatch reservation ${dispatchKey}: ${error.message}`);
+  }
+}
+
 /**
  * Mark batch as completed (atomic operation)
  * @param {string} auditId - The audit ID
@@ -276,6 +883,8 @@ export async function markBatchCompleted(auditId, batchNum, context, maxRetries 
 
       if (current.etag) {
         putParams.IfMatch = current.etag;
+      } else {
+        putParams.IfNoneMatch = '*';
       }
 
       // eslint-disable-next-line no-await-in-loop
@@ -283,8 +892,7 @@ export async function markBatchCompleted(auditId, batchNum, context, maxRetries 
       log.debug(`[batch-state] Marked batch ${batchNum} as completed`);
       return;
     } catch (error) {
-      if (error.name === 'PreconditionFailed' && attempt < maxRetries - 1) {
-        // Retry with exponential backoff
+      if (isConditionalWriteConflict(error) && attempt < maxRetries - 1) {
         // eslint-disable-next-line no-await-in-loop
         await sleep(50 * 2 ** attempt * (0.5 + Math.random()));
         // eslint-disable-next-line no-continue
@@ -293,6 +901,7 @@ export async function markBatchCompleted(auditId, batchNum, context, maxRetries 
       throw error;
     }
   }
+  throw new Error(`Failed to mark batch ${batchNum} as completed after ${maxRetries} attempts`);
 }
 
 /**
@@ -326,16 +935,17 @@ export async function loadAllBatchResults(auditId, context, startTime) {
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   const prefix = `${BATCH_STATE_PREFIX}/${auditId}/batches/`;
 
-  // Check timeout before loading
-  if (startTime && isApproachingTimeout(startTime, log)) {
+  // Check timeout before loading (uses runtime remaining time when available)
+  if (startTime && buildTimeoutStatus(startTime, context).isApproachingTimeout) {
     log.error('[batch-state] Approaching timeout, cannot safely load all batch results');
     throw new Error('Timeout approaching - cannot complete merge operation');
   }
 
-  const { Contents } = await s3Client.send(new ListObjectsV2Command({
-    Bucket: bucketName,
-    Prefix: prefix,
-  }));
+  const Contents = await listAllObjects({
+    s3Client,
+    bucketName,
+    prefix,
+  });
 
   if (!Contents || Contents.length === 0) {
     log.info('[batch-state] No batch files found');
@@ -344,16 +954,23 @@ export async function loadAllBatchResults(auditId, context, startTime) {
 
   log.info(`[batch-state] Loading ${Contents.length} batch files...`);
 
-  // Load all batches in parallel
-  const batches = await Promise.all(
-    Contents.map(async ({ Key }) => {
+  // Load all batches in parallel. Any unreadable/corrupt batch is fatal because
+  // silently merging partial results under-reports broken links.
+  const batches = await mapInBatches(
+    Contents,
+    S3_BATCH_OPERATION_SIZE,
+    async ({ Key }) => {
+      if (startTime && buildTimeoutStatus(startTime, context).isApproachingTimeout) {
+        throw new Error('Timeout approaching while loading batch results');
+      }
+
       const response = await s3Client.send(new GetObjectCommand({
         Bucket: bucketName,
         Key,
       }));
       const body = await response.Body.transformToString();
       return JSON.parse(body);
-    }),
+    },
   );
 
   // Sort by batch number for consistent ordering
@@ -385,10 +1002,11 @@ export async function cleanupBatchState(auditId, context) {
   const prefix = `${BATCH_STATE_PREFIX}/${auditId}/`;
 
   try {
-    const { Contents } = await s3Client.send(new ListObjectsV2Command({
-      Bucket: bucketName,
-      Prefix: prefix,
-    }));
+    const Contents = await listAllObjects({
+      s3Client,
+      bucketName,
+      prefix,
+    });
 
     if (!Contents || Contents.length === 0) {
       log.debug('[batch-state] No files to cleanup');
@@ -397,12 +1015,14 @@ export async function cleanupBatchState(auditId, context) {
 
     log.info(`[batch-state] Cleaning up ${Contents.length} files for audit ${auditId}`);
 
-    // Delete all files in parallel
-    await Promise.all(
-      Contents.map(({ Key }) => s3Client.send(new DeleteObjectCommand({
+    // Delete all files in bounded batches to avoid unbounded concurrent deletes.
+    await forEachInBatches(
+      Contents,
+      S3_BATCH_OPERATION_SIZE,
+      ({ Key }) => s3Client.send(new DeleteObjectCommand({
         Bucket: bucketName,
         Key,
-      }))),
+      })),
     );
 
     log.info(`[batch-state] Cleanup complete for audit ${auditId}`);
@@ -417,18 +1037,154 @@ export async function cleanupBatchState(auditId, context) {
  * @param {number} startTime - Lambda start timestamp
  * @returns {Object} Timeout status
  */
-export function getTimeoutStatus(startTime) {
-  const elapsed = Date.now() - startTime;
-  const remaining = LAMBDA_TIMEOUT_MS - elapsed;
-  const safeTimeRemaining = remaining - TIMEOUT_BUFFER_MS;
+export function getTimeoutStatus(startTime, runtimeContext) {
+  return buildTimeoutStatus(startTime, runtimeContext);
+}
 
-  return {
-    elapsed,
-    remaining,
-    safeTimeRemaining,
-    isApproachingTimeout: elapsed > SAFE_PROCESSING_TIME_MS,
-    percentUsed: (elapsed / LAMBDA_TIMEOUT_MS) * 100,
-  };
+async function loadFinalizationLockWithETag(auditId, context) {
+  const { s3Client, env } = context;
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  const key = `${BATCH_STATE_PREFIX}/${auditId}/finalization-lock.json`;
+
+  try {
+    const response = await s3Client.send(new GetObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+    }));
+    const body = await response.Body.transformToString();
+    const lock = JSON.parse(body);
+
+    return {
+      acquiredAt: lock.acquiredAt || null,
+      expiresAt: lock.expiresAt || null,
+      status: lock.status || 'active',
+      etag: response.ETag,
+    };
+  } catch (error) {
+    if (error.name === 'NoSuchKey') {
+      return null;
+    }
+    /* c8 ignore next 2 - Defensive: non-NoSuchKey S3 errors during lock load */
+    throw error;
+  }
+}
+
+function isFinalizationLockReclaimable(lockData) {
+  /* c8 ignore next 2 - Defensive guards; callers always provide lockData */
+  if (!lockData) return true;
+  if (lockData.status === 'released') return true;
+
+  if (lockData.expiresAt) {
+    const expiresAtMs = Date.parse(lockData.expiresAt);
+    /* c8 ignore next */
+    if (Number.isNaN(expiresAtMs)) return true;
+    return Date.now() > expiresAtMs;
+  }
+
+  const { acquiredAt } = lockData;
+  if (!acquiredAt) return true;
+  const acquiredAtMs = Date.parse(acquiredAt);
+  if (Number.isNaN(acquiredAtMs)) return true;
+  return (Date.now() - acquiredAtMs) > FINALIZATION_LOCK_TTL_MS;
+}
+
+/**
+ * Acquire an exclusive finalization lock using S3 conditional writes.
+ * Prevents duplicate finalization when multiple Lambda invocations
+ * reach this point concurrently (e.g., via SQS at-least-once delivery).
+ * Includes TTL-based stale lock reclaim to prevent permanent deadlocks
+ * if the lock holder crashes before completing finalization.
+ * @param {string} auditId - The audit ID
+ * @param {Object} context - Context with s3Client, env, log
+ * @returns {Promise<string|null>} Lock ETag if acquired, null if already held
+ */
+export async function tryAcquireFinalizationLock(auditId, context) {
+  const { s3Client, env, log } = context;
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  const key = `${BATCH_STATE_PREFIX}/${auditId}/finalization-lock.json`;
+  const lockBody = JSON.stringify({
+    acquiredAt: new Date().toISOString(),
+    expiresAt: resolveLeaseExpiry(context, FINALIZATION_LOCK_TTL_MS),
+    auditId,
+  });
+
+  try {
+    const response = await s3Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+      Body: lockBody,
+      ContentType: 'application/json',
+      IfNoneMatch: '*',
+    }));
+    log.info(`[batch-state] Acquired finalization lock for audit ${auditId}`);
+    return response.ETag ?? '"finalization-lock"';
+  } catch (error) {
+    if (!isConditionalWriteConflict(error)) {
+      throw error;
+    }
+  }
+
+  const existingLock = await loadFinalizationLockWithETag(auditId, context);
+  if (!existingLock) {
+    return null;
+  }
+
+  if (!isFinalizationLockReclaimable(existingLock)) {
+    log.info(`[batch-state] Finalization lock already held for audit ${auditId}`);
+    return null;
+  }
+
+  try {
+    const response = await s3Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+      Body: lockBody,
+      ContentType: 'application/json',
+      IfMatch: existingLock.etag,
+    }));
+    log.warn(`[batch-state] Reclaimed stale finalization lock for audit ${auditId}`);
+    /* c8 ignore next - fallback coercion branch */
+    return response.ETag ?? existingLock.etag;
+  } catch (error) {
+    if (isConditionalWriteConflict(error) || error.name === 'NoSuchKey') {
+      log.info(`[batch-state] Lost finalization lock reclaim race for audit ${auditId}`);
+      return null;
+    }
+    throw error;
+  }
+}
+
+export async function releaseFinalizationLock(auditId, lockEtag, context) {
+  const { s3Client, env, log } = context;
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  const key = `${BATCH_STATE_PREFIX}/${auditId}/finalization-lock.json`;
+
+  try {
+    if (lockEtag) {
+      await s3Client.send(new PutObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+        Body: JSON.stringify({
+          status: 'released',
+          releasedAt: new Date().toISOString(),
+        }),
+        ContentType: 'application/json',
+        IfMatch: lockEtag,
+      }));
+    } else {
+      await s3Client.send(new DeleteObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+      }));
+    }
+    log.info(`[batch-state] Released finalization lock for audit ${auditId}`);
+  } catch (error) {
+    if (isConditionalWriteConflict(error) || error.name === 'NoSuchKey') {
+      log.info(`[batch-state] Finalization lock for audit ${auditId} was already cleared or reclaimed, skipping release`);
+      return;
+    }
+    log.warn(`[batch-state] Failed to release finalization lock for audit ${auditId}: ${error.message}`);
+  }
 }
 
 /**
@@ -442,9 +1198,77 @@ export async function loadFinalResults(auditId, context, startTime) {
   return loadAllBatchResults(auditId, context, startTime);
 }
 
+/**
+ * Persist scrapeResultPaths to S3 so continuation Lambdas can reconstruct them.
+ * Called once on the initial invocation (batchStartIndex === 0).
+ * @param {string} auditId - The audit ID
+ * @param {Map<string,string>} scrapeResultPaths - URL → S3 key mapping
+ * @param {Object} context - Context with s3Client, env, log
+ */
+export async function saveScrapeResultPaths(auditId, scrapeResultPaths, context) {
+  const { s3Client, env, log } = context;
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  const key = `${BATCH_STATE_PREFIX}/${auditId}/scrape-result-paths.json`;
+  const entries = Array.from(scrapeResultPaths.entries());
+
+  try {
+    await s3Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+      Body: JSON.stringify(entries),
+      ContentType: 'application/json',
+      IfNoneMatch: '*',
+    }));
+    log.info(`[batch-state] Saved ${entries.length} scrape result paths for audit ${auditId}`);
+    return true;
+  } catch (error) {
+    if (isConditionalWriteConflict(error)) {
+      log.info(`[batch-state] Scrape result paths already exist for audit ${auditId}, preserving existing manifest`);
+      return false;
+    }
+    log.error(`[batch-state] Failed to save scrape result paths: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * Load scrapeResultPaths from S3 on continuation Lambdas.
+ * @param {string} auditId - The audit ID
+ * @param {Object} context - Context with s3Client, env, log
+ * @returns {Promise<Map<string,string>>} Reconstructed URL → S3 key mapping
+ */
+export async function loadScrapeResultPaths(auditId, context) {
+  const { s3Client, env, log } = context;
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  const key = `${BATCH_STATE_PREFIX}/${auditId}/scrape-result-paths.json`;
+
+  try {
+    const response = await s3Client.send(new GetObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+    }));
+    const body = await response.Body.transformToString();
+    const entries = JSON.parse(body);
+    const map = new Map(entries);
+    log.info(`[batch-state] Loaded ${map.size} scrape result paths for audit ${auditId}`);
+    return map;
+  } catch (error) {
+    if (error.name === 'NoSuchKey') {
+      log.warn(`[batch-state] No scrape result paths found for audit ${auditId}`);
+      return new Map();
+    }
+    log.error(`[batch-state] Failed to load scrape result paths: ${error.message}`);
+    throw error;
+  }
+}
+
 // Export constants for use in handler
 export const BATCH_TIMEOUT_CONFIG = {
   LAMBDA_TIMEOUT_MS,
   TIMEOUT_BUFFER_MS,
   SAFE_PROCESSING_TIME_MS,
+  BATCH_CLAIM_TTL_MS,
+  DISPATCH_RESERVATION_TTL_MS,
+  FINALIZATION_LOCK_TTL_MS,
+  EXECUTION_LOCK_TTL_MS,
 };

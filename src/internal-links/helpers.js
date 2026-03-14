@@ -20,6 +20,7 @@ const LINK_TIMEOUT = 5000;
 export const CPC_DEFAULT_VALUE = 1;
 export const TRAFFIC_MULTIPLIER = 0.01; // 1%
 export const MAX_LINKS_TO_CONSIDER = 10;
+const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Spacecat/1.0';
 export const STATUS_BUCKETS = {
   NOT_FOUND_404: 'not_found_404',
   GONE_410: 'gone_410',
@@ -37,6 +38,10 @@ export const STATUS_BUCKETS = {
  * @returns {number} - Cost per click (CPC) Value
  */
 export const resolveCpcValue = () => CPC_DEFAULT_VALUE;
+
+function getUserAgent() {
+  return process.env.BROKEN_LINKS_USER_AGENT || DEFAULT_USER_AGENT;
+}
 
 /**
  * Calculates KPI deltas based on broken internal links audit data
@@ -129,7 +134,69 @@ export function classifyStatusBucket(status, error = null) {
  * @returns {boolean} True if it's a static asset (image, SVG, CSS, JS, etc.)
  */
 function isStaticAsset(url) {
-  return /\.(svg|png|jpe?g|gif|webp|css|js|ico|woff2?)(\?.*)?$/i.test(url);
+  return /\.(svg|png|jpe?g|gif|webp|avif|css|js|ico|woff2?|ttf|otf|eot|pdf|mp4|webm|mp3|ogg)(\?.*)?$/i.test(url);
+}
+
+function shouldInspectForSoft404(contentType, isAsset) {
+  /* c8 ignore next - Defensive fallback for null/undefined contentType */
+  return !isAsset && /^text\/html\b|^application\/xhtml\+xml\b/i.test(contentType || '');
+}
+
+function isSoft404Text(bodyText) {
+  /* c8 ignore next - Defensive fallback for null/undefined bodyText */
+  const text = String(bodyText || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+  if (!text) {
+    return false;
+  }
+
+  const normalizedText = text.slice(0, 12000);
+
+  return [
+    /404 not found/,
+    /page not found/,
+    /not found/,
+    /the page you (requested|are looking for).{0,40}(could not be found|does not exist|is unavailable)/,
+    /sorry[, ]+we (couldn'?t|can'?t) find/,
+    /sorry[, ]+the page.{0,40}(could not be found|does not exist|is unavailable)/,
+    /we can'?t seem to find the page/,
+    /this page no longer exists/,
+    /the requested url was not found/,
+    /error 404/,
+    /seite nicht gefunden/,
+    /page introuvable/,
+    /page non trouv[ée]e/,
+    /p[áa]gina no encontrada/,
+    /pagina non trovata/,
+    /p[áa]gina n[ãa]o encontrada/,
+    /pagina niet gevonden/,
+    /ページが見つかりません/,
+  ].some((pattern) => pattern.test(normalizedText));
+}
+
+async function releaseResponseBody(response, log, requestLabel) {
+  if (!response) return;
+
+  /* c8 ignore start - Runtime-specific response body cleanup */
+  try {
+    if (typeof response.body?.cancel === 'function') {
+      await response.body.cancel();
+      return;
+    }
+
+    if (typeof response.arrayBuffer === 'function') {
+      await response.arrayBuffer();
+    }
+  } catch (error) {
+    log.debug(`Failed to release ${requestLabel} response body: ${error.message}`);
+  }
+  /* c8 ignore stop */
 }
 
 /**
@@ -139,12 +206,13 @@ function isStaticAsset(url) {
  * @returns {Promise<Object|null>} Result object with metadata, or null if inconclusive
  */
 async function checkLinkWithHead(url, log) {
+  let headResponse;
   try {
-    const headResponse = await fetch(url, {
+    headResponse = await fetch(url, {
       method: 'HEAD',
       timeout: LINK_TIMEOUT,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Spacecat/1.0',
+        'User-Agent': getUserAgent(),
       },
     });
     const { status } = headResponse;
@@ -172,6 +240,9 @@ async function checkLinkWithHead(url, log) {
     return null;
   } catch (headError) {
     return null;
+  /* c8 ignore next 2 - Finally branch always runs; c8 tracks try/catch path split */
+  } finally {
+    await releaseResponseBody(headResponse, log, 'HEAD');
   }
 }
 
@@ -183,9 +254,10 @@ async function checkLinkWithHead(url, log) {
  * @returns {Promise<Object>} Result object with metadata
  */
 async function checkLinkWithGet(url, isAsset, log) {
+  let getResponse;
   try {
     const getHeaders = {
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Spacecat/1.0',
+      'User-Agent': getUserAgent(),
     };
 
     // For assets, request only 1 byte to avoid full download
@@ -193,7 +265,7 @@ async function checkLinkWithGet(url, isAsset, log) {
       getHeaders.Range = 'bytes=0-0';
     }
 
-    const getResponse = await fetch(url, {
+    getResponse = await fetch(url, {
       method: 'GET',
       timeout: LINK_TIMEOUT,
       headers: getHeaders,
@@ -201,6 +273,16 @@ async function checkLinkWithGet(url, isAsset, log) {
     const { status } = getResponse;
     const contentType = getResponse.headers.get('content-type') || null;
     const statusBucket = classifyStatusBucket(status);
+
+    if (statusBucket === null && status === 200 && shouldInspectForSoft404(contentType, isAsset)) {
+      const responseText = await getResponse.text();
+      if (isSoft404Text(responseText)) {
+        log.info(`✗ BROKEN LINK FOUND: ${url} (GET ${status}, bucket=${STATUS_BUCKETS.SOFT_404})`);
+        return {
+          isBroken: true, httpStatus: status, statusBucket: STATUS_BUCKETS.SOFT_404, contentType,
+        };
+      }
+    }
 
     if (statusBucket === null) {
       return {
@@ -229,6 +311,9 @@ async function checkLinkWithGet(url, isAsset, log) {
     return {
       isBroken: true, httpStatus: null, statusBucket, contentType: null,
     };
+  /* c8 ignore next 2 - Finally branch always runs; c8 tracks try/catch path split */
+  } finally {
+    await releaseResponseBody(getResponse, log, 'GET');
   }
 }
 

@@ -58,21 +58,20 @@ export function createOpportunityAndSuggestionsStep({
 
     const auditResultToUse = updatedAuditResult || audit.getAuditResult();
     const { brokenInternalLinks, success } = auditResultToUse;
+    const filteredBrokenInternalLinks = (brokenInternalLinks || []).filter(
+      (link) => !isCanonicalOrHreflangLink(link),
+    );
+    const reportedLinks = filteredBrokenInternalLinks.length > maxBrokenLinksReported
+      ? filteredBrokenInternalLinks.slice(0, maxBrokenLinksReported)
+      : filteredBrokenInternalLinks;
 
     if (!success) {
       log.info('Audit failed, skipping suggestions generation');
-      return { status: 'complete' };
+      return { status: 'complete', reportedBrokenLinks: reportedLinks };
     }
 
-    const brokenInternalLinksFiltered = (brokenInternalLinks || []).filter(
-      (link) => !isCanonicalOrHreflangLink(link),
-    );
-
-    const reportedLinks = brokenInternalLinksFiltered.length > maxBrokenLinksReported
-      ? brokenInternalLinksFiltered.slice(0, maxBrokenLinksReported)
-      : brokenInternalLinksFiltered;
-    if (brokenInternalLinksFiltered.length > maxBrokenLinksReported) {
-      log.warn(`Capping reported broken links from ${brokenInternalLinksFiltered.length} to ${maxBrokenLinksReported} (priority order)`);
+    if (filteredBrokenInternalLinks.length > maxBrokenLinksReported) {
+      log.warn(`Capping reported broken links from ${filteredBrokenInternalLinks.length} to ${maxBrokenLinksReported} (priority order)`);
       await updateAuditResult(
         audit,
         auditResultToUse,
@@ -107,7 +106,7 @@ export function createOpportunityAndSuggestionsStep({
         opportunity.setUpdatedBy('system');
         await opportunity.save();
       }
-      return { status: 'complete' };
+      return { status: 'complete', reportedBrokenLinks: reportedLinks };
     }
 
     const kpiDeltas = calculateKpiDeltasForAudit(reportedLinks);
@@ -132,6 +131,13 @@ export function createOpportunityAndSuggestionsStep({
       opportunityId: opportunity.getId(),
       log,
     });
+
+    const handlerEnabled = await dataAccess.Configuration?.findLatest?.()
+      ?.isHandlerEnabledForSite?.(site);
+    if (handlerEnabled === false) {
+      log.info('Auto-suggest disabled for site, skipping external suggestion generation');
+      return { status: 'complete', reportedBrokenLinks: reportedLinks };
+    }
 
     let ahrefsTopPages = [];
     try {
@@ -181,7 +187,7 @@ export function createOpportunityAndSuggestionsStep({
 
     if (brokenLinksForConfiguredItemTypes.length === 0) {
       log.warn('No valid broken links to process. Skipping.');
-      return { status: 'complete' };
+      return { status: 'complete', reportedBrokenLinks: reportedLinks };
     }
 
     const useBrightData = Boolean(env.BRIGHT_DATA_API_KEY && env.BRIGHT_DATA_ZONE);
@@ -255,7 +261,7 @@ export function createOpportunityAndSuggestionsStep({
           .catch((error) => {
             log.warn(`Bright Data failed for ${brokenLink.urlTo}:`, error);
           })));
-        if (i + brightDataBatchSize < brokenLinks.length
+        if (i + brightDataBatchSize < brokenLinksForConfiguredItemTypes.length
           && Number.isFinite(brightDataRequestDelayMs)
           && brightDataRequestDelayMs > 0) {
           // eslint-disable-next-line no-await-in-loop
@@ -299,17 +305,17 @@ export function createOpportunityAndSuggestionsStep({
 
     if (brokenLinksForMystique.length === 0) {
       log.info('All broken links resolved via Bright Data. Skipping Mystique.');
-      return { status: 'complete' };
+      return { status: 'complete', reportedBrokenLinks: reportedLinks };
     }
 
     if (!opportunity?.getId()) {
       log.error('Opportunity ID is missing. Cannot send to Mystique.');
-      return { status: 'complete' };
+      return { status: 'complete', reportedBrokenLinks: reportedLinks };
     }
 
     if (alternativeUrls.length === 0) {
       log.warn('No alternative URLs available. Skipping message to Mystique.');
-      return { status: 'complete' };
+      return { status: 'complete', reportedBrokenLinks: reportedLinks };
     }
 
     const totalBatches = Math.ceil(brokenLinksForMystique.length / maxBrokenLinksPerBatch);
@@ -342,7 +348,8 @@ export function createOpportunityAndSuggestionsStep({
       };
 
       /* c8 ignore start - defensive payload-size backoff path */
-      while (JSON.stringify(message).length > 240000 && alternativeUrlsForMessage.length > 1) {
+      let serializedMessage = JSON.stringify(message);
+      while (Buffer.byteLength(serializedMessage, 'utf8') > 240000 && alternativeUrlsForMessage.length > 1) {
         alternativeUrlsForMessage.pop();
         message = {
           ...message,
@@ -351,6 +358,7 @@ export function createOpportunityAndSuggestionsStep({
             alternativeUrls: alternativeUrlsForMessage,
           },
         };
+        serializedMessage = JSON.stringify(message);
       }
       /* c8 ignore stop */
 
@@ -360,6 +368,6 @@ export function createOpportunityAndSuggestionsStep({
     }
 
     log.info(`Successfully sent all ${totalBatches} batch(es) to Mystique`);
-    return { status: 'complete' };
+    return { status: 'complete', reportedBrokenLinks: reportedLinks };
   };
 }

@@ -12,11 +12,11 @@
 
 import { hasText } from '@adobe/spacecat-shared-utils';
 import { PAGES_PER_BATCH } from './crawl-detection.js';
+import { MAX_BROKEN_LINKS_REPORTED } from './result-utils.js';
 
 const MAX_URLS_TO_PROCESS = 100;
 const DEFAULT_LINKCHECKER_MIN_TIME_NEEDED_MS = 5 * 60 * 1000;
 const MAX_BROKEN_LINKS = 100;
-const MAX_BROKEN_LINKS_REPORTED = 500;
 const BRIGHT_DATA_VALIDATE_URLS = 'BRIGHT_DATA_VALIDATE_URLS';
 const BRIGHT_DATA_MAX_RESULTS = 'BRIGHT_DATA_MAX_RESULTS';
 const BRIGHT_DATA_REQUEST_DELAY_MS = 'BRIGHT_DATA_REQUEST_DELAY_MS';
@@ -64,7 +64,7 @@ function getEnvInt(env, key, defaultValue) {
   return Number.isFinite(value) ? value : defaultValue;
 }
 
-function getPositiveIntConfig(value, fallback) {
+export function getPositiveIntConfig(value, fallback) {
   const numericValue = Number.parseInt(value, 10);
   return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : fallback;
 }

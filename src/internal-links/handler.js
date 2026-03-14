@@ -40,6 +40,8 @@ import {
   loadFinalResults,
   cleanupBatchState,
   getTimeoutStatus,
+  tryAcquireFinalizationLock,
+  releaseFinalizationLock,
 } from './batch-state.js';
 import {
   buildLinkCheckerQuery,
@@ -143,6 +145,8 @@ export const {
   loadFinalResults,
   cleanupBatchState,
   getTimeoutStatus,
+  tryAcquireFinalizationLock,
+  releaseFinalizationLock,
   buildLinkCheckerQuery,
   submitSplunkJob,
   pollJobStatus,

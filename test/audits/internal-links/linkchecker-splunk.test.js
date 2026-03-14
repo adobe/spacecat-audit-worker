@@ -45,6 +45,9 @@ describe('linkchecker-splunk', () => {
 
     mockClient = {
       apiBaseUrl: 'https://splunk.example.com:8089',
+      env: {
+        SPLUNK_SEARCH_NAMESPACE: 'team/search',
+      },
       loginObj: null,
       login: sandbox.stub().resolves({ sessionId: 'test-session-id', cookie: 'test-cookie' }),
       fetchAPI: sandbox.stub(),
@@ -55,6 +58,7 @@ describe('linkchecker-splunk', () => {
       env: {
         SPLUNK_API_BASE_URL: 'https://splunk.example.com:8089',
         SPLUNK_API_TOKEN: 'test-token',
+        SPLUNK_SEARCH_NAMESPACE: 'team/search',
       },
     };
   });
@@ -101,6 +105,16 @@ describe('linkchecker-splunk', () => {
 
       expect(query).to.include('| head 5000');
     });
+
+    it('escapes program and environment values in the query', () => {
+      const query = buildLinkCheckerQuery({
+        programId: 'program"123',
+        environmentId: 'env\\456',
+      });
+
+      expect(query).to.include('aem_program_id="program\\"123"');
+      expect(query).to.include('aem_envId="env\\\\456"');
+    });
   });
 
   describe('submitSplunkJob', () => {
@@ -116,6 +130,26 @@ describe('linkchecker-splunk', () => {
       expect(mockClient.login).to.have.been.calledOnce;
       expect(mockClient.fetchAPI).to.have.been.calledOnce;
       expect(mockLog.info).to.have.been.calledWith(sinon.match('Job submitted successfully'));
+    });
+
+    it('uses configured Splunk namespace when submitting jobs', async () => {
+      mockClient.env = { SPLUNK_SEARCH_NAMESPACE: 'team/search' };
+      mockClient.fetchAPI.resolves({
+        status: 201,
+        json: sandbox.stub().resolves({ sid: 'job-id-123' }),
+      });
+
+      await submitSplunkJob(mockClient, 'search query', mockLog);
+
+      expect(mockClient.fetchAPI.firstCall.args[0]).to.equal(
+        'https://splunk.example.com:8089/servicesNS/team/search/search/search/jobs',
+      );
+    });
+
+    it('throws when configured Splunk namespace is blank after normalization', async () => {
+      mockClient.env = { SPLUNK_SEARCH_NAMESPACE: '///' };
+      await expect(submitSplunkJob(mockClient, 'search query', mockLog))
+        .to.be.rejectedWith('SPLUNK_SEARCH_NAMESPACE must be configured');
     });
 
     it('throws error if submission fails', async () => {
@@ -566,6 +600,7 @@ describe('linkchecker-splunk', () => {
 
   describe('fetchLinkCheckerLogs', () => {
     it('submits job, polls until complete, and returns results', async () => {
+      mockClient.env = { SPLUNK_SEARCH_NAMESPACE: 'team/search' };
       const mockedModule = await esmock('../../../src/internal-links/linkchecker-splunk.js', {
         '../../../src/support/splunk-client-loader.js': {
           createSplunkClient: sandbox.stub().resolves(mockClient),
@@ -614,6 +649,7 @@ describe('linkchecker-splunk', () => {
     });
 
     it('throws error if polling times out', async () => {
+      mockClient.env = { SPLUNK_SEARCH_NAMESPACE: 'team/search' };
       const mockedModule = await esmock('../../../src/internal-links/linkchecker-splunk.js', {
         '../../../src/support/splunk-client-loader.js': {
           createSplunkClient: sandbox.stub().resolves(mockClient),
@@ -651,6 +687,7 @@ describe('linkchecker-splunk', () => {
     });
 
     it('throws error when polled job fails', async () => {
+      mockClient.env = { SPLUNK_SEARCH_NAMESPACE: 'team/search' };
       const mockedModule = await esmock('../../../src/internal-links/linkchecker-splunk.js', {
         '../../../src/support/splunk-client-loader.js': {
           createSplunkClient: sandbox.stub().resolves(mockClient),
@@ -681,6 +718,32 @@ describe('linkchecker-splunk', () => {
         environmentId: 'env456',
         context: mockContext,
       })).to.be.rejectedWith('Splunk job failed. sid=job-id-123, dispatchState=FAILED');
+    });
+
+    it('aborts synchronous polling when Lambda timeout is already approaching', async () => {
+      mockClient.env = { SPLUNK_SEARCH_NAMESPACE: 'team/search' };
+      const mockedModule = await esmock('../../../src/internal-links/linkchecker-splunk.js', {
+        '../../../src/support/splunk-client-loader.js': {
+          createSplunkClient: sandbox.stub().resolves(mockClient),
+        },
+      });
+      sandbox.stub(Date, 'now').returns(14 * 60 * 1000);
+
+      mockClient.fetchAPI.onFirstCall().resolves({
+        status: 201,
+        json: sandbox.stub().resolves({ sid: 'job-id-123' }),
+      });
+
+      await expect(mockedModule.fetchLinkCheckerLogs({
+        programId: 'program123',
+        environmentId: 'env456',
+        context: {
+          ...mockContext,
+          lambdaStartTime: 0,
+        },
+      })).to.be.rejectedWith('Splunk job polling aborted due to Lambda timeout guard. sid=job-id-123');
+
+      expect(mockClient.fetchAPI).to.have.been.calledOnce;
     });
   });
 });

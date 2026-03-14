@@ -10,7 +10,31 @@
  * governing permissions and limitations under the License.
  */
 
+import { prependSchema, stripWWW } from '@adobe/spacecat-shared-utils';
 import { createInternalLinksStepLogger } from './logging.js';
+import { classifyStatusBucket, isLinkInaccessible } from './helpers.js';
+import { isSharedInternalResource, isWithinAuditScope } from './subpath-filter.js';
+
+function isOnAuditHost(url, baseURL) {
+  try {
+    const parsedUrl = new URL(prependSchema(url));
+    const parsedBaseURL = new URL(prependSchema(baseURL));
+    return stripWWW(parsedUrl.hostname) === stripWWW(parsedBaseURL.hostname)
+      && parsedUrl.port === parsedBaseURL.port;
+  } catch (error) {
+    return false;
+  }
+}
+
+function normalizeLinkCheckerValidity(validity) {
+  return String(validity || 'UNKNOWN').trim().toUpperCase();
+}
+
+function disableEventLoopWait(context) {
+  if (context && 'callbackWaitsForEmptyEventLoop' in context) {
+    context.callbackWaitsForEmptyEventLoop = false;
+  }
+}
 
 export function createFinalizeCrawlDetection({
   auditType,
@@ -21,19 +45,75 @@ export function createFinalizeCrawlDetection({
   loadFinalResults,
   cleanupBatchState,
   getTimeoutStatus,
+  tryAcquireFinalizationLock,
+  releaseFinalizationLock,
   updateAuditResult,
   opportunityAndSuggestionsStep,
   filterByStatusIfNeeded,
   filterByItemTypes,
 }) {
+  const REVALIDATION_BATCH_SIZE = 5;
+  const MIN_REVALIDATION_TIME_MS = 2 * 60 * 1000;
+  const MIN_SAFE_TIME_MID_REVALIDATION_MS = 60 * 1000;
+
+  async function revalidateLinkCheckerResults(links, revalidationOpts) {
+    const {
+      lambdaStartTime: rvStartTime,
+      context: rvContext,
+      log: rvLog,
+      siteId,
+      auditId: rvAuditId,
+    } = revalidationOpts;
+    const validated = [];
+
+    for (let i = 0; i < links.length; i += REVALIDATION_BATCH_SIZE) {
+      const status = getTimeoutStatus(rvStartTime, rvContext);
+      /* c8 ignore next 4 - Mid-loop timeout exit; tested via timed mock */
+      if (status.safeTimeRemaining <= MIN_SAFE_TIME_MID_REVALIDATION_MS) {
+        rvLog.warn(`LinkChecker re-validation stopping at ${i}/${links.length} due to timeout`);
+        validated.push(...links.slice(i));
+        return validated;
+      }
+
+      const batch = links.slice(i, i + REVALIDATION_BATCH_SIZE);
+      // eslint-disable-next-line no-await-in-loop
+      const results = await Promise.allSettled(
+        batch.map(async (link) => {
+          const validation = await isLinkInaccessible(link.urlTo, rvLog, siteId, rvAuditId);
+          return { link, validation };
+        }),
+      );
+
+      for (let j = 0; j < results.length; j += 1) {
+        const result = results[j];
+        if (result.status === 'fulfilled') {
+          if (result.value.validation.isBroken) {
+            validated.push({
+              ...result.value.link,
+              httpStatus: result.value.validation.httpStatus ?? result.value.link.httpStatus,
+              statusBucket: result.value.validation.statusBucket ?? result.value.link.statusBucket,
+            });
+          }
+        } else {
+          validated.push(batch[j]);
+        }
+      }
+    }
+
+    rvLog.info(`LinkChecker re-validation: ${links.length} -> ${validated.length} still broken`);
+    return validated;
+  }
+
   return async function finalizeCrawlDetection(
     context,
     { skipCrawlDetection = false },
     startTime = Date.now(),
   ) {
+    disableEventLoopWait(context);
     const {
       log: baseLog, site, audit, dataAccess,
     } = context;
+    const lambdaStartTime = context.lambdaStartTime ?? startTime;
     const config = createConfigResolver(site, context.env);
     const auditId = audit.getId();
     const log = createInternalLinksStepLogger({
@@ -45,8 +125,23 @@ export function createFinalizeCrawlDetection({
       step: 'finalize-crawl-detection',
     });
     const shouldCleanup = !skipCrawlDetection;
+    const baseURL = typeof site.getBaseURL === 'function' ? site.getBaseURL() : '';
+    let finalizationLockAcquired = false;
+    let finalizationLockEtag = null;
 
-    const timeoutStatus = getTimeoutStatus(startTime);
+    async function releaseHeldFinalizationLock() {
+      if (!finalizationLockAcquired || !releaseFinalizationLock) {
+        return;
+      }
+      await releaseFinalizationLock(auditId, finalizationLockEtag, {
+        ...context,
+        log,
+      });
+      finalizationLockAcquired = false;
+      finalizationLockEtag = null;
+    }
+
+    const timeoutStatus = getTimeoutStatus(lambdaStartTime, context);
     log.info('====== Finalize: Merge and Generate Suggestions ======');
     log.info(`auditId: ${auditId}`);
     log.info(`Timeout status: ${timeoutStatus.percentUsed.toFixed(1)}% used, ${Math.floor(timeoutStatus.safeTimeRemaining / 1000)}s safe time remaining`);
@@ -62,38 +157,107 @@ export function createFinalizeCrawlDetection({
       log.info(`Audit already finalized at ${auditResult.internalLinksWorkflowCompletedAt}, skipping duplicate finalization`);
       return { status: 'already-finalized' };
     }
+
+    if (tryAcquireFinalizationLock) {
+      finalizationLockEtag = await tryAcquireFinalizationLock(auditId, { ...context, log });
+      /* c8 ignore next 4 - Duplicate finalization guard; SQS at-least-once */
+      if (!finalizationLockEtag) {
+        throw new Error(`Finalization lock is already held for audit ${auditId}; retrying later`);
+      }
+      finalizationLockAcquired = true;
+    }
+
     const rumLinks = auditResult.brokenInternalLinks ?? [];
     log.info(`RUM detection results: ${rumLinks.length} broken links`);
 
     const linkCheckerResults = context.linkCheckerResults ?? [];
+    const { linkCheckerStatus, linkCheckerError } = context;
     log.info(`LinkChecker detection results: ${linkCheckerResults.length} broken links`);
 
     let finalLinks = rumLinks;
+    let opportunityResult;
 
     try {
       if (!skipCrawlDetection) {
         const crawlLinks = await loadFinalResults(auditId, {
           ...context,
           log,
-        }, startTime);
+        }, lambdaStartTime);
         log.info(`Crawl detected ${crawlLinks.length} broken links`);
 
         /* c8 ignore start - defensive normalization defaults */
-        const linkCheckerLinks = linkCheckerResults.map((lc) => ({
-          urlFrom: lc.urlFrom,
-          urlTo: lc.urlTo,
-          anchorText: lc.anchorText || '[no text]',
-          itemType: lc.itemType || 'link',
-          detectionSource: 'linkchecker',
-          trafficDomain: 0,
-          httpStatus: lc.httpStatus,
-          statusBucket: 'masked_by_linkchecker',
-        })).filter((link) => link.urlFrom && link.urlTo);
+        let skippedLinkCheckerRows = 0;
+        const linkCheckerLinks = linkCheckerResults
+          .map((lc) => {
+            const itemType = lc.itemType || 'link';
+            const validity = normalizeLinkCheckerValidity(lc.validity);
+            const httpStatus = Number.parseInt(lc.httpStatus, 10);
+            const statusBucket = classifyStatusBucket(httpStatus);
+            const isExplicitBrokenValidity = validity === 'INVALID';
+            const hasBrokenStatus = Boolean(statusBucket);
+
+            if (!lc.urlFrom || !lc.urlTo) {
+              skippedLinkCheckerRows += 1;
+              return null;
+            }
+
+            if (!hasBrokenStatus && !isExplicitBrokenValidity) {
+              skippedLinkCheckerRows += 1;
+              return null;
+            }
+
+            if (baseURL) {
+              const targetInScope = isWithinAuditScope(lc.urlTo, baseURL)
+                || isSharedInternalResource(lc.urlTo, baseURL, itemType);
+              if (!(isOnAuditHost(lc.urlFrom, baseURL)
+                && isOnAuditHost(lc.urlTo, baseURL)
+                && isWithinAuditScope(lc.urlFrom, baseURL)
+                && targetInScope)) {
+                skippedLinkCheckerRows += 1;
+                return null;
+              }
+            }
+
+            return {
+              urlFrom: lc.urlFrom,
+              urlTo: lc.urlTo,
+              anchorText: lc.anchorText || '[no text]',
+              itemType,
+              detectionSource: 'linkchecker',
+              trafficDomain: 1,
+              httpStatus: Number.isFinite(httpStatus) ? httpStatus : lc.httpStatus,
+              statusBucket: statusBucket || 'masked_by_linkchecker',
+              validity,
+            };
+          })
+          .filter(Boolean);
         /* c8 ignore stop */
 
         log.info(`LinkChecker links transformed: ${linkCheckerLinks.length} broken links`);
+        if (skippedLinkCheckerRows > 0) {
+          log.info(`Skipped ${skippedLinkCheckerRows} LinkChecker rows without a broken signal or outside audit scope`);
+        }
 
-        const crawlAndLinkCheckerMerged = mergeAndDeduplicate(crawlLinks, linkCheckerLinks, log);
+        const preValidationStatus = getTimeoutStatus(lambdaStartTime, context);
+        let validatedLinkCheckerLinks;
+        if (linkCheckerLinks.length > 0
+          && preValidationStatus.safeTimeRemaining > MIN_REVALIDATION_TIME_MS) {
+          validatedLinkCheckerLinks = await revalidateLinkCheckerResults(
+            linkCheckerLinks,
+            {
+              lambdaStartTime, context, log, siteId: site.getId(), auditId,
+            },
+          );
+        } else {
+          validatedLinkCheckerLinks = linkCheckerLinks;
+          /* c8 ignore next 3 - Defensive timeout guard for LinkChecker re-validation */
+          if (linkCheckerLinks.length > 0) {
+            log.warn('Insufficient time for LinkChecker re-validation, using results as-is');
+          }
+        }
+
+        const validatedLinks = validatedLinkCheckerLinks;
+        const crawlAndLinkCheckerMerged = mergeAndDeduplicate(crawlLinks, validatedLinks, log);
         log.info(`After crawl+LinkChecker merge: ${crawlAndLinkCheckerMerged.length} unique broken links`);
 
         finalLinks = mergeAndDeduplicate(crawlAndLinkCheckerMerged, rumLinks, log);
@@ -120,46 +284,57 @@ export function createFinalizeCrawlDetection({
       const lowPriority = prioritizedLinks.filter((link) => link.priority === 'low').length;
       log.info(`Priority: ${highPriority} high, ${mediumPriority} medium, ${lowPriority} low`);
 
-      const updatedAuditResult = await updateAuditResult(
-        audit,
-        auditResult,
-        prioritizedLinks,
-        dataAccess,
-        log,
-        site.getId(),
-      );
+      const updatedAuditResult = {
+        ...auditResult,
+        brokenInternalLinks: prioritizedLinks,
+      };
 
       log.info('=====================================================');
 
-      const opportunityResult = await opportunityAndSuggestionsStep({
+      opportunityResult = await opportunityAndSuggestionsStep({
         ...context,
         log: baseLog,
         updatedAuditResult,
       });
 
-      const completionBaseResult = audit.getAuditResult?.() || updatedAuditResult;
-      const completedReportedLinks = completionBaseResult.brokenInternalLinks
+      const completedReportedLinks = opportunityResult?.reportedBrokenLinks
         || updatedAuditResult.brokenInternalLinks;
       await updateAuditResult(
         audit,
-        {
-          ...completionBaseResult,
-          internalLinksWorkflowCompletedAt: new Date().toISOString(),
-        },
+        updatedAuditResult,
         completedReportedLinks,
         dataAccess,
         log,
         site.getId(),
+        {
+          internalLinksWorkflowCompletedAt: new Date().toISOString(),
+          ...(linkCheckerStatus ? {
+            internalLinksLinkCheckerStatus: linkCheckerStatus,
+          } : {}),
+          ...(linkCheckerError ? {
+            internalLinksLinkCheckerError: linkCheckerError,
+          } : {}),
+        },
       );
 
-      return opportunityResult;
-    } finally {
       if (shouldCleanup) {
         await cleanupBatchState(auditId, {
           ...context,
           log,
         }).catch((err) => log.warn(`Cleanup failed: ${err.message}`));
       }
+
+      await releaseHeldFinalizationLock();
+
+      return opportunityResult;
+    } catch (error) {
+      if (shouldCleanup) {
+        log.warn('Preserving batch state because finalization failed before successful completion');
+      }
+      if (finalizationLockAcquired) {
+        await releaseHeldFinalizationLock();
+      }
+      throw error;
     }
   };
 }

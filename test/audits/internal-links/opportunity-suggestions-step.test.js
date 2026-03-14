@@ -122,7 +122,8 @@ describe('internal-links opportunity suggestions step', () => {
 
     const result = await step(context);
 
-    expect(result).to.deep.equal({ status: 'complete' });
+    expect(result.status).to.equal('complete');
+    expect(result.reportedBrokenLinks).to.have.lengthOf(2);
     expect(sqs.sendMessage.calledOnce).to.equal(true);
     const payload = sqs.sendMessage.firstCall.args[1];
     expect(payload.data.brokenLinks).to.have.lengthOf(1);
@@ -221,11 +222,128 @@ describe('internal-links opportunity suggestions step', () => {
       },
     };
 
-    await step(context);
+    const result = await step(context);
 
+    expect(result.status).to.equal('complete');
+    expect(result.reportedBrokenLinks).to.have.lengthOf(1);
     expect(sqs.sendMessage.calledOnce).to.equal(true);
     const payload = sqs.sendMessage.firstCall.args[1];
     expect(payload.data.brokenLinks).to.have.lengthOf(1);
     expect(payload.data.brokenLinks[0].urlTo).to.equal('https://example.com/broken-link');
+  });
+
+  it('returns reportedBrokenLinks when the audit result is unsuccessful', async () => {
+    const step = createOpportunityAndSuggestionsStep({
+      auditType: 'broken-internal-links',
+      opptyStatuses: { NEW: 'NEW', RESOLVED: 'RESOLVED' },
+      suggestionStatuses: { NEW: 'NEW', OUTDATED: 'OUTDATED' },
+      isNonEmptyArray: (value) => Array.isArray(value) && value.length > 0,
+      createContextLogger: (log) => log,
+      calculateKpiDeltasForAudit: sinon.stub().returns({}),
+      convertToOpportunity: sinon.stub(),
+      createOpportunityData: sinon.stub(),
+      syncBrokenInternalLinksSuggestions: sinon.stub(),
+      filterByAuditScope: (pages) => pages,
+      extractPathPrefix: () => null,
+      isUnscrapeable: () => false,
+      filterBrokenSuggestedUrls: sinon.stub().resolves([]),
+      BrightDataClient: { createFrom: sinon.stub() },
+      buildLocaleSearchUrl: sinon.stub(),
+      extractLocaleFromUrl: sinon.stub(),
+      localesMatch: sinon.stub(),
+      sleep: sinon.stub().resolves(),
+      updateAuditResult: sinon.stub().resolves(),
+      isCanonicalOrHreflangLink: () => false,
+    });
+
+    const result = await step({
+      log: {
+        info: sinon.stub(),
+        warn: sinon.stub(),
+        error: sinon.stub(),
+        debug: sinon.stub(),
+      },
+      site: {
+        getId: () => 'site-1',
+        getConfig: () => ({ getHandlers: () => ({}) }),
+      },
+      audit: {
+        getId: () => 'audit-1',
+        getAuditResult: () => ({
+          success: false,
+          brokenInternalLinks: [
+            { urlFrom: 'https://example.com/source', urlTo: 'https://example.com/broken-link', itemType: 'link' },
+          ],
+        }),
+      },
+      dataAccess: {},
+      env: {},
+    });
+
+    expect(result).to.deep.equal({
+      status: 'complete',
+      reportedBrokenLinks: [
+        { urlFrom: 'https://example.com/source', urlTo: 'https://example.com/broken-link', itemType: 'link' },
+      ],
+    });
+  });
+
+  it('returns reportedBrokenLinks when there are no broken internal links to process', async () => {
+    const Opportunity = {
+      allBySiteIdAndStatus: sinon.stub().resolves([]),
+    };
+
+    const step = createOpportunityAndSuggestionsStep({
+      auditType: 'broken-internal-links',
+      opptyStatuses: { NEW: 'NEW', RESOLVED: 'RESOLVED' },
+      suggestionStatuses: { NEW: 'NEW', OUTDATED: 'OUTDATED' },
+      isNonEmptyArray: (value) => Array.isArray(value) && value.length > 0,
+      createContextLogger: (log) => log,
+      calculateKpiDeltasForAudit: sinon.stub().returns({}),
+      convertToOpportunity: sinon.stub(),
+      createOpportunityData: sinon.stub(),
+      syncBrokenInternalLinksSuggestions: sinon.stub(),
+      filterByAuditScope: (pages) => pages,
+      extractPathPrefix: () => null,
+      isUnscrapeable: () => false,
+      filterBrokenSuggestedUrls: sinon.stub().resolves([]),
+      BrightDataClient: { createFrom: sinon.stub() },
+      buildLocaleSearchUrl: sinon.stub(),
+      extractLocaleFromUrl: sinon.stub(),
+      localesMatch: sinon.stub(),
+      sleep: sinon.stub().resolves(),
+      updateAuditResult: sinon.stub().resolves(),
+      isCanonicalOrHreflangLink: () => false,
+    });
+
+    const result = await step({
+      log: {
+        info: sinon.stub(),
+        warn: sinon.stub(),
+        error: sinon.stub(),
+        debug: sinon.stub(),
+      },
+      site: {
+        getId: () => 'site-1',
+        getConfig: () => ({ getHandlers: () => ({}) }),
+      },
+      audit: {
+        getId: () => 'audit-1',
+        getAuditResult: () => ({
+          success: true,
+          brokenInternalLinks: [],
+        }),
+      },
+      dataAccess: {
+        Opportunity,
+        Suggestion: { bulkUpdateStatus: sinon.stub().resolves() },
+      },
+      env: {},
+    });
+
+    expect(result).to.deep.equal({
+      status: 'complete',
+      reportedBrokenLinks: [],
+    });
   });
 });

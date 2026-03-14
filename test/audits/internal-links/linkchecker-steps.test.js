@@ -15,22 +15,25 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
+use(chaiAsPromised);
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
 describe('LinkChecker Steps Tests', function () {
-  this.timeout(10000);
+  this.timeout(60000);
   const sandbox = sinon.createSandbox();
   let context;
   let mockSplunkClient;
   let mockCreateSplunkClient;
   let fetchLinkCheckerLogsStep;
   let resumeLinkCheckerPollingStep;
+  let batchStateMock;
 
   beforeEach(async () => {
     // Mock Splunk client
@@ -38,34 +41,58 @@ describe('LinkChecker Steps Tests', function () {
       login: sandbox.stub().resolves({ sessionId: 'test-session', cookie: 'test-cookie' }),
       fetchAPI: sandbox.stub(),
       apiBaseUrl: 'https://splunk.example.com:8089',
+      env: {
+        SPLUNK_SEARCH_NAMESPACE: 'team/search',
+      },
     };
 
     mockCreateSplunkClient = sandbox.stub().resolves(mockSplunkClient);
 
     // Mock the module imports
-    const mockedHandler = await esmock('../../../src/internal-links/handler.js', {
-      '../../../src/support/splunk-client-loader.js': { createSplunkClient: mockCreateSplunkClient },
-      '../../../src/internal-links/batch-state.js': {
-        saveBatchResults: sandbox.stub().resolves(),
-        updateCache: sandbox.stub().resolves(),
-        loadCache: sandbox.stub().resolves({ brokenUrlsCache: [], workingUrlsCache: [] }),
-        markBatchCompleted: sandbox.stub().resolves(),
-        isBatchCompleted: sandbox.stub().resolves(false),
+    batchStateMock = {
+      saveBatchResults: sandbox.stub().resolves(),
+      updateCache: sandbox.stub().resolves(),
+      loadCache: sandbox.stub().resolves({ brokenUrlsCache: [], workingUrlsCache: [] }),
+      markBatchCompleted: sandbox.stub().resolves(),
+      isBatchCompleted: sandbox.stub().resolves(false),
         loadFinalResults: sandbox.stub().resolves([]),
         cleanupBatchState: sandbox.stub().resolves(),
-        getTimeoutStatus: (startTime) => {
-          const elapsed = Date.now() - startTime;
-          const lambdaTimeoutMs = 15 * 60 * 1000;
-          const safeTimeRemaining = lambdaTimeoutMs - elapsed - (2 * 60 * 1000);
-          return {
-            elapsed,
-            remaining: lambdaTimeoutMs - elapsed,
-            safeTimeRemaining,
-            isApproachingTimeout: elapsed > (13 * 60 * 1000),
-            percentUsed: (elapsed / lambdaTimeoutMs) * 100,
-          };
-        },
+        tryAcquireFinalizationLock: sandbox.stub().resolves('"finalization-lock-etag"'),
+        releaseFinalizationLock: sandbox.stub().resolves(),
+        reserveWorkflowDispatch: sandbox.stub().resolves({ acquired: true, state: 'acquired' }),
+        markWorkflowDispatchSent: sandbox.stub().resolves(),
+        markWorkflowDispatchSentWithRetry: sandbox.stub().resolves(),
+        clearWorkflowDispatchReservation: sandbox.stub().resolves(),
+        releaseBatchProcessingClaim: sandbox.stub().resolves(),
+        tryStartBatchProcessing: sandbox.stub().resolves('"mock-claim-etag"'),
+        tryAcquireExecutionLock: sandbox.stub().resolves('"exec-lock-etag"'),
+        releaseExecutionLock: sandbox.stub().resolves(),
+        saveScrapeResultPaths: sandbox.stub().resolves(),
+        loadScrapeResultPaths: sandbox.stub().resolves(new Map()),
+      getTimeoutStatus: (startTime) => {
+        const elapsed = Date.now() - startTime;
+        const lambdaTimeoutMs = 15 * 60 * 1000;
+        const safeTimeRemaining = lambdaTimeoutMs - elapsed - (2 * 60 * 1000);
+        return {
+          elapsed,
+          remaining: lambdaTimeoutMs - elapsed,
+          safeTimeRemaining,
+          isApproachingTimeout: safeTimeRemaining <= 0,
+          percentUsed: (elapsed / lambdaTimeoutMs) * 100,
+        };
       },
+      BATCH_TIMEOUT_CONFIG: {
+        LAMBDA_TIMEOUT_MS: 15 * 60 * 1000,
+        TIMEOUT_BUFFER_MS: 2 * 60 * 1000,
+        SAFE_PROCESSING_TIME_MS: 13 * 60 * 1000,
+        BATCH_CLAIM_TTL_MS: 15 * 60 * 1000,
+        DISPATCH_RESERVATION_TTL_MS: 5 * 60 * 1000,
+      },
+    };
+    const mockedHandler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/support/splunk-client-loader.js': { createSplunkClient: mockCreateSplunkClient },
+    }, {
+      '../../../src/internal-links/batch-state.js': batchStateMock,
     });
 
     fetchLinkCheckerLogsStep = mockedHandler.fetchLinkCheckerLogsStep;
@@ -140,6 +167,22 @@ describe('LinkChecker Steps Tests', function () {
   });
 
   describe('fetchLinkCheckerLogsStep', () => {
+    it('should skip stale LinkChecker start when workflow already completed', async () => {
+      context.audit.getAuditResult = () => ({
+        brokenInternalLinks: [],
+        internalLinksWorkflowCompletedAt: '2026-03-14T09:45:00.000Z',
+      });
+
+      const result = await fetchLinkCheckerLogsStep(context);
+
+      expect(result).to.deep.equal({ status: 'already-finalized' });
+      expect(batchStateMock.tryAcquireExecutionLock).to.not.have.been.called;
+      expect(mockCreateSplunkClient).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match('Audit already finalized at 2026-03-14T09:45:00.000Z'),
+      );
+    });
+
     it('should skip LinkChecker detection when feature flag is disabled', async () => {
       context.site.getConfig = () => ({
         getHandlers: () => ({
@@ -154,6 +197,10 @@ describe('LinkChecker Steps Tests', function () {
       const result = await fetchLinkCheckerLogsStep(context);
 
       expect(context.log.info).to.have.been.calledWith(sinon.match('LinkChecker detection disabled'));
+      expect(context.audit.setAuditResult).to.have.been.called;
+      expect(context.audit.setAuditResult.lastCall.args[0]).to.include({
+        internalLinksLinkCheckerStatus: 'skipped',
+      });
       // Should proceed to finalization without LinkChecker data
       expect(result).to.exist;
     });
@@ -292,14 +339,9 @@ describe('LinkChecker Steps Tests', function () {
     it('should send continuation message when approaching Lambda timeout', async () => {
       const timeoutHandler = await esmock('../../../src/internal-links/handler.js', {
         '../../../src/support/splunk-client-loader.js': { createSplunkClient: mockCreateSplunkClient },
+      }, {
         '../../../src/internal-links/batch-state.js': {
-          saveBatchResults: sandbox.stub().resolves(),
-          updateCache: sandbox.stub().resolves(),
-          loadCache: sandbox.stub().resolves({ brokenUrlsCache: [], workingUrlsCache: [] }),
-          markBatchCompleted: sandbox.stub().resolves(),
-          isBatchCompleted: sandbox.stub().resolves(false),
-          loadFinalResults: sandbox.stub().resolves([]),
-          cleanupBatchState: sandbox.stub().resolves(),
+          ...batchStateMock,
           getTimeoutStatus: () => ({
             elapsed: 14 * 60 * 1000,
             remaining: 60 * 1000,
@@ -321,7 +363,7 @@ describe('LinkChecker Steps Tests', function () {
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
     });
 
-    it('should proceed to finalization when Splunk job fails', async () => {
+    it('should finalize with failed LinkChecker status when Splunk job fails', async () => {
       // Mock Splunk job submission
       mockSplunkClient.fetchAPI
         .onFirstCall().resolves({
@@ -345,22 +387,31 @@ describe('LinkChecker Steps Tests', function () {
 
       const result = await fetchLinkCheckerLogsStep(context);
 
-      expect(context.log.error).to.have.been.calledWith(sinon.match('Splunk job failed'));
-      expect(context.log.warn).to.have.been.calledWith(sinon.match('Proceeding to finalization without LinkChecker data'));
+      expect(result).to.exist;
+      expect(context.log.error).to.have.been.calledWith(sinon.match('LinkChecker Splunk job failed'));
+      expect(context.audit.setAuditResult).to.have.been.called;
+      expect(context.audit.setAuditResult.lastCall.args[0]).to.include({
+        internalLinksLinkCheckerStatus: 'failed',
+        internalLinksLinkCheckerError: 'LinkChecker Splunk job failed: sid=job-123, dispatchState=FAILED',
+      });
     });
 
-    it('should handle Splunk job submission error gracefully', async () => {
+    it('should finalize with failed LinkChecker status when Splunk job submission fails', async () => {
       // Mock Splunk job submission failure
-      mockSplunkClient.fetchAPI
-        .onFirstCall().resolves({
-          status: 500,
-          text: sandbox.stub().resolves('Internal Server Error'),
-        });
+      mockSplunkClient.fetchAPI.resolves({
+        status: 500,
+        text: sandbox.stub().resolves('Internal Server Error'),
+      });
 
       const result = await fetchLinkCheckerLogsStep(context);
 
+      expect(result).to.exist;
       expect(context.log.error).to.have.been.calledWith(sinon.match('LinkChecker detection failed'));
-      expect(context.log.warn).to.have.been.calledWith(sinon.match('Proceeding to finalization without LinkChecker data'));
+      expect(context.audit.setAuditResult).to.have.been.called;
+      expect(context.audit.setAuditResult.lastCall.args[0]).to.include({
+        internalLinksLinkCheckerStatus: 'failed',
+        internalLinksLinkCheckerError: 'Splunk job submission failed. Status: 500. Body: Internal Server Error',
+      });
     });
 
     it('should send continuation when max poll attempts reached', async () => {
@@ -459,6 +510,31 @@ describe('LinkChecker Steps Tests', function () {
   });
 
   describe('resumeLinkCheckerPollingStep', () => {
+    it('should skip stale LinkChecker polling when workflow already completed', async () => {
+      context.audit.getAuditResult = () => ({
+        brokenInternalLinks: [],
+        internalLinksWorkflowCompletedAt: '2026-03-14T10:00:00.000Z',
+      });
+      context.auditContext = {
+        ...context.auditContext,
+        resumePolling: true,
+        linkCheckerJobId: 'job-123',
+        linkCheckerStartTime: Date.now() - 1000,
+        pollingContinuationCount: 1,
+      };
+
+      const result = await resumeLinkCheckerPollingStep(context);
+
+      expect(result).to.deep.equal({ status: 'already-finalized' });
+      expect(batchStateMock.tryAcquireExecutionLock).to.not.have.been.called;
+      expect(mockCreateSplunkClient).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match('Audit already finalized at 2026-03-14T10:00:00.000Z'),
+      );
+    });
+  });
+
+  describe('resumeLinkCheckerPollingStep', () => {
     beforeEach(() => {
       context.auditContext = {
         linkCheckerJobId: 'job-123',
@@ -467,28 +543,30 @@ describe('LinkChecker Steps Tests', function () {
       };
     });
 
-    it('should error when linkCheckerJobId is missing', async () => {
+    it('should throw when linkCheckerJobId is missing', async () => {
       context.auditContext = {
-        // Missing linkCheckerJobId
         linkCheckerStartTime: Date.now(),
       };
 
-      const result = await resumeLinkCheckerPollingStep(context);
+      await expect(resumeLinkCheckerPollingStep(context)).to.be.rejectedWith(
+        'Missing linkCheckerJobId in auditContext, cannot resume polling',
+      );
 
       expect(context.log.error).to.have.been.calledWith(sinon.match('Missing linkCheckerJobId'));
     });
 
-    it('should abort when job exceeds max duration', async () => {
+    it('should throw when job exceeds max duration', async () => {
       context.auditContext = {
         linkCheckerJobId: 'job-123',
         linkCheckerStartTime: Date.now() - (61 * 60 * 1000), // 61 minutes ago
         skipCrawlDetection: false,
       };
 
-      const result = await resumeLinkCheckerPollingStep(context);
+      await expect(resumeLinkCheckerPollingStep(context)).to.be.rejectedWith(
+        'LinkChecker job exceeded max duration for sid=job-123',
+      );
 
-      expect(context.log.warn).to.have.been.calledWith(sinon.match('LinkChecker job has been running for'));
-      expect(context.log.warn).to.have.been.calledWith(sinon.match('Proceeding to finalization without LinkChecker data'));
+      expect(context.log.warn).to.have.been.calledWith(sinon.match('LinkChecker job exceeded max duration'));
     });
 
     it('should fetch results when job completes on continuation', async () => {
@@ -553,8 +631,7 @@ describe('LinkChecker Steps Tests', function () {
       expect(result).to.deep.equal({ status: 'linkchecker-polling-continuation' });
     });
 
-    it('should proceed to finalization when job fails on continuation', async () => {
-      // Mock job status (failed)
+    it('should throw when job fails on continuation', async () => {
       mockSplunkClient.fetchAPI
         .onFirstCall().resolves({
           status: 200,
@@ -570,20 +647,19 @@ describe('LinkChecker Steps Tests', function () {
           }),
         });
 
-      const result = await resumeLinkCheckerPollingStep(context);
+      await expect(resumeLinkCheckerPollingStep(context)).to.be.rejectedWith(
+        'LinkChecker Splunk job failed: sid=job-123, dispatchState=FAILED',
+      );
 
-      expect(context.log.error).to.have.been.calledWith(sinon.match('Splunk job failed'));
+      expect(context.log.error).to.have.been.calledWith(sinon.match('LinkChecker Splunk job failed'));
     });
 
-    it('should handle error during continuation polling gracefully', async () => {
-      // Mock Splunk API error
-      mockSplunkClient.fetchAPI
-        .onFirstCall().rejects(new Error('Network error'));
+    it('should throw when continuation polling errors', async () => {
+      mockSplunkClient.fetchAPI.rejects(new Error('Network error'));
 
-      const result = await resumeLinkCheckerPollingStep(context);
+      await expect(resumeLinkCheckerPollingStep(context)).to.be.rejectedWith('Network error');
 
       expect(context.log.error).to.have.been.calledWith(sinon.match('LinkChecker polling continuation failed'));
-      expect(context.log.warn).to.have.been.calledWith(sinon.match('Proceeding to finalization without LinkChecker data'));
     });
 
     it('should preserve skipCrawlDetection flag in continuation', async () => {
@@ -652,14 +728,9 @@ describe('LinkChecker Steps Tests', function () {
     it('should send continuation on resume when approaching Lambda timeout', async () => {
       const timeoutHandler = await esmock('../../../src/internal-links/handler.js', {
         '../../../src/support/splunk-client-loader.js': { createSplunkClient: mockCreateSplunkClient },
+      }, {
         '../../../src/internal-links/batch-state.js': {
-          saveBatchResults: sandbox.stub().resolves(),
-          updateCache: sandbox.stub().resolves(),
-          loadCache: sandbox.stub().resolves({ brokenUrlsCache: [], workingUrlsCache: [] }),
-          markBatchCompleted: sandbox.stub().resolves(),
-          isBatchCompleted: sandbox.stub().resolves(false),
-          loadFinalResults: sandbox.stub().resolves([]),
-          cleanupBatchState: sandbox.stub().resolves(),
+          ...batchStateMock,
           getTimeoutStatus: () => ({
             elapsed: 14 * 60 * 1000,
             remaining: 60 * 1000,
