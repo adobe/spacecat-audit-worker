@@ -11,6 +11,7 @@
  */
 
 import { ImsClient } from '@adobe/spacecat-shared-ims-client';
+import { getBrandGuidelinesFromSite } from './brand-profile.js';
 
 /**
  * Calculates a weekly cron schedule set to run one hour from now.
@@ -208,6 +209,25 @@ export class ContentAIClient {
 
     this.log?.info(`Creating ContentAI configuration for site ${baseURL} with cron schedule ${cronSchedule} and name ${name}`);
 
+    // Get brand guidelines from site config
+    const brandGuidelines = getBrandGuidelinesFromSite(site, this.log);
+    const hasBrandGuidelines = brandGuidelines && brandGuidelines.length > 0;
+
+    if (hasBrandGuidelines) {
+      this.log?.info(`[ContentAI] Brand guidelines found for site ${baseURL}`);
+    } else {
+      this.log?.info(`[ContentAI] No brand guidelines found for site ${baseURL}`);
+    }
+
+    // Build system prompt with optional brand guidelines
+    let systemPrompt = 'You are a helpful AI Assistant powering the search experience.\nYou will answer questions using the provided context.\n';
+
+    if (hasBrandGuidelines) {
+      systemPrompt += `\n**Brand Guidelines**:\n${brandGuidelines}\n\nWhen generating responses, follow the brand guidelines to ensure answers match the brand's tone, vocabulary, and editorial standards.\n`;
+    }
+
+    systemPrompt += '\nContext: {context}\n';
+
     const contentAiData = {
       steps: [
         {
@@ -232,7 +252,7 @@ export class ContentAIClient {
           name: 'Comprehensive Q&A assitant',
           description: 'AI assistant for answering any user question about a topic in the indexed knowledge',
           prompts: {
-            system: 'You are a helpful AI Assistant powering the search experience.\nYou will answer questions using the provided context.\nContext: {context}\n',
+            system: systemPrompt,
             user: 'Please answer the following question: {question}\n',
           },
         },

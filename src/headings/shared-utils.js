@@ -17,6 +17,10 @@ import SeoChecks from '../metatags/seo-checks.js';
 import { getTopPagesForSiteId } from '../utils/data-access.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import {
+  extractBrandGuidelinesFromProfile,
+  formatBrandGuidelinesToMarkdown,
+} from '../utils/brand-profile.js';
+import {
   getHeadingLevel,
   getHeadingContext,
   getScrapeJsonPath,
@@ -142,49 +146,13 @@ export async function loadScrapeJson(url, site, allKeys, s3Client, S3_SCRAPER_BU
 }
 
 /**
- * Extract brand guidelines from brand profile
- * @param {Object} brandProfile - Brand profile from site config
- * @returns {Object} Formatted brand guidelines
- */
-function extractBrandGuidelinesFromProfile(brandProfile) {
-  const mainProfile = brandProfile.main_profile || {};
-  // Extract brand persona (short description)
-  const brandPersona = mainProfile.brand_personality?.description || '';
-
-  // Extract tone
-  const toneAttributes = mainProfile.tone_attributes || {};
-  const primaryTones = toneAttributes.primary || [];
-  const tone = primaryTones.join(', ');
-
-  // Extract editorial guidelines
-  const editorialGuidelines = mainProfile.editorial_guidelines || {};
-  const dos = editorialGuidelines.dos || [];
-  const donts = editorialGuidelines.donts || [];
-
-  // Extract forbidden items
-  const languagePatterns = mainProfile.language_patterns || {};
-  const avoidPatterns = languagePatterns.avoid || [];
-  const avoidTones = toneAttributes.avoid || [];
-  const forbidden = [...avoidPatterns, ...avoidTones];
-
-  return {
-    brand_persona: brandPersona,
-    tone,
-    editorial_guidelines: {
-      do: dos,
-      dont: donts,
-    },
-    forbidden,
-  };
-}
-
-/**
  * Get brand guidelines from site config or generate from healthy tags using AI
+ * Returns formatted markdown string suitable for AI prompts
  * @param {Object} healthyTagsObject - Object with healthy title, description, h1
  * @param {Object} log - Logger instance
  * @param {Object} context - Audit context
  * @param {Object} site - Site object (optional, for accessing brand profile)
- * @returns {Promise<Object>} Brand guidelines
+ * @returns {Promise<string>} Brand guidelines formatted as markdown string
  */
 export async function getBrandGuidelines(healthyTagsObject, log, context, site = null) {
   // First, try to get brand profile from site config
@@ -195,8 +163,9 @@ export async function getBrandGuidelines(healthyTagsObject, log, context, site =
       if (brandProfile && typeof brandProfile === 'object' && Object.keys(brandProfile).length > 0) {
         log.info('[Brand Guidelines] Using brand profile from site config');
         const guidelines = extractBrandGuidelinesFromProfile(brandProfile);
-        log.debug(`[Brand Guidelines] Extracted guidelines: ${JSON.stringify(guidelines)}`);
-        return guidelines;
+        const formattedGuidelines = formatBrandGuidelinesToMarkdown(guidelines);
+        log.debug(`[Brand Guidelines] Extracted guidelines: ${formattedGuidelines}`);
+        return formattedGuidelines;
       }
     } catch (error) {
       log.warn(`[Brand Guidelines] Error accessing brand profile from site config: ${error.message}`);
