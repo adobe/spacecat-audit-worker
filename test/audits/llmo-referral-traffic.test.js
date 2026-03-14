@@ -29,6 +29,7 @@ describe('LLMO Referral Traffic Handler', () => {
   let audit;
   let mockAthenaClient;
   let mockSharepointClient;
+  let mockConfiguration;
   let getStaticContentStub;
   let createLLMOSharepointClientStub;
   let saveExcelReportStub;
@@ -68,6 +69,12 @@ describe('LLMO Referral Traffic Handler', () => {
       }),
     };
 
+    mockConfiguration = {
+      isHandlerEnabledForSite: sandbox.stub().returns(false),
+      enableHandlerForSite: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
@@ -78,6 +85,7 @@ describe('LLMO Referral Traffic Handler', () => {
         },
       })
       .build();
+    context.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
 
     // Mock the handler module with esmock
     handlerModule = await esmock('../../src/llmo-referral-traffic/handler.js', {
@@ -113,6 +121,9 @@ describe('LLMO Referral Traffic Handler', () => {
       expect(result.fullAuditRef).to.include('No OpTel Data Found');
       expect(mockAthenaClient.query).to.have.been.calledOnce;
       expect(saveExcelReportStub).to.not.have.been.called;
+      expect(context.dataAccess.Configuration.findLatest).to.not.have.been.called;
+      expect(mockConfiguration.enableHandlerForSite).to.not.have.been.called;
+      expect(mockConfiguration.save).to.not.have.been.called;
     });
 
     it('should create populated spreadsheet when traffic data exists', async () => {
@@ -141,6 +152,9 @@ describe('LLMO Referral Traffic Handler', () => {
       expect(result.fullAuditRef).to.equal('test-folder/referral-traffic/referral-traffic-w10-2025.xlsx');
       expect(mockAthenaClient.query).to.have.been.calledOnce;
       expect(saveExcelReportStub).to.have.been.calledOnce;
+      expect(context.dataAccess.Configuration.findLatest).to.have.been.calledOnce;
+      expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('page-intent', site);
+      expect(mockConfiguration.save).to.have.been.calledOnce;
     });
 
     it('should enrich data with page intents and region', async () => {
@@ -161,6 +175,18 @@ describe('LLMO Referral Traffic Handler', () => {
       expect(result.auditResult.rowCount).to.equal(2);
       expect(saveExcelReportStub).to.have.been.calledOnce;
     });
+
+    it('should not save configuration when page-intent is already enabled', async () => {
+      mockConfiguration.isHandlerEnabledForSite.withArgs('page-intent', site).returns(true);
+
+      mockAthenaClient.query.resolves([
+        { path: '/page1', trf_type: 'earned', trf_channel: 'llm' },
+      ]);
+
+      await handlerModule.referralTrafficRunner(context);
+
+      expect(mockConfiguration.enableHandlerForSite).to.not.have.been.called;
+      expect(mockConfiguration.save).to.not.have.been.called;
+    });
   });
 });
-
