@@ -856,8 +856,30 @@ describe('LLM Error Pages Utils', () => {
       expect(result.weeks[0]).to.have.property('startDate');
       expect(result.weeks[0]).to.have.property('endDate');
       expect(result.weeks[0]).to.have.property('dateRange');
+      expect(result.weeks[0]).to.have.property('periodIdentifier');
+      expect(result.weeks[0].periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
       expect(result.referenceDate).to.equal(referenceDate.toISOString());
       expect(result.columns).to.be.an('array');
+    });
+
+    it('should generate multiple weeks with weekOffsets array', () => {
+      const referenceDate = new Date('2024-01-15');
+      const result = generateReportingPeriods(referenceDate, [-2, -1, 0]);
+
+      expect(result.weeks).to.have.length(3);
+      result.weeks.forEach((week) => {
+        expect(week).to.have.property('periodIdentifier');
+        expect(week.periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
+      });
+      expect(result.columns).to.have.length(3);
+    });
+
+    it('should accept a single numeric weekOffset', () => {
+      const referenceDate = new Date('2024-01-15');
+      const result = generateReportingPeriods(referenceDate, -2);
+
+      expect(result.weeks).to.have.length(1);
+      expect(result.weeks[0]).to.have.property('periodIdentifier');
     });
   });
 
