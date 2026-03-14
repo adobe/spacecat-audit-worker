@@ -11,7 +11,6 @@
  */
 
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
-import { resolveConsolidatedBucketName, extractCustomerDomain } from '../utils/cdn-utils.js';
 import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL } from '../common/user-agent-classification.js';
 import { ELMO_LIVE_HOST } from '../common/constants.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
@@ -234,30 +233,6 @@ export async function buildLlmErrorPagesQuery(options) {
     // country extraction
     countryExtraction: buildCountryExtractionSQL(),
   }, './src/llm-error-pages/sql/llm-error-pages.sql');
-}
-
-// ============================================================================
-// SITE AND CONFIGURATION UTILITIES
-// ============================================================================
-export async function getS3Config(site, context) {
-  const customerDomain = extractCustomerDomain(site);
-
-  const domainParts = customerDomain.split(/[._]/);
-  /* c8 ignore next */
-  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const bucket = resolveConsolidatedBucketName(context);
-  const siteId = site.getId();
-  const aggregatedLocation = `s3://${bucket}/aggregated/${siteId}/`;
-
-  return {
-    bucket,
-    customerName,
-    customerDomain,
-    aggregatedLocation,
-    databaseName: `cdn_logs_${customerDomain}`,
-    tableName: `aggregated_logs_${customerDomain}_consolidated`,
-    getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
-  };
 }
 
 // ============================================================================
