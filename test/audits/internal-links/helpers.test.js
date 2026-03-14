@@ -26,6 +26,7 @@ import {
   classifyStatusBucket,
   STATUS_BUCKETS,
 } from '../../../src/internal-links/helpers.js';
+import { createContextLogger } from '../../../src/common/context-logger.js';
 import { auditData } from '../../fixtures/internal-links-data.js';
 
 describe('calculateKpiDeltasForAudit', () => {
@@ -140,6 +141,23 @@ describe('isLinkInaccessible', () => {
       .reply(200);
 
     const result = await isLinkInaccessible('https://example.com', mockLog, 'test-site-id');
+    expect(result.isBroken).to.be.false;
+  });
+
+  it('should reuse an existing context logger without wrapping', async function call() {
+    this.timeout(6000);
+    nock('https://example.com')
+      .head('/context-logger')
+      .reply(200);
+
+    const contextLogger = createContextLogger(mockLog, {
+      auditType: 'broken-internal-links',
+      siteId: 'test-site-id',
+      auditId: 'audit-1',
+      step: 'helpers-test',
+    });
+
+    const result = await isLinkInaccessible('https://example.com/context-logger', contextLogger, 'test-site-id');
     expect(result.isBroken).to.be.false;
   });
 
@@ -484,6 +502,24 @@ describe('isLinkInaccessible', () => {
     expect(result.isBroken).to.be.false;
     expect(result.inconclusive).to.be.true;
     expect(mockLog.error.called).to.be.false;
+  });
+
+  it('should report redirect-chain fetch errors as broken', async function call() {
+    this.timeout(15000);
+    const redirectError = new Error('Too many redirects');
+    redirectError.code = 'ERR_TOO_MANY_REDIRECTS';
+
+    nock('https://example.com')
+      .head('/redirect-loop')
+      .reply(403)
+      .get('/redirect-loop')
+      .replyWithError(redirectError);
+
+    const result = await isLinkInaccessible('https://example.com/redirect-loop', mockLog, 'test-site-id');
+    expect(result.isBroken).to.be.true;
+    expect(result.inconclusive).to.not.equal(true);
+    expect(result.statusBucket).to.equal(STATUS_BUCKETS.REDIRECT_CHAIN_EXCESSIVE);
+    expect(mockLog.error.calledOnce).to.be.true;
   });
 
   it('should classify soft 404 pages returned with HTTP 200', async function call() {
