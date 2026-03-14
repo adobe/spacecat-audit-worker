@@ -24,6 +24,7 @@ import accessibilityDesktop from './accessibility/handler-desktop.js';
 import accessibilityMobile from './accessibility/handler-mobile.js';
 import apex from './apex/handler.js';
 import cwv from './cwv/handler.js';
+import cwvTrendsAudit from './cwv-trends-audit/handler.js';
 import lhsDesktop from './lhs/handler-desktop.js';
 import lhsMobile from './lhs/handler-mobile.js';
 import sitemap from './sitemap/handler.js';
@@ -124,6 +125,7 @@ const HANDLERS = {
   'accessibility-mobile': accessibilityMobile,
   apex,
   cwv,
+  'cwv-trends-audit': cwvTrendsAudit,
   'lhs-mobile': lhsMobile,
   'lhs-desktop': lhsDesktop,
   sitemap,
