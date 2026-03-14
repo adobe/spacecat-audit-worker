@@ -9,9 +9,11 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { isNonEmptyArray, getStaticContent } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, getStaticContent, resolveCanonicalUrl } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { Audit, PageIntent as PageIntentModel } from '@adobe/spacecat-shared-data-access';
+import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
+import URI from 'urijs';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getTemporalCondition } from '../utils/date-utils.js';
@@ -36,15 +38,65 @@ const NOTHING_TO_PROCESS_RESULT = (baseURL, siteId) => ({
   siteId,
 });
 
+/**
+ * Resolves the effective base URL for the page-intent audit.
+ * If overrideBaseURL is not already set, uses resolveCanonicalUrl to follow redirects
+ * and persists the result to the site's fetch config if www subdomain changed.
+ * @param {Object} site - The site object
+ * @param {Object} log - Logger instance
+ * @returns {Promise<string>} The resolved base URL
+ */
+async function resolveEffectiveBaseUrl(site, log) {
+  const siteId = site.getId();
+  const siteConfig = site.getConfig();
+
+  // If overrideBaseURL is already set, use it
+  const existingOverride = siteConfig?.getFetchConfig()?.overrideBaseURL;
+  if (existingOverride) {
+    return existingOverride;
+  }
+
+  const baseURL = site.getBaseURL();
+
+  // Resolve canonical URL for the site from the base URL
+  const resolvedUrl = await resolveCanonicalUrl(baseURL);
+  if (resolvedUrl === null) {
+    return baseURL;
+  }
+
+  const baseUri = new URI(baseURL);
+  const resolvedUri = new URI(resolvedUrl);
+
+  const baseSubdomain = baseUri.subdomain();
+  const resolvedSubdomain = resolvedUri.subdomain();
+
+  // Only set override if www subdomain changed
+  const wwwChanged = (baseSubdomain === 'www' && resolvedSubdomain !== 'www')
+                  || (baseSubdomain !== 'www' && resolvedSubdomain === 'www');
+
+  if (wwwChanged) {
+    // Preserve the base URL's pathname in the override
+    const basePathName = baseUri.pathname();
+    const overrideBaseURL = basePathName !== '/'
+      ? `${resolvedUri.origin()}${basePathName}`
+      : resolvedUri.origin();
+    log.info(`${LOG_PREFIX} Setting overrideBaseURL for site ${siteId}: ${baseURL} -> ${overrideBaseURL}`);
+    siteConfig.updateFetchConfig({ overrideBaseURL });
+    site.setConfig(Config.toDynamoItem(siteConfig));
+    await site.save();
+    return overrideBaseURL;
+  }
+
+  return baseURL;
+}
+
 export async function getPathsOfLastWeek(context) {
   const {
     env, site, finalUrl, log,
   } = context;
 
   const { S3_IMPORTER_BUCKET_NAME: importerBucket, PAGE_INTENT_BATCH_SIZE: batchSize = 10 } = env;
-  /* c8 ignore next */
-  const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
-  const baseURL = overrideBaseURL || site.getBaseURL();
+  const baseURL = await resolveEffectiveBaseUrl(site, log);
   const tempLocation = `s3://${importerBucket}/rum-metrics-compact/temp/out/`;
   const athenaClient = AWSAthenaClient.fromContext(context, tempLocation);
   const today = new Date();

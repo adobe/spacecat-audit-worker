@@ -26,6 +26,7 @@ describe('Page Intent Handler', () => {
   let sandbox;
   let context;
   let mockSite;
+  let mockSiteConfig;
   let mockAudit;
   let mockPageIntent;
   let mockS3Client;
@@ -33,6 +34,8 @@ describe('Page Intent Handler', () => {
   let getStaticContentStub;
   let getObjectFromKeyStub;
   let promptStub;
+  let resolveCanonicalUrlStub;
+  let configToDynamoItemStub;
   let handlerModule;
 
   const baseURL = 'https://example.com';
@@ -45,15 +48,21 @@ describe('Page Intent Handler', () => {
   });
 
   beforeEach(async () => {
+    // Mock site config
+    mockSiteConfig = {
+      getFetchConfig: sandbox.stub().returns({}),
+      updateFetchConfig: sandbox.stub(),
+    };
+
     // Mock site
     mockSite = {
       getSiteId: sandbox.stub().returns(siteId),
       getId: sandbox.stub().returns(siteId),
       getBaseURL: sandbox.stub().returns(baseURL),
       getPageIntents: sandbox.stub().resolves([]),
-      getConfig: sandbox.stub().returns({
-        getFetchConfig: sandbox.stub().returns({}),
-      }),
+      getConfig: sandbox.stub().returns(mockSiteConfig),
+      setConfig: sandbox.stub(),
+      save: sandbox.stub().resolves(),
     };
 
     // Mock audit
@@ -87,6 +96,8 @@ describe('Page Intent Handler', () => {
         total_tokens: 150,
       },
     });
+    resolveCanonicalUrlStub = sandbox.stub().resolves(null);
+    configToDynamoItemStub = sandbox.stub().returns({ converted: 'config' });
 
     // Setup context
     context = new MockContextBuilder()
@@ -111,10 +122,17 @@ describe('Page Intent Handler', () => {
     handlerModule = await esmock('../../../src/page-intent/handler.js', {
       '@adobe/spacecat-shared-utils': {
         getStaticContent: getStaticContentStub,
+        isNonEmptyArray: (arr) => Array.isArray(arr) && arr.length > 0,
+        resolveCanonicalUrl: resolveCanonicalUrlStub,
       },
       '@adobe/spacecat-shared-athena-client': {
         AWSAthenaClient: {
           fromContext: sandbox.stub().returns(mockAthenaClient),
+        },
+      },
+      '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
+        Config: {
+          toDynamoItem: configToDynamoItemStub,
         },
       },
       '../../../src/utils/s3-utils.js': {
@@ -241,6 +259,95 @@ describe('Page Intent Handler', () => {
       // /page1 and invalid-url-without-protocol are filtered out as existing
       expect(result.urls).to.have.lengthOf(1);
       expect(result.urls[0].url).to.equal(`${baseURL}/page2`);
+    });
+  });
+
+  describe('resolveEffectiveBaseUrl', () => {
+    it('should set overrideBaseURL when www subdomain is added', async () => {
+      mockSite.getBaseURL.returns('https://example.com');
+      resolveCanonicalUrlStub.resolves('https://www.example.com');
+      mockAthenaClient.query.resolves([{ path: '/page1' }]);
+
+      const result = await handlerModule.getPathsOfLastWeek(context);
+
+      expect(mockSiteConfig.updateFetchConfig).to.have.been.calledWith({
+        overrideBaseURL: 'https://www.example.com',
+      });
+      expect(mockSite.setConfig).to.have.been.calledOnce;
+      expect(mockSite.save).to.have.been.calledOnce;
+      expect(result.urls[0].url).to.equal('https://www.example.com/page1');
+    });
+
+    it('should set overrideBaseURL when www subdomain is removed', async () => {
+      mockSite.getBaseURL.returns('https://www.example.com');
+      resolveCanonicalUrlStub.resolves('https://example.com');
+      mockAthenaClient.query.resolves([{ path: '/page1' }]);
+
+      const result = await handlerModule.getPathsOfLastWeek(context);
+
+      expect(mockSiteConfig.updateFetchConfig).to.have.been.calledWith({
+        overrideBaseURL: 'https://example.com',
+      });
+      expect(mockSite.setConfig).to.have.been.calledOnce;
+      expect(mockSite.save).to.have.been.calledOnce;
+      expect(result.urls[0].url).to.equal('https://example.com/page1');
+    });
+
+    it('should use existing overrideBaseURL from config and skip resolution', async () => {
+      mockSiteConfig.getFetchConfig.returns({ overrideBaseURL: 'https://override.example.com' });
+      mockAthenaClient.query.resolves([{ path: '/page1' }]);
+
+      const result = await handlerModule.getPathsOfLastWeek(context);
+
+      expect(resolveCanonicalUrlStub).to.not.have.been.called;
+      expect(mockSiteConfig.updateFetchConfig).to.not.have.been.called;
+      expect(result.urls[0].url).to.equal('https://override.example.com/page1');
+    });
+
+    it('should fall back to site.getBaseURL() when resolveCanonicalUrl returns null', async () => {
+      mockSite.getBaseURL.returns('https://example.com');
+      resolveCanonicalUrlStub.resolves(null);
+      mockAthenaClient.query.resolves([{ path: '/page1' }]);
+
+      const result = await handlerModule.getPathsOfLastWeek(context);
+
+      expect(mockSiteConfig.updateFetchConfig).to.not.have.been.called;
+      expect(result.urls[0].url).to.equal('https://example.com/page1');
+    });
+
+    it('should preserve subpath when www subdomain changes', async () => {
+      mockSite.getBaseURL.returns('https://example.com/blog');
+      resolveCanonicalUrlStub.resolves('https://www.example.com/whatever');
+      mockAthenaClient.query.resolves([{ path: '/page1' }]);
+
+      const result = await handlerModule.getPathsOfLastWeek(context);
+
+      expect(mockSiteConfig.updateFetchConfig).to.have.been.calledWith({
+        overrideBaseURL: 'https://www.example.com/blog',
+      });
+      expect(result.urls[0].url).to.equal('https://www.example.com/blog/page1');
+    });
+
+    it('should not update config when only protocol changes', async () => {
+      mockSite.getBaseURL.returns('http://example.com');
+      resolveCanonicalUrlStub.resolves('https://example.com');
+      mockAthenaClient.query.resolves([{ path: '/page1' }]);
+
+      const result = await handlerModule.getPathsOfLastWeek(context);
+
+      expect(mockSiteConfig.updateFetchConfig).to.not.have.been.called;
+      expect(result.urls[0].url).to.equal('http://example.com/page1');
+    });
+
+    it('should not update config when non-www subdomain changes', async () => {
+      mockSite.getBaseURL.returns('https://blog.example.com');
+      resolveCanonicalUrlStub.resolves('https://news.example.com');
+      mockAthenaClient.query.resolves([{ path: '/page1' }]);
+
+      const result = await handlerModule.getPathsOfLastWeek(context);
+
+      expect(mockSiteConfig.updateFetchConfig).to.not.have.been.called;
+      expect(result.urls[0].url).to.equal('https://blog.example.com/page1');
     });
   });
 
