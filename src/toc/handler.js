@@ -50,6 +50,39 @@ export const TOPPAGES_CHECK = {
 };
 
 /**
+ * Detect TOC presence in DOM using heuristic signals, without AI.
+ * Checks for:
+ * 1. A list (ul/ol) containing 2+ internal anchor links (href="#...")
+ * 2. Elements with TOC-related class or id names
+ * @param {CheerioAPI} $ - The Cheerio instance
+ * @returns {boolean} True if a TOC is detected in the DOM
+ */
+export function hasTocInDom($) {
+  // Signal 1: list (ul/ol) with 2+ internal anchor links (href="#...")
+  let anchorListFound = false;
+  $('ul, ol').each((_, listEl) => {
+    if ($(listEl).find('a[href^="#"]').length >= 2) {
+      anchorListFound = true;
+      return false; // break the each loop
+    }
+    return true; // continue
+  });
+  if (anchorListFound) return true;
+
+  // Signal 2: elements with TOC-related class or id names
+  const tocPatterns = [
+    'toc',
+    'table-of-contents',
+    'tableofcontents',
+    'anchor-list',
+    'anchor__list',
+  ];
+  return tocPatterns.some(
+    (pattern) => $(`[class*="${pattern}"], [id*="${pattern}"]`).length > 0,
+  );
+}
+
+/**
  * Detect if a Table of Contents (TOC) is present in the document using LLM analysis
  * @param {CheerioAPI} $ - The Cheerio instance
  * @param {string} url - The page URL
@@ -61,10 +94,23 @@ export const TOPPAGES_CHECK = {
  */
 async function getTocDetails($, url, pageTags, log, context, scrapedAt) {
   try {
-    // Extract first 3000 characters from body
-    const bodyElement = $('body')[0];
-    const bodyHTML = $(bodyElement).html() || '';
-    const bodyContent = bodyHTML.substring(0, 3000);
+    // Phase 1: DOM-based heuristic — fast, deterministic, no AI needed
+    if (hasTocInDom($)) {
+      log.debug(`[TOC Detection] TOC detected via DOM heuristic for ${url}`);
+      return {
+        tocPresent: true,
+        TOCCSSSelector: null,
+        confidence: 10,
+        reasoning: 'TOC detected via DOM heuristic (anchor link list or TOC class/id found)',
+      };
+    }
+
+    // Phase 2: AI-based detection using <main> content (or body fallback)
+    const mainEl = $('body > main');
+    const htmlToAnalyze = mainEl.length > 0
+      ? mainEl.html() || ''
+      : $('body').html() || '';
+    const bodyContent = htmlToAnalyze.substring(0, 8000);
 
     // Prepare prompt data
     const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
@@ -118,15 +164,19 @@ async function getTocDetails($, url, pageTags, log, context, scrapedAt) {
       const placement = determineTocPlacement($, getHeadingSelector);
       const headingsData = extractTocData($, getHeadingSelector);
 
-      result.suggestedPlacement = placement;
-      result.transformRules = {
-        action: placement.action,
-        selector: placement.selector,
-        value: headingsData,
-        valueFormat: 'html',
-        scrapedAt: new Date(scrapedAt).toISOString(),
-      };
-      log.debug(`[TOC Detection] Suggested TOC placement for ${url}: ${placement.reasoning}`);
+      if (headingsData.length === 0) {
+        log.debug(`[TOC Detection] No headings found for TOC suggestion for ${url}, skipping`);
+      } else {
+        result.suggestedPlacement = placement;
+        result.transformRules = {
+          action: placement.action,
+          selector: placement.selector,
+          value: headingsData,
+          valueFormat: 'html',
+          scrapedAt: new Date(scrapedAt).toISOString(),
+        };
+        log.debug(`[TOC Detection] Suggested TOC placement for ${url}: ${placement.reasoning}`);
+      }
     }
 
     return result;

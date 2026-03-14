@@ -21,6 +21,7 @@
  * excluding legitimate content.
  */
 export const TOC_EXCLUDED_CONTAINER_SELECTORS = [
+  // Cookie/consent/privacy UI
   '#onetrust-consent-sdk',
   '#onetrust-pc-sdk',
   '.ot-pc-sdk',
@@ -38,6 +39,18 @@ export const TOC_EXCLUDED_CONTAINER_SELECTORS = [
   '[class*="cookie-consent"]',
   '[class*="privacy-preference"]',
   '[class*="onetrust"]',
+
+  // Navigation panels — headings inside these are structural/UI, not content
+  'nav',
+  '[role="navigation"]',
+  'header',
+  'footer',
+  '[class*="nav-"]',
+  '[class*="navigation"]',
+  '[class*="sidebar"]',
+  '[id*="sidebar"]',
+  '[class*="menu"]',
+  '[id*="nav"]',
 ];
 
 /**
