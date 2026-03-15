@@ -23,7 +23,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Check out
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           persist-credentials: 'false'
 
@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           persist-credentials: 'false'
       - name: Setup Node & NPM
@@ -61,7 +61,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Check out
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           persist-credentials: 'false'
 
@@ -92,7 +92,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Check out
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           persist-credentials: 'false'
 
@@ -118,7 +118,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Check out
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           persist-credentials: 'false'
 
@@ -156,7 +156,7 @@ jobs:
     if: github.event_name == 'push' && github.ref != 'refs/heads/main'
     steps:
       - name: Check out
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           persist-credentials: 'false'
 
