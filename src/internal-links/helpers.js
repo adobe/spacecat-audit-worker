@@ -83,6 +83,28 @@ function isTimeoutError(error) {
 }
 
 /**
+ * Checks if an error is transient (network/HTTP glitch) rather than a truly broken link.
+ * Servers/CDNs under load, proxies mangling headers, or brief connection resets can cause
+ * these while the resource is actually available; treat as accessible to avoid false positives.
+ * @param {Error} error - The error to check
+ * @returns {boolean} True if it's a transient error
+ */
+function isTransientNetworkError(error) {
+  const message = error?.message || '';
+  const code = (error?.code || '').toLowerCase();
+  return (
+    code === 'err_http2_stream_error'
+    || message.includes('NGHTTP2_REFUSED_STREAM')
+    || message.includes('NGHTTP2_INTERNAL_ERROR')
+    || message.includes('NGHTTP2_CONNECT_ERROR')
+    || code === 'econnreset'
+    || code === 'hpe_invalid_header_token'
+    || message.includes('HPE_INVALID_HEADER_TOKEN')
+    || message.includes('Invalid header token')
+  );
+}
+
+/**
  * Checks if a URL points to a static asset
  * @param {string} url - The URL to check
  * @returns {boolean} True if it's a static asset (image, SVG, CSS, JS, etc.)
@@ -171,6 +193,11 @@ async function checkLinkWithGet(url, isAsset, log) {
   } catch (getError) {
     if (isTimeoutError(getError)) {
       log.info(`⏱ TIMEOUT: ${url} (GET request timed out after ${LINK_TIMEOUT}ms, assuming accessible)`);
+      return false;
+    }
+
+    if (isTransientNetworkError(getError)) {
+      log.info(`⏱ TRANSIENT: ${url} (${getError.code || getError.message}, assuming accessible)`);
       return false;
     }
 
