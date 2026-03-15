@@ -2218,6 +2218,86 @@ describe('Canonical URL Tests', () => {
         expect(result.urls[2]).to.deep.equal({ url: 'another-invalid-url' });
         expect(result.urls[3]).to.deep.equal({ url: 'https://example.com/page2' });
       });
+
+      it('should exclude pages disallowed by robots.txt before scraping', async () => {
+        const mockRobots = {
+          isAllowed: sinon.stub().callsFake((url) => !url.includes('/search/')),
+        };
+
+        const { submitForScraping: submitForScrapingMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/robots-utils.js': {
+              fetchRobotsTxt: sinon.stub().resolves(mockRobots),
+              filterUrlsByRobots: sinon.stub().callsFake((robots, urls, logger) => {
+                const allowed = urls.filter((u) => !u.includes('/search/'));
+                if (allowed.length < urls.length) {
+                  logger.info(`[robots-utils] https://example.com/robots.txt: excluded ${urls.length - allowed.length} URL(s) disallowed by robots.txt`);
+                }
+                return allowed;
+              }),
+              isDisallowedByRobots: sinon.stub().returns(false),
+            },
+          },
+        );
+
+        const testDataAccess = {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+              { getUrl: () => 'https://example.com/page1' },
+              { getUrl: () => 'https://example.com/search/business-listing' },
+              { getUrl: () => 'https://example.com/search/results' },
+              { getUrl: () => 'https://example.com/page2' },
+            ]),
+          },
+        };
+
+        const testContext = {
+          ...context,
+          dataAccess: testDataAccess,
+          site,
+          finalUrl: 'https://example.com',
+        };
+
+        const result = await submitForScrapingMocked(testContext);
+
+        expect(result.urls).to.have.lengthOf(2);
+        expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page1' });
+        expect(result.urls[1]).to.deep.equal({ url: 'https://example.com/page2' });
+      });
+
+      it('should pass all pages through when robots.txt is unavailable', async () => {
+        const { submitForScraping: submitForScrapingMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/robots-utils.js': {
+              fetchRobotsTxt: sinon.stub().resolves(null),
+              filterUrlsByRobots: sinon.stub().callsFake((robots, urls) => urls),
+              isDisallowedByRobots: sinon.stub().returns(false),
+            },
+          },
+        );
+
+        const testDataAccess = {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+              { getUrl: () => 'https://example.com/page1' },
+              { getUrl: () => 'https://example.com/page2' },
+            ]),
+          },
+        };
+
+        const testContext = {
+          ...context,
+          dataAccess: testDataAccess,
+          site,
+          finalUrl: 'https://example.com',
+        };
+
+        const result = await submitForScrapingMocked(testContext);
+
+        expect(result.urls).to.have.lengthOf(2);
+      });
     });
 
     /* REMOVED: validateCanonicalFromHTML tests - function deleted from handler.js
@@ -3756,6 +3836,11 @@ describe('Canonical URL Tests', () => {
             '../../src/utils/s3-utils.js': {
               getObjectFromKey: mockGetObjectFromKey,
             },
+            '../../src/utils/robots-utils.js': {
+              fetchRobotsTxt: sinon.stub().resolves(null),
+              filterUrlsByRobots: sinon.stub().callsFake((_, urls) => urls),
+              isDisallowedByRobots: sinon.stub().returns(false),
+            },
           },
         );
 
@@ -3837,6 +3922,126 @@ describe('Canonical URL Tests', () => {
         expect(context.log.warn).to.have.been.calledWith(
           '[canonical] Scrape result is empty for scrapes/job-id/page1/scrape.json (rawBody length: 0)',
         );
+      });
+
+      it('should skip scraped pages disallowed by robots.txt', async () => {
+        const scrapedContent = {
+          url: 'https://example.com/search/business-listing',
+          finalUrl: 'https://example.com/search/business-listing',
+          scrapeResult: {
+            canonical: { exists: true, count: 1, href: 'https://example.com/search/business-listing', inHead: true },
+            rawBody: createValidRawBody(),
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/search/business-listing', 'scrapes/job-id/search/scrape.json'],
+          ]),
+          audit: { getId: () => 'test-audit-id' },
+          dataAccess: {
+            Opportunity: {
+              allBySiteId: sinon.stub().resolves([]),
+              allBySiteIdAndStatus: sinon.stub().resolves([]),
+              create: sinon.stub().resolves({
+                getId: () => 'test-oppty-id',
+                getSuggestions: sinon.stub().resolves([]),
+                addSuggestions: sinon.stub().resolves({ createdItems: [] }),
+              }),
+            },
+            Suggestion: {
+              allByOpportunityId: sinon.stub().resolves([]),
+              bulkCreate: sinon.stub().resolves({ createdItems: [], errors: [] }),
+            },
+          },
+        };
+
+        const mockRobots = { isAllowed: sinon.stub().returns(false) };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': { getObjectFromKey: mockGetObjectFromKey },
+            '../../src/utils/robots-utils.js': {
+              fetchRobotsTxt: sinon.stub().resolves(mockRobots),
+              filterUrlsByRobots: sinon.stub().callsFake((_, urls) => urls),
+              isDisallowedByRobots: sinon.stub().returns(true),
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result.auditResult).to.deep.equal({
+          status: 'success',
+          message: 'No canonical issues detected',
+        });
+        expect(context.log.info).to.have.been.calledWith(
+          '[canonical] Skipping https://example.com/search/business-listing - disallowed by robots.txt',
+        );
+      });
+
+      it('should audit scraped pages normally when robots.txt is unavailable', async () => {
+        const scrapedContent = {
+          url: 'https://example.com/page1',
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            canonical: { exists: true, count: 1, href: 'https://example.com/page1', inHead: true },
+            rawBody: createValidRawBody(),
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/page1', 'scrapes/job-id/page1/scrape.json'],
+          ]),
+          audit: { getId: () => 'test-audit-id' },
+          dataAccess: {
+            Opportunity: {
+              allBySiteId: sinon.stub().resolves([]),
+              allBySiteIdAndStatus: sinon.stub().resolves([]),
+              create: sinon.stub().resolves({
+                getId: () => 'test-oppty-id',
+                getSuggestions: sinon.stub().resolves([]),
+                addSuggestions: sinon.stub().resolves({ createdItems: [] }),
+              }),
+            },
+            Suggestion: {
+              allByOpportunityId: sinon.stub().resolves([]),
+              bulkCreate: sinon.stub().resolves({ createdItems: [], errors: [] }),
+            },
+          },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': { getObjectFromKey: mockGetObjectFromKey },
+            '../../src/utils/robots-utils.js': {
+              fetchRobotsTxt: sinon.stub().resolves(null),
+              filterUrlsByRobots: sinon.stub().callsFake((_, urls) => urls),
+              isDisallowedByRobots: sinon.stub().returns(false),
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        // Page is allowed through and audited (self-referenced canonical = no issues)
+        expect(result.auditResult).to.deep.equal({
+          status: 'success',
+          message: 'No canonical issues detected',
+        });
       });
     });
   });

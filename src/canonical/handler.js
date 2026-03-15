@@ -26,6 +26,7 @@ import { createOpportunityData, createOpportunityDataForElmo } from './opportuni
 import { CANONICAL_CHECKS } from './constants.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import { isAuthUrl } from '../support/utils.js';
+import { fetchRobotsTxt, filterUrlsByRobots, isDisallowedByRobots } from '../utils/robots-utils.js';
 
 /**
  * @import {type RequestOptions} from "@adobe/fetch"
@@ -101,12 +102,16 @@ export async function submitForScraping(context) {
     return true;
   });
 
-  log.info(`[canonical] After filtering: ${filteredUrls.length} pages will be scraped - ${JSON.stringify(filteredUrls)}`);
+  // Filter out pages disallowed by robots.txt
+  const robots = await fetchRobotsTxt(site.getBaseURL(), log);
+  const allowedUrls = filterUrlsByRobots(robots, filteredUrls, log);
+
+  log.info(`[canonical] After filtering: ${allowedUrls.length} pages will be scraped - ${JSON.stringify(allowedUrls)}`);
 
   // Note: Do NOT return auditResult/fullAuditRef for steps with SCRAPE_CLIENT destination
   // These are intermediate steps; the scraper will trigger the next step when complete
   return {
-    urls: filteredUrls.map((url) => ({ url })),
+    urls: allowedUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'default',
     allowCache: false,
@@ -380,6 +385,9 @@ export async function processScrapedContent(context) {
   const scrapeKeys = Array.from(scrapeResultPaths.values());
   log.info(`[canonical] Found ${scrapeKeys.length} scraped objects from scrapeResultPaths, starting to process ${scrapeKeys.length} pages`);
 
+  // Fetch robots.txt once for use across all scraped pages
+  const robots = await fetchRobotsTxt(baseURL, log);
+
   // Process each scraped page
   const auditPromises = scrapeKeys.map(async (key) => {
     try {
@@ -412,6 +420,12 @@ export async function processScrapedContent(context) {
       }
       if (isPdfUrl(finalUrl)) {
         log.info(`[canonical] Skipping ${url} - redirected to PDF: ${finalUrl}`);
+        return null;
+      }
+
+      // Filter out pages disallowed by robots.txt
+      if (isDisallowedByRobots(robots, finalUrl)) {
+        log.info(`[canonical] Skipping ${finalUrl} - disallowed by robots.txt`);
         return null;
       }
 
