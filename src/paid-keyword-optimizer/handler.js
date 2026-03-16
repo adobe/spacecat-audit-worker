@@ -50,6 +50,23 @@ const EXCLUDE_URL_PATTERNS = [
 ];
 
 /**
+ * Normalizes a URL by stripping the www. prefix from the hostname.
+ * This ensures consistent URL matching between different data sources
+ * (e.g., RUM uses casio.com while Ahrefs uses www.casio.com).
+ * @param {string} url - URL to normalize
+ * @returns {string} URL with www. stripped from hostname
+ */
+function normalizeUrl(url) {
+  try {
+    const parsed = new URL(url);
+    parsed.hostname = parsed.hostname.replace(/^www\./, '');
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+/**
  * Checks if a URL matches any excluded page type pattern
  * @param {string} url - URL to check
  * @returns {boolean} True if the URL should be excluded
@@ -76,7 +93,7 @@ async function fetchPaidPagesFromS3(context, siteId) {
 
   const map = new Map();
   for (const page of pages) {
-    map.set(page.url, {
+    map.set(normalizeUrl(page.url), {
       topKeyword: page.topKeyword,
       cpc: page.cpc || 0,
       sumTraffic: page.sum_traffic || 0,
@@ -586,7 +603,7 @@ export async function runPaidKeywordAnalysisStep(context) {
 
   const rankedPages = bounceFilteredPages
     .map((page) => {
-      const ahrefs = ahrefsMap.get(page.url) || {};
+      const ahrefs = ahrefsMap.get(normalizeUrl(page.url)) || {};
       return {
         ...page,
         cpc: ahrefs.cpc || 0,
@@ -658,6 +675,7 @@ export async function sendToMystique(auditUrl, auditData, context, site) {
 }
 
 export {
+  normalizeUrl,
   isExcludedPageType,
   fetchPaidPagesFromS3,
   computePriorityScore,

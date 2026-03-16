@@ -26,6 +26,7 @@ import {
   importTrafficAnalysisWeekStep1,
   importTrafficAnalysisWeekStep2,
   importTrafficAnalysisWeekStep3,
+  normalizeUrl,
   isExcludedPageType,
   fetchPaidPagesFromS3,
   computePriorityScore,
@@ -235,6 +236,28 @@ describe('Paid Keyword Optimizer Audit', () => {
       });
       expect(config.rumMetricsDatabase).to.equal('custom_db');
       expect(config.rumMetricsCompactTable).to.equal('custom_table');
+    });
+  });
+
+  describe('normalizeUrl', () => {
+    it('should strip www. prefix from hostname', () => {
+      expect(normalizeUrl('https://www.casio.com/fr/watches/')).to.equal('https://casio.com/fr/watches/');
+      expect(normalizeUrl('https://www.example.com/path')).to.equal('https://example.com/path');
+    });
+
+    it('should leave URLs without www. unchanged', () => {
+      expect(normalizeUrl('https://casio.com/fr/watches/')).to.equal('https://casio.com/fr/watches/');
+      expect(normalizeUrl('https://example.com/path')).to.equal('https://example.com/path');
+    });
+
+    it('should handle invalid URLs gracefully', () => {
+      expect(normalizeUrl('not-a-url')).to.equal('not-a-url');
+      expect(normalizeUrl('')).to.equal('');
+    });
+
+    it('should preserve other URL components', () => {
+      expect(normalizeUrl('https://www.example.com:8080/path?q=1#hash'))
+        .to.equal('https://example.com:8080/path?q=1#hash');
     });
   });
 
