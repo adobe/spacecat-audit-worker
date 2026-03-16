@@ -16,16 +16,63 @@ import { Audit, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-share
 import { getScrapedDataForSiteId, limitConcurrency } from '../support/utils.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from './subpath-filter.js';
+import { getPositiveIntConfig } from './config.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
+function normalizeAnchorText(anchorText) {
+  if (typeof anchorText !== 'string') {
+    return '';
+  }
+
+  const normalized = anchorText.trim();
+  return normalized === '[no text]' ? '' : normalized;
+}
+
+function getSuggestionType() {
+  return 'CONTENT_UPDATE';
+}
+
+function getSuggestionRank(entry) {
+  const trafficDomain = Number.parseInt(entry?.trafficDomain, 10);
+  return Number.isFinite(trafficDomain) && trafficDomain > 0 ? trafficDomain : 1;
+}
+
+function sanitizeBrokenLinkData(entry = {}) {
+  return {
+    title: entry.title,
+    urlFrom: entry.urlFrom,
+    urlTo: entry.urlTo,
+    itemType: entry.itemType || 'link',
+    priority: entry.priority || 'high',
+    urlsSuggested: entry.urlsSuggested || [],
+    aiRationale: entry.aiRationale || '',
+    httpStatus: entry.httpStatus,
+    statusBucket: entry.statusBucket,
+    contentType: entry.contentType,
+    detectionSource: entry.detectionSource,
+    anchorText: normalizeAnchorText(entry.anchorText),
+  };
+}
+
+function parseSuggestionJson(content, log, siteId, contextLabel) {
+  try {
+    return JSON.parse(content);
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE}] [Site: ${siteId}] Invalid JSON for ${contextLabel}: ${error.message}`);
+    return null;
+  }
+}
 
 export const generateSuggestionData = async (finalUrl, brokenInternalLinks, context, site) => {
   const { log } = context;
 
   const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
   const azureOpenAIOptions = { responseFormat: 'json_object' };
-  const BATCH_SIZE = 100;
-  const MAX_CONCURRENT_AI_CALLS = 5;
+  /* c8 ignore start - config fallback parsing is defensive */
+  const internalLinksConfig = site?.getConfig?.()?.getHandlers?.()?.['broken-internal-links']?.config || {};
+  const BATCH_SIZE = getPositiveIntConfig(internalLinksConfig.suggestionBatchSize, 100);
+  const MAX_CONCURRENT_AI_CALLS = getPositiveIntConfig(internalLinksConfig.maxConcurrentAiCalls, 5);
+  /* c8 ignore stop */
 
   // Ensure brokenInternalLinks is an array
   if (!Array.isArray(brokenInternalLinks)) {
@@ -134,7 +181,7 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
       return null;
     }
 
-    return JSON.parse(content);
+    return parseSuggestionJson(content, log, site.getId(), `broken URL ${urlTo}`);
   };
 
   async function processBatches(batches, urlTo) {
@@ -183,7 +230,16 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
           return { ...link };
         }
 
-        const answer = JSON.parse(finalResponse.choices[0].message.content);
+        const answer = parseSuggestionJson(
+          finalResponse.choices[0].message.content,
+          log,
+          site.getId(),
+          `final suggestions for ${link.urlTo}`,
+        );
+        /* c8 ignore next 3 - Defensive guard when AI returns no answer */
+        if (!answer) {
+          return { ...link };
+        }
         return {
           ...link,
           urlsSuggested: answer.suggested_urls?.length > 0 ? answer.suggested_urls : [finalUrl],
@@ -227,7 +283,12 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
         continue;
       }
 
-      headerSuggestionsResults.push(JSON.parse(response.choices[0].message.content));
+      headerSuggestionsResults.push(parseSuggestionJson(
+        response.choices[0].message.content,
+        log,
+        site.getId(),
+        `header suggestions for ${link.urlTo}`,
+      ));
     } catch (error) {
       log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Header suggestion error: ${error.message}`);
       headerSuggestionsResults.push(null);
@@ -261,9 +322,16 @@ export async function syncBrokenInternalLinksSuggestions({
 
   // Custom merge function to preserve user-edited fields
   const mergeDataFunction = (existingData, newData) => {
-    const merged = {
+    const normalizedExistingData = {
       ...existingData,
-      ...newData,
+      anchorText: normalizeAnchorText(existingData?.anchorText),
+    };
+    delete normalizedExistingData.type;
+    delete normalizedExistingData.trafficDomain;
+
+    const merged = {
+      ...normalizedExistingData,
+      ...sanitizeBrokenLinkData(newData),
     };
 
     // Preserve urlEdited and isEdited flag if user has made a selection (AI or custom)
@@ -279,34 +347,40 @@ export async function syncBrokenInternalLinksSuggestions({
     return merged;
   };
 
+  const mergeStatusFunction = (existing) => {
+    const currentStatus = existing.getStatus();
+    if (currentStatus === SuggestionDataAccess.STATUSES.REJECTED) {
+      return null;
+    }
+
+    if (
+      currentStatus === SuggestionDataAccess.STATUSES.OUTDATED
+      || currentStatus === SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+    ) {
+      return SuggestionDataAccess.STATUSES.NEW;
+    }
+
+    return null;
+  };
+
   await syncSuggestions({
     opportunity,
     newData: brokenInternalLinks,
     context,
     buildKey,
     statusToSetForOutdated: SuggestionDataAccess.STATUSES.NEW,
+    newSuggestionStatus: SuggestionDataAccess.STATUSES.NEW,
+    mergeStatusFunction,
     mergeDataFunction,
     mapNewSuggestion: (entry) => {
       const itemType = entry.itemType || 'link';
-      // Internal-links must never set trafficDomain to 0 (use 1 when missing or 0)
-      const trafficDomain = (entry.trafficDomain === 0 || entry.trafficDomain == null)
-        ? 1
-        : entry.trafficDomain;
+      const rank = getSuggestionRank(entry);
 
       return {
         opportunityId,
-        type: 'CONTENT_UPDATE',
-        rank: trafficDomain,
-        data: {
-          title: entry.title,
-          urlFrom: entry.urlFrom,
-          urlTo: entry.urlTo,
-          itemType,
-          priority: entry.priority || 'high',
-          urlsSuggested: entry.urlsSuggested || [],
-          aiRationale: entry.aiRationale || '',
-          trafficDomain,
-        },
+        type: getSuggestionType(itemType),
+        rank,
+        data: sanitizeBrokenLinkData(entry),
       };
     },
   });

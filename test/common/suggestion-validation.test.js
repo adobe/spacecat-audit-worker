@@ -117,5 +117,25 @@ describe('Suggestion Validation Tests', () => {
     expect(suggestions[1].status).to.equal(Suggestion.STATUSES.PENDING_VALIDATION);
   });
 
+  it('should honor explicit new suggestion status overrides', async () => {
+    context.site.requiresValidation = true;
+
+    await syncSuggestions({
+      context,
+      opportunity,
+      newData,
+      buildKey,
+      mapNewSuggestion,
+      newSuggestionStatus: Suggestion.STATUSES.NEW,
+    });
+
+    const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
+    expect(addSuggestionsCall).to.exist;
+
+    const suggestions = addSuggestionsCall.args[0];
+    expect(suggestions[0].status).to.equal(Suggestion.STATUSES.NEW);
+    expect(suggestions[1].status).to.equal(Suggestion.STATUSES.NEW);
+  });
+
   // Removed legacy list test; relies on entitlement-driven requiresValidation only
 });

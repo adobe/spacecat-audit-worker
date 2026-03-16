@@ -151,6 +151,134 @@ describe('generateSuggestionData', async function test() {
     expect(azureOpenAIClient.fetchChatCompletion).to.not.have.been.called;
   });
 
+  it('should fallback to safe defaults when suggestion config values are non-positive', async () => {
+    const azureClientStub = {
+      fetchChatCompletion: sandbox.stub().resolves({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              suggested_urls: ['https://example.com/fix'],
+              aiRationale: 'Rationale',
+            }),
+          },
+          finish_reason: 'stop',
+        }],
+      }),
+    };
+
+    const mockedModule = await esmock('../../../src/internal-links/suggestions-generator.js', {
+      '@adobe/spacecat-shared-gpt-client': {
+        AzureOpenAIClient: {
+          createFrom: () => azureClientStub,
+        },
+      },
+      '../../../src/support/utils.js': {
+        getScrapedDataForSiteId: sandbox.stub().resolves({
+          siteData: ['https://example.com/page1'],
+          headerLinks: ['https://example.com/home'],
+        }),
+        limitConcurrency: async (tasks) => Promise.all(tasks.map((task) => task())),
+      },
+      '../../../src/internal-links/subpath-filter.js': {
+        filterByAuditScope: (data) => data,
+        extractPathPrefix: () => null,
+      },
+      '@adobe/spacecat-shared-utils': {
+        getPrompt: async (payload) => payload,
+        isNonEmptyArray: (arr) => Array.isArray(arr) && arr.length > 0,
+      },
+    });
+
+    const siteWithInvalidSuggestionConfig = {
+      ...site,
+      getConfig: () => ({
+        getHandlers: () => ({
+          'broken-internal-links': {
+            config: {
+              suggestionBatchSize: 0,
+              maxConcurrentAiCalls: 0,
+            },
+          },
+        }),
+      }),
+    };
+
+    const result = await mockedModule.generateSuggestionData(
+      'https://example.com',
+      [{ urlTo: 'https://example.com/broken-link' }],
+      context,
+      siteWithInvalidSuggestionConfig,
+    );
+
+    expect(result).to.have.lengthOf(1);
+    expect(result[0].urlsSuggested).to.deep.equal(['https://example.com/fix']);
+    expect(azureClientStub.fetchChatCompletion).to.have.been.called;
+  });
+
+  it('should use configured positive suggestion values when provided', async () => {
+    const azureClientStub = {
+      fetchChatCompletion: sandbox.stub().resolves({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              suggested_urls: ['https://example.com/fix'],
+              aiRationale: 'Rationale',
+            }),
+          },
+          finish_reason: 'stop',
+        }],
+      }),
+    };
+
+    const mockedModule = await esmock('../../../src/internal-links/suggestions-generator.js', {
+      '@adobe/spacecat-shared-gpt-client': {
+        AzureOpenAIClient: {
+          createFrom: () => azureClientStub,
+        },
+      },
+      '../../../src/support/utils.js': {
+        getScrapedDataForSiteId: sandbox.stub().resolves({
+          siteData: ['https://example.com/page1', 'https://example.com/page2'],
+          headerLinks: ['https://example.com/home'],
+        }),
+        limitConcurrency: async (tasks) => Promise.all(tasks.map((task) => task())),
+      },
+      '../../../src/internal-links/subpath-filter.js': {
+        filterByAuditScope: (data) => data,
+        extractPathPrefix: () => null,
+      },
+      '@adobe/spacecat-shared-utils': {
+        getPrompt: async (payload) => payload,
+        isNonEmptyArray: (arr) => Array.isArray(arr) && arr.length > 0,
+      },
+    });
+
+    const siteWithValidSuggestionConfig = {
+      ...site,
+      getConfig: () => ({
+        getHandlers: () => ({
+          'broken-internal-links': {
+            config: {
+              suggestionBatchSize: 1,
+              maxConcurrentAiCalls: 2,
+            },
+          },
+        }),
+      }),
+    };
+
+    const result = await mockedModule.generateSuggestionData(
+      'https://example.com',
+      [{ urlTo: 'https://example.com/broken-link' }],
+      context,
+      siteWithValidSuggestionConfig,
+    );
+
+    expect(result).to.have.lengthOf(1);
+    expect(result[0].urlsSuggested).to.deep.equal(['https://example.com/fix']);
+    expect(azureClientStub.fetchChatCompletion).to.have.been.called;
+  });
+
   it('processes suggestions for broken internal links, defaults to base URL if none found', async () => {
     context.s3Client.send.onCall(0).resolves({
       Contents: [
@@ -1109,6 +1237,58 @@ describe('generateSuggestionData', async function test() {
     expect(context.log.error).to.have.been.calledWithMatch(/Empty response content for/);
   });
 
+  it('should handle malformed JSON response content', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site1/scrape.json' },
+      ],
+      IsTruncated: false,
+      NextContinuationToken: 'token',
+    });
+    context.s3Client.send.resolves(mockFileResponse);
+    configuration.isHandlerEnabledForSite.returns(true);
+
+    let callCount = 0;
+    azureOpenAIClient.fetchChatCompletion.callsFake(async () => {
+      callCount += 1;
+      if (callCount <= 2) {
+        return {
+          choices: [{
+            message: {
+              content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
+            },
+            finish_reason: 'stop',
+          }],
+        };
+      }
+
+      if (callCount === 3) {
+        return {
+          choices: [{
+            message: {
+              content: '{"suggested_urls":',
+            },
+            finish_reason: 'stop',
+          }],
+        };
+      }
+
+      return {
+        choices: [{
+          message: {
+            content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
+          },
+          finish_reason: 'stop',
+        }],
+      };
+    });
+
+    const result = await generateSuggestionData('https://example.com', brokenInternalLinksData, context, site);
+
+    expect(result).to.have.lengthOf(2);
+    expect(context.log.error).to.have.been.calledWithMatch(/Invalid JSON for broken URL/);
+  });
+
   it('should handle final response with no choices', async () => {
     context.s3Client.send.onCall(0).resolves({
       Contents: [
@@ -1239,6 +1419,7 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     expect(callArgs.newData).to.deep.equal(brokenInternalLinks);
     expect(callArgs.context).to.equal(testContext);
     expect(callArgs.statusToSetForOutdated).to.equal(SuggestionDataAccess.STATUSES.NEW);
+    expect(callArgs.newSuggestionStatus).to.equal(SuggestionDataAccess.STATUSES.NEW);
     expect(callArgs.buildKey(brokenInternalLinks[0])).to.equal('https://example.com/from1-https://example.com/to1-link');
 
 
@@ -1255,7 +1436,11 @@ describe('syncBrokenInternalLinksSuggestions', () => {
         priority: 'high',
         urlsSuggested: ['https://example.com/suggested1'],
         aiRationale: 'Test rationale',
-        trafficDomain: 100,
+        httpStatus: undefined,
+        statusBucket: undefined,
+        contentType: undefined,
+        detectionSource: undefined,
+        anchorText: '',
       },
     });
   });
@@ -1301,7 +1486,11 @@ describe('syncBrokenInternalLinksSuggestions', () => {
         priority: 'high',
         urlsSuggested: [],
         aiRationale: '',
-        trafficDomain: 50,
+        httpStatus: undefined,
+        statusBucket: undefined,
+        contentType: undefined,
+        detectionSource: undefined,
+        anchorText: '',
       },
     });
 
@@ -1336,7 +1525,7 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     expect(mappedSuggestion.data.aiRationale).to.equal('');
   });
 
-  it('should use trafficDomain 1 (never 0) when entry.trafficDomain is null, undefined, or 0', async () => {
+  it('should use rank 1 (never 0) when entry.trafficDomain is null, undefined, or 0', async () => {
     const brokenInternalLinks = [
       { urlFrom: 'https://example.com/from1', urlTo: 'https://example.com/to1' },
       { urlFrom: 'https://example.com/from2', urlTo: 'https://example.com/to2', trafficDomain: null },
@@ -1356,11 +1545,140 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     const zeroTraffic = callArgs.mapNewSuggestion(brokenInternalLinks[2]);
 
     expect(noTraffic.rank).to.equal(1);
-    expect(noTraffic.data.trafficDomain).to.equal(1);
+    expect(noTraffic.data.trafficDomain).to.equal(undefined);
     expect(nullTraffic.rank).to.equal(1);
-    expect(nullTraffic.data.trafficDomain).to.equal(1);
+    expect(nullTraffic.data.trafficDomain).to.equal(undefined);
     expect(zeroTraffic.rank).to.equal(1);
-    expect(zeroTraffic.data.trafficDomain).to.equal(1);
+    expect(zeroTraffic.data.trafficDomain).to.equal(undefined);
+  });
+
+  it('should keep rank while omitting persisted trafficDomain from suggestion payloads', async () => {
+    const brokenInternalLinks = [
+      {
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+        trafficDomain: 27,
+        detectionSource: 'crawl',
+      },
+      {
+        urlFrom: 'https://example.com/from2',
+        urlTo: 'https://example.com/to2',
+        trafficDomain: 13,
+        detectionSource: 'linkchecker',
+      },
+    ];
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks,
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    const callArgs = mockSyncSuggestions.getCall(0).args[0];
+    const crawlSuggestion = callArgs.mapNewSuggestion(brokenInternalLinks[0]);
+    const linkCheckerSuggestion = callArgs.mapNewSuggestion(brokenInternalLinks[1]);
+
+    expect(crawlSuggestion.rank).to.equal(27);
+    expect(crawlSuggestion.data.trafficDomain).to.equal(undefined);
+    expect(linkCheckerSuggestion.rank).to.equal(13);
+    expect(linkCheckerSuggestion.data.trafficDomain).to.equal(undefined);
+  });
+
+  it('should normalize legacy [no text] anchor placeholders to empty strings', async () => {
+    const brokenInternalLinks = [
+      {
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+        trafficDomain: 10,
+        anchorText: '[no text]',
+      },
+    ];
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks,
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    const callArgs = mockSyncSuggestions.getCall(0).args[0];
+    const suggestion = callArgs.mapNewSuggestion(brokenInternalLinks[0]);
+
+    expect(suggestion.data.anchorText).to.equal('');
+  });
+
+  it('should reset OUTDATED suggestions back to NEW instead of PENDING_VALIDATION', async () => {
+    const brokenInternalLinks = [
+      {
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+        trafficDomain: 10,
+      },
+    ];
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks,
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    const callArgs = mockSyncSuggestions.getCall(0).args[0];
+    const mergeStatusFn = callArgs.mergeStatusFunction;
+    const existingSuggestion = {
+      getStatus: () => SuggestionDataAccess.STATUSES.OUTDATED,
+    };
+
+    expect(mergeStatusFn(existingSuggestion)).to.equal(SuggestionDataAccess.STATUSES.NEW);
+  });
+
+  it('should reset PENDING_VALIDATION suggestions back to NEW on rerun', async () => {
+    const brokenInternalLinks = [
+      {
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+        trafficDomain: 10,
+      },
+    ];
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks,
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    const callArgs = mockSyncSuggestions.getCall(0).args[0];
+    const mergeStatusFn = callArgs.mergeStatusFunction;
+    const existingSuggestion = {
+      getStatus: () => SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
+    };
+
+    expect(mergeStatusFn(existingSuggestion)).to.equal(SuggestionDataAccess.STATUSES.NEW);
+  });
+
+  it('should preserve non-empty anchor text values', async () => {
+    const brokenInternalLinks = [
+      {
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+        trafficDomain: 10,
+        anchorText: 'Read more',
+      },
+    ];
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks,
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    const callArgs = mockSyncSuggestions.getCall(0).args[0];
+    const suggestion = callArgs.mapNewSuggestion(brokenInternalLinks[0]);
+
+    expect(suggestion.data.anchorText).to.equal('Read more');
   });
 
   it('should preserve urlEdited when isEdited is true', async () => {
@@ -1410,7 +1728,7 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     expect(result.urlEdited).to.equal('https://example.com/user-fixed-url');
     expect(result.isEdited).to.equal(true);
     expect(result.title).to.equal('New Title');
-    expect(result.trafficDomain).to.equal(100);
+    expect(result.trafficDomain).to.equal(undefined);
     expect(result.urlsSuggested).to.deep.equal(['https://example.com/new-suggested']);
   });
 
