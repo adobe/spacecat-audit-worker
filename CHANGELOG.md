@@ -1,3 +1,10 @@
+# [1.358.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.357.1...v1.358.0) (2026-03-16)
+
+
+### Features
+
+* enhancing internal links audit with linkchecker ([#2101](https://github.com/adobe/spacecat-audit-worker/issues/2101)) ([da1a67e](https://github.com/adobe/spacecat-audit-worker/commit/da1a67e015faa225d54ed694cd6a675e402fd70c))
+
 ## [1.357.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.357.0...v1.357.1) (2026-03-16)
 
 
