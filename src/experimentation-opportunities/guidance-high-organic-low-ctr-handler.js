@@ -67,9 +67,11 @@ function filterHighOrganicLowCtrOpportunities(opportunities) {
  * @param {Object} opportunity - The opportunity to remove
  * @returns {Promise<void>}
  */
-async function removeOpportunityWithSuggestions(opportunity) {
+async function removeOpportunityWithSuggestions(opportunity, Suggestion) {
   const suggestions = await opportunity.getSuggestions();
-  await Promise.all(suggestions.map((s) => s.remove()));
+  if (suggestions.length > 0) {
+    await Suggestion.removeByIds(suggestions.map((s) => s.getId()));
+  }
   await opportunity.remove();
 }
 
@@ -121,7 +123,7 @@ export default async function handler(message, context) {
           `Replacing ${HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE} opportunity for ${lowestPage} `
           + `(pageViews: ${lowestScore}) with ${url} (pageViews: ${newPageViews})`,
         );
-        await removeOpportunityWithSuggestions(lowestOpportunity);
+        await removeOpportunityWithSuggestions(lowestOpportunity, Suggestion);
       } else {
         log.warn(
           `Max opportunities (${MAX_HIGH_ORGANIC_LOW_CTR_OPPORTUNITIES}) for ${HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE} `
@@ -151,7 +153,9 @@ export default async function handler(message, context) {
     opportunity.setUpdatedBy('system');
     opportunity = await opportunity.save();
     // Delete previous suggestions if any exist
-    await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
+    if (existingSuggestions.length > 0) {
+      await Suggestion.removeByIds(existingSuggestions.map((s) => s.getId()));
+    }
   }
 
   // map the suggestions received from M to PSS

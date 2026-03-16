@@ -119,6 +119,7 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     Opportunity = {
       allBySiteId: sandbox.stub(),
       create: sandbox.stub(),
+      saveMany: sandbox.stub().resolves(),
     };
     Audit = { findById: sandbox.stub() };
 
@@ -190,7 +191,7 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
 
     // The existing opportunity for the same URL should be marked as IGNORED
     expect(existingOpptyForSameUrl.setStatus).to.have.been.calledWith('IGNORED');
-    expect(existingOpptyForSameUrl.save).to.have.been.called;
+    expect(Opportunity.saveMany).to.have.been.calledWith([existingOpptyForSameUrl]);
 
     expect(result.status).to.equal(ok().status);
   });
@@ -243,11 +244,10 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
 
     // Only the system opportunity should be marked as IGNORED
     expect(systemOpptyForSameUrl.setStatus).to.have.been.calledWith('IGNORED');
-    expect(systemOpptyForSameUrl.save).to.have.been.called;
+    expect(Opportunity.saveMany).to.have.been.calledWith([systemOpptyForSameUrl]);
 
     // The user-modified opportunity should not be touched
     expect(userOpptyForSameUrl.setStatus).to.not.have.been.called;
-    expect(userOpptyForSameUrl.save).to.not.have.been.called;
 
     expect(result.status).to.equal(ok().status);
   });
@@ -356,7 +356,7 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
 
     // Only the existing opportunity should be marked as IGNORED, not the newly created one
     expect(existingOppty.setStatus).to.have.been.calledWith('IGNORED');
-    expect(existingOppty.save).to.have.been.called;
+    expect(Opportunity.saveMany).to.have.been.calledWith([existingOppty]);
     expect(result.status).to.equal(ok().status);
   });
 

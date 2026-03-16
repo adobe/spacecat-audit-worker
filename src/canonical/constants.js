@@ -17,6 +17,12 @@ export const CANONICAL_CHECKS = Object.freeze({
     explanation: 'The canonical tag is missing, which can lead to duplicate content issues and negatively affect SEO rankings.',
     suggestion: 'Add a canonical tag to the head section',
   },
+  CANONICAL_TAG_NO_HREF: {
+    check: 'canonical-tag-no-href',
+    title: 'Canonical Tag Missing href',
+    explanation: 'The canonical tag exists but has no href attribute, making it ineffective for SEO.',
+    suggestion: 'Add an href attribute to the canonical tag pointing to the preferred URL of this page.',
+  },
   CANONICAL_TAG_MULTIPLE: {
     check: 'canonical-tag-multiple',
     title: 'Multiple Canonical Tags',

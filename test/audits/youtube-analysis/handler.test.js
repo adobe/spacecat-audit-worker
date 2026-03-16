@@ -22,39 +22,36 @@ import { MockContextBuilder } from '../../shared.js';
 use(sinonChai);
 use(chaiAsPromised);
 
-describe('Wikipedia Analysis Handler', () => {
+describe('YouTube Analysis Handler', () => {
   let sandbox;
   let context;
   let mockSite;
   let mockAudit;
-  let mockConfiguration;
   let mockStoreClient;
-  let wikipediaAnalysisHandler;
+  let youtubeAnalysisHandler;
   let StoreEmptyError;
 
   const baseURL = 'https://example.com';
   const siteId = 'test-site-id';
   const auditId = 'test-audit-id';
 
-  // Mock store data
   const mockUrls = [
-    { url: 'https://en.wikipedia.org/wiki/Example_Corp', type: 'wikipedia', metadata: { title: 'Example Corp' } },
-    { url: 'https://en.wikipedia.org/wiki/Example_Products', type: 'wikipedia', metadata: { title: 'Example Products' } },
+    { url: 'https://www.youtube.com/watch?v=abc', type: 'youtube', metadata: {} },
+    { url: 'https://www.youtube.com/watch?v=Qdef', type: 'youtube', metadata: {} },
   ];
 
   const mockSentimentConfig = {
     topics: [
-      { topicId: 'topic-1', name: '2026 Product Launch', subPrompts: ['product quality', 'features'] },
+      { topicId: 'topic-1', name: 'Video Content Quality', subPrompts: ['engagement', 'production value'] },
     ],
     guidelines: [
-      { guidelineId: 'guide-1', name: 'Quality Focus', instruction: 'Focus on product quality', audits: ['wikipedia-analysis'] },
+      { guidelineId: 'guide-1', name: 'YouTube Best Practices', instruction: 'Focus on viewer engagement', audits: ['youtube-analysis'] },
     ],
   };
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
 
-    // Create StoreEmptyError class for testing
     StoreEmptyError = class extends Error {
       constructor(storeName, siteIdParam, details = '') {
         super(`${storeName} returned empty results for siteId: ${siteIdParam}${details ? `. ${details}` : ''}`);
@@ -64,7 +61,6 @@ describe('Wikipedia Analysis Handler', () => {
       }
     };
 
-    // Mock StoreClient
     mockStoreClient = {
       getUrls: sandbox.stub().resolves(mockUrls),
       getGuidelines: sandbox.stub().resolves(mockSentimentConfig),
@@ -74,20 +70,12 @@ describe('Wikipedia Analysis Handler', () => {
       createFrom: sandbox.stub().returns(mockStoreClient),
     };
 
-    // Load handler with mocked StoreClient
-    wikipediaAnalysisHandler = await esmock('../../../src/wikipedia-analysis/handler.js', {
+    youtubeAnalysisHandler = await esmock('../../../src/youtube-analysis/handler.js', {
       '../../../src/utils/store-client.js': {
         default: mockStoreClientClass,
         StoreEmptyError,
-        URL_TYPES: { WIKIPEDIA: 'wikipedia-analysis' },
-        GUIDELINE_TYPES: { WIKIPEDIA_ANALYSIS: 'wikipedia-analysis' },
       },
     });
-
-    mockConfiguration = {
-      isHandlerEnabledForSite: sandbox.stub().returns(true),
-      getHandlers: sandbox.stub().returns({}),
-    };
 
     mockSite = {
       getId: sandbox.stub().returns(siteId),
@@ -126,7 +114,7 @@ describe('Wikipedia Analysis Handler', () => {
             findById: sandbox.stub().resolves(mockSite),
           },
           Configuration: {
-            findLatest: sandbox.stub().resolves(mockConfiguration),
+            findLatest: sandbox.stub().resolves({ isHandlerEnabledForSite: sandbox.stub().returns(true), getHandlers: sandbox.stub().returns({}) }),
           },
         },
       })
@@ -139,26 +127,26 @@ describe('Wikipedia Analysis Handler', () => {
 
   describe('Handler Export', () => {
     it('should export a valid audit handler', () => {
-      expect(wikipediaAnalysisHandler.default).to.be.an('object');
-      expect(wikipediaAnalysisHandler.default).to.have.property('runner');
-      expect(wikipediaAnalysisHandler.default.runner).to.be.a('function');
+      expect(youtubeAnalysisHandler.default).to.be.an('object');
+      expect(youtubeAnalysisHandler.default).to.have.property('runner');
+      expect(youtubeAnalysisHandler.default.runner).to.be.a('function');
     });
 
     it('should have URL resolver configured', () => {
-      expect(wikipediaAnalysisHandler.default).to.have.property('urlResolver');
-      expect(wikipediaAnalysisHandler.default.urlResolver).to.be.a('function');
+      expect(youtubeAnalysisHandler.default).to.have.property('urlResolver');
+      expect(youtubeAnalysisHandler.default.urlResolver).to.be.a('function');
     });
 
     it('should have post processors configured', () => {
-      expect(wikipediaAnalysisHandler.default).to.have.property('postProcessors');
-      expect(wikipediaAnalysisHandler.default.postProcessors).to.be.an('array');
-      expect(wikipediaAnalysisHandler.default.postProcessors).to.have.lengthOf(1);
+      expect(youtubeAnalysisHandler.default).to.have.property('postProcessors');
+      expect(youtubeAnalysisHandler.default.postProcessors).to.be.an('array');
+      expect(youtubeAnalysisHandler.default.postProcessors).to.have.lengthOf(1);
     });
   });
 
-  describe('runWikipediaAnalysisAudit (via runner)', () => {
+  describe('runYouTubeAnalysisAudit (via runner)', () => {
     it('should return pending_analysis status with config and store data when successful', async () => {
-      const result = await wikipediaAnalysisHandler.default.runner(baseURL, context, mockSite);
+      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.status).to.equal('pending_analysis');
@@ -171,7 +159,6 @@ describe('Wikipedia Analysis Handler', () => {
       expect(result.auditResult.config.industry).to.equal('Technology');
       expect(result.auditResult.config.brandKeywords).to.deep.equal(['example', 'corp']);
 
-      // Verify store data is included
       expect(result.auditResult.storeData).to.exist;
       expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
       expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(mockSentimentConfig);
@@ -180,16 +167,16 @@ describe('Wikipedia Analysis Handler', () => {
     });
 
     it('should call StoreClient with correct parameters', async () => {
-      await wikipediaAnalysisHandler.default.runner(baseURL, context, mockSite);
+      await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'wikipedia-analysis');
-      expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, 'wikipedia-analysis');
+      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'youtube-analysis');
+      expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, 'youtube-analysis');
     });
 
     it('should return error when urlStore returns empty', async () => {
-      mockStoreClient.getUrls.rejects(new StoreEmptyError('urlStore', siteId, 'No wikipedia URLs found'));
+      mockStoreClient.getUrls.rejects(new StoreEmptyError('urlStore', siteId, 'No youtube-analysis URLs found'));
 
-      const result = await wikipediaAnalysisHandler.default.runner(baseURL, context, mockSite);
+      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.include('urlStore returned empty results');
@@ -200,7 +187,7 @@ describe('Wikipedia Analysis Handler', () => {
     it('should return error when guidelinesStore returns empty', async () => {
       mockStoreClient.getGuidelines.rejects(new StoreEmptyError('guidelinesStore', 'N/A', 'No guidelines found'));
 
-      const result = await wikipediaAnalysisHandler.default.runner(baseURL, context, mockSite);
+      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.include('guidelinesStore returned empty results');
@@ -217,7 +204,7 @@ describe('Wikipedia Analysis Handler', () => {
       });
       mockSite.getBaseURL.returns('');
 
-      const result = await wikipediaAnalysisHandler.default.runner('', context, mockSite);
+      const result = await youtubeAnalysisHandler.default.runner('', context, mockSite);
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.equal('No company name configured for this site');
@@ -234,7 +221,7 @@ describe('Wikipedia Analysis Handler', () => {
       });
       mockSite.getBaseURL.returns('https://bmw.com');
 
-      const result = await wikipediaAnalysisHandler.default.runner('https://bmw.com', context, mockSite);
+      const result = await youtubeAnalysisHandler.default.runner('https://bmw.com', context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.config.companyName).to.equal('https://bmw.com');
@@ -244,7 +231,7 @@ describe('Wikipedia Analysis Handler', () => {
       mockSite.getConfig.returns(null);
       mockSite.getBaseURL.returns('https://test-company.com');
 
-      const result = await wikipediaAnalysisHandler.default.runner('https://test-company.com', context, mockSite);
+      const result = await youtubeAnalysisHandler.default.runner('https://test-company.com', context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.config.companyName).to.equal('https://test-company.com');
@@ -253,7 +240,7 @@ describe('Wikipedia Analysis Handler', () => {
     it('should handle general errors during execution', async () => {
       mockSite.getConfig.throws(new Error('Config error'));
 
-      const result = await wikipediaAnalysisHandler.default.runner(baseURL, context, mockSite);
+      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.equal('Config error');
@@ -283,14 +270,14 @@ describe('Wikipedia Analysis Handler', () => {
         },
       };
 
-      const postProcessor = wikipediaAnalysisHandler.default.postProcessors[0];
+      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
       await postProcessor(baseURL, auditData, context);
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       expect(context.sqs.sendMessage).to.have.been.calledWith(
         'spacecat-to-mystique',
         sinon.match({
-          type: 'guidance:wikipedia-analysis',
+          type: 'guidance:youtube-analysis',
           siteId,
           url: baseURL,
           auditId,
@@ -319,12 +306,12 @@ describe('Wikipedia Analysis Handler', () => {
         },
       };
 
-      const postProcessor = wikipediaAnalysisHandler.default.postProcessors[0];
+      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
       const result = await postProcessor(baseURL, auditData, context);
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.info).to.have.been.calledWith('[Wikipedia] Audit failed, skipping Mystique message');
+      expect(context.log.info).to.have.been.calledWith('[YouTube] Audit failed, skipping Mystique message');
     });
 
     it('should skip sending message when SQS is not configured', async () => {
@@ -339,11 +326,11 @@ describe('Wikipedia Analysis Handler', () => {
         },
       };
 
-      const postProcessor = wikipediaAnalysisHandler.default.postProcessors[0];
+      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
       const result = await postProcessor(baseURL, auditData, context);
 
       expect(result).to.deep.equal(auditData);
-      expect(context.log.warn).to.have.been.calledWith('[Wikipedia] SQS or Mystique queue not configured, skipping message');
+      expect(context.log.warn).to.have.been.calledWith('[YouTube] SQS or Mystique queue not configured, skipping message');
     });
 
     it('should skip sending message when queue env is not set', async () => {
@@ -358,7 +345,7 @@ describe('Wikipedia Analysis Handler', () => {
         },
       };
 
-      const postProcessor = wikipediaAnalysisHandler.default.postProcessors[0];
+      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
       const result = await postProcessor(baseURL, auditData, context);
 
       expect(result).to.deep.equal(auditData);
@@ -376,12 +363,12 @@ describe('Wikipedia Analysis Handler', () => {
         },
       };
 
-      const postProcessor = wikipediaAnalysisHandler.default.postProcessors[0];
+      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
       const result = await postProcessor(baseURL, auditData, context);
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.warn).to.have.been.calledWith('[Wikipedia] Site not found, skipping Mystique message');
+      expect(context.log.warn).to.have.been.calledWith('[YouTube] Site not found, skipping Mystique message');
     });
 
     it('should throw error when SQS send fails', async () => {
@@ -396,9 +383,9 @@ describe('Wikipedia Analysis Handler', () => {
         },
       };
 
-      const postProcessor = wikipediaAnalysisHandler.default.postProcessors[0];
+      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
-      expect(context.log.error).to.have.been.calledWith('[Wikipedia] Failed to send Mystique message: SQS Error');
+      expect(context.log.error).to.have.been.calledWith('[YouTube] Failed to send Mystique message: SQS Error');
     });
   });
 });
