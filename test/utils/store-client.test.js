@@ -60,6 +60,7 @@ describe('StoreClient', () => {
         WIKIPEDIA: 'wikipedia-analysis',
         REDDIT: 'reddit-analysis',
         YOUTUBE: 'youtube-analysis',
+        CITED: 'top-cited-analysis',
       });
     });
 
@@ -68,6 +69,7 @@ describe('StoreClient', () => {
         WIKIPEDIA_ANALYSIS: 'wikipedia-analysis',
         REDDIT_ANALYSIS: 'reddit-analysis',
         YOUTUBE_ANALYSIS: 'youtube-analysis',
+        CITED_ANALYSIS: 'cited-analysis',
       });
     });
   });
