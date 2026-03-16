@@ -12,35 +12,6 @@
 
 import { prependSchema, stripWWW } from '@adobe/spacecat-shared-utils';
 
-const CROSS_SCOPE_SHARED_ITEM_TYPES = new Set([
-  'form',
-  'image',
-  'svg',
-  'css',
-  'js',
-  'iframe',
-  'video',
-  'audio',
-  'media',
-]);
-
-function isLocaleLikePathSegment(segment) {
-  return /^[a-z]{2}(?:[-_][a-z0-9]{2,8}){0,2}$/i.test(segment);
-}
-
-function parseAgainstBase(url, parsedBaseURL) {
-  /* c8 ignore next 3 - Guard: null/empty URL */
-  if (!url) {
-    return null;
-  }
-
-  if (url.startsWith('http://') || url.startsWith('https://')) {
-    return new URL(prependSchema(url));
-  }
-
-  return new URL(url, parsedBaseURL);
-}
-
 /**
  * Checks if a URL is within the audit scope defined by baseURL.
  * For baseURL with subpath (e.g., bulk.com/uk), only URLs starting with that subpath are included.
@@ -94,34 +65,6 @@ export function isWithinAuditScope(url, baseURL) {
     return parsedUrl.pathname.startsWith(basePathWithSlash) || parsedUrl.pathname === basePath;
   } catch (error) {
     // If URL parsing fails, exclude it to be safe
-    return false;
-  }
-}
-
-export function isSharedInternalResource(url, baseURL, itemType) {
-  if (!url || !baseURL || !CROSS_SCOPE_SHARED_ITEM_TYPES.has(itemType)) {
-    return false;
-  }
-
-  try {
-    const parsedBaseURL = new URL(prependSchema(baseURL));
-    const basePath = parsedBaseURL.pathname;
-    const hasBasePath = basePath && basePath !== '/';
-
-    if (!hasBasePath) {
-      return false;
-    }
-
-    const parsedUrl = parseAgainstBase(url, parsedBaseURL);
-    const normalizedUrlHost = stripWWW(parsedUrl.hostname);
-    const normalizedBaseHost = stripWWW(parsedBaseURL.hostname);
-    if (normalizedUrlHost !== normalizedBaseHost || parsedUrl.port !== parsedBaseURL.port) {
-      return false;
-    }
-
-    const basePathWithSlash = `${basePath}/`;
-    return !(parsedUrl.pathname.startsWith(basePathWithSlash) || parsedUrl.pathname === basePath);
-  } catch (error) {
     return false;
   }
 }
@@ -215,12 +158,9 @@ export function extractPathPrefix(url) {
       return '';
     }
 
+    // Get first path segment as locale/subpath
     const segments = pathname.split('/').filter((seg) => seg.length > 0);
-    if (segments.length === 0) {
-      return '';
-    }
-
-    return isLocaleLikePathSegment(segments[0]) ? `/${segments[0]}` : '';
+    return segments.length > 0 ? `/${segments[0]}` : '';
   } catch (error) {
     return '';
   }

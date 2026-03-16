@@ -10,20 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
-const DEFAULT_SPLUNK_CLIENT_MODULE = '@adobe/spacecat-shared-splunk-client';
-const SPLUNK_CLIENT_MODULE_ENV = 'SPACECAT_SPLUNK_CLIENT_MODULE';
-
-export async function loadSplunkClientClass() {
-  const moduleName = process.env[SPLUNK_CLIENT_MODULE_ENV] || DEFAULT_SPLUNK_CLIENT_MODULE;
-  try {
-    const module = await import(moduleName);
-    return module.default;
-  } catch (error) {
-    throw new Error(`Failed to load Splunk client module (${moduleName}): ${error.message}`);
-  }
-}
+import SplunkAPIClient from '@adobe/spacecat-shared-splunk-client';
 
 export async function createSplunkClient(context) {
-  const SplunkAPIClient = await loadSplunkClientClass();
   return SplunkAPIClient.createFrom(context);
 }

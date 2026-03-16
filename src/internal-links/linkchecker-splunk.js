@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { createSplunkClient } from '../support/splunk-client-loader.js';
+import { createSplunkClient } from './splunk-client.js';
 import { getTimeoutStatus } from './batch-state.js';
 import { sleep } from '../support/utils.js';
 

@@ -1286,7 +1286,7 @@ describe('generateSuggestionData', async function test() {
     const result = await generateSuggestionData('https://example.com', brokenInternalLinksData, context, site);
 
     expect(result).to.have.lengthOf(2);
-    expect(context.log.error).to.have.been.calledWithMatch(/Invalid JSON for broken URL/);
+    expect(context.log.error).to.have.been.calledWithMatch(/Batch processing error: Unexpected end of JSON input/);
   });
 
   it('should handle final response with no choices', async () => {
@@ -1359,7 +1359,6 @@ describe('syncBrokenInternalLinksSuggestions', () => {
   let testSandbox;
   let testContext;
   let testOpportunity;
-  let mockSyncSuggestions;
   let syncBrokenInternalLinksSuggestions;
 
   beforeEach(async () => {
@@ -1368,32 +1367,44 @@ describe('syncBrokenInternalLinksSuggestions', () => {
       .withSandbox(testSandbox)
       .withOverrides({
         env: {},
+        dataAccess: {
+          Suggestion: {
+            saveMany: testSandbox.stub().resolves(),
+            bulkUpdateStatus: testSandbox.stub().resolves(),
+          },
+        },
       })
       .build();
 
     testOpportunity = {
       getId: () => 'oppty-id-1',
+      getSuggestions: testSandbox.stub().resolves([]),
       addSuggestions: testSandbox.stub().resolves({
         createdItems: [],
         errorItems: [],
       }),
     };
 
-    // Mock syncSuggestions using esmock
-    mockSyncSuggestions = testSandbox.stub().resolves();
-    const mockedModule = await esmock('../../../src/internal-links/suggestions-generator.js', {
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: mockSyncSuggestions,
-      },
-    });
-    syncBrokenInternalLinksSuggestions = mockedModule.syncBrokenInternalLinksSuggestions;
+    ({ syncBrokenInternalLinksSuggestions } = await import('../../../src/internal-links/suggestions-generator.js'));
   });
 
   afterEach(() => {
     testSandbox.restore();
   });
 
-  it('should call syncSuggestions with correct parameters', async () => {
+  it('returns early when context is missing', async () => {
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks: [],
+      context: null,
+      opportunityId: 'oppty-id-1',
+    });
+
+    expect(testOpportunity.getSuggestions).to.not.have.been.called;
+    expect(testOpportunity.addSuggestions).to.not.have.been.called;
+  });
+
+  it('adds new suggestions as NEW with sanitized payloads', async () => {
     const brokenInternalLinks = [
       {
         urlFrom: 'https://example.com/from1',
@@ -1405,6 +1416,8 @@ describe('syncBrokenInternalLinksSuggestions', () => {
       },
     ];
 
+    testContext.site.requiresValidation = true;
+
     await syncBrokenInternalLinksSuggestions({
       opportunity: testOpportunity,
       brokenInternalLinks,
@@ -1412,22 +1425,13 @@ describe('syncBrokenInternalLinksSuggestions', () => {
       opportunityId: 'oppty-id-1',
     });
 
-    // Verify syncSuggestions was called with correct parameters
-    expect(mockSyncSuggestions).to.have.been.calledOnce;
-    const callArgs = mockSyncSuggestions.getCall(0).args[0];
-    expect(callArgs.opportunity).to.equal(testOpportunity);
-    expect(callArgs.newData).to.deep.equal(brokenInternalLinks);
-    expect(callArgs.context).to.equal(testContext);
-    expect(callArgs.statusToSetForOutdated).to.equal(SuggestionDataAccess.STATUSES.NEW);
-    expect(callArgs.newSuggestionStatus).to.equal(SuggestionDataAccess.STATUSES.NEW);
-    expect(callArgs.buildKey(brokenInternalLinks[0])).to.equal('https://example.com/from1-https://example.com/to1-link');
-
-
-    const mappedSuggestion = callArgs.mapNewSuggestion(brokenInternalLinks[0]);
+    expect(testOpportunity.addSuggestions).to.have.been.calledOnce;
+    const mappedSuggestion = testOpportunity.addSuggestions.firstCall.args[0][0];
     expect(mappedSuggestion).to.deep.equal({
       opportunityId: 'oppty-id-1',
       type: 'CONTENT_UPDATE',
       rank: 100,
+      status: SuggestionDataAccess.STATUSES.NEW,
       data: {
         title: 'Test Title',
         urlFrom: 'https://example.com/from1',
@@ -1445,7 +1449,7 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     });
   });
 
-  it('should handle assets in mapNewSuggestion', async () => {
+  it('adds asset suggestions with the same internal-links-only payload shape', async () => {
     const brokenAssets = [
       {
         urlFrom: 'https://example.com/page1',
@@ -1470,14 +1474,12 @@ describe('syncBrokenInternalLinksSuggestions', () => {
       opportunityId: 'oppty-id-1',
     });
 
-    expect(mockSyncSuggestions).to.have.been.calledOnce;
-    const callArgs = mockSyncSuggestions.getCall(0).args[0];
-
-    const imageSuggestion = callArgs.mapNewSuggestion(brokenAssets[0]);
+    const [imageSuggestion, cssSuggestion] = testOpportunity.addSuggestions.firstCall.args[0];
     expect(imageSuggestion).to.deep.equal({
       opportunityId: 'oppty-id-1',
       type: 'CONTENT_UPDATE',
       rank: 50,
+      status: SuggestionDataAccess.STATUSES.NEW,
       data: {
         title: 'Broken Image',
         urlFrom: 'https://example.com/page1',
@@ -1494,13 +1496,13 @@ describe('syncBrokenInternalLinksSuggestions', () => {
       },
     });
 
-    const cssSuggestion = callArgs.mapNewSuggestion(brokenAssets[1]);
     expect(cssSuggestion.type).to.equal('CONTENT_UPDATE');
+    expect(cssSuggestion.status).to.equal(SuggestionDataAccess.STATUSES.NEW);
     expect(cssSuggestion.data.itemType).to.equal('css');
     expect(cssSuggestion.data.priority).to.equal('high');
   });
 
-  it('should handle empty arrays in mapNewSuggestion', async () => {
+  it('uses default empty payload fields when data is missing', async () => {
     const brokenInternalLinks = [
       {
         urlFrom: 'https://example.com/from1',
@@ -1517,15 +1519,13 @@ describe('syncBrokenInternalLinksSuggestions', () => {
       opportunityId: 'oppty-id-1',
     });
 
-    const callArgs = mockSyncSuggestions.getCall(0).args[0];
-    const mappedSuggestion = callArgs.mapNewSuggestion(brokenInternalLinks[0]);
+    const mappedSuggestion = testOpportunity.addSuggestions.firstCall.args[0][0];
 
-    // Should use default empty array and empty string
     expect(mappedSuggestion.data.urlsSuggested).to.deep.equal([]);
     expect(mappedSuggestion.data.aiRationale).to.equal('');
   });
 
-  it('should use rank 1 (never 0) when entry.trafficDomain is null, undefined, or 0', async () => {
+  it('uses rank 1 when trafficDomain is missing, null, or zero', async () => {
     const brokenInternalLinks = [
       { urlFrom: 'https://example.com/from1', urlTo: 'https://example.com/to1' },
       { urlFrom: 'https://example.com/from2', urlTo: 'https://example.com/to2', trafficDomain: null },
@@ -1539,10 +1539,7 @@ describe('syncBrokenInternalLinksSuggestions', () => {
       opportunityId: 'oppty-id-1',
     });
 
-    const callArgs = mockSyncSuggestions.getCall(0).args[0];
-    const noTraffic = callArgs.mapNewSuggestion(brokenInternalLinks[0]);
-    const nullTraffic = callArgs.mapNewSuggestion(brokenInternalLinks[1]);
-    const zeroTraffic = callArgs.mapNewSuggestion(brokenInternalLinks[2]);
+    const [noTraffic, nullTraffic, zeroTraffic] = testOpportunity.addSuggestions.firstCall.args[0];
 
     expect(noTraffic.rank).to.equal(1);
     expect(noTraffic.data.trafficDomain).to.equal(undefined);
@@ -1552,7 +1549,7 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     expect(zeroTraffic.data.trafficDomain).to.equal(undefined);
   });
 
-  it('should keep rank while omitting persisted trafficDomain from suggestion payloads', async () => {
+  it('keeps rank while omitting persisted trafficDomain from suggestion payloads', async () => {
     const brokenInternalLinks = [
       {
         urlFrom: 'https://example.com/from1',
@@ -1575,9 +1572,7 @@ describe('syncBrokenInternalLinksSuggestions', () => {
       opportunityId: 'oppty-id-1',
     });
 
-    const callArgs = mockSyncSuggestions.getCall(0).args[0];
-    const crawlSuggestion = callArgs.mapNewSuggestion(brokenInternalLinks[0]);
-    const linkCheckerSuggestion = callArgs.mapNewSuggestion(brokenInternalLinks[1]);
+    const [crawlSuggestion, linkCheckerSuggestion] = testOpportunity.addSuggestions.firstCall.args[0];
 
     expect(crawlSuggestion.rank).to.equal(27);
     expect(crawlSuggestion.data.trafficDomain).to.equal(undefined);
@@ -1585,7 +1580,7 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     expect(linkCheckerSuggestion.data.trafficDomain).to.equal(undefined);
   });
 
-  it('should normalize legacy [no text] anchor placeholders to empty strings', async () => {
+  it('normalizes legacy [no text] anchor placeholders to empty strings', async () => {
     const brokenInternalLinks = [
       {
         urlFrom: 'https://example.com/from1',
@@ -1602,342 +1597,205 @@ describe('syncBrokenInternalLinksSuggestions', () => {
       opportunityId: 'oppty-id-1',
     });
 
-    const callArgs = mockSyncSuggestions.getCall(0).args[0];
-    const suggestion = callArgs.mapNewSuggestion(brokenInternalLinks[0]);
+    const suggestion = testOpportunity.addSuggestions.firstCall.args[0][0];
 
     expect(suggestion.data.anchorText).to.equal('');
   });
 
-  it('should reset OUTDATED suggestions back to NEW instead of PENDING_VALIDATION', async () => {
-    const brokenInternalLinks = [
-      {
-        urlFrom: 'https://example.com/from1',
-        urlTo: 'https://example.com/to1',
-        trafficDomain: 10,
-      },
-    ];
-
-    await syncBrokenInternalLinksSuggestions({
-      opportunity: testOpportunity,
-      brokenInternalLinks,
-      context: testContext,
-      opportunityId: 'oppty-id-1',
-    });
-
-    const callArgs = mockSyncSuggestions.getCall(0).args[0];
-    const mergeStatusFn = callArgs.mergeStatusFunction;
+  it('updates existing suggestions, preserves edits, and resets stale statuses to NEW', async () => {
     const existingSuggestion = {
-      getStatus: () => SuggestionDataAccess.STATUSES.OUTDATED,
-    };
-
-    expect(mergeStatusFn(existingSuggestion)).to.equal(SuggestionDataAccess.STATUSES.NEW);
-  });
-
-  it('should reset PENDING_VALIDATION suggestions back to NEW on rerun', async () => {
-    const brokenInternalLinks = [
-      {
+      getData: testSandbox.stub().returns({
         urlFrom: 'https://example.com/from1',
         urlTo: 'https://example.com/to1',
-        trafficDomain: 10,
-      },
-    ];
+        urlEdited: 'https://example.com/user-fixed-url',
+        isEdited: true,
+        anchorText: '[no text]',
+        trafficDomain: 50,
+      }),
+      setData: testSandbox.stub(),
+      getStatus: testSandbox.stub().returns(SuggestionDataAccess.STATUSES.PENDING_VALIDATION),
+      setStatus: testSandbox.stub(),
+      setUpdatedBy: testSandbox.stub(),
+      save: testSandbox.stub().resolves(),
+    };
+    testOpportunity.getSuggestions.resolves([existingSuggestion]);
 
     await syncBrokenInternalLinksSuggestions({
       opportunity: testOpportunity,
-      brokenInternalLinks,
-      context: testContext,
-      opportunityId: 'oppty-id-1',
-    });
-
-    const callArgs = mockSyncSuggestions.getCall(0).args[0];
-    const mergeStatusFn = callArgs.mergeStatusFunction;
-    const existingSuggestion = {
-      getStatus: () => SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
-    };
-
-    expect(mergeStatusFn(existingSuggestion)).to.equal(SuggestionDataAccess.STATUSES.NEW);
-  });
-
-  it('should leave REJECTED suggestions unchanged on rerun', async () => {
-    const brokenInternalLinks = [
-      {
+      brokenInternalLinks: [{
         urlFrom: 'https://example.com/from1',
         urlTo: 'https://example.com/to1',
-        trafficDomain: 10,
-      },
-    ];
-
-    await syncBrokenInternalLinksSuggestions({
-      opportunity: testOpportunity,
-      brokenInternalLinks,
-      context: testContext,
-      opportunityId: 'oppty-id-1',
-    });
-
-    const callArgs = mockSyncSuggestions.getCall(0).args[0];
-    const mergeStatusFn = callArgs.mergeStatusFunction;
-    const existingSuggestion = {
-      getStatus: () => SuggestionDataAccess.STATUSES.REJECTED,
-    };
-
-    expect(mergeStatusFn(existingSuggestion)).to.equal(null);
-  });
-
-  it('should leave already active suggestions unchanged on rerun', async () => {
-    const brokenInternalLinks = [
-      {
-        urlFrom: 'https://example.com/from1',
-        urlTo: 'https://example.com/to1',
-        trafficDomain: 10,
-      },
-    ];
-
-    await syncBrokenInternalLinksSuggestions({
-      opportunity: testOpportunity,
-      brokenInternalLinks,
-      context: testContext,
-      opportunityId: 'oppty-id-1',
-    });
-
-    const callArgs = mockSyncSuggestions.getCall(0).args[0];
-    const mergeStatusFn = callArgs.mergeStatusFunction;
-    const existingSuggestion = {
-      getStatus: () => SuggestionDataAccess.STATUSES.NEW,
-    };
-
-    expect(mergeStatusFn(existingSuggestion)).to.equal(null);
-  });
-
-  it('should preserve non-empty anchor text values', async () => {
-    const brokenInternalLinks = [
-      {
-        urlFrom: 'https://example.com/from1',
-        urlTo: 'https://example.com/to1',
-        trafficDomain: 10,
-        anchorText: 'Read more',
-      },
-    ];
-
-    await syncBrokenInternalLinksSuggestions({
-      opportunity: testOpportunity,
-      brokenInternalLinks,
-      context: testContext,
-      opportunityId: 'oppty-id-1',
-    });
-
-    const callArgs = mockSyncSuggestions.getCall(0).args[0];
-    const suggestion = callArgs.mapNewSuggestion(brokenInternalLinks[0]);
-
-    expect(suggestion.data.anchorText).to.equal('Read more');
-  });
-
-  it('should preserve urlEdited when isEdited is true', async () => {
-    const brokenInternalLinks = [
-      {
-        urlFrom: 'https://example.com/from1',
-        urlTo: 'https://example.com/to1',
+        title: 'New Title',
         trafficDomain: 100,
-        urlsSuggested: ['https://example.com/suggested1'],
-        aiRationale: 'Test rationale',
-      },
-    ];
-
-    await syncBrokenInternalLinksSuggestions({
-      opportunity: testOpportunity,
-      brokenInternalLinks,
+        anchorText: 'Read more',
+        urlsSuggested: ['https://example.com/new-suggested'],
+        aiRationale: 'New rationale',
+      }],
       context: testContext,
       opportunityId: 'oppty-id-1',
     });
 
-    const callArgs = mockSyncSuggestions.getCall(0).args[0];
-    const mergeDataFn = callArgs.mergeDataFunction;
-    expect(mergeDataFn).to.be.a('function');
-
-    // Test that urlEdited is preserved when isEdited is true
-    const existingData = {
+    expect(existingSuggestion.setData).to.have.been.calledOnceWith({
       urlFrom: 'https://example.com/from1',
       urlTo: 'https://example.com/to1',
-      title: 'Old Title',
-      trafficDomain: 50,
-      urlEdited: 'https://example.com/user-fixed-url',
-      isEdited: true,
-      urlsSuggested: ['https://example.com/old-suggested'],
-    };
-
-    const newData = {
-      urlFrom: 'https://example.com/from1',
-      urlTo: 'https://example.com/to1',
+      anchorText: 'Read more',
       title: 'New Title',
-      trafficDomain: 100,
+      itemType: 'link',
+      priority: 'high',
       urlsSuggested: ['https://example.com/new-suggested'],
       aiRationale: 'New rationale',
-    };
-
-    const result = mergeDataFn(existingData, newData);
-
-    expect(result.urlEdited).to.equal('https://example.com/user-fixed-url');
-    expect(result.isEdited).to.equal(true);
-    expect(result.title).to.equal('New Title');
-    expect(result.trafficDomain).to.equal(undefined);
-    expect(result.urlsSuggested).to.deep.equal(['https://example.com/new-suggested']);
-  });
-
-  it('should preserve urlEdited when isEdited is false (AI selection)', async () => {
-    const brokenInternalLinks = [
-      {
-        urlFrom: 'https://example.com/from1',
-        urlTo: 'https://example.com/to1',
-        trafficDomain: 100,
-      },
-    ];
-
-    await syncBrokenInternalLinksSuggestions({
-      opportunity: testOpportunity,
-      brokenInternalLinks,
-      context: testContext,
-      opportunityId: 'oppty-id-1',
-    });
-
-    const callArgs = mockSyncSuggestions.getCall(0).args[0];
-    const mergeDataFn = callArgs.mergeDataFunction;
-
-    // Test that urlEdited IS preserved when isEdited is false (user selected AI suggestion)
-    const existingData = {
-      urlFrom: 'https://example.com/from1',
-      urlTo: 'https://example.com/to1',
-      urlEdited: 'https://example.com/old-edited-url',
-      isEdited: false,
-    };
-
-    const newData = {
-      urlFrom: 'https://example.com/from1',
-      urlTo: 'https://example.com/to1',
-      title: 'New Title',
-    };
-
-    const result = mergeDataFn(existingData, newData);
-
-    // urlEdited should be preserved even when isEdited is false
-    expect(result.urlEdited).to.equal('https://example.com/old-edited-url');
-    expect(result.isEdited).to.equal(false);
-    expect(result.title).to.equal('New Title');
-  });
-
-  it('should not preserve urlEdited when urlEdited is undefined', async () => {
-    const brokenInternalLinks = [
-      {
-        urlFrom: 'https://example.com/from1',
-        urlTo: 'https://example.com/to1',
-        trafficDomain: 100,
-      },
-    ];
-
-    await syncBrokenInternalLinksSuggestions({
-      opportunity: testOpportunity,
-      brokenInternalLinks,
-      context: testContext,
-      opportunityId: 'oppty-id-1',
-    });
-
-    const callArgs = mockSyncSuggestions.getCall(0).args[0];
-    const mergeDataFn = callArgs.mergeDataFunction;
-
-    // Test that urlEdited is NOT preserved when it's undefined
-    const existingData = {
-      urlFrom: 'https://example.com/from1',
-      urlTo: 'https://example.com/to1',
+      httpStatus: undefined,
+      statusBucket: undefined,
+      contentType: undefined,
+      detectionSource: undefined,
+      urlEdited: 'https://example.com/user-fixed-url',
       isEdited: true,
-      // urlEdited is undefined
-    };
-
-    const newData = {
-      urlFrom: 'https://example.com/from1',
-      urlTo: 'https://example.com/to1',
-      title: 'New Title',
-    };
-
-    const result = mergeDataFn(existingData, newData);
-
-    expect(result.urlEdited).to.be.undefined;
-    expect(result.title).to.equal('New Title');
+    });
+    expect(existingSuggestion.setStatus).to.have.been.calledOnceWith(SuggestionDataAccess.STATUSES.NEW);
+    expect(testContext.dataAccess.Suggestion.saveMany).to.have.been.calledOnceWith([existingSuggestion]);
+    expect(testOpportunity.addSuggestions).to.not.have.been.called;
   });
 
-  it('should handle when isEdited is null', async () => {
-    const brokenInternalLinks = [
-      {
+  it('keeps rejected suggestions unchanged on rerun', async () => {
+    const existingSuggestion = {
+      getData: testSandbox.stub().returns({
         urlFrom: 'https://example.com/from1',
         urlTo: 'https://example.com/to1',
-        trafficDomain: 100,
-      },
-    ];
+      }),
+      setData: testSandbox.stub(),
+      getStatus: testSandbox.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+      setStatus: testSandbox.stub(),
+      setUpdatedBy: testSandbox.stub(),
+      save: testSandbox.stub().resolves(),
+    };
+    testOpportunity.getSuggestions.resolves([existingSuggestion]);
 
     await syncBrokenInternalLinksSuggestions({
       opportunity: testOpportunity,
-      brokenInternalLinks,
+      brokenInternalLinks: [{
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+      }],
       context: testContext,
       opportunityId: 'oppty-id-1',
     });
 
-    const callArgs = mockSyncSuggestions.getCall(0).args[0];
-    const mergeDataFn = callArgs.mergeDataFunction;
-
-    // Test with null isEdited
-    const existingData = {
-      urlFrom: 'https://example.com/from1',
-      urlTo: 'https://example.com/to1',
-      urlEdited: 'https://example.com/edited-url',
-      isEdited: null,
-    };
-
-    const newData = {
-      urlFrom: 'https://example.com/from1',
-      urlTo: 'https://example.com/to1',
-      title: 'New Title',
-    };
-
-    const result = mergeDataFn(existingData, newData);
-
-    expect(result.urlEdited).to.be.undefined;
-    expect(result.title).to.equal('New Title');
+    expect(existingSuggestion.setStatus).to.not.have.been.called;
+    expect(testContext.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
   });
 
-  it('should handle when urlEdited is null', async () => {
-    const brokenInternalLinks = [
-      {
+  it('does not preserve urlEdited when edit metadata is incomplete', async () => {
+    const existingSuggestion = {
+      getData: testSandbox.stub().returns({
         urlFrom: 'https://example.com/from1',
         urlTo: 'https://example.com/to1',
-        trafficDomain: 100,
-      },
-    ];
+        urlEdited: null,
+        isEdited: true,
+      }),
+      setData: testSandbox.stub(),
+      getStatus: testSandbox.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+      setStatus: testSandbox.stub(),
+      setUpdatedBy: testSandbox.stub(),
+      save: testSandbox.stub().resolves(),
+    };
+    testOpportunity.getSuggestions.resolves([existingSuggestion]);
 
     await syncBrokenInternalLinksSuggestions({
       opportunity: testOpportunity,
-      brokenInternalLinks,
+      brokenInternalLinks: [{
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+        title: 'New Title',
+      }],
       context: testContext,
       opportunityId: 'oppty-id-1',
     });
 
-    const callArgs = mockSyncSuggestions.getCall(0).args[0];
-    const mergeDataFn = callArgs.mergeDataFunction;
+    expect(existingSuggestion.setData.firstCall.args[0].urlEdited).to.equal(undefined);
+  });
 
-    // Test with null urlEdited but true isEdited
-    const existingData = {
-      urlFrom: 'https://example.com/from1',
-      urlTo: 'https://example.com/to1',
-      urlEdited: null,
-      isEdited: true,
+  it('falls back to _saveMany when saveMany is unavailable', async () => {
+    const existingSuggestion = {
+      getData: testSandbox.stub().returns({
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+      }),
+      setData: testSandbox.stub(),
+      getStatus: testSandbox.stub().returns(SuggestionDataAccess.STATUSES.OUTDATED),
+      setStatus: testSandbox.stub(),
+      setUpdatedBy: testSandbox.stub(),
+      save: testSandbox.stub().resolves(),
     };
+    testOpportunity.getSuggestions.resolves([existingSuggestion]);
+    delete testContext.dataAccess.Suggestion.saveMany;
+    Reflect.set(testContext.dataAccess.Suggestion, '_saveMany', testSandbox.stub().resolves());
 
-    const newData = {
-      urlFrom: 'https://example.com/from1',
-      urlTo: 'https://example.com/to1',
-      title: 'New Title',
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks: [{
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+      }],
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    expect(Reflect.get(testContext.dataAccess.Suggestion, '_saveMany')).to.have.been.calledOnceWith([existingSuggestion]);
+  });
+
+  it('falls back to per-item save when bulk helpers are unavailable', async () => {
+    const existingSuggestion = {
+      getData: testSandbox.stub().returns({
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+      }),
+      setData: testSandbox.stub(),
+      getStatus: testSandbox.stub().returns(SuggestionDataAccess.STATUSES.OUTDATED),
+      setStatus: testSandbox.stub(),
+      setUpdatedBy: testSandbox.stub(),
+      save: testSandbox.stub().resolves(),
     };
+    testOpportunity.getSuggestions.resolves([existingSuggestion]);
+    delete testContext.dataAccess.Suggestion.saveMany;
 
-    const result = mergeDataFn(existingData, newData);
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks: [{
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+      }],
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
 
-    // Should not preserve null urlEdited
-    expect(result.urlEdited).to.be.undefined;
-    expect(result.title).to.equal('New Title');
+    expect(existingSuggestion.save).to.have.been.calledOnce;
+  });
+
+  it('falls back to per-item save when the Suggestion collection is unavailable', async () => {
+    const existingSuggestion = {
+      getData: testSandbox.stub().returns({
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+      }),
+      setData: testSandbox.stub(),
+      getStatus: testSandbox.stub().returns(SuggestionDataAccess.STATUSES.OUTDATED),
+      setStatus: testSandbox.stub(),
+      setUpdatedBy: testSandbox.stub(),
+      save: testSandbox.stub().resolves(),
+    };
+    testOpportunity.getSuggestions.resolves([existingSuggestion]);
+    delete testContext.dataAccess.Suggestion;
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks: [{
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+      }],
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    expect(existingSuggestion.save).to.have.been.calledOnce;
   });
 });

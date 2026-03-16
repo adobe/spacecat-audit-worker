@@ -10,7 +10,10 @@
  * governing permissions and limitations under the License.
  */
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
-import { createAuditLogger, isContextLogger } from '../common/context-logger.js';
+import {
+  createInternalLinksAuditLogger,
+  isInternalLinksContextLogger,
+} from './logging.js';
 
 const AUDIT_TYPE = 'broken-internal-links';
 
@@ -328,9 +331,9 @@ async function checkLinkWithGet(url, isAsset, log) {
  *   { isBroken, inconclusive, httpStatus, statusBucket, contentType }
  */
 export async function isLinkInaccessible(url, baseLog, siteId, auditId = null) {
-  const log = isContextLogger(baseLog)
+  const log = isInternalLinksContextLogger(baseLog)
     ? baseLog
-    : createAuditLogger(baseLog, AUDIT_TYPE, siteId, auditId);
+    : createInternalLinksAuditLogger(baseLog, AUDIT_TYPE, siteId, auditId);
 
   // Validate URL as it appears on the page (no path encoding rewrite).
   // Rewriting %20→hyphen would hide broken canonicals that point to the wrong URL.

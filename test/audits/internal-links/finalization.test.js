@@ -24,6 +24,103 @@ use(chaiAsPromised);
 use(sinonChai);
 
 describe('internal-links finalization', () => {
+  it('returns already-finalized when the workflow completion marker exists', async () => {
+    const finalize = createFinalizeCrawlDetection({
+      auditType: 'broken-internal-links',
+      createContextLogger: (log) => log,
+      createConfigResolver: () => ({
+        getIncludedStatusBuckets: () => ['not_found_404'],
+        getIncludedItemTypes: () => ['link'],
+      }),
+      calculatePriority: (links) => links,
+      mergeAndDeduplicate: (firstLinks, secondLinks) => [...secondLinks, ...firstLinks],
+      loadFinalResults: sinon.stub().resolves([]),
+      cleanupBatchState: sinon.stub().resolves(),
+      getTimeoutStatus: sinon.stub().returns({
+        percentUsed: 1,
+        safeTimeRemaining: 100000,
+        isApproachingTimeout: false,
+      }),
+      updateAuditResult: sinon.stub().resolves({}),
+      opportunityAndSuggestionsStep: sinon.stub().resolves({ status: 'complete' }),
+      filterByStatusIfNeeded,
+      filterByItemTypes,
+    });
+
+    const log = {
+      info: sinon.stub(),
+      warn: sinon.stub(),
+      error: sinon.stub(),
+      debug: sinon.stub(),
+    };
+
+    const result = await finalize({
+      log,
+      site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
+      env: {},
+      audit: {
+        getId: () => 'audit-1',
+        getAuditResult: () => ({
+          brokenInternalLinks: [],
+          internalLinksWorkflowCompletedAt: '2026-03-16T00:00:00.000Z',
+        }),
+      },
+      dataAccess: {},
+      linkCheckerResults: [],
+    }, { skipCrawlDetection: false });
+
+    expect(result).to.deep.equal({ status: 'already-finalized' });
+    expect(log.info).to.have.been.calledWith(
+      'Audit already finalized at 2026-03-16T00:00:00.000Z, skipping duplicate finalization',
+    );
+  });
+
+  it('handles missing rum and linkchecker arrays defensively', async () => {
+    const updateAuditResult = sinon.stub().resolves({});
+
+    const finalize = createFinalizeCrawlDetection({
+      auditType: 'broken-internal-links',
+      createContextLogger: (log) => log,
+      createConfigResolver: () => ({
+        getIncludedStatusBuckets: () => ['not_found_404'],
+        getIncludedItemTypes: () => ['link'],
+      }),
+      calculatePriority: (links) => links,
+      mergeAndDeduplicate: (firstLinks, secondLinks) => [...secondLinks, ...firstLinks],
+      loadFinalResults: sinon.stub().resolves([]),
+      cleanupBatchState: sinon.stub().resolves(),
+      getTimeoutStatus: sinon.stub().returns({
+        percentUsed: 1,
+        safeTimeRemaining: 100000,
+        isApproachingTimeout: false,
+      }),
+      updateAuditResult,
+      opportunityAndSuggestionsStep: sinon.stub().resolves({ status: 'complete' }),
+      filterByStatusIfNeeded,
+      filterByItemTypes,
+    });
+
+    const result = await finalize({
+      log: {
+        info: sinon.stub(),
+        warn: sinon.stub(),
+        error: sinon.stub(),
+        debug: sinon.stub(),
+      },
+      site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
+      env: {},
+      audit: {
+        getId: () => 'audit-1',
+        getAuditResult: () => ({}),
+      },
+      dataAccess: {},
+      linkCheckerResults: null,
+    }, { skipCrawlDetection: true });
+
+    expect(result).to.deep.equal({ status: 'complete' });
+    expect(updateAuditResult.firstCall.args[2]).to.deep.equal([]);
+  });
+
   it('filters final links by configured status buckets and item types', async () => {
     const updateAuditResult = sinon.stub();
     updateAuditResult.resolves({});

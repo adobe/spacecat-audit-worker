@@ -30,7 +30,6 @@ import {
   reconcileDisappearedSuggestions,
   publishDeployedFixEntities,
   AUTHOR_ONLY_OPPORTUNITY_TYPES,
-  saveModels,
 } from '../../src/utils/data-access.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -88,38 +87,6 @@ describe('data-access', () => {
       await expect(retrieveSiteBySiteId(mockDataAccess, 'site1', mockLog)).to.be.rejectedWith('Error getting site site1: database error');
       expect(mockDataAccess.Site.findById).to.have.been.calledOnceWith('site1');
       expect(mockLog.warn).to.not.have.been.called;
-    });
-  });
-
-  describe('saveModels', () => {
-    it('returns early when items are empty', async () => {
-      const collection = {
-        saveMany: sinon.stub().rejects(new Error('should not be called')),
-      };
-
-      await saveModels(collection, []);
-
-      expect(collection.saveMany).to.not.have.been.called;
-    });
-
-    it('falls back to per-item save when bulk save helpers are unavailable', async () => {
-      const first = { save: sinon.stub().resolves() };
-      const second = { save: sinon.stub().resolves() };
-
-      await saveModels({}, [first, second]);
-
-      expect(first.save).to.have.been.calledOnce;
-      expect(second.save).to.have.been.calledOnce;
-    });
-
-    it('falls back to per-item save when collection is not provided', async () => {
-      const first = { save: sinon.stub().resolves() };
-      const second = { save: sinon.stub().resolves() };
-
-      await saveModels(null, [first, second]);
-
-      expect(first.save).to.have.been.calledOnce;
-      expect(second.save).to.have.been.calledOnce;
     });
   });
 
@@ -462,43 +429,6 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setStatus).to.have
         .been.calledWith(SuggestionDataAccess.STATUSES.NEW);
       expect(context.dataAccess.Suggestion.saveMany).to.have.been
-        .calledOnceWith([existingSuggestions[0]]);
-    });
-
-    it('should fall back to _saveMany when saveMany is unavailable', async () => {
-      const suggestionsData = [
-        { key: '1', title: 'old title' },
-      ];
-      const existingSuggestions = [{
-        id: '1',
-        data: suggestionsData[0],
-        getData: sinon.stub().returns(suggestionsData[0]),
-        setData: sinon.stub(),
-        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.OUTDATED),
-        setStatus: sinon.stub(),
-        setUpdatedBy: sinon.stub().returnsThis(),
-      }];
-
-      const newData = [
-        { key: '1', title: 'updated title' },
-      ];
-
-      mockOpportunity.getSuggestions.resolves(existingSuggestions);
-      context.site = { requiresValidation: false };
-      delete context.dataAccess.Suggestion.saveMany;
-      Reflect.set(context.dataAccess.Suggestion, '_saveMany', sandbox.stub().resolves());
-
-      await syncSuggestions({
-        context,
-        opportunity: mockOpportunity,
-        newData,
-        buildKey,
-        mapNewSuggestion,
-      });
-
-      expect(existingSuggestions[0].setStatus).to.have
-        .been.calledWith(SuggestionDataAccess.STATUSES.NEW);
-      expect(Reflect.get(context.dataAccess.Suggestion, '_saveMany')).to.have.been
         .calledOnceWith([existingSuggestions[0]]);
     });
 

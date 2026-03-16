@@ -29,12 +29,6 @@
  * log.error('Processing failed');
  * // Logs: "[auditType=lhs] [siteId=xyz789] [auditId=123] Processing failed"
  */
-const CONTEXT_LOGGER_MARKER = Symbol.for('spacecat.contextLogger');
-
-export function isContextLogger(log) {
-  return Boolean(log?.[CONTEXT_LOGGER_MARKER]);
-}
-
 export function createContextLogger(log, context = {}) {
   // Input validation
   if (!log || typeof log !== 'object') {
@@ -65,19 +59,12 @@ export function createContextLogger(log, context = {}) {
   // Create wrapped logger methods using shared implementation
   const createLogMethod = (level) => (message, ...args) => log[level](`${prefix} ${message}`, ...args);
 
-  const wrappedLog = {
+  return {
     info: createLogMethod('info'),
     warn: createLogMethod('warn'),
     error: createLogMethod('error'),
     debug: createLogMethod('debug'),
   };
-
-  Object.defineProperty(wrappedLog, CONTEXT_LOGGER_MARKER, {
-    value: true,
-    enumerable: false,
-  });
-
-  return wrappedLog;
 }
 
 /**

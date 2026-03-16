@@ -620,7 +620,7 @@ describe('linkchecker-splunk', () => {
     it('submits job, polls until complete, and returns results', async () => {
       mockClient.env = { SPLUNK_SEARCH_NAMESPACE: 'team/search' };
       const mockedModule = await esmock('../../../src/internal-links/linkchecker-splunk.js', {
-        '../../../src/support/splunk-client-loader.js': {
+        '../../../src/internal-links/splunk-client.js': {
           createSplunkClient: sandbox.stub().resolves(mockClient),
         },
       });
@@ -669,7 +669,7 @@ describe('linkchecker-splunk', () => {
     it('throws error if polling times out', async () => {
       mockClient.env = { SPLUNK_SEARCH_NAMESPACE: 'team/search' };
       const mockedModule = await esmock('../../../src/internal-links/linkchecker-splunk.js', {
-        '../../../src/support/splunk-client-loader.js': {
+        '../../../src/internal-links/splunk-client.js': {
           createSplunkClient: sandbox.stub().resolves(mockClient),
         },
       });
@@ -707,7 +707,7 @@ describe('linkchecker-splunk', () => {
     it('throws error when polled job fails', async () => {
       mockClient.env = { SPLUNK_SEARCH_NAMESPACE: 'team/search' };
       const mockedModule = await esmock('../../../src/internal-links/linkchecker-splunk.js', {
-        '../../../src/support/splunk-client-loader.js': {
+        '../../../src/internal-links/splunk-client.js': {
           createSplunkClient: sandbox.stub().resolves(mockClient),
         },
       });
@@ -741,7 +741,7 @@ describe('linkchecker-splunk', () => {
     it('aborts synchronous polling when Lambda timeout is already approaching', async () => {
       mockClient.env = { SPLUNK_SEARCH_NAMESPACE: 'team/search' };
       const mockedModule = await esmock('../../../src/internal-links/linkchecker-splunk.js', {
-        '../../../src/support/splunk-client-loader.js': {
+        '../../../src/internal-links/splunk-client.js': {
           createSplunkClient: sandbox.stub().resolves(mockClient),
         },
       });

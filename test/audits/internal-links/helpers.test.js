@@ -26,7 +26,7 @@ import {
   classifyStatusBucket,
   STATUS_BUCKETS,
 } from '../../../src/internal-links/helpers.js';
-import { createContextLogger } from '../../../src/common/context-logger.js';
+import { createInternalLinksContextLogger } from '../../../src/internal-links/logging.js';
 import { auditData } from '../../fixtures/internal-links-data.js';
 
 describe('calculateKpiDeltasForAudit', () => {
@@ -150,7 +150,7 @@ describe('isLinkInaccessible', () => {
       .head('/context-logger')
       .reply(200);
 
-    const contextLogger = createContextLogger(mockLog, {
+    const contextLogger = createInternalLinksContextLogger(mockLog, {
       auditType: 'broken-internal-links',
       siteId: 'test-site-id',
       auditId: 'audit-1',

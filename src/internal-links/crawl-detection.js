@@ -12,11 +12,15 @@
 
 import { load as cheerioLoad } from 'cheerio';
 import { getObjectFromKey } from '../utils/s3-utils.js';
-import { isWithinAuditScope, isSharedInternalResource } from './subpath-filter.js';
-import { createAuditLogger, isContextLogger } from '../common/context-logger.js';
+import { isWithinAuditScope } from './subpath-filter.js';
 import { isLinkInaccessible } from './helpers.js';
 import { limitConcurrency, sleep } from '../support/utils.js';
 import { buildBrokenLinkKey, getUrlCacheKey } from './link-key.js';
+import {
+  createInternalLinksAuditLogger,
+  isInternalLinksContextLogger,
+} from './logging.js';
+import { isSharedInternalResource } from './scope-utils.js';
 
 const AUDIT_TYPE = 'broken-internal-links';
 
@@ -684,9 +688,9 @@ export async function detectBrokenLinksFromCrawlBatch({
     s3Client, env, log: baseLog, site,
   } = context;
   const auditId = context.audit?.getId?.() || null;
-  const log = isContextLogger(baseLog)
+  const log = isInternalLinksContextLogger(baseLog)
     ? baseLog
-    : createAuditLogger(baseLog, AUDIT_TYPE, site.getId(), auditId);
+    : createInternalLinksAuditLogger(baseLog, AUDIT_TYPE, site.getId(), auditId);
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   const baseURL = site.getBaseURL();
   const baseHostname = new URL(baseURL).hostname.replace(/^www\./, '');

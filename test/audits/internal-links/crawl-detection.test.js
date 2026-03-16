@@ -17,6 +17,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
+import { createInternalLinksContextLogger } from '../../../src/internal-links/logging.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -65,6 +66,8 @@ describe('Crawl Detection Module', () => {
       },
       '../../../src/internal-links/subpath-filter.js': {
         isWithinAuditScope: isWithinAuditScopeStub,
+      },
+      '../../../src/internal-links/scope-utils.js': {
         isSharedInternalResource: isSharedInternalResourceStub,
       },
     });
@@ -108,6 +111,29 @@ describe('Crawl Detection Module', () => {
     it('should export PAGES_PER_BATCH constant', () => {
       expect(PAGES_PER_BATCH).to.be.a('number');
       expect(PAGES_PER_BATCH).to.be.greaterThan(0);
+    });
+
+    it('should reuse an existing internal-links contextual logger', async () => {
+      const contextualLog = createInternalLinksContextLogger(mockContext.log, {
+        auditType: 'broken-internal-links',
+        siteId: mockSite.getId(),
+        auditId: 'audit-123',
+        step: 'crawl-detection',
+      });
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths: new Map(),
+        batchStartIndex: 0,
+        batchSize: 2,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, {
+        ...mockContext,
+        log: contextualLog,
+        audit: { getId: () => 'audit-123' },
+      });
+
+      expect(result.results).to.deep.equal([]);
     });
 
     it('should process a batch of pages starting from batchStartIndex', async () => {

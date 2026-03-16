@@ -18,6 +18,13 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { createContextLogger } from '../../../src/common/context-logger.js';
+import {
+  buildLinkCheckerQuery,
+  submitSplunkJob,
+  pollJobStatus,
+  fetchJobResults,
+} from '../../../src/internal-links/linkchecker-splunk.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
@@ -34,6 +41,7 @@ describe('LinkChecker Steps Tests', function () {
   let fetchLinkCheckerLogsStep;
   let resumeLinkCheckerPollingStep;
   let batchStateMock;
+  let createLinkCheckerOrchestration;
 
   beforeEach(async () => {
     // Mock Splunk client
@@ -89,14 +97,12 @@ describe('LinkChecker Steps Tests', function () {
         DISPATCH_RESERVATION_TTL_MS: 5 * 60 * 1000,
       },
     };
-    const mockedHandler = await esmock('../../../src/internal-links/handler.js', {
-      '../../../src/support/splunk-client-loader.js': { createSplunkClient: mockCreateSplunkClient },
-    }, {
-      '../../../src/internal-links/batch-state.js': batchStateMock,
-    });
-
-    fetchLinkCheckerLogsStep = mockedHandler.fetchLinkCheckerLogsStep;
-    resumeLinkCheckerPollingStep = mockedHandler.resumeLinkCheckerPollingStep;
+    ({ createLinkCheckerOrchestration } = await esmock(
+      '../../../src/internal-links/linkchecker-orchestration.js',
+      {
+        '../../../src/internal-links/batch-state.js': batchStateMock,
+      },
+    ));
 
     // Create basic context
     context = new MockContextBuilder()
@@ -160,6 +166,41 @@ describe('LinkChecker Steps Tests', function () {
         },
       })
       .build();
+
+    const finalizeCrawlDetection = sandbox.stub().callsFake(async (finalizeContext) => {
+      const currentAuditResult = context.audit.getAuditResult?.() || {};
+      const nextAuditResult = {
+        ...currentAuditResult,
+        internalLinksLinkCheckerStatus: finalizeContext.linkCheckerStatus,
+      };
+
+      if (finalizeContext.linkCheckerError) {
+        nextAuditResult.internalLinksLinkCheckerError = finalizeContext.linkCheckerError;
+      }
+
+      if (finalizeContext.linkCheckerResults) {
+        nextAuditResult.internalLinksLinkCheckerResults = finalizeContext.linkCheckerResults;
+      }
+
+      context.audit.setAuditResult(nextAuditResult);
+      await context.audit.save();
+      return { status: 'finalized' };
+    });
+
+    ({
+      fetchLinkCheckerLogsStep,
+      resumeLinkCheckerPollingStep,
+    } = createLinkCheckerOrchestration({
+      auditType: AUDIT_TYPE,
+      createContextLogger,
+      getTimeoutStatus: batchStateMock.getTimeoutStatus,
+      buildLinkCheckerQuery,
+      submitSplunkJob,
+      pollJobStatus,
+      fetchJobResults,
+      createSplunkClient: mockCreateSplunkClient,
+      finalizeCrawlDetection,
+    }));
   });
 
   afterEach(() => {
@@ -337,19 +378,22 @@ describe('LinkChecker Steps Tests', function () {
     });
 
     it('should send continuation message when approaching Lambda timeout', async () => {
-      const timeoutHandler = await esmock('../../../src/internal-links/handler.js', {
-        '../../../src/support/splunk-client-loader.js': { createSplunkClient: mockCreateSplunkClient },
-      }, {
-        '../../../src/internal-links/batch-state.js': {
-          ...batchStateMock,
-          getTimeoutStatus: () => ({
-            elapsed: 14 * 60 * 1000,
-            remaining: 60 * 1000,
-            safeTimeRemaining: -60 * 1000,
-            isApproachingTimeout: true,
-            percentUsed: 96,
-          }),
-        },
+      const timeoutHandler = createLinkCheckerOrchestration({
+        auditType: AUDIT_TYPE,
+        createContextLogger,
+        getTimeoutStatus: () => ({
+          elapsed: 14 * 60 * 1000,
+          remaining: 60 * 1000,
+          safeTimeRemaining: -60 * 1000,
+          isApproachingTimeout: true,
+          percentUsed: 96,
+        }),
+        buildLinkCheckerQuery,
+        submitSplunkJob,
+        pollJobStatus,
+        fetchJobResults,
+        createSplunkClient: mockCreateSplunkClient,
+        finalizeCrawlDetection: sandbox.stub().resolves({ status: 'finalized' }),
       });
 
       mockSplunkClient.fetchAPI
@@ -726,19 +770,22 @@ describe('LinkChecker Steps Tests', function () {
     });
 
     it('should send continuation on resume when approaching Lambda timeout', async () => {
-      const timeoutHandler = await esmock('../../../src/internal-links/handler.js', {
-        '../../../src/support/splunk-client-loader.js': { createSplunkClient: mockCreateSplunkClient },
-      }, {
-        '../../../src/internal-links/batch-state.js': {
-          ...batchStateMock,
-          getTimeoutStatus: () => ({
-            elapsed: 14 * 60 * 1000,
-            remaining: 60 * 1000,
-            safeTimeRemaining: -60 * 1000,
-            isApproachingTimeout: true,
-            percentUsed: 96,
-          }),
-        },
+      const timeoutHandler = createLinkCheckerOrchestration({
+        auditType: AUDIT_TYPE,
+        createContextLogger,
+        getTimeoutStatus: () => ({
+          elapsed: 14 * 60 * 1000,
+          remaining: 60 * 1000,
+          safeTimeRemaining: -60 * 1000,
+          isApproachingTimeout: true,
+          percentUsed: 96,
+        }),
+        buildLinkCheckerQuery,
+        submitSplunkJob,
+        pollJobStatus,
+        fetchJobResults,
+        createSplunkClient: mockCreateSplunkClient,
+        finalizeCrawlDetection: sandbox.stub().resolves({ status: 'finalized' }),
       });
 
       const result = await timeoutHandler.resumeLinkCheckerPollingStep(context);

@@ -13,7 +13,8 @@
 import { prependSchema, stripWWW } from '@adobe/spacecat-shared-utils';
 import { createInternalLinksStepLogger } from './logging.js';
 import { classifyStatusBucket, isLinkInaccessible } from './helpers.js';
-import { isSharedInternalResource, isWithinAuditScope } from './subpath-filter.js';
+import { isWithinAuditScope } from './subpath-filter.js';
+import { isSharedInternalResource } from './scope-utils.js';
 
 function isOnAuditHost(url, baseURL) {
   try {

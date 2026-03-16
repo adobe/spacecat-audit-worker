@@ -17,6 +17,8 @@ import sinon from 'sinon';
 
 import { createContextLogger } from '../../../src/common/context-logger.js';
 import {
+  createInternalLinksAuditLogger,
+  createInternalLinksContextLogger,
   createInternalLinksStepLogger,
   ensureInternalLinksStepLogger,
 } from '../../../src/internal-links/logging.js';
@@ -57,13 +59,29 @@ describe('internal-links logging helpers', () => {
     );
   });
 
+  it('creates an audit logger and includes auditId when provided', () => {
+    const log = createInternalLinksAuditLogger(
+      baseLog,
+      'broken-internal-links',
+      'site-123',
+      'audit-456',
+      createContextLogger,
+    );
+
+    log.debug('Audit scoped');
+
+    expect(baseLog.debug).to.have.been.calledWith(
+      '[auditType=broken-internal-links] [siteId=site-123] [auditId=audit-456] Audit scoped',
+    );
+  });
+
   it('returns the existing contextual logger when already wrapped', () => {
-    const contextualLog = createContextLogger(baseLog, {
+    const contextualLog = createInternalLinksContextLogger(baseLog, {
       auditType: 'broken-internal-links',
       siteId: 'site-123',
       auditId: 'audit-456',
       step: 'run-crawl-detection-batch',
-    });
+    }, createContextLogger);
 
     const ensuredLog = ensureInternalLinksStepLogger({
       createContextLogger,

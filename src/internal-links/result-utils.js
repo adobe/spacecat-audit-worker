@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { isContextLogger } from '../common/context-logger.js';
+import { isInternalLinksContextLogger } from './logging.js';
 
 export const MAX_BROKEN_LINKS_REPORTED = 500;
 const DEFAULT_LINK_ITEM_TYPE = 'link';
@@ -69,7 +69,7 @@ export function createUpdateAuditResult({ auditType, createAuditLogger }) {
       ...extraFields,
     };
     const auditId = audit.getId ? audit.getId() : audit.id;
-    const contextLog = isContextLogger(log)
+    const contextLog = isInternalLinksContextLogger(log)
       ? log
       : createAuditLogger(log, auditType, siteId, auditId);
 

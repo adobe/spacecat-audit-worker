@@ -14,9 +14,8 @@ import { getPrompt, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { getScrapedDataForSiteId, limitConcurrency } from '../support/utils.js';
-import { syncSuggestions } from '../utils/data-access.js';
+import { handleOutdatedSuggestions } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from './subpath-filter.js';
-import { getPositiveIntConfig } from './config.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 function normalizeAnchorText(anchorText) {
@@ -54,13 +53,23 @@ function sanitizeBrokenLinkData(entry = {}) {
   };
 }
 
-function parseSuggestionJson(content, log, siteId, contextLabel) {
-  try {
-    return JSON.parse(content);
-  } catch (error) {
-    log.error(`[${AUDIT_TYPE}] [Site: ${siteId}] Invalid JSON for ${contextLabel}: ${error.message}`);
-    return null;
+async function saveSuggestions(collection, items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return;
   }
+
+  if (typeof collection?.saveMany === 'function') {
+    await collection.saveMany(items);
+    return;
+  }
+
+  const saveManyV2 = collection ? Reflect.get(collection, '_saveMany') : null;
+  if (typeof saveManyV2 === 'function') {
+    await saveManyV2.call(collection, items);
+    return;
+  }
+
+  await Promise.all(items.map(async (item) => item.save()));
 }
 
 export const generateSuggestionData = async (finalUrl, brokenInternalLinks, context, site) => {
@@ -68,11 +77,8 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
 
   const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
   const azureOpenAIOptions = { responseFormat: 'json_object' };
-  /* c8 ignore start - config fallback parsing is defensive */
-  const internalLinksConfig = site?.getConfig?.()?.getHandlers?.()?.['broken-internal-links']?.config || {};
-  const BATCH_SIZE = getPositiveIntConfig(internalLinksConfig.suggestionBatchSize, 100);
-  const MAX_CONCURRENT_AI_CALLS = getPositiveIntConfig(internalLinksConfig.maxConcurrentAiCalls, 5);
-  /* c8 ignore stop */
+  const BATCH_SIZE = 100;
+  const MAX_CONCURRENT_AI_CALLS = 5;
 
   // Ensure brokenInternalLinks is an array
   if (!Array.isArray(brokenInternalLinks)) {
@@ -181,7 +187,7 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
       return null;
     }
 
-    return parseSuggestionJson(content, log, site.getId(), `broken URL ${urlTo}`);
+    return JSON.parse(content);
   };
 
   async function processBatches(batches, urlTo) {
@@ -230,16 +236,7 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
           return { ...link };
         }
 
-        const answer = parseSuggestionJson(
-          finalResponse.choices[0].message.content,
-          log,
-          site.getId(),
-          `final suggestions for ${link.urlTo}`,
-        );
-        /* c8 ignore next 3 - Defensive guard when AI returns no answer */
-        if (!answer) {
-          return { ...link };
-        }
+        const answer = JSON.parse(finalResponse.choices[0].message.content);
         return {
           ...link,
           urlsSuggested: answer.suggested_urls?.length > 0 ? answer.suggested_urls : [finalUrl],
@@ -283,12 +280,7 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
         continue;
       }
 
-      headerSuggestionsResults.push(parseSuggestionJson(
-        response.choices[0].message.content,
-        log,
-        site.getId(),
-        `header suggestions for ${link.urlTo}`,
-      ));
+      headerSuggestionsResults.push(JSON.parse(response.choices[0].message.content));
     } catch (error) {
       log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Header suggestion error: ${error.message}`);
       headerSuggestionsResults.push(null);
@@ -317,6 +309,10 @@ export async function syncBrokenInternalLinksSuggestions({
   context,
   opportunityId,
 }) {
+  if (!context) {
+    return;
+  }
+
   // Include itemType in key to distinguish between links and assets pointing to same URL
   const buildKey = (item) => `${item.urlFrom}-${item.urlTo}-${item.itemType || 'link'}`;
 
@@ -363,25 +359,54 @@ export async function syncBrokenInternalLinksSuggestions({
     return null;
   };
 
-  await syncSuggestions({
-    opportunity,
-    newData: brokenInternalLinks,
+  const { log, dataAccess } = context;
+  const { Suggestion } = dataAccess;
+  const newDataKeys = new Set(brokenInternalLinks.map(buildKey));
+  const existingSuggestions = await opportunity.getSuggestions();
+  const newDataByKey = new Map(brokenInternalLinks.map((data) => [buildKey(data), data]));
+  const existingSuggestionKeys = new Set(
+    existingSuggestions.map((suggestion) => buildKey(suggestion.getData())),
+  );
+
+  await handleOutdatedSuggestions({
     context,
+    existingSuggestions,
+    newDataKeys,
     buildKey,
     statusToSetForOutdated: SuggestionDataAccess.STATUSES.NEW,
-    newSuggestionStatus: SuggestionDataAccess.STATUSES.NEW,
-    mergeStatusFunction,
-    mergeDataFunction,
-    mapNewSuggestion: (entry) => {
-      const itemType = entry.itemType || 'link';
-      const rank = getSuggestionRank(entry);
+  });
 
+  const toUpdate = existingSuggestions
+    .filter((existing) => newDataKeys.has(buildKey(existing.getData())));
+
+  toUpdate.forEach((existing) => {
+    const newDataItem = newDataByKey.get(buildKey(existing.getData()));
+    existing.setData(mergeDataFunction(existing.getData(), newDataItem));
+
+    const newStatus = mergeStatusFunction(existing);
+    if (newStatus !== null) {
+      existing.setStatus(newStatus);
+    }
+    existing.setUpdatedBy('system');
+  });
+
+  await saveSuggestions(Suggestion, toUpdate);
+
+  const newSuggestions = brokenInternalLinks
+    .filter((data) => !existingSuggestionKeys.has(buildKey(data)))
+    .map((entry) => {
+      const itemType = entry.itemType || 'link';
       return {
         opportunityId,
         type: getSuggestionType(itemType),
-        rank,
+        rank: getSuggestionRank(entry),
+        status: SuggestionDataAccess.STATUSES.NEW,
         data: sanitizeBrokenLinkData(entry),
       };
-    },
-  });
+    });
+
+  if (newSuggestions.length > 0) {
+    log.info(`Adding ${newSuggestions.length} new internal-links suggestions for opportunity ${opportunityId}`);
+    await opportunity.addSuggestions(newSuggestions);
+  }
 }

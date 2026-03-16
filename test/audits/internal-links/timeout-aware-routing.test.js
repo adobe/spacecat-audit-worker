@@ -18,6 +18,7 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { createContextLogger } from '../../../src/common/context-logger.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
@@ -30,17 +31,20 @@ describe('Timeout-Aware Routing Tests', function () {
   const sandbox = sinon.createSandbox();
   let context;
   let runCrawlDetectionBatch;
-  let fetchLinkCheckerLogsStep;
   let mockIsBatchCompleted;
   let mockLoadCache;
   let mockSaveScrapeResultPaths;
+  let createCrawlBatchOrchestration;
+  let fetchLinkCheckerLogsStepStub;
+  let resumeLinkCheckerPollingStepStub;
+  let detectBrokenLinksFromCrawlBatchStub;
 
   beforeEach(async () => {
     mockIsBatchCompleted = sandbox.stub().resolves(false);
     mockLoadCache = sandbox.stub().resolves({ brokenUrlsCache: [], workingUrlsCache: [] });
     mockSaveScrapeResultPaths = sandbox.stub().resolves();
 
-    // Mock the handler with S3 and Splunk clients
+    // Mock batch state and orchestration dependencies
     const batchStateMock = {
       loadCache: mockLoadCache,
       isBatchCompleted: mockIsBatchCompleted,
@@ -81,39 +85,22 @@ describe('Timeout-Aware Routing Tests', function () {
         };
       },
     };
-    const mockedHandler = await esmock('../../../src/internal-links/handler.js', {
-      '../../../src/support/splunk-client-loader.js': {
-        createSplunkClient: () => Promise.resolve({
-          login: sandbox.stub().resolves({ sessionId: 'test', cookie: 'test' }),
-          fetchAPI: sandbox.stub()
-            .onFirstCall().resolves({
-              status: 200,
-              json: () => Promise.resolve({
-                entry: [{
-                  content: {
-                    isDone: true,
-                    dispatchState: 'DONE',
-                    resultCount: 0,
-                  },
-                }],
-              }),
-            })
-            .onSecondCall().resolves({
-              status: 200,
-              json: () => Promise.resolve({ results: [] }),
-            }),
-          apiBaseUrl: 'https://splunk.test',
-          env: {
-            SPLUNK_SEARCH_NAMESPACE: 'team/search',
-          },
-        }),
+    ({ createCrawlBatchOrchestration } = await esmock(
+      '../../../src/internal-links/crawl-batch-orchestration.js',
+      {
+        '../../../src/internal-links/batch-state.js': batchStateMock,
       },
-    }, {
-      '../../../src/internal-links/batch-state.js': batchStateMock,
-    });
+    ));
 
-    runCrawlDetectionBatch = mockedHandler.runCrawlDetectionBatch;
-    fetchLinkCheckerLogsStep = mockedHandler.fetchLinkCheckerLogsStep;
+    fetchLinkCheckerLogsStepStub = sandbox.stub().resolves({ status: 'linkchecker-started' });
+    resumeLinkCheckerPollingStepStub = sandbox.stub().resolves({ status: 'linkchecker-resumed' });
+    detectBrokenLinksFromCrawlBatchStub = sandbox.stub().resolves({
+      results: [],
+      pagesProcessed: 0,
+      brokenUrlsCache: [],
+      workingUrlsCache: [],
+      hasMorePages: false,
+    });
 
     // Create basic context
     context = new MockContextBuilder()
@@ -154,6 +141,20 @@ describe('Timeout-Aware Routing Tests', function () {
         scrapeResultPaths: new Map(),
       })
       .build();
+
+    ({ runCrawlDetectionBatch } = createCrawlBatchOrchestration({
+      auditType: AUDIT_TYPE,
+      createContextLogger,
+      detectBrokenLinksFromCrawlBatch: detectBrokenLinksFromCrawlBatchStub,
+      saveBatchResults: sandbox.stub().resolves(),
+      updateCache: sandbox.stub().resolves(),
+      loadCache: mockLoadCache,
+      markBatchCompleted: sandbox.stub().resolves(),
+      isBatchCompleted: mockIsBatchCompleted,
+      getTimeoutStatus: batchStateMock.getTimeoutStatus,
+      fetchLinkCheckerLogsStep: fetchLinkCheckerLogsStepStub,
+      resumeLinkCheckerPollingStep: resumeLinkCheckerPollingStepStub,
+    }));
   });
 
   afterEach(() => {

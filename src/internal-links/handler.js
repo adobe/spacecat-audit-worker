@@ -16,7 +16,7 @@ import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { createAuditLogger, createContextLogger } from '../common/context-logger.js';
+import { createContextLogger } from '../common/context-logger.js';
 import { isUnscrapeable, filterBrokenSuggestedUrls } from '../utils/url-utils.js';
 import { syncBrokenInternalLinksSuggestions } from './suggestions-generator.js';
 import {
@@ -25,7 +25,7 @@ import {
   calculateKpiDeltasForAudit,
 } from './helpers.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { filterByAuditScope, isWithinAuditScope, extractPathPrefix } from './subpath-filter.js';
+import { filterByAuditScope, isWithinAuditScope } from './subpath-filter.js';
 import {
   detectBrokenLinksFromCrawlBatch,
   mergeAndDeduplicate,
@@ -55,7 +55,6 @@ import BrightDataClient, {
   localesMatch,
 } from '../support/bright-data-client.js';
 import { sleep } from '../support/utils.js';
-import { createSplunkClient } from '../support/splunk-client-loader.js';
 import {
   MAX_BROKEN_LINKS_REPORTED,
   filterByStatusIfNeeded,
@@ -63,11 +62,16 @@ import {
   isCanonicalOrHreflangLink,
   createUpdateAuditResult,
 } from './result-utils.js';
+import {
+  createInternalLinksAuditLogger,
+} from './logging.js';
 import { createInternalLinksRumSteps } from './rum-detection.js';
 import { createSubmitForScraping } from './scrape-submission.js';
 import { createOpportunityAndSuggestionsStep } from './opportunity-suggestions.js';
 import { createInternalLinksOrchestration } from './orchestration.js';
 import { createInternalLinksConfigResolver } from './config.js';
+import { createSplunkClient } from './splunk-client.js';
+import { extractLocalePathPrefix } from './scope-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30;
@@ -77,7 +81,7 @@ export { MAX_BROKEN_LINKS_REPORTED };
 
 export const updateAuditResult = createUpdateAuditResult({
   auditType: AUDIT_TYPE,
-  createAuditLogger,
+  createAuditLogger: createInternalLinksAuditLogger,
 });
 
 export const {
@@ -112,7 +116,7 @@ export const opportunityAndSuggestionsStep = createOpportunityAndSuggestionsStep
   createOpportunityData,
   syncBrokenInternalLinksSuggestions,
   filterByAuditScope,
-  extractPathPrefix,
+  extractPathPrefix: extractLocalePathPrefix,
   isUnscrapeable,
   filterBrokenSuggestedUrls,
   BrightDataClient,

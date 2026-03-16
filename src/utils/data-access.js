@@ -57,35 +57,6 @@ function safeStringify(data, maxArrayLength = 10) {
 }
 
 /**
- * Persist a batch of models across data-access providers.
- *
- * v3/postgres exposes public `saveMany()`, while the default v2 path only
- * exposes `_saveMany()`. As a last resort, fall back to per-item `save()`.
- *
- * @param {object} collection - Data-access collection/model surface.
- * @param {Array<object>} items - Model instances to persist.
- * @returns {Promise<void>}
- */
-export async function saveModels(collection, items) {
-  if (!isNonEmptyArray(items)) {
-    return;
-  }
-
-  if (typeof collection?.saveMany === 'function') {
-    await collection.saveMany(items);
-    return;
-  }
-
-  const saveManyV2 = collection ? Reflect.get(collection, '_saveMany') : null;
-  if (typeof saveManyV2 === 'function') {
-    await saveManyV2.call(collection, items);
-    return;
-  }
-
-  await Promise.all(items.map(async (item) => item.save()));
-}
-
-/**
  * Fetches site data based on the given base URL. If no site is found for the given
  * base URL, null is returned. Otherwise, the site object is returned. If an error
  * occurs while fetching the site, an error is thrown.
@@ -338,8 +309,6 @@ export const defaultMergeStatusFunction = (existing, newDataItem, context) => {
  * @param {Function} [params.mergeStatusFunction] - Function to determine the status of
  *   existing suggestions.
  * @param {string} [params.statusToSetForOutdated] - Status to set for outdated suggestions.
- * @param {string|null} [params.newSuggestionStatus] - Optional status override for newly
- *   created suggestions.
  * @param {Array} [params.existingSuggestions] - Pre-fetched suggestions to avoid duplicate
  *   DB query. If not provided, will be fetched from opportunity.
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
@@ -353,7 +322,6 @@ export async function syncSuggestions({
   mergeDataFunction = defaultMergeDataFunction,
   mergeStatusFunction = defaultMergeStatusFunction,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
-  newSuggestionStatus = null,
   scrapedUrlsSet = null,
   existingSuggestions: prefetchedSuggestions = null,
 }) {
@@ -406,23 +374,21 @@ export async function syncSuggestions({
   });
 
   if (toUpdate.length > 0) {
-    await saveModels(Suggestion, toUpdate);
+    await Suggestion.saveMany(toUpdate);
   }
   log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
   // Prepare new suggestions - O(N) with Set lookup
   const { site } = context;
   const requiresValidation = Boolean(site?.requiresValidation);
-  const statusForNewSuggestions = newSuggestionStatus
-    ?? (requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
-      : SuggestionDataAccess.STATUSES.NEW);
   const newSuggestions = newData
     .filter((data) => !existingSuggestionKeys.has(buildKey(data)))
     .map((data) => {
       const suggestion = mapNewSuggestion(data);
       return {
         ...suggestion,
-        status: statusForNewSuggestions,
+        status: requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+          : SuggestionDataAccess.STATUSES.NEW,
       };
     });
 
@@ -535,7 +501,7 @@ export async function reconcileDisappearedSuggestions({
     });
 
     try {
-      await saveModels(Suggestion, fixedSuggestions);
+      await Suggestion.saveMany(fixedSuggestions);
     } catch (e) {
       log.warn(`Failed to mark ${fixedSuggestions.length} suggestions as FIXED: ${e.message}`);
       return;
@@ -670,7 +636,7 @@ export async function publishDeployedFixEntities({
 
     if (fixEntitiesToPublish.length > 0) {
       try {
-        await saveModels(FixEntity, fixEntitiesToPublish);
+        await FixEntity.saveMany(fixEntitiesToPublish);
         fixEntitiesToPublish.forEach((fe) => {
           log.info(`Published fix entity ${fe.getId?.()}`);
         });

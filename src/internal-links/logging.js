@@ -10,10 +10,50 @@
  * governing permissions and limitations under the License.
  */
 
-import { isContextLogger } from '../common/context-logger.js';
+import { createContextLogger } from '../common/context-logger.js';
+
+const INTERNAL_LINKS_CONTEXT_LOGGER_MARKER = Symbol.for('spacecat.internalLinksContextLogger');
+
+function markInternalLinksContextLogger(log) {
+  if (!log?.[INTERNAL_LINKS_CONTEXT_LOGGER_MARKER]) {
+    Object.defineProperty(log, INTERNAL_LINKS_CONTEXT_LOGGER_MARKER, {
+      value: true,
+      enumerable: false,
+    });
+  }
+
+  return log;
+}
+
+export function isInternalLinksContextLogger(log) {
+  return Boolean(log?.[INTERNAL_LINKS_CONTEXT_LOGGER_MARKER]);
+}
+
+export function createInternalLinksContextLogger(
+  log,
+  context = {},
+  contextLoggerFactory = createContextLogger,
+) {
+  return markInternalLinksContextLogger(contextLoggerFactory(log, context));
+}
+
+export function createInternalLinksAuditLogger(
+  log,
+  auditType,
+  siteId,
+  auditId = null,
+  contextLoggerFactory = createContextLogger,
+) {
+  const context = { auditType, siteId };
+  if (auditId) {
+    context.auditId = auditId;
+  }
+
+  return createInternalLinksContextLogger(log, context, contextLoggerFactory);
+}
 
 export function createInternalLinksStepLogger({
-  createContextLogger,
+  createContextLogger: contextLoggerFactory = createContextLogger,
   log,
   auditType,
   siteId,
@@ -21,17 +61,17 @@ export function createInternalLinksStepLogger({
   step,
   extraContext = {},
 }) {
-  return createContextLogger(log, {
+  return createInternalLinksContextLogger(log, {
     auditType,
     siteId,
     auditId,
     step,
     ...extraContext,
-  });
+  }, contextLoggerFactory);
 }
 
 export function ensureInternalLinksStepLogger({
-  createContextLogger,
+  createContextLogger: contextLoggerFactory = createContextLogger,
   log,
   auditType,
   siteId,
@@ -39,12 +79,12 @@ export function ensureInternalLinksStepLogger({
   step,
   extraContext = {},
 }) {
-  if (isContextLogger(log)) {
+  if (isInternalLinksContextLogger(log)) {
     return log;
   }
 
   return createInternalLinksStepLogger({
-    createContextLogger,
+    createContextLogger: contextLoggerFactory,
     log,
     auditType,
     siteId,

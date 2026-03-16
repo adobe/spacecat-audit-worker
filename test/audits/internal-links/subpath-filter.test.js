@@ -17,7 +17,6 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import {
   isWithinAuditScope,
-  isSharedInternalResource,
   filterByAuditScope,
   extractPathPrefix,
 } from '../../../src/internal-links/subpath-filter.js';
@@ -95,32 +94,6 @@ describe('subpath-filter', () => {
       expect(isWithinAuditScope('https://bulk.com/uk/page', 'bulk.com:8080/uk')).to.equal(false);
       // Same port should work
       expect(isWithinAuditScope('https://bulk.com:8080/uk/page', 'bulk.com:8080/uk')).to.equal(true);
-    });
-  });
-
-  describe('isSharedInternalResource', () => {
-    it('returns false when url is empty or baseURL has no scoped subpath', () => {
-      expect(isSharedInternalResource('', 'bulk.com/uk', 'js')).to.equal(false);
-      expect(isSharedInternalResource('/etc.clientlibs/app.js', 'bulk.com', 'js')).to.equal(false);
-    });
-
-    it('allows same-host shared assets outside the scoped subpath for supported item types', () => {
-      expect(isSharedInternalResource('https://bulk.com/etc.clientlibs/app.js', 'bulk.com/uk', 'js')).to.equal(true);
-      expect(isSharedInternalResource('/content/dam/shared/hero.png', 'bulk.com/uk', 'image')).to.equal(true);
-      expect(isSharedInternalResource('/bin/form/submit', 'bulk.com/uk', 'form')).to.equal(true);
-    });
-
-    it('does not allow navigational page links outside the scoped subpath', () => {
-      expect(isSharedInternalResource('https://bulk.com/products', 'bulk.com/uk', 'link')).to.equal(false);
-    });
-
-    it('does not allow cross-host resources', () => {
-      expect(isSharedInternalResource('https://cdn.bulk.com/etc.clientlibs/app.js', 'bulk.com/uk', 'js')).to.equal(false);
-      expect(isSharedInternalResource('https://other.com/content/dam/shared/hero.png', 'bulk.com/uk', 'image')).to.equal(false);
-    });
-
-    it('returns false when base URL parsing fails', () => {
-      expect(isSharedInternalResource('/etc.clientlibs/app.js', '://invalid', 'js')).to.equal(false);
     });
   });
 
@@ -268,7 +241,7 @@ describe('subpath-filter', () => {
       expect(extractPathPrefix('bulk.com/uk/page1')).to.equal('/uk');
       expect(extractPathPrefix('bulk.com/fr/page1')).to.equal('/fr');
       expect(extractPathPrefix('https://bulk.com/uk/page1')).to.equal('/uk');
-      expect(extractPathPrefix('bulk.com/products/item')).to.equal('');
+      expect(extractPathPrefix('bulk.com/products/item')).to.equal('/products');
       expect(extractPathPrefix('bulk.com/en-us/page1')).to.equal('/en-us');
     });
 

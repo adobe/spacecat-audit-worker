@@ -18,7 +18,6 @@ import {
   createContextLogger,
   createAuditLogger,
   createSiteLogger,
-  isContextLogger,
 } from '../../src/common/context-logger.js';
 
 describe('Context Logger', () => {
@@ -168,13 +167,6 @@ describe('Context Logger', () => {
 
       expect(baseLog.debug).to.have.been.calledOnce;
       expect(baseLog.debug).to.have.been.calledWith('[auditType=test] Debug message');
-    });
-
-    it('should mark wrapped loggers as context loggers', () => {
-      const log = createContextLogger(baseLog, { auditType: 'test' });
-
-      expect(isContextLogger(log)).to.be.true;
-      expect(isContextLogger(baseLog)).to.be.false;
     });
   });
 
