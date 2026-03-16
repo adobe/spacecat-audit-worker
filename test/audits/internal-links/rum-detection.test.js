@@ -162,6 +162,90 @@ describe('internal-links rum-detection', () => {
     );
   });
 
+  it('strips hashes from persisted rum source and target URLs', async () => {
+    const rumApiClient = {
+      query: sinon.stub().resolves([
+        {
+          url_from: 'https://example.com/source#section',
+          url_to: 'https://example.com/missing#details',
+          traffic_domain: 42,
+        },
+      ]),
+    };
+    const isLinkInaccessible = sinon.stub().resolves({
+      isBroken: true,
+      inconclusive: false,
+      httpStatus: 404,
+      statusBucket: 'not_found_404',
+      contentType: 'text/html',
+    });
+    const log = createLog();
+    const { runAuditAndImportTopPagesStep } = createSteps({ isLinkInaccessible });
+
+    const result = await runAuditAndImportTopPagesStep({
+      log,
+      site: createSite(),
+      rumApiClient,
+      finalUrl: 'https://example.com',
+      audit: {
+        getId: () => 'audit-1',
+      },
+    });
+
+    expect(result.auditResult.brokenInternalLinks).to.deep.equal([{
+      urlFrom: 'https://example.com/source',
+      urlTo: 'https://example.com/missing',
+      trafficDomain: 42,
+      detectionSource: 'rum',
+      httpStatus: 404,
+      statusBucket: 'not_found_404',
+      contentType: 'text/html',
+      priority: 'high',
+    }]);
+  });
+
+  it('preserves invalid absolute rum source URLs when hash stripping fallback is used', async () => {
+    const rumApiClient = {
+      query: sinon.stub().resolves([
+        {
+          url_from: 'not-a-valid-absolute-url',
+          url_to: 'https://example.com/missing',
+          traffic_domain: 7,
+        },
+      ]),
+    };
+    const isLinkInaccessible = sinon.stub().resolves({
+      isBroken: true,
+      inconclusive: false,
+      httpStatus: 404,
+      statusBucket: 'not_found_404',
+      contentType: 'text/html',
+    });
+    const log = createLog();
+    const { runAuditAndImportTopPagesStep } = createSteps({ isLinkInaccessible });
+
+    const result = await runAuditAndImportTopPagesStep({
+      log,
+      site: createSite(),
+      rumApiClient,
+      finalUrl: 'https://example.com',
+      audit: {
+        getId: () => 'audit-1',
+      },
+    });
+
+    expect(result.auditResult.brokenInternalLinks).to.deep.equal([{
+      urlFrom: 'not-a-valid-absolute-url',
+      urlTo: 'https://example.com/missing',
+      trafficDomain: 7,
+      detectionSource: 'rum',
+      httpStatus: 404,
+      statusBucket: 'not_found_404',
+      contentType: 'text/html',
+      priority: 'high',
+    }]);
+  });
+
   it('logs inconclusive and failed validation counts in rum summary', async () => {
     const rumApiClient = {
       query: sinon.stub().resolves([

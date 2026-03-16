@@ -86,9 +86,57 @@ function getAssetTypeFromUrl(url, pageUrl = 'https://example.com') {
   /* c8 ignore stop */
 }
 
+function decodeCssEscapes(rawValue = '') {
+  return String(rawValue)
+    .replace(/\\([0-9a-fA-F]{1,6})(?:\r\n|[ \t\r\n\f])?/g, (_, hex) => {
+      try {
+        return String.fromCodePoint(Number.parseInt(hex, 16));
+      } catch (error) {
+        return '';
+      }
+    })
+    .replace(/\\([^\n\r\f0-9a-fA-F])/g, '$1');
+}
+
+function normalizeMalformedEscapedPath(rawValue = '') {
+  const value = String(rawValue);
+  const [pathAndQuery, hash = ''] = value.split('#');
+  const [pathname = '', query = ''] = pathAndQuery.split('?');
+  const pathSegments = pathname.split('/');
+  const escapedSegmentCount = pathSegments.filter((segment) => /^2f(?:%20)?/i.test(segment)).length;
+
+  if (escapedSegmentCount < 2) {
+    return value;
+  }
+
+  const normalizedPath = pathSegments
+    .map((segment) => segment.replace(/^2f(?:%20)?/i, ''))
+    .join('/');
+  const rebuiltPath = normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`;
+  const rebuiltQuery = query ? `?${query}` : '';
+  const rebuiltHash = hash ? `#${hash}` : '';
+
+  return `${rebuiltPath}${rebuiltQuery}${rebuiltHash}`;
+}
+
+function normalizeDetectedUrlCandidate(rawValue = '') {
+  const decodedValue = decodeCssEscapes(String(rawValue)).trim().replace(/^['"]|['"]$/g, '');
+  return normalizeMalformedEscapedPath(decodedValue);
+}
+
+function stripAbsoluteUrlHash(url) {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = '';
+    return parsed.toString();
+  } catch (error) {
+    return url;
+  }
+}
+
 function extractCssUrlCandidates(rawCss = '') {
   return Array.from(String(rawCss).matchAll(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi))
-    .map((match) => match[2]?.trim())
+    .map((match) => normalizeDetectedUrlCandidate(match[2]))
     .filter(Boolean)
     .filter((candidate) => !candidate.startsWith('data:') && !candidate.startsWith('#'));
 }
@@ -105,8 +153,9 @@ function resolveUrlCandidates(rawValue, pageUrl) {
     .map((entry) => entry.trim())
     .filter(Boolean)
     .map((entry) => entry.split(/\s+/)[0])
+    .map((entry) => normalizeDetectedUrlCandidate(entry))
     .filter((entry) => entry && !entry.startsWith('data:') && !entry.startsWith('#'))
-    .map((entry) => new URL(entry, pageUrl).toString());
+    .map((entry) => stripAbsoluteUrlHash(new URL(entry, pageUrl).toString()));
 }
 
 function pushResolvedReference({
@@ -118,10 +167,11 @@ function pushResolvedReference({
   type,
   anchorText,
 }) {
-  if (!rawUrl || rawUrl.startsWith('#')) return;
+  const normalizedUrl = normalizeDetectedUrlCandidate(rawUrl);
+  if (!normalizedUrl || normalizedUrl.startsWith('#')) return;
 
   try {
-    const absoluteUrl = new URL(rawUrl, pageUrl).toString();
+    const absoluteUrl = stripAbsoluteUrlHash(new URL(normalizedUrl, pageUrl).toString());
     const hostname = normalizeHostname(absoluteUrl);
     const isAllowedHost = isInternalAssetHost(hostname, baseHostname);
 
@@ -183,11 +233,11 @@ function extractInternalLinks($, pageUrl, baseHostname, log) {
   // Extract links from anchor tags
   $('a[href]').each((_, el) => {
     const $a = $(el);
-    const href = $a.attr('href');
+    const href = normalizeDetectedUrlCandidate($a.attr('href'));
     if (!href || href.startsWith('#')) return;
 
     try {
-      const absoluteUrl = new URL(href, pageUrl).toString();
+      const absoluteUrl = stripAbsoluteUrlHash(new URL(href, pageUrl).toString());
       const linkHostname = new URL(absoluteUrl).hostname.replace(/^www\./, '');
 
       if (linkHostname === baseHostname) {
@@ -205,11 +255,11 @@ function extractInternalLinks($, pageUrl, baseHostname, log) {
   // Extract links from image map areas
   $('area[href]').each((_, el) => {
     const $area = $(el);
-    const href = $area.attr('href');
+    const href = normalizeDetectedUrlCandidate($area.attr('href'));
     if (!href || href.startsWith('#')) return;
 
     try {
-      const absoluteUrl = new URL(href, pageUrl).toString();
+      const absoluteUrl = stripAbsoluteUrlHash(new URL(href, pageUrl).toString());
       const linkHostname = normalizeHostname(absoluteUrl);
 
       if (isSameHost(linkHostname, baseHostname)) {
@@ -226,12 +276,12 @@ function extractInternalLinks($, pageUrl, baseHostname, log) {
 
   // Extract form action URLs
   $('form[action]').each((_, el) => {
-    const action = $(el).attr('action');
+    const action = normalizeDetectedUrlCandidate($(el).attr('action'));
     // eslint-disable-next-line no-script-url
     if (!action || action.startsWith('#') || action.startsWith('javascript:')) return;
 
     try {
-      const absoluteUrl = new URL(action, pageUrl).toString();
+      const absoluteUrl = stripAbsoluteUrlHash(new URL(action, pageUrl).toString());
       const linkHostname = new URL(absoluteUrl).hostname.replace(/^www\./, '');
 
       if (linkHostname === baseHostname) {
@@ -248,11 +298,11 @@ function extractInternalLinks($, pageUrl, baseHostname, log) {
 
   // Extract canonical URLs
   $('link[rel="canonical"]').each((_, el) => {
-    const href = $(el).attr('href');
+    const href = normalizeDetectedUrlCandidate($(el).attr('href'));
     if (!href) return;
 
     try {
-      const absoluteUrl = new URL(href, pageUrl).toString();
+      const absoluteUrl = stripAbsoluteUrlHash(new URL(href, pageUrl).toString());
       const linkHostname = new URL(absoluteUrl).hostname.replace(/^www\./, '');
 
       if (linkHostname === baseHostname) {
@@ -269,11 +319,11 @@ function extractInternalLinks($, pageUrl, baseHostname, log) {
 
   // Extract alternate language/locale links
   $('link[rel="alternate"][hreflang]').each((_, el) => {
-    const href = $(el).attr('href');
+    const href = normalizeDetectedUrlCandidate($(el).attr('href'));
     if (!href) return;
 
     try {
-      const absoluteUrl = new URL(href, pageUrl).toString();
+      const absoluteUrl = stripAbsoluteUrlHash(new URL(href, pageUrl).toString());
       const linkHostname = new URL(absoluteUrl).hostname.replace(/^www\./, '');
 
       if (linkHostname === baseHostname) {
@@ -305,11 +355,11 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
 
   // Images and SVGs
   $('img[src]').each((_, el) => {
-    const src = $(el).attr('src');
+    const src = normalizeDetectedUrlCandidate($(el).attr('src'));
     if (!src || src.startsWith('data:') || src.startsWith('#')) return;
 
     try {
-      const absoluteUrl = new URL(src, pageUrl).toString();
+      const absoluteUrl = stripAbsoluteUrlHash(new URL(src, pageUrl).toString());
       const assetHostname = normalizeHostname(absoluteUrl);
 
       if (isInternalAssetHost(assetHostname, baseHostname)) {
@@ -766,7 +816,7 @@ export async function detectBrokenLinksFromCrawlBatch({
       }
 
       const html = s3Object.scrapeResult.rawBody;
-      const pageUrl = s3Object.finalUrl || url;
+      const pageUrl = stripAbsoluteUrlHash(s3Object.finalUrl || url);
 
       if (!isWithinAuditScope(pageUrl, baseURL)) {
         pagesSkipped += 1;

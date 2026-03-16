@@ -14,6 +14,16 @@ import { createInternalLinksStepLogger } from './logging.js';
 
 const RUM_VALIDATION_CONCURRENCY = 10;
 
+function stripAbsoluteUrlHash(url) {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = '';
+    return parsed.toString();
+  } catch (error) {
+    return url;
+  }
+}
+
 async function mapSettledInBatches(items, batchSize, mapper) {
   const settledResults = [];
 
@@ -131,8 +141,8 @@ export function createInternalLinksRumSteps({
       const inaccessibleLinks = accessibilityResults
         .filter((result) => result.inaccessible)
         .map((result) => ({
-          urlFrom: result.link.url_from,
-          urlTo: result.link.url_to,
+          urlFrom: stripAbsoluteUrlHash(result.link.url_from),
+          urlTo: stripAbsoluteUrlHash(result.link.url_to),
           trafficDomain: result.link.traffic_domain,
           detectionSource: 'rum',
           httpStatus: result.validation.httpStatus,

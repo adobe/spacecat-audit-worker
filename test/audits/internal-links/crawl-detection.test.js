@@ -1477,6 +1477,307 @@ describe('Crawl Detection Module', () => {
       expect(isLinkInaccessibleStub).to.have.been.calledWith('https://example.com/internal.png');
     });
 
+    it('should decode CSS-escaped URLs in style tags and inline styles', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      const htmlWithEscapedCssUrls = `
+        <html>
+          <head>
+            <style>
+              .hero {
+                background-image: url(\\2f content\\2f dam\\2f apcolourcatalogue\\2f asset\\2f hero.webp);
+              }
+            </style>
+          </head>
+          <body>
+            <div style="background-image: url(\\2f content\\2f dam\\2f apcolourcatalogue\\2f asset\\2f inline.webp)"></div>
+          </body>
+        </html>
+      `;
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: { rawBody: htmlWithEscapedCssUrls },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub
+        .withArgs('https://example.com/content/dam/apcolourcatalogue/asset/hero.webp')
+        .resolves(createValidationResponse(true, 404, '4xx', { contentType: 'image/webp' }));
+      isLinkInaccessibleStub
+        .withArgs('https://example.com/content/dam/apcolourcatalogue/asset/inline.webp')
+        .resolves(createValidationResponse(true, 404, '4xx', { contentType: 'image/webp' }));
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      expect(isLinkInaccessibleStub).to.have.been.calledTwice;
+      expect(isLinkInaccessibleStub).to.have.been.calledWith('https://example.com/content/dam/apcolourcatalogue/asset/hero.webp');
+      expect(isLinkInaccessibleStub).to.have.been.calledWith('https://example.com/content/dam/apcolourcatalogue/asset/inline.webp');
+      expect(isLinkInaccessibleStub).to.not.have.been.calledWith(
+        'https://example.com/2f%20content/2f%20dam/2f%20apcolourcatalogue/2f%20asset/2f%20hero.webp',
+      );
+      const styleResult = result.results.find((entry) => entry.anchorText === '[style url()]');
+      const inlineStyleResult = result.results.find((entry) => entry.anchorText === '[inline style url()]');
+
+      expect(styleResult).to.deep.include({
+        urlFrom: 'https://example.com/page1',
+        urlTo: 'https://example.com/content/dam/apcolourcatalogue/asset/hero.webp',
+        anchorText: '[style url()]',
+        itemType: 'image',
+        httpStatus: 404,
+        statusBucket: '4xx',
+        contentType: 'image/webp',
+        trafficDomain: 1,
+      });
+      expect(inlineStyleResult).to.deep.include({
+        urlFrom: 'https://example.com/page1',
+        urlTo: 'https://example.com/content/dam/apcolourcatalogue/asset/inline.webp',
+        anchorText: '[inline style url()]',
+        itemType: 'image',
+        httpStatus: 404,
+        statusBucket: '4xx',
+        contentType: 'image/webp',
+        trafficDomain: 1,
+      });
+    });
+
+    it('should normalize malformed escaped path fragments across link and asset extraction', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      const htmlWithMalformedEscapedPaths = `
+        <html>
+          <body>
+            <a href="/2f%20products/2f%20paint-products.html">Paint Products</a>
+            <img src="/2f%20content/2f%20dam/2f%20apcolourcatalogue/2f%20asset/2fhero.webp" alt="Hero">
+          </body>
+        </html>
+      `;
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: { rawBody: htmlWithMalformedEscapedPaths },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub
+        .withArgs('https://example.com/products/paint-products.html')
+        .resolves(createValidationResponse(true));
+      isLinkInaccessibleStub
+        .withArgs('https://example.com/content/dam/apcolourcatalogue/asset/hero.webp')
+        .resolves(createValidationResponse(true, 404, '4xx', { contentType: 'image/webp' }));
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      expect(isLinkInaccessibleStub).to.have.been.calledTwice;
+      expect(isLinkInaccessibleStub).to.have.been.calledWith('https://example.com/products/paint-products.html');
+      expect(isLinkInaccessibleStub).to.have.been.calledWith('https://example.com/content/dam/apcolourcatalogue/asset/hero.webp');
+      expect(result.results.some((entry) => entry.urlTo === 'https://example.com/products/paint-products.html' && entry.itemType === 'link')).to.equal(true);
+      expect(result.results.some((entry) => entry.urlTo === 'https://example.com/content/dam/apcolourcatalogue/asset/hero.webp' && entry.itemType === 'image')).to.equal(true);
+    });
+
+    it('should ignore CSS URLs with invalid escaped code points', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      const htmlWithInvalidCssEscape = `
+        <html>
+          <head>
+            <style>
+              .hero {
+                background-image: url(\\110000 );
+              }
+            </style>
+          </head>
+          <body>
+            <img src="/valid.png" alt="Valid">
+          </body>
+        </html>
+      `;
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: { rawBody: htmlWithInvalidCssEscape },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub
+        .withArgs('https://example.com/valid.png')
+        .resolves(createValidationResponse(false));
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      expect(isLinkInaccessibleStub).to.have.been.calledOnce;
+      expect(isLinkInaccessibleStub).to.have.been.calledWith('https://example.com/valid.png');
+      expect(result.results).to.deep.equal([]);
+    });
+
+    it('should preserve query strings and strip hashes when normalizing malformed escaped paths', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      const htmlWithMalformedEscapedPathAndFragments = `
+        <html>
+          <body>
+            <a href="/2f%20products/2f%20paint-products.html?category=interior#top">Paint Products</a>
+          </body>
+        </html>
+      `;
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: { rawBody: htmlWithMalformedEscapedPathAndFragments },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub
+        .withArgs('https://example.com/products/paint-products.html?category=interior')
+        .resolves(createValidationResponse(true));
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      expect(isLinkInaccessibleStub).to.have.been.calledOnce;
+      expect(isLinkInaccessibleStub).to.have.been.calledWith(
+        'https://example.com/products/paint-products.html?category=interior',
+      );
+      expect(result.results).to.have.lengthOf(1);
+      expect(result.results[0]).to.deep.include({
+        urlFrom: 'https://example.com/page1',
+        urlTo: 'https://example.com/products/paint-products.html?category=interior',
+        itemType: 'link',
+        anchorText: 'Paint Products',
+      });
+    });
+
+    it('should add a leading slash when normalizing relative malformed escaped paths', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      const htmlWithRelativeMalformedEscapedPath = `
+        <html>
+          <body>
+            <a href="2f%20products/2f%20paint-products.html">Paint Products</a>
+          </body>
+        </html>
+      `;
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: { rawBody: htmlWithRelativeMalformedEscapedPath },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub
+        .withArgs('https://example.com/products/paint-products.html')
+        .resolves(createValidationResponse(true));
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      expect(isLinkInaccessibleStub).to.have.been.calledOnce;
+      expect(isLinkInaccessibleStub).to.have.been.calledWith(
+        'https://example.com/products/paint-products.html',
+      );
+      expect(result.results).to.have.lengthOf(1);
+      expect(result.results[0]).to.deep.include({
+        urlFrom: 'https://example.com/page1',
+        urlTo: 'https://example.com/products/paint-products.html',
+        itemType: 'link',
+        anchorText: 'Paint Products',
+      });
+    });
+
+    it('should strip source page hashes before persisting broken crawl links', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      const htmlWithBrokenLink = `
+        <html>
+          <body>
+            <a href="/broken-target">Broken Target</a>
+          </body>
+        </html>
+      `;
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: { rawBody: htmlWithBrokenLink },
+        finalUrl: 'https://example.com/page1#details',
+      });
+
+      isLinkInaccessibleStub
+        .withArgs('https://example.com/broken-target')
+        .resolves(createValidationResponse(true));
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      expect(result.results).to.have.lengthOf(1);
+      expect(result.results[0]).to.deep.include({
+        urlFrom: 'https://example.com/page1',
+        urlTo: 'https://example.com/broken-target',
+        itemType: 'link',
+        anchorText: 'Broken Target',
+      });
+    });
+
+    it('should tolerate invalid absolute source page URLs when stripping hashes', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: { rawBody: '<html><body><p>No links</p></body></html>' },
+        finalUrl: 'not-a-valid-absolute-url',
+      });
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      expect(result.results).to.deep.equal([]);
+      expect(isLinkInaccessibleStub).to.not.have.been.called;
+    });
+
     it('should fallback to safe defaults when batch config values are non-positive', async () => {
       const scrapeResultPaths = new Map([
         ['https://example.com/page1', 'scrapes/page1.json'],
