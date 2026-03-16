@@ -780,5 +780,28 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
         expect(result.status).to.equal(ok().status);
       });
     });
+
+    describe('fallback branches for missing guidanceBody fields', () => {
+      it('should default to [] when guidanceBody.suggestions is undefined (line 101)', async () => {
+        Opportunity.allBySiteId.resolves([]);
+        Opportunity.create.resolves(opportunityInstance);
+        const message = createMessage({ bodyOverrides: { suggestions: undefined } });
+
+        const result = await handler(message, context);
+
+        expect(result.status).to.equal(ok().status);
+      });
+
+      it('should default sumTraffic to 0 when both guidanceBody and data lack it (line 103)', async () => {
+        Opportunity.allBySiteId.resolves([]);
+        Opportunity.create.resolves(opportunityInstance);
+        const message = createMessage({ bodyOverrides: { sumTraffic: undefined } });
+        message.data.sumTraffic = undefined;
+
+        const result = await handler(message, context);
+
+        expect(result.status).to.equal(ok().status);
+      });
+    });
   });
 });

@@ -573,7 +573,7 @@ export async function runPaidKeywordAnalysisStep(context) {
   log.debug(`[ad-intent-mismatch] [Site: ${finalUrl}] Audit updated with analysis results`);
 
   const { auditResult } = result;
-  const searchPages = auditResult.predominantlyPaidPages || [];
+  const searchPages = auditResult.predominantlyPaidPages;
 
   // Fetch Ahrefs data (mandatory — terminate if fails)
   let ahrefsMap;
