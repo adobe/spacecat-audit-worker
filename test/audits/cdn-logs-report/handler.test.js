@@ -146,6 +146,7 @@ describe('CDN Logs Report Handler', function test() {
   let saveExcelReportStub;
   let createLLMOSharepointClientStub;
   let bulkPublishToAdminHlxStub;
+  let syncAgenticTrafficToDbStub;
 
   this.timeout(10000);
 
@@ -198,12 +199,23 @@ describe('CDN Logs Report Handler', function test() {
     saveExcelReportStub = sinon.stub().resolves();
     createLLMOSharepointClientStub = sinon.stub();
     bulkPublishToAdminHlxStub = sinon.stub().resolves();
-    
+    syncAgenticTrafficToDbStub = sinon.stub().resolves({
+      source: 'db-endpoints',
+      existingRows: 0,
+      deletedExisting: false,
+      insertedRows: 2,
+      chunkSize: 2000,
+      chunkCount: 1,
+    });
+
     handler = await esmock('../../../src/cdn-logs-report/handler.js', {}, {
       '../../../src/utils/report-uploader.js': {
         createLLMOSharepointClient: createLLMOSharepointClientStub,
         saveExcelReport: saveExcelReportStub,
         bulkPublishToAdminHlx: bulkPublishToAdminHlxStub,
+      },
+      '../../../src/cdn-logs-report/utils/agentic-traffic-db-sync.js': {
+        syncAgenticTrafficToDb: syncAgenticTrafficToDbStub,
       },
     });
   });
@@ -218,6 +230,15 @@ describe('CDN Logs Report Handler', function test() {
     createLLMOSharepointClientStub.resolves(createMockSharepointClient(sandbox));
     bulkPublishToAdminHlxStub.reset();
     bulkPublishToAdminHlxStub.resolves();
+    syncAgenticTrafficToDbStub.reset();
+    syncAgenticTrafficToDbStub.resolves({
+      source: 'db-endpoints',
+      existingRows: 0,
+      deletedExisting: false,
+      insertedRows: 2,
+      chunkSize: 2000,
+      chunkCount: 1,
+    });
 
     site = {
       getSiteId: () => 'test-site',
@@ -308,6 +329,7 @@ describe('CDN Logs Report Handler', function test() {
       // Verify Athena interactions
       expect(context.athenaClient.execute).to.have.been.callCount(1);
       expect(context.athenaClient.query).to.have.been.callCount(2);
+      expect(result.dailyAgenticExport).to.equal(undefined);
     });
 
     it('handles different weekOffset values', async () => {
@@ -366,6 +388,120 @@ describe('CDN Logs Report Handler', function test() {
 
       clock.restore();
       expect(context.athenaClient.query).to.have.been.callCount(2);
+    });
+
+    it('runs additional daily export for allowlisted site id', async () => {
+      const clock = sinon.useFakeTimers({
+        now: new Date('2025-01-07T12:00:00Z'),
+        toFake: ['Date'],
+      });
+
+      site.getId = () => '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3';
+      context.athenaClient.query.resetHistory();
+
+      const auditContext = createAuditContext(sandbox);
+      const result = await handler.runner('https://example.com', context, site, auditContext);
+
+      clock.restore();
+
+      expect(context.athenaClient.query).to.have.been.callCount(3);
+      expect(result).to.have.property('dailyAgenticExport');
+      expect(result.dailyAgenticExport).to.include({
+        enabled: true,
+        success: true,
+        siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+        trafficDate: '2025-01-06',
+      });
+      expect(result.dailyAgenticExport).to.have.property('delivery');
+      expect(result.dailyAgenticExport.delivery).to.deep.equal({
+        source: 'db-endpoints',
+        existingRows: 0,
+        deletedExisting: false,
+        insertedRows: 2,
+        chunkSize: 2000,
+        chunkCount: 1,
+      });
+    });
+
+    it('isolates daily export failures and keeps weekly results', async () => {
+      const clock = sinon.useFakeTimers({
+        now: new Date('2025-01-07T12:00:00Z'),
+        toFake: ['Date'],
+      });
+
+      site.getId = () => '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3';
+      context.athenaClient.query = sandbox.stub().callsFake((query, database, description) => {
+        if (description.includes('agentic_daily_flat_data')) {
+          return Promise.reject(new Error('Daily query failed'));
+        }
+        if (description.includes('agentic')) {
+          return Promise.resolve(MOCK_AGENTIC_DATA);
+        }
+        if (description.includes('referral')) {
+          return Promise.resolve(MOCK_REFERRAL_DATA);
+        }
+        return Promise.resolve([]);
+      });
+
+      const auditContext = createAuditContext(sandbox);
+      const result = await handler.runner('https://example.com', context, site, auditContext);
+
+      clock.restore();
+
+      expect(result.auditResult).to.be.an('array').and.to.have.length.greaterThan(0);
+      expect(result).to.have.property('dailyAgenticExport');
+      expect(result.dailyAgenticExport).to.include({
+        enabled: true,
+        success: false,
+        siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+        trafficDate: '2025-01-06',
+      });
+      expect(result.dailyAgenticExport.error).to.equal('Daily query failed');
+      expect(result.dailyAgenticExport.delivery).to.deep.equal({
+        source: 'db-endpoints',
+        status: 'failed',
+      });
+    });
+
+    it('db_only mode skips weekly flow and runs daily export for explicit date', async () => {
+      const auditContext = createAuditContext(sandbox, {
+        mode: 'db_only',
+        date: '2025-01-10',
+      });
+      const result = await handler.runner('https://example.com', context, site, auditContext);
+
+      expect(result.auditResult).to.deep.equal([]);
+      expect(result.dailyAgenticExport).to.include({
+        enabled: true,
+        mode: 'single',
+        success: true,
+        fromDate: '2025-01-10',
+        toDate: '2025-01-10',
+      });
+      expect(result.dailyAgenticExport.runs).to.have.length(1);
+      expect(context.athenaClient.query).to.have.been.callCount(1);
+      expect(createLLMOSharepointClientStub).to.not.have.been.called;
+    });
+
+    it('db_only mode supports inclusive date range', async () => {
+      const auditContext = createAuditContext(sandbox, {
+        mode: 'db_only',
+        fromDate: '2025-01-08',
+        toDate: '2025-01-10',
+      });
+      const result = await handler.runner('https://example.com', context, site, auditContext);
+
+      expect(result.auditResult).to.deep.equal([]);
+      expect(result.dailyAgenticExport).to.include({
+        enabled: true,
+        mode: 'range',
+        success: true,
+        fromDate: '2025-01-08',
+        toDate: '2025-01-10',
+      });
+      expect(result.dailyAgenticExport.runs).to.have.length(3);
+      expect(context.athenaClient.query).to.have.been.callCount(3);
+      expect(createLLMOSharepointClientStub).to.not.have.been.called;
     });
 
     it('handles bulk publish errors gracefully', async () => {
