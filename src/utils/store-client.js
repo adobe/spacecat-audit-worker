@@ -28,7 +28,6 @@
  */
 
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
-import { Audit } from '@adobe/spacecat-shared-data-access';
 
 /**
  * Error thrown when a store returns empty results
@@ -48,9 +47,9 @@ export class StoreEmptyError extends Error {
  * Used as {auditType} path parameter in /sites/{siteId}/url-store/by-audit/{auditType}
  */
 export const URL_TYPES = {
-  WIKIPEDIA: Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS || 'wikipedia-analysis',
-  REDDIT: Audit.AUDIT_TYPES.REDDIT_ANALYSIS || 'reddit-analysis',
-  YOUTUBE: Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS || 'youtube-analysis',
+  WIKIPEDIA: 'wikipedia-analysis',
+  REDDIT: 'reddit-analysis',
+  YOUTUBE: 'youtube-analysis',
   CITED: 'top-cited-analysis',
 };
 
@@ -59,10 +58,10 @@ export const URL_TYPES = {
  * These are used as the ?audit= query parameter in /sites/{siteId}/sentiment/config
  */
 export const GUIDELINE_TYPES = {
-  WIKIPEDIA_ANALYSIS: Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS || 'wikipedia-analysis',
-  REDDIT_ANALYSIS: Audit.AUDIT_TYPES.REDDIT_ANALYSIS || 'reddit-analysis',
-  YOUTUBE_ANALYSIS: Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS || 'youtube-analysis',
-  CITED_ANALYSIS: Audit.AUDIT_TYPES.CITED_ANALYSIS || 'cited-analysis',
+  WIKIPEDIA_ANALYSIS: 'wikipedia-analysis',
+  REDDIT_ANALYSIS: 'reddit-analysis',
+  YOUTUBE_ANALYSIS: 'youtube-analysis',
+  CITED_ANALYSIS: 'cited-analysis',
 };
 
 /**
