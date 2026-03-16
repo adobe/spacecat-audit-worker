@@ -13,9 +13,11 @@
 import { AuditBuilder } from '../common/audit-builder.js';
 import { PSI_STRATEGY_DESKTOP } from '../support/psi-client.js';
 import createLHSAuditRunner from './lib.js';
+import { lhsDesktopBlackboardPublisher } from './blackboard-publisher.js';
 
 export default new AuditBuilder()
   .withRunner(createLHSAuditRunner(PSI_STRATEGY_DESKTOP))
   // default impl strips slash, which is incorrect
   .withUrlResolver((site) => site.getBaseURL())
+  .withPostProcessors([lhsDesktopBlackboardPublisher])
   .build();
