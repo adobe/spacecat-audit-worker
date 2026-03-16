@@ -1431,13 +1431,14 @@ describe('syncBrokenInternalLinksSuggestions', () => {
       opportunityId: 'oppty-id-1',
       type: 'CONTENT_UPDATE',
       rank: 100,
-      status: SuggestionDataAccess.STATUSES.NEW,
+      status: SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
       data: {
         title: 'Test Title',
         urlFrom: 'https://example.com/from1',
         urlTo: 'https://example.com/to1',
         itemType: 'link',
         priority: 'high',
+        trafficDomain: 100,
         urlsSuggested: ['https://example.com/suggested1'],
         aiRationale: 'Test rationale',
         httpStatus: undefined,
@@ -1486,7 +1487,8 @@ describe('syncBrokenInternalLinksSuggestions', () => {
         urlTo: 'https://example.com/broken.png',
         itemType: 'image',
         priority: 'high',
-        urlsSuggested: [],
+        trafficDomain: 50,
+        urlsSuggested: ['https://example.com'],
         aiRationale: '',
         httpStatus: undefined,
         statusBucket: undefined,
@@ -1500,9 +1502,11 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     expect(cssSuggestion.status).to.equal(SuggestionDataAccess.STATUSES.NEW);
     expect(cssSuggestion.data.itemType).to.equal('css');
     expect(cssSuggestion.data.priority).to.equal('high');
+    expect(cssSuggestion.data.trafficDomain).to.equal(30);
+    expect(cssSuggestion.data.urlsSuggested).to.deep.equal(['https://example.com']);
   });
 
-  it('uses default empty payload fields when data is missing', async () => {
+  it('uses safe payload defaults when data is missing', async () => {
     const brokenInternalLinks = [
       {
         urlFrom: 'https://example.com/from1',
@@ -1521,11 +1525,53 @@ describe('syncBrokenInternalLinksSuggestions', () => {
 
     const mappedSuggestion = testOpportunity.addSuggestions.firstCall.args[0][0];
 
-    expect(mappedSuggestion.data.urlsSuggested).to.deep.equal([]);
+    expect(mappedSuggestion.data.trafficDomain).to.equal(100);
+    expect(mappedSuggestion.data.urlsSuggested).to.deep.equal(['https://example.com']);
     expect(mappedSuggestion.data.aiRationale).to.equal('');
   });
 
-  it('uses rank 1 when trafficDomain is missing, null, or zero', async () => {
+  it('falls back to urlTo when no site base URL is available for default suggestions', async () => {
+    const siteWithoutBaseURL = {
+      ...testContext.site,
+      getBaseURL: () => '',
+    };
+    testContext.site = siteWithoutBaseURL;
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks: [{
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+      }],
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    const mappedSuggestion = testOpportunity.addSuggestions.firstCall.args[0][0];
+    expect(mappedSuggestion.data.urlsSuggested).to.deep.equal(['https://example.com/to1']);
+  });
+
+  it('uses an empty suggested-url array only when neither site base URL nor urlTo is available', async () => {
+    const siteWithoutBaseURL = {
+      ...testContext.site,
+      getBaseURL: () => '',
+    };
+    testContext.site = siteWithoutBaseURL;
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks: [{
+        urlFrom: 'https://example.com/from1',
+      }],
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    const mappedSuggestion = testOpportunity.addSuggestions.firstCall.args[0][0];
+    expect(mappedSuggestion.data.urlsSuggested).to.deep.equal([]);
+  });
+
+  it('uses rank 1 and persists trafficDomain 1 when trafficDomain is missing, null, or zero', async () => {
     const brokenInternalLinks = [
       { urlFrom: 'https://example.com/from1', urlTo: 'https://example.com/to1' },
       { urlFrom: 'https://example.com/from2', urlTo: 'https://example.com/to2', trafficDomain: null },
@@ -1542,14 +1588,14 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     const [noTraffic, nullTraffic, zeroTraffic] = testOpportunity.addSuggestions.firstCall.args[0];
 
     expect(noTraffic.rank).to.equal(1);
-    expect(noTraffic.data.trafficDomain).to.equal(undefined);
+    expect(noTraffic.data.trafficDomain).to.equal(1);
     expect(nullTraffic.rank).to.equal(1);
-    expect(nullTraffic.data.trafficDomain).to.equal(undefined);
+    expect(nullTraffic.data.trafficDomain).to.equal(1);
     expect(zeroTraffic.rank).to.equal(1);
-    expect(zeroTraffic.data.trafficDomain).to.equal(undefined);
+    expect(zeroTraffic.data.trafficDomain).to.equal(1);
   });
 
-  it('keeps rank while omitting persisted trafficDomain from suggestion payloads', async () => {
+  it('keeps rank and persists trafficDomain in suggestion payloads', async () => {
     const brokenInternalLinks = [
       {
         urlFrom: 'https://example.com/from1',
@@ -1575,9 +1621,9 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     const [crawlSuggestion, linkCheckerSuggestion] = testOpportunity.addSuggestions.firstCall.args[0];
 
     expect(crawlSuggestion.rank).to.equal(27);
-    expect(crawlSuggestion.data.trafficDomain).to.equal(undefined);
+    expect(crawlSuggestion.data.trafficDomain).to.equal(27);
     expect(linkCheckerSuggestion.rank).to.equal(13);
-    expect(linkCheckerSuggestion.data.trafficDomain).to.equal(undefined);
+    expect(linkCheckerSuggestion.data.trafficDomain).to.equal(13);
   });
 
   it('normalizes legacy [no text] anchor placeholders to empty strings', async () => {
@@ -1602,7 +1648,7 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     expect(suggestion.data.anchorText).to.equal('');
   });
 
-  it('updates existing suggestions, preserves edits, and resets stale statuses to NEW', async () => {
+  it('updates existing suggestions, preserves edits, and keeps pending-validation status on rerun', async () => {
     const existingSuggestion = {
       getData: testSandbox.stub().returns({
         urlFrom: 'https://example.com/from1',
@@ -1611,6 +1657,8 @@ describe('syncBrokenInternalLinksSuggestions', () => {
         isEdited: true,
         anchorText: '[no text]',
         trafficDomain: 50,
+        urlsSuggested: ['https://example.com/existing-suggestion'],
+        aiRationale: 'Existing rationale',
       }),
       setData: testSandbox.stub(),
       getStatus: testSandbox.stub().returns(SuggestionDataAccess.STATUSES.PENDING_VALIDATION),
@@ -1640,6 +1688,7 @@ describe('syncBrokenInternalLinksSuggestions', () => {
       urlTo: 'https://example.com/to1',
       anchorText: 'Read more',
       title: 'New Title',
+      trafficDomain: 100,
       itemType: 'link',
       priority: 'high',
       urlsSuggested: ['https://example.com/new-suggested'],
@@ -1651,9 +1700,65 @@ describe('syncBrokenInternalLinksSuggestions', () => {
       urlEdited: 'https://example.com/user-fixed-url',
       isEdited: true,
     });
-    expect(existingSuggestion.setStatus).to.have.been.calledOnceWith(SuggestionDataAccess.STATUSES.NEW);
+    expect(existingSuggestion.setStatus).to.not.have.been.called;
     expect(testContext.dataAccess.Suggestion.saveMany).to.have.been.calledOnceWith([existingSuggestion]);
     expect(testOpportunity.addSuggestions).to.not.have.been.called;
+  });
+
+  it('revives outdated suggestions to pending validation when the site requires validation', async () => {
+    testContext.site.requiresValidation = true;
+    const existingSuggestion = {
+      getData: testSandbox.stub().returns({
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+      }),
+      setData: testSandbox.stub(),
+      getStatus: testSandbox.stub().returns(SuggestionDataAccess.STATUSES.OUTDATED),
+      setStatus: testSandbox.stub(),
+      setUpdatedBy: testSandbox.stub(),
+      save: testSandbox.stub().resolves(),
+    };
+    testOpportunity.getSuggestions.resolves([existingSuggestion]);
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks: [{
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+      }],
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    expect(existingSuggestion.setStatus).to.have.been.calledOnceWith(
+      SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
+    );
+  });
+
+  it('marks missing suggestions as OUTDATED on rerun', async () => {
+    const missingSuggestion = {
+      getData: testSandbox.stub().returns({
+        urlFrom: 'https://example.com/old-from',
+        urlTo: 'https://example.com/old-to',
+      }),
+      getStatus: testSandbox.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+    };
+    testOpportunity.getSuggestions.resolves([missingSuggestion]);
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks: [{
+        urlFrom: 'https://example.com/new-from',
+        urlTo: 'https://example.com/new-to',
+      }],
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    expect(testContext.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+      [missingSuggestion],
+      SuggestionDataAccess.STATUSES.OUTDATED,
+    );
   });
 
   it('keeps rejected suggestions unchanged on rerun', async () => {
@@ -1712,6 +1817,69 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     });
 
     expect(existingSuggestion.setData.firstCall.args[0].urlEdited).to.equal(undefined);
+    expect(existingSuggestion.setData.firstCall.args[0].urlsSuggested).to.deep.equal(['https://example.com']);
+  });
+
+  it('falls back to the site default suggestion when updated data has no urlsSuggested and no existing suggestion exists', async () => {
+    const existingSuggestion = {
+      getData: testSandbox.stub().returns({
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+        aiRationale: null,
+      }),
+      setData: testSandbox.stub(),
+      getStatus: testSandbox.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+      setStatus: testSandbox.stub(),
+      setUpdatedBy: testSandbox.stub(),
+      save: testSandbox.stub().resolves(),
+    };
+    testOpportunity.getSuggestions.resolves([existingSuggestion]);
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks: [{
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+        title: 'New Title',
+      }],
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    expect(existingSuggestion.setData.firstCall.args[0].urlsSuggested).to.deep.equal(['https://example.com']);
+    expect(existingSuggestion.setData.firstCall.args[0].aiRationale).to.equal('');
+  });
+
+  it('preserves existing urlsSuggested when updated data has no urlsSuggested', async () => {
+    const existingSuggestion = {
+      getData: testSandbox.stub().returns({
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+        urlsSuggested: ['https://example.com/existing-target'],
+        aiRationale: 'Existing rationale',
+      }),
+      setData: testSandbox.stub(),
+      getStatus: testSandbox.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+      setStatus: testSandbox.stub(),
+      setUpdatedBy: testSandbox.stub(),
+      save: testSandbox.stub().resolves(),
+    };
+    testOpportunity.getSuggestions.resolves([existingSuggestion]);
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks: [{
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+      }],
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    expect(existingSuggestion.setData.firstCall.args[0].urlsSuggested).to.deep.equal([
+      'https://example.com/existing-target',
+    ]);
+    expect(existingSuggestion.setData.firstCall.args[0].aiRationale).to.equal('Existing rationale');
   });
 
   it('falls back to _saveMany when saveMany is unavailable', async () => {

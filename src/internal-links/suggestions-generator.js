@@ -18,6 +18,7 @@ import { handleOutdatedSuggestions } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from './subpath-filter.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
+
 function normalizeAnchorText(anchorText) {
   if (typeof anchorText !== 'string') {
     return '';
@@ -31,19 +32,37 @@ function getSuggestionType() {
   return 'CONTENT_UPDATE';
 }
 
-function getSuggestionRank(entry) {
+function getNormalizedTrafficDomain(entry) {
   const trafficDomain = Number.parseInt(entry?.trafficDomain, 10);
   return Number.isFinite(trafficDomain) && trafficDomain > 0 ? trafficDomain : 1;
 }
 
-function sanitizeBrokenLinkData(entry = {}) {
+function getSuggestionRank(entry) {
+  return getNormalizedTrafficDomain(entry);
+}
+
+function getDefaultSuggestedUrls(site, entry = {}) {
+  if (Array.isArray(entry.urlsSuggested) && entry.urlsSuggested.length > 0) {
+    return entry.urlsSuggested;
+  }
+
+  const siteBaseURL = site?.getBaseURL?.();
+  if (siteBaseURL) {
+    return [siteBaseURL];
+  }
+
+  return entry.urlTo ? [entry.urlTo] : [];
+}
+
+function sanitizeBrokenLinkData(site, entry = {}) {
   return {
     title: entry.title,
     urlFrom: entry.urlFrom,
     urlTo: entry.urlTo,
     itemType: entry.itemType || 'link',
     priority: entry.priority || 'high',
-    urlsSuggested: entry.urlsSuggested || [],
+    trafficDomain: getNormalizedTrafficDomain(entry),
+    urlsSuggested: getDefaultSuggestedUrls(site, entry),
     aiRationale: entry.aiRationale || '',
     httpStatus: entry.httpStatus,
     statusBucket: entry.statusBucket,
@@ -318,17 +337,26 @@ export async function syncBrokenInternalLinksSuggestions({
 
   // Custom merge function to preserve user-edited fields
   const mergeDataFunction = (existingData, newData) => {
+    const existingUrlsSuggested = Array.isArray(existingData?.urlsSuggested)
+      ? existingData.urlsSuggested.filter(Boolean)
+      : [];
     const normalizedExistingData = {
       ...existingData,
       anchorText: normalizeAnchorText(existingData?.anchorText),
     };
     delete normalizedExistingData.type;
-    delete normalizedExistingData.trafficDomain;
 
     const merged = {
       ...normalizedExistingData,
-      ...sanitizeBrokenLinkData(newData),
+      ...sanitizeBrokenLinkData(context.site, newData),
     };
+
+    if (!Array.isArray(newData?.urlsSuggested) || newData.urlsSuggested.length === 0) {
+      merged.urlsSuggested = existingUrlsSuggested.length > 0
+        ? existingUrlsSuggested
+        : getDefaultSuggestedUrls(context.site, newData);
+      merged.aiRationale = existingData?.aiRationale || '';
+    }
 
     // Preserve urlEdited and isEdited flag if user has made a selection (AI or custom)
     // eslint-disable-next-line max-len
@@ -349,11 +377,11 @@ export async function syncBrokenInternalLinksSuggestions({
       return null;
     }
 
-    if (
-      currentStatus === SuggestionDataAccess.STATUSES.OUTDATED
-      || currentStatus === SuggestionDataAccess.STATUSES.PENDING_VALIDATION
-    ) {
-      return SuggestionDataAccess.STATUSES.NEW;
+    if (currentStatus === SuggestionDataAccess.STATUSES.OUTDATED) {
+      const requiresValidation = Boolean(context.site?.requiresValidation);
+      return requiresValidation
+        ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+        : SuggestionDataAccess.STATUSES.NEW;
     }
 
     return null;
@@ -373,7 +401,7 @@ export async function syncBrokenInternalLinksSuggestions({
     existingSuggestions,
     newDataKeys,
     buildKey,
-    statusToSetForOutdated: SuggestionDataAccess.STATUSES.NEW,
+    statusToSetForOutdated: SuggestionDataAccess.STATUSES.OUTDATED,
   });
 
   const toUpdate = existingSuggestions
@@ -396,12 +424,15 @@ export async function syncBrokenInternalLinksSuggestions({
     .filter((data) => !existingSuggestionKeys.has(buildKey(data)))
     .map((entry) => {
       const itemType = entry.itemType || 'link';
+      const requiresValidation = Boolean(context.site?.requiresValidation);
       return {
         opportunityId,
         type: getSuggestionType(itemType),
         rank: getSuggestionRank(entry),
-        status: SuggestionDataAccess.STATUSES.NEW,
-        data: sanitizeBrokenLinkData(entry),
+        status: requiresValidation
+          ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+          : SuggestionDataAccess.STATUSES.NEW,
+        data: sanitizeBrokenLinkData(context.site, entry),
       };
     });
 
