@@ -1658,6 +1658,56 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     expect(mergeStatusFn(existingSuggestion)).to.equal(SuggestionDataAccess.STATUSES.NEW);
   });
 
+  it('should leave REJECTED suggestions unchanged on rerun', async () => {
+    const brokenInternalLinks = [
+      {
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+        trafficDomain: 10,
+      },
+    ];
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks,
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    const callArgs = mockSyncSuggestions.getCall(0).args[0];
+    const mergeStatusFn = callArgs.mergeStatusFunction;
+    const existingSuggestion = {
+      getStatus: () => SuggestionDataAccess.STATUSES.REJECTED,
+    };
+
+    expect(mergeStatusFn(existingSuggestion)).to.equal(null);
+  });
+
+  it('should leave already active suggestions unchanged on rerun', async () => {
+    const brokenInternalLinks = [
+      {
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+        trafficDomain: 10,
+      },
+    ];
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks,
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    const callArgs = mockSyncSuggestions.getCall(0).args[0];
+    const mergeStatusFn = callArgs.mergeStatusFunction;
+    const existingSuggestion = {
+      getStatus: () => SuggestionDataAccess.STATUSES.NEW,
+    };
+
+    expect(mergeStatusFn(existingSuggestion)).to.equal(null);
+  });
+
   it('should preserve non-empty anchor text values', async () => {
     const brokenInternalLinks = [
       {
