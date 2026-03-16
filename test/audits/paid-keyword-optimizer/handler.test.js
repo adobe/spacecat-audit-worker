@@ -346,8 +346,15 @@ describe('Paid Keyword Optimizer Audit', () => {
       expect(isExcludedPageType('https://example.com/blog/post')).to.be.false;
     });
 
+    it('should exclude URLs without trailing slash (terminal path segment)', () => {
+      expect(isExcludedPageType('https://example.com/checkout')).to.be.true;
+      expect(isExcludedPageType('https://example.com/help')).to.be.true;
+      expect(isExcludedPageType('https://example.com/login')).to.be.true;
+      expect(isExcludedPageType('https://example.com/api')).to.be.true;
+    });
+
     it('should require path segments with leading slash', () => {
-      // The pattern requires /segment/ (leading and trailing slashes)
+      // The pattern requires /segment (leading slash)
       expect(isExcludedPageType('https://example.com/my-help')).to.be.false;
       expect(isExcludedPageType('https://example.com/helpdesk')).to.be.false;
     });
@@ -447,6 +454,18 @@ describe('Paid Keyword Optimizer Audit', () => {
 
       await expect(fetchPaidPagesFromS3(ctx, 'site-123'))
         .to.be.rejected;
+    });
+
+    it('should return null when S3 response is not an array', async () => {
+      const mockS3 = createMockS3Client(sandbox, { unexpected: 'object' });
+      const ctx = {
+        s3Client: mockS3,
+        env: { S3_IMPORTER_BUCKET_NAME: 'test-bucket' },
+        log: logStub,
+      };
+
+      const result = await fetchPaidPagesFromS3(ctx, 'site-123');
+      expect(result).to.be.null;
     });
 
     it('should return null when data is empty array', async () => {

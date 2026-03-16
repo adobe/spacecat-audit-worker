@@ -37,16 +37,16 @@ const AUDIT_CONSTANTS = {
 };
 
 const EXCLUDE_URL_PATTERNS = [
-  /\/(help|support|faq|docs|documentation)\//i,
-  /\/(cart|checkout|order|payment)\//i,
-  /\/(legal|privacy|terms|cookie-policy)\//i,
-  /\/(login|signin|register|signup|account)\//i,
-  /\/(search|search-results|results)\//i,
-  /\/(thank-you|confirmation)\//i,
-  /\/(404|error|not-found)\//i,
-  /\/(unsubscribe|preferences|manage-subscription)\//i,
-  /\/(api|webhook)\//i,
-  /\/(status|system-status)\//i,
+  /\/(help|support|faq|docs|documentation)(\/|$)/i,
+  /\/(cart|checkout|order|payment)(\/|$)/i,
+  /\/(legal|privacy|terms|cookie-policy)(\/|$)/i,
+  /\/(login|signin|register|signup|account)(\/|$)/i,
+  /\/(search|search-results|results)(\/|$)/i,
+  /\/(thank-you|confirmation)(\/|$)/i,
+  /\/(404|error|not-found)(\/|$)/i,
+  /\/(unsubscribe|preferences|manage-subscription)(\/|$)/i,
+  /\/(api|webhook)(\/|$)/i,
+  /\/(status|system-status)(\/|$)/i,
 ];
 
 /**
@@ -93,6 +93,10 @@ async function fetchPaidPagesFromS3(context, siteId) {
   const bodyString = await response.Body.transformToString();
   const pages = JSON.parse(bodyString);
 
+  if (!Array.isArray(pages)) {
+    return null;
+  }
+
   const map = new Map();
   for (const page of pages) {
     map.set(normalizeUrl(page.url), {
@@ -120,6 +124,8 @@ function computePriorityScore(page, ahrefsData) {
   const cpc = ahrefsData?.cpc || 0;
   const wastedSpend = cpc * page.pageViews * page.bounceRate;
   const alignmentSignal = Math.max(0.1, 1 - (page.engagedScrollRate ?? 0.5));
+  // Normalize to ~$-thousands so scores stay in a human-readable range;
+  // the downstream filter (priorityScore > 0.01) is calibrated to this scale.
   return (wastedSpend / 1000) * alignmentSignal;
 }
 
