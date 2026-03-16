@@ -194,6 +194,15 @@ describe('Cited Analysis Handler', () => {
       expect(result.auditResult.storeData.sentimentConfig).to.deep.equal({ topics: [], guidelines: [] });
     });
 
+    it('should re-throw non-StoreEmptyError from getGuidelines', async () => {
+      mockStoreClient.getGuidelines.rejects(new Error('Network failure'));
+
+      const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.include('Network failure');
+    });
+
     it('should return error when urlStore returns empty', async () => {
       mockStoreClient.getUrls.rejects(new StoreEmptyError('urlStore', siteId, 'No top-cited-analysis URLs found'));
 
