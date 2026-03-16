@@ -21,8 +21,7 @@ import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import handler, {
   inferRecommendationType,
-  getEvictionScore,
-  findLowestEvictionCandidate,
+  reconcileOpportunities,
   MAX_OPPORTUNITIES_PER_TYPE,
 } from '../../../src/paid-keyword-optimizer/guidance-handler.js';
 
@@ -61,9 +60,22 @@ function createMessage({ bodyOverrides, guidanceOverrides } = {}) {
   };
 }
 
+// Counter for unique suggestion IDs
+let suggestionCounter = 0;
+
+// Helper to create suggestion mocks with variations
+function makeSuggestionWithVariations(variations) {
+  suggestionCounter += 1;
+  return [{
+    getId: () => `suggestion-${suggestionCounter}`,
+    getData: () => ({ variations }),
+  }];
+}
+
 // Helper to create a fresh stubbed opportunity instance
 function makeOppty({
-  id, type, status = 'NEW', updatedBy = 'system', url = null, sumTraffic = 0, suggestions = [],
+  id, type, status = 'NEW', updatedBy = 'system', url = null,
+  sumTraffic = 0, suggestions = [], updatedAt = null,
 }) {
   return {
     getId: () => id,
@@ -79,7 +91,7 @@ function makeOppty({
     getData: () => ({ url, sumTraffic }),
     getStatus: () => status,
     getUpdatedBy: () => updatedBy,
-    getUpdatedAt: () => new Date().toISOString(),
+    getUpdatedAt: () => updatedAt || new Date().toISOString(),
   };
 }
 
@@ -94,6 +106,7 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
+    suggestionCounter = 0;
     logStub = {
       info: sandbox.stub(),
       debug: sandbox.stub(),
@@ -102,6 +115,7 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     };
     Suggestion = {
       create: sandbox.stub().resolves(),
+      removeByIds: sandbox.stub().resolves(),
       STATUSES: SuggestionDataAccess.STATUSES,
       TYPES: SuggestionDataAccess.TYPES,
     };
@@ -122,9 +136,10 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
       getUpdatedAt: () => new Date().toISOString(),
     };
     Opportunity = {
-      allBySiteId: sandbox.stub(),
+      allBySiteIdAndStatus: sandbox.stub().resolves([]),
       create: sandbox.stub(),
       saveMany: sandbox.stub().resolves(),
+      removeByIds: sandbox.stub().resolves(),
     };
     Audit = { findById: sandbox.stub() };
 
@@ -187,65 +202,162 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     });
   });
 
-  describe('getEvictionScore', () => {
-    it('should return sumTraffic from opportunity data', () => {
-      const oppty = makeOppty({
-        id: 'o1', type: 'ad-intent-mismatch', sumTraffic: 5000,
-      });
-      expect(getEvictionScore(oppty)).to.equal(5000);
-    });
-
-    it('should return 0 when sumTraffic is missing', () => {
-      const oppty = {
-        getData: () => ({}),
-      };
-      expect(getEvictionScore(oppty)).to.equal(0);
-    });
-
-    it('should return 0 when getData returns null', () => {
-      const oppty = {
-        getData: () => null,
-      };
-      expect(getEvictionScore(oppty)).to.equal(0);
-    });
-  });
-
-  describe('findLowestEvictionCandidate', () => {
-    it('should find the opportunity with the lowest sumTraffic', () => {
-      const oppty1 = makeOppty({ id: 'o1', type: 'ad-intent-mismatch', sumTraffic: 5000 });
-      const oppty2 = makeOppty({ id: 'o2', type: 'ad-intent-mismatch', sumTraffic: 1000 });
-      const oppty3 = makeOppty({ id: 'o3', type: 'ad-intent-mismatch', sumTraffic: 3000 });
-
-      const result = findLowestEvictionCandidate([oppty1, oppty2, oppty3]);
-      expect(result.getId()).to.equal('o2');
-    });
-
-    it('should return first element if all have equal scores', () => {
-      const oppty1 = makeOppty({ id: 'o1', type: 'ad-intent-mismatch', sumTraffic: 100 });
-      const oppty2 = makeOppty({ id: 'o2', type: 'ad-intent-mismatch', sumTraffic: 100 });
-
-      const result = findLowestEvictionCandidate([oppty1, oppty2]);
-      expect(result.getId()).to.equal('o1');
-    });
-
-    it('should handle single element', () => {
-      const oppty = makeOppty({ id: 'o1', type: 'ad-intent-mismatch', sumTraffic: 500 });
-
-      const result = findLowestEvictionCandidate([oppty]);
-      expect(result.getId()).to.equal('o1');
-    });
-  });
-
   describe('MAX_OPPORTUNITIES_PER_TYPE', () => {
     it('should be 4', () => {
       expect(MAX_OPPORTUNITIES_PER_TYPE).to.equal(4);
     });
   });
 
+  describe('reconcileOpportunities', () => {
+    it('should not remove anything when audit_required count <= MAX', async () => {
+      const opptys = [];
+      for (let i = 0; i < 3; i += 1) {
+        opptys.push(makeOppty({
+          id: `o${i}`,
+          type: 'ad-intent-mismatch',
+          suggestions: makeSuggestionWithVariations([{ suggestionText: 'text' }]),
+          updatedAt: new Date(2025, 0, i + 1).toISOString(),
+        }));
+      }
+
+      await reconcileOpportunities(opptys, context.dataAccess, logStub, 'site');
+
+      expect(Opportunity.removeByIds).to.not.have.been.called;
+      expect(Suggestion.removeByIds).to.not.have.been.called;
+    });
+
+    it('should remove newest excess audit_required opportunities and their suggestions', async () => {
+      const opptys = [];
+      for (let i = 0; i < 6; i += 1) {
+        opptys.push(makeOppty({
+          id: `o${i}`,
+          type: 'ad-intent-mismatch',
+          suggestions: makeSuggestionWithVariations([{ suggestionText: 'text' }]),
+          updatedAt: new Date(2025, 0, i + 1).toISOString(), // o0=oldest, o5=newest
+        }));
+      }
+
+      await reconcileOpportunities(opptys, context.dataAccess, logStub, 'site');
+
+      // Should remove o4 and o5 (newest 2 excess beyond MAX of 4)
+      expect(Opportunity.removeByIds).to.have.been.calledOnce;
+      const removedIds = Opportunity.removeByIds.getCall(0).args[0];
+      expect(removedIds).to.have.lengthOf(2);
+      expect(removedIds).to.include('o4');
+      expect(removedIds).to.include('o5');
+
+      // Should also remove their suggestions
+      expect(Suggestion.removeByIds).to.have.been.calledOnce;
+      expect(Suggestion.removeByIds.getCall(0).args[0]).to.have.lengthOf(2);
+    });
+
+    it('should never remove modify_heading opportunities even if total count > MAX', async () => {
+      const opptys = [];
+      // 6 modify_heading opportunities (all have variationChanges)
+      for (let i = 0; i < 6; i += 1) {
+        opptys.push(makeOppty({
+          id: `mh${i}`,
+          type: 'ad-intent-mismatch',
+          suggestions: makeSuggestionWithVariations([{ variationChanges: [{ tag: 'h1' }] }]),
+          updatedAt: new Date(2025, 0, i + 1).toISOString(),
+        }));
+      }
+
+      await reconcileOpportunities(opptys, context.dataAccess, logStub, 'site');
+
+      // Nothing removed — modify_heading are protected
+      expect(Opportunity.removeByIds).to.not.have.been.called;
+      expect(Suggestion.removeByIds).to.not.have.been.called;
+    });
+
+    it('should only cap audit_required while keeping all modify_heading', async () => {
+      const opptys = [];
+
+      // 3 modify_heading (protected)
+      for (let i = 0; i < 3; i += 1) {
+        opptys.push(makeOppty({
+          id: `mh${i}`,
+          type: 'ad-intent-mismatch',
+          suggestions: makeSuggestionWithVariations([{ variationChanges: [{ tag: 'h1' }] }]),
+          updatedAt: new Date(2025, 0, i + 1).toISOString(),
+        }));
+      }
+
+      // 5 audit_required (should be capped at 4)
+      for (let i = 0; i < 5; i += 1) {
+        opptys.push(makeOppty({
+          id: `ar${i}`,
+          type: 'ad-intent-mismatch',
+          suggestions: makeSuggestionWithVariations([{ suggestionText: 'review' }]),
+          updatedAt: new Date(2025, 1, i + 1).toISOString(), // ar0=oldest, ar4=newest
+        }));
+      }
+
+      await reconcileOpportunities(opptys, context.dataAccess, logStub, 'site');
+
+      // Only ar4 (newest excess) should be removed
+      expect(Opportunity.removeByIds).to.have.been.calledOnce;
+      const removedIds = Opportunity.removeByIds.getCall(0).args[0];
+      expect(removedIds).to.have.lengthOf(1);
+      expect(removedIds).to.include('ar4');
+
+      // None of the modify_heading should be touched
+      expect(removedIds).to.not.include('mh0');
+      expect(removedIds).to.not.include('mh1');
+      expect(removedIds).to.not.include('mh2');
+    });
+
+    it('should handle empty activeOpportunities', async () => {
+      await reconcileOpportunities([], context.dataAccess, logStub, 'site');
+
+      expect(Opportunity.removeByIds).to.not.have.been.called;
+      expect(Suggestion.removeByIds).to.not.have.been.called;
+    });
+
+    it('should handle opportunities with no suggestions (unknown type)', async () => {
+      const opptys = [];
+      for (let i = 0; i < 6; i += 1) {
+        opptys.push(makeOppty({
+          id: `u${i}`,
+          type: 'ad-intent-mismatch',
+          suggestions: [{ getId: () => `s-u${i}`, getData: () => ({}) }],
+          updatedAt: new Date(2025, 0, i + 1).toISOString(),
+        }));
+      }
+
+      await reconcileOpportunities(opptys, context.dataAccess, logStub, 'site');
+
+      // unknown type is not audit_required, so nothing is capped
+      expect(Opportunity.removeByIds).to.not.have.been.called;
+    });
+
+    it('should not call Suggestion.removeByIds when excess have no suggestions', async () => {
+      const opptys = [];
+      for (let i = 0; i < 5; i += 1) {
+        opptys.push(makeOppty({
+          id: `o${i}`,
+          type: 'ad-intent-mismatch',
+          // getSuggestions returns items with suggestionText but no getId for the removal
+          suggestions: [{
+            getId: () => `s${i}`,
+            getData: () => ({ variations: [{ suggestionText: 'text' }] }),
+          }],
+          updatedAt: new Date(2025, 0, i + 1).toISOString(),
+        }));
+      }
+
+      await reconcileOpportunities(opptys, context.dataAccess, logStub, 'site');
+
+      // Should remove o4 (newest excess)
+      expect(Opportunity.removeByIds).to.have.been.calledOnce;
+      expect(Suggestion.removeByIds).to.have.been.calledOnce;
+      expect(Suggestion.removeByIds.getCall(0).args[0]).to.deep.equal(['s4']);
+    });
+  });
+
   describe('handler', () => {
     it('should return notFound if no audit is found', async () => {
       Audit.findById.resolves(null);
-      Opportunity.allBySiteId.resolves([]);
       const message = createMessage();
 
       const result = await handler(message, context);
@@ -254,7 +366,6 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     });
 
     it('should create a new opportunity and suggestion', async () => {
-      Opportunity.allBySiteId.resolves([]);
       Opportunity.create.resolves(opportunityInstance);
       const message = createMessage();
 
@@ -271,10 +382,10 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
         type: 'ad-intent-mismatch',
         status: 'NEW',
         updatedBy: 'system',
-        url: TEST_URL, // Same URL
+        url: TEST_URL,
       });
 
-      Opportunity.allBySiteId.resolves([existingOpptyForSameUrl]);
+      Opportunity.allBySiteIdAndStatus.resolves([existingOpptyForSameUrl]);
       Opportunity.create.resolves(opportunityInstance);
       const message = createMessage();
 
@@ -282,11 +393,8 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
 
       expect(Opportunity.create).to.have.been.called;
       expect(Suggestion.create).to.have.been.called;
-
-      // The existing opportunity for the same URL should be marked as IGNORED
       expect(existingOpptyForSameUrl.setStatus).to.have.been.calledWith('IGNORED');
       expect(Opportunity.saveMany).to.have.been.calledWith([existingOpptyForSameUrl]);
-
       expect(result.status).to.equal(ok().status);
     });
 
@@ -296,21 +404,16 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
         type: 'ad-intent-mismatch',
         status: 'NEW',
         updatedBy: 'system',
-        url: 'https://example-page/different-page', // Different URL
+        url: 'https://example-page/different-page',
       });
 
-      Opportunity.allBySiteId.resolves([existingOpptyForDifferentUrl]);
+      Opportunity.allBySiteIdAndStatus.resolves([existingOpptyForDifferentUrl]);
       Opportunity.create.resolves(opportunityInstance);
       const message = createMessage();
 
       const result = await handler(message, context);
 
-      expect(Opportunity.create).to.have.been.called;
-      expect(Suggestion.create).to.have.been.called;
-
-      // The existing opportunity for a different URL should NOT be marked as IGNORED
       expect(existingOpptyForDifferentUrl.setStatus).to.not.have.been.called;
-
       expect(result.status).to.equal(ok().status);
     });
 
@@ -330,19 +433,15 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
         url: TEST_URL,
       });
 
-      Opportunity.allBySiteId.resolves([systemOpptyForSameUrl, userOpptyForSameUrl]);
+      Opportunity.allBySiteIdAndStatus.resolves([systemOpptyForSameUrl, userOpptyForSameUrl]);
       Opportunity.create.resolves(opportunityInstance);
       const message = createMessage();
 
       const result = await handler(message, context);
 
-      // Only the system opportunity should be marked as IGNORED
       expect(systemOpptyForSameUrl.setStatus).to.have.been.calledWith('IGNORED');
       expect(Opportunity.saveMany).to.have.been.calledWith([systemOpptyForSameUrl]);
-
-      // The user-modified opportunity should not be touched
       expect(userOpptyForSameUrl.setStatus).to.not.have.been.called;
-
       expect(result.status).to.equal(ok().status);
     });
 
@@ -355,7 +454,7 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
         url: TEST_URL,
       });
 
-      Opportunity.allBySiteId.resolves([wrongTypeOppty]);
+      Opportunity.allBySiteIdAndStatus.resolves([wrongTypeOppty]);
       Opportunity.create.resolves(opportunityInstance);
       const message = createMessage();
 
@@ -366,7 +465,6 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     });
 
     it('should skip opportunity creation and log for low severity', async () => {
-      Opportunity.allBySiteId.resolves([]);
       const message = createMessage({ bodyOverrides: { issueSeverity: 'low' } });
 
       const result = await handler(message, context);
@@ -378,7 +476,6 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     });
 
     it('should skip opportunity creation for none severity', async () => {
-      Opportunity.allBySiteId.resolves([]);
       const message = createMessage({ bodyOverrides: { issueSeverity: 'none' } });
 
       const result = await handler(message, context);
@@ -388,7 +485,6 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     });
 
     it('should create opportunity if severity is medium', async () => {
-      Opportunity.allBySiteId.resolves([]);
       Opportunity.create.resolves(opportunityInstance);
       const message = createMessage({ bodyOverrides: { issueSeverity: 'Medium' } });
 
@@ -400,7 +496,6 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     });
 
     it('should create opportunity if severity is high', async () => {
-      Opportunity.allBySiteId.resolves([]);
       Opportunity.create.resolves(opportunityInstance);
       const message = createMessage({ bodyOverrides: { issueSeverity: 'high' } });
 
@@ -412,7 +507,6 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     });
 
     it('should set suggestion status to PENDING_VALIDATION when site requires validation', async () => {
-      Opportunity.allBySiteId.resolves([]);
       Opportunity.create.resolves(opportunityInstance);
       context.site = { requiresValidation: true };
       const message = createMessage();
@@ -423,7 +517,6 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     });
 
     it('should set suggestion status to NEW when site does not require validation', async () => {
-      Opportunity.allBySiteId.resolves([]);
       Opportunity.create.resolves(opportunityInstance);
       context.site = { requiresValidation: false };
       const message = createMessage();
@@ -442,20 +535,18 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
         url: TEST_URL,
       });
 
-      Opportunity.allBySiteId.resolves([existingOppty]);
+      Opportunity.allBySiteIdAndStatus.resolves([existingOppty]);
       Opportunity.create.resolves(opportunityInstance);
       const message = createMessage();
 
       const result = await handler(message, context);
 
-      // Only the existing opportunity should be marked as IGNORED, not the newly created one
       expect(existingOppty.setStatus).to.have.been.calledWith('IGNORED');
       expect(Opportunity.saveMany).to.have.been.calledWith([existingOppty]);
       expect(result.status).to.equal(ok().status);
     });
 
     it('should skip opportunity creation when guidance is empty', async () => {
-      Opportunity.allBySiteId.resolves([]);
       const message = {
         auditId: 'auditId',
         siteId: 'site',
@@ -474,7 +565,6 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     });
 
     it('should skip opportunity creation when guidance is missing', async () => {
-      Opportunity.allBySiteId.resolves([]);
       const message = {
         auditId: 'auditId',
         siteId: 'site',
@@ -492,7 +582,6 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     });
 
     it('should store suggestions as variations in the suggestion data', async () => {
-      Opportunity.allBySiteId.resolves([]);
       Opportunity.create.resolves(opportunityInstance);
       const suggestions = [
         { id: 'original', name: 'Original', screenshotUrl: 'https://example.com/original.png' },
@@ -507,7 +596,6 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     });
 
     it('should pass the full message to the opportunity mapper', async () => {
-      Opportunity.allBySiteId.resolves([]);
       Opportunity.create.resolves(opportunityInstance);
       const message = createMessage();
 
@@ -516,14 +604,12 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
       const opportunityCreateCall = Opportunity.create.getCall(0);
       const createdOpportunity = opportunityCreateCall.args[0];
 
-      // Check that the opportunity has the correct data from the message
       expect(createdOpportunity.data).to.have.property('url', TEST_URL);
       expect(createdOpportunity.data).to.have.property('cpc', 0.075);
       expect(createdOpportunity.data).to.have.property('sumTraffic', 23423.5);
     });
 
     it('should include insight, rationale, and recommendation in opportunity guidance', async () => {
-      Opportunity.allBySiteId.resolves([]);
       Opportunity.create.resolves(opportunityInstance);
       const message = createMessage({
         guidanceOverrides: {
@@ -546,260 +632,87 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
       });
     });
 
-    describe('eviction flow', () => {
-      // Helper: create a suggestion mock that getSuggestions returns
-      function makeSuggestionWithVariations(variations) {
-        return [{
-          getData: () => ({ variations }),
-        }];
-      }
-
-      it('should create opportunity when under cap (less than MAX_OPPORTUNITIES_PER_TYPE)', async () => {
-        // 2 existing opportunities of same inferred type (under cap of 4)
-        const existing1 = makeOppty({
-          id: 'e1',
-          type: 'ad-intent-mismatch',
-          url: 'https://other1.com',
-          sumTraffic: 100,
-          suggestions: makeSuggestionWithVariations([{ variationChanges: [{ tag: 'h1' }] }]),
-        });
-        const existing2 = makeOppty({
-          id: 'e2',
-          type: 'ad-intent-mismatch',
-          url: 'https://other2.com',
-          sumTraffic: 200,
-          suggestions: makeSuggestionWithVariations([{ variationChanges: [{ tag: 'h1' }] }]),
-        });
-
-        Opportunity.allBySiteId.resolves([existing1, existing2]);
-        Opportunity.create.resolves(opportunityInstance);
-
-        // Message with variationChanges suggestions -> modify_heading type
-        const message = createMessage({
-          bodyOverrides: {
-            suggestions: [
-              { variationChanges: [{ tag: 'h1', newValue: 'Better Heading' }] },
-            ],
-            sumTraffic: 500,
-          },
-        });
-
-        const result = await handler(message, context);
-
-        expect(Opportunity.create).to.have.been.called;
-        expect(existing1.setStatus).to.not.have.been.calledWith('IGNORED');
-        expect(existing2.setStatus).to.not.have.been.calledWith('IGNORED');
-        expect(result.status).to.equal(ok().status);
-      });
-
-      it('should evict lowest-traffic opportunity when at cap and new has higher traffic', async () => {
-        // 4 existing opportunities of type modify_heading (at cap)
-        const existingOpptys = [];
-        for (let i = 0; i < 4; i += 1) {
-          existingOpptys.push(makeOppty({
-            id: `e${i}`,
+    describe('reconciliation in handler flow', () => {
+      it('should run reconciliation after creating opportunity', async () => {
+        // 5 audit_required opportunities (including the newly created one)
+        const opptys = [];
+        for (let i = 0; i < 5; i += 1) {
+          opptys.push(makeOppty({
+            id: `existing-${i}`,
             type: 'ad-intent-mismatch',
-            url: `https://page${i}.com`,
-            sumTraffic: (i + 1) * 100, // 100, 200, 300, 400
-            suggestions: makeSuggestionWithVariations([{ variationChanges: [{ tag: 'h1' }] }]),
+            url: `https://other${i}.com`,
+            suggestions: makeSuggestionWithVariations([{ suggestionText: 'review' }]),
+            updatedAt: new Date(2025, 0, i + 1).toISOString(),
           }));
         }
 
-        Opportunity.allBySiteId.resolves(existingOpptys);
+        Opportunity.allBySiteIdAndStatus.resolves(opptys);
         Opportunity.create.resolves(opportunityInstance);
-
-        // New opportunity has higher traffic than the lowest (100)
-        const message = createMessage({
-          bodyOverrides: {
-            suggestions: [
-              { variationChanges: [{ tag: 'h1', newValue: 'New Heading' }] },
-            ],
-            sumTraffic: 500, // Higher than lowest (100)
-          },
-        });
+        const message = createMessage();
 
         const result = await handler(message, context);
 
-        // Should evict the lowest (e0 with traffic 100)
-        expect(existingOpptys[0].setStatus).to.have.been.calledWith('IGNORED');
-        expect(existingOpptys[0].save).to.have.been.called;
-        // Should create the new opportunity
+        // Should have created then reconciled (removing newest excess)
         expect(Opportunity.create).to.have.been.called;
-        expect(logStub.info).to.have.been.calledWithMatch(/Evicted opportunity e0/);
+        expect(Opportunity.removeByIds).to.have.been.calledOnce;
         expect(result.status).to.equal(ok().status);
       });
 
-      it('should drop new opportunity when at cap and new has lower traffic', async () => {
-        // 4 existing opportunities of type modify_heading (at cap)
-        const existingOpptys = [];
-        for (let i = 0; i < 4; i += 1) {
-          existingOpptys.push(makeOppty({
-            id: `e${i}`,
-            type: 'ad-intent-mismatch',
-            url: `https://page${i}.com`,
-            sumTraffic: (i + 1) * 1000, // 1000, 2000, 3000, 4000
-            suggestions: makeSuggestionWithVariations([{ variationChanges: [{ tag: 'h1' }] }]),
-          }));
-        }
-
-        Opportunity.allBySiteId.resolves(existingOpptys);
-
-        // New opportunity has lower traffic than the lowest existing (1000)
-        const message = createMessage({
-          bodyOverrides: {
-            suggestions: [
-              { variationChanges: [{ tag: 'h1', newValue: 'New Heading' }] },
-            ],
-            sumTraffic: 500, // Lower than lowest existing (1000)
-          },
-        });
-
-        const result = await handler(message, context);
-
-        // Should NOT create new opportunity
-        expect(Opportunity.create).not.to.have.been.called;
-        expect(logStub.info).to.have.been.calledWithMatch(/Dropped new opportunity/);
-        expect(result.status).to.equal(ok().status);
-      });
-
-      it('should isolate eviction by type: modify_heading cap does not affect audit_required', async () => {
-        // 4 modify_heading type opportunities (at cap)
-        const modifyHeadingOpptys = [];
-        for (let i = 0; i < 4; i += 1) {
-          modifyHeadingOpptys.push(makeOppty({
+      it('should never remove modify_heading opportunities during reconciliation', async () => {
+        // 6 modify_heading opportunities — all protected
+        const opptys = [];
+        for (let i = 0; i < 6; i += 1) {
+          opptys.push(makeOppty({
             id: `mh${i}`,
             type: 'ad-intent-mismatch',
             url: `https://page${i}.com`,
-            sumTraffic: (i + 1) * 100,
             suggestions: makeSuggestionWithVariations([{ variationChanges: [{ tag: 'h1' }] }]),
+            updatedAt: new Date(2025, 0, i + 1).toISOString(),
           }));
         }
 
-        Opportunity.allBySiteId.resolves(modifyHeadingOpptys);
+        Opportunity.allBySiteIdAndStatus.resolves(opptys);
         Opportunity.create.resolves(opportunityInstance);
-
-        // New opportunity is audit_required type (has suggestionText)
-        const message = createMessage({
-          bodyOverrides: {
-            suggestions: [
-              { suggestionText: 'Review this page for intent alignment' },
-            ],
-            sumTraffic: 50, // Low traffic, but different type
-          },
-        });
+        const message = createMessage();
 
         const result = await handler(message, context);
 
-        // Should create because audit_required type has 0 existing (under cap of 4)
-        expect(Opportunity.create).to.have.been.called;
-        // None of the modify_heading opportunities should be evicted
-        modifyHeadingOpptys.forEach((oppty) => {
-          expect(oppty.setStatus).to.not.have.been.calledWith('IGNORED');
-        });
+        // modify_heading are never removed
+        expect(Opportunity.removeByIds).to.not.have.been.called;
         expect(result.status).to.equal(ok().status);
       });
 
-      it('should use sumTraffic from guidance body for eviction comparison', async () => {
-        // 4 existing opportunities with low traffic
-        const existingOpptys = [];
-        for (let i = 0; i < 4; i += 1) {
-          existingOpptys.push(makeOppty({
-            id: `e${i}`,
+      it('should exclude IGNORED opportunities from reconciliation', async () => {
+        // 2 opportunities for same URL (one will be IGNORED) + 3 others = 5 total
+        const sameUrlOppty = makeOppty({
+          id: 'same-url-old',
+          type: 'ad-intent-mismatch',
+          url: TEST_URL,
+          suggestions: makeSuggestionWithVariations([{ suggestionText: 'old' }]),
+          updatedAt: new Date(2025, 0, 1).toISOString(),
+        });
+
+        const others = [];
+        for (let i = 0; i < 3; i += 1) {
+          others.push(makeOppty({
+            id: `other-${i}`,
             type: 'ad-intent-mismatch',
-            url: `https://page${i}.com`,
-            sumTraffic: 10, // All very low
-            suggestions: makeSuggestionWithVariations([{ variationChanges: [{ tag: 'h1' }] }]),
+            url: `https://other${i}.com`,
+            suggestions: makeSuggestionWithVariations([{ suggestionText: 'text' }]),
+            updatedAt: new Date(2025, 0, i + 2).toISOString(),
           }));
         }
 
-        Opportunity.allBySiteId.resolves(existingOpptys);
+        Opportunity.allBySiteIdAndStatus.resolves([sameUrlOppty, ...others]);
         Opportunity.create.resolves(opportunityInstance);
-
-        // New has sumTraffic in body
-        const message = createMessage({
-          bodyOverrides: {
-            suggestions: [
-              { variationChanges: [{ tag: 'h1', newValue: 'Heading' }] },
-            ],
-            sumTraffic: 100,
-          },
-        });
+        const message = createMessage();
 
         const result = await handler(message, context);
 
-        // New traffic (100) > lowest existing (10), so evict + create
-        expect(Opportunity.create).to.have.been.called;
-        expect(result.status).to.equal(ok().status);
-      });
-
-      it('should fall back to data.sumTraffic when guidanceBody.sumTraffic is missing', async () => {
-        // 4 existing opportunities with high traffic
-        const existingOpptys = [];
-        for (let i = 0; i < 4; i += 1) {
-          existingOpptys.push(makeOppty({
-            id: `e${i}`,
-            type: 'ad-intent-mismatch',
-            url: `https://page${i}.com`,
-            sumTraffic: 10000,
-            suggestions: makeSuggestionWithVariations([{ variationChanges: [{ tag: 'h1' }] }]),
-          }));
-        }
-
-        Opportunity.allBySiteId.resolves(existingOpptys);
-
-        // sumTraffic is NOT in body, but IS in data
-        const message = {
-          auditId: 'auditId',
-          siteId: 'site',
-          data: {
-            url: TEST_URL,
-            sumTraffic: 5,
-            guidance: [{
-              insight: 'test',
-              rationale: 'test',
-              recommendation: 'test',
-              type: 'guidance',
-              body: {
-                issueSeverity: 'medium',
-                url: TEST_URL,
-                suggestions: [
-                  { variationChanges: [{ tag: 'h1' }] },
-                ],
-                cpc: 1.0,
-                // sumTraffic intentionally missing from body
-              },
-            }],
-            suggestions: [],
-          },
-        };
-
-        const result = await handler(message, context);
-
-        // data.sumTraffic = 5, lower than all existing (10000), so dropped
-        expect(Opportunity.create).not.to.have.been.called;
-        expect(result.status).to.equal(ok().status);
-      });
-    });
-
-    describe('fallback branches for missing guidanceBody fields', () => {
-      it('should default to [] when guidanceBody.suggestions is undefined (line 101)', async () => {
-        Opportunity.allBySiteId.resolves([]);
-        Opportunity.create.resolves(opportunityInstance);
-        const message = createMessage({ bodyOverrides: { suggestions: undefined } });
-
-        const result = await handler(message, context);
-
-        expect(result.status).to.equal(ok().status);
-      });
-
-      it('should default sumTraffic to 0 when both guidanceBody and data lack it (line 103)', async () => {
-        Opportunity.allBySiteId.resolves([]);
-        Opportunity.create.resolves(opportunityInstance);
-        const message = createMessage({ bodyOverrides: { sumTraffic: undefined } });
-        message.data.sumTraffic = undefined;
-
-        const result = await handler(message, context);
-
+        // sameUrlOppty should be IGNORED (same URL)
+        expect(sameUrlOppty.setStatus).to.have.been.calledWith('IGNORED');
+        // Reconciliation should only see 3 active (others), which is under cap
+        expect(Opportunity.removeByIds).to.not.have.been.called;
         expect(result.status).to.equal(ok().status);
       });
     });

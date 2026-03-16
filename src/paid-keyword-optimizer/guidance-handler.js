@@ -35,24 +35,55 @@ function inferRecommendationType(suggestions) {
 }
 
 /**
- * Gets the eviction score for an opportunity. Higher score = higher priority to keep.
- * Uses sumTraffic as the metric for ad-intent-mismatch opportunities.
- * @param {Object} opportunity - The opportunity object
- * @returns {number} The eviction score (higher = more important to keep)
+ * Reconciles audit_required opportunities to stay within the per-site cap.
+ * modify_heading opportunities (those with variationChanges) are never removed.
+ * When audit_required count exceeds MAX_OPPORTUNITIES_PER_TYPE, the newest
+ * excess opportunities and their suggestions are removed.
+ * @param {Array} activeOpportunities - Active (NEW, system) ad-intent-mismatch opportunities
+ * @param {Object} dataAccess - Data access object with Opportunity and Suggestion
+ * @param {Object} log - Logger
+ * @param {string} siteId - Site ID for logging
  */
-function getEvictionScore(opportunity) {
-  return opportunity.getData()?.sumTraffic || 0;
-}
+async function reconcileOpportunities(activeOpportunities, dataAccess, log, siteId) {
+  const { Opportunity, Suggestion } = dataAccess;
 
-/**
- * Finds the opportunity with the lowest eviction score (candidate for removal).
- * @param {Array} opportunities - Array of opportunity objects
- * @returns {Object} The opportunity with the lowest eviction score
- */
-function findLowestEvictionCandidate(opportunities) {
-  return opportunities.reduce(
-    (lowest, current) => (getEvictionScore(current) < getEvictionScore(lowest) ? current : lowest),
-    opportunities[0],
+  // Classify each opportunity by loading its suggestions
+  const classified = await Promise.all(
+    activeOpportunities.map(async (oppty) => {
+      const suggestions = await oppty.getSuggestions();
+      const suggestionData = suggestions?.[0]?.getData();
+      const type = inferRecommendationType(suggestionData?.variations || []);
+      return { oppty, type, suggestions };
+    }),
+  );
+
+  // Only audit_required are capped; modify_heading are protected (never removed)
+  const auditRequired = classified.filter(({ type }) => type === 'audit_required');
+
+  if (auditRequired.length <= MAX_OPPORTUNITIES_PER_TYPE) {
+    return;
+  }
+
+  // Sort oldest first (keep), newest last (remove)
+  auditRequired.sort(
+    (a, b) => new Date(a.oppty.getUpdatedAt()) - new Date(b.oppty.getUpdatedAt()),
+  );
+
+  const excess = auditRequired.slice(MAX_OPPORTUNITIES_PER_TYPE);
+
+  const suggestionIdsToRemove = excess.flatMap(
+    ({ suggestions }) => suggestions.map((s) => s.getId()),
+  );
+  const opptyIdsToRemove = excess.map(({ oppty }) => oppty.getId());
+
+  if (suggestionIdsToRemove.length > 0) {
+    await Suggestion.removeByIds(suggestionIdsToRemove);
+  }
+  await Opportunity.removeByIds(opptyIdsToRemove);
+
+  log.info(
+    `[ad-intent-mismatch] Reconciliation: removed ${opptyIdsToRemove.length} excess `
+    + `audit_required opportunities for site ${siteId}`,
   );
 }
 
@@ -97,63 +128,11 @@ export default async function handler(message, context) {
     return ok();
   }
 
-  // Infer recommendation type from new guidance suggestions
-  const newSuggestions = guidanceBody?.suggestions || [];
-  const newType = inferRecommendationType(newSuggestions);
-  const newTraffic = guidanceBody?.sumTraffic || data?.sumTraffic || 0;
-
-  // Query existing opportunities for eviction check
-  const existingOpportunities = await Opportunity.allBySiteId(siteId);
-  const sameTypeOpportunities = existingOpportunities
-    .filter((oppty) => oppty.getType() === 'ad-intent-mismatch')
-    .filter((oppty) => oppty.getStatus() === 'NEW' && oppty.getUpdatedBy() === 'system');
-
-  // Load suggestions to infer type for existing opportunities
-  const inferredTypes = await Promise.all(
-    sameTypeOpportunities.map(async (oppty) => {
-      const opptySuggestions = await oppty.getSuggestions();
-      const existingSuggestionData = opptySuggestions?.[0]?.getData();
-      return {
-        oppty,
-        type: inferRecommendationType(existingSuggestionData?.variations || []),
-      };
-    }),
-  );
-  const sameTypeWithInferredType = inferredTypes
-    .filter(({ type }) => type === newType)
-    .map(({ oppty }) => oppty);
-
-  // Eviction check
-  if (sameTypeWithInferredType.length >= MAX_OPPORTUNITIES_PER_TYPE) {
-    const lowestCandidate = findLowestEvictionCandidate(sameTypeWithInferredType);
-    const lowestTraffic = getEvictionScore(lowestCandidate);
-
-    if (newTraffic > lowestTraffic) {
-      // Evict lowest and create new
-      lowestCandidate.setStatus('IGNORED');
-      await lowestCandidate.save();
-      log.info(
-        `[ad-intent-mismatch] Evicted opportunity ${lowestCandidate.getId()} `
-        + `(traffic: ${lowestTraffic}) for new opportunity (traffic: ${newTraffic}), `
-        + `type: ${newType}, site: ${siteId}`,
-      );
-    } else {
-      // Drop new - capacity full
-      log.info(
-        `[ad-intent-mismatch] Dropped new opportunity (traffic: ${newTraffic}) - `
-        + `lowest existing (traffic: ${lowestTraffic}) is higher, `
-        + `type: ${newType}, site: ${siteId}`,
-      );
-      return ok();
-    }
-  }
-
-  // Create opportunity
+  // Always create opportunity + suggestion first
   const entity = mapToKeywordOptimizerOpportunity(siteId, audit, message);
   const opportunity = await Opportunity.create(entity);
   paidLog.createdOpportunity(siteId, url, opportunity.getId());
 
-  // Create suggestion for the new opportunity
   const suggestionData = mapToKeywordOptimizerSuggestion(
     context,
     opportunity.getId(),
@@ -162,14 +141,22 @@ export default async function handler(message, context) {
   await Suggestion.create(suggestionData);
   paidLog.createdSuggestion(opportunity.getId(), siteId, url, auditId);
 
-  // Mark existing same-URL opportunities as IGNORED (preserve existing logic)
+  // Re-read fresh state for same-URL marking and reconciliation
+  const newOpportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+  const sameTypeOpportunities = newOpportunities
+    .filter((oppty) => oppty.getType() === 'ad-intent-mismatch')
+    .filter((oppty) => oppty.getUpdatedBy() === 'system');
+
+  // Mark existing same-URL opportunities as IGNORED
   const existingMatches = sameTypeOpportunities
     .filter((oppty) => oppty.getData()?.url === url)
     .filter((oppty) => oppty.getId() !== opportunity.getId());
 
+  const ignoredIds = new Set();
   if (existingMatches.length > 0) {
     existingMatches.forEach((oldOppty) => {
       oldOppty.setStatus('IGNORED');
+      ignoredIds.add(oldOppty.getId());
     });
     await Opportunity.saveMany(existingMatches);
     existingMatches.forEach((oldOppty) => {
@@ -177,12 +164,16 @@ export default async function handler(message, context) {
     });
   }
 
+  // Reconcile: enforce cap on audit_required, never touch modify_heading
+  const activeOpportunities = sameTypeOpportunities
+    .filter((oppty) => !ignoredIds.has(oppty.getId()));
+  await reconcileOpportunities(activeOpportunities, dataAccess, log, siteId);
+
   return ok();
 }
 
 export {
   inferRecommendationType,
-  getEvictionScore,
-  findLowestEvictionCandidate,
+  reconcileOpportunities,
   MAX_OPPORTUNITIES_PER_TYPE,
 };

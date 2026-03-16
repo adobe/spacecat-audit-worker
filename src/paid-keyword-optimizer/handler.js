@@ -76,10 +76,12 @@ function isExcludedPageType(url) {
 }
 
 /**
- * Fetches Ahrefs paid-pages data from S3 and returns a Map keyed by URL
+ * Fetches Ahrefs paid-pages data from S3 and returns a Map keyed by URL.
+ * Returns null if the data file exists but is empty.
+ * Throws on actual failures (S3 access errors, JSON parse errors).
  * @param {Object} context - Execution context with s3Client, env, and log
  * @param {string} siteId - Site ID
- * @returns {Promise<Map>} Map of URL to Ahrefs data
+ * @returns {Promise<Map|null>} Map of URL to Ahrefs data, or null if empty
  */
 async function fetchPaidPagesFromS3(context, siteId) {
   const { s3Client, env } = context;
@@ -102,7 +104,7 @@ async function fetchPaidPagesFromS3(context, siteId) {
   }
 
   if (map.size === 0) {
-    throw new Error(`Ahrefs paid-pages data is empty for site ${siteId} (key: ${key})`);
+    return null;
   }
 
   return map;
@@ -575,12 +577,17 @@ export async function runPaidKeywordAnalysisStep(context) {
   const { auditResult } = result;
   const searchPages = auditResult.predominantlyPaidPages;
 
-  // Fetch Ahrefs data (mandatory — terminate if fails)
+  // Fetch Ahrefs data (mandatory — terminate if unavailable or empty)
   let ahrefsMap;
   try {
     ahrefsMap = await fetchPaidPagesFromS3(context, siteId);
   } catch (error) {
-    log.error(`[ad-intent-mismatch] [Site: ${finalUrl}] Audit terminated: Ahrefs data unavailable for site ${siteId}. Reason: ${error.message}`);
+    log.error(`[ad-intent-mismatch] [Site: ${finalUrl}] Ahrefs S3 fetch failed for site ${siteId}: ${error.message}`);
+    return {};
+  }
+
+  if (!ahrefsMap) {
+    log.info(`[ad-intent-mismatch] [Site: ${finalUrl}] No Ahrefs paid-pages data for site ${siteId}; skipping mystique`);
     return {};
   }
 

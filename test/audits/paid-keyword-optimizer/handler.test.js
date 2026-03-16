@@ -449,7 +449,7 @@ describe('Paid Keyword Optimizer Audit', () => {
         .to.be.rejected;
     });
 
-    it('should throw when data is empty array', async () => {
+    it('should return null when data is empty array', async () => {
       const mockS3 = createMockS3Client(sandbox, []);
       const ctx = {
         s3Client: mockS3,
@@ -457,8 +457,8 @@ describe('Paid Keyword Optimizer Audit', () => {
         log: logStub,
       };
 
-      await expect(fetchPaidPagesFromS3(ctx, 'site-123'))
-        .to.be.rejectedWith(/Ahrefs paid-pages data is empty/);
+      const result = await fetchPaidPagesFromS3(ctx, 'site-123');
+      expect(result).to.be.null;
     });
   });
 
@@ -941,14 +941,24 @@ describe('Paid Keyword Optimizer Audit', () => {
       }
     });
 
-    it('should return empty when Ahrefs data fetch fails (audit terminates)', async () => {
+    it('should return empty when Ahrefs S3 fetch fails', async () => {
       context.s3Client.send.rejects(new Error('S3 not found'));
 
       const result = await runPaidKeywordAnalysisStep(stepContext);
 
       expect(result).to.deep.equal({});
       expect(context.sqs.sendMessage).to.not.have.been.called;
-      expect(logStub.error).to.have.been.calledWithMatch(/Audit terminated: Ahrefs data unavailable/);
+      expect(logStub.error).to.have.been.calledWithMatch(/Ahrefs S3 fetch failed/);
+    });
+
+    it('should return empty when Ahrefs data is empty (null return)', async () => {
+      stepContext.s3Client = createMockS3Client(sandbox, []);
+
+      const result = await runPaidKeywordAnalysisStep(stepContext);
+
+      expect(result).to.deep.equal({});
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(logStub.info).to.have.been.calledWithMatch(/No Ahrefs paid-pages data/);
     });
 
     it('should not send to mystique when no predominantly paid pages found', async () => {
