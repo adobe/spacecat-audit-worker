@@ -2733,7 +2733,7 @@ describe('TOC (Table of Contents) Audit', () => {
       it('TOC_EXCLUDED_CONTAINER_SELECTORS includes navigation-related selectors', () => {
         expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('nav');
         expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[role="navigation"]');
-        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('header');
+        expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('body > header');
         expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('footer');
         expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[class*="nav-"]');
         expect(TOC_EXCLUDED_CONTAINER_SELECTORS).to.include('[class*="navigation"]');
@@ -2817,9 +2817,15 @@ describe('TOC (Table of Contents) Audit', () => {
         const $ = cheerioLoad('<div role="navigation"><h2>Navigation Links</h2></div>');
         expect(isHeadingInExcludedContainer($('h2')[0], $)).to.equal(true);
       });
-      it('returns true when heading is inside a header element', () => {
-        const $ = cheerioLoad('<header><h1>Site Name</h1></header>');
+      it('returns true when heading is inside the top-level site header (body > header)', () => {
+        const $ = cheerioLoad('<body><header><h1>Site Name</h1></header></body>');
         expect(isHeadingInExcludedContainer($('h1')[0], $)).to.equal(true);
+      });
+      it('does NOT exclude heading inside article > header (section-level header)', () => {
+        const $ = cheerioLoad(
+          '<body><main><article><header><h1>Article Title</h1></header></article></main></body>',
+        );
+        expect(isHeadingInExcludedContainer($('h1')[0], $)).to.equal(false);
       });
       it('returns true when heading is inside a footer element', () => {
         const $ = cheerioLoad('<footer><h2>Footer Links</h2></footer>');
@@ -2901,12 +2907,26 @@ describe('TOC (Table of Contents) Audit', () => {
         expect(result).to.have.lengthOf(2);
         expect(result.map((r) => r.text)).to.deep.equal(['Page Title', 'Section 1']);
       });
-      it('excludes headings inside header and footer', () => {
+      it('excludes headings inside top-level site header (body > header) and footer', () => {
         const $ = cheerioLoad(
           '<body>'
           + '<header><h1>Site Logo</h1></header>'
           + '<main><h1 id="title">Article Title</h1><h2 id="sec1">Section 1</h2></main>'
           + '<footer><h2>Footer Links</h2></footer>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Article Title', 'Section 1']);
+      });
+      it('includes heading inside article > header (section-level header is not excluded)', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<header><h1>Site Logo</h1></header>'
+          + '<main>'
+          + '<article><header><h1 id="title">Article Title</h1></header>'
+          + '<h2 id="sec1">Section 1</h2></article>'
+          + '</main>'
           + '</body>',
         );
         const result = extractTocData($, stubGetHeadingSelector);

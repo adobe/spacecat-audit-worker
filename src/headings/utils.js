@@ -43,7 +43,7 @@ export const TOC_EXCLUDED_CONTAINER_SELECTORS = [
   // Navigation panels — headings inside these are structural/UI, not content
   'nav',
   '[role="navigation"]',
-  'header',
+  'body > header',
   'footer',
   '[class*="nav-"]',
   '[class*="navigation"]',
