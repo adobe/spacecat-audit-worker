@@ -188,6 +188,55 @@ ADRs in `/docs/decisions/` numbered sequentially (001, 002, ...), following the 
 * When a decision is superseded, update its status field and link to the new ADR.
 * Specs should reflect the implemented state once work is complete.
 
+## Database Query Patterns — Avoiding N+1
+
+The data-access layer (`@adobe/spacecat-shared-data-access`) talks to PostgreSQL via PostgREST. The connection pool is **200 total connections** (10 ECS tasks × 20 pool). N+1 patterns can exhaust this pool and cause cascading failures.
+
+### Never do this (N+1 patterns)
+
+```js
+// BAD: N concurrent saves — fires N HTTP requests
+await Promise.all(suggestions.map((s) => s.save()));
+
+// BAD: N sequential finds in a loop
+for (const id of ids) {
+  const suggestion = await Suggestion.findById(id);
+}
+
+// BAD: N concurrent removes
+await Promise.all(suggestions.map((s) => s.remove()));
+```
+
+### Use bulk methods instead
+
+| Instead of | Use | Why |
+|------------|-----|-----|
+| `Promise.all(items.map(i => i.save()))` | `Collection.saveMany(items)` | Single chunked upsert |
+| N × `Collection.findById(id)` | `Collection.batchGetByKeys(keys)` | Single `.in()` query |
+| `Promise.all(items.map(i => i.remove()))` | `Collection.removeByIds(ids)` | Single `DELETE .in(id, ids)` |
+
+### Correct patterns
+
+```js
+// GOOD: Bulk save — chunks internally
+await Suggestion.saveMany(suggestionsToSave);
+
+// GOOD: Batch fetch by IDs, then build a lookup Map
+const keys = ids.map((id) => ({ suggestionId: id }));
+const { data: suggestions } = await Suggestion.batchGetByKeys(keys);
+const suggestionMap = new Map(suggestions.map((s) => [s.getId(), s]));
+
+// GOOD: Bulk remove
+await Suggestion.removeByIds(suggestionsToRemove.map((s) => s.getId()));
+```
+
+### Where to watch for this
+
+- `syncSuggestions` / `syncSuggestionsWithPublishDetection` in `src/utils/data-access.js`
+- Guidance handlers that update suggestions from AI responses
+- Code-fix handlers that apply patch data to suggestions
+- Any loop over entities that calls `.save()`, `.remove()`, or `findById()`
+
 ## Adding a New Audit
 
 1. Create `src/[audit-name]/handler.js` with `AuditBuilder` and register it in `src/index.js` under `HANDLERS`.

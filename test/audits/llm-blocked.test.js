@@ -328,7 +328,7 @@ describe('LLM Blocked Audit', () => {
     expect(context.dataAccess.Opportunity.getSuggestions).to.have.been.calledOnce;
     expect(existingSuggestions[0].setData).to.have.been.calledOnce;
     expect(existingSuggestions[0].setUpdatedBy).to.have.been.calledWith('system');
-    expect(existingSuggestions[0].save).to.have.been.calledOnce;
+    expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
 
     // Verify that no new suggestions were added
     expect(context.dataAccess.Opportunity.addSuggestions).to.not.have.been.called;

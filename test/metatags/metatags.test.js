@@ -477,6 +477,7 @@ describe('Meta Tags', () => {
               }),
             },
           ]),
+          saveMany: sinon.stub().resolves(),
           STATUSES: {
             NEW: 'NEW',
           },
@@ -1078,6 +1079,7 @@ describe('Meta Tags', () => {
           },
           Suggestion: {
             bulkUpdateStatus: sinon.stub(),
+            saveMany: sinon.stub().resolves(),
           },
         };
         context = {
@@ -1245,8 +1247,8 @@ describe('Meta Tags', () => {
           toOverride: true,
         });
 
-        // Verify the suggestion was saved
-        expect(existingSuggestion.save).to.be.calledOnce;
+        // Verify the suggestions were saved via saveMany
+        expect(dataAccessStub.Suggestion.saveMany).to.be.calledOnce;
       });
 
       it('should throw error if suggestions fail to create', async () => {
@@ -1485,6 +1487,7 @@ describe('Meta Tags', () => {
                 }),
               },
             ]),
+            saveMany: sinon.stub().resolves(),
             STATUSES: {
               NEW: 'NEW',
             },

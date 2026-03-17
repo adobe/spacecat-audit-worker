@@ -60,6 +60,8 @@ describe('high-organic-low-ctr guidance handler tests', () => {
     };
     Suggestion = {
       create: sandbox.stub().resolves(),
+      removeByIds: sandbox.stub().resolves(),
+      saveMany: sandbox.stub().resolves(),
       STATUSES: SuggestionDataAccess.STATUSES,
       TYPES: SuggestionDataAccess.TYPES,
     };
@@ -198,11 +200,17 @@ describe('high-organic-low-ctr guidance handler tests', () => {
   });
 
   it('removes previous suggestions if any', async () => {
-    const oldSuggestion = {
+    const oldSuggestion1 = {
+      getId: sandbox.stub().returns('old-sugg-1'),
       remove: sandbox.stub().resolves(),
       getUpdatedBy: sandbox.stub().returns('system'),
     };
-    dummyOpportunity.getSuggestions.resolves([oldSuggestion, oldSuggestion]);
+    const oldSuggestion2 = {
+      getId: sandbox.stub().returns('old-sugg-2'),
+      remove: sandbox.stub().resolves(),
+      getUpdatedBy: sandbox.stub().returns('system'),
+    };
+    dummyOpportunity.getSuggestions.resolves([oldSuggestion1, oldSuggestion2]);
 
     Opportunity.allBySiteId.resolves([dummyOpportunity]);
 
@@ -218,7 +226,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
     await handler(message, context);
 
-    expect(oldSuggestion.remove).to.have.been.calledTwice;
+    expect(Suggestion.removeByIds).to.have.been.calledWith(['old-sugg-1', 'old-sugg-2']);
     expect(Suggestion.create).to.have.been.calledOnce;
   });
 
@@ -307,6 +315,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
   it('should update system-managed opportunities (updatedBy: system)', async () => {
     const systemSuggestion = {
+      getId: sandbox.stub().returns('system-sugg-1'),
       getUpdatedBy: sandbox.stub().returns('system'),
       remove: sandbox.stub().resolves(),
     };
@@ -348,6 +357,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
   it('should update opportunities with null/undefined updatedBy (legacy suggestions)', async () => {
     const legacySuggestion = {
+      getId: sandbox.stub().returns('legacy-sugg-1'),
       getUpdatedBy: sandbox.stub().returns(null),
       remove: sandbox.stub().resolves(),
     };
@@ -611,12 +621,13 @@ describe('high-organic-low-ctr guidance handler tests', () => {
     });
 
     it('should remove suggestions when removing opportunity for replacement', async () => {
-      const suggestionToRemove = { remove: sandbox.stub().resolves() };
+      const suggestionToRemove1 = { getId: sandbox.stub().returns('sugg-rm-1'), remove: sandbox.stub().resolves() };
+      const suggestionToRemove2 = { getId: sandbox.stub().returns('sugg-rm-2'), remove: sandbox.stub().resolves() };
       const lowestOpportunity = {
         getId: sandbox.stub().returns('oppty-lowest'),
         getType: sandbox.stub().returns('high-organic-low-ctr'),
         getData: sandbox.stub().returns({ page: 'https://abc.com/lowest', pageViews: 1000 }),
-        getSuggestions: sandbox.stub().resolves([suggestionToRemove, suggestionToRemove]),
+        getSuggestions: sandbox.stub().resolves([suggestionToRemove1, suggestionToRemove2]),
         remove: sandbox.stub().resolves(),
       };
       const existingOpportunities = [
@@ -638,7 +649,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
       await handler(message, context);
 
-      expect(suggestionToRemove.remove).to.have.been.calledTwice;
+      expect(Suggestion.removeByIds).to.have.been.calledWith(['sugg-rm-1', 'sugg-rm-2']);
       expect(lowestOpportunity.remove).to.have.been.calledOnce;
     });
   });
