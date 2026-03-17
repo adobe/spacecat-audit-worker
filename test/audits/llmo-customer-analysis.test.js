@@ -285,6 +285,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.configChangesDetected).to.equal(true);
       expect(result.auditResult.triggeredSteps).to.include('traffic-analysis');
       expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
+      expect(result.auditResult.brandPresenceScheduleId).to.equal('sched-001');
     });
 
     it('should not trigger referral traffic imports on subsequent config updates', async () => {
@@ -528,6 +529,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.message).to.equal('Audits enabled (no config version provided, skipping config comparison)');
       expect(result.auditResult.triggeredSteps).to.include('traffic-analysis');
       expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
+      expect(result.auditResult.brandPresenceScheduleId).to.equal('sched-001');
       // 4 referral traffic imports via SQS
       expect(sqs.sendMessage).to.have.callCount(4);
     });
@@ -885,6 +887,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.triggeredSteps).to.include('traffic-analysis');
       expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
       expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
+      expect(result.auditResult.brandPresenceScheduleId).to.equal('sched-001');
       expect(result.fullAuditRef).to.equal('https://example.com');
     });
 
@@ -1234,7 +1237,7 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      // Verify the DRS schedule API was called
+      // Verify the DRS schedule API was called with LOW priority
       expect(mockFetch).to.have.been.calledWith(
         'https://drs.example.com/api/schedules',
         sinon.match({
@@ -1246,6 +1249,11 @@ describe('LLMO Customer Analysis Handler', () => {
         }),
       );
 
+      // Verify LOW priority in the schedule payload
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.job_config.priority).to.equal('LOW');
+
       // Verify the schedule trigger was called
       expect(mockFetch).to.have.been.calledWith(
         'https://drs.example.com/api/schedules/site-123/sched-001/trigger',
@@ -1253,6 +1261,7 @@ describe('LLMO Customer Analysis Handler', () => {
       );
 
       expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
+      expect(result.auditResult.brandPresenceScheduleId).to.equal('sched-001');
     });
 
     it('should handle brand presence schedule creation failure gracefully', async () => {
@@ -1291,6 +1300,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('completed');
       // brand-presence-schedule should NOT be in triggeredSteps
       expect(result.auditResult.triggeredSteps).to.not.include('brand-presence-schedule');
+      expect(result.auditResult.brandPresenceScheduleId).to.be.undefined;
     });
 
     it('should handle brand presence schedule trigger failure gracefully', async () => {
@@ -1436,6 +1446,7 @@ describe('LLMO Customer Analysis Handler', () => {
       );
 
       expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
+      expect(result.auditResult.brandPresenceScheduleId).to.equal('sched-001');
     });
 
     it('should fall back to schedule.id when schedule_id is not present', async () => {
@@ -1477,6 +1488,7 @@ describe('LLMO Customer Analysis Handler', () => {
       );
 
       expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
+      expect(result.auditResult.brandPresenceScheduleId).to.equal('sched-fallback');
     });
 
     it('should not create brand presence schedule on subsequent config updates', async () => {

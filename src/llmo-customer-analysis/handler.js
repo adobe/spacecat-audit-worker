@@ -154,7 +154,7 @@ export async function createAndTriggerBrandPresenceSchedule(context, siteId, dom
     description: `Onboarding brand presence: ${domain} (${siteId})`,
     job_config: {
       provider_ids: ['brightdata', 'google_ai_overviews', 'openai_web_search'],
-      priority: 'HIGH',
+      priority: 'LOW',
       enable_brand_presence: true,
       cadence: 'weekly',
       provider_parameters: {
@@ -211,6 +211,8 @@ export async function createAndTriggerBrandPresenceSchedule(context, siteId, dom
   }
 
   log.info(`Brand presence schedule ${scheduleId} triggered successfully for site ${siteId}`);
+
+  return scheduleId;
 }
 
 export async function triggerReferralTrafficImports(context, site) {
@@ -321,12 +323,13 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   const { configVersion, previousConfigVersion } = auditContext;
   const isFirstTimeOnboarding = !previousConfigVersion;
 
+  let bpScheduleId;
   if (isFirstTimeOnboarding) {
     await sendOnboardingNotification(context, site, 'first_onboarding');
 
     // Create and trigger brand presence schedule via DRS API (non-fatal)
     try {
-      await createAndTriggerBrandPresenceSchedule(context, siteId, domain);
+      bpScheduleId = await createAndTriggerBrandPresenceSchedule(context, siteId, domain);
       triggeredSteps.push('brand-presence-schedule');
     } catch (error) {
       log.error(`Failed to create/trigger brand presence schedule for site ${siteId}: ${error.message}`);
@@ -354,6 +357,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
         configChangesDetected: false,
         message: 'Audits enabled (no config version provided, skipping config comparison)',
         triggeredSteps,
+        brandPresenceScheduleId: bpScheduleId,
         previousConfigVersion,
         configVersion,
       },
@@ -438,6 +442,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
         status: 'completed',
         configChangesDetected: true,
         triggeredSteps,
+        brandPresenceScheduleId: bpScheduleId,
         previousConfigVersion,
         configVersion,
       },
