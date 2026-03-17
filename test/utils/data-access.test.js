@@ -1182,6 +1182,116 @@ describe('data-access', () => {
         expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 2');
       });
 
+      describe('stalenessDays filtering', () => {
+        it('should mark non-scraped suggestions as OUTDATED when their updatedAt exceeds stalenessDays', async () => {
+          const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+          const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+
+          const existingSuggestions = [
+            {
+              id: '1',
+              getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1' }),
+              getStatus: sinon.stub().returns('NEW'),
+              getUpdatedAt: sinon.stub().returns(eightDaysAgo),
+            },
+          ];
+
+          const newData = [{ url: 'https://example.com/page2', key: 'page2' }];
+          // page1 was NOT scraped in this batch
+          const scrapedUrlsSet = new Set(['https://example.com/page2']);
+
+          mockOpportunity.getSuggestions.resolves(existingSuggestions);
+          mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+          await syncSuggestions({
+            opportunity: mockOpportunity,
+            newData,
+            context,
+            buildKey: buildKeyWithUrl,
+            mapNewSuggestion,
+            scrapedUrlsSet,
+            stalenessDays: 7,
+          });
+
+          // page1 not scraped but is stale (8 days) → should be marked OUTDATED
+          expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+            [existingSuggestions[0]],
+            'OUTDATED',
+          );
+        });
+
+        it('should preserve non-scraped suggestions whose updatedAt is within stalenessDays', async () => {
+          const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+          const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+
+          const existingSuggestions = [
+            {
+              id: '1',
+              getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1' }),
+              getStatus: sinon.stub().returns('NEW'),
+              getUpdatedAt: sinon.stub().returns(threeDaysAgo),
+            },
+          ];
+
+          const newData = [{ url: 'https://example.com/page2', key: 'page2' }];
+          // page1 was NOT scraped in this batch
+          const scrapedUrlsSet = new Set(['https://example.com/page2']);
+
+          mockOpportunity.getSuggestions.resolves(existingSuggestions);
+          mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+          await syncSuggestions({
+            opportunity: mockOpportunity,
+            newData,
+            context,
+            buildKey: buildKeyWithUrl,
+            mapNewSuggestion,
+            scrapedUrlsSet,
+            stalenessDays: 7,
+          });
+
+          // page1 not scraped and fresh (3 days) → should be preserved
+          expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+        });
+
+        it('should mark scraped suggestions as OUTDATED regardless of stalenessDays', async () => {
+          const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+          const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
+
+          const existingSuggestions = [
+            {
+              id: '1',
+              getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1' }),
+              getStatus: sinon.stub().returns('NEW'),
+              getUpdatedAt: sinon.stub().returns(oneDayAgo),
+            },
+          ];
+
+          const newData = [{ url: 'https://example.com/page2', key: 'page2' }];
+          // page1 WAS scraped and is missing from new data
+          const scrapedUrlsSet = new Set(['https://example.com/page1', 'https://example.com/page2']);
+
+          mockOpportunity.getSuggestions.resolves(existingSuggestions);
+          mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+          await syncSuggestions({
+            opportunity: mockOpportunity,
+            newData,
+            context,
+            buildKey: buildKeyWithUrl,
+            mapNewSuggestion,
+            scrapedUrlsSet,
+            stalenessDays: 7,
+          });
+
+          // page1 was scraped but no longer in results → OUTDATED even though fresh (1 day)
+          expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+            [existingSuggestions[0]],
+            'OUTDATED',
+          );
+        });
+      });
+
       it('should use FIXED status when statusToSetForOutdated is specified', async () => {
         const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
 

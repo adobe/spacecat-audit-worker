@@ -12,10 +12,12 @@
 
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
+import { subDays } from 'date-fns';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
+import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
 import {
@@ -25,11 +27,11 @@ import {
 import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
 import {
   CONTENT_GAIN_THRESHOLD,
+  DAILY_BATCH_SIZE,
   TOP_AGENTIC_URLS_LIMIT,
   TOP_ORGANIC_URLS_LIMIT,
   MODE_AI_ONLY,
 } from './utils/constants.js';
-import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -166,6 +168,41 @@ async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) 
 }
 
 /**
+ * Returns a Set of URL pathnames for suggestions updated within the last 7 days.
+ * Used to skip recently-processed URLs in the daily batching logic.
+ * @param {Object} context
+ * @param {string} siteId
+ * @returns {Promise<Set<string>>}
+ */
+async function getRecentlyProcessedPathnames(context, siteId) {
+  const { dataAccess, log } = context;
+  try {
+    const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+    const opportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
+    if (!opportunity) {
+      return new Set();
+    }
+    const suggestions = await opportunity.getSuggestions();
+    const sevenDaysAgo = subDays(new Date(), 7);
+    return new Set(
+      suggestions
+        .filter((s) => new Date(s.getUpdatedAt?.() || 0) > sevenDaysAgo)
+        .map((s) => {
+          try {
+            return new URL(s.getData()?.url || '').pathname;
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean),
+    );
+  } catch (e) {
+    log.warn(`${LOG_PREFIX} Failed to load recently-processed pathnames: ${e.message}`);
+    return new Set();
+  }
+}
+
+/**
  * Sanitizes the import path by replacing special characters with hyphens
  * @param {string} importPath - The path to sanitize
  * @returns {string} The sanitized path
@@ -270,7 +307,9 @@ async function compareHtmlContent(url, context) {
       throw new Error(`Missing HTML data for ${url} (server-side: ${!!serverSideHtml}, client-side: ${!!clientSideHtml})`);
     }
 
-    // Even if original scrape was forbidden, we might have HTML uploaded from local scraping
+    // Single calculateStats call via analyzeHtmlForPrerender — returns both prerender fields
+    // (needsPrerender, contentGainRatio, wordCountBefore/After) and citability fields
+    // (citabilityScore, contentRatio, wordDifference, botWords, normalWords).
     const analysis = await analyzeHtmlForPrerender(
       serverSideHtml,
       clientSideHtml,
@@ -651,11 +690,35 @@ export async function submitForScraping(context) {
   // Fetch Top Agentic URLs (limited by TOP_AGENTIC_URLS_LIMIT)
   const agenticUrls = await getTopAgenticUrls(site, context);
 
+  // Daily batching: filter URLs recently processed within the last 7 days
+  const recentPathnames = await getRecentlyProcessedPathnames(context, siteId);
+
+  const filteredAgenticUrls = agenticUrls.filter((url) => {
+    try {
+      return !recentPathnames.has(new URL(url).pathname);
+    } catch {
+      return true;
+    }
+  });
+
+  // Include organic URLs only when none were recently processed (first batch of the weekly cycle)
+  const hasRecentOrganic = topPagesUrls.some((url) => {
+    try {
+      return recentPathnames.has(new URL(url).pathname);
+    } catch {
+      return false;
+    }
+  });
+  const batchedOrganicUrls = hasRecentOrganic ? [] : topPagesUrls;
+
+  // Cap combined organic + agentic batch to DAILY_BATCH_SIZE (includedURLs always pass through)
+  const priorityUrls = [...batchedOrganicUrls, ...filteredAgenticUrls];
+  const batchedUrls = priorityUrls.slice(0, DAILY_BATCH_SIZE);
+
   // Merge URLs ensuring uniqueness while handling www vs non-www differences
   // Also filters out non-HTML URLs (PDFs, images, etc.) in a single pass
   const { urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
-    topPagesUrls,
-    agenticUrls,
+    batchedUrls,
     includedURLs,
   );
 
@@ -663,6 +726,9 @@ export async function submitForScraping(context) {
     ${LOG_PREFIX} prerender_submit_scraping_metrics:
     submittedUrls=${finalUrls.length},
     agenticUrls=${agenticUrls.length},
+    filteredAgenticUrls=${filteredAgenticUrls.length},
+    batchedUrls=${batchedUrls.length},
+    organicIncluded=${batchedOrganicUrls.length > 0},
     topPagesUrls=${topPagesUrls.length},
     includedURLs=${includedURLs.length},
     filteredOutUrls=${filteredCount},
@@ -892,6 +958,9 @@ export async function processOpportunityAndSuggestions(
       data: suggestion.key ? suggestion.data : mapSuggestionData(suggestion),
     }),
     scrapedUrlsSet,
+    // Phase 2d: only outdate suggestions older than 7 days that weren't scraped in this batch,
+    // aligning with the rolling 7-day batching cycle.
+    stalenessDays: 7,
     // Custom merge function: handle both types
     mergeDataFunction: (existingData, newDataItem) => {
       // Domain-wide suggestion: replace with new data
@@ -916,6 +985,72 @@ export async function processOpportunityAndSuggestions(
     totalSuggestions=${allSuggestions.length},`);
 
   return opportunity;
+}
+
+/**
+ * Writes citability metrics to the PageCitability entity for all successfully scraped URLs.
+ * This enables the page-citability audit to detect recently-processed URLs via its 7-day
+ * staleness filter, avoiding duplicate scraping across both audits.
+ *
+ * @param {Array} comparisonResults - Results from compareHtmlContent (all scraped URLs)
+ * @param {string} siteId - Site ID
+ * @param {Object} context - Audit context with dataAccess and log
+ * @returns {Promise<void>}
+ */
+export async function writeToCitabilityRecords(comparisonResults, siteId, context) {
+  const { dataAccess, log } = context;
+  const { PageCitability } = dataAccess;
+
+  if (!PageCitability?.allBySiteId) {
+    log.debug(`${LOG_PREFIX} PageCitability not available, skipping citability record writes`);
+    return;
+  }
+
+  const existingRecords = await PageCitability.allBySiteId(siteId);
+  const existingRecordsMap = new Map(existingRecords.map((r) => [r.getUrl(), r]));
+
+  const successful = comparisonResults.filter((r) => !r.error);
+  let written = 0;
+
+  await Promise.all(successful.map(async (result) => {
+    const {
+      url,
+      citabilityScore,
+      contentGainRatio,
+      wordDifference,
+      wordCountBefore,
+      wordCountAfter,
+      isDeployedAtEdge,
+    } = result;
+    try {
+      const existing = existingRecordsMap.get(url);
+      if (existing) {
+        existing.setCitabilityScore(citabilityScore ?? null);
+        existing.setContentRatio(contentGainRatio ?? null);
+        existing.setWordDifference(wordDifference ?? null);
+        existing.setBotWords(wordCountBefore ?? null);
+        existing.setNormalWords(wordCountAfter ?? null);
+        existing.setIsDeployedAtEdge(isDeployedAtEdge ?? false);
+        await existing.save();
+      } else {
+        await PageCitability.create({
+          siteId,
+          url,
+          citabilityScore: citabilityScore ?? null,
+          contentRatio: contentGainRatio ?? null,
+          wordDifference: wordDifference ?? null,
+          botWords: wordCountBefore ?? null,
+          normalWords: wordCountAfter ?? null,
+          isDeployedAtEdge: isDeployedAtEdge ?? false,
+        });
+      }
+      written += 1;
+    } catch (e) {
+      log.warn(`${LOG_PREFIX} Failed to write PageCitability for ${url}: ${e.message}`);
+    }
+  }));
+
+  log.info(`${LOG_PREFIX} Wrote PageCitability records: ${written}/${successful.length}`);
 }
 
 /**
@@ -1088,6 +1223,10 @@ export async function processContentAndGenerateOpportunities(context) {
       urlsToCheck.map((url) => compareHtmlContent(url, context)),
     );
 
+    // Phase 2c: write citability metrics to PageCitability entity so page-citability audit
+    // can detect recently-processed URLs via its 7-day staleness filter.
+    await writeToCitabilityRecords(comparisonResults, siteId, context);
+
     const urlsNeedingPrerender = comparisonResults.filter((result) => result.needsPrerender);
     const successfulComparisons = comparisonResults.filter((result) => !result.error);
 
@@ -1183,6 +1322,7 @@ export async function processContentAndGenerateOpportunities(context) {
           buildKey: (suggestionData) => suggestionData.url,
           mapNewSuggestion: () => ({}),
           scrapedUrlsSet: scrapedUrlsForNoOppty,
+          stalenessDays: 7,
         });
       }
     }

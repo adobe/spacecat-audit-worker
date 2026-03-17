@@ -14,6 +14,7 @@ import {
   Suggestion as SuggestionDataAccess,
   FixEntity as FixEntityDataAccess,
 } from '@adobe/spacecat-shared-data-access';
+import { subDays } from 'date-fns';
 import { limitConcurrencyAllSettled } from '../support/utils.js';
 
 // Max concurrent HTTP calls to prevent Lambda timeout (15 min)
@@ -184,6 +185,7 @@ export const handleOutdatedSuggestions = async ({
   buildKey,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
+  stalenessDays = null,
 }) => {
   const { Suggestion } = context.dataAccess;
   const { log } = context;
@@ -206,10 +208,19 @@ export const handleOutdatedSuggestions = async ({
       return !(data?.tokowakaDeployed || data?.edgeDeployed);
     })
     .filter((existing) => {
-      // mark suggestions as outdated only if their URL was actually scraped
+      // mark suggestions as outdated only if their URL was actually scraped,
+      // OR if the suggestion is stale (not updated within stalenessDays)
       if (scrapedUrlsSet) {
         const suggestionUrl = existing.getData()?.url;
-        return suggestionUrl && scrapedUrlsSet.has(suggestionUrl);
+        if (suggestionUrl && scrapedUrlsSet.has(suggestionUrl)) {
+          return true;
+        }
+        if (stalenessDays !== null) {
+          const threshold = subDays(new Date(), stalenessDays);
+          const updatedAt = new Date(existing.getUpdatedAt?.() || 0);
+          return updatedAt < threshold;
+        }
+        return false;
       }
       return true;
     });
@@ -323,6 +334,7 @@ export async function syncSuggestions({
   mergeStatusFunction = defaultMergeStatusFunction,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
+  stalenessDays = null,
   existingSuggestions: prefetchedSuggestions = null,
 }) {
   if (!context) {
@@ -347,6 +359,7 @@ export async function syncSuggestions({
     context,
     statusToSetForOutdated,
     scrapedUrlsSet,
+    stalenessDays,
   });
 
   log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
