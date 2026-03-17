@@ -86,6 +86,39 @@ describe('Index DRS message normalization', () => {
     expect(sentMessage.siteId).to.equal('site-123');
   });
 
+  it('passes brand_presence_batch_id through normalization', async () => {
+    const drsMessage = {
+      event_type: 'JOB_COMPLETED',
+      job_id: 'drs-job-bp',
+      provider_id: 'prompt_generation_base_url',
+      result_location: 's3://bucket/results.json',
+      metadata: {
+        site_id: 'site-123',
+        source: 'onboarding',
+        brand: 'TestBrand',
+        brand_presence_batch_id: 'bp-onboarding-drs-job-bp',
+      },
+    };
+
+    context.invocation = {
+      event: {
+        Records: [{ body: JSON.stringify(drsMessage) }],
+      },
+    };
+
+    const resp = await main(new Request('https://space.cat'), context);
+
+    expect(resp.status).to.equal(200);
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match('Received drs:prompt_generation_base_url audit request'),
+      sinon.match({
+        auditContext: sinon.match({
+          brandPresenceBatchId: 'bp-onboarding-drs-job-bp',
+        }),
+      }),
+    );
+  });
+
   it('returns 404 for DRS message with unknown provider_id', async () => {
     const drsMessage = {
       event_type: 'JOB_COMPLETED',

@@ -90,6 +90,7 @@ describe('Image Alt Text Handler', () => {
           Configuration: {
             findLatest: sandbox.stub().resolves({
               getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
+              isHandlerEnabledForSite: sandbox.stub().returns(false),
             }),
           },
         },
@@ -147,23 +148,14 @@ describe('Image Alt Text Handler', () => {
 
   describe('processAltTextWithMystique', () => {
     let sendAltTextOpportunityToMystiqueStub;
-    let clearAltTextSuggestionsStub;
-    let isAuditEnabledForSiteStub;
 
     beforeEach(async () => {
       sendAltTextOpportunityToMystiqueStub = sandbox.stub().resolves();
-      clearAltTextSuggestionsStub = sandbox.stub().resolves();
-      isAuditEnabledForSiteStub = sandbox.stub().resolves(false); // Default to 100 page limit
-      // Mock the module with our stubs
       handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
         '@adobe/spacecat-shared-utils': { tracingFetch: tracingFetchStub },
         '../../../src/image-alt-text/opportunityHandler.js': {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
-          clearAltTextSuggestions: clearAltTextSuggestionsStub,
-        },
-        '../../../src/common/audit-utils.js': {
-          isAuditEnabledForSite: isAuditEnabledForSiteStub,
         },
       });
     });
@@ -184,6 +176,7 @@ describe('Image Alt Text Handler', () => {
         context,
         [],
         false,
+        true,
       );
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Processing alt-text with Mystique for site site-id',
@@ -244,8 +237,6 @@ describe('Image Alt Text Handler', () => {
 
       await handlerModule.processAltTextWithMystique(context);
 
-      // Should NOT call clearAltTextSuggestions anymore
-      expect(clearAltTextSuggestionsStub).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith(
         '[alt-text]: Updating opportunity for new audit run',
       );
@@ -302,7 +293,6 @@ describe('Image Alt Text Handler', () => {
 
       await handlerModule.processAltTextWithMystique(context);
 
-      expect(clearAltTextSuggestionsStub).to.not.have.been.called;
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Creating new opportunity for site site-id',
       );
@@ -327,6 +317,7 @@ describe('Image Alt Text Handler', () => {
         context,
         [],
         false,
+        true,
       );
     });
 
@@ -347,6 +338,7 @@ describe('Image Alt Text Handler', () => {
         context,
         [],
         false,
+        true,
       );
     });
 
@@ -367,6 +359,7 @@ describe('Image Alt Text Handler', () => {
         context,
         [],
         false,
+        true,
       );
     });
 
@@ -389,6 +382,7 @@ describe('Image Alt Text Handler', () => {
         context,
         [],
         false,
+        true,
       );
     });
 
@@ -681,6 +675,7 @@ describe('Image Alt Text Handler', () => {
           context,
           ['https://example.com/image1.jpg', 'https://example.com/image3.jpg'],
           false,
+          true,
         );
       });
 
@@ -733,6 +728,7 @@ describe('Image Alt Text Handler', () => {
           context,
           ['https://example.com/image2.jpg'],
           false,
+          true,
         );
       });
 
@@ -774,14 +770,16 @@ describe('Image Alt Text Handler', () => {
 
   describe('processScraping', () => {
     let s3ClientMock;
-    let isAuditEnabledForSiteStub;
+    let configurationMock;
 
     beforeEach(async () => {
       s3ClientMock = {
         send: sandbox.stub(),
       };
 
-      isAuditEnabledForSiteStub = sandbox.stub();
+      configurationMock = {
+        isHandlerEnabledForSite: sandbox.stub().returns(false),
+      };
 
       context = new MockContextBuilder()
         .withSandbox(sandbox)
@@ -805,20 +803,17 @@ describe('Image Alt Text Handler', () => {
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
             },
+            Configuration: {
+              findLatest: sandbox.stub().resolves(configurationMock),
+            },
           },
         })
         .build();
 
-      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
-        '../../../src/common/audit-utils.js': {
-          isAuditEnabledForSite: isAuditEnabledForSiteStub,
-        },
-      });
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {});
     });
 
     it('should check S3 for existing scrapes and return missing URLs', async () => {
-      isAuditEnabledForSiteStub.resolves(false); // Regular site, 100 page limit
-
       // Mock S3 responses: page1 exists, page2 and page3 don't
       s3ClientMock.send.callsFake((command) => {
         if (command instanceof HeadObjectCommand) {
@@ -854,8 +849,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should send first URL when all scrapes exist', async () => {
-      isAuditEnabledForSiteStub.resolves(false);
-
       // Mock S3 to return success for all pages
       s3ClientMock.send.resolves();
 
@@ -874,7 +867,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should throw error when no top pages found', async () => {
-      isAuditEnabledForSiteStub.resolves(false);
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
 
       await expect(handlerModule.processScraping(context))
@@ -882,7 +874,7 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should limit pages to 20 when summit-plg is enabled', async () => {
-      isAuditEnabledForSiteStub.resolves(true); // summit-plg enabled
+      configurationMock.isHandlerEnabledForSite.returns(true);
 
       // Create 25 pages to ensure slicing works
       const pages = Array.from({ length: 25 }, (_, i) => ({
@@ -908,8 +900,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should limit pages to 100 when summit-plg is disabled', async () => {
-      isAuditEnabledForSiteStub.resolves(false); // summit-plg disabled
-
       // Create 150 pages to ensure slicing works
       const pages = Array.from({ length: 150 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
@@ -932,8 +922,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should handle NoSuchKey error as missing scrape', async () => {
-      isAuditEnabledForSiteStub.resolves(false);
-
       const error = new Error('NoSuchKey');
       error.name = 'NoSuchKey';
       s3ClientMock.send.rejects(error);
@@ -949,8 +937,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should handle other S3 errors with fail-safe approach', async () => {
-      isAuditEnabledForSiteStub.resolves(false);
-
       const error = new Error('S3 Connection timeout');
       error.name = 'NetworkError';
       s3ClientMock.send.rejects(error);
@@ -965,8 +951,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should use correct S3 key format with pathname', async () => {
-      isAuditEnabledForSiteStub.resolves(false);
-
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
         { getUrl: () => 'https://example.com/products/item1' },
       ]);
@@ -983,8 +967,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should handle mix of existing and missing scrapes', async () => {
-      isAuditEnabledForSiteStub.resolves(false);
-
       // page1 exists, page2 doesn't, page3 exists
       s3ClientMock.send.callsFake((command) => {
         if (command instanceof HeadObjectCommand) {
@@ -1011,11 +993,14 @@ describe('Image Alt Text Handler', () => {
 
   describe('processAltTextWithMystique with page limits', () => {
     let sendAltTextOpportunityToMystiqueStub;
-    let isAuditEnabledForSiteStub;
+    let configurationMock;
 
     beforeEach(async () => {
       sendAltTextOpportunityToMystiqueStub = sandbox.stub().resolves();
-      isAuditEnabledForSiteStub = sandbox.stub();
+      configurationMock = {
+        getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
+        isHandlerEnabledForSite: sandbox.stub().returns(false),
+      };
 
       context = new MockContextBuilder()
         .withSandbox(sandbox)
@@ -1045,9 +1030,7 @@ describe('Image Alt Text Handler', () => {
               }),
             },
             Configuration: {
-              findLatest: sandbox.stub().resolves({
-                getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
-              }),
+              findLatest: sandbox.stub().resolves(configurationMock),
             },
           },
         })
@@ -1059,14 +1042,11 @@ describe('Image Alt Text Handler', () => {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
         },
-        '../../../src/common/audit-utils.js': {
-          isAuditEnabledForSite: isAuditEnabledForSiteStub,
-        },
       });
     });
 
     it('should limit to 20 pages when summit-plg is enabled', async () => {
-      isAuditEnabledForSiteStub.resolves(true); // summit-plg enabled
+      configurationMock.isHandlerEnabledForSite.returns(true);
 
       // Create 50 pages
       const pages = Array.from({ length: 50 }, (_, i) => ({
@@ -1083,6 +1063,7 @@ describe('Image Alt Text Handler', () => {
       expect(sentUrls[0]).to.equal('https://example.com/page1');
       expect(sentUrls[19]).to.equal('https://example.com/page20');
       expect(callArgs[6]).to.equal(true);
+      expect(callArgs[7]).to.equal(true);
 
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Page limit set to 20 (summit-plg enabled: true)',
@@ -1093,8 +1074,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should limit to 100 pages when summit-plg is disabled', async () => {
-      isAuditEnabledForSiteStub.resolves(false); // summit-plg disabled
-
       // Create 150 pages
       const pages = Array.from({ length: 150 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
@@ -1110,6 +1089,7 @@ describe('Image Alt Text Handler', () => {
       expect(sentUrls[0]).to.equal('https://example.com/page1');
       expect(sentUrls[99]).to.equal('https://example.com/page100');
       expect(callArgs[6]).to.equal(false);
+      expect(callArgs[7]).to.equal(true);
 
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Page limit set to 100 (summit-plg enabled: false)',
@@ -1120,7 +1100,7 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should include includedURLs in addition to limited top pages', async () => {
-      isAuditEnabledForSiteStub.resolves(true); // 20 page limit
+      configurationMock.isHandlerEnabledForSite.returns(true);
 
       const pages = Array.from({ length: 25 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
@@ -1151,10 +1131,11 @@ describe('Image Alt Text Handler', () => {
       expect(sentUrls).to.include('https://example.com/page20');
       expect(sentUrls).to.not.include('https://example.com/page21');
       expect(callArgs[6]).to.equal(true);
+      expect(callArgs[7]).to.equal(true);
     });
 
-    it('should handle when isAuditEnabledForSite throws error', async () => {
-      isAuditEnabledForSiteStub.rejects(new Error('Configuration error'));
+    it('should handle when Configuration.findLatest throws error', async () => {
+      context.dataAccess.Configuration.findLatest.rejects(new Error('Configuration error'));
 
       await expect(handlerModule.processAltTextWithMystique(context))
         .to.be.rejectedWith('Configuration error');
@@ -1167,13 +1148,16 @@ describe('Image Alt Text Handler', () => {
 
   describe('processAltTextWithMystique reads stored offset', () => {
     let sendAltTextOpportunityToMystiqueStub;
-    let isAuditEnabledForSiteStub;
+    let configurationMock;
     let bulkUpdateStatusStub;
 
     beforeEach(async () => {
       sendAltTextOpportunityToMystiqueStub = sandbox.stub().resolves();
-      isAuditEnabledForSiteStub = sandbox.stub().resolves(true); // summit-plg enabled
       bulkUpdateStatusStub = sandbox.stub().resolves();
+      configurationMock = {
+        getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
+        isHandlerEnabledForSite: sandbox.stub().returns(true),
+      };
 
       context = new MockContextBuilder()
         .withSandbox(sandbox)
@@ -1206,9 +1190,7 @@ describe('Image Alt Text Handler', () => {
               bulkUpdateStatus: bulkUpdateStatusStub,
             },
             Configuration: {
-              findLatest: sandbox.stub().resolves({
-                getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
-              }),
+              findLatest: sandbox.stub().resolves(configurationMock),
             },
           },
         })
@@ -1219,9 +1201,6 @@ describe('Image Alt Text Handler', () => {
         '../../../src/image-alt-text/opportunityHandler.js': {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
-        },
-        '../../../src/common/audit-utils.js': {
-          isAuditEnabledForSite: isAuditEnabledForSiteStub,
         },
       });
     });
@@ -1268,7 +1247,7 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should ignore offset for non-summit-plg sites (always starts at 0)', async () => {
-      isAuditEnabledForSiteStub.resolves(false); // Non-summit-plg
+      configurationMock.isHandlerEnabledForSite.returns(false);
 
       const pages = Array.from({ length: 150 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
@@ -1312,14 +1291,16 @@ describe('Image Alt Text Handler', () => {
 
   describe('processScraping with page offset', () => {
     let s3ClientMock;
-    let isAuditEnabledForSiteStub;
+    let configurationMock;
 
     beforeEach(async () => {
       s3ClientMock = {
         send: sandbox.stub(),
       };
 
-      isAuditEnabledForSiteStub = sandbox.stub();
+      configurationMock = {
+        isHandlerEnabledForSite: sandbox.stub().returns(true),
+      };
 
       context = new MockContextBuilder()
         .withSandbox(sandbox)
@@ -1339,20 +1320,17 @@ describe('Image Alt Text Handler', () => {
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
             },
+            Configuration: {
+              findLatest: sandbox.stub().resolves(configurationMock),
+            },
           },
         })
         .build();
 
-      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
-        '../../../src/common/audit-utils.js': {
-          isAuditEnabledForSite: isAuditEnabledForSiteStub,
-        },
-      });
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {});
     });
 
     it('should advance offset when no NEW suggestions in current window', async () => {
-      isAuditEnabledForSiteStub.resolves(true);
-
       const pages = Array.from({ length: 50 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
       }));
@@ -1387,8 +1365,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should keep offset when NEW suggestions exist in current window', async () => {
-      isAuditEnabledForSiteStub.resolves(true);
-
       const pages = Array.from({ length: 50 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
       }));
@@ -1430,8 +1406,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should advance when only OUTDATED/SKIPPED suggestions in window', async () => {
-      isAuditEnabledForSiteStub.resolves(true);
-
       const pages = Array.from({ length: 50 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
       }));
@@ -1480,8 +1454,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should wrap offset to 0 when it exceeds total pages', async () => {
-      isAuditEnabledForSiteStub.resolves(true);
-
       const pages = Array.from({ length: 25 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
       }));
@@ -1514,8 +1486,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should advance from offset 20 to 40 when no NEW suggestions at 20', async () => {
-      isAuditEnabledForSiteStub.resolves(true);
-
       const pages = Array.from({ length: 60 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
       }));
@@ -1546,8 +1516,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should default to offset 0 when opportunity lookup fails', async () => {
-      isAuditEnabledForSiteStub.resolves(true);
-
       const pages = Array.from({ length: 25 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
       }));
@@ -1569,8 +1537,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should not save offset when no opportunity exists', async () => {
-      isAuditEnabledForSiteStub.resolves(true);
-
       const pages = Array.from({ length: 25 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
       }));
@@ -1589,7 +1555,7 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should read stored offset without suggestion check for non-summit-plg', async () => {
-      isAuditEnabledForSiteStub.resolves(false); // non-summit-plg
+      configurationMock.isHandlerEnabledForSite.returns(false);
 
       const pages = Array.from({ length: 150 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
@@ -1617,8 +1583,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should handle opportunity getData returning null when saving offset', async () => {
-      isAuditEnabledForSiteStub.resolves(true);
-
       const pages = Array.from({ length: 50 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
       }));
@@ -1649,8 +1613,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should handle save offset failure gracefully', async () => {
-      isAuditEnabledForSiteStub.resolves(true);
-
       const pages = Array.from({ length: 50 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
       }));

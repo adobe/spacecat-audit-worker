@@ -111,6 +111,8 @@ import wikipediaAnalysis from './wikipedia-analysis/handler.js';
 import wikipediaAnalysisGuidance from './wikipedia-analysis/guidance-handler.js';
 import redditAnalysis from './reddit-analysis/handler.js';
 import redditAnalysisGuidance from './reddit-analysis/guidance-handler.js';
+import youtubeAnalysis from './youtube-analysis/handler.js';
+import youtubeAnalysisGuidance from './youtube-analysis/guidance-handler.js';
 import frescopaDataGeneration from './frescopa-data-generation/handler.js';
 import semanticValueVisibility from './semantic-value-visibility/handler.js';
 import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
@@ -221,6 +223,8 @@ const HANDLERS = {
   'guidance:wikipedia-analysis': wikipediaAnalysisGuidance,
   'reddit-analysis': redditAnalysis,
   'guidance:reddit-analysis': redditAnalysisGuidance,
+  'youtube-analysis': youtubeAnalysis,
+  'guidance:youtube-analysis': youtubeAnalysisGuidance,
   'frescopa-data-generation': frescopaDataGeneration,
   'semantic-value-visibility': semanticValueVisibility,
   'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
@@ -249,6 +253,9 @@ function normalizeDrsMessage(message) {
       resultLocation: message.result_location,
       providerId,
       source: metadata.source,
+      ...(metadata.brand_presence_batch_id && {
+        brandPresenceBatchId: metadata.brand_presence_batch_id,
+      }),
     },
   };
 }

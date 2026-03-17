@@ -146,29 +146,37 @@ export default async function handler(message, context) {
     log.warn(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Empty updates array provided in message data. Skipping processing!`);
     return ok();
   }
-  await Promise.all(updates.map(async (update) => {
-    const {
-      suggestion_id: suggestionId,
-      fixes,
-    } = update;
-
-    // Validate suggestionId
-    if (!suggestionId) {
+  // Validate and collect suggestion IDs from updates
+  const validUpdates = updates.filter((update) => {
+    if (!update.suggestion_id) {
       log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] No suggestionId provided in update data`);
-      return;
+      return false;
     }
-    const suggestion = await Suggestion.findById(suggestionId);
+    if (!isNonEmptyArray(update.fixes)) {
+      log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] No code-fixes in update data`);
+      return false;
+    }
+    return true;
+  });
+
+  // Batch-fetch all suggestions in a single query instead of N individual findById calls
+  const suggestionIds = validUpdates.map((u) => u.suggestion_id);
+  const { data: existingSuggestions = [] } = suggestionIds.length > 0
+    ? await Suggestion.batchGetByKeys(suggestionIds.map((id) => ({ suggestionId: id })))
+    : { data: [] };
+  const suggestionMap = new Map(existingSuggestions.map((s) => [s.getId(), s]));
+
+  // Process updates in parallel (S3 reads are the slow part, not DB)
+  const toSave = [];
+  await Promise.all(validUpdates.map(async (update) => {
+    const { suggestion_id: suggestionId, fixes } = update;
+    const suggestion = suggestionMap.get(suggestionId);
     if (!suggestion) {
-      log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Suggestion not found for ID: ${update.suggestionId}`);
+      log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Suggestion not found for ID: ${suggestionId}`);
       return;
     }
 
     log.info(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Processing update for suggestion: ${suggestionId}`);
-
-    if (!isNonEmptyArray(fixes)) {
-      log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] No code-fixes in update data`);
-      return;
-    }
 
     // Right now we only expect one fix; the array is just used for future-proofing
     if (fixes.length > 1) {
@@ -192,7 +200,7 @@ export default async function handler(message, context) {
     );
 
     if (!reportData) {
-      log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] No code-fix report found for suggestion: ${update.suggestionId}`);
+      log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] No code-fix report found for suggestion: ${suggestionId}`);
       return;
     }
 
@@ -201,9 +209,12 @@ export default async function handler(message, context) {
       patchContent: reportData.diff,
       isCodeChangeAvailable: true,
     });
-
-    suggestion.save();
+    toSave.push(suggestion);
   }));
+
+  if (toSave.length > 0) {
+    await Suggestion.saveMany(toSave);
+  }
 
   return ok();
 }

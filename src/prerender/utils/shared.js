@@ -17,7 +17,9 @@
 
 import ExcelJS from 'exceljs';
 import { generateReportingPeriods as genPeriods } from '../../cdn-logs-report/utils/report-utils.js';
-import { resolveConsolidatedBucketName, extractCustomerDomain } from '../../utils/cdn-utils.js';
+import {
+  getS3Config,
+} from '../../utils/cdn-utils.js';
 import { createLLMOSharepointClient, readFromSharePoint } from '../../utils/report-uploader.js';
 import { downloadExistingCdnSheet } from '../../llm-error-pages/utils.js';
 
@@ -29,29 +31,13 @@ export function generateReportingPeriods(referenceDate = new Date()) {
   return genPeriods(referenceDate);
 }
 
-export async function getS3Config(site, context) {
-  const customerDomain = extractCustomerDomain(site);
-  const domainParts = customerDomain.split(/[._]/);
-  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const bucket = resolveConsolidatedBucketName(context);
-
-  return {
-    bucket,
-    customerName,
-    customerDomain,
-    databaseName: `cdn_logs_${customerDomain}`,
-    tableName: `aggregated_logs_${customerDomain}_consolidated`,
-    getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
-  };
-}
-
 /**
  * Load the latest week's agentic traffic sheet for a site
  * Returns the computed weekId, baseUrl, output location and parsed rows.
  */
 export async function loadLatestAgenticSheet(site, context) {
   const { log } = context;
-  const s3Config = await getS3Config(site, context);
+  const s3Config = getS3Config(site, context);
   const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.customerName;
   const outputLocation = `${llmoFolder}/agentic-traffic`;
   const { weeks } = generateReportingPeriods();
