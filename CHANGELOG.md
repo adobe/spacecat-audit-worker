@@ -1,3 +1,10 @@
+## [1.360.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.360.2...v1.360.3) (2026-03-17)
+
+
+### Bug Fixes
+
+* pass configVersion through onboarding flow, remove broken DRS brand detection ([#2124](https://github.com/adobe/spacecat-audit-worker/issues/2124)) ([53bab51](https://github.com/adobe/spacecat-audit-worker/commit/53bab516e73c812231d9c8167ccdd29d7cc5c6a0))
+
 ## [1.360.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.360.1...v1.360.2) (2026-03-17)
 
 
