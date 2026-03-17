@@ -705,6 +705,12 @@ describe('Commerce Product Enrichments Handler', () => {
   });
 
   it('runAuditAndProcessResults returns OPPORTUNITIES_FOUND when product pages are detected', async () => {
+    site.getConfig.returns({
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({}),
+    });
+
     const s3Client = {
       send: sinon.stub().resolves({
         ContentType: 'application/json',
@@ -757,6 +763,12 @@ describe('Commerce Product Enrichments Handler', () => {
   });
 
   it('runAuditAndProcessResults filters out category pages with multiple products', async () => {
+    site.getConfig.returns({
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({}),
+    });
+
     const s3Client = {
       send: sinon.stub().resolves({
         ContentType: 'application/json',
@@ -1055,6 +1067,8 @@ describe('Commerce Product Enrichments Handler', () => {
     });
 
     site.getConfig.returns({
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
       getHandlers: sinon.stub().returns({
         'commerce-product-enrichments': {
           instanceType: 'ACCS',
@@ -1693,7 +1707,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
     });
   });
 
-  it('attaches preFetch to scrape entry when SKU matches config', async () => {
+  it('attaches preFetch to product scrape when product URL matches categoryPages config', async () => {
     const preFetchRules = [
       { type: 'commerce-catalog-search', params: { filters: [{ attribute: 'categoryPath', eq: 'sactionals' }], pageSize: 10 } },
     ];
@@ -1705,7 +1719,9 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
       getHandlers: sinon.stub().returns({
         'commerce-product-enrichments': {
           instanceType: 'ACCS',
-          preFetch: { 'TEST-SKU-123': preFetchRules },
+          categoryPages: [
+            { url: 'https://example.com/sactionals', categoryId: '1032', preFetch: preFetchRules },
+          ],
         },
       }),
     });
@@ -1731,7 +1747,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
           transformToString: sinon.stub().resolves(JSON.stringify({
             scrapeResult: {
               structuredData: {
-                jsonld: { Product: [{ name: 'Test Product', sku: 'TEST-SKU-123' }] },
+                jsonld: { Product: [{ name: 'Test Product', sku: 'TEST-SKU-123', url: 'https://example.com/sactionals/build' }] },
               },
             },
           })),
@@ -1769,7 +1785,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
     expect(payload.scrapes[0].preFetch).to.deep.equal(preFetchRules);
   });
 
-  it('does not attach preFetch when SKU does not match config', async () => {
+  it('does not attach preFetch when product URL does not match categoryPages config', async () => {
     site.getConfig.returns({
       getIncludedURLs: sinon.stub().resolves([]),
       getExcludedURLs: sinon.stub().returns([]),
@@ -1777,7 +1793,9 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
       getHandlers: sinon.stub().returns({
         'commerce-product-enrichments': {
           instanceType: 'ACCS',
-          preFetch: { 'DIFFERENT-SKU': [{ type: 'commerce-catalog-search', params: {} }] },
+          categoryPages: [
+            { url: 'https://example.com/sacs', categoryId: '1035', preFetch: [{ type: 'commerce-catalog-search', params: {} }] },
+          ],
         },
       }),
     });
@@ -1803,7 +1821,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
           transformToString: sinon.stub().resolves(JSON.stringify({
             scrapeResult: {
               structuredData: {
-                jsonld: { Product: [{ name: 'Test Product', sku: 'TEST-SKU-123' }] },
+                jsonld: { Product: [{ name: 'Test Product', sku: 'TEST-SKU-123', url: 'https://example.com/snugg/build' }] },
               },
             },
           })),
@@ -1843,7 +1861,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
     expect(payload.scrapes[0]).to.not.have.property('preFetch');
   });
 
-  it('attaches preFetch only to matching SKUs in mixed batch', async () => {
+  it('attaches preFetch only to products whose URL matches categoryPages in mixed batch', async () => {
     const preFetchRules = [
       { type: 'commerce-catalog-search', params: { filters: [{ attribute: 'categoryPath', eq: 'sactionals' }], pageSize: 10 } },
     ];
@@ -1854,7 +1872,9 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
       getHandlers: sinon.stub().returns({
         'commerce-product-enrichments': {
           instanceType: 'ACCS',
-          preFetch: { 'SKU-001': preFetchRules },
+          categoryPages: [
+            { url: 'https://example.com/sactionals', categoryId: '1032', preFetch: preFetchRules },
+          ],
         },
       }),
     });
@@ -1881,7 +1901,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
         transformToString: sinon.stub().resolves(JSON.stringify({
           scrapeResult: {
             structuredData: {
-              jsonld: { Product: [{ name: 'Product 1', sku: 'SKU-001' }] },
+              jsonld: { Product: [{ name: 'Product 1', sku: 'SKU-001', url: 'https://example.com/sactionals/build' }] },
             },
           },
         })),
@@ -1894,7 +1914,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
         transformToString: sinon.stub().resolves(JSON.stringify({
           scrapeResult: {
             structuredData: {
-              jsonld: { Product: [{ name: 'Product 2', sku: 'SKU-002' }] },
+              jsonld: { Product: [{ name: 'Product 2', sku: 'SKU-002', url: 'https://example.com/snugg/build' }] },
             },
           },
         })),
@@ -1936,7 +1956,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
     expect(scrape2).to.not.have.property('preFetch');
   });
 
-  it('does not attach preFetch when preFetch config is empty object', async () => {
+  it('does not attach preFetch when categoryPages config is empty', async () => {
     site.getConfig.returns({
       getIncludedURLs: sinon.stub().resolves([]),
       getExcludedURLs: sinon.stub().returns([]),
@@ -1944,7 +1964,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
       getHandlers: sinon.stub().returns({
         'commerce-product-enrichments': {
           instanceType: 'ACCS',
-          preFetch: {},
+          categoryPages: [],
         },
       }),
     });
@@ -1970,7 +1990,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
           transformToString: sinon.stub().resolves(JSON.stringify({
             scrapeResult: {
               structuredData: {
-                jsonld: { Product: [{ name: 'Test Product', sku: 'TEST-SKU-123' }] },
+                jsonld: { Product: [{ name: 'Test Product', sku: 'TEST-SKU-123', url: 'https://example.com/product-1' }] },
               },
             },
           })),

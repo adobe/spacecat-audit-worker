@@ -203,15 +203,11 @@ function buildCategoryPageScrapes(handlerConfig, scrapeResultPaths, log) {
 async function sendEnrichment(productPages, commerceConfig, site, env, log, {
   categoryPageScrapes = [],
 } = {}) {
-  const handlerConfig = site.getConfig()?.getHandlers()?.[AUDIT_TYPE];
-  const preFetchConfig = handlerConfig?.preFetch || {};
-
   const allScrapes = [
     ...productPages.map((page) => {
       const scrape = { sku: page.sku, key: page.location };
-      const preFetch = preFetchConfig[page.sku];
-      if (preFetch) {
-        scrape.preFetch = preFetch;
+      if (page.preFetch) {
+        scrape.preFetch = page.preFetch;
       }
       return scrape;
     }),
@@ -338,6 +334,8 @@ export async function runAuditAndProcessResults(context) {
     log.warn(`${LOG_PREFIX} Step 3: Failed to extract commerce config: ${configError.message}`);
   }
 
+  const handlerConfig = site.getConfig()?.getHandlers()?.[AUDIT_TYPE];
+
   // Process each scraped result in parallel
   const processResults = await Promise.all(
     [...scrapeResultPaths].map(async ([url, s3Path]) => {
@@ -361,6 +359,7 @@ export async function runAuditAndProcessResults(context) {
         let isProductPage = false;
         let skuCount = 0;
         let sku = null;
+        let preFetch = null;
 
         const Product = scrapeData?.scrapeResult?.structuredData?.jsonld?.Product;
         if (Array.isArray(Product) && Product.length > 0) {
@@ -370,6 +369,17 @@ export async function runAuditAndProcessResults(context) {
           // Extract the actual SKU value
           if (isProductPage) {
             sku = Product.find((p) => p.sku)?.sku;
+          }
+
+          // if there's a match between categoryPages config and the @url prod from the jsonld
+          // add the preFetch strategies to the scrape entry
+          const categoryProductUrl = Product.find((p) => p.url)?.url;
+          const categoryPage = handlerConfig?.categoryPages?.find(
+            (cp) => categoryProductUrl && cp.url && categoryProductUrl.includes(cp.url),
+          );
+
+          if (categoryPage) {
+            preFetch = categoryPage.preFetch;
           }
         }
 
@@ -382,6 +392,7 @@ export async function runAuditAndProcessResults(context) {
           isProductPage,
           skuCount,
           sku,
+          preFetch,
         };
       } catch (error) {
         log.error(`${LOG_PREFIX} Step 3: Error processing scrape result for ${url}: ${error.message}`, error);
@@ -403,7 +414,6 @@ export async function runAuditAndProcessResults(context) {
   const productPages = processedPages.filter((page) => page.isProductPage);
 
   // Build category page scrapes from handler config
-  const handlerConfig = site.getConfig()?.getHandlers()?.[AUDIT_TYPE];
   const categoryPageScrapes = buildCategoryPageScrapes(handlerConfig, scrapeResultPaths, log);
 
   let enrichmentResponse = null;
