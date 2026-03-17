@@ -17,10 +17,10 @@ import {
 } from '../utils/report-uploader.js';
 import {
   generateReportingPeriods,
-  getS3Config,
   toPathOnly,
   SPREADSHEET_COLUMNS,
 } from './utils.js';
+import { getS3Config } from '../utils/cdn-utils.js';
 
 function derivePeriodFromBrokenLinks(brokenLinks = []) {
   const periodRegex = /llm-404-suggestion-(w\d{2}-\d{4})-/;
@@ -52,7 +52,7 @@ export default async function handler(message, context) {
     log.error(`Site not found for siteId: ${siteId}`);
     return notFound('Site not found');
   }
-  const s3Config = await getS3Config(site, context);
+  const s3Config = getS3Config(site, context);
 
   const audit = await Audit.findById(auditId);
   if (!audit) {
