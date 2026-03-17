@@ -1,3 +1,10 @@
+## [1.358.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.358.0...v1.358.1) (2026-03-17)
+
+
+### Bug Fixes
+
+* temporarily disable ad-intent-mismatch opportunity creation ([#2147](https://github.com/adobe/spacecat-audit-worker/issues/2147)) ([73e0db6](https://github.com/adobe/spacecat-audit-worker/commit/73e0db6f2ce3344d16c97e74b24f6fc35e58313c)), closes [#2133](https://github.com/adobe/spacecat-audit-worker/issues/2133)
+
 # [1.358.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.357.1...v1.358.0) (2026-03-16)
 
 
