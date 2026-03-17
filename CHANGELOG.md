@@ -1,3 +1,10 @@
+## [1.360.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.360.3...v1.360.4) (2026-03-17)
+
+
+### Bug Fixes
+
+* Massive empty meta tags suggestions starting week of Mar 16 ([#2153](https://github.com/adobe/spacecat-audit-worker/issues/2153)) ([6eada62](https://github.com/adobe/spacecat-audit-worker/commit/6eada626dff893b89b11a4abafd4e8bc463ad579))
+
 ## [1.360.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.360.2...v1.360.3) (2026-03-17)
 
 
