@@ -2398,6 +2398,11 @@ describe('TOC (Table of Contents) Audit', () => {
         const $ = cheerioLoad('<nav id="table-of-contents"><ul><li>Item</li></ul></nav>');
         expect(hasTocInDom($)).to.equal(true);
       });
+
+      it('returns true for element with class containing "cmp-toc__content"', () => {
+        const $ = cheerioLoad('<div class="cmp-toc__content"><ul><li>Item</li></ul></div>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
     });
 
     describe('no TOC signals', () => {

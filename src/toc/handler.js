@@ -76,6 +76,7 @@ export function hasTocInDom($) {
     'tableofcontents',
     'anchor-list',
     'anchor__list',
+    'cmp-toc__content',
   ];
   return tocPatterns.some(
     (pattern) => $(`[class*="${pattern}"], [id*="${pattern}"]`).length > 0,
