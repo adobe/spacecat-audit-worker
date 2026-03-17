@@ -380,6 +380,18 @@ describe('CDN Config Handler', () => {
       expect(mockSite.save).to.have.been.called;
     });
 
+    it('should persist region in bucket configuration when provided', async () => {
+      const data = { bucketName: 'test-bucket', region: 'eu-west-1', cdnProvider: 'commerce-fastly' };
+
+      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+      expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({
+        bucketName: 'test-bucket',
+        region: 'eu-west-1',
+      });
+      expect(mockSite.save).to.have.been.called;
+    });
+
     it('should handle aem-cs-fastly provider', async () => {
       context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({}), getFullAuditRef: () => '' });
 

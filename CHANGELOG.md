@@ -1,3 +1,17 @@
+## [1.360.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.360.0...v1.360.1) (2026-03-17)
+
+
+### Bug Fixes
+
+* excluding privacy/cookies/avigation headings from toc ([#2123](https://github.com/adobe/spacecat-audit-worker/issues/2123)) ([832505e](https://github.com/adobe/spacecat-audit-worker/commit/832505e83fd3b2daeee477713d37b8bbf5355f29))
+
+# [1.360.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.359.2...v1.360.0) (2026-03-17)
+
+
+### Features
+
+* cross-region CDN bucket support for Athena/S3 ([#2081](https://github.com/adobe/spacecat-audit-worker/issues/2081)) ([a0c2dd5](https://github.com/adobe/spacecat-audit-worker/commit/a0c2dd52add97e1393f342255c51f51263bad888))
+
 ## [1.359.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.359.1...v1.359.2) (2026-03-17)
 
 

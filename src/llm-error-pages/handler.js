@@ -12,10 +12,8 @@
 
 import ExcelJS from 'exceljs';
 import { Audit } from '@adobe/spacecat-shared-data-access';
-import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
-  getS3Config,
   generateReportingPeriods,
   processErrorPagesResults,
   buildLlmErrorPagesQuery,
@@ -29,7 +27,7 @@ import {
 import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
 import { validateCountryCode } from '../cdn-logs-report/utils/report-utils.js';
-import { buildSiteFilters } from '../utils/cdn-utils.js';
+import { buildSiteFilters, getS3Config, getCdnAwsRuntime } from '../utils/cdn-utils.js';
 import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -131,13 +129,14 @@ export async function submitForScraping(context) {
 /* eslint-disable no-await-in-loop */
 export async function runAuditAndSendToMystique(context) {
   const { log, site } = context;
-  const s3Config = await getS3Config(site, context);
+  const s3Config = getS3Config(site, context);
   const url = site.getBaseURL();
 
   log.info(`[LLM-ERROR-PAGES] Starting audit for ${url}`);
 
   try {
-    const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
+    const awsRuntime = getCdnAwsRuntime(site, context);
+    const athenaClient = awsRuntime.createAthenaClient(s3Config.getAthenaTempLocation());
 
     const isMonday = new Date().getUTCDay() === 1;
     let weekOffsets;

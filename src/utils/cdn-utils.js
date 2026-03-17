@@ -10,7 +10,13 @@
  * governing permissions and limitations under the License.
  */
 
-import { HeadBucketCommand, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  HeadBucketCommand,
+  ListObjectsV2Command,
+  GetObjectCommand,
+} from '@aws-sdk/client-s3';
+import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import zlib from 'zlib';
 import { hasText } from '@adobe/spacecat-shared-utils';
 import { PROVIDER_USER_AGENT_PATTERNS } from '../common/user-agent-classification.js';
@@ -107,11 +113,36 @@ export async function resolveCdnBucketName(site, context) {
   const {
     s3Client, log, env,
   } = context;
+  const resolveClientRegion = async () => {
+    const region = s3Client?.config?.region;
+    return typeof region === 'function' ? region() : region;
+  };
+  const logBucketRegionError = async (error, bucket) => {
+    const statusCode = error?.$metadata?.httpStatusCode;
+    const bucketRegionHint = error?.$response?.headers?.['x-amz-bucket-region'];
+
+    if (statusCode === 301) {
+      const clientRegion = await resolveClientRegion();
+      log.error(`Bucket ${bucket} is in region ${bucketRegionHint || 'unknown'} but client is using ${clientRegion}.`, {
+        bucket,
+        configuredRegion: site.getConfig()?.getLlmoCdnBucketConfig?.()?.region,
+        runtimeRegion: env?.AWS_REGION,
+        clientRegion,
+        bucketRegionHint,
+        requestId: error?.$metadata?.requestId,
+      });
+    }
+  };
 
   // If the bucket name is configured, use it
   const { bucketName } = site.getConfig()?.getLlmoCdnBucketConfig() || {};
   if (bucketName) {
-    await s3Client.send(new HeadBucketCommand({ Bucket: bucketName }));
+    try {
+      await s3Client.send(new HeadBucketCommand({ Bucket: bucketName }));
+    } catch (error) {
+      await logBucketRegionError(error, bucketName);
+      throw error;
+    }
     return bucketName;
   }
 
@@ -123,6 +154,7 @@ export async function resolveCdnBucketName(site, context) {
       await s3Client.send(new HeadBucketCommand({ Bucket: standardBucket }));
       return standardBucket;
     } catch (error) {
+      await logBucketRegionError(error, standardBucket);
       log.info(`Standardized bucket ${standardBucket} not found`, error);
     }
   }
@@ -315,11 +347,69 @@ export async function discoverCdnProviders(s3Client, bucketName, timeParts) {
   return [];
 }
 
-export function resolveConsolidatedBucketName(context) {
-  const { env } = context;
+export function resolveSiteCdnRegion(site, context) {
+  const configuredRegion = site?.getConfig?.()?.getLlmoCdnBucketConfig?.()?.region;
+  if (configuredRegion) {
+    return configuredRegion;
+  }
+
+  return context?.env?.AWS_REGION || 'us-east-1';
+}
+
+export function resolveConsolidatedBucketName(context, region) {
+  const { env = {} } = context;
   const { AWS_ENV, AWS_REGION = 'us-east-1' } = env;
+  const resolvedRegion = region || AWS_REGION;
   const environment = AWS_ENV || 'prod';
-  return `spacecat-${environment}-cdn-logs-aggregates-${AWS_REGION}`;
+  return `spacecat-${environment}-cdn-logs-aggregates-${resolvedRegion}`;
+}
+
+export function getS3Config(site, context) {
+  const region = resolveSiteCdnRegion(site, context);
+  const customerDomain = extractCustomerDomain(site);
+  const domainParts = customerDomain.split(/[._]/);
+  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
+  const bucket = resolveConsolidatedBucketName(context, region);
+  const siteId = site?.getId?.();
+  return {
+    bucket,
+    region,
+    siteId,
+    customerName,
+    customerDomain,
+    databaseName: `cdn_logs_${customerDomain}`,
+    tableName: `aggregated_logs_${customerDomain}_consolidated`,
+    referralTableName: `aggregated_referral_logs_${customerDomain}_consolidated`,
+    aggregatedLocation: siteId ? `s3://${bucket}/aggregated/${siteId}/` : undefined,
+    aggregatedReferralLocation: siteId ? `s3://${bucket}/aggregated-referral/${siteId}/` : undefined,
+    getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
+  };
+}
+
+export function getCdnAwsRuntime(site, context) {
+  const region = resolveSiteCdnRegion(site, context);
+  const runtimeRegion = context?.env?.AWS_REGION || 'us-east-1';
+  const s3Client = region === runtimeRegion ? context.s3Client : new S3Client({ region });
+  const athenaContext = region === runtimeRegion
+    ? context
+    : {
+      ...context,
+      athenaClient: undefined,
+      env: {
+        ...context.env,
+        AWS_REGION: region,
+      },
+    };
+
+  return {
+    region,
+    s3Client,
+    createAthenaClient: (tempLocation, opts = {}) => AWSAthenaClient.fromContext(
+      athenaContext,
+      tempLocation,
+      opts,
+    ),
+  };
 }
 
 /**
