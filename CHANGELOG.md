@@ -1,3 +1,10 @@
+## [1.360.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.360.1...v1.360.2) (2026-03-17)
+
+
+### Bug Fixes
+
+* removed the aso entitlement check from summit plg logic ([#2151](https://github.com/adobe/spacecat-audit-worker/issues/2151)) ([be98676](https://github.com/adobe/spacecat-audit-worker/commit/be98676a4ba477fdf62843037f747ebbd092916b))
+
 ## [1.360.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.360.0...v1.360.1) (2026-03-17)
 
 
