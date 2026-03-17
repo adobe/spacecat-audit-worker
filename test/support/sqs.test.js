@@ -30,6 +30,7 @@ describe('sqs', () => {
   let context;
 
   beforeEach('setup', () => {
+    nock.disableNetConnect();
     context = {
       log: console,
       runtime: {
@@ -40,6 +41,8 @@ describe('sqs', () => {
 
   afterEach('clean', () => {
     sandbox.restore();
+    nock.cleanAll();
+    nock.enableNetConnect();
   });
 
   it('do not initialize a new sqs if already initialized', async () => {
@@ -260,10 +263,27 @@ describe('sqs', () => {
     const message = { key: 'value' };
     const logSpy = sandbox.spy(context.log, 'info');
 
+    // Mock any POST request to SQS endpoint - AWS SDK v3 may format requests
+    // differently when queueUrl is null
     nock('https://sqs.us-east-1.amazonaws.com')
-      .post('/')
-      .reply(200, (_, body) => {
-        const { MessageBody } = JSON.parse(body);
+      .post(/.*/)
+      .reply(200, (uri, body) => {
+        // Parse body - AWS SDK v3 sends JSON with MessageBody field
+        const parsedBody = JSON.parse(body);
+        // Extract MessageBody from the actual request to calculate correct MD5
+        const { MessageBody } = parsedBody;
+        return {
+          MessageId: 'message-id',
+          MD5OfMessageBody: crypto.createHash('md5').update(MessageBody, 'utf-8').digest('hex'),
+        };
+      });
+
+    // Also mock localhost:4566 (LocalStack) in case SDK tries to use it when queueUrl is null
+    nock('http://localhost:4566')
+      .post(/.*/)
+      .reply(200, (uri, body) => {
+        const parsedBody = JSON.parse(body);
+        const { MessageBody } = parsedBody;
         return {
           MessageId: 'message-id',
           MD5OfMessageBody: crypto.createHash('md5').update(MessageBody, 'utf-8').digest('hex'),
@@ -272,6 +292,43 @@ describe('sqs', () => {
 
     await wrap(async (req, ctx) => {
       await ctx.sqs.sendMessage(null, message);
+    }).with(sqsWrapper)({}, context);
+
+    expect(logSpy).to.have.been.calledWith('Success, message sent. Queue: unknown, Type: unknown, MessageID: message-id');
+  });
+
+  it('uses unknown as fallback when queueUrl is undefined', async () => {
+    const message = { key: 'value' };
+    const logSpy = sandbox.spy(context.log, 'info');
+
+    // Mock any POST request to SQS endpoint
+    nock('https://sqs.us-east-1.amazonaws.com')
+      .post(/.*/)
+      .reply(200, (uri, body) => {
+        // Parse body - AWS SDK v3 sends JSON with MessageBody field
+        const parsedBody = JSON.parse(body);
+        // Extract MessageBody from the actual request to calculate correct MD5
+        const { MessageBody } = parsedBody;
+        return {
+          MessageId: 'message-id',
+          MD5OfMessageBody: crypto.createHash('md5').update(MessageBody, 'utf-8').digest('hex'),
+        };
+      });
+
+    // Also mock localhost:4566 (LocalStack) in case SDK tries to use it
+    nock('http://localhost:4566')
+      .post(/.*/)
+      .reply(200, (uri, body) => {
+        const parsedBody = JSON.parse(body);
+        const { MessageBody } = parsedBody;
+        return {
+          MessageId: 'message-id',
+          MD5OfMessageBody: crypto.createHash('md5').update(MessageBody, 'utf-8').digest('hex'),
+        };
+      });
+
+    await wrap(async (req, ctx) => {
+      await ctx.sqs.sendMessage(undefined, message);
     }).with(sqsWrapper)({}, context);
 
     expect(logSpy).to.have.been.calledWith('Success, message sent. Queue: unknown, Type: unknown, MessageID: message-id');

@@ -756,6 +756,12 @@ describe('Preflight Audit', () => {
               transformToString: sinon.stub().resolves(JSON.stringify({
                 scrapeResult: {
                   rawBody: html.replaceAll('https://example.com', 'https://main--example--page.aem.page'),
+                  canonical: {
+                    exists: true,
+                    count: 1,
+                    href: 'https://main--example--page.aem.page/wrong',
+                    inHead: true,
+                  },
                   tags: {
                     title: 'Page 1 Title',
                     description: 'Page 1 Description',
@@ -1306,6 +1312,12 @@ describe('Preflight Audit', () => {
               transformToString: sinon.stub().resolves(JSON.stringify({
                 scrapeResult: {
                   rawBody: html,
+                  canonical: {
+                    exists: true,
+                    count: 1,
+                    href: 'https://main--example--page.aem.page/readability-test',
+                    inHead: true,
+                  },
                   tags: {
                     title: 'Readability Test Page',
                     description: 'Test page for readability',

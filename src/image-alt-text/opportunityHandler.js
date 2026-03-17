@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { getRUMUrl, toggleWWW } from '../support/utils.js';
@@ -20,53 +20,6 @@ import {
 } from './constants.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
-
-/**
- * Synchronizes existing suggestions with new data
- * by removing existing suggestions and adding new ones.
- *
- * @param {Object} params - The parameters for the sync operation.
- * @param {Object} params.opportunity - The opportunity object to synchronize suggestions for.
- * @param {Array} params.newSuggestionDTOs - Array of new data objects (not models) to sync.
- * @param {Object} params.log - Logger object for error reporting.
- * @returns {Promise<void>} - Resolves when the synchronization is complete.
- */
-export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, log }) {
-  const existingSuggestions = await opportunity.getSuggestions();
-
-  const IGNORED_STATUSES = [SuggestionModel.STATUSES.SKIPPED, SuggestionModel.STATUSES.FIXED];
-  const ignoredSuggestions = existingSuggestions.filter(
-    (s) => IGNORED_STATUSES.includes(s.getStatus()),
-  );
-  const ignoredSuggestionIds = ignoredSuggestions.map((s) => s.getData().recommendations[0].id);
-
-  // Remove existing suggestions that were not ignored
-  await Promise.all(existingSuggestions
-    .filter(
-      (suggestion) => !ignoredSuggestionIds.includes(suggestion.getData().recommendations[0].id),
-    )
-    .map((suggestion) => suggestion.remove()));
-
-  const suggestionsToAdd = newSuggestionDTOs.filter(
-    (s) => !ignoredSuggestionIds.includes(s.data.recommendations[0].id),
-  );
-
-  // Add new suggestions to oppty
-  if (isNonEmptyArray(suggestionsToAdd)) {
-    const updateResult = await opportunity.addSuggestions(suggestionsToAdd);
-
-    if (isNonEmptyArray(updateResult.errorItems)) {
-      log.error(`[${AUDIT_TYPE}]: Suggestions for siteId ${opportunity.getSiteId()} contains ${updateResult.errorItems.length} items with errors`);
-      updateResult.errorItems.forEach((errorItem) => {
-        log.error(`[${AUDIT_TYPE}]: Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
-      });
-
-      if (!isNonEmptyArray(updateResult.createdItems)) {
-        throw new Error(`[${AUDIT_TYPE}]: Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
-      }
-    }
-  }
-}
 
 export const getProjectedMetrics = async ({
   images, auditUrl, context, log,
@@ -143,6 +96,7 @@ export const chunkArray = (array, chunkSize) => {
  * @param {Array<string>} imageUrlsWithAltText - Image URLs from existing NEW suggestions
  *   (empty array if no opportunity exists)
  * @param {boolean} isSummitPlg - Whether the site has summit-plg enabled
+ * @param {boolean} decorativeAgentEnabled - Whether decorative agent classification is enabled
  * @returns {Promise<void>}
  */
 export async function sendAltTextOpportunityToMystique(
@@ -153,6 +107,7 @@ export async function sendAltTextOpportunityToMystique(
   context,
   imageUrlsWithAltText = [],
   isSummitPlg = false,
+  decorativeAgentEnabled = false,
 ) {
   const {
     sqs, env, log, dataAccess,
@@ -182,6 +137,7 @@ export async function sendAltTextOpportunityToMystique(
           pageUrls: batch,
           imageUrlsWithAltText,
           isSummitPlg,
+          decorativeAgentEnabled,
         },
       };
       // eslint-disable-next-line no-await-in-loop
@@ -194,47 +150,6 @@ export async function sendAltTextOpportunityToMystique(
   } catch (error) {
     log.error(`[${AUDIT_TYPE}]: Failed to send alt-text opportunity to Mystique: ${error.message}`);
     throw error;
-  }
-}
-
-/**
- * Clears all existing alt-text suggestions except those that are ignored/skipped
- * This should be called once at the beginning of the alt-text audit process
- *
- * @param {Object} params - The parameters for the cleanup operation.
- * @param {Object} params.opportunity - The opportunity object to clear suggestions for.
- * @param {Object} params.log - Logger object for error reporting.
- * @returns {Promise<void>} - Resolves when the cleanup is complete.
- */
-export async function clearAltTextSuggestions({ opportunity, log }) {
-  if (!opportunity) {
-    log.debug(`[${AUDIT_TYPE}]: No opportunity found, skipping suggestion cleanup`);
-    return;
-  }
-
-  const existingSuggestions = await opportunity.getSuggestions();
-
-  if (!existingSuggestions || existingSuggestions.length === 0) {
-    log.debug(`[${AUDIT_TYPE}]: No existing suggestions to clear`);
-    return;
-  }
-
-  const IGNORED_STATUSES = [SuggestionModel.STATUSES.SKIPPED, SuggestionModel.STATUSES.FIXED];
-  const ignoredSuggestions = existingSuggestions.filter(
-    (s) => IGNORED_STATUSES.includes(s.getStatus()),
-  );
-  const ignoredSuggestionIds = ignoredSuggestions.map((s) => s.getData().recommendations[0].id);
-
-  // Remove existing suggestions that were not ignored
-  const suggestionsToRemove = existingSuggestions.filter(
-    (suggestion) => !ignoredSuggestionIds.includes(suggestion.getData().recommendations[0].id),
-  );
-
-  if (suggestionsToRemove.length > 0) {
-    await Promise.all(suggestionsToRemove.map((suggestion) => suggestion.remove()));
-    log.info(`[${AUDIT_TYPE}]: Cleared ${suggestionsToRemove.length} existing suggestions (preserved ${ignoredSuggestions.length} ignored suggestions)`);
-  } else {
-    log.debug(`[${AUDIT_TYPE}]: No suggestions to clear (all ${existingSuggestions.length} suggestions are ignored)`);
   }
 }
 
@@ -268,28 +183,4 @@ export async function addAltTextSuggestions({ opportunity, newSuggestionDTOs, lo
   }
 
   log.debug(`[${AUDIT_TYPE}]: Added ${newSuggestionDTOs.length} new suggestions`);
-}
-
-/**
- * Cleans up all OUTDATED suggestions for the opportunity
- * @param {Object} opportunity - The opportunity object
- * @param {Object} log - Logger
- * @returns {Promise<void>}
- */
-export async function cleanupOutdatedSuggestions(opportunity, log) {
-  try {
-    const allSuggestions = await opportunity.getSuggestions();
-    const outdatedSuggestions = allSuggestions.filter(
-      (suggestion) => suggestion.getStatus() === SuggestionModel.STATUSES.OUTDATED,
-    );
-
-    if (outdatedSuggestions.length > 0) {
-      await Promise.all(outdatedSuggestions.map((suggestion) => suggestion.remove()));
-      log.debug(`[${AUDIT_TYPE}]: Cleaned up ${outdatedSuggestions.length} OUTDATED suggestions`);
-    } else {
-      log.debug(`[${AUDIT_TYPE}]: No OUTDATED suggestions to clean up`);
-    }
-  } catch (error) {
-    log.error(`[${AUDIT_TYPE}]: Failed to cleanup OUTDATED suggestions: ${error.message}`);
-  }
 }

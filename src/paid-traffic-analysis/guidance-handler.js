@@ -78,7 +78,7 @@ async function ignorePreviousOpportunitiesForPeriod(Opportunity, siteId, period,
       return false;
     });
 
-  await Promise.all(candidates.map(async (oppty) => {
+  candidates.forEach((oppty) => {
     const data = oppty.getData();
     const title = oppty.getTitle();
     const weekVal = data?.week;
@@ -87,8 +87,10 @@ async function ignorePreviousOpportunitiesForPeriod(Opportunity, siteId, period,
     log.debug(`Setting existing paid-traffic opportunity id=${id} title="${title}" week=${weekVal} month=${monthVal} to IGNORED`);
     oppty.setStatus('IGNORED');
     oppty.setUpdatedBy('system');
-    await oppty.save();
-  }));
+  });
+  if (candidates.length > 0) {
+    await Opportunity.saveMany(candidates);
+  }
   log.debug(`Ignored ${candidates.length} existing paid-traffic opportunities for siteId=${siteId}`);
 }
 

@@ -18,7 +18,7 @@ import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-
 import { getPreviousWeekTriples } from '../utils/date-utils.js';
 import { SPREADSHEET_COLUMNS } from '../faqs/utils.js';
 
-const MAX_PROMPTS = 2;
+const MAX_PROMPTS = 200;
 const WEEKS_TO_LOOK_BACK = 4;
 const DEFAULT_FANOUT_COUNT = 4;
 
