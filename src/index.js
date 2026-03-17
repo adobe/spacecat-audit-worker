@@ -30,6 +30,7 @@ import sitemap from './sitemap/handler.js';
 import sitemapProductCoverage from './sitemap-product-coverage/handler.js';
 import redirectChains from './redirect-chains/handler.js';
 import identifyRedirects from './identify-redirects/handler.js';
+import detectCdn from './detect-cdn/handler.js';
 import paid from './paid-cookie-consent/handler.js';
 import paidKeywordOptimizer from './paid-keyword-optimizer/handler.js';
 import paidKeywordOptimizerGuidance from './paid-keyword-optimizer/guidance-handler.js';
@@ -128,6 +129,7 @@ const HANDLERS = {
   'sitemap-product-coverage': sitemapProductCoverage,
   'redirect-chains': redirectChains,
   'identify-redirects': identifyRedirects,
+  'detect-cdn': detectCdn,
   paid,
   'no-cta-above-the-fold': noCTAAboveTheFold,
   'paid-traffic-analysis': paidTrafficAnalysis,
