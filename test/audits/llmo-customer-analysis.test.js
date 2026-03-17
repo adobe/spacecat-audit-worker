@@ -107,6 +107,7 @@ describe('LLMO Customer Analysis Handler', () => {
     let mockLlmoConfig;
     let mockRUMAPIClient;
     let mockGetRUMUrl;
+    let mockFetch;
 
     beforeEach(async () => {
       sqs.sendMessage.resetHistory();
@@ -132,6 +133,22 @@ describe('LLMO Customer Analysis Handler', () => {
 
       mockGetRUMUrl = sandbox.stub().resolves('example.com');
 
+      // Default mock fetch for DRS schedule API calls
+      mockFetch = sandbox.stub();
+      // POST /schedules - create schedule
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      // POST /schedules/{site_id}/{schedule_id}/trigger - trigger schedule
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      context.env.DRS_API_URL = 'https://drs.example.com/api';
+      context.env.DRS_API_KEY = 'test-drs-key';
+
       mockHandler = await esmock('../../src/llmo-customer-analysis/handler.js', {
         '@adobe/spacecat-shared-utils': {
           getLastNumberOfWeeks: () => [
@@ -141,6 +158,7 @@ describe('LLMO Customer Analysis Handler', () => {
             { week: 4, year: 2025 },
           ],
           llmoConfig: mockLlmoConfig,
+          tracingFetch: mockFetch,
         },
         '@adobe/spacecat-shared-rum-api-client': {
           default: mockRUMAPIClientClass,
@@ -266,6 +284,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
       expect(result.auditResult.triggeredSteps).to.include('traffic-analysis');
+      expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
     });
 
     it('should not trigger referral traffic imports on subsequent config updates', async () => {
@@ -508,6 +527,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.configChangesDetected).to.equal(false);
       expect(result.auditResult.message).to.equal('Audits enabled (no config version provided, skipping config comparison)');
       expect(result.auditResult.triggeredSteps).to.include('traffic-analysis');
+      expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
       // 4 referral traffic imports via SQS
       expect(sqs.sendMessage).to.have.callCount(4);
     });
@@ -864,6 +884,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.configChangesDetected).to.equal(true);
       expect(result.auditResult.triggeredSteps).to.include('traffic-analysis');
       expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
+      expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
       expect(result.fullAuditRef).to.equal('https://example.com');
     });
 
@@ -1189,6 +1210,225 @@ describe('LLMO Customer Analysis Handler', () => {
 
       // Verify configuration.save was called
       expect(configuration.save).to.have.been.called;
+    });
+
+    it('should create and trigger brand presence schedule on first-time onboarding', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Verify the DRS schedule API was called
+      expect(mockFetch).to.have.been.calledWith(
+        'https://drs.example.com/api/schedules',
+        sinon.match({
+          method: 'POST',
+          headers: sinon.match({
+            'Content-Type': 'application/json',
+            'x-api-key': 'test-drs-key',
+          }),
+        }),
+      );
+
+      // Verify the schedule trigger was called
+      expect(mockFetch).to.have.been.calledWith(
+        'https://drs.example.com/api/schedules/site-123/sched-001/trigger',
+        sinon.match({ method: 'POST' }),
+      );
+
+      expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
+    });
+
+    it('should handle brand presence schedule creation failure gracefully', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      // Override mockFetch to fail on schedule creation
+      mockFetch.onFirstCall().resolves({
+        ok: false,
+        status: 500,
+        text: async () => 'Internal Server Error',
+      });
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Should log the error but still complete
+      expect(log.error).to.have.been.calledWith(
+        sinon.match('Failed to create/trigger brand presence schedule for site site-123'),
+      );
+      expect(result.auditResult.status).to.equal('completed');
+      // brand-presence-schedule should NOT be in triggeredSteps
+      expect(result.auditResult.triggeredSteps).to.not.include('brand-presence-schedule');
+    });
+
+    it('should handle brand presence schedule trigger failure gracefully', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      // Schedule creation succeeds
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-002' }),
+      });
+      // Schedule trigger fails
+      mockFetch.onSecondCall().resolves({
+        ok: false,
+        status: 502,
+        text: async () => 'Bad Gateway',
+      });
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(log.error).to.have.been.calledWith(
+        sinon.match('Failed to create/trigger brand presence schedule for site site-123'),
+      );
+      expect(result.auditResult.status).to.equal('completed');
+      expect(result.auditResult.triggeredSteps).to.not.include('brand-presence-schedule');
+    });
+
+    it('should skip brand presence schedule when DRS API URL is not configured', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      // Remove DRS env vars
+      delete context.env.DRS_API_URL;
+      delete context.env.DRS_API_KEY;
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Should not call fetch for schedule creation
+      expect(mockFetch).to.not.have.been.called;
+      expect(log.error).to.have.been.calledWith(
+        sinon.match('Failed to create/trigger brand presence schedule for site site-123: DRS API URL or key not configured'),
+      );
+      expect(result.auditResult.status).to.equal('completed');
+      // brand-presence-schedule should NOT be in triggeredSteps
+      expect(result.auditResult.triggeredSteps).to.not.include('brand-presence-schedule');
+    });
+
+    it('should handle missing schedule_id in DRS response', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      // Schedule creation returns no schedule_id
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(log.error).to.have.been.calledWith(
+        sinon.match('Failed to create/trigger brand presence schedule for site site-123'),
+      );
+      expect(result.auditResult.triggeredSteps).to.not.include('brand-presence-schedule');
+    });
+
+    it('should not create brand presence schedule on subsequent config updates', async () => {
+      const auditContext = {
+        configVersion: 'v2',
+        previousConfigVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Should not call fetch for schedule creation on non-first-time onboarding
+      expect(mockFetch).to.not.have.been.called;
     });
 
   });
