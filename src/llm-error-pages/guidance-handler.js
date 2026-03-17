@@ -17,8 +17,6 @@ import {
 } from '../utils/report-uploader.js';
 import {
   generateReportingPeriods,
-  getS3Config,
-  generatePeriodIdentifier,
   toPathOnly,
   SPREADSHEET_COLUMNS,
 } from './utils.js';
