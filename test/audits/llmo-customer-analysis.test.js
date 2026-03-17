@@ -1404,6 +1404,81 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.triggeredSteps).to.not.include('brand-presence-schedule');
     });
 
+    it('should strip trailing slashes from DRS API URL', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      // Set URL with trailing slashes
+      context.env.DRS_API_URL = 'https://drs.example.com/api///';
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Verify trailing slashes are stripped from the DRS API URL
+      expect(mockFetch).to.have.been.calledWith(
+        'https://drs.example.com/api/schedules',
+        sinon.match({ method: 'POST' }),
+      );
+
+      expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
+    });
+
+    it('should fall back to schedule.id when schedule_id is not present', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      // Return response with `id` instead of `schedule_id`
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => ({ id: 'sched-fallback' }),
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Verify the trigger call uses the fallback id
+      expect(mockFetch).to.have.been.calledWith(
+        'https://drs.example.com/api/schedules/site-123/sched-fallback/trigger',
+        sinon.match({ method: 'POST' }),
+      );
+
+      expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
+    });
+
     it('should not create brand presence schedule on subsequent config updates', async () => {
       const auditContext = {
         configVersion: 'v2',
