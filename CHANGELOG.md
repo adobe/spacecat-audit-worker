@@ -1,3 +1,10 @@
+## [1.359.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.359.1...v1.359.2) (2026-03-17)
+
+
+### Bug Fixes
+
+* **forms-a11y:** keep handler that normalizes Mystique a11y payload to update_from/target_selector for codefix-handler compatibility. ([#2038](https://github.com/adobe/spacecat-audit-worker/issues/2038)) ([72b67cc](https://github.com/adobe/spacecat-audit-worker/commit/72b67cc6a7f1b7a2c116157a3c135a05e1b28b43))
+
 ## [1.359.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.359.0...v1.359.1) (2026-03-17)
 
 
