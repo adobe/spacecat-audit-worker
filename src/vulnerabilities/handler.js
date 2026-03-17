@@ -175,6 +175,7 @@ export async function extractCodeBucket(context) {
     siteId: site.getId(),
     auditResult: result.auditResult,
     fullAuditRef: result.fullAuditRef,
+    auditContext: { forceAemy: true },
   };
 }
 

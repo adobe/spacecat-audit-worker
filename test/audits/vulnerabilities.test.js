@@ -689,6 +689,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(result).to.have.property('auditResult');
       expect(result).to.have.property('fullAuditRef', 'https://example.com');
       expect(result.auditResult).to.have.property('success', true);
+      expect(result).to.have.deep.property('auditContext', { forceAemy: true });
     });
 
     it('should throw error when audit fails', async () => {
