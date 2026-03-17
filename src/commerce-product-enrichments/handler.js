@@ -121,6 +121,8 @@ async function buildScrapePayload({
     },
     options: {
       waitTimeoutForMetaTags: 5000,
+      screenshotTypes: [],
+      expandShadowDOM: false,
     },
     allowCache: false,
     maxScrapeAge: 0,

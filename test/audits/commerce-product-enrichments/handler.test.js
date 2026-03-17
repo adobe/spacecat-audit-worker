@@ -199,6 +199,8 @@ describe('Commerce Product Enrichments Handler', () => {
       },
       options: {
         waitTimeoutForMetaTags: 5000,
+        screenshotTypes: [],
+        expandShadowDOM: false,
       },
       allowCache: false,
       maxScrapeAge: 0,
@@ -447,6 +449,8 @@ describe('Commerce Product Enrichments Handler', () => {
       },
       options: {
         waitTimeoutForMetaTags: 5000,
+        screenshotTypes: [],
+        expandShadowDOM: false,
       },
       allowCache: false,
       maxScrapeAge: 0,
