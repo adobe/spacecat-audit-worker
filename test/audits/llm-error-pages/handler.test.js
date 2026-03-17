@@ -381,7 +381,7 @@ describe('LLM Error Pages Handler', function () {
       }
     });
 
-    it('should handle audit failure gracefully', async () => {
+    it('should handle per-week query failure gracefully', async () => {
       mockAthenaClient.query.rejects(new Error('Database error'));
 
       const result = await runAuditAndSendToMystique(context);
@@ -389,10 +389,23 @@ describe('LLM Error Pages Handler', function () {
       expect(result.auditResult[0].success).to.be.false;
       expect(result.auditResult[0].error).to.equal('Database error');
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/\[LLM-ERROR-PAGES\] Audit failed: Database error/),
+        sinon.match(/\[LLM-ERROR-PAGES\] Failed for/),
         sinon.match.instanceOf(Error),
       );
       expect(context.sqs.sendMessage).not.to.have.been.called;
+    });
+
+    it('should handle audit failure gracefully when setup fails before week loop', async () => {
+      mockCreateLLMOSharepointClient.rejects(new Error('SharePoint connection failed'));
+
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(result.auditResult[0].success).to.be.false;
+      expect(result.auditResult[0].error).to.equal('SharePoint connection failed');
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/\[LLM-ERROR-PAGES\] Audit failed: SharePoint connection failed/),
+        sinon.match.instanceOf(Error),
+      );
     });
 
     it('should skip Mystique when SQS not configured', async () => {
