@@ -1,3 +1,10 @@
+# [1.359.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.358.1...v1.359.0) (2026-03-17)
+
+
+### Features
+
+* add backfill support for llm-error-pages ([#2099](https://github.com/adobe/spacecat-audit-worker/issues/2099)) ([abe8697](https://github.com/adobe/spacecat-audit-worker/commit/abe8697b1d62564e71b03bbc9f4e607ec4c29aac))
+
 ## [1.358.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.358.0...v1.358.1) (2026-03-17)
 
 
