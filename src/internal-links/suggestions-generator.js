@@ -14,10 +14,82 @@ import { getPrompt, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { getScrapedDataForSiteId, limitConcurrency } from '../support/utils.js';
-import { syncSuggestions } from '../utils/data-access.js';
+import { handleOutdatedSuggestions } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from './subpath-filter.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
+
+function normalizeAnchorText(anchorText) {
+  if (typeof anchorText !== 'string') {
+    return '';
+  }
+
+  const normalized = anchorText.trim();
+  return normalized === '[no text]' ? '' : normalized;
+}
+
+function getSuggestionType() {
+  return 'CONTENT_UPDATE';
+}
+
+function getNormalizedTrafficDomain(entry) {
+  const trafficDomain = Number.parseInt(entry?.trafficDomain, 10);
+  return Number.isFinite(trafficDomain) && trafficDomain > 0 ? trafficDomain : 1;
+}
+
+function getSuggestionRank(entry) {
+  return getNormalizedTrafficDomain(entry);
+}
+
+function getDefaultSuggestedUrls(site, entry = {}) {
+  if (Array.isArray(entry.urlsSuggested) && entry.urlsSuggested.length > 0) {
+    return entry.urlsSuggested;
+  }
+
+  const siteBaseURL = site?.getBaseURL?.();
+  if (siteBaseURL) {
+    return [siteBaseURL];
+  }
+
+  return entry.urlTo ? [entry.urlTo] : [];
+}
+
+function sanitizeBrokenLinkData(site, entry = {}) {
+  return {
+    title: entry.title,
+    urlFrom: entry.urlFrom,
+    urlTo: entry.urlTo,
+    itemType: entry.itemType || 'link',
+    priority: entry.priority || 'high',
+    trafficDomain: getNormalizedTrafficDomain(entry),
+    urlsSuggested: getDefaultSuggestedUrls(site, entry),
+    aiRationale: entry.aiRationale || '',
+    httpStatus: entry.httpStatus,
+    statusBucket: entry.statusBucket,
+    contentType: entry.contentType,
+    detectionSource: entry.detectionSource,
+    anchorText: normalizeAnchorText(entry.anchorText),
+  };
+}
+
+async function saveSuggestions(collection, items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return;
+  }
+
+  if (typeof collection?.saveMany === 'function') {
+    await collection.saveMany(items);
+    return;
+  }
+
+  const saveManyV2 = collection ? Reflect.get(collection, '_saveMany') : null;
+  if (typeof saveManyV2 === 'function') {
+    await saveManyV2.call(collection, items);
+    return;
+  }
+
+  await Promise.all(items.map(async (item) => item.save()));
+}
 
 export const generateSuggestionData = async (finalUrl, brokenInternalLinks, context, site) => {
   const { log } = context;
@@ -256,15 +328,35 @@ export async function syncBrokenInternalLinksSuggestions({
   context,
   opportunityId,
 }) {
+  if (!context) {
+    return;
+  }
+
   // Include itemType in key to distinguish between links and assets pointing to same URL
   const buildKey = (item) => `${item.urlFrom}-${item.urlTo}-${item.itemType || 'link'}`;
 
   // Custom merge function to preserve user-edited fields
   const mergeDataFunction = (existingData, newData) => {
-    const merged = {
+    const existingUrlsSuggested = Array.isArray(existingData?.urlsSuggested)
+      ? existingData.urlsSuggested.filter(Boolean)
+      : [];
+    const normalizedExistingData = {
       ...existingData,
-      ...newData,
+      anchorText: normalizeAnchorText(existingData?.anchorText),
     };
+    delete normalizedExistingData.type;
+
+    const merged = {
+      ...normalizedExistingData,
+      ...sanitizeBrokenLinkData(context.site, newData),
+    };
+
+    if (!Array.isArray(newData?.urlsSuggested) || newData.urlsSuggested.length === 0) {
+      merged.urlsSuggested = existingUrlsSuggested.length > 0
+        ? existingUrlsSuggested
+        : getDefaultSuggestedUrls(context.site, newData);
+      merged.aiRationale = existingData?.aiRationale || '';
+    }
 
     // Preserve urlEdited and isEdited flag if user has made a selection (AI or custom)
     // eslint-disable-next-line max-len
@@ -279,35 +371,73 @@ export async function syncBrokenInternalLinksSuggestions({
     return merged;
   };
 
-  await syncSuggestions({
-    opportunity,
-    newData: brokenInternalLinks,
-    context,
-    buildKey,
-    statusToSetForOutdated: SuggestionDataAccess.STATUSES.NEW,
-    mergeDataFunction,
-    mapNewSuggestion: (entry) => {
-      const itemType = entry.itemType || 'link';
-      // Internal-links must never set trafficDomain to 0 (use 1 when missing or 0)
-      const trafficDomain = (entry.trafficDomain === 0 || entry.trafficDomain == null)
-        ? 1
-        : entry.trafficDomain;
+  const mergeStatusFunction = (existing) => {
+    const currentStatus = existing.getStatus();
+    if (currentStatus === SuggestionDataAccess.STATUSES.REJECTED) {
+      return null;
+    }
 
+    if (currentStatus === SuggestionDataAccess.STATUSES.OUTDATED) {
+      const requiresValidation = Boolean(context.site?.requiresValidation);
+      return requiresValidation
+        ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+        : SuggestionDataAccess.STATUSES.NEW;
+    }
+
+    return null;
+  };
+
+  const { log, dataAccess } = context;
+  const { Suggestion } = dataAccess;
+  const newDataKeys = new Set(brokenInternalLinks.map(buildKey));
+  const existingSuggestions = await opportunity.getSuggestions();
+  const newDataByKey = new Map(brokenInternalLinks.map((data) => [buildKey(data), data]));
+  const existingSuggestionKeys = new Set(
+    existingSuggestions.map((suggestion) => buildKey(suggestion.getData())),
+  );
+
+  await handleOutdatedSuggestions({
+    context,
+    existingSuggestions,
+    newDataKeys,
+    buildKey,
+    statusToSetForOutdated: SuggestionDataAccess.STATUSES.OUTDATED,
+  });
+
+  const toUpdate = existingSuggestions
+    .filter((existing) => newDataKeys.has(buildKey(existing.getData())));
+
+  toUpdate.forEach((existing) => {
+    const newDataItem = newDataByKey.get(buildKey(existing.getData()));
+    existing.setData(mergeDataFunction(existing.getData(), newDataItem));
+
+    const newStatus = mergeStatusFunction(existing);
+    if (newStatus !== null) {
+      existing.setStatus(newStatus);
+    }
+    existing.setUpdatedBy('system');
+  });
+
+  await saveSuggestions(Suggestion, toUpdate);
+
+  const newSuggestions = brokenInternalLinks
+    .filter((data) => !existingSuggestionKeys.has(buildKey(data)))
+    .map((entry) => {
+      const itemType = entry.itemType || 'link';
+      const requiresValidation = Boolean(context.site?.requiresValidation);
       return {
         opportunityId,
-        type: 'CONTENT_UPDATE',
-        rank: trafficDomain,
-        data: {
-          title: entry.title,
-          urlFrom: entry.urlFrom,
-          urlTo: entry.urlTo,
-          itemType,
-          priority: entry.priority || 'high',
-          urlsSuggested: entry.urlsSuggested || [],
-          aiRationale: entry.aiRationale || '',
-          trafficDomain,
-        },
+        type: getSuggestionType(itemType),
+        rank: getSuggestionRank(entry),
+        status: requiresValidation
+          ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+          : SuggestionDataAccess.STATUSES.NEW,
+        data: sanitizeBrokenLinkData(context.site, entry),
       };
-    },
-  });
+    });
+
+  if (newSuggestions.length > 0) {
+    log.info(`Adding ${newSuggestions.length} new internal-links suggestions for opportunity ${opportunityId}`);
+    await opportunity.addSuggestions(newSuggestions);
+  }
 }

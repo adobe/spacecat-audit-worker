@@ -77,6 +77,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     Opportunity = {
       allBySiteId: sandbox.stub(),
       create: sandbox.stub(),
+      saveMany: sandbox.stub().resolves(),
     };
     Site = {
       findById: sandbox.stub(),
@@ -476,9 +477,10 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
     // The consent-banner opportunities should be marked as IGNORED
     expect(consentBannerOppty1.setStatus).to.have.been.calledWith('IGNORED');
-    expect(consentBannerOppty1.save).to.have.been.called;
     expect(consentBannerOppty2.setStatus).to.have.been.calledWith('IGNORED');
-    expect(consentBannerOppty2.save).to.have.been.called;
+    expect(Opportunity.saveMany).to.have.been.calledWith(
+      sinon.match((arr) => arr.length === 2),
+    );
 
     // The non-matching type should not be touched
     expect(wrongTypeOppty.setStatus).to.not.have.been.called;
@@ -532,11 +534,10 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
     // Only system opportunity should be marked as IGNORED
     expect(systemOppty.setStatus).to.have.been.calledWith('IGNORED');
-    expect(systemOppty.save).to.have.been.called;
+    expect(Opportunity.saveMany).to.have.been.calledWith([systemOppty]);
 
     // The user opportunity should not be touched
     expect(userOppty.setStatus).to.not.have.been.called;
-    expect(userOppty.save).to.not.have.been.called;
 
     expect(result.status).to.equal(ok().status);
   });
@@ -746,7 +747,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
     // Only the existing opportunity should be marked as IGNORED, not the newly created one
     expect(existingConsentBannerOppty.setStatus).to.have.been.calledWith('IGNORED');
-    expect(existingConsentBannerOppty.save).to.have.been.called;
+    expect(Opportunity.saveMany).to.have.been.calledWith([existingConsentBannerOppty]);
     expect(result.status).to.equal(ok().status);
   });
 
