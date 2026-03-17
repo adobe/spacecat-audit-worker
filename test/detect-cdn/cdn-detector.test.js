@@ -223,6 +223,26 @@ describe('cdn-detector', () => {
       expect(getResponse.body.cancel).to.have.been.calledOnce;
     });
 
+    it('when HEAD fails and GET succeeds, calls log.warn with message (branch coverage)', async () => {
+      const log = { warn: sinon.stub() };
+      const headers = new Map([['cf-ray', 'x']]);
+      const getResponse = {
+        headers: { forEach(cb) { headers.forEach((v, k) => cb(v, k)); } },
+        body: { cancel: sinon.stub() },
+      };
+      const fetchFn = sinon.stub()
+        .onFirstCall()
+        .rejects(new Error('unexpected end of file'))
+        .onSecondCall()
+        .resolves(getResponse);
+      const result = await detectCdnFromUrl('https://example.com', fetchFn, { log });
+      expect(result).to.deep.equal({ cdn: 'Cloudflare' });
+      expect(log.warn).to.have.been.calledOnce;
+      expect(log.warn.firstCall.args[0]).to.include('HEAD request failed');
+      expect(log.warn.firstCall.args[1]).to.equal('unexpected end of file');
+      expect(log.warn.firstCall.args[2]).to.equal('https://example.com');
+    });
+
     it('returns error message as string when both HEAD and GET throw with no .message', async () => {
       const fetchFn = sinon.stub().rejects('plain string error');
       const result = await detectCdnFromUrl('https://example.com', fetchFn);
