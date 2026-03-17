@@ -715,10 +715,10 @@ export class FormDeDuplicator {
   }
 
   /**
-   * @param url
-   * @param formSource
-   * @returns {*[]} and array of form @param fingerprintKey
-   * for all the forms that matched with this key
+   * @param {string} url
+   * @param {string} formSource
+   * @returns {string[]} Array of `url__formSource` keys whose fingerprints match
+   * the given form (id, formSource, or field signatures). The original key is excluded.
    */
   findDuplicate(url, formSource) {
     const fingerprintKey = buildKey(url, formSource);
@@ -743,7 +743,10 @@ export class FormDeDuplicator {
  * Apply filtering and deduplication logic to opportunities.
  * This function performs three steps:
  * 1. Filters out opportunities that match existing INVALIDATED opportunities
- * 2. Deduplicates by formsource, keeping only the entry with highest pageviews
+ * 2a. Deduplicates by formsource, keeping only the entry with highest pageviews
+ * 2b: Deduplicate by form fingerprint (id, formSource, or field signatures).
+ *  If duplicates exist, keep the opportunity with the highest pageviews.
+ *  Only applies when scraped form data is available.
  * 3. Limits to top N opportunities by pageviews
  *
  * @param {Array} newOpportunities - Array of opportunity data objects to filter
@@ -752,7 +755,8 @@ export class FormDeDuplicator {
  *   (e.g., FORM_OPPORTUNITY_TYPES.LOW_CONVERSION)
  * @param {Object} log - Logger object
  * @param {number} maxLimit - Maximum number of opportunities to return (default: 3)
- * @param {object} scrapeData - the scrape data
+ * @param {Object} scrapeData - Scraped data object containing `formData` array with
+ *   form details including `finalUrl` and `scrapeResult`.
  * @returns {Array} - Filtered and limited array of opportunity data objects
  */
 export function applyOpportunityFilters(
@@ -799,7 +803,9 @@ export function applyOpportunityFilters(
       opportunities = Array.from(formSourceMap.values());
     }
   }
-
+  // Step 2b: Deduplicate by form fingerprint (id, formSource, or field signatures).
+  // If duplicates exist, keep the opportunity with the highest pageviews.
+  // Only applies when scraped form data is available.
   if (opportunities.length > maxLimit && scrapeData?.formData?.length > 0) {
     const deDuplicator = new FormDeDuplicator(opportunities, scrapeData);
     const processedForms = new Set(); // Track processed form URLs
