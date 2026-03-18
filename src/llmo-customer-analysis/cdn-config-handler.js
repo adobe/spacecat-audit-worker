@@ -107,16 +107,23 @@ async function handleAdobeFastly(
   }, null, 900);
 }
 
-async function handleBucketConfiguration(siteId, bucketName, pathId, { dataAccess: { Site } }) {
+async function handleBucketConfiguration(
+  siteId,
+  bucketName,
+  pathId,
+  region,
+  { dataAccess: { Site } },
+) {
   const site = await Site.findById(siteId);
   const config = site.getConfig();
 
-  if (!bucketName && !pathId) {
+  if (!bucketName && !pathId && !region) {
     config.updateLlmoCdnBucketConfig({});
   } else {
     config.updateLlmoCdnBucketConfig({
       ...(bucketName && { bucketName }),
       ...(pathId && { orgId: pathId }),
+      ...(region && { region }),
     });
   }
 
@@ -130,7 +137,12 @@ async function handleBucketConfiguration(siteId, bucketName, pathId, { dataAcces
 export async function handleCdnBucketConfigChanges(context, data) {
   /* c8 ignore next */
   const { siteId } = context.params || {};
-  const { cdnProvider, allowedPaths, bucketName } = data;
+  const {
+    cdnProvider,
+    allowedPaths,
+    bucketName,
+    region,
+  } = data;
   const { dataAccess: { Configuration }, log } = context;
 
   if (!siteId) throw new Error('Site ID is required for CDN configuration');
@@ -140,7 +152,7 @@ export async function handleCdnBucketConfigChanges(context, data) {
 
   if (!cdnProvider) {
     // if no cdn provider is provided, remove the bucket configuration
-    await handleBucketConfiguration(siteId, null, null, context);
+    await handleBucketConfiguration(siteId, null, null, null, context);
     // disable cdn-logs-analysis and page-citability audits
     const configuration = await Configuration.findLatest();
     configuration.disableHandlerForSite('cdn-logs-analysis', site);
@@ -173,8 +185,8 @@ export async function handleCdnBucketConfigChanges(context, data) {
   }
 
   // Set bucket configuration
-  if (bucketName || pathId) {
-    await handleBucketConfiguration(siteId, bucketName, pathId, context);
+  if (bucketName || pathId || region) {
+    await handleBucketConfiguration(siteId, bucketName, pathId, region, context);
   }
 
   // enable cdn-logs-analysis audit
