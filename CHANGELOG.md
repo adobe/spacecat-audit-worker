@@ -1,3 +1,10 @@
+# [1.363.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.362.0...v1.363.0) (2026-03-18)
+
+
+### Features
+
+* send topics to guideline store ([#2138](https://github.com/adobe/spacecat-audit-worker/issues/2138)) ([babb3a3](https://github.com/adobe/spacecat-audit-worker/commit/babb3a3a46a180a9fcbd287b18f1db26ba483bcb))
+
 # [1.362.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.361.0...v1.362.0) (2026-03-18)
 
 
