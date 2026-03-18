@@ -153,6 +153,21 @@ describe('CDN Logs Report Utils', () => {
       expect(reportUtils.validateCountryCode('GLOBAL')).to.equal('GLOBAL');
       expect(reportUtils.validateCountryCode('global')).to.equal('GLOBAL');
     });
+
+    it('returns GLOBAL for codes in per-site ignore list', () => {
+      expect(reportUtils.validateCountryCode('PS', ['PS'])).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode('ps', ['PS'])).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode('AD', ['ad', 'ps'])).to.equal('GLOBAL');
+    });
+
+    it('returns valid code when not in per-site ignore list', () => {
+      expect(reportUtils.validateCountryCode('US', ['PS'])).to.equal('US');
+      expect(reportUtils.validateCountryCode('DE', ['PS', 'AD'])).to.equal('DE');
+    });
+
+    it('handles empty per-site ignore list', () => {
+      expect(reportUtils.validateCountryCode('US', [])).to.equal('US');
+    });
   });
 
   describe('loadSql', () => {
