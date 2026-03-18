@@ -117,6 +117,7 @@ import semanticValueVisibility from './semantic-value-visibility/handler.js';
 import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
 import drsPromptGeneration from './drs-prompt-generation/handler.js';
 import offsiteBrandPresence from './offsite-brand-presence/handler.js';
+import competitorsAnalysis from './competitors-analysis/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -228,6 +229,7 @@ const HANDLERS = {
   'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
   'drs:prompt_generation_base_url': drsPromptGeneration,
   'offsite-brand-presence': offsiteBrandPresence,
+  'competitors-analysis': competitorsAnalysis,
   dummy: (message) => ok(message),
 };
 
