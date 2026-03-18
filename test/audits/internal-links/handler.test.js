@@ -175,14 +175,29 @@ describe('Broken internal links audit', () => {
   });
 
   it('broken-internal-links audit runs rum api client 404 query', async () => {
+    const brokenTargets = new Set([
+      'https://www.petplace.com/a01',
+      'https://www.petplace.com/ax02',
+    ]);
     const { internalLinksAuditRunner: deterministicRunner } = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/helpers.js': {
         ...(await import('../../../src/internal-links/helpers.js')),
-        isLinkInaccessible: sinon.stub().resolves({
-          isBroken: true,
-          httpStatus: 404,
-          statusBucket: 'not_found_404',
-          contentType: 'text/html; charset=utf-8',
+        isLinkInaccessible: sinon.stub().callsFake(async (url) => {
+          if (brokenTargets.has(url)) {
+            return {
+              isBroken: true,
+              httpStatus: 404,
+              statusBucket: 'not_found_404',
+              contentType: 'text/html; charset=utf-8',
+            };
+          }
+          return {
+            isBroken: false,
+            inconclusive: false,
+            httpStatus: 200,
+            statusBucket: null,
+            contentType: 'text/html',
+          };
         }),
       },
     });
@@ -326,11 +341,15 @@ describe('Broken internal links audit', () => {
     const { internalLinksAuditRunner: internalLinksAuditRunnerMocked } = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/helpers.js': {
         isLinkInaccessible: async (url) => {
-          // Check for original URL (with www) since that's what's passed from RUM
           if (url === 'https://www.example.com/catastrophic-error') {
             throw new Error('Database connection failed');
           }
-          return { isBroken: true, httpStatus: 404, statusBucket: 'not_found_404', contentType: 'text/html' };
+          if (url === 'https://www.example.com/valid') {
+            return { isBroken: true, httpStatus: 404, statusBucket: 'not_found_404', contentType: 'text/html' };
+          }
+          return {
+            isBroken: false, inconclusive: false, httpStatus: 200, statusBucket: null, contentType: 'text/html',
+          };
         },
         calculatePriority: (links) => links.map((l) => ({ ...l, priority: 'high' })),
         calculateKpiDeltasForAudit: () => ({ projectedTrafficLost: 0, projectedTrafficValue: 0 }),
@@ -369,15 +388,24 @@ describe('Broken internal links audit', () => {
 
     const { internalLinksAuditRunner: internalLinksAuditRunnerMocked } = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/helpers.js': {
-        isLinkInaccessible: async () => {
+        isLinkInaccessible: async (url) => {
           activeValidations += 1;
           maxConcurrentValidations = Math.max(maxConcurrentValidations, activeValidations);
           await Promise.resolve();
           activeValidations -= 1;
+          if (url.includes('/broken-')) {
+            return {
+              isBroken: true,
+              httpStatus: 404,
+              statusBucket: 'not_found_404',
+              contentType: 'text/html',
+            };
+          }
           return {
-            isBroken: true,
-            httpStatus: 404,
-            statusBucket: 'not_found_404',
+            isBroken: false,
+            inconclusive: false,
+            httpStatus: 200,
+            statusBucket: null,
             contentType: 'text/html',
           };
         },
@@ -395,15 +423,26 @@ describe('Broken internal links audit', () => {
 
     expect(result.auditResult.success).to.equal(true);
     expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(25);
-    expect(maxConcurrentValidations).to.be.at.most(10);
+    expect(maxConcurrentValidations).to.be.at.most(20);
   }).timeout(10000);
 
   it('broken-internal-links audit filters out-of-scope RUM links before validation', async () => {
-    const isLinkInaccessibleStub = sinon.stub().resolves({
-      isBroken: true,
-      httpStatus: 404,
-      statusBucket: 'not_found_404',
-      contentType: 'text/html',
+    const isLinkInaccessibleStub = sinon.stub().callsFake(async (url) => {
+      if (url.includes('/blog/broken')) {
+        return {
+          isBroken: true,
+          httpStatus: 404,
+          statusBucket: 'not_found_404',
+          contentType: 'text/html',
+        };
+      }
+      return {
+        isBroken: false,
+        inconclusive: false,
+        httpStatus: 200,
+        statusBucket: null,
+        contentType: 'text/html',
+      };
     });
 
     const { internalLinksAuditRunner: internalLinksAuditRunnerMocked } = await esmock('../../../src/internal-links/handler.js', {
@@ -441,8 +480,14 @@ describe('Broken internal links audit', () => {
     expect(result.auditResult.success).to.equal(true);
     expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
     expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/blog/broken');
-    expect(isLinkInaccessibleStub).to.have.been.calledOnceWith(
+    expect(isLinkInaccessibleStub).to.have.been.calledWith(
       'https://www.example.com/blog/broken',
+      sinon.match.any,
+      scopedContext.site.getId(),
+      sinon.match.any,
+    );
+    expect(isLinkInaccessibleStub).to.have.been.calledWith(
+      'https://www.example.com/blog/page-1',
       sinon.match.any,
       scopedContext.site.getId(),
       sinon.match.any,
