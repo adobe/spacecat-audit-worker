@@ -13,8 +13,7 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
 
-// Fallback until @adobe/spacecat-shared-data-access includes CITED_ANALYSIS (PR #1444)
-const CITED_ANALYSIS_TYPE = Audit.AUDIT_TYPES.CITED_ANALYSIS || 'cited-analysis';
+const CITED_ANALYSIS_TYPE = Audit.AUDIT_TYPES.CITED_ANALYSIS;
 
 /**
  * Creates opportunity data for cited URL analysis.

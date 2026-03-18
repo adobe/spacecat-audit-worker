@@ -20,8 +20,7 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 
-// Fallback until @adobe/spacecat-shared-data-access includes CITED_ANALYSIS (PR #1444)
-const AUDIT_TYPE = Audit.AUDIT_TYPES.CITED_ANALYSIS || 'cited-analysis';
+const AUDIT_TYPE = Audit.AUDIT_TYPES.CITED_ANALYSIS;
 
 function getRankFromPriority(priority) {
   const priorityRanks = {
