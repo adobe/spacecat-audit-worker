@@ -22,46 +22,80 @@
  *   containing { url, category, timesCited, subPrompts }
  * @returns {Array<Object>} Enriched URL items with added categories, timesCited, and prompts
  */
-export function enrichUrlsWithTopicData(urls, topics) {
-  if (!urls?.length || !topics?.length) return urls || [];
+function getWantedUrls(urls) {
+  const wantedUrls = new Set();
 
+  for (const urlItem of urls) {
+    if (urlItem.url) {
+      wantedUrls.add(urlItem.url.toLowerCase());
+    }
+  }
+
+  return wantedUrls;
+}
+
+function createAggregatedTopicData() {
+  return {
+    categories: new Set(),
+    prompts: new Set(),
+    timesCited: 0,
+  };
+}
+
+function buildTopicLookup(urls, topics) {
+  const wantedUrls = getWantedUrls(urls);
   const topicLookup = new Map();
 
   for (const topic of topics) {
     for (const topicUrl of (topic.urls || [])) {
-      if (topicUrl.url) {
-        const normalized = topicUrl.url.toLowerCase();
-        if (!topicLookup.has(normalized)) {
-          topicLookup.set(normalized, []);
+      const normalized = topicUrl.url?.toLowerCase();
+
+      if (!normalized || !wantedUrls.has(normalized)) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      let aggregated = topicLookup.get(normalized);
+      if (!aggregated) {
+        aggregated = createAggregatedTopicData();
+        topicLookup.set(normalized, aggregated);
+      }
+
+      if (topicUrl.category) {
+        aggregated.categories.add(topicUrl.category);
+      }
+
+      aggregated.timesCited = Math.max(
+        aggregated.timesCited,
+        Number(topicUrl.timesCited) || 0,
+      );
+
+      for (const prompt of (topicUrl.subPrompts || [])) {
+        if (prompt) {
+          aggregated.prompts.add(prompt);
         }
-        topicLookup.set(normalized, [...topicLookup.get(normalized), topicUrl]);
       }
     }
   }
 
+  return topicLookup;
+}
+
+export function enrichUrlsWithTopicData(urls, topics) {
+  if (!urls?.length || !topics?.length) return urls || [];
+
+  const topicLookup = buildTopicLookup(urls, topics);
+
   return urls.map((urlItem) => {
     const normalized = urlItem.url?.toLowerCase();
-    const matches = topicLookup.get(normalized);
-    if (!matches || matches.length === 0) return urlItem;
-
-    const categories = [...new Set(
-      matches.map((m) => m.category).filter(Boolean),
-    )];
-
-    const timesCited = matches.reduce(
-      (sum, m) => sum + (Number(m.timesCited) || 0),
-      0,
-    );
-
-    const prompts = [...new Set(
-      matches.flatMap((m) => m.subPrompts || []).filter(Boolean),
-    )];
+    const match = normalized ? topicLookup.get(normalized) : null;
+    if (!match) return urlItem;
 
     return {
       ...urlItem,
-      ...(categories.length > 0 && { categories }),
-      ...(timesCited > 0 && { timesCited }),
-      ...(prompts.length > 0 && { prompts }),
+      ...(match.categories.size > 0 && { categories: [...match.categories] }),
+      ...(match.timesCited > 0 && { timesCited: match.timesCited }),
+      ...(match.prompts.size > 0 && { prompts: [...match.prompts] }),
     };
   });
 }
