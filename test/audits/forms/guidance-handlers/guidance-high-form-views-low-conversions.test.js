@@ -186,8 +186,8 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
       save: sinon.stub().resolvesThis(),
       getId: sinon.stub().resolves('testId'),
       getSuggestions: sinon.stub().resolves([]),
-      setUpdatedBy: sinon.stub(),
       opportunityId: 'opp-123',
+      setUpdatedBy: sinon.stub(),
     };
     dataAccessStub.Opportunity.allBySiteId.resolves([existingOpportunity]);
     context.site = { requiresValidation: true };
