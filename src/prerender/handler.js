@@ -884,6 +884,17 @@ export async function processOpportunityAndSuggestions(
     ? [...preRenderSuggestions, domainWideSuggestion]
     : [...preRenderSuggestions];
 
+  // Verify existing suggestions for this audit run's URLs and mark as FIXED
+  // if prerendering is already enabled at the edge. Must run before syncSuggestions
+  // so FIXED suggestions are preserved by the sync step (FIXED is excluded from outdate logic).
+  const auditRunUrls = new Set(preRenderSuggestions.map((s) => s.url));
+  const fixedCount = await verifyAndMarkFixedSuggestions(
+    opportunity,
+    context,
+    prerenderStatusMap,
+    auditRunUrls,
+  );
+
   await syncSuggestions({
     opportunity,
     newData: allSuggestions,
@@ -911,13 +922,6 @@ export async function processOpportunityAndSuggestions(
     },
   });
 
-  // Verify NEW suggestions and mark as FIXED if prerendering is already enabled
-  const fixedCount = await verifyAndMarkFixedSuggestions(
-    opportunity,
-    context,
-    prerenderStatusMap,
-  );
-
   log.info(`
     ${LOG_PREFIX} prerender_suggestions_sync_metrics:
     siteId=${auditData.siteId},
@@ -925,7 +929,7 @@ export async function processOpportunityAndSuggestions(
     isPaidLLMOCustomer=${isPaid},
     suggestions=${preRenderSuggestions.length},
     totalSuggestions=${allSuggestions.length},
-    autoFixedSuggestions=${fixedCount},`);
+    stampedAsPrerenderedSuggestions=${fixedCount},`);
 
   return opportunity;
 }

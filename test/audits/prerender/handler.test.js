@@ -2046,6 +2046,7 @@ describe('Prerender Audit', () => {
           },
           '../../../src/prerender/utils/utils.js': {
             isPaidLLMOCustomer: sinon.stub().resolves(true),
+            verifyAndMarkFixedSuggestions: sinon.stub().resolves(0),
           },
         });
 
@@ -2099,6 +2100,7 @@ describe('Prerender Audit', () => {
           },
           '../../../src/prerender/utils/utils.js': {
             isPaidLLMOCustomer: sinon.stub().resolves(true),
+            verifyAndMarkFixedSuggestions: sinon.stub().resolves(0),
           },
         });
 
@@ -2151,6 +2153,7 @@ describe('Prerender Audit', () => {
           },
           '../../../src/prerender/utils/utils.js': {
             isPaidLLMOCustomer: sinon.stub().resolves(true),
+            verifyAndMarkFixedSuggestions: sinon.stub().resolves(0),
           },
         });
 
@@ -2203,6 +2206,7 @@ describe('Prerender Audit', () => {
           },
           '../../../src/prerender/utils/utils.js': {
             isPaidLLMOCustomer: sinon.stub().resolves(true),
+            verifyAndMarkFixedSuggestions: sinon.stub().resolves(0),
           },
         });
 
@@ -2246,6 +2250,7 @@ describe('Prerender Audit', () => {
           },
           '../../../src/prerender/utils/utils.js': {
             isPaidLLMOCustomer: sinon.stub().resolves(true),
+            verifyAndMarkFixedSuggestions: sinon.stub().resolves(0),
           },
         });
 
@@ -2297,6 +2302,7 @@ describe('Prerender Audit', () => {
           },
           '../../../src/prerender/utils/utils.js': {
             isPaidLLMOCustomer: sinon.stub().resolves(true),
+            verifyAndMarkFixedSuggestions: sinon.stub().resolves(0),
           },
         });
 
@@ -2350,6 +2356,7 @@ describe('Prerender Audit', () => {
           },
           '../../../src/prerender/utils/utils.js': {
             isPaidLLMOCustomer: sinon.stub().resolves(true),
+            verifyAndMarkFixedSuggestions: sinon.stub().resolves(0),
           },
         });
 
@@ -2404,6 +2411,7 @@ describe('Prerender Audit', () => {
           },
           '../../../src/prerender/utils/utils.js': {
             isPaidLLMOCustomer: sinon.stub().resolves(true),
+            verifyAndMarkFixedSuggestions: sinon.stub().resolves(0),
           },
         });
 

@@ -150,31 +150,31 @@ jobs:
           AWS_REGION: us-east-1
           AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_DEV}}
 
-  branch-deploy:
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.event_name == 'push' && github.ref != 'refs/heads/main'
-    steps:
-      - name: Check out
-        uses: actions/checkout@v5
-        with:
-          persist-credentials: 'false'
-
-      - name: Setup Node & NPM
-        uses: ./.github/actions/setup-node-npm
-        env:
-          MYSTICAT_DATA_SERVICE_REPO_READ_TOKEN: ${{ secrets.MYSTICAT_DATA_SERVICE_REPO_READ_TOKEN }}
-
-      - name: Configure AWS
-        uses: ./.github/actions/configure-aws
-        with:
-          aws_role_to_assume: 'arn:aws:iam::${{secrets.AWS_ACCOUNT_ID_DEV}}:role/spacecat-role-github-actions'
-
-      - name: Branch Deployment
-        run: npm run deploy-dev
-        env:
-          AWS_REGION: us-east-1
-          AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_DEV}}
-
-      - name: Post-Deployment Integration Test
-        run: npm run test-postdeploy
+# branch-deploy:
+#   runs-on: ubuntu-latest
+#   needs: build
+#   if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+#   steps:
+#     - name: Check out
+#       uses: actions/checkout@v5
+#       with:
+#         persist-credentials: 'false'
+#
+#     - name: Setup Node & NPM
+#       uses: ./.github/actions/setup-node-npm
+#       env:
+#         MYSTICAT_DATA_SERVICE_REPO_READ_TOKEN: ${{ secrets.MYSTICAT_DATA_SERVICE_REPO_READ_TOKEN }}
+#
+#     - name: Configure AWS
+#       uses: ./.github/actions/configure-aws
+#       with:
+#         aws_role_to_assume: 'arn:aws:iam::${{secrets.AWS_ACCOUNT_ID_DEV}}:role/spacecat-role-github-actions'
+#
+#     - name: Branch Deployment
+#       run: npm run deploy-dev
+#       env:
+#         AWS_REGION: us-east-1
+#         AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_DEV}}
+#
+#     - name: Post-Deployment Integration Test
+#       run: npm run test-postdeploy

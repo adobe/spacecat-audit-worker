@@ -14,7 +14,7 @@
  * General utilities for the Prerender audit.
  */
 
-import { Entitlement, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+import { Entitlement } from '@adobe/spacecat-shared-data-access';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 
 /**
@@ -120,51 +120,55 @@ export async function isPaidLLMOCustomer(context) {
 }
 
 /**
- * Verifies NEW suggestions for prerender opportunity and marks them as FIXED
- * using the isDeployedAtEdge status captured during content scraping.
+ * Stamps a detectedAsPrerenderedAt ISO timestamp on suggestions for URLs where
+ * prerendering is already enabled at the edge (isDeployedAtEdge = true).
+ *
+ * Runs BEFORE syncSuggestions so the timestamp is present when the sync step
+ * creates or merges suggestion records.
+ *
+ * Once set, the timestamp is never overwritten — it captures the first time
+ * a URL was observed as already prerendered.
  *
  * @param {Object} opportunity - The opportunity object containing suggestions
  * @param {Object} context - Context with log
  * @param {Map<string, boolean>} prerenderStatusMap - Map of URL to isDeployedAtEdge
- * @returns {Promise<number>} - Number of suggestions marked as fixed
+ * @param {Set<string>} auditRunUrls - Set of URLs found in this audit run (needsPrerender=true)
+ * @returns {Promise<number>} - Number of suggestions stamped
  */
-export async function verifyAndMarkFixedSuggestions(opportunity, context, prerenderStatusMap) {
+export async function verifyAndMarkFixedSuggestions(
+  opportunity,
+  context,
+  prerenderStatusMap,
+  auditRunUrls,
+) {
   const { log } = context;
 
   try {
     const suggestions = await opportunity.getSuggestions();
-    const newSuggestions = suggestions.filter(
-      (s) => s.getStatus() === SuggestionDataAccess.STATUSES.NEW,
-    );
+    const now = new Date().toISOString();
 
-    if (newSuggestions.length === 0) {
-      return 0;
-    }
-
-    const urlSuggestions = newSuggestions.filter((s) => {
+    const prerenderedSuggestions = suggestions.filter((s) => {
       const data = s.getData();
-      return data?.url && !data?.key;
-    });
-
-    if (urlSuggestions.length === 0) {
-      return 0;
-    }
-
-    const fixedSuggestions = urlSuggestions.filter((suggestion) => {
-      const { url } = suggestion.getData();
+      const { url } = data;
+      // Skip domain-wide aggregate suggestions (they have a key field)
+      if (!url || data?.key) return false;
+      // Only consider URLs from this audit run
+      if (!auditRunUrls.has(url)) return false;
+      // Already stamped — nothing to do
+      if (data.detectedAsPrerenderedAt) return false;
+      // Only stamp when edge is already deploying prerender
       return prerenderStatusMap.get(url) === true;
     });
 
-    if (fixedSuggestions.length > 0) {
-      await Promise.all(
-        fixedSuggestions.map((suggestion) => {
-          suggestion.setStatus(SuggestionDataAccess.STATUSES.FIXED);
-          return suggestion.save();
-        }),
-      );
-    }
+    await Promise.all(
+      prerenderedSuggestions.map((s) => {
+        s.setData({ ...s.getData(), detectedAsPrerenderedAt: now });
+        s.setUpdatedBy('system');
+        return s.save();
+      }),
+    );
 
-    return fixedSuggestions.length;
+    return prerenderedSuggestions.length;
   } catch (error) {
     log.error(`Prerender - verification error: ${error.message}`, error);
     return 0;
