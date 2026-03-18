@@ -150,7 +150,7 @@ export async function createAndTriggerBrandPresenceSchedule(context, siteId, dom
   const schedulePayload = {
     site_id: siteId,
     frequency: 'weekly',
-    cron_expression: '0 8 * * 1',
+    cron_expression: 'auto',
     description: `Onboarding brand presence: ${domain} (${siteId})`,
     job_config: {
       provider_ids: ['brightdata', 'google_ai_overviews', 'openai_web_search'],
