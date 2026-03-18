@@ -11,6 +11,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 
 function getEmptyVariationList() {
   return [
@@ -35,6 +36,7 @@ function getEmptyVariationList() {
 export async function addSuggestions(
   opportunity,
   newSuggestions,
+  context = {},
 ) {
   let variations = [];
 
@@ -42,10 +44,15 @@ export async function addSuggestions(
     variations = [...newSuggestions];
   }
 
+  const requiresValidation = Boolean(context?.site?.requiresValidation);
+  const suggestionStatus = requiresValidation
+    ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+    : SuggestionDataAccess.STATUSES.NEW;
+
   const existingSuggestions = await opportunity.getSuggestions();
 
-  if (existingSuggestions && existingSuggestions.length > 0) {
-    if (existingSuggestions[0].data && existingSuggestions[0].data.variations) {
+  if (existingSuggestions?.length > 0) {
+    if (existingSuggestions[0]?.data?.variations) {
       // replacing the entire variations with the new ones
       existingSuggestions[0].data.variations = variations;
     }
@@ -56,7 +63,7 @@ export async function addSuggestions(
         opportunityId: opportunity.opportunityId,
         type: 'CONTENT_UPDATE',
         rank: 1,
-        status: 'PENDING_VALIDATION',
+        status: suggestionStatus,
         data: {
           variations: variations.length > 0 ? variations : getEmptyVariationList(),
         },

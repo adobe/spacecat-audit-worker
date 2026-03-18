@@ -16,6 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import sinonChai from 'sinon-chai';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { FORM_OPPORTUNITY_TYPES } from '../../../../src/forms-opportunities/constants.js';
 import handler from '../../../../src/forms-opportunities/guidance-handlers/guidance-high-form-views-low-conversions.js';
 
@@ -140,6 +141,105 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
     };
     await handler(messageWithoutSuggestions, context);
     expect(existingOpportunity.addSuggestions).to.be.calledOnce;
+  });
+
+  it('should create suggestion with NEW status when context.site.requiresValidation is false', async () => {
+    const existingOpportunity = {
+      getData: sinon.stub().returns({ form: 'https://example.com', formsource: '.form' }),
+      getType: sinon.stub().returns(FORM_OPPORTUNITY_TYPES.LOW_CONVERSION),
+      setAuditId: sinon.stub(),
+      setGuidance: sinon.stub(),
+      addSuggestions: sinon.stub(),
+      save: sinon.stub().resolvesThis(),
+      getId: sinon.stub().resolves('testId'),
+      getSuggestions: sinon.stub().resolves([]),
+      setUpdatedBy: sinon.stub(),
+      opportunityId: 'opp-123',
+    };
+    dataAccessStub.Opportunity.allBySiteId.resolves([existingOpportunity]);
+    context.site = { requiresValidation: false };
+
+    const messageWithoutSuggestions = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        url: 'https://example.com',
+        form_source: '.form',
+        guidance: 'Some guidance'
+      },
+    };
+    await handler(messageWithoutSuggestions, context);
+
+    const addSuggestionsCall = existingOpportunity.addSuggestions.getCall(0);
+    expect(addSuggestionsCall).to.exist;
+    const suggestionList = addSuggestionsCall.args[0];
+    expect(suggestionList[0].status).to.equal(SuggestionDataAccess.STATUSES.NEW);
+  });
+
+  it('should create suggestion with PENDING_VALIDATION status when context.site.requiresValidation is true', async () => {
+    const existingOpportunity = {
+      getData: sinon.stub().returns({ form: 'https://example.com', formsource: '.form' }),
+      getType: sinon.stub().returns(FORM_OPPORTUNITY_TYPES.LOW_CONVERSION),
+      setAuditId: sinon.stub(),
+      setGuidance: sinon.stub(),
+      addSuggestions: sinon.stub(),
+      save: sinon.stub().resolvesThis(),
+      getId: sinon.stub().resolves('testId'),
+      getSuggestions: sinon.stub().resolves([]),
+      setUpdatedBy: sinon.stub(),
+      opportunityId: 'opp-123',
+    };
+    dataAccessStub.Opportunity.allBySiteId.resolves([existingOpportunity]);
+    context.site = { requiresValidation: true };
+
+    const messageWithoutSuggestions = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        url: 'https://example.com',
+        form_source: '.form',
+        guidance: 'Some guidance'
+      },
+    };
+    await handler(messageWithoutSuggestions, context);
+
+    const addSuggestionsCall = existingOpportunity.addSuggestions.getCall(0);
+    expect(addSuggestionsCall).to.exist;
+    const suggestionList = addSuggestionsCall.args[0];
+    expect(suggestionList[0].status).to.equal(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
+  });
+
+  it('should create suggestion with NEW status when context.site.requiresValidation is undefined (backwards compat)', async () => {
+    const existingOpportunity = {
+      getData: sinon.stub().returns({ form: 'https://example.com', formsource: '.form' }),
+      getType: sinon.stub().returns(FORM_OPPORTUNITY_TYPES.LOW_CONVERSION),
+      setAuditId: sinon.stub(),
+      setGuidance: sinon.stub(),
+      addSuggestions: sinon.stub(),
+      save: sinon.stub().resolvesThis(),
+      getId: sinon.stub().resolves('testId'),
+      getSuggestions: sinon.stub().resolves([]),
+      setUpdatedBy: sinon.stub(),
+      opportunityId: 'opp-123',
+    };
+    dataAccessStub.Opportunity.allBySiteId.resolves([existingOpportunity]);
+    // context.site not set - simulates legacy callers
+
+    const messageWithoutSuggestions = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        url: 'https://example.com',
+        form_source: '.form',
+        guidance: 'Some guidance'
+      },
+    };
+    await handler(messageWithoutSuggestions, context);
+
+    const addSuggestionsCall = existingOpportunity.addSuggestions.getCall(0);
+    expect(addSuggestionsCall).to.exist;
+    const suggestionList = addSuggestionsCall.args[0];
+    expect(suggestionList[0].status).to.equal(SuggestionDataAccess.STATUSES.NEW);
   });
 
   it('should not create empty suggestion if any suggestion found', async () => {
