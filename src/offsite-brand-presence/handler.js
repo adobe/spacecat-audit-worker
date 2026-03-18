@@ -447,7 +447,7 @@ async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, 
         const urls = [...topicData.urlMap.entries()]
           .map(([url, info]) => ({
             url,
-            timesCited: allUrls.get(url)?.count ?? 0,
+            timesCited: allUrls.get(url).count,
             category: info.category,
             subPrompts: [...info.subPrompts],
           }));
