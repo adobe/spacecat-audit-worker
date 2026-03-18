@@ -19,6 +19,7 @@ import sinonChai from 'sinon-chai';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import {
   retrieveSiteBySiteId,
+  getTopPagesForSiteId,
   syncSuggestions,
   syncSuggestionsWithPublishDetection,
   getImsOrgId,
@@ -86,6 +87,63 @@ describe('data-access', () => {
       await expect(retrieveSiteBySiteId(mockDataAccess, 'site1', mockLog)).to.be.rejectedWith('Error getting site site1: database error');
       expect(mockDataAccess.Site.findById).to.have.been.calledOnceWith('site1');
       expect(mockLog.warn).to.not.have.been.called;
+    });
+  });
+
+  describe('getTopPagesForSiteId', () => {
+    let mockDataAccess;
+    let mockLog;
+
+    beforeEach(() => {
+      mockDataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub(),
+        },
+      };
+
+      mockLog = {
+        info: sinon.stub(),
+        error: sinon.stub(),
+      };
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('returns mapped top-page urls when ahrefs pages are found', async () => {
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+        { getUrl: sinon.stub().returns('https://example.com/one') },
+        { getUrl: sinon.stub().returns('https://example.com/two') },
+      ]);
+
+      const result = await getTopPagesForSiteId(mockDataAccess, 'site-1', {}, mockLog);
+
+      expect(result).to.deep.equal([
+        { url: 'https://example.com/one' },
+        { url: 'https://example.com/two' },
+      ]);
+      expect(mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo)
+        .to.have.been.calledOnceWith('site-1', 'ahrefs', 'global');
+      expect(mockLog.info).to.have.been.calledWith('Received top pages response:', sinon.match.string);
+      expect(mockLog.info).to.have.been.calledWith('Found 2 top pages');
+    });
+
+    it('returns an empty array when no top pages are found', async () => {
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(null);
+
+      const result = await getTopPagesForSiteId(mockDataAccess, 'site-1', {}, mockLog);
+
+      expect(result).to.deep.equal([]);
+      expect(mockLog.info).to.have.been.calledWith('No top pages found');
+    });
+
+    it('logs and rethrows errors from SiteTopPage lookup', async () => {
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.rejects(new Error('lookup failed'));
+
+      await expect(getTopPagesForSiteId(mockDataAccess, 'site-1', {}, mockLog))
+        .to.be.rejectedWith('lookup failed');
+      expect(mockLog.error).to.have.been.calledWith('Error retrieving top pages for site site-1: lookup failed');
     });
   });
 

@@ -231,6 +231,8 @@ describe('CDN Logs Report Handler', function test() {
       .withSandbox(sandbox)
       .withOverrides({
         env: {
+          AWS_ENV: 'test',
+          AWS_REGION: 'us-east-1',
           SHAREPOINT_CLIENT_ID: 'test-client-id',
           SHAREPOINT_CLIENT_SECRET: 'test-client-secret',
           SHAREPOINT_AUTHORITY: 'https://login.microsoftonline.com/test-tenant-id',
@@ -324,6 +326,22 @@ describe('CDN Logs Report Handler', function test() {
       expect(context.log.debug).to.have.been.calledWith(
         sinon.match(`week offset: ${weekOffset}`),
       );
+    });
+
+    it('uses site cdn config region aggregate location when region is configured', async () => {
+      context.env.AWS_REGION = 'eu-west-1';
+      site.getConfig = () => createSiteConfig({
+        getLlmoCdnBucketConfig: () => ({ bucketName: 'cdn-logs-adobe-dev', region: 'eu-west-1' }),
+      });
+      const auditContext = createAuditContext(sandbox, { weekOffset: 0 });
+
+      await handler.runner('https://example.com', context, site, auditContext);
+
+      const listObjectsCalls = context.s3Client.send.getCalls()
+        .filter((call) => call.args[0]?.constructor?.name === 'ListObjectsV2Command');
+      expect(listObjectsCalls.length).to.be.greaterThan(0);
+      expect(listObjectsCalls[0].args[0].input.Bucket)
+        .to.equal('spacecat-test-cdn-logs-aggregates-eu-west-1');
     });
 
     it('runs -1 and 0 on Monday when no weekOffset provided', async () => {

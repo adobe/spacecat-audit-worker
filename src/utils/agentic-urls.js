@@ -10,8 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
-import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
-import { resolveConsolidatedBucketName, extractCustomerDomain } from './cdn-utils.js';
+import {
+  getS3Config,
+  getCdnAwsRuntime,
+} from './cdn-utils.js';
 import { generateReportingPeriods } from '../cdn-logs-report/utils/report-utils.js';
 import { weeklyBreakdownQueries } from '../cdn-logs-report/utils/query-builder.js';
 
@@ -41,28 +43,6 @@ export const EXCLUDED_URL_SUFFIXES = [
 ];
 
 /**
- * Builds S3 config for Athena queries.
- * @param {Object} site - Site object
- * @param {Object} context - Context with env
- * @returns {Promise<Object>} S3 config object
- */
-async function getS3Config(site, context) {
-  const customerDomain = extractCustomerDomain(site);
-  const domainParts = customerDomain.split(/[._]/);
-  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const bucket = resolveConsolidatedBucketName(context);
-
-  return {
-    bucket,
-    customerName,
-    customerDomain,
-    databaseName: `cdn_logs_${customerDomain}`,
-    tableName: `aggregated_logs_${customerDomain}_consolidated`,
-    getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
-  };
-}
-
-/**
  * Fetch top Agentic URLs using Athena.
  * Find last week's top agentic URLs, filters out pooled 'Other',
  * groups by URL, and returns the top URLs by total hits.
@@ -83,11 +63,12 @@ export async function getTopAgenticUrlsFromAthena(
     ? `https://${context.finalUrl}`
     : context.finalUrl || site.getBaseURL();
   try {
-    const s3Config = await getS3Config(site, context);
+    const awsRuntime = getCdnAwsRuntime(site, context);
+    const s3Config = getS3Config(site, context);
     const periods = generateReportingPeriods();
     const recentWeeks = periods.weeks;
     const oneWeekPeriods = { weeks: [recentWeeks[0]] };
-    const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
+    const athenaClient = awsRuntime.createAthenaClient(s3Config.getAthenaTempLocation());
     const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit({
       periods: oneWeekPeriods,
       databaseName: s3Config.databaseName,

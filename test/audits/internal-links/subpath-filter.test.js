@@ -242,6 +242,7 @@ describe('subpath-filter', () => {
       expect(extractPathPrefix('bulk.com/fr/page1')).to.equal('/fr');
       expect(extractPathPrefix('https://bulk.com/uk/page1')).to.equal('/uk');
       expect(extractPathPrefix('bulk.com/products/item')).to.equal('/products');
+      expect(extractPathPrefix('bulk.com/en-us/page1')).to.equal('/en-us');
     });
 
     it('should handle URLs with query parameters', () => {
@@ -287,4 +288,3 @@ describe('subpath-filter', () => {
     });
   });
 });
-
