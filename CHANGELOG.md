@@ -1,3 +1,10 @@
+# [1.362.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.361.0...v1.362.0) (2026-03-18)
+
+
+### Features
+
+* Broken backlink dispatcher ([#2095](https://github.com/adobe/spacecat-audit-worker/issues/2095)) ([e20fcd3](https://github.com/adobe/spacecat-audit-worker/commit/e20fcd33b104935e4f01aea1d99a4ff9fa086ba5))
+
 # [1.361.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.360.4...v1.361.0) (2026-03-18)
 
 
