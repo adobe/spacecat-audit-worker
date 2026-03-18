@@ -19,7 +19,7 @@ describe('enrichUrlsWithTopicData', () => {
   const redditUrl3 = 'https://www.reddit.com/r/finance/comments/ghi789/finance_post';
   const ytUrl1 = 'https://www.youtube.com/watch?v=test';
 
-  it('should enrich urls with categories, timesCited, and prompts from topics', () => {
+  it('should enrich urls with categories, max timesCited, and prompts from topics', () => {
     const urls = [
       { url: redditUrl1, siteId: 'site-1' },
       { url: redditUrl2, siteId: 'site-1' },
@@ -40,7 +40,7 @@ describe('enrichUrlsWithTopicData', () => {
           {
             url: ytUrl1,
             category: 'insurance-video',
-            timesCited: 2,
+            timesCited: 3,
             subPrompts: ['prompt-a'],
           },
         ],
@@ -52,7 +52,7 @@ describe('enrichUrlsWithTopicData', () => {
           {
             url: redditUrl1,
             category: 'travel-insurance',
-            timesCited: 2,
+            timesCited: 3,
             subPrompts: ['prompt-b', 'prompt-c'],
           },
           {
@@ -77,7 +77,7 @@ describe('enrichUrlsWithTopicData', () => {
       url: redditUrl1,
       siteId: 'site-1',
       categories: ['pet-insurance', 'travel-insurance'],
-      timesCited: 5,
+      timesCited: 3,
       prompts: ['prompt-a', 'prompt-b', 'prompt-c'],
     });
 
@@ -93,7 +93,7 @@ describe('enrichUrlsWithTopicData', () => {
       url: ytUrl1,
       siteId: 'site-1',
       categories: ['insurance-video', 'travel-video'],
-      timesCited: 5,
+      timesCited: 3,
       prompts: ['prompt-a', 'prompt-b', 'prompt-e'],
     });
   });
@@ -147,7 +147,7 @@ describe('enrichUrlsWithTopicData', () => {
     const result = enrichUrlsWithTopicData(urls, topics);
 
     expect(result[0].categories).to.deep.equal(['insurance']);
-    expect(result[0].timesCited).to.equal(3);
+    expect(result[0].timesCited).to.equal(2);
     expect(result[0].prompts).to.deep.equal(['p1', 'p2', 'p3']);
   });
 
@@ -264,7 +264,7 @@ describe('enrichUrlsWithTopicData', () => {
 
     const result = enrichUrlsWithTopicData(urls, topics);
 
-    expect(result[0].timesCited).to.equal(10);
+    expect(result[0].timesCited).to.equal(7);
   });
 
   it('should skip topic url entries without a url field', () => {

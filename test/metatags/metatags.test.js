@@ -1708,6 +1708,96 @@ describe('Meta Tags', () => {
         expect(context.sqs.sendMessage).to.have.been.called;
       });
 
+      it('when site.requiresValidation is true, fetches suggestions for both NEW and PENDING_VALIDATION and sends combined list to Mystique', async () => {
+        site.requiresValidation = true;
+        const pendingSuggestions = [
+          {
+            getId: sinon.stub().returns('sugg-pending-1'),
+            getData: sinon.stub().returns({
+              url: 'http://example.com/blog/page1',
+              tagName: 'title',
+            }),
+          },
+          {
+            getId: sinon.stub().returns('sugg-pending-2'),
+            getData: sinon.stub().returns({
+              url: 'http://example.com/blog/page2',
+              tagName: 'description',
+            }),
+          },
+        ];
+        dataAccessStub.Suggestion.allByOpportunityIdAndStatus
+          .onFirstCall()
+          .resolves([])
+          .onSecondCall()
+          .resolves(pendingSuggestions);
+
+        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub().resolves(5000);
+        const mockValidateDetectedIssues = sinon.stub().callsFake(
+          async (detectedTags) => detectedTags,
+        );
+        const mockConvertToOpportunity = sinon.stub().resolves(metatagsOppty);
+        const mockSyncSuggestions = sinon.stub().resolves();
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
+          '../../src/utils/data-access.js': { syncSuggestions: mockSyncSuggestions },
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
+        });
+
+        const result = await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(result).to.deep.equal({ status: 'complete' });
+        expect(dataAccessStub.Suggestion.allByOpportunityIdAndStatus).to.have.been.calledTwice;
+        expect(dataAccessStub.Suggestion.allByOpportunityIdAndStatus.firstCall.args[1]).to.equal('NEW');
+        expect(dataAccessStub.Suggestion.allByOpportunityIdAndStatus.secondCall.args[1]).to.equal('PENDING_VALIDATION');
+        const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+        expect(sentMessage.data.suggestionMap).to.have.lengthOf(2);
+        expect(sentMessage.data.pageUrls).to.have.lengthOf(2);
+      });
+
+      it('when site.requiresValidation is false, fetches suggestions only for NEW status', async () => {
+        site.requiresValidation = false;
+        dataAccessStub.Suggestion.allByOpportunityIdAndStatus.resetHistory();
+        dataAccessStub.Suggestion.allByOpportunityIdAndStatus.resolves([
+          {
+            getId: sinon.stub().returns('sugg-001'),
+            getData: sinon.stub().returns({
+              url: 'http://example.com/blog/page1',
+              tagName: 'title',
+            }),
+          },
+        ]);
+
+        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub().resolves(5000);
+        const mockValidateDetectedIssues = sinon.stub().callsFake(
+          async (detectedTags) => detectedTags,
+        );
+        const mockConvertToOpportunity = sinon.stub().resolves(metatagsOppty);
+        const mockSyncSuggestions = sinon.stub().resolves();
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
+          '../../src/utils/data-access.js': { syncSuggestions: mockSyncSuggestions },
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
+        });
+
+        await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(dataAccessStub.Suggestion.allByOpportunityIdAndStatus).to.have.been.calledOnce;
+        expect(dataAccessStub.Suggestion.allByOpportunityIdAndStatus.firstCall.args[1]).to.equal('NEW');
+      });
+
       it('should handle case when no tags are extracted', async () => {
         const mockGetRUMDomainkey = sinon.stub()
           .resolves('mockedDomainKey');

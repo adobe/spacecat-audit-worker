@@ -380,6 +380,27 @@ describe('CDN Analysis Handler', () => {
       expect(resultInvalid.fullAuditRef).to.not.equal('s3://spacecat-dev-cdn-logs-aggregates-us-east-1/aggregated/test-site-id/2025/01/02/03/');
     });
 
+    it('uses site cdn config region for consolidated bucket when provided', async () => {
+      context.env.AWS_REGION = 'eu-west-1';
+      site.getConfig.returns({
+        getLlmoCdnBucketConfig: () => ({
+          bucketName: 'cdn-logs-adobe-dev',
+          region: 'eu-west-1',
+        }),
+      });
+
+      const auditContext = {
+        year: 2025,
+        month: 1,
+        day: 2,
+        hour: 3,
+      };
+
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext);
+
+      expect(result.fullAuditRef).to.equal('s3://spacecat-dev-cdn-logs-aggregates-eu-west-1/aggregated/test-site-id/2025/01/02/03/');
+    });
+
     it('handles both orgId and imsOrgId being empty', async () => {
       site.getConfig.returns({
         getLlmoCdnBucketConfig: () => ({ bucketName: 'cdn-logs-test', orgId: '' }),
@@ -543,6 +564,98 @@ describe('CDN Analysis Handler', () => {
       );
       expect(result.auditResult.providers[0].rawDataPath)
         .to.include('/raw/byocdn-other/2025/06/15/');
+    });
+
+    it('should clear forceReprocess partitions once even when multiple providers are processed', async () => {
+      const auditContext = {
+        year: 2025, month: 6, day: 15, hour: 10,
+        forceReprocess: true,
+        isSubAudit: true,
+      };
+
+      const orgId = 'test-ims-org-id';
+      const deletePrefixes = [];
+
+      context.s3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'HeadBucketCommand') {
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'DeleteObjectsCommand') {
+          deletePrefixes.push(command.input.Delete.Objects[0].Key);
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'ListObjectsV2Command') {
+          const { Prefix = '' } = command.input || {};
+          if (Prefix === `${orgId}/raw/`) {
+            return Promise.resolve({
+              CommonPrefixes: [
+                { Prefix: `${orgId}/raw/aem-cs-fastly/` },
+                { Prefix: `${orgId}/raw/byocdn-fastly/` },
+              ],
+            });
+          }
+          if (Prefix.includes('aggregated')) {
+            return Promise.resolve({ Contents: [{ Key: `${Prefix}data.parquet` }] });
+          }
+          if (Prefix.includes('/raw/aem-cs-fastly/2025/06/15/10/')) {
+            return Promise.resolve({ Contents: [{ Key: `${Prefix}file1.log` }] });
+          }
+          if (Prefix.includes('/raw/byocdn-fastly/2025/06/15/10/')) {
+            return Promise.resolve({ Contents: [{ Key: `${Prefix}file2.log` }] });
+          }
+          return Promise.resolve({ Contents: [] });
+        }
+        return Promise.resolve({});
+      });
+
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext);
+
+      expect(result.auditResult.providers).to.be.an('array').with.length(2);
+      expect(deletePrefixes).to.have.length(2);
+      expect(deletePrefixes[0]).to.include('aggregated/test-site-id/2025/06/15/10/');
+      expect(deletePrefixes[1]).to.include('aggregated-referral/test-site-id/2025/06/15/10/');
+    });
+
+    it('should rebuild and warn when only one aggregate path exists', async () => {
+      const auditContext = {
+        year: 2025, month: 6, day: 15, hour: 10,
+        isSubAudit: true,
+      };
+
+      const deletePrefixes = [];
+
+      context.s3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'HeadBucketCommand') {
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'DeleteObjectsCommand') {
+          deletePrefixes.push(command.input.Delete.Objects[0].Key);
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'ListObjectsV2Command') {
+          const { Prefix = '' } = command.input || {};
+          if (Prefix.includes('aggregated-referral/')) {
+            return Promise.resolve({ Contents: [] });
+          }
+          if (Prefix.includes('aggregated/')) {
+            return Promise.resolve({ Contents: [{ Key: `${Prefix}data.parquet` }] });
+          }
+          return Promise.resolve({
+            Contents: [{ Key: 'test-ims-org-id/raw/aem-cs-fastly/2025/06/15/10/file1.log' }],
+            CommonPrefixes: [{ Prefix: 'test-ims-org-id/raw/aem-cs-fastly/' }],
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext);
+
+      expect(result.auditResult.providers).to.be.an('array').with.length(1);
+      expect(deletePrefixes).to.have.length(1);
+      expect(deletePrefixes[0]).to.include('aggregated/test-site-id/2025/06/15/10/');
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/found partial aggregates.*Rebuilding/),
+      );
     });
 
     it('deduplicates cdn-logs-report triggers by week', async () => {
