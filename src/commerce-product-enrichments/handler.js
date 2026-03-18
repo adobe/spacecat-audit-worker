@@ -373,8 +373,6 @@ export async function runAuditAndProcessResults(context) {
             sku = Product.find((p) => p.sku)?.sku;
           }
 
-          // if there's a match between categoryPages config and the @url prod from the jsonld
-          // add the preFetch strategies to the scrape entry
           const categoryProductUrl = Product.find((p) => p.url)?.url;
           const categoryPage = handlerConfig?.categoryPages?.find(
             (cp) => categoryProductUrl && cp.url && categoryProductUrl.includes(cp.url),
