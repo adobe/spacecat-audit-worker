@@ -263,6 +263,7 @@ async function compareHtmlContent(url, context) {
   // Track if scrape.json exists and if it indicates 403
   const hasScrapeMetadata = metadata !== null;
   const scrapeForbidden = metadata?.error?.statusCode === 403;
+  const isDeployedAtEdge = metadata?.isDeployedAtEdge === true;
 
   try {
     // Validate HTML data availability
@@ -277,11 +278,12 @@ async function compareHtmlContent(url, context) {
       CONTENT_GAIN_THRESHOLD,
     );
 
-    log.debug(`Prerender - Content analysis for ${url}: contentGainRatio=${analysis.contentGainRatio}, wordCountBefore=${analysis.wordCountBefore}, wordCountAfter=${analysis.wordCountAfter}`);
+    log.debug(`Prerender - Content analysis for ${url}: contentGainRatio=${analysis.contentGainRatio}, wordCountBefore=${analysis.wordCountBefore}, wordCountAfter=${analysis.wordCountAfter}, isDeployedAtEdge=${isDeployedAtEdge}`);
 
     return {
       url,
       ...analysis,
+      isDeployedAtEdge, // Track if page is served by an edge worker (from scrape.json)
       hasScrapeMetadata, // Track if scrape.json exists on S3
       scrapeForbidden, // Track if original scrape was forbidden (403)
       /* c8 ignore next */
@@ -293,6 +295,7 @@ async function compareHtmlContent(url, context) {
       url,
       error: true,
       needsPrerender: false,
+      isDeployedAtEdge,
       hasScrapeMetadata,
       scrapeForbidden,
       scrapeError: metadata?.error,
@@ -1121,7 +1124,12 @@ export async function processContentAndGenerateOpportunities(context) {
       ? Math.round((failedCount / urlsSubmittedForScraping) * 100)
       : 0;
 
-    const scrapedUrlsSet = new Set(successfulComparisons.map((r) => r.url));
+    // Exclude edge-deployed URLs from scrapedUrlsSet so that existing NEW suggestions
+    // for those pages are not marked OUTDATED by handleOutdatedSuggestions, regardless
+    // of the word diff / content gain ratio result.
+    const scrapedUrlsSet = new Set(
+      successfulComparisons.filter((r) => !r.isDeployedAtEdge).map((r) => r.url),
+    );
 
     const auditResult = {
       totalUrlsChecked: comparisonResults.length,
