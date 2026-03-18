@@ -516,6 +516,7 @@ export async function keywordPromptsImportStep(context) {
     siteId: site.getId(),
     auditResult: { keywordQuestions: [], aiPlatform },
     fullAuditRef: finalUrl,
+    allowCache: true,
   };
 
   if (referenceDate) {

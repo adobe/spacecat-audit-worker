@@ -116,16 +116,20 @@ export function getJsonFaqSuggestion(suggestions) {
  * by checking for the configuration and testing the search endpoint
  * @param {Object} site - The site object
  * @param {Object} context - The context object with env and log
+ * @param {ContentAIClient} [contentAIClient] - Optional pre-initialized client for reuse
  * @returns {Promise<{uid: string|null, indexName: string|null,
  *   genSearchEnabled: boolean, isWorking: boolean}>}
  */
-export async function validateContentAI(site, context) {
+export async function validateContentAI(site, context, contentAIClient = null) {
   const { log } = context;
 
   try {
-    // Initialize Content AI client once (token generated once)
-    const client = new ContentAIClient(context);
-    await client.initialize();
+    // Use provided client or create a new one
+    let client = contentAIClient;
+    if (!client) {
+      client = new ContentAIClient(context);
+      await client.initialize();
+    }
 
     const existingConf = await client.getConfigurationForSite(site);
     const baseURL = site.getBaseURL();
