@@ -283,7 +283,7 @@ async function compareHtmlContent(url, context) {
     return {
       url,
       ...analysis,
-      isDeployedAtEdge, // Track if page is served by an edge worker (from scrape.json)
+      isDeployedAtEdge,
       hasScrapeMetadata, // Track if scrape.json exists on S3
       scrapeForbidden, // Track if original scrape was forbidden (403)
       /* c8 ignore next */
@@ -1124,9 +1124,6 @@ export async function processContentAndGenerateOpportunities(context) {
       ? Math.round((failedCount / urlsSubmittedForScraping) * 100)
       : 0;
 
-    // Exclude edge-deployed URLs from scrapedUrlsSet so that existing NEW suggestions
-    // for those pages are not marked OUTDATED by handleOutdatedSuggestions, regardless
-    // of the word diff / content gain ratio result.
     const scrapedUrlsSet = new Set(
       successfulComparisons.filter((r) => !r.isDeployedAtEdge).map((r) => r.url),
     );
