@@ -1,3 +1,10 @@
+# [1.361.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.360.4...v1.361.0) (2026-03-18)
+
+
+### Features
+
+* Prefetch config enrichment payload for `commerce-product-enrichments` audit ([#2149](https://github.com/adobe/spacecat-audit-worker/issues/2149)) ([d688ba9](https://github.com/adobe/spacecat-audit-worker/commit/d688ba9ed0360102f52cd27173268a96d86cd0ce)), closes [OneAdobe/catalog-agent-service#38](https://github.com/OneAdobe/catalog-agent-service/issues/38)
+
 ## [1.360.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.360.3...v1.360.4) (2026-03-17)
 
 
