@@ -135,7 +135,7 @@ export async function isPaidLLMOCustomer(context) {
  * @param {Set<string>} auditRunUrls - Set of URLs found in this audit run (needsPrerender=true)
  * @returns {Promise<number>} - Number of suggestions stamped
  */
-export async function verifyAndMarkFixedSuggestions(
+export async function stampDetectedAsPrerendered(
   opportunity,
   context,
   prerenderStatusMap,

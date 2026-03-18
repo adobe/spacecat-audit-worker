@@ -22,7 +22,7 @@ import {
   loadLatestAgenticSheet,
   buildSheetHitsMap,
 } from './utils/shared.js';
-import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls, verifyAndMarkFixedSuggestions } from './utils/utils.js';
+import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls, stampDetectedAsPrerendered } from './utils/utils.js';
 import {
   CONTENT_GAIN_THRESHOLD,
   TOP_AGENTIC_URLS_LIMIT,
@@ -888,7 +888,7 @@ export async function processOpportunityAndSuggestions(
   // if prerendering is already enabled at the edge. Must run before syncSuggestions
   // so FIXED suggestions are preserved by the sync step (FIXED is excluded from outdate logic).
   const auditRunUrls = new Set(preRenderSuggestions.map((s) => s.url));
-  const fixedCount = await verifyAndMarkFixedSuggestions(
+  const fixedCount = await stampDetectedAsPrerendered(
     opportunity,
     context,
     prerenderStatusMap,

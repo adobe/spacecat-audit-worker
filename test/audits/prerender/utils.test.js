@@ -396,7 +396,7 @@ describe('Prerender Utils', () => {
     });
   });
 
-  describe('verifyAndMarkFixedSuggestions', () => {
+  describe('stampDetectedAsPrerendered', () => {
     let mockOpportunity;
     let mockSuggestion1;
     let mockSuggestion2;
@@ -448,7 +448,7 @@ describe('Prerender Utils', () => {
       ]);
       const auditRunUrls = new Set(['https://example.com/page1', 'https://example.com/page2']);
 
-      const result = await utils.verifyAndMarkFixedSuggestions(
+      const result = await utils.stampDetectedAsPrerendered(
         mockOpportunity,
         context,
         prerenderStatusMap,
@@ -471,7 +471,7 @@ describe('Prerender Utils', () => {
       const prerenderStatusMap = new Map([['https://example.com/page1', true]]);
       const auditRunUrls = new Set(['https://example.com/page1']);
 
-      const result = await utils.verifyAndMarkFixedSuggestions(
+      const result = await utils.stampDetectedAsPrerendered(
         mockOpportunity,
         context,
         prerenderStatusMap,
@@ -502,7 +502,7 @@ describe('Prerender Utils', () => {
       ]);
       const auditRunUrls = new Set(['https://example.com/page1', 'https://example.com/page2']);
 
-      const result = await utils.verifyAndMarkFixedSuggestions(
+      const result = await utils.stampDetectedAsPrerendered(
         mockOpportunity,
         context,
         prerenderStatusMap,
@@ -533,7 +533,7 @@ describe('Prerender Utils', () => {
       ]);
       const auditRunUrls = new Set(['https://example.com/approved', 'https://example.com/page1']);
 
-      const result = await utils.verifyAndMarkFixedSuggestions(
+      const result = await utils.stampDetectedAsPrerendered(
         mockOpportunity,
         context,
         prerenderStatusMap,
@@ -555,7 +555,7 @@ describe('Prerender Utils', () => {
       // Only page1 is in the current audit run
       const auditRunUrls = new Set(['https://example.com/page1']);
 
-      const result = await utils.verifyAndMarkFixedSuggestions(
+      const result = await utils.stampDetectedAsPrerendered(
         mockOpportunity,
         context,
         prerenderStatusMap,
@@ -570,7 +570,7 @@ describe('Prerender Utils', () => {
     it('should return 0 when there are no suggestions', async () => {
       mockOpportunity.getSuggestions.resolves([]);
 
-      const result = await utils.verifyAndMarkFixedSuggestions(
+      const result = await utils.stampDetectedAsPrerendered(
         mockOpportunity,
         context,
         new Map(),
@@ -589,7 +589,7 @@ describe('Prerender Utils', () => {
       ]);
       const auditRunUrls = new Set(['https://example.com/page1', 'https://example.com/page2']);
 
-      const result = await utils.verifyAndMarkFixedSuggestions(
+      const result = await utils.stampDetectedAsPrerendered(
         mockOpportunity,
         context,
         prerenderStatusMap,
@@ -610,7 +610,7 @@ describe('Prerender Utils', () => {
       ]);
       const auditRunUrls = new Set(['https://example.com/page1', 'https://example.com/page2']);
 
-      const result = await utils.verifyAndMarkFixedSuggestions(
+      const result = await utils.stampDetectedAsPrerendered(
         mockOpportunity,
         context,
         prerenderStatusMap,
@@ -627,7 +627,7 @@ describe('Prerender Utils', () => {
 
       const auditRunUrls = new Set(['https://example.com/page1']);
 
-      const result = await utils.verifyAndMarkFixedSuggestions(
+      const result = await utils.stampDetectedAsPrerendered(
         mockOpportunity,
         context,
         new Map(),
@@ -641,7 +641,7 @@ describe('Prerender Utils', () => {
     it('should return 0 when only domain-wide suggestions exist', async () => {
       mockOpportunity.getSuggestions.resolves([mockDomainWideSuggestion]);
 
-      const result = await utils.verifyAndMarkFixedSuggestions(
+      const result = await utils.stampDetectedAsPrerendered(
         mockOpportunity,
         context,
         new Map([['https://example.com/page1', true]]),
@@ -655,7 +655,7 @@ describe('Prerender Utils', () => {
     it('should return 0 and log error when getSuggestions throws', async () => {
       mockOpportunity.getSuggestions.rejects(new Error('Database error'));
 
-      const result = await utils.verifyAndMarkFixedSuggestions(
+      const result = await utils.stampDetectedAsPrerendered(
         mockOpportunity,
         context,
         new Map(),
