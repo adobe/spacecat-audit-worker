@@ -88,10 +88,10 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
   });
 
   describe('isLowSeverityGuidanceBody', () => {
-    it('returns true for low severity', () => {
-      expect(isLowSeverityGuidanceBody({ issueSeverity: 'low' })).to.be.true;
-      expect(isLowSeverityGuidanceBody({ issueSeverity: 'Low' })).to.be.true;
-      expect(isLowSeverityGuidanceBody({ issueSeverity: 'LOW' })).to.be.true;
+    it('returns false for low severity (low now produces opportunities)', () => {
+      expect(isLowSeverityGuidanceBody({ issueSeverity: 'low' })).to.be.false;
+      expect(isLowSeverityGuidanceBody({ issueSeverity: 'Low' })).to.be.false;
+      expect(isLowSeverityGuidanceBody({ issueSeverity: 'LOW' })).to.be.false;
     });
 
     it('returns true for none severity', () => {
@@ -124,9 +124,9 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
       expect(isLowSeverityGuidanceBody(undefined)).to.be.false;
     });
 
-    it('handles severity strings containing low or none', () => {
-      expect(isLowSeverityGuidanceBody({ issueSeverity: 'very-low' })).to.be.true;
-      expect(isLowSeverityGuidanceBody({ issueSeverity: 'none-detected' })).to.be.true;
+    it('rejects substring false positives (strict equality)', () => {
+      expect(isLowSeverityGuidanceBody({ issueSeverity: 'very-low' })).to.be.false;
+      expect(isLowSeverityGuidanceBody({ issueSeverity: 'none-detected' })).to.be.false;
     });
   });
 
@@ -349,8 +349,66 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
 
       const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
-      // Should handle null/undefined gracefully
-      expect(result.description).to.include('0');
+      // Should handle null/undefined gracefully — uses avgBounceRate ?? 0 fallback
+      expect(result.description).to.include('0.0%');
+      expect(result.description).to.not.include('NaN');
+    });
+
+    it('does not produce NaN in description when averageBounceRate is undefined', () => {
+      const audit = createMockAudit({
+        totalPageViews: 10000,
+        averageBounceRate: undefined,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      });
+      const message = createMessage();
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.description).to.include('0.0%');
+      expect(result.description).to.not.include('NaN');
+    });
+
+    it('passes gapAnalysis from guidance body to opportunity data', () => {
+      const audit = createMockAudit({
+        totalPageViews: 10000,
+        averageBounceRate: 0.45,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      });
+      const gapAnalysis = {
+        keywordToAdGap: { severity: 'medium', description: 'Mismatch found' },
+        overallAlignmentScore: 'fair',
+      };
+      const message = createMessage({ bodyOverrides: { gapAnalysis } });
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.gapAnalysis).to.deep.equal(gapAnalysis);
+    });
+
+    it('defaults gapAnalysis to empty object when not in guidance body', () => {
+      const audit = createMockAudit({
+        totalPageViews: 10000,
+        averageBounceRate: 0.45,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      });
+      const message = createMessage();
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.gapAnalysis).to.deep.equal({});
+    });
+
+    it('handles null audit result gracefully with || {} fallback', () => {
+      const audit = createMockAudit(null);
+      const message = createMessage();
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      // With || {} fallback, should not throw and should use defaults
+      expect(result.data.pageViews).to.equal(0);
+      expect(result.data.trackedPageKPIValue).to.equal(0);
+      expect(result.description).to.include('0.0%');
+      expect(result.description).to.not.include('NaN');
     });
 
     it('handles missing guidance body fields gracefully', () => {

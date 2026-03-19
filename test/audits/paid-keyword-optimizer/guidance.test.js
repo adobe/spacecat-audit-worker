@@ -365,6 +365,21 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
       expect(result.status).to.equal(notFound().status);
     });
 
+    it('should return ok and skip when audit has no result data', async () => {
+      Audit.findById.resolves({
+        getAuditId: () => 'auditId',
+        getAuditType: () => 'paid-keyword-optimizer',
+        getAuditResult: () => null,
+      });
+      const message = createMessage();
+
+      const result = await handler(message, context);
+
+      expect(Opportunity.create).not.to.have.been.called;
+      expect(Suggestion.create).not.to.have.been.called;
+      expect(result.status).to.equal(ok().status);
+    });
+
     it('should create a new opportunity and suggestion', async () => {
       Opportunity.create.resolves(opportunityInstance);
       const message = createMessage();
@@ -464,14 +479,14 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
       expect(result.status).to.equal(ok().status);
     });
 
-    it('should skip opportunity creation and log for low severity', async () => {
+    it('should create opportunity for low severity (low now qualifies)', async () => {
+      Opportunity.create.resolves(opportunityInstance);
       const message = createMessage({ bodyOverrides: { issueSeverity: 'low' } });
 
       const result = await handler(message, context);
 
-      expect(Opportunity.create).not.to.have.been.called;
-      expect(Suggestion.create).not.to.have.been.called;
-      expect(logStub.info).to.have.been.calledWithMatch(/\[paid-audit\] Skipping ad-intent-mismatch: low issue severity/);
+      expect(Opportunity.create).to.have.been.called;
+      expect(Suggestion.create).to.have.been.called;
       expect(result.status).to.equal(ok().status);
     });
 
