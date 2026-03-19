@@ -107,6 +107,8 @@ export default async function handler(message, context) {
 
     log.info(`[YouTube] Processing ${suggestions.length} suggestions for ${companyName}`);
 
+    const auditType = opportunityData.type || AUDIT_TYPE;
+
     const opportunity = await convertToOpportunity(
       baseUrl,
       {
@@ -116,7 +118,7 @@ export default async function handler(message, context) {
       },
       context,
       createOpportunityData,
-      AUDIT_TYPE,
+      auditType,
       { opportunityData },
     );
 
