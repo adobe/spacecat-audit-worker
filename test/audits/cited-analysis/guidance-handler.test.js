@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Adobe. All rights reserved.
+ * Copyright 2026 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -22,7 +22,7 @@ import { MockContextBuilder } from '../../shared.js';
 use(sinonChai);
 use(chaiAsPromised);
 
-describe('Reddit Analysis Guidance Handler', () => {
+describe('Cited Analysis Guidance Handler', () => {
   let sandbox;
   let context;
   let mockSite;
@@ -53,7 +53,6 @@ describe('Reddit Analysis Guidance Handler', () => {
       getId: sandbox.stub().returns('opp-123'),
       getData: sandbox.stub().returns({ existingData: true }),
       setData: sandbox.stub(),
-      setStatus: sandbox.stub(),
       save: sandbox.stub().resolves(),
     };
 
@@ -61,7 +60,7 @@ describe('Reddit Analysis Guidance Handler', () => {
     convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
     fetchStub = sandbox.stub();
 
-    handler = await esmock('../../../src/reddit-analysis/guidance-handler.js', {
+    handler = await esmock('../../../src/cited-analysis/guidance-handler.js', {
       '../../../src/utils/data-access.js': {
         syncSuggestions: syncSuggestionsStub,
       },
@@ -104,14 +103,14 @@ describe('Reddit Analysis Guidance Handler', () => {
               {
                 id: 'sug_1',
                 priority: 'HIGH',
-                title: 'Improve community engagement',
-                description: 'Engage more in relevant subreddits',
+                title: 'Improve page content',
+                description: 'Enhance content for LLM citability',
               },
               {
                 id: 'sug_2',
                 priority: 'MEDIUM',
-                title: 'Address sentiment',
-                description: 'Respond to negative feedback',
+                title: 'Add structured data',
+                description: 'Include schema markup for better citation',
               },
             ],
           },
@@ -123,19 +122,18 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(result.status).to.equal(200);
       expect(convertToOpportunityStub).to.have.been.calledOnce;
       expect(syncSuggestionsStub).to.have.been.calledOnce;
-      expect(mockOpportunity.setStatus).to.have.been.calledWith('NEW');
       expect(mockOpportunity.setData).to.have.been.called;
       expect(mockOpportunity.save).to.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Successfully processed Reddit analysis/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Successfully processed cited analysis/));
     });
 
     it('should pass opportunityData from BO JSON to convertToOpportunity', async () => {
       const opportunityData = {
-        title: '[ʙᴇᴛᴀ] Reddit Sentiment Analysis - Cited',
+        title: 'Cited URL Analysis',
         description: 'Custom description from Mystique',
-        runbook: 'https://adobe.sharepoint.com/sites/reddit-analysis',
+        runbook: 'https://adobe.sharepoint.com/sites/cited-analysis',
         origin: 'ESS_OPS',
-        tags: ['Reddit', 'Social Media', 'social', 'isElmo'],
+        tags: ['cited', 'earned', 'isElmo'],
       };
       const message = {
         siteId,
@@ -158,26 +156,6 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(propsArg.opportunityData).to.deep.equal(opportunityData);
     });
 
-    it('should set status from opportunityData when provided by Mystique', async () => {
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          companyName: 'Example Corp',
-          analysis: {
-            opportunity: { status: 'IGNORED' },
-            suggestions: [
-              { id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' },
-            ],
-          },
-        },
-      };
-
-      await handler.default(message, context);
-
-      expect(mockOpportunity.setStatus).to.have.been.calledWith('IGNORED');
-    });
-
     it('should return noContent when no suggestions found', async () => {
       const message = {
         siteId,
@@ -194,7 +172,7 @@ describe('Reddit Analysis Guidance Handler', () => {
 
       expect(result.status).to.equal(204);
       expect(convertToOpportunityStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith('[Reddit] No suggestions found in analysis');
+      expect(context.log.info).to.have.been.calledWith('[Cited] No suggestions found in analysis');
     });
 
     it('should return noContent when suggestions property is missing from analysis', async () => {
@@ -221,7 +199,7 @@ describe('Reddit Analysis Guidance Handler', () => {
         auditId,
         data: {
           error: true,
-          errorMessage: 'HTTP error in content store /url-lookup (dataset=reddit_posts): 400 Bad Request',
+          errorMessage: 'HTTP error in content store /url-lookup: 400 Bad Request',
         },
       };
 
@@ -244,7 +222,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      expect(context.log.error).to.have.been.calledWith('[Reddit] No analysis data provided in message');
+      expect(context.log.error).to.have.been.calledWith('[Cited] No analysis data provided in message');
     });
 
     it('should return notFound when site not found', async () => {
@@ -272,11 +250,11 @@ describe('Reddit Analysis Guidance Handler', () => {
     it('should fetch BO JSON from presigned URL and pass opportunityData', async () => {
       const opportunityData = {
         id: 'opp-1',
-        title: '[ʙᴇᴛᴀ] Reddit Sentiment Analysis - Cited',
+        title: 'Cited URL Analysis',
         description: 'Analysis description',
-        runbook: 'https://adobe.sharepoint.com/sites/reddit-analysis',
+        runbook: 'https://adobe.sharepoint.com/sites/cited-analysis',
         origin: 'ESS_OPS',
-        tags: ['Reddit', 'Social Media'],
+        tags: ['cited', 'earned'],
       };
       const boJson = {
         opportunity: opportunityData,
@@ -380,11 +358,11 @@ describe('Reddit Analysis Guidance Handler', () => {
       const syncCall = syncSuggestionsStub.firstCall;
       const { newData, mapNewSuggestion } = syncCall.args[0];
 
-      expect(mapNewSuggestion(newData[0]).rank).to.equal(0); // CRITICAL
-      expect(mapNewSuggestion(newData[1]).rank).to.equal(1); // HIGH
-      expect(mapNewSuggestion(newData[2]).rank).to.equal(2); // MEDIUM
-      expect(mapNewSuggestion(newData[3]).rank).to.equal(3); // LOW
-      expect(mapNewSuggestion(newData[4]).rank).to.equal(4); // UNKNOWN (default)
+      expect(mapNewSuggestion(newData[0]).rank).to.equal(0);
+      expect(mapNewSuggestion(newData[1]).rank).to.equal(1);
+      expect(mapNewSuggestion(newData[2]).rank).to.equal(2);
+      expect(mapNewSuggestion(newData[3]).rank).to.equal(3);
+      expect(mapNewSuggestion(newData[4]).rank).to.equal(4);
     });
 
     it('should use correct buildKey function', async () => {
@@ -407,7 +385,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       const { buildKey } = syncCall.args[0];
       const key = buildKey({ id: 'my_suggestion_id' });
 
-      expect(key).to.equal('reddit::my_suggestion_id');
+      expect(key).to.equal('cited::my_suggestion_id');
     });
   });
 
@@ -432,7 +410,7 @@ describe('Reddit Analysis Guidance Handler', () => {
 
       expect(result.status).to.equal(400);
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Error processing Reddit analysis/),
+        sinon.match(/Error processing cited analysis/),
         sinon.match.any,
       );
     });
@@ -462,7 +440,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      expect(context.log.error).to.have.been.calledWith('[Reddit] No analysis data provided in message');
+      expect(context.log.error).to.have.been.calledWith('[Cited] No analysis data provided in message');
     });
 
     it('should return notFound when audit not found', async () => {
@@ -531,7 +509,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       await handler.default(message, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Received Reddit analysis guidance for siteId/),
+        sinon.match(/Received cited analysis guidance for siteId/),
       );
     });
   });
