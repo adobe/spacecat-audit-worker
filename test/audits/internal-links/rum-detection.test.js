@@ -43,6 +43,9 @@ describe('internal-links rum-detection', () => {
       auditType: 'broken-internal-links',
       interval: 30,
       createContextLogger: (log) => log,
+      createConfigResolver: () => ({
+        isLinkCheckerEnabled: () => false,
+      }),
       createRUMAPIClient: sinon.stub(),
       resolveFinalUrl: sinon.stub().resolves('https://example.com'),
       isLinkInaccessible: sinon.stub(),
@@ -384,9 +387,48 @@ describe('internal-links rum-detection', () => {
       site: createSite(),
       rumApiClient,
       finalUrl: 'https://example.com',
-    })).to.be.rejectedWith('Audit failed, skip scraping and suggestion generation');
+    })).to.be.rejectedWith('audit failed with error: upstream down');
 
-    expect(log.error).to.have.been.calledWith('RUM detection audit failed');
+    expect(log.error).to.have.been.calledWith('RUM detection audit failed: audit failed with error: upstream down');
+  });
+
+  it('continues from the top-pages step when rum detection fails and LinkChecker is enabled', async () => {
+    const rumApiClient = {
+      query: sinon.stub().rejects(new Error('upstream down')),
+    };
+    const log = createLog();
+    const { runAuditAndImportTopPagesStep } = createSteps({
+      createConfigResolver: () => ({
+        isLinkCheckerEnabled: () => true,
+      }),
+    });
+
+    const result = await runAuditAndImportTopPagesStep({
+      log,
+      site: createSite(),
+      rumApiClient,
+      finalUrl: 'https://example.com',
+      env: {},
+    });
+
+    expect(result).to.deep.equal({
+      auditResult: {
+        finalUrl: 'https://example.com',
+        error: 'audit failed with error: upstream down',
+        success: true,
+        brokenInternalLinks: [],
+        auditContext: {
+          interval: 30,
+          rumError: 'audit failed with error: upstream down',
+        },
+      },
+      fullAuditRef: 'https://example.com',
+      type: 'top-pages',
+      siteId: 'site-1',
+    });
+    expect(log.warn).to.have.been.calledWith(
+      'RUM detection audit failed, continuing with LinkChecker enabled: audit failed with error: upstream down',
+    );
   });
 
   it('logs zero broken links when prioritized rum links are undefined', async () => {

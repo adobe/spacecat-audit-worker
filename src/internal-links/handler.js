@@ -91,6 +91,7 @@ export const {
   auditType: AUDIT_TYPE,
   interval: INTERVAL,
   createContextLogger,
+  createConfigResolver: createInternalLinksConfigResolver,
   createRUMAPIClient: (context) => RUMAPIClient.createFrom(context),
   resolveFinalUrl: resolveInternalLinksRumDomain,
   isLinkInaccessible,

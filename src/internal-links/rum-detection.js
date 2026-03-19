@@ -41,6 +41,7 @@ export function createInternalLinksRumSteps({
   auditType,
   interval,
   createContextLogger,
+  createConfigResolver = () => ({ isLinkCheckerEnabled: () => false }),
   createRUMAPIClient,
   resolveFinalUrl,
   isLinkInaccessible,
@@ -181,7 +182,7 @@ export function createInternalLinksRumSteps({
 
   async function runAuditAndImportTopPagesStep(context) {
     const {
-      site, log: baseLog, finalUrl, audit,
+      site, log: baseLog, finalUrl, audit, env,
     } = context;
     /* c8 ignore next - defensive logger context when audit is absent or incomplete */
     const auditId = audit && typeof audit.getId === 'function' ? audit.getId() : undefined;
@@ -205,8 +206,28 @@ export function createInternalLinksRumSteps({
     const { success } = internalLinksAuditRunnerResult.auditResult;
 
     if (!success) {
-      log.error('RUM detection audit failed');
-      throw new Error('Audit failed, skip scraping and suggestion generation');
+      const rumError = internalLinksAuditRunnerResult.auditResult.error || 'RUM detection audit failed';
+      const config = createConfigResolver(site, env);
+      if (config.isLinkCheckerEnabled()) {
+        log.warn(`RUM detection audit failed, continuing with LinkChecker enabled: ${rumError}`);
+        return {
+          auditResult: {
+            ...internalLinksAuditRunnerResult.auditResult,
+            brokenInternalLinks: [],
+            success: true,
+            auditContext: {
+              interval,
+              rumError,
+            },
+          },
+          fullAuditRef: finalUrl,
+          type: 'top-pages',
+          siteId: site.getId(),
+        };
+      }
+
+      log.error(`RUM detection audit failed: ${rumError}`);
+      throw new Error(rumError);
     }
 
     log.info(`RUM detection complete. Found ${internalLinksAuditRunnerResult.auditResult.brokenInternalLinks?.length || 0} broken links`);

@@ -950,7 +950,7 @@ describe('Broken internal links audit', () => {
     expect(result.urls.length).to.be.greaterThan(0);
   }).timeout(10000);
 
-  it('runAuditAndImportTopPagesStep should throw error when RUM audit returns success=false', async () => {
+  it('runAuditAndImportTopPagesStep should continue when RUM audit returns success=false and LinkChecker is enabled', async () => {
     // Mock RUMAPIClient to throw an error, which causes internalLinksAuditRunner to catch it
     // and return success: false
     const mockRumClient = {
@@ -964,13 +964,33 @@ describe('Broken internal links audit', () => {
     const { runAuditAndImportTopPagesStep: runAuditAndImportTopPagesStepMocked } = await esmock('../../../src/internal-links/handler.js', {
       '@adobe/spacecat-shared-rum-api-client': { default: RUMAPIClientMock },
     });
-    const testContext = { ...context };
+    const testContext = {
+      ...context,
+      env: {},
+      site: {
+        ...context.site,
+        getConfig: () => ({
+          getHandlers: () => ({
+            'broken-internal-links': {
+              config: {
+                isLinkCheckerEnabled: true,
+              },
+            },
+          }),
+        }),
+      },
+    };
     delete testContext.rumApiClient;
 
-    // Should throw because internalLinksAuditRunner caught an error and returned success: false
-    await expect(runAuditAndImportTopPagesStepMocked(testContext))
-      .to.be.rejectedWith('Audit failed, skip scraping and suggestion generation');
+    const result = await runAuditAndImportTopPagesStepMocked(testContext);
 
+    expect(result.type).to.equal('top-pages');
+    expect(result.auditResult.success).to.equal(true);
+    expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
+    expect(result.auditResult.auditContext).to.deep.equal({
+      interval: 30,
+      rumError: 'audit failed with error: RUM API connection failed',
+    });
     expect(mockRumClient.query).to.have.been.called;
   }).timeout(10000);
 
