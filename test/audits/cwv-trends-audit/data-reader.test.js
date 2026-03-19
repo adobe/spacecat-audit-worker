@@ -147,5 +147,21 @@ describe('CWV Trends Data Reader', () => {
       const result = await readTrendData({}, 'bucket', new Date('2025-11-28T00:00:00Z'), 1, log);
       expect(result).to.have.lengthOf(1);
     });
+
+    it('rejects already-parsed object exceeding size limit', async () => {
+      // Create a large JSON array as already-parsed object (>15 MB)
+      const largeData = Array(120000).fill({
+        url: 'https://example.com/page-with-a-longer-path-to-increase-size',
+        metrics: [{
+          deviceType: 'mobile', pageviews: 5000, lcp: 2000, cls: 0.08, inp: 180,
+          bounceRate: 0.25, engagement: 0.75, clickRate: 0.60,
+        }],
+      });
+      // Pass already-parsed object (not string)
+      getObjectFromKeyStub.resolves(largeData);
+      const result = await readTrendData({}, 'bucket', new Date('2025-11-28T00:00:00Z'), 1, log);
+      expect(result).to.have.lengthOf(0);
+      expect(log.warn).to.have.been.calledWith(sinon.match(/exceeds size limit/));
+    });
   });
 });

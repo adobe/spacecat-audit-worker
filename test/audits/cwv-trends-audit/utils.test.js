@@ -370,4 +370,155 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
       expect(err.message).to.include('28 required');
     }
   });
+
+  it('handles percentage change when previous is 0 and current is 0', async () => {
+    // Build data where good count goes from 0 to 0
+    const urlsDay1 = [buildUrl('https://ex.com/poor', 'mobile', { lcp: 5000, cls: 0.30, inp: 600 })];
+    const urlsDay2 = [buildUrl('https://ex.com/poor', 'mobile', { lcp: 5000, cls: 0.30, inp: 600 })];
+
+    const dailyData = [];
+    for (let i = 0; i < 21; i += 1) {
+      const d = new Date('2025-11-01'); d.setDate(d.getDate() + i);
+      dailyData.push({ date: d.toISOString().split('T')[0], data: urlsDay1 });
+    }
+    for (let i = 0; i < 7; i += 1) {
+      const d = new Date('2025-11-22'); d.setDate(d.getDate() + i);
+      dailyData.push({ date: d.toISOString().split('T')[0], data: urlsDay2 });
+    }
+    readTrendDataStub.resolves(dailyData);
+
+    const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
+    const { summary } = result.auditResult;
+
+    // When both current and previous are 0, percentage change should be 0
+    expect(summary.good.current).to.equal(0);
+    expect(summary.good.previous).to.equal(0);
+    expect(summary.good.percentageChange).to.equal(0);
+  });
+
+  it('handles percentage change when previous is 0 and current is not 0', async () => {
+    // Build data where good count goes from 0 to some positive number
+    const urlsDay1 = [buildUrl('https://ex.com/poor', 'mobile', { lcp: 5000, cls: 0.30, inp: 600 })];
+    const urlsDay2 = [buildUrl('https://ex.com/good', 'mobile', { lcp: 2000, cls: 0.05, inp: 100 })];
+
+    const dailyData = [];
+    for (let i = 0; i < 21; i += 1) {
+      const d = new Date('2025-11-01'); d.setDate(d.getDate() + i);
+      dailyData.push({ date: d.toISOString().split('T')[0], data: urlsDay1 });
+    }
+    for (let i = 0; i < 7; i += 1) {
+      const d = new Date('2025-11-22'); d.setDate(d.getDate() + i);
+      dailyData.push({ date: d.toISOString().split('T')[0], data: urlsDay2 });
+    }
+    readTrendDataStub.resolves(dailyData);
+
+    const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
+    const { summary } = result.auditResult;
+
+    // When previous is 0 and current is not, percentage change should be 100
+    expect(summary.good.current).to.equal(1);
+    expect(summary.good.previous).to.equal(0);
+    expect(summary.good.percentageChange).to.equal(100);
+  });
+
+  it('handles summary with less than 8 days of data (uses day 0 as previous)', async () => {
+    const urls = [buildUrl('https://ex.com/good', 'mobile', { lcp: 2000, cls: 0.05, inp: 100 })];
+
+    // Create exactly 28 days, but test that if we had < 8 days, it would use day 0
+    // We can't actually test < 8 days since we require 28 days minimum
+    // But we can verify the 28-day case works correctly
+    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
+
+    const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
+    const { summary } = result.auditResult;
+
+    // Should compare day 27 to day 20
+    expect(summary.good.current).to.equal(1);
+    expect(summary.good.previous).to.equal(1);
+    expect(summary.good.change).to.equal(0);
+  });
+
+});
+
+describe('CWV Trends Audit Runner (utils.js) - Edge Cases', function () {
+  this.timeout(5000);
+  let sandbox;
+  let cwvTrendsRunner;
+  let readTrendDataStub;
+  let log;
+
+  before(async () => {
+    sandbox = sinon.createSandbox();
+    readTrendDataStub = sandbox.stub();
+    log = { info: sandbox.spy(), warn: sandbox.spy(), error: sandbox.spy() };
+
+    // Mock with TREND_DAYS = 7 to test the len < 8 branch
+    const module = await esmock('../../../src/cwv-trends-audit/utils.js', {
+      '../../../src/cwv-trends-audit/constants.js': {
+        MIN_PAGEVIEWS: 1000,
+        TREND_DAYS: 7,
+        S3_BASE_PATH: 'metrics/cwv-trends',
+        DEFAULT_DEVICE_TYPE: 'mobile',
+        AUDIT_TYPE: 'cwv-trends-audit',
+      },
+      '../../../src/cwv-trends-audit/data-reader.js': {
+        readTrendData: readTrendDataStub,
+        formatDate: (d) => d.toISOString().split('T')[0],
+        subtractDays: (d, n) => { const r = new Date(d); r.setDate(r.getDate() - n); return r; },
+      },
+    });
+
+    cwvTrendsRunner = module.default;
+  });
+
+  afterEach(() => {
+    readTrendDataStub.reset();
+    log.info.resetHistory();
+    log.warn.resetHistory();
+    log.error.resetHistory();
+  });
+
+  after(() => { sandbox.restore(); });
+
+  it('uses day 0 as previous when less than 8 days of trend data', async () => {
+    const urls = [{
+      url: 'https://ex.com/p1',
+      metrics: [{
+        deviceType: 'mobile',
+        pageviews: 5000,
+        bounceRate: 0.25,
+        engagement: 0.75,
+        clickRate: 0.60,
+        lcp: 2000,
+        cls: 0.08,
+        inp: 180,
+      }],
+    }];
+
+    // Create exactly 7 days of data
+    const dailyData = [];
+    for (let i = 0; i < 7; i += 1) {
+      const d = new Date('2025-11-22');
+      d.setDate(d.getDate() + i);
+      dailyData.push({ date: d.toISOString().split('T')[0], data: urls });
+    }
+
+    readTrendDataStub.resolves(dailyData);
+
+    const site = {
+      getId: () => 'site-1',
+      getConfig: () => ({
+        getHandlers: () => ({ 'cwv-trends-audit': {} }),
+      }),
+    };
+
+    const result = await cwvTrendsRunner('https://ex.com', {
+      s3Client: {}, log, env: { S3_IMPORTER_BUCKET_NAME: 'bucket' },
+    }, site);
+
+    // With 7 days (< 8), should compare day 6 (last) to day 0 (first)
+    expect(result.auditResult.summary.good.current).to.equal(1);
+    expect(result.auditResult.summary.good.previous).to.equal(1);
+    expect(result.auditResult.summary.good.change).to.equal(0);
+  });
 });
