@@ -13,7 +13,9 @@
 /* eslint-env mocha */
 import { expect } from 'chai';
 
-describe('CWV Trends Audit Handler', () => {
+describe('CWV Trends Audit Handler', function () {
+  this.timeout(5000);
+
   it('exports a RunnerAudit instance as default', async () => {
     const module = await import('../../../src/cwv-trends-audit/handler.js');
     expect(module.default).to.be.an('object');

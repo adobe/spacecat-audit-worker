@@ -11,11 +11,24 @@
  */
 
 import {
-  MIN_PAGEVIEWS, TREND_DAYS, CURRENT_WEEK_DAYS, S3_BASE_PATH,
+  MIN_PAGEVIEWS, TREND_DAYS, S3_BASE_PATH,
   DEFAULT_DEVICE_TYPE, AUDIT_TYPE,
 } from './constants.js';
 import { readTrendData, formatDate, subtractDays } from './data-reader.js';
 import { categorizeUrl } from './cwv-categorizer.js';
+
+/**
+ * Validates a URL string for basic sanity.
+ */
+function isValidUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Filters URLs by device type and minimum pageviews.
@@ -23,6 +36,12 @@ import { categorizeUrl } from './cwv-categorizer.js';
 function filterUrls(urlEntries, deviceType, log) {
   return urlEntries
     .map((entry) => {
+      // Validate URL
+      if (!isValidUrl(entry.url)) {
+        log.warn(`Skipping invalid URL: ${entry.url}`);
+        return null;
+      }
+
       const metrics = entry.metrics?.find((m) => m.deviceType === deviceType);
       if (!metrics) return null;
       if (metrics.pageviews < MIN_PAGEVIEWS) return null;
@@ -49,10 +68,14 @@ function filterUrls(urlEntries, deviceType, log) {
 
 /**
  * Builds trend data: per-day counts of good/needsImprovement/poor URLs.
+ * Returns both trendData and a cache of filtered URLs per day for performance.
  */
 function buildTrendData(dailyData, deviceType, log) {
-  return dailyData.map((day) => {
+  const filteredCache = new Map();
+  const trendData = dailyData.map((day) => {
     const urls = filterUrls(day.data, deviceType, log);
+    filteredCache.set(day.date, urls);
+
     let good = 0;
     let needsImprovement = 0;
     let poor = 0;
@@ -68,28 +91,8 @@ function buildTrendData(dailyData, deviceType, log) {
       date: day.date, good, needsImprovement, poor,
     };
   });
-}
 
-/**
- * Calculates average counts over a slice of trendData entries.
- */
-function averageCounts(entries) {
-  if (entries.length === 0) return { good: 0, needsImprovement: 0, poor: 0 };
-
-  const sum = entries.reduce(
-    (acc, e) => ({
-      good: acc.good + e.good,
-      needsImprovement: acc.needsImprovement + e.needsImprovement,
-      poor: acc.poor + e.poor,
-    }),
-    { good: 0, needsImprovement: 0, poor: 0 },
-  );
-
-  return {
-    good: sum.good / entries.length,
-    needsImprovement: sum.needsImprovement / entries.length,
-    poor: sum.poor / entries.length,
-  };
+  return { trendData, filteredCache };
 }
 
 function pctChange(current, previous) {
@@ -98,23 +101,21 @@ function pctChange(current, previous) {
 }
 
 /**
- * Builds summary comparing current week avg (last 7 days) vs previous week avg (days 15-21).
+ * Builds summary comparing current day vs 7 days before (point-to-point comparison).
+ * Current = value on the most recent day
+ * Previous = value 7 days before the most recent day
  */
 function buildSummary(trendData, totalUrls) {
   const len = trendData.length;
-  const currentWeek = trendData.slice(Math.max(0, len - CURRENT_WEEK_DAYS));
-  const previousWeek = trendData.slice(
-    Math.max(0, len - 2 * CURRENT_WEEK_DAYS),
-    Math.max(0, len - CURRENT_WEEK_DAYS),
-  );
 
-  const curr = averageCounts(currentWeek);
-  const prev = averageCounts(previousWeek);
+  // Point-to-point comparison: last day vs 7 days before
+  const currentDay = trendData[len - 1];
+  const previousDay = len >= 8 ? trendData[len - 8] : trendData[0];
 
   const makeStat = (category) => {
-    const current = Math.round(curr[category] * 100) / 100;
-    const previous = Math.round(prev[category] * 100) / 100;
-    const change = Math.round((current - previous) * 100) / 100;
+    const current = currentDay[category];
+    const previous = previousDay[category];
+    const change = current - previous;
     return {
       current,
       previous,
@@ -133,22 +134,14 @@ function buildSummary(trendData, totalUrls) {
 }
 
 /**
- * Computes weekly average for a specific URL and field.
+ * Finds a URL's value for a specific field from cached filtered URLs.
  */
-function weeklyAvgForUrl(urlKey, dailySlice, deviceType, field, log) {
-  let sum = 0;
-  let count = 0;
-
-  for (const day of dailySlice) {
-    const urls = filterUrls(day.data, deviceType, log);
-    const match = urls.find((u) => u.url === urlKey);
-    if (match && match[field] !== null && match[field] !== undefined) {
-      sum += match[field];
-      count += 1;
-    }
+function getUrlValueFromCache(urlKey, cachedUrls, field) {
+  const match = cachedUrls.find((u) => u.url === urlKey);
+  if (match && match[field] !== null && match[field] !== undefined) {
+    return match[field];
   }
-
-  return count > 0 ? sum / count : null;
+  return null;
 }
 
 function round(value, decimals) {
@@ -158,18 +151,20 @@ function round(value, decimals) {
 
 /**
  * Builds urlDetails from the most recent date's data,
- * with change values computed as current week avg minus previous week avg.
+ * with change values computed as point-to-point (current day vs 7 days before).
+ * Uses cached filtered URLs for performance.
  */
-function buildUrlDetails(dailyData, deviceType, log) {
-  const latestDay = dailyData[dailyData.length - 1];
-  const latestUrls = filterUrls(latestDay.data, deviceType, log);
-
+function buildUrlDetails(dailyData, filteredCache, deviceType, log) {
   const len = dailyData.length;
-  const currentWeekSlice = dailyData.slice(Math.max(0, len - CURRENT_WEEK_DAYS));
-  const previousWeekSlice = dailyData.slice(
-    Math.max(0, len - 2 * CURRENT_WEEK_DAYS),
-    Math.max(0, len - CURRENT_WEEK_DAYS),
-  );
+  const latestDay = dailyData[len - 1];
+  const latestUrls = filteredCache.get(latestDay.date)
+    || filterUrls(latestDay.data, deviceType, log);
+
+  // Point-to-point comparison: current day vs 7 days before
+  const previousDayIndex = len >= 8 ? len - 8 : 0;
+  const previousDay = dailyData[previousDayIndex];
+  const previousUrls = filteredCache.get(previousDay.date)
+    || filterUrls(previousDay.data, deviceType, log);
 
   const fields = ['pageviews', 'lcp', 'cls', 'inp', 'bounceRate', 'engagement', 'clickRate'];
   const pctFields = new Set(['bounceRate', 'engagement', 'clickRate']);
@@ -183,18 +178,18 @@ function buildUrlDetails(dailyData, deviceType, log) {
 
     for (const field of fields) {
       const rawValue = url[field];
-      const currentAvg = weeklyAvgForUrl(url.url, currentWeekSlice, deviceType, field, log);
-      const previousAvg = weeklyAvgForUrl(url.url, previousWeekSlice, deviceType, field, log);
+      const currentValue = getUrlValueFromCache(url.url, latestUrls, field);
+      const previousValue = getUrlValueFromCache(url.url, previousUrls, field);
 
       if (pctFields.has(field)) {
         detail[field] = rawValue != null ? round(rawValue * 100, 1) : null;
-        detail[`${field}Change`] = (currentAvg != null && previousAvg != null)
-          ? round((currentAvg - previousAvg) * 100, 1)
+        detail[`${field}Change`] = (currentValue != null && previousValue != null)
+          ? round((currentValue - previousValue) * 100, 1)
           : null;
       } else {
         detail[field] = rawValue != null ? round(rawValue, 3) : null;
-        detail[`${field}Change`] = (currentAvg != null && previousAvg != null)
-          ? round(currentAvg - previousAvg, 3)
+        detail[`${field}Change`] = (currentValue != null && previousValue != null)
+          ? round(currentValue - previousValue, 3)
           : null;
       }
     }
@@ -235,6 +230,7 @@ function emptyResult(domain, deviceType, startDate, endDate) {
  * CWV Trends audit runner.
  * Reads device type from site config (handler-level config under the audit type key).
  * Falls back to DEFAULT_DEVICE_TYPE ('mobile') when not configured.
+ * Requires minimum 28 days of data.
  */
 export default async function cwvTrendsRunner(finalUrl, context, site) {
   const { s3Client, log, env } = context;
@@ -256,11 +252,19 @@ export default async function cwvTrendsRunner(finalUrl, context, site) {
     return emptyResult(domain, deviceType, startDate, endDate);
   }
 
-  const trendData = buildTrendData(dailyData, deviceType, log);
-  const latestUrls = filterUrls(dailyData[dailyData.length - 1].data, deviceType, log);
+  // Require minimum 28 days of data
+  if (dailyData.length < TREND_DAYS) {
+    const error = `Insufficient data: ${dailyData.length} days found, ${TREND_DAYS} required`;
+    log.error(`[${AUDIT_TYPE}] ${error}`);
+    throw new Error(error);
+  }
+
+  const { trendData, filteredCache } = buildTrendData(dailyData, deviceType, log);
+  const latestDay = dailyData[dailyData.length - 1];
+  const latestUrls = filteredCache.get(latestDay.date);
   const totalUrls = latestUrls.length;
   const summary = buildSummary(trendData, totalUrls);
-  const urlDetails = buildUrlDetails(dailyData, deviceType, log);
+  const urlDetails = buildUrlDetails(dailyData, filteredCache, deviceType, log);
 
   log.info(`[${AUDIT_TYPE}] Processed ${totalUrls} URLs, ${dailyData.length} days of data`);
 

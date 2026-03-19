@@ -8,14 +8,18 @@ The audit runs once per site. The device type (mobile or desktop) is determined 
 
 ### Acceptance Criteria
 
-- [ ] Scheduled as `every-sunday`
-- [ ] Reads 28 days of pre-imported CWV data from S3
-- [ ] CWV metrics categorized using standard thresholds (LCP ≤ 2500/4000, CLS ≤ 0.1/0.25, INP ≤ 200/500)
-- [ ] Device type read from `site.getConfig().getHandlers()['cwv-trends-audit'].deviceType`
-- [ ] Creates/updates "Mobile Web Performance Trends Report" or "Desktop Web Performance Trends Report" opportunity by title match
-- [ ] Audit result payload matches schema: `metadata`, `trendData`, `summary`, `urlDetails`
-- [ ] URLs filtered by minimum 1000 pageviews, sorted descending
-- [ ] 100% unit test coverage
+- [x] Scheduled as `every-sunday`
+- [x] Reads 28 days of pre-imported CWV data from S3
+- [x] Requires minimum 28 days of data (fails with error if less)
+- [x] CWV metrics categorized using standard thresholds (LCP ≤ 2500/4000, CLS ≤ 0.1/0.25, INP ≤ 200/500)
+- [x] Device type read from `site.getConfig().getHandlers()['cwv-trends-audit'].deviceType`
+- [x] Creates/updates "Mobile Web Performance Trends Report" or "Desktop Web Performance Trends Report" opportunity by title match
+- [x] Audit result payload matches schema: `metadata`, `trendData`, `summary`, `urlDetails`
+- [x] URLs filtered by minimum 1000 pageviews, sorted descending
+- [x] URL validation added (rejects invalid/malformed URLs)
+- [x] JSON size validation (max 15 MB per file)
+- [x] Performance optimized with filtered URL caching
+- [x] 100% unit test coverage
 
 ---
 
@@ -55,6 +59,8 @@ cwv-trends-audit runner
 - **Bucket:** `S3_IMPORTER_BUCKET_NAME` (from environment)
 - **Key pattern:** `metrics/cwv-trends/cwv-trends-daily-{YYYY-MM-DD}.json`
 - **Content:** JSON array of URL entries, each with a `metrics` array containing device-specific CWV data
+- **Size limit:** Max 15 MB per JSON file (typical files are 9-10 MB)
+- **Minimum data:** Requires 28 days of data; audit fails with error if less than 28 days available
 - The audit reads from S3 only — no direct RUM API calls
 
 ### S3 Payload Structure (per date file)
@@ -83,12 +89,14 @@ cwv-trends-audit runner
 
 ## Data Processing
 
-### URL Filtering
+### URL Filtering & Validation
 
+- **URL validation:** Reject invalid/malformed URLs (must be valid http/https URLs)
 - Filter by configured device type (match `metrics[].deviceType`)
 - Minimum `MIN_PAGEVIEWS = 1000` pageviews
 - Skip URLs with `deviceType === 'undefined'` (log warning)
 - Sort by pageviews descending
+- **Performance:** Filtered URLs are cached to avoid redundant filtering operations
 
 ### CWV Categorization Thresholds
 
@@ -105,18 +113,28 @@ cwv-trends-audit runner
 
 ### Summary Calculation
 
-- **Current week:** Last 7 days of the 28-day window
-- **Previous week:** Days 15–21 of the 28-day window
+**Point-to-Point Comparison (NOT Averaging):**
+
+- **Current:** Value on the most recent day (day 28)
+- **Previous:** Value 7 days before the most recent day (day 21)
 - Each stat: `{ current, previous, change, percentageChange, status }`
 - Change = current - previous
 - Percentage change = ((current - previous) / previous) × 100
+
+The data from S3 already contains P75 values for the last 7 days, so we use the specific day's values directly, not averages.
+
+**Example:** If the audit runs on 2026-03-15:
+- `current` = counts on 2026-03-15
+- `previous` = counts on 2026-03-08
+- `change` = current - previous
 
 ### URL Details
 
 - Sequential `id` (string "1", "2", ...) sorted by pageviews descending
 - Percentage fields (`bounceRate`, `engagement`, `clickRate`) multiplied by 100
 - Raw fields (`pageviews`, `lcp`, `cls`, `inp`) kept as-is
-- Change values: current week average - previous week average
+- **Change values:** Point-to-point comparison (current day - 7 days before), NOT weekly averages
+- All URLs validated for proper format (must be valid http/https URLs)
 
 ---
 

@@ -13,6 +13,9 @@
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import { S3_BASE_PATH } from './constants.js';
 
+// Maximum allowed JSON size: 15 MB (larger than typical 9-10 MB files)
+const MAX_JSON_SIZE_BYTES = 15 * 1024 * 1024;
+
 export function formatDate(date) {
   return date.toISOString().split('T')[0];
 }
@@ -28,8 +31,48 @@ function buildS3Key(dateStr) {
 }
 
 /**
+ * Validates JSON data size and structure.
+ */
+function validateJsonData(raw, dateStr, log) {
+  // Parse if needed (before size check to ensure consistent validation)
+  let parsed = raw;
+  if (typeof raw === 'string') {
+    // Check size of string first
+    const sizeBytes = Buffer.byteLength(raw, 'utf8');
+    if (sizeBytes > MAX_JSON_SIZE_BYTES) {
+      log.warn(`JSON data for ${dateStr} exceeds size limit: ${(sizeBytes / 1024 / 1024).toFixed(2)} MB`);
+      return null;
+    }
+
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      log.warn(`Failed to parse JSON for date ${dateStr}`);
+      return null;
+    }
+  } else {
+    // For already-parsed objects, check serialized size
+    const serialized = JSON.stringify(raw);
+    const sizeBytes = Buffer.byteLength(serialized, 'utf8');
+    if (sizeBytes > MAX_JSON_SIZE_BYTES) {
+      log.warn(`JSON data for ${dateStr} exceeds size limit: ${(sizeBytes / 1024 / 1024).toFixed(2)} MB`);
+      return null;
+    }
+  }
+
+  // Validate structure
+  if (!parsed || !Array.isArray(parsed)) {
+    log.warn(`Invalid JSON structure for date ${dateStr}: expected array`);
+    return null;
+  }
+
+  return parsed;
+}
+
+/**
  * Reads CWV trend data from S3 for a given number of days ending on endDate.
  * Fetches all dates in parallel and skips missing ones gracefully.
+ * Validates JSON size and structure.
  *
  * @param {object} s3Client - AWS S3 client
  * @param {string} bucketName - S3 bucket name
@@ -49,18 +92,10 @@ export async function readTrendData(s3Client, bucketName, endDate, days, log) {
     promises.push(
       getObjectFromKey(s3Client, bucketName, key, log)
         .then((raw) => {
-          let parsed = raw;
-          if (typeof raw === 'string') {
-            try {
-              parsed = JSON.parse(raw);
-            } catch {
-              parsed = null;
-            }
-          }
-          if (parsed && Array.isArray(parsed)) {
+          const parsed = validateJsonData(raw, dateStr, log);
+          if (parsed) {
             return { date: dateStr, data: parsed };
           }
-          log.warn(`Empty or invalid S3 data for date ${dateStr}`);
           return null;
         })
         .catch(() => {

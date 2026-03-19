@@ -98,7 +98,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
 
   it('reads device type from site config', async () => {
     const urls = [buildUrl('https://ex.com/p1', 'desktop')];
-    readTrendDataStub.resolves(buildDays(['2025-11-28'], urls));
+    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner(
       'https://ex.com',
@@ -112,7 +112,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
 
   it('defaults to mobile when config has no deviceType', async () => {
     const urls = [buildUrl('https://ex.com/p1', 'mobile')];
-    readTrendDataStub.resolves(buildDays(['2025-11-28'], urls));
+    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
 
@@ -121,7 +121,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
 
   it('defaults to mobile when site has no config', async () => {
     const urls = [buildUrl('https://ex.com/p1', 'mobile')];
-    readTrendDataStub.resolves(buildDays(['2025-11-28'], urls));
+    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const site = { getId: () => 'site-1', getConfig: () => null };
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), site);
@@ -131,7 +131,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
 
   it('defaults to mobile when getConfig is undefined', async () => {
     const urls = [buildUrl('https://ex.com/p1', 'mobile')];
-    readTrendDataStub.resolves(buildDays(['2025-11-28'], urls));
+    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const site = { getId: () => 'site-1' };
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), site);
@@ -144,7 +144,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
       buildUrl('https://ex.com/m', 'mobile'),
       buildUrl('https://ex.com/d', 'desktop'),
     ];
-    readTrendDataStub.resolves(buildDays(['2025-11-28'], urls));
+    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
 
@@ -157,7 +157,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
       buildUrl('https://ex.com/high', 'mobile', { pageviews: 5000 }),
       buildUrl('https://ex.com/low', 'mobile', { pageviews: 500 }),
     ];
-    readTrendDataStub.resolves(buildDays(['2025-11-28'], urls));
+    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
 
@@ -171,7 +171,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
       buildUrl('https://ex.com/high', 'mobile', { pageviews: 8000 }),
       buildUrl('https://ex.com/mid', 'mobile', { pageviews: 5000 }),
     ];
-    readTrendDataStub.resolves(buildDays(['2025-11-28'], urls));
+    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
 
@@ -189,7 +189,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
       buildUrl('https://ex.com/ni', 'mobile', { pageviews: 4000, lcp: 3000, cls: 0.15, inp: 300 }),
       buildUrl('https://ex.com/poor', 'mobile', { pageviews: 3000, lcp: 5000, cls: 0.30, inp: 600 }),
     ];
-    readTrendDataStub.resolves(buildDays(['2025-11-28'], urls));
+    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
     const details = result.auditResult.urlDetails;
@@ -203,7 +203,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     const urls = [buildUrl('https://ex.com/p', 'mobile', {
       pageviews: 5000, lcp: null, cls: null, inp: null,
     })];
-    readTrendDataStub.resolves(buildDays(['2025-11-28'], urls));
+    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
 
@@ -214,7 +214,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     const urls = [buildUrl('https://ex.com/p', 'mobile', {
       pageviews: 5000, bounceRate: 0.253, engagement: 0.785, clickRate: 0.760,
     })];
-    readTrendDataStub.resolves(buildDays(['2025-11-28'], urls));
+    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
     const d = result.auditResult.urlDetails[0];
@@ -228,7 +228,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     const urls = [buildUrl('https://ex.com/p', 'mobile', {
       pageviews: 5000, bounceRate: null, engagement: null, clickRate: null,
     })];
-    readTrendDataStub.resolves(buildDays(['2025-11-28'], urls));
+    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
     const d = result.auditResult.urlDetails[0];
@@ -244,7 +244,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
       buildUrl('https://ex.com/poor', 'mobile', { pageviews: 3000, lcp: 5000, cls: 0.30, inp: 600 }),
       buildUrl('https://ex.com/ni', 'mobile', { pageviews: 2000, lcp: 3000, cls: 0.15, inp: 300 }),
     ];
-    readTrendDataStub.resolves(buildDays(['2025-11-28'], urls));
+    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
     const t = result.auditResult.trendData[0];
@@ -281,7 +281,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
 
   it('skips URLs with undefined device type', async () => {
     const urls = [buildUrl('https://ex.com/p', 'undefined', { pageviews: 5000 })];
-    readTrendDataStub.resolves(buildDays(['2025-11-28'], urls));
+    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const site = {
       getId: () => 'site-1',
@@ -300,7 +300,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
       buildUrl('https://ex.com/nulls', 'mobile', { lcp: null, cls: null, inp: null }),
       buildUrl('https://ex.com/good', 'mobile', { pageviews: 3000, lcp: 2000, cls: 0.05, inp: 100 }),
     ];
-    readTrendDataStub.resolves(buildDays(['2025-11-28'], urls));
+    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
 
@@ -309,7 +309,23 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     expect(result.auditResult.trendData[0].poor).to.equal(0);
   });
 
-  it('computes change as current week avg minus previous week avg', async () => {
+  it('skips invalid URLs', async () => {
+    const urls = [
+      { url: 'not-a-url', metrics: [{ deviceType: 'mobile', pageviews: 5000, lcp: 2000, cls: 0.08, inp: 180 }] },
+      { url: '', metrics: [{ deviceType: 'mobile', pageviews: 5000, lcp: 2000, cls: 0.08, inp: 180 }] },
+      { url: null, metrics: [{ deviceType: 'mobile', pageviews: 5000, lcp: 2000, cls: 0.08, inp: 180 }] },
+      buildUrl('https://ex.com/valid', 'mobile'),
+    ];
+    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
+
+    const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
+
+    expect(result.auditResult.urlDetails).to.have.lengthOf(1);
+    expect(result.auditResult.urlDetails[0].url).to.equal('https://ex.com/valid');
+    expect(log.warn).to.have.been.calledWith(sinon.match(/invalid URL/i));
+  });
+
+  it('computes change as point-to-point (current day vs 7 days before)', async () => {
     const prev = [buildUrl('https://ex.com/p', 'mobile', {
       pageviews: 4000, lcp: 2000, bounceRate: 0.30, engagement: 0.70, clickRate: 0.50,
       cls: 0.10, inp: 200,
@@ -320,12 +336,14 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     })];
 
     const dailyData = [];
-    for (let i = 0; i < 7; i += 1) {
-      const d = new Date('2025-11-14'); d.setDate(d.getDate() + i);
+    // Days 0-20: previous values
+    for (let i = 0; i < 21; i += 1) {
+      const d = new Date('2025-11-01'); d.setDate(d.getDate() + i);
       dailyData.push({ date: d.toISOString().split('T')[0], data: prev });
     }
+    // Days 21-27: current values
     for (let i = 0; i < 7; i += 1) {
-      const d = new Date('2025-11-21'); d.setDate(d.getDate() + i);
+      const d = new Date('2025-11-22'); d.setDate(d.getDate() + i);
       dailyData.push({ date: d.toISOString().split('T')[0], data: curr });
     }
     readTrendDataStub.resolves(dailyData);
@@ -333,8 +351,23 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
     const detail = result.auditResult.urlDetails[0];
 
+    // Point-to-point: day 27 (curr) - day 20 (prev)
     expect(detail.pageviewsChange).to.equal(2000);
     expect(detail.lcpChange).to.equal(500);
     expect(detail.bounceRateChange).to.equal(-10);
+  });
+
+  it('fails when less than 28 days of data', async () => {
+    const urls = [buildUrl('https://ex.com/p1', 'mobile')];
+    readTrendDataStub.resolves(buildDays(makeDates(20), urls));
+
+    try {
+      await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
+      expect.fail('Should have thrown error');
+    } catch (err) {
+      expect(err.message).to.include('Insufficient data');
+      expect(err.message).to.include('20 days found');
+      expect(err.message).to.include('28 required');
+    }
   });
 });
