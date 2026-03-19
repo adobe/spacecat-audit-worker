@@ -195,6 +195,80 @@ describe('internal-links finalization', () => {
     expect(updateAuditResult.firstCall.args[6]).to.have.property('internalLinksWorkflowCompletedAt');
   });
 
+  it('uses overrideBaseURL when normalizing and scoping linkchecker results', async () => {
+    const updateAuditResult = sinon.stub().resolves({});
+
+    const finalize = createFinalizeCrawlDetection({
+      auditType: 'broken-internal-links',
+      createContextLogger: (log) => log,
+      createConfigResolver: () => ({
+        getIncludedStatusBuckets: () => ['not_found_404', 'masked_by_linkchecker'],
+        getIncludedItemTypes: () => ['link'],
+      }),
+      calculatePriority: (links) => links,
+      mergeAndDeduplicate: (firstLinks, secondLinks) => [...secondLinks, ...firstLinks],
+      loadFinalResults: sinon.stub().resolves([]),
+      cleanupBatchState: sinon.stub().resolves(),
+      getTimeoutStatus: sinon.stub().returns({
+        percentUsed: 1,
+        safeTimeRemaining: 100000,
+        isApproachingTimeout: false,
+      }),
+      updateAuditResult,
+      opportunityAndSuggestionsStep: sinon.stub().resolves({ status: 'complete' }),
+      filterByStatusIfNeeded,
+      filterByItemTypes,
+    });
+
+    await finalize({
+      log: {
+        info: sinon.stub(),
+        warn: sinon.stub(),
+        error: sinon.stub(),
+        debug: sinon.stub(),
+      },
+      site: {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://example.com/en.html',
+        getConfig: () => ({
+          getFetchConfig: () => ({
+            overrideBaseURL: 'https://example.com/en',
+          }),
+        }),
+      },
+      env: {},
+      audit: {
+        getId: () => 'audit-1',
+        getAuditResult: () => ({
+          brokenInternalLinks: [],
+        }),
+      },
+      dataAccess: {},
+      linkCheckerResults: [
+        {
+          urlFrom: '/content/ASO/en/adventures.html',
+          urlTo: '/en/workshop',
+          itemType: 'link',
+          httpStatus: 404,
+        },
+      ],
+    }, { skipCrawlDetection: false });
+
+    expect(updateAuditResult.firstCall.args[2]).to.deep.equal([
+      {
+        urlFrom: 'https://example.com/en/adventures.html',
+        urlTo: 'https://example.com/en/workshop',
+        anchorText: '',
+        itemType: 'link',
+        detectionSource: 'linkchecker',
+        trafficDomain: 1,
+        httpStatus: 404,
+        statusBucket: 'not_found_404',
+        validity: 'UNKNOWN',
+      },
+    ]);
+  });
+
   it('preserves batch state when finalization fails before completion', async () => {
     const cleanupBatchState = sinon.stub().resolves();
     const updateAuditResult = sinon.stub().resolves({});

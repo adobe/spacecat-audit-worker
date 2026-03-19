@@ -15,6 +15,7 @@ import { createInternalLinksStepLogger } from './logging.js';
 import { classifyStatusBucket, isLinkInaccessible } from './helpers.js';
 import { isWithinAuditScope } from './subpath-filter.js';
 import { isSharedInternalResource } from './scope-utils.js';
+import { resolveInternalLinksBaseURL } from './base-url.js';
 
 function isOnAuditHost(url, baseURL) {
   try {
@@ -172,7 +173,7 @@ export function createFinalizeCrawlDetection({
       step: 'finalize-crawl-detection',
     });
     const shouldCleanup = !skipCrawlDetection;
-    const baseURL = typeof site.getBaseURL === 'function' ? site.getBaseURL() : '';
+    const baseURL = resolveInternalLinksBaseURL(site);
     let finalizationLockAcquired = false;
     let finalizationLockEtag = null;
 
@@ -191,6 +192,7 @@ export function createFinalizeCrawlDetection({
     const timeoutStatus = getTimeoutStatus(lambdaStartTime, context);
     log.info('====== Finalize: Merge and Generate Suggestions ======');
     log.info(`auditId: ${auditId}`);
+    log.info(`Using audit scope URL for finalization: ${baseURL}`);
     log.info(`Timeout status: ${timeoutStatus.percentUsed.toFixed(1)}% used, ${Math.floor(timeoutStatus.safeTimeRemaining / 1000)}s safe time remaining`);
 
     /* c8 ignore next 4 - Defensive timeout warning path depends on invocation timing */

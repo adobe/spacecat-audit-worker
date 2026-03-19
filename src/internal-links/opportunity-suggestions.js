@@ -10,7 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
-import { createInternalLinksConfigResolver } from './config.js';
+import {
+  createInternalLinksConfigResolver,
+} from './config.js';
+import { resolveInternalLinksBaseURL } from './base-url.js';
 import { createInternalLinksStepLogger } from './logging.js';
 
 export function createOpportunityAndSuggestionsStep({
@@ -55,6 +58,7 @@ export function createOpportunityAndSuggestionsStep({
     const maxAlternativeUrlsToSend = config.getMaxAlternativeUrlsToSend();
     const brightDataConfig = config.getBrightDataConfig();
     const mystiqueItemTypes = new Set(config.getMystiqueItemTypes());
+    const auditScopeURL = resolveInternalLinksBaseURL(site);
 
     const auditResultToUse = updatedAuditResult || audit.getAuditResult();
     const { brokenInternalLinks, success } = auditResultToUse;
@@ -159,8 +163,7 @@ export function createOpportunityAndSuggestionsStep({
       topPages = topPages.slice(0, maxUrlsToProcess);
     }
 
-    const baseURL = site.getBaseURL();
-    const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
+    const filteredTopPages = filterByAuditScope(topPages, auditScopeURL, { urlProperty: 'getUrl' }, log);
     log.info(`After audit scope filtering: ${filteredTopPages.length} top pages available`);
 
     const suggestionStatusesToProcess = [suggestionStatuses.NEW];
@@ -210,7 +213,7 @@ export function createOpportunityAndSuggestionsStep({
       const brightDataClient = BrightDataClient.createFrom(context);
 
       const processBrokenLink = async (brokenLink) => {
-        const searchUrl = buildLocaleSearchUrl(finalUrl || site.getBaseURL(), brokenLink.urlTo);
+        const searchUrl = buildLocaleSearchUrl(finalUrl || auditScopeURL, brokenLink.urlTo);
 
         const {
           results, keywords,
@@ -240,7 +243,7 @@ export function createOpportunityAndSuggestionsStep({
 
         let urlsSuggested = [best.link];
         if (validateBrightDataUrls) {
-          const validated = await filterBrokenSuggestedUrls(urlsSuggested, site.getBaseURL());
+          const validated = await filterBrokenSuggestedUrls(urlsSuggested, auditScopeURL);
           if (validated.length === 0) {
             return;
           }

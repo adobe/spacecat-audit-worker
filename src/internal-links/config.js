@@ -14,6 +14,11 @@ import { hasText } from '@adobe/spacecat-shared-utils';
 import { PAGES_PER_BATCH } from './crawl-detection.js';
 import { MAX_BROKEN_LINKS_REPORTED } from './result-utils.js';
 
+export {
+  getInternalLinksFetchConfig,
+  resolveInternalLinksBaseURL,
+} from './base-url.js';
+
 const MAX_URLS_TO_PROCESS = 100;
 const DEFAULT_LINKCHECKER_MIN_TIME_NEEDED_MS = 5 * 60 * 1000;
 const MAX_BROKEN_LINKS = 100;

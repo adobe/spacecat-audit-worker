@@ -15,6 +15,7 @@ import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { getScrapedDataForSiteId, limitConcurrency } from '../support/utils.js';
 import { handleOutdatedSuggestions } from '../utils/data-access.js';
+import { resolveInternalLinksBaseURL } from './base-url.js';
 import { filterByAuditScope, extractPathPrefix } from './subpath-filter.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
@@ -46,7 +47,7 @@ function getDefaultSuggestedUrls(site, entry = {}) {
     return entry.urlsSuggested;
   }
 
-  const siteBaseURL = site?.getBaseURL?.();
+  const siteBaseURL = resolveInternalLinksBaseURL(site);
   if (siteBaseURL) {
     return [siteBaseURL];
   }
@@ -110,7 +111,7 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
 
   // Filter siteData and headerLinks by audit scope (subpath/locale) if baseURL has a subpath
   // This ensures AI only sees URLs from the same locale as alternatives
-  const baseURL = site.getBaseURL();
+  const baseURL = resolveInternalLinksBaseURL(site);
   const filteredSiteData = filterByAuditScope(siteData, baseURL, {}, log);
   const filteredHeaderLinks = filterByAuditScope(headerLinks, baseURL, {}, log);
 

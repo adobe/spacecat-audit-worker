@@ -162,6 +162,49 @@ describe('internal-links rum-detection', () => {
     );
   });
 
+  it('uses overrideBaseURL when filtering rum links by audit scope', async () => {
+    const isWithinAuditScope = sinon.stub().returns(true);
+    const rumApiClient = {
+      query: sinon.stub().resolves([
+        {
+          url_from: 'https://example.com/en/source',
+          url_to: 'https://example.com/en/missing',
+          traffic_domain: 42,
+        },
+      ]),
+    };
+    const isLinkInaccessible = sinon.stub().resolves({
+      isBroken: true,
+      inconclusive: false,
+      httpStatus: 404,
+      statusBucket: 'not_found_404',
+      contentType: 'text/html',
+    });
+    const log = createLog();
+    const { runAuditAndImportTopPagesStep } = createSteps({ isWithinAuditScope, isLinkInaccessible });
+
+    await runAuditAndImportTopPagesStep({
+      log,
+      site: {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://example.com/en.html',
+        getConfig: () => ({
+          getFetchConfig: () => ({
+            overrideBaseURL: 'https://example.com/en',
+          }),
+        }),
+      },
+      rumApiClient,
+      finalUrl: 'https://example.com',
+      audit: {
+        getId: () => 'audit-1',
+      },
+    });
+
+    expect(isWithinAuditScope.firstCall.args[1]).to.equal('https://example.com/en');
+    expect(isWithinAuditScope.secondCall.args[1]).to.equal('https://example.com/en');
+  });
+
   it('strips hashes from persisted rum source and target URLs', async () => {
     const rumApiClient = {
       query: sinon.stub().resolves([

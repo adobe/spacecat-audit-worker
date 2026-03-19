@@ -21,6 +21,7 @@ import {
   isInternalLinksContextLogger,
 } from './logging.js';
 import { isSharedInternalResource } from './scope-utils.js';
+import { resolveInternalLinksBaseURL } from './base-url.js';
 
 const AUDIT_TYPE = 'broken-internal-links';
 
@@ -743,7 +744,7 @@ export async function detectBrokenLinksFromCrawlBatch({
     ? baseLog
     : createInternalLinksAuditLogger(baseLog, AUDIT_TYPE, site.getId(), auditId);
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
-  const baseURL = site.getBaseURL();
+  const baseURL = resolveInternalLinksBaseURL(site);
   const baseHostname = new URL(baseURL).hostname.replace(/^www\./, '');
   /* c8 ignore start - config fallback parsing is defensive */
   const internalLinksConfig = site?.getConfig?.()?.getHandlers?.()?.['broken-internal-links']?.config || {};

@@ -643,6 +643,45 @@ describe('Broken internal links audit', () => {
     expect(result.urls).to.deep.include({ url: 'https://example.com/included2' });
   }).timeout(10000);
 
+  it('submitForScraping should prefer overrideBaseURL for audit scope filtering', async () => {
+    const mockSiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+        { getUrl: () => 'https://example.com/en/adventures.html' },
+      ]),
+    };
+
+    const mockSite = {
+      ...site,
+      getBaseURL: () => 'https://example.com/en.html',
+      getConfig: () => ({
+        getIncludedURLs: () => [],
+        getFetchConfig: () => ({
+          overrideBaseURL: 'https://example.com/en',
+        }),
+      }),
+    };
+
+    const mockAudit = {
+      getId: () => 'audit-123',
+      getAuditResult: () => ({ success: true }),
+      getFullAuditRef: () => 'www.example.com',
+    };
+
+    const testContext = {
+      ...context,
+      site: mockSite,
+      audit: mockAudit,
+      dataAccess: {
+        ...context.dataAccess,
+        SiteTopPage: mockSiteTopPage,
+      },
+    };
+
+    const result = await submitForScraping(testContext);
+
+    expect(result.urls).to.deep.equal([{ url: 'https://example.com/en/adventures.html' }]);
+  }).timeout(10000);
+
 
   it('submitForScraping should filter out unscrape-able files', async () => {
     const mockSiteTopPage = {

@@ -16,6 +16,7 @@ import { expect } from 'chai';
 import {
   InternalLinksConfigResolver,
   createInternalLinksConfigResolver,
+  resolveInternalLinksBaseURL,
 } from '../../../src/internal-links/config.js';
 
 function createSite(config = {}, deliveryConfig = {}) {
@@ -250,6 +251,69 @@ describe('internal-links config resolver', () => {
       camelCaseValue: true,
       legacyValue: false,
     });
+  });
+
+  it('prefers the legacy LinkChecker flag in debug info when camelCase is absent', () => {
+    const resolver = new InternalLinksConfigResolver(createSite({
+      isLinkcheckerEnabled: true,
+    }), {});
+
+    expect(resolver.getLinkCheckerFlagDebugInfo()).to.deep.equal({
+      enabled: true,
+      source: 'isLinkcheckerEnabled',
+      camelCaseRaw: undefined,
+      legacyRaw: true,
+      camelCaseValue: undefined,
+      legacyValue: true,
+    });
+  });
+
+  it('prefers fetchConfig.overrideBaseURL for internal-links scope when valid', () => {
+    const site = {
+      getBaseURL: () => 'https://example.com/en.html',
+      getConfig: () => ({
+        getFetchConfig: () => ({
+          overrideBaseURL: 'https://example.com/en',
+        }),
+      }),
+    };
+
+    expect(resolveInternalLinksBaseURL(site)).to.equal('https://example.com/en');
+  });
+
+  it('reads overrideBaseURL from nested config.fetchConfig fallback', () => {
+    const site = {
+      getBaseURL: () => 'https://example.com/en.html',
+      getConfig: () => ({
+        config: {
+          fetchConfig: {
+            overrideBaseURL: 'https://example.com/en',
+          },
+        },
+      }),
+    };
+
+    expect(resolveInternalLinksBaseURL(site)).to.equal('https://example.com/en');
+  });
+
+  it('falls back to site baseURL when overrideBaseURL is missing or invalid', () => {
+    const invalidOverrideSite = {
+      getBaseURL: () => 'https://example.com/en.html',
+      getConfig: () => ({
+        getFetchConfig: () => ({
+          overrideBaseURL: 'not-a-valid-url',
+        }),
+      }),
+    };
+    const missingOverrideSite = {
+      getBaseURL: () => 'https://example.com/en.html',
+      getConfig: () => ({
+        getFetchConfig: () => ({}),
+      }),
+    };
+
+    expect(resolveInternalLinksBaseURL(invalidOverrideSite)).to.equal('https://example.com/en.html');
+    expect(resolveInternalLinksBaseURL(missingOverrideSite)).to.equal('https://example.com/en.html');
   });
 
   it('prefers deliveryConfig program and environment IDs over handler config', () => {
