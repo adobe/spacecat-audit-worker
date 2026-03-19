@@ -1,3 +1,31 @@
+# [1.365.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.364.3...v1.365.0) (2026-03-19)
+
+
+### Features
+
+* add cited-analysis audit handler ([#2144](https://github.com/adobe/spacecat-audit-worker/issues/2144)) ([2de26c6](https://github.com/adobe/spacecat-audit-worker/commit/2de26c6c1c5b9f71519938b5abb9b138c55f6663))
+
+## [1.364.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.364.2...v1.364.3) (2026-03-19)
+
+
+### Bug Fixes
+
+* handle empty sentiment guidelines gracefully in Reddit and YouTube analysis ([#2169](https://github.com/adobe/spacecat-audit-worker/issues/2169)) ([b0a7c06](https://github.com/adobe/spacecat-audit-worker/commit/b0a7c06f462841667fd9d9513127664da8dfec62))
+
+## [1.364.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.364.1...v1.364.2) (2026-03-19)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2167](https://github.com/adobe/spacecat-audit-worker/issues/2167)) ([6af64f6](https://github.com/adobe/spacecat-audit-worker/commit/6af64f62af0f57610df9613494affd133a912b0a))
+
+## [1.364.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.364.0...v1.364.1) (2026-03-19)
+
+
+### Bug Fixes
+
+* add per-environment reserved concurrency via CLI flags ([#2158](https://github.com/adobe/spacecat-audit-worker/issues/2158)) ([88d862e](https://github.com/adobe/spacecat-audit-worker/commit/88d862ee822c9004bc7102efbb8927231ba3ba5f))
+
 # [1.364.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.363.2...v1.364.0) (2026-03-19)
 
 

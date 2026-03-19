@@ -22,13 +22,13 @@ import { MockContextBuilder } from '../../shared.js';
 use(sinonChai);
 use(chaiAsPromised);
 
-describe('YouTube Analysis Handler', () => {
+describe('Cited Analysis Handler', () => {
   let sandbox;
   let context;
   let mockSite;
   let mockAudit;
   let mockStoreClient;
-  let youtubeAnalysisHandler;
+  let citedAnalysisHandler;
   let StoreEmptyError;
 
   const baseURL = 'https://example.com';
@@ -36,16 +36,16 @@ describe('YouTube Analysis Handler', () => {
   const auditId = 'test-audit-id';
 
   const mockUrls = [
-    { url: 'https://www.youtube.com/watch?v=abc', type: 'youtube', metadata: {} },
-    { url: 'https://www.youtube.com/watch?v=Qdef', type: 'youtube', metadata: {} },
+    { url: 'https://techblog.example.com/review-of-example', type: 'top-cited-analysis', metadata: {} },
+    { url: 'https://news.example.com/example-corp-article', type: 'top-cited-analysis', metadata: {} },
   ];
 
   const mockSentimentConfig = {
     topics: [
-      { topicId: 'topic-1', name: 'Video Content Quality', subPrompts: ['engagement', 'production value'] },
+      { topicId: 'topic-1', name: 'Brand Perception', subPrompts: ['brand mentions', 'sentiment'] },
     ],
     guidelines: [
-      { guidelineId: 'guide-1', name: 'YouTube Best Practices', instruction: 'Focus on viewer engagement', audits: ['youtube-analysis'] },
+      { guidelineId: 'guide-1', name: 'Cited Analysis Best Practices', instruction: 'Focus on LLM citability', audits: ['cited-analysis'] },
     ],
   };
 
@@ -70,10 +70,22 @@ describe('YouTube Analysis Handler', () => {
       createFrom: sandbox.stub().returns(mockStoreClient),
     };
 
-    youtubeAnalysisHandler = await esmock('../../../src/youtube-analysis/handler.js', {
+    citedAnalysisHandler = await esmock('../../../src/cited-analysis/handler.js', {
       '../../../src/utils/store-client.js': {
         default: mockStoreClientClass,
         StoreEmptyError,
+        URL_TYPES: {
+          WIKIPEDIA: 'wikipedia-analysis',
+          REDDIT: 'reddit-analysis',
+          YOUTUBE: 'youtube-analysis',
+          CITED: 'top-cited-analysis',
+        },
+        GUIDELINE_TYPES: {
+          WIKIPEDIA_ANALYSIS: 'wikipedia-analysis',
+          REDDIT_ANALYSIS: 'reddit-analysis',
+          YOUTUBE_ANALYSIS: 'youtube-analysis',
+          CITED_ANALYSIS: 'cited-analysis',
+        },
       },
     });
 
@@ -127,26 +139,26 @@ describe('YouTube Analysis Handler', () => {
 
   describe('Handler Export', () => {
     it('should export a valid audit handler', () => {
-      expect(youtubeAnalysisHandler.default).to.be.an('object');
-      expect(youtubeAnalysisHandler.default).to.have.property('runner');
-      expect(youtubeAnalysisHandler.default.runner).to.be.a('function');
+      expect(citedAnalysisHandler.default).to.be.an('object');
+      expect(citedAnalysisHandler.default).to.have.property('runner');
+      expect(citedAnalysisHandler.default.runner).to.be.a('function');
     });
 
     it('should have URL resolver configured', () => {
-      expect(youtubeAnalysisHandler.default).to.have.property('urlResolver');
-      expect(youtubeAnalysisHandler.default.urlResolver).to.be.a('function');
+      expect(citedAnalysisHandler.default).to.have.property('urlResolver');
+      expect(citedAnalysisHandler.default.urlResolver).to.be.a('function');
     });
 
     it('should have post processors configured', () => {
-      expect(youtubeAnalysisHandler.default).to.have.property('postProcessors');
-      expect(youtubeAnalysisHandler.default.postProcessors).to.be.an('array');
-      expect(youtubeAnalysisHandler.default.postProcessors).to.have.lengthOf(1);
+      expect(citedAnalysisHandler.default).to.have.property('postProcessors');
+      expect(citedAnalysisHandler.default.postProcessors).to.be.an('array');
+      expect(citedAnalysisHandler.default.postProcessors).to.have.lengthOf(1);
     });
   });
 
-  describe('runYouTubeAnalysisAudit (via runner)', () => {
+  describe('runCitedAnalysisAudit (via runner)', () => {
     it('should return pending_analysis status with config and store data when successful', async () => {
-      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
+      const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.status).to.equal('pending_analysis');
@@ -167,41 +179,39 @@ describe('YouTube Analysis Handler', () => {
     });
 
     it('should call StoreClient with correct parameters', async () => {
-      await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
+      await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'youtube-analysis');
-      expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, 'youtube-analysis');
+      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'top-cited-analysis');
+      expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, 'cited-analysis');
+    });
+
+    it('should succeed with empty guidelines when guidelinesStore is empty', async () => {
+      mockStoreClient.getGuidelines.rejects(new StoreEmptyError('guidelinesStore', 'N/A', 'No guidelines found'));
+
+      const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.storeData.sentimentConfig).to.deep.equal({ topics: [], guidelines: [] });
+    });
+
+    it('should re-throw non-StoreEmptyError from getGuidelines', async () => {
+      mockStoreClient.getGuidelines.rejects(new Error('Network failure'));
+
+      const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.include('Network failure');
     });
 
     it('should return error when urlStore returns empty', async () => {
-      mockStoreClient.getUrls.rejects(new StoreEmptyError('urlStore', siteId, 'No youtube-analysis URLs found'));
+      mockStoreClient.getUrls.rejects(new StoreEmptyError('urlStore', siteId, 'No top-cited-analysis URLs found'));
 
-      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
+      const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.include('urlStore returned empty results');
       expect(result.auditResult.storeName).to.equal('urlStore');
       expect(context.log.error).to.have.been.called;
-    });
-
-    it('should proceed with empty guidelines when guidelinesStore returns empty', async () => {
-      mockStoreClient.getGuidelines.rejects(new StoreEmptyError('guidelinesStore', 'N/A', 'No guidelines found'));
-
-      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.storeData.sentimentConfig.topics).to.deep.equal([]);
-      expect(result.auditResult.storeData.sentimentConfig.guidelines).to.deep.equal([]);
-      expect(context.log.info).to.have.been.calledWithMatch(/No sentiment config found/);
-    });
-
-    it('should rethrow non-StoreEmptyError from getGuidelines', async () => {
-      mockStoreClient.getGuidelines.rejects(new Error('Network timeout'));
-
-      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
-
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.include('Network timeout');
     });
 
     it('should return error when company name is not configured', async () => {
@@ -214,7 +224,7 @@ describe('YouTube Analysis Handler', () => {
       });
       mockSite.getBaseURL.returns('');
 
-      const result = await youtubeAnalysisHandler.default.runner('', context, mockSite);
+      const result = await citedAnalysisHandler.default.runner('', context, mockSite);
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.equal('No company name configured for this site');
@@ -231,7 +241,7 @@ describe('YouTube Analysis Handler', () => {
       });
       mockSite.getBaseURL.returns('https://bmw.com');
 
-      const result = await youtubeAnalysisHandler.default.runner('https://bmw.com', context, mockSite);
+      const result = await citedAnalysisHandler.default.runner('https://bmw.com', context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.config.companyName).to.equal('https://bmw.com');
@@ -241,7 +251,7 @@ describe('YouTube Analysis Handler', () => {
       mockSite.getConfig.returns(null);
       mockSite.getBaseURL.returns('https://test-company.com');
 
-      const result = await youtubeAnalysisHandler.default.runner('https://test-company.com', context, mockSite);
+      const result = await citedAnalysisHandler.default.runner('https://test-company.com', context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.config.companyName).to.equal('https://test-company.com');
@@ -250,7 +260,7 @@ describe('YouTube Analysis Handler', () => {
     it('should handle general errors during execution', async () => {
       mockSite.getConfig.throws(new Error('Config error'));
 
-      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
+      const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.equal('Config error');
@@ -280,14 +290,14 @@ describe('YouTube Analysis Handler', () => {
         },
       };
 
-      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
       await postProcessor(baseURL, auditData, context);
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       expect(context.sqs.sendMessage).to.have.been.calledWith(
         'spacecat-to-mystique',
         sinon.match({
-          type: 'guidance:youtube-analysis',
+          type: 'guidance:cited-analysis',
           siteId,
           url: baseURL,
           auditId,
@@ -299,12 +309,32 @@ describe('YouTube Analysis Handler', () => {
             competitorRegion: 'US',
             industry: 'Technology',
             brandKeywords: ['example'],
-            urls: mockUrls,
             topics: mockSentimentConfig.topics,
             guidelines: mockSentimentConfig.guidelines,
           }),
         }),
       );
+    });
+
+    it('should send raw urls when no topics are available', async () => {
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: {
+            urls: mockUrls,
+            sentimentConfig: { topics: [], guidelines: [] },
+          },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.urls).to.deep.equal(mockUrls);
     });
 
     it('should skip sending message when audit failed', async () => {
@@ -316,12 +346,12 @@ describe('YouTube Analysis Handler', () => {
         },
       };
 
-      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
       const result = await postProcessor(baseURL, auditData, context);
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.info).to.have.been.calledWith('[YouTube] Audit failed, skipping Mystique message');
+      expect(context.log.info).to.have.been.calledWith('[Cited] Audit failed, skipping Mystique message');
     });
 
     it('should skip sending message when SQS is not configured', async () => {
@@ -336,11 +366,11 @@ describe('YouTube Analysis Handler', () => {
         },
       };
 
-      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
       const result = await postProcessor(baseURL, auditData, context);
 
       expect(result).to.deep.equal(auditData);
-      expect(context.log.warn).to.have.been.calledWith('[YouTube] SQS or Mystique queue not configured, skipping message');
+      expect(context.log.warn).to.have.been.calledWith('[Cited] SQS or Mystique queue not configured, skipping message');
     });
 
     it('should skip sending message when queue env is not set', async () => {
@@ -355,7 +385,7 @@ describe('YouTube Analysis Handler', () => {
         },
       };
 
-      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
       const result = await postProcessor(baseURL, auditData, context);
 
       expect(result).to.deep.equal(auditData);
@@ -373,12 +403,12 @@ describe('YouTube Analysis Handler', () => {
         },
       };
 
-      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
       const result = await postProcessor(baseURL, auditData, context);
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.warn).to.have.been.calledWith('[YouTube] Site not found, skipping Mystique message');
+      expect(context.log.warn).to.have.been.calledWith('[Cited] Site not found, skipping Mystique message');
     });
 
     it('should throw error when SQS send fails', async () => {
@@ -393,9 +423,9 @@ describe('YouTube Analysis Handler', () => {
         },
       };
 
-      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
-      expect(context.log.error).to.have.been.calledWith('[YouTube] Failed to send Mystique message: SQS Error');
+      expect(context.log.error).to.have.been.calledWith('[Cited] Failed to send Mystique message: SQS Error');
     });
   });
 });
