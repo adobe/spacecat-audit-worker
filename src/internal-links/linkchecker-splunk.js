@@ -19,6 +19,7 @@ const DEFAULT_MAX_RESULTS = 10000;
 const TRANSIENT_SPLUNK_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
 const SPLUNK_REQUEST_MAX_RETRIES = 3;
 const SPLUNK_RETRY_BASE_DELAY_MS = 1000;
+const DEFAULT_SPLUNK_SEARCH_NAMESPACE = 'admin/search';
 
 function escapeSplunkString(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -28,12 +29,7 @@ function getSplunkSearchNamespace(context = {}) {
   const configuredNamespace = context?.env?.SPLUNK_SEARCH_NAMESPACE;
   /* c8 ignore next - fallback coercion branch */
   const normalizedNamespace = String(configuredNamespace || '').replace(/^\/+|\/+$/g, '');
-
-  if (!normalizedNamespace) {
-    throw new Error('SPLUNK_SEARCH_NAMESPACE must be configured for internal-links LinkChecker');
-  }
-
-  return normalizedNamespace;
+  return normalizedNamespace || DEFAULT_SPLUNK_SEARCH_NAMESPACE;
 }
 
 async function fetchSplunkAPIWithRetry(client, request, log) {

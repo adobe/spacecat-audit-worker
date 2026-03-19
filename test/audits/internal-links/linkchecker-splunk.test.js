@@ -148,17 +148,32 @@ describe('linkchecker-splunk', () => {
       );
     });
 
-    it('throws when configured Splunk namespace is blank after normalization', async () => {
+    it('falls back to admin/search when configured Splunk namespace is blank after normalization', async () => {
       mockClient.env = { SPLUNK_SEARCH_NAMESPACE: '///' };
-      await expect(submitSplunkJob(mockClient, 'search query', mockLog))
-        .to.be.rejectedWith('SPLUNK_SEARCH_NAMESPACE must be configured');
+      mockClient.fetchAPI.resolves({
+        status: 201,
+        json: sandbox.stub().resolves({ sid: 'job-id-123' }),
+      });
+
+      await submitSplunkJob(mockClient, 'search query', mockLog);
+
+      expect(mockClient.fetchAPI.firstCall.args[0]).to.equal(
+        'https://splunk.example.com:8089/servicesNS/admin/search/search/search/jobs',
+      );
     });
 
-    it('throws when client env is missing', async () => {
+    it('falls back to admin/search when client env is missing', async () => {
       mockClient.env = undefined;
+      mockClient.fetchAPI.resolves({
+        status: 201,
+        json: sandbox.stub().resolves({ sid: 'job-id-123' }),
+      });
 
-      await expect(submitSplunkJob(mockClient, 'search query', mockLog))
-        .to.be.rejectedWith('SPLUNK_SEARCH_NAMESPACE must be configured');
+      await submitSplunkJob(mockClient, 'search query', mockLog);
+
+      expect(mockClient.fetchAPI.firstCall.args[0]).to.equal(
+        'https://splunk.example.com:8089/servicesNS/admin/search/search/search/jobs',
+      );
     });
 
     it('throws error if submission fails', async () => {
