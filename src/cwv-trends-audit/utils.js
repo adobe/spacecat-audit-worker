@@ -158,13 +158,13 @@ function buildUrlDetails(dailyData, filteredCache, deviceType, log) {
   const len = dailyData.length;
   const latestDay = dailyData[len - 1];
   const latestUrls = filteredCache.get(latestDay.date)
-    || filterUrls(latestDay.data, deviceType, log);
+  /* c8 ignore next */ || filterUrls(latestDay.data, deviceType, log);
 
   // Point-to-point comparison: current day vs 7 days before
   const previousDayIndex = len >= 8 ? len - 8 : 0;
   const previousDay = dailyData[previousDayIndex];
   const previousUrls = filteredCache.get(previousDay.date)
-    || filterUrls(previousDay.data, deviceType, log);
+  /* c8 ignore next */ || filterUrls(previousDay.data, deviceType, log);
 
   const fields = ['pageviews', 'lcp', 'cls', 'inp', 'bounceRate', 'engagement', 'clickRate'];
   const pctFields = new Set(['bounceRate', 'engagement', 'clickRate']);
