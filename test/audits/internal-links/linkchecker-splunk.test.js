@@ -137,6 +137,16 @@ describe('linkchecker-splunk', () => {
 
       expect(query).to.not.include('like(urlFrom');
     });
+
+    it('does not add a scope filter when scopeBaseURL is invalid', () => {
+      const query = buildLinkCheckerQuery({
+        programId: 'program123',
+        environmentId: 'env456',
+        scopeBaseURL: 'not a valid url',
+      });
+
+      expect(query).to.not.include('like(urlFrom');
+    });
   });
 
   describe('submitSplunkJob', () => {
