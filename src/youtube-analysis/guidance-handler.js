@@ -135,6 +135,8 @@ export default async function handler(message, context) {
       }),
     });
 
+    const status = opportunityData.status || 'NEW';
+    opportunity.setStatus(status);
     opportunity.setData({
       ...opportunity.getData(),
       fullAnalysis: analysisData,

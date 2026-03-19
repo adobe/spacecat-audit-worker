@@ -53,6 +53,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       getId: sandbox.stub().returns('opp-123'),
       getData: sandbox.stub().returns({ existingData: true }),
       setData: sandbox.stub(),
+      setStatus: sandbox.stub(),
       save: sandbox.stub().resolves(),
     };
 
@@ -122,6 +123,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(result.status).to.equal(200);
       expect(convertToOpportunityStub).to.have.been.calledOnce;
       expect(syncSuggestionsStub).to.have.been.calledOnce;
+      expect(mockOpportunity.setStatus).to.have.been.calledWith('NEW');
       expect(mockOpportunity.setData).to.have.been.called;
       expect(mockOpportunity.save).to.have.been.called;
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Successfully processed Reddit analysis/));
@@ -154,6 +156,26 @@ describe('Reddit Analysis Guidance Handler', () => {
       const convertCall = convertToOpportunityStub.firstCall;
       const propsArg = convertCall.args[5];
       expect(propsArg.opportunityData).to.deep.equal(opportunityData);
+    });
+
+    it('should set status from opportunityData when provided by Mystique', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: { status: 'IGNORED' },
+            suggestions: [
+              { id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' },
+            ],
+          },
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockOpportunity.setStatus).to.have.been.calledWith('IGNORED');
     });
 
     it('should return noContent when no suggestions found', async () => {
