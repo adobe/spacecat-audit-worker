@@ -392,6 +392,30 @@ describe('internal-links rum-detection', () => {
     expect(log.error).to.have.been.calledWith('RUM detection audit failed: audit failed with error: upstream down');
   });
 
+  it('uses the default LinkChecker config resolver when none is provided', async () => {
+    const rumApiClient = {
+      query: sinon.stub().rejects(new Error('upstream down')),
+    };
+    const log = createLog();
+    const { runAuditAndImportTopPagesStep } = createInternalLinksRumSteps({
+      auditType: 'broken-internal-links',
+      interval: 30,
+      createContextLogger: (baseLog) => baseLog,
+      createRUMAPIClient: sinon.stub(),
+      resolveFinalUrl: sinon.stub().resolves('https://example.com'),
+      isLinkInaccessible: sinon.stub(),
+      calculatePriority: (links) => links,
+      isWithinAuditScope: sinon.stub().returns(true),
+    });
+
+    await expect(runAuditAndImportTopPagesStep({
+      log,
+      site: createSite(),
+      rumApiClient,
+      finalUrl: 'https://example.com',
+    })).to.be.rejectedWith('audit failed with error: upstream down');
+  });
+
   it('continues from the top-pages step when rum detection fails and LinkChecker is enabled', async () => {
     const rumApiClient = {
       query: sinon.stub().rejects(new Error('upstream down')),

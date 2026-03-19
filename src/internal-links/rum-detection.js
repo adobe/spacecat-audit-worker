@@ -11,6 +11,7 @@
  */
 
 import { createInternalLinksStepLogger } from './logging.js';
+import { getInternalLinksFetchConfig } from './base-url.js';
 
 const RUM_VALIDATION_CONCURRENCY = 10;
 
@@ -61,8 +62,11 @@ export function createInternalLinksRumSteps({
       step: 'rum-detection',
     });
     const finalUrl = context?.finalUrl || await resolveFinalUrl(site, context);
+    const siteBaseURL = site.getBaseURL();
+    const { overrideBaseURL } = getInternalLinksFetchConfig(site);
 
     log.info('====== RUM Detection Phase ======');
+    log.info(`RUM resolver v2: siteBaseURL=${siteBaseURL}, overrideBaseURL=${overrideBaseURL || 'none'}, resolvedRumDomain=${finalUrl}`);
     log.info(`Site: ${site.getId()}, Domain: ${finalUrl}`);
 
     try {
@@ -93,7 +97,7 @@ export function createInternalLinksRumSteps({
         };
       }
 
-      const baseURL = site.getBaseURL();
+      const baseURL = siteBaseURL;
       const scopedInternal404Links = internal404Links.filter((link) => (
         isWithinAuditScope(link.url_from, baseURL)
         && isWithinAuditScope(link.url_to, baseURL)
