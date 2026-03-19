@@ -83,6 +83,10 @@ export class StepAudit extends BaseAudit {
     if (step.destination === AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT) {
       const scrapeClient = ScrapeClient.createFrom(context);
       const payload = destination.formatPayload(stepResult, auditContext, context);
+      if (stepResult?.status === 'skipped' || !Array.isArray(payload?.urls) || payload.urls.length === 0) {
+        log.info(`Skipping scrapeJob creation for step ${step.name}: no URLs to scrape`);
+        return stepResult;
+      }
       log.debug(`Creating new scrapeJob with the ScrapeClient. Payload: ${JSON.stringify(payload)}`);
       const scrapeJob = await scrapeClient.createScrapeJob(payload);
       log.info(`Created scrapeJob with id: ${scrapeJob.id}`);

@@ -436,6 +436,51 @@ describe('Step-based Audit Tests', () => {
       expect(context.log.info).to.have.been.calledWith('Created scrapeJob with id: scrape-job-123');
     });
 
+    it('skips SCRAPE_CLIENT job creation when the step returns no URLs', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      const mockScrapeClient = {
+        createScrapeJob: sandbox.stub().resolves({ id: 'scrape-job-123' }),
+      };
+      sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
+
+      const scrapeAudit = new AuditBuilder()
+        .addStep('scrape-step', async () => ({
+          status: 'skipped',
+          urls: [],
+          siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        }), AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+        .addStep('final', async () => ({ status: 'complete' }))
+        .build();
+
+      const existingAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.findById.resolves(existingAudit);
+
+      const scrapeMessage = {
+        type: 'content-audit',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        auditContext: {
+          next: 'scrape-step',
+          auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
+        },
+      };
+
+      const result = await scrapeAudit.run(scrapeMessage, context);
+
+      expect(result.status).to.equal(200);
+      expect(ScrapeClient.createFrom).to.have.been.calledOnce;
+      expect(mockScrapeClient.createScrapeJob).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match('Skipping scrapeJob creation for step scrape-step: no URLs to scrape'),
+      );
+    });
+
     it('loads scrape result paths when scrapeJobId is provided', async () => {
       // Mock HTTP request for URL resolution
       nock('https://space.cat')

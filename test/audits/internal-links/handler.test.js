@@ -723,6 +723,7 @@ describe('Broken internal links audit', () => {
     const result = await submitForScraping(testContext);
 
     // All URLs should be filtered out (PDFs are unscrape-able)
+    expect(result.status).to.equal('skipped');
     expect(result.urls).to.be.an('array');
     expect(result.urls.length).to.equal(0);
   }).timeout(10000);

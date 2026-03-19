@@ -79,6 +79,7 @@ export function createSubmitForScraping({
       log.warn('No URLs available for scraping');
       log.info('==========================================');
       return {
+        status: 'skipped',
         auditResult: audit.getAuditResult(),
         fullAuditRef: audit.getFullAuditRef(),
         urls: [],
