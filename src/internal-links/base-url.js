@@ -11,6 +11,7 @@
  */
 
 import { isValidUrl } from '@adobe/spacecat-shared-utils';
+import { wwwUrlResolver } from '../common/base-audit.js';
 
 export function getInternalLinksFetchConfig(site) {
   const siteConfig = site?.getConfig?.();
@@ -27,4 +28,13 @@ export function resolveInternalLinksBaseURL(site) {
   }
 
   return site?.getBaseURL?.() || '';
+}
+
+export async function resolveInternalLinksRumDomain(site, context) {
+  return wwwUrlResolver({
+    getBaseURL: () => site?.getBaseURL?.(),
+    getConfig: () => ({
+      getFetchConfig: () => ({}),
+    }),
+  }, context);
 }

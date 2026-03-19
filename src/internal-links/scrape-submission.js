@@ -13,7 +13,6 @@
 import {
   createInternalLinksConfigResolver,
 } from './config.js';
-import { resolveInternalLinksBaseURL } from './base-url.js';
 import { createInternalLinksStepLogger } from './logging.js';
 
 export function createSubmitForScraping({
@@ -63,8 +62,7 @@ export function createSubmitForScraping({
     let finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
     log.info(`Merged URLs: ${topPagesUrls.length} (Ahrefs) + ${includedURLs.length} (manual) = ${finalUrls.length} unique`);
 
-    const baseURL = resolveInternalLinksBaseURL(site);
-    log.info(`Using audit scope URL for scraping: ${baseURL}`);
+    const baseURL = site.getBaseURL();
     finalUrls = finalUrls.filter((url) => isWithinAuditScope(url, baseURL));
     log.info(`After audit scope filtering: ${finalUrls.length} URLs`);
 

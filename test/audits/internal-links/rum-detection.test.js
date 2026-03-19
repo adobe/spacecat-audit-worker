@@ -162,7 +162,7 @@ describe('internal-links rum-detection', () => {
     );
   });
 
-  it('uses overrideBaseURL when filtering rum links by audit scope', async () => {
+  it('uses site baseURL when filtering rum links by audit scope even if overrideBaseURL exists', async () => {
     const isWithinAuditScope = sinon.stub().returns(true);
     const rumApiClient = {
       query: sinon.stub().resolves([
@@ -201,8 +201,8 @@ describe('internal-links rum-detection', () => {
       },
     });
 
-    expect(isWithinAuditScope.firstCall.args[1]).to.equal('https://example.com/en');
-    expect(isWithinAuditScope.secondCall.args[1]).to.equal('https://example.com/en');
+    expect(isWithinAuditScope.firstCall.args[1]).to.equal('https://example.com/en.html');
+    expect(isWithinAuditScope.secondCall.args[1]).to.equal('https://example.com/en.html');
   });
 
   it('strips hashes from persisted rum source and target URLs', async () => {

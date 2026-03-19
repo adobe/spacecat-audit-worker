@@ -11,7 +11,6 @@
  */
 
 import { createInternalLinksStepLogger } from './logging.js';
-import { resolveInternalLinksBaseURL } from './base-url.js';
 
 const RUM_VALIDATION_CONCURRENCY = 10;
 
@@ -93,7 +92,7 @@ export function createInternalLinksRumSteps({
         };
       }
 
-      const baseURL = resolveInternalLinksBaseURL(site);
+      const baseURL = site.getBaseURL();
       const scopedInternal404Links = internal404Links.filter((link) => (
         isWithinAuditScope(link.url_from, baseURL)
         && isWithinAuditScope(link.url_to, baseURL)

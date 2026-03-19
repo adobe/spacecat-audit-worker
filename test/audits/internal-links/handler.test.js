@@ -233,8 +233,8 @@ describe('Broken internal links audit', () => {
     const rumQueryStub = sinon.stub().resolves([]);
 
     const { internalLinksAuditRunner: mockedRunner } = await esmock('../../../src/internal-links/handler.js', {
-      '../../../src/common/base-audit.js': {
-        wwwUrlResolver: resolverStub,
+      '../../../src/internal-links/base-url.js': {
+        resolveInternalLinksRumDomain: resolverStub,
       },
       '@adobe/spacecat-shared-rum-api-client': {
         default: {
@@ -643,7 +643,7 @@ describe('Broken internal links audit', () => {
     expect(result.urls).to.deep.include({ url: 'https://example.com/included2' });
   }).timeout(10000);
 
-  it('submitForScraping should prefer overrideBaseURL for audit scope filtering', async () => {
+  it('submitForScraping should continue using site baseURL for audit scope filtering', async () => {
     const mockSiteTopPage = {
       allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
         { getUrl: () => 'https://example.com/en/adventures.html' },
@@ -679,7 +679,8 @@ describe('Broken internal links audit', () => {
 
     const result = await submitForScraping(testContext);
 
-    expect(result.urls).to.deep.equal([{ url: 'https://example.com/en/adventures.html' }]);
+    expect(result.status).to.equal('skipped');
+    expect(result.urls).to.deep.equal([]);
   }).timeout(10000);
 
 

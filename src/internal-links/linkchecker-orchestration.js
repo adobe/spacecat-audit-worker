@@ -21,6 +21,7 @@ import {
   releaseExecutionLock,
 } from './batch-state.js';
 import { sleep } from '../support/utils.js';
+import { resolveInternalLinksBaseURL } from './base-url.js';
 
 const MAX_POLLING_CONTINUATIONS = 10;
 
@@ -226,6 +227,7 @@ export function createLinkCheckerOrchestration({
         programId,
         environmentId,
         lookbackMinutes,
+        scopeBaseURL: resolveInternalLinksBaseURL(site),
       });
 
       log.info('Submitting Splunk job for LinkChecker logs');

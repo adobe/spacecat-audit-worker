@@ -117,6 +117,26 @@ describe('linkchecker-splunk', () => {
       expect(query).to.include('aem_program_id="program\\"123"');
       expect(query).to.include('aem_envId="env\\\\456"');
     });
+
+    it('adds a scope filter when scopeBaseURL has a subpath', () => {
+      const query = buildLinkCheckerQuery({
+        programId: 'program123',
+        environmentId: 'env456',
+        scopeBaseURL: 'https://publish.example.com/wknd-abhigarg-0001/us/en',
+      });
+
+      expect(query).to.include('| where like(urlFrom, "/content/ASO/wknd-abhigarg-0001/us/en%") OR like(urlFrom, "/wknd-abhigarg-0001/us/en%")');
+    });
+
+    it('does not add a scope filter when scopeBaseURL has no subpath', () => {
+      const query = buildLinkCheckerQuery({
+        programId: 'program123',
+        environmentId: 'env456',
+        scopeBaseURL: 'https://publish.example.com',
+      });
+
+      expect(query).to.not.include('like(urlFrom');
+    });
   });
 
   describe('submitSplunkJob', () => {
