@@ -206,7 +206,7 @@ export function createInternalLinksRumSteps({
     const { success } = internalLinksAuditRunnerResult.auditResult;
 
     if (!success) {
-      const rumError = internalLinksAuditRunnerResult.auditResult.error || 'RUM detection audit failed';
+      const { error: rumError } = internalLinksAuditRunnerResult.auditResult;
       const config = createConfigResolver(site, env);
       if (config.isLinkCheckerEnabled()) {
         log.warn(`RUM detection audit failed, continuing with LinkChecker enabled: ${rumError}`);
