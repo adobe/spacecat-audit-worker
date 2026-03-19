@@ -59,13 +59,13 @@ export function createInternalLinksRumSteps({
       auditType,
       siteId: site.getId(),
       auditId,
-      step: 'rum-detection',
+      step: 'rum-detector-phase',
     });
     const finalUrl = context?.finalUrl || await resolveFinalUrl(site, context);
     const siteBaseURL = site.getBaseURL();
     const { overrideBaseURL } = getInternalLinksFetchConfig(site);
 
-    log.info('====== RUM Detection Phase ======');
+    log.info('====== RUM Detection Phase started ======');
     log.info(`RUM resolver v2: siteBaseURL=${siteBaseURL}, overrideBaseURL=${overrideBaseURL || 'none'}, resolvedRumDomain=${finalUrl}`);
     log.info(`Site: ${site.getId()}, Domain: ${finalUrl}`);
 
