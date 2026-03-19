@@ -79,8 +79,10 @@ describe('linkchecker-splunk', () => {
       expect(query).to.include('latest=@m');
       expect(query).to.include('aem_program_id="program123"');
       expect(query).to.include('aem_envId="env456"');
-      expect(query).to.include('"linkchecker.removed_internal_link"');
+      expect(query).to.include('msg="*linkchecker.removed_internal_link*"');
       expect(query).to.include('| spath');
+      expect(query).to.include('| rex field=msg "LinkCheckerTransformer (?<linkchecker_json>\\{.*\\})$"');
+      expect(query).to.include('| spath input=linkchecker_json');
       expect(query).to.include('| rename linkchecker.removed_internal_link.urlFrom as urlFrom');
       expect(query).to.include('| where isnotnull(urlFrom) AND isnotnull(urlTo)');
       expect(query).to.include('| head 10000');

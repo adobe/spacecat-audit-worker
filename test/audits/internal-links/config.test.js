@@ -220,6 +220,14 @@ describe('internal-links config resolver', () => {
     expect(resolver.getLinkCheckerEnvironmentId()).to.equal('env-456');
   });
 
+  it('supports the camelCase site-config flag for enabling LinkChecker', () => {
+    const resolver = new InternalLinksConfigResolver(createSite({
+      isLinkCheckerEnabled: true,
+    }), {});
+
+    expect(resolver.isLinkCheckerEnabled()).to.equal(true);
+  });
+
   it('prefers deliveryConfig program and environment IDs over handler config', () => {
     const resolver = new InternalLinksConfigResolver(createSite({
       aemProgramId: 'handler-program',

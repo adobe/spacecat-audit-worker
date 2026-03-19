@@ -131,7 +131,9 @@ export class InternalLinksConfigResolver {
   }
 
   isLinkCheckerEnabled() {
-    return this.handlerConfig.isLinkcheckerEnabled ?? false;
+    return this.handlerConfig.isLinkCheckerEnabled
+      ?? this.handlerConfig.isLinkcheckerEnabled
+      ?? false;
   }
 
   getLinkCheckerProgramId() {

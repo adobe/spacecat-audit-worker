@@ -92,8 +92,8 @@ export function buildLinkCheckerQuery({
   // 1. Base index and time range
   // 2. Filter by program and environment (automatically logged by AEM)
   // 3. Filter for LinkChecker internal link removal events (FT_SITES-39847)
-  // 4. Parse JSON structure
-  // 5. Extract fields and limit results
+  // 4. Parse the top-level event JSON, then extract the embedded JSON payload from msg
+  // 5. Parse embedded LinkChecker payload, extract fields, and limit results
   return [
     'search',
     'index=dx_aem_engineering',
@@ -101,8 +101,10 @@ export function buildLinkCheckerQuery({
     'latest=@m',
     `aem_program_id="${escapeSplunkString(programId)}"`,
     `aem_envId="${escapeSplunkString(environmentId)}"`,
-    '"linkchecker.removed_internal_link"', // FT_SITES-39847 ensures this field exists
-    '| spath', // Parse JSON structure
+    'msg="*linkchecker.removed_internal_link*"',
+    '| spath', // Parse top-level Skyline event JSON
+    '| rex field=msg "LinkCheckerTransformer (?<linkchecker_json>\\{.*\\})$"',
+    '| spath input=linkchecker_json', // Parse embedded LinkChecker payload from msg
     '| rename linkchecker.removed_internal_link.urlFrom as urlFrom',
     '| rename linkchecker.removed_internal_link.urlTo as urlTo',
     '| rename linkchecker.removed_internal_link.validity as validity',

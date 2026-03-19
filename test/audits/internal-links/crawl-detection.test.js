@@ -1589,6 +1589,49 @@ describe('Crawl Detection Module', () => {
       expect(result.results.some((entry) => entry.urlTo === 'https://example.com/content/dam/apcolourcatalogue/asset/hero.webp' && entry.itemType === 'image')).to.equal(true);
     });
 
+    it('should classify SVG assets referenced from CSS url() as svg', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      const htmlWithCssSvgAsset = `
+        <html>
+          <head>
+            <style>
+              .icon {
+                background-image: url('/webassets/icons/search.svg');
+              }
+            </style>
+          </head>
+          <body></body>
+        </html>
+      `;
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: { rawBody: htmlWithCssSvgAsset },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub
+        .withArgs('https://example.com/webassets/icons/search.svg')
+        .resolves(createValidationResponse(true, 404, '4xx', { contentType: 'image/svg+xml' }));
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      expect(result.results).to.have.lengthOf(1);
+      expect(result.results[0]).to.deep.include({
+        urlTo: 'https://example.com/webassets/icons/search.svg',
+        itemType: 'svg',
+        anchorText: '[style url()]',
+      });
+    });
+
     it('should ignore CSS URLs with invalid escaped code points', async () => {
       const scrapeResultPaths = new Map([
         ['https://example.com/page1', 'scrapes/page1.json'],

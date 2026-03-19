@@ -31,6 +31,21 @@ function normalizeLinkCheckerValidity(validity) {
   return String(validity || 'UNKNOWN').trim().toUpperCase();
 }
 
+const LINKCHECKER_VALIDITY_ONLY_ASSET_TYPES = new Set([
+  'image',
+  'svg',
+  'css',
+  'js',
+  'iframe',
+  'video',
+  'audio',
+  'media',
+]);
+
+function requiresExplicitBrokenStatus(itemType) {
+  return LINKCHECKER_VALIDITY_ONLY_ASSET_TYPES.has(itemType);
+}
+
 function disableEventLoopWait(context) {
   if (context && 'callbackWaitsForEmptyEventLoop' in context) {
     context.callbackWaitsForEmptyEventLoop = false;
@@ -200,13 +215,15 @@ export function createFinalizeCrawlDetection({
             const statusBucket = classifyStatusBucket(httpStatus);
             const isExplicitBrokenValidity = validity === 'INVALID';
             const hasBrokenStatus = Boolean(statusBucket);
+            const requireBrokenStatus = requiresExplicitBrokenStatus(itemType);
 
             if (!lc.urlFrom || !lc.urlTo) {
               skippedLinkCheckerRows += 1;
               return null;
             }
 
-            if (!hasBrokenStatus && !isExplicitBrokenValidity) {
+            if ((requireBrokenStatus && !hasBrokenStatus)
+              || (!hasBrokenStatus && !isExplicitBrokenValidity)) {
               skippedLinkCheckerRows += 1;
               return null;
             }

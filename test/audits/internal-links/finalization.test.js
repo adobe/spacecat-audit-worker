@@ -823,6 +823,58 @@ describe('internal-links finalization', () => {
       expect(linkCheckerLinks[0].statusBucket).to.equal('not_found_404');
     });
 
+    it('should drop LinkChecker SVG assets without an explicit broken HTTP status', async () => {
+      const updateAuditResult = sinon.stub().resolves({});
+      const finalize = buildFinalize({ updateAuditResult });
+
+      await finalize(buildContext([
+        {
+          urlFrom: 'https://example.com/page',
+          urlTo: 'https://example.com/webassets/icons/search.svg',
+          itemType: 'svg',
+          validity: 'INVALID',
+        },
+      ]), { skipCrawlDetection: false });
+
+      expect(mockIsLinkInaccessible).to.not.have.been.called;
+      const reportedLinks = updateAuditResult.firstCall.args[2];
+      const linkCheckerLinks = reportedLinks.filter((l) => l.detectionSource === 'linkchecker');
+      expect(linkCheckerLinks).to.have.lengthOf(0);
+    });
+
+    it('should keep LinkChecker SVG assets when they have an explicit broken HTTP status', async () => {
+      mockIsLinkInaccessible.resolves({
+        isBroken: false,
+        inconclusive: true,
+        httpStatus: null,
+        statusBucket: null,
+      });
+
+      const updateAuditResult = sinon.stub().resolves({});
+      const finalize = buildFinalize({
+        updateAuditResult,
+        createConfigResolver: () => ({
+          getIncludedStatusBuckets: () => ['not_found_404', 'masked_by_linkchecker'],
+          getIncludedItemTypes: () => ['link', 'svg'],
+        }),
+      });
+
+      await finalize(buildContext([
+        {
+          urlFrom: 'https://example.com/page',
+          urlTo: 'https://example.com/webassets/icons/search.svg',
+          itemType: 'svg',
+          httpStatus: 404,
+          validity: 'INVALID',
+        },
+      ]), { skipCrawlDetection: false });
+
+      const reportedLinks = updateAuditResult.firstCall.args[2];
+      const linkCheckerLinks = reportedLinks.filter((l) => l.detectionSource === 'linkchecker');
+      expect(linkCheckerLinks).to.have.lengthOf(1);
+      expect(linkCheckerLinks[0].statusBucket).to.equal('not_found_404');
+    });
+
     it('should skip re-validation when insufficient time remains', async () => {
       const updateAuditResult = sinon.stub().resolves({});
       const getTimeoutStatus = sinon.stub().returns({
