@@ -160,7 +160,8 @@ export function createLinkCheckerOrchestration({
 
     const auditId = audit.getId();
     const executionLockKey = 'linkchecker-start';
-    const isLinkcheckerEnabled = config.isLinkCheckerEnabled();
+    const linkCheckerFlagDebug = config.getLinkCheckerFlagDebugInfo();
+    const isLinkcheckerEnabled = linkCheckerFlagDebug.enabled;
     const log = createInternalLinksStepLogger({
       createContextLogger,
       log: baseLog,
@@ -171,7 +172,13 @@ export function createLinkCheckerOrchestration({
     });
 
     log.info('====== LinkChecker Detection Step ======');
-    log.info(`auditId: ${auditId}, isLinkcheckerEnabled: ${isLinkcheckerEnabled}`);
+    log.info(
+      `auditId: ${auditId}, isLinkcheckerEnabled: ${isLinkcheckerEnabled}, `
+      + `flagSource=${linkCheckerFlagDebug.source}, `
+      + `camelCaseRaw=${String(linkCheckerFlagDebug.camelCaseRaw)}, `
+      + `legacyRaw=${String(linkCheckerFlagDebug.legacyRaw)}, `
+      + 'resolverVersion=v2',
+    );
 
     const workflowCompletedAt = getWorkflowCompletedAt(audit);
     if (workflowCompletedAt) {

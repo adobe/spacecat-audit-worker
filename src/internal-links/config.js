@@ -131,9 +131,36 @@ export class InternalLinksConfigResolver {
   }
 
   isLinkCheckerEnabled() {
-    return this.handlerConfig.isLinkCheckerEnabled
-      ?? this.handlerConfig.isLinkcheckerEnabled
-      ?? false;
+    const camelCaseValue = getBooleanConfig(this.handlerConfig.isLinkCheckerEnabled, undefined);
+    const legacyValue = getBooleanConfig(this.handlerConfig.isLinkcheckerEnabled, undefined);
+
+    if (typeof camelCaseValue === 'boolean') {
+      return camelCaseValue;
+    }
+    if (typeof legacyValue === 'boolean') {
+      return legacyValue;
+    }
+    return false;
+  }
+
+  getLinkCheckerFlagDebugInfo() {
+    const camelCaseValue = getBooleanConfig(this.handlerConfig.isLinkCheckerEnabled, undefined);
+    const legacyValue = getBooleanConfig(this.handlerConfig.isLinkcheckerEnabled, undefined);
+    let source = 'default:false';
+    if (typeof camelCaseValue === 'boolean') {
+      source = 'isLinkCheckerEnabled';
+    } else if (typeof legacyValue === 'boolean') {
+      source = 'isLinkcheckerEnabled';
+    }
+
+    return {
+      enabled: this.isLinkCheckerEnabled(),
+      source,
+      camelCaseRaw: this.handlerConfig.isLinkCheckerEnabled,
+      legacyRaw: this.handlerConfig.isLinkcheckerEnabled,
+      camelCaseValue,
+      legacyValue,
+    };
   }
 
   getLinkCheckerProgramId() {

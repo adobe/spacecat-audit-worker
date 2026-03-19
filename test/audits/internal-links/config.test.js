@@ -228,6 +228,30 @@ describe('internal-links config resolver', () => {
     expect(resolver.isLinkCheckerEnabled()).to.equal(true);
   });
 
+  it('supports the legacy site-config flag for enabling LinkChecker', () => {
+    const resolver = new InternalLinksConfigResolver(createSite({
+      isLinkcheckerEnabled: true,
+    }), {});
+
+    expect(resolver.isLinkCheckerEnabled()).to.equal(true);
+  });
+
+  it('exposes LinkChecker flag debug info for troubleshooting', () => {
+    const resolver = new InternalLinksConfigResolver(createSite({
+      isLinkCheckerEnabled: true,
+      isLinkcheckerEnabled: false,
+    }), {});
+
+    expect(resolver.getLinkCheckerFlagDebugInfo()).to.deep.equal({
+      enabled: true,
+      source: 'isLinkCheckerEnabled',
+      camelCaseRaw: true,
+      legacyRaw: false,
+      camelCaseValue: true,
+      legacyValue: false,
+    });
+  });
+
   it('prefers deliveryConfig program and environment IDs over handler config', () => {
     const resolver = new InternalLinksConfigResolver(createSite({
       aemProgramId: 'handler-program',

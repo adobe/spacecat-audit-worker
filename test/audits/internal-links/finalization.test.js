@@ -444,6 +444,135 @@ describe('internal-links finalization', () => {
     ]);
   });
 
+  it('normalizes relative LinkChecker URLs onto the audited host before scope checks', async () => {
+    const updateAuditResult = sinon.stub().resolves({});
+    const log = {
+      info: sinon.stub(),
+      warn: sinon.stub(),
+      error: sinon.stub(),
+      debug: sinon.stub(),
+    };
+
+    const finalize = createFinalizeCrawlDetection({
+      auditType: 'broken-internal-links',
+      createContextLogger: (baseLog) => baseLog,
+      createConfigResolver: () => ({
+        getIncludedStatusBuckets: () => ['not_found_404'],
+        getIncludedItemTypes: () => ['link'],
+      }),
+      calculatePriority: (links) => links.map((link) => ({ ...link, priority: 'high' })),
+      mergeAndDeduplicate: (firstLinks, secondLinks) => [...secondLinks, ...firstLinks],
+      loadFinalResults: sinon.stub().resolves([]),
+      cleanupBatchState: sinon.stub().resolves(),
+      getTimeoutStatus: sinon.stub().returns({
+        percentUsed: 1,
+        safeTimeRemaining: 100000,
+        isApproachingTimeout: false,
+      }),
+      updateAuditResult,
+      opportunityAndSuggestionsStep: sinon.stub().resolves({ status: 'complete' }),
+      filterByStatusIfNeeded,
+      filterByItemTypes,
+    });
+
+    await finalize({
+      log,
+      site: {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://publish.example.com/wknd-abhigarg-0001/us/en',
+      },
+      env: {},
+      audit: {
+        getId: () => 'audit-1',
+        getAuditResult: () => ({ brokenInternalLinks: [] }),
+      },
+      dataAccess: {},
+      linkCheckerResults: [
+        {
+          urlFrom: '/content/ASO/wknd-abhigarg-0001/us/en/adventures.html',
+          urlTo: '/wknd-abhigarg-0001/us/en/workshop',
+          itemType: 'link',
+          validity: 'INVALID',
+          httpStatus: 404,
+        },
+      ],
+    }, { skipCrawlDetection: false });
+
+    expect(updateAuditResult.firstCall.args[2]).to.deep.equal([
+      {
+        urlFrom: 'https://publish.example.com/wknd-abhigarg-0001/us/en/adventures.html',
+        urlTo: 'https://publish.example.com/wknd-abhigarg-0001/us/en/workshop',
+        anchorText: '',
+        itemType: 'link',
+        detectionSource: 'linkchecker',
+        trafficDomain: 1,
+        httpStatus: 404,
+        statusBucket: 'not_found_404',
+        validity: 'INVALID',
+        priority: 'high',
+      },
+    ]);
+    expect(log.info).to.have.been.calledWith(
+      sinon.match('LinkChecker normalization v2 active: normalized=1, repositoryPaths=1'),
+    );
+  });
+
+  it('falls back safely when LinkChecker URL normalization cannot parse the base URL', async () => {
+    const updateAuditResult = sinon.stub().resolves({});
+
+    const finalize = createFinalizeCrawlDetection({
+      auditType: 'broken-internal-links',
+      createContextLogger: (log) => log,
+      createConfigResolver: () => ({
+        getIncludedStatusBuckets: () => ['not_found_404'],
+        getIncludedItemTypes: () => ['link'],
+      }),
+      calculatePriority: (links) => links.map((link) => ({ ...link, priority: 'high' })),
+      mergeAndDeduplicate: (firstLinks, secondLinks) => [...secondLinks, ...firstLinks],
+      loadFinalResults: sinon.stub().resolves([]),
+      cleanupBatchState: sinon.stub().resolves(),
+      getTimeoutStatus: sinon.stub().returns({
+        percentUsed: 1,
+        safeTimeRemaining: 100000,
+        isApproachingTimeout: false,
+      }),
+      updateAuditResult,
+      opportunityAndSuggestionsStep: sinon.stub().resolves({ status: 'complete' }),
+      filterByStatusIfNeeded,
+      filterByItemTypes,
+    });
+
+    await finalize({
+      log: {
+        info: sinon.stub(),
+        warn: sinon.stub(),
+        error: sinon.stub(),
+        debug: sinon.stub(),
+      },
+      site: {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://[::1',
+      },
+      env: {},
+      audit: {
+        getId: () => 'audit-1',
+        getAuditResult: () => ({ brokenInternalLinks: [] }),
+      },
+      dataAccess: {},
+      linkCheckerResults: [
+        {
+          urlFrom: '/content/ASO/wknd-abhigarg-0001/us/en/adventures.html',
+          urlTo: '/wknd-abhigarg-0001/us/en/workshop',
+          itemType: 'link',
+          validity: 'INVALID',
+          httpStatus: 404,
+        },
+      ],
+    }, { skipCrawlDetection: false });
+
+    expect(updateAuditResult.firstCall.args[2]).to.deep.equal([]);
+  });
+
   it('drops LinkChecker rows without broken validity or broken status', async () => {
     const updateAuditResult = sinon.stub().resolves({});
 
@@ -683,7 +812,7 @@ describe('internal-links finalization', () => {
       },
       dataAccess: {},
       linkCheckerResults: [
-        { urlFrom: ':::invalid', urlTo: 'https://example.com/missing', itemType: 'link', httpStatus: 404 },
+        { urlFrom: 'https://[::1', urlTo: 'https://example.com/missing', itemType: 'link', httpStatus: 404 },
       ],
     }, { skipCrawlDetection: false });
 
