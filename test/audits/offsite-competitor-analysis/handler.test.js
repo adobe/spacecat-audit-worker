@@ -350,6 +350,7 @@ describe('Offsite Competitor Analysis Handler', () => {
           data: sinon.match({
             companyName: 'Example Corp',
             companyWebsite: baseURL,
+            industry: 'Technology',
             aliases: ['ExCo'],
             competitors: ['Rival Inc'],
           }),

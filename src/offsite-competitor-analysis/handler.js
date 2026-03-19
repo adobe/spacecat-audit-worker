@@ -138,7 +138,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
   }
 
   const {
-    companyName, companyWebsite, aliases, competitors,
+    companyName, companyWebsite, industry, aliases, competitors,
   } = auditResult;
 
   const message = {
@@ -149,6 +149,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     data: {
       companyName,
       companyWebsite,
+      industry,
       aliases,
       competitors,
     },
