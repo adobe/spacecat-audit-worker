@@ -15,14 +15,14 @@ import { wwwUrlResolver } from '../common/index.js';
 import StoreClient, { StoreEmptyError, URL_TYPES, GUIDELINE_TYPES } from '../utils/store-client.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 
-const LOG_PREFIX = '[Reddit]';
+const LOG_PREFIX = '[Cited]';
 
 /**
- * Reddit Analysis Audit Handler
+ * Cited Analysis Audit Handler
  *
- * This audit performs Reddit analysis by:
- * 1. Fetching Reddit URLs from the URL Store (discovered during brand presence analysis)
- * 2. Fetching analysis topics and guidelines from the Sentiment Config
+ * This audit performs cited URL analysis by:
+ * 1. Fetching top-cited URLs from the URL Store (discovered during brand presence analysis)
+ * 2. Optionally fetching analysis topics and guidelines from the Sentiment Config
  * 3. Sending all data to Mystique for analysis
  *
  * Mystique will fetch the actual page content from the Content Store directly
@@ -31,12 +31,7 @@ const LOG_PREFIX = '[Reddit]';
  * Results are returned via the guidance handler.
  */
 
-/**
- * Retrieves Reddit-related configuration from the site
- * @param {Object} site - The site object
- * @returns {Object} Reddit configuration
- */
-function getRedditConfig(site) {
+function getCitedConfig(site) {
   const config = site.getConfig();
   const baseURL = site.getBaseURL();
 
@@ -50,36 +45,26 @@ function getRedditConfig(site) {
   };
 }
 
-/**
- * Fetches all required data from stores for Reddit analysis
- * @param {string} siteId - The site ID
- * @param {Object} context - The audit context
- * @returns {Promise<Object>} Object containing urls and sentimentConfig
- * @throws {StoreEmptyError} If any store returns empty results
- */
 async function fetchStoreData(siteId, context) {
   const { log } = context;
   const storeClient = StoreClient.createFrom(context);
 
   log.info(`${LOG_PREFIX} Fetching data from stores for siteId: ${siteId}`);
 
-  const urls = await storeClient.getUrls(siteId, URL_TYPES.REDDIT);
-  log.info(`${LOG_PREFIX} Retrieved ${urls.length} Reddit URLs from URL Store`);
+  const urls = await storeClient.getUrls(siteId, URL_TYPES.CITED);
+  log.info(`${LOG_PREFIX} Retrieved ${urls.length} cited URLs from URL Store`);
 
   let sentimentConfig = { topics: [], guidelines: [] };
   try {
-    const auditType = GUIDELINE_TYPES.REDDIT_ANALYSIS;
-    sentimentConfig = await storeClient.getGuidelines(siteId, auditType);
+    sentimentConfig = await storeClient.getGuidelines(siteId, GUIDELINE_TYPES.CITED_ANALYSIS);
+    log.info(`${LOG_PREFIX} Retrieved ${sentimentConfig.topics.length} topics and ${sentimentConfig.guidelines.length} guidelines`);
   } catch (error) {
     if (error instanceof StoreEmptyError) {
-      log.info(`${LOG_PREFIX} No sentiment config found, proceeding without guidelines`);
+      log.info(`${LOG_PREFIX} No guidelines configured for cited-analysis, proceeding without`);
     } else {
       throw error;
     }
   }
-  const topicCount = sentimentConfig.topics.length;
-  const guidelineCount = sentimentConfig.guidelines.length;
-  log.info(`${LOG_PREFIX} Retrieved ${topicCount} topics and ${guidelineCount} guidelines`);
 
   return {
     urls,
@@ -87,23 +72,16 @@ async function fetchStoreData(siteId, context) {
   };
 }
 
-/**
- * Run Reddit Analysis audit
- * @param {string} url - The resolved URL for the audit
- * @param {Object} context - The audit context
- * @param {Object} site - The site being audited
- * @returns {Promise<Object>} Audit result
- */
-async function runRedditAnalysisAudit(url, context, site) {
+async function runCitedAnalysisAudit(url, context, site) {
   const { log } = context;
   const siteId = site.getId();
 
-  log.info(`${LOG_PREFIX} Starting Reddit analysis audit for site: ${siteId}`);
+  log.info(`${LOG_PREFIX} Starting cited analysis audit for site: ${siteId}`);
 
   try {
-    const redditConfig = getRedditConfig(site);
+    const citedConfig = getCitedConfig(site);
 
-    if (!redditConfig.companyName) {
+    if (!citedConfig.companyName) {
       log.warn(`${LOG_PREFIX} No company name configured for site, skipping audit`);
       return {
         auditResult: {
@@ -114,17 +92,17 @@ async function runRedditAnalysisAudit(url, context, site) {
       };
     }
 
-    log.info(`${LOG_PREFIX} Config: companyName=${redditConfig.companyName}, website=${redditConfig.companyWebsite}`);
+    log.info(`${LOG_PREFIX} Config: companyName=${citedConfig.companyName}, website=${citedConfig.companyWebsite}`);
 
     const storeData = await fetchStoreData(siteId, context);
 
-    log.info(`${LOG_PREFIX} Successfully fetched all store data for ${redditConfig.companyName}`);
+    log.info(`${LOG_PREFIX} Successfully fetched all store data for ${citedConfig.companyName}`);
 
     return {
       auditResult: {
         success: true,
         status: 'pending_analysis',
-        config: redditConfig,
+        config: citedConfig,
         storeData,
       },
       fullAuditRef: url,
@@ -153,9 +131,6 @@ async function runRedditAnalysisAudit(url, context, site) {
   }
 }
 
-/**
- * Post processor to send Reddit analysis request to Mystique
- */
 async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
   const {
     log, sqs, env, dataAccess, audit,
@@ -182,10 +157,12 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
     const { config, storeData } = auditResult;
     const { urls, sentimentConfig } = storeData;
-    const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics);
+    const enrichedUrls = sentimentConfig.topics.length > 0
+      ? enrichUrlsWithTopicData(urls, sentimentConfig.topics)
+      : urls;
 
     const message = {
-      type: 'guidance:reddit-analysis',
+      type: 'guidance:cited-analysis',
       siteId,
       url: site.getBaseURL(),
       auditId: audit.getId(),
@@ -205,7 +182,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     };
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`${LOG_PREFIX} Queued Reddit analysis request to Mystique for ${config.companyName} with ${urls.length} URLs`);
+    log.info(`${LOG_PREFIX} Queued cited analysis request to Mystique for ${config.companyName} with ${urls.length} URLs`);
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
     throw error;
@@ -216,6 +193,6 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .withRunner(runRedditAnalysisAudit)
+  .withRunner(runCitedAnalysisAudit)
   .withPostProcessors([sendMystiqueMessagePostProcessor])
   .build();
