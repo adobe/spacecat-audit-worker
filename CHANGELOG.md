@@ -1,3 +1,10 @@
+# [1.366.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.365.1...v1.366.0) (2026-03-20)
+
+
+### Features
+
+* support per-site country code ignore list in CDN logs report ([#2157](https://github.com/adobe/spacecat-audit-worker/issues/2157)) ([1e22fe7](https://github.com/adobe/spacecat-audit-worker/commit/1e22fe7fa26e23ebcf277205cb580dd6c4bbac6f))
+
 ## [1.365.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.365.0...v1.365.1) (2026-03-20)
 
 
