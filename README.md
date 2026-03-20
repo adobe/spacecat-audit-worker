@@ -18,7 +18,7 @@ $ npm install @adobe/spacecat-audit-worker
 
 ## Usage
 
-See the [API documentation](docs/API.md).
+See the detailed [API documentation](docs/API.md).
 
 ## Development
 
