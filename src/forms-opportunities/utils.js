@@ -361,93 +361,6 @@ export function filterForms(formOpportunities, scrapedData, log, excludeUrls = n
   });
 }
 
-/**
- * Get the urls and form sources for accessibility audit
- * @param scrapedData
- * @param formVitals
- * @param context
- * @returns {Array} array of objects with url and formsources
- */
-export function getUrlsDataForAccessibilityAudit(scrapedData, formVitals, context) {
-  const { log } = context;
-  const urlsData = [];
-  const addedFormSources = new Set();
-  if (isNonEmptyArray(scrapedData.formData)) {
-    const formUrlPageViewsMap = new Map();
-    for (const fv of formVitals) {
-      const totalPageViews = Object.values(fv.pageview).reduce((acc, curr) => acc + curr, 0);
-      const existingPageViews = formUrlPageViewsMap.get(fv.url) || 0;
-      if (totalPageViews >= existingPageViews) {
-        formUrlPageViewsMap.set(fv.url, totalPageViews);
-      }
-    }
-    const formScrapedData = [...scrapedData.formData];
-    formScrapedData.sort((a, b) => {
-      const aPageViews = formUrlPageViewsMap.get(a.finalUrl);
-      const bPageViews = formUrlPageViewsMap.get(b.finalUrl);
-      return bPageViews - aPageViews;
-    });
-    // sort the form in scraped data based on the page views in the form vitals
-    for (const form of formScrapedData) {
-      const formSources = [];
-      const scrapeResultArray = Array.isArray(form.scrapeResult) ? form.scrapeResult : [];
-      const validForms = scrapeResultArray.filter((sr) => !shouldExcludeForm(sr));
-      if (form.finalUrl.includes('search') || validForms.length === 0) {
-        // eslint-disable-next-line no-continue
-        continue;
-      }
-      // 1. get formSources from scraped data if available
-      let isFormSourceAlreadyAdded = false;
-      validForms.forEach((sr) => {
-        if (!sr.formSource) {
-          return;
-        }
-        if (!addedFormSources.has(sr.formSource)) {
-          formSources.push(sr.formSource);
-          if (!['dialog form', 'form'].includes(sr.formSource)) {
-            addedFormSources.add(sr.formSource);
-          }
-        } else {
-          isFormSourceAlreadyAdded = true;
-        }
-      });
-      // eslint-disable-next-line max-len
-      // 2. If no unique formSource found in current page, then use id or classList to identify the form
-      if (formSources.length === 0) {
-        log.debug(`[Form Opportunity] No formSource found in scraped data for form: ${form.finalUrl}`);
-        validForms.forEach((sr) => {
-          if (sr.formSource) {
-            return;
-          }
-          if (sr.id) {
-            if (!addedFormSources.has(`form#${sr.id}`)) {
-              formSources.push(`form#${sr.id}`);
-              addedFormSources.add(`form#${sr.id}`);
-            } else {
-              isFormSourceAlreadyAdded = true;
-            }
-          } else if (sr.classList) {
-            formSources.push(`form.${sr.classList.split(' ').join('.')}`);
-          }
-        });
-      }
-      // 3. Fallback to "form" element. If any formSource of current page is already added
-      // in previous pages, then don't add "form" element.
-      if (!isFormSourceAlreadyAdded && formSources.length === 0) {
-        formSources.push('form');
-      }
-      log.debug(`[Form Opportunity] Form sources for page: ${form.finalUrl} are ${formSources.join(', ')}`);
-      if (formSources.length > 0) {
-        urlsData.push({
-          url: form.finalUrl,
-          formSources,
-        });
-      }
-    }
-  }
-  return urlsData;
-}
-
 export function getSuccessCriteriaDetails(criteria) {
   let cNumber;
 
@@ -738,6 +651,129 @@ export class FormDeDuplicator {
   getOpportunity(fingerprintKey) {
     return this.urlSourceOppMap.get(fingerprintKey);
   }
+}
+
+/**
+ * Deduplicates scraped form data by fingerprint across pages.
+ *
+ * Given a sorted (by page views descending) array of scraped form data, removes
+ * scrapeResult entries whose fingerprint (id, formSource, or field signatures)
+ * matches one already seen on an earlier (higher-traffic) page. Pages with no
+ * remaining entries after deduplication are dropped entirely.
+ *
+ * Excluded forms (e.g. search) are kept in the output but are NOT added to the
+ * fingerprint pool, so they do not trigger false-positive deduplication.
+ *
+ * @param {Array} sortedFormDataArray - scrapedData.formData sorted by page views descending
+ * @returns {Array} Deduplicated formData array
+ */
+export function filterDuplicateScrapedForms(sortedFormDataArray) {
+  const seenFingerprints = [];
+  return sortedFormDataArray
+    .map((formPage) => {
+      const scrapeResultArray = Array.isArray(formPage.scrapeResult) ? formPage.scrapeResult : [];
+      const dedupedResults = scrapeResultArray.filter((sr) => {
+        // Excluded forms (search, zero-field, etc.) are kept but do not join the fingerprint pool
+        if (shouldExcludeForm(sr)) return true;
+        // Forms without fields cannot be fingerprinted — keep as-is
+        if (!Array.isArray(sr.formFields) || sr.formFields.length === 0) return true;
+        const fp = getFormFingerprint(sr);
+        if (seenFingerprints.some((seen) => isFingerMatch(fp, seen))) return false;
+        seenFingerprints.push(fp);
+        return true;
+      });
+      if (dedupedResults.length === 0) return null;
+      return { ...formPage, scrapeResult: dedupedResults };
+    })
+    .filter(Boolean);
+}
+
+/**
+ * Get the urls and form sources for accessibility audit
+ * @param scrapedData
+ * @param formVitals
+ * @param context
+ * @returns {Array} array of objects with url and formsources
+ */
+export function getUrlsDataForAccessibilityAudit(scrapedData, formVitals, context) {
+  const { log } = context;
+  const urlsData = [];
+  const addedFormSources = new Set();
+  if (isNonEmptyArray(scrapedData.formData)) {
+    const formUrlPageViewsMap = new Map();
+    for (const fv of formVitals) {
+      const totalPageViews = Object.values(fv.pageview).reduce((acc, curr) => acc + curr, 0);
+      const existingPageViews = formUrlPageViewsMap.get(fv.url) || 0;
+      if (totalPageViews >= existingPageViews) {
+        formUrlPageViewsMap.set(fv.url, totalPageViews);
+      }
+    }
+    const formScrapedData = filterDuplicateScrapedForms(
+      [...scrapedData.formData].sort((a, b) => {
+        const aPageViews = formUrlPageViewsMap.get(a.finalUrl);
+        const bPageViews = formUrlPageViewsMap.get(b.finalUrl);
+        return bPageViews - aPageViews;
+      }),
+    );
+    // sort the form in scraped data based on the page views in the form vitals
+    for (const form of formScrapedData) {
+      const formSources = [];
+      const scrapeResultArray = form.scrapeResult;
+      const validForms = scrapeResultArray.filter((sr) => !shouldExcludeForm(sr));
+      if (form.finalUrl.includes('search') || validForms.length === 0) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      // 1. get formSources from scraped data if available
+      let isFormSourceAlreadyAdded = false;
+      validForms.forEach((sr) => {
+        if (!sr.formSource) {
+          return;
+        }
+        if (!addedFormSources.has(sr.formSource)) {
+          formSources.push(sr.formSource);
+          if (!['dialog form', 'form'].includes(sr.formSource)) {
+            addedFormSources.add(sr.formSource);
+          }
+        } else {
+          isFormSourceAlreadyAdded = true;
+        }
+      });
+      // eslint-disable-next-line max-len
+      // 2. If no unique formSource found in current page, then use id or classList to identify the form
+      if (formSources.length === 0) {
+        log.debug(`[Form Opportunity] No formSource found in scraped data for form: ${form.finalUrl}`);
+        validForms.forEach((sr) => {
+          if (sr.formSource) {
+            return;
+          }
+          if (sr.id) {
+            if (!addedFormSources.has(`form#${sr.id}`)) {
+              formSources.push(`form#${sr.id}`);
+              addedFormSources.add(`form#${sr.id}`);
+            } else {
+              isFormSourceAlreadyAdded = true;
+            }
+          } else if (sr.classList) {
+            formSources.push(`form.${sr.classList.split(' ').join('.')}`);
+          }
+        });
+      }
+      // 3. Fallback to "form" element. If any formSource of current page is already added
+      // in previous pages, then don't add "form" element.
+      if (!isFormSourceAlreadyAdded && formSources.length === 0) {
+        formSources.push('form');
+      }
+      log.debug(`[Form Opportunity] Form sources for page: ${form.finalUrl} are ${formSources.join(', ')}`);
+      if (formSources.length > 0) {
+        urlsData.push({
+          url: form.finalUrl,
+          formSources,
+        });
+      }
+    }
+  }
+  return urlsData;
 }
 
 /**

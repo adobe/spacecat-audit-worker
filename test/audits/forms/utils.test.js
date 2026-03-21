@@ -24,6 +24,7 @@ import {
   applyOpportunityFilters,
   shouldIgnoreFormByDetails,
   FormDeDuplicator,
+  filterDuplicateScrapedForms,
 } from '../../../src/forms-opportunities/utils.js';
 import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
 
@@ -258,6 +259,208 @@ describe('getUrlsDataForAccessibilityAudit', () => {
         formSources: ['form'],
       },
     ]);
+  });
+
+  it('should exclude a lower-traffic page whose form has the same field signatures as a higher-traffic page', () => {
+    const sharedFields = [
+      { tagName: 'input', type: 'email', classList: 'email-field' },
+      { tagName: 'button', type: 'submit', classList: 'btn' },
+    ];
+    const localFormVitals = [
+      { url: 'https://example.com/high-traffic', pageview: { desktop: 500, mobile: 500 } },
+      { url: 'https://example.com/low-traffic', pageview: { desktop: 100, mobile: 100 } },
+    ];
+    const scrapedData = {
+      formData: [
+        {
+          finalUrl: 'https://example.com/high-traffic',
+          scrapeResult: [{ formSource: 'form.newsletter-a', formFields: sharedFields }],
+        },
+        {
+          finalUrl: 'https://example.com/low-traffic',
+          scrapeResult: [{ formSource: 'form.newsletter-b', formFields: sharedFields }],
+        },
+      ],
+    };
+    const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, localFormVitals, context);
+    expect(urlsData).to.have.lengthOf(1);
+    expect(urlsData[0].url).to.equal('https://example.com/high-traffic');
+  });
+});
+
+describe('filterDuplicateScrapedForms', () => {
+  it('should return empty array for empty input', () => {
+    expect(filterDuplicateScrapedForms([])).to.deep.equal([]);
+  });
+
+  it('should return all pages unchanged when there are no fingerprint duplicates', () => {
+    const input = [
+      {
+        finalUrl: 'https://example.com/page1',
+        scrapeResult: [{
+          formSource: 'form.newsletter',
+          formFields: [
+            { tagName: 'input', type: 'email', classList: 'email' },
+            { tagName: 'button', type: 'submit', classList: 'btn' },
+          ],
+        }],
+      },
+      {
+        finalUrl: 'https://example.com/page2',
+        scrapeResult: [{
+          formSource: 'form.contact',
+          formFields: [
+            { tagName: 'input', type: 'text', classList: 'name' },
+            { tagName: 'textarea', type: '', classList: 'msg' },
+            { tagName: 'button', type: 'submit', classList: 'btn' },
+          ],
+        }],
+      },
+    ];
+    const result = filterDuplicateScrapedForms(input);
+    expect(result).to.have.lengthOf(2);
+    expect(result[0].finalUrl).to.equal('https://example.com/page1');
+    expect(result[1].finalUrl).to.equal('https://example.com/page2');
+  });
+
+  it('should drop the second page when both have the same field signatures', () => {
+    const sharedFields = [
+      { tagName: 'input', type: 'email', classList: 'email-field' },
+      { tagName: 'button', type: 'submit', classList: 'submit-btn' },
+    ];
+    const input = [
+      {
+        finalUrl: 'https://example.com/page1',
+        scrapeResult: [{ formSource: 'form.newsletter-a', formFields: sharedFields }],
+      },
+      {
+        finalUrl: 'https://example.com/page2',
+        scrapeResult: [{ formSource: 'form.newsletter-b', formFields: sharedFields }],
+      },
+    ];
+    const result = filterDuplicateScrapedForms(input);
+    expect(result).to.have.lengthOf(1);
+    expect(result[0].finalUrl).to.equal('https://example.com/page1');
+  });
+
+  it('should deduplicate by form id when the same id appears on different pages', () => {
+    const input = [
+      {
+        finalUrl: 'https://example.com/page1',
+        scrapeResult: [{
+          formSource: 'form.a',
+          id: 'shared-form-id',
+          formFields: [
+            { tagName: 'input', type: 'text', classList: '' },
+            { tagName: 'button', type: 'submit', classList: '' },
+          ],
+        }],
+      },
+      {
+        finalUrl: 'https://example.com/page2',
+        scrapeResult: [{
+          formSource: 'form.b',
+          id: 'shared-form-id',
+          formFields: [
+            { tagName: 'input', type: 'text', classList: '' },
+            { tagName: 'button', type: 'submit', classList: '' },
+          ],
+        }],
+      },
+    ];
+    const result = filterDuplicateScrapedForms(input);
+    expect(result).to.have.lengthOf(1);
+    expect(result[0].finalUrl).to.equal('https://example.com/page1');
+  });
+
+  it('should deduplicate by formSource string when the same formSource appears on different pages', () => {
+    const input = [
+      {
+        finalUrl: 'https://example.com/page1',
+        scrapeResult: [{
+          formSource: '#main form.newsletter',
+          formFields: [
+            { tagName: 'input', type: 'email', classList: '' },
+            { tagName: 'button', type: 'submit', classList: '' },
+          ],
+        }],
+      },
+      {
+        finalUrl: 'https://example.com/page2',
+        scrapeResult: [{
+          formSource: '#main form.newsletter',
+          formFields: [
+            { tagName: 'input', type: 'text', classList: '' },
+            { tagName: 'button', type: 'submit', classList: '' },
+          ],
+        }],
+      },
+    ];
+    const result = filterDuplicateScrapedForms(input);
+    expect(result).to.have.lengthOf(1);
+    expect(result[0].finalUrl).to.equal('https://example.com/page1');
+  });
+
+  it('should keep forms without formFields (cannot be fingerprinted)', () => {
+    const input = [
+      {
+        finalUrl: 'https://example.com/page1',
+        scrapeResult: [{ formSource: 'form.a', formFields: [] }],
+      },
+      {
+        finalUrl: 'https://example.com/page2',
+        scrapeResult: [{ formSource: 'form.b', formFields: [] }],
+      },
+    ];
+    const result = filterDuplicateScrapedForms(input);
+    expect(result).to.have.lengthOf(2);
+  });
+
+  it('should keep a unique form on a page even when another form on that page is a duplicate', () => {
+    const sharedFields = [
+      { tagName: 'input', type: 'email', classList: 'email' },
+      { tagName: 'button', type: 'submit', classList: 'btn' },
+    ];
+    const uniqueFields = [
+      { tagName: 'input', type: 'text', classList: 'name' },
+      { tagName: 'textarea', type: '', classList: 'msg' },
+      { tagName: 'button', type: 'submit', classList: 'btn' },
+    ];
+    const input = [
+      {
+        finalUrl: 'https://example.com/page1',
+        scrapeResult: [{ formSource: 'form.newsletter', formFields: sharedFields }],
+      },
+      {
+        finalUrl: 'https://example.com/page2',
+        scrapeResult: [
+          { formSource: 'form.newsletter-copy', formFields: sharedFields }, // duplicate
+          { formSource: 'form.contact', formFields: uniqueFields }, // unique
+        ],
+      },
+    ];
+    const result = filterDuplicateScrapedForms(input);
+    expect(result).to.have.lengthOf(2);
+    const page2 = result.find((p) => p.finalUrl === 'https://example.com/page2');
+    expect(page2.scrapeResult).to.have.lengthOf(1);
+    expect(page2.scrapeResult[0].formSource).to.equal('form.contact');
+  });
+
+  it('should keep excluded forms (e.g. search) in the output without adding them to the fingerprint pool', () => {
+    const searchFields = [{ tagName: 'input', type: 'search', classList: '' }];
+    const input = [
+      {
+        finalUrl: 'https://example.com/page1',
+        scrapeResult: [{ formType: 'search', formSource: 'form.search', formFields: searchFields }],
+      },
+      {
+        finalUrl: 'https://example.com/page2',
+        scrapeResult: [{ formType: 'search', formSource: 'form.search-2', formFields: searchFields }],
+      },
+    ];
+    // Both search forms kept (not deduplicated against each other)
+    const result = filterDuplicateScrapedForms(input);
+    expect(result).to.have.lengthOf(2);
   });
 });
 
