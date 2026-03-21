@@ -16,7 +16,6 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import { parquetWriteBuffer } from 'hyparquet-writer';
 import {
   keywordPromptsImportStep,
   loadPromptsAndSendDetection,
@@ -178,8 +177,7 @@ describe('Geo Brand Presence Handler', () => {
   });
 
   it('should send detection message to Mystique in step 1', async () => {
-    // Mock S3 client method used by getStoredMetrics (AWS SDK v3 style)
-    fakeParquetS3Response(fakeData());
+    fakeConfigS3Response(fakeAiTopicsConfig());
 
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
@@ -187,7 +185,6 @@ describe('Geo Brand Presence Handler', () => {
       ...context,
       auditContext: {
         calendarWeek: { year: 2025, week: 33 },
-        parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
 
@@ -216,14 +213,13 @@ describe('Geo Brand Presence Handler', () => {
     // Set aiPlatform to an invalid value
     audit.getAuditResult = () => ({ aiPlatform: 'invalid-provider' });
 
-    fakeParquetS3Response(fakeData());
+    fakeConfigS3Response(fakeAiTopicsConfig());
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
     await loadPromptsAndSendDetection({
       ...context,
       auditContext: {
         calendarWeek: { year: 2025, week: 33 },
-        parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
 
@@ -242,9 +238,6 @@ describe('Geo Brand Presence Handler', () => {
   it('sends customer defined prompts from the config to mystique in step 1', async () => {
     const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
     const cat2 = '2a2f9b39-126b-411e-af0b-ad2a48dfd9b1';
-
-    // Mock parquet data with no AI prompts (only human prompts from config)
-    fakeParquetS3Response([]);
 
     fakeConfigS3Response({
       ...llmoConfig.defaultConfig(),
@@ -278,7 +271,6 @@ describe('Geo Brand Presence Handler', () => {
       ...context,
       auditContext: {
         calendarWeek: { year: 2025, week: 33 },
-        parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
 
@@ -616,18 +608,15 @@ describe('Geo Brand Presence Handler', () => {
   });
 
   it('should NOT send detection message when no prompts available', async () => {
-    fakeParquetS3Response([]);
-    
-    // Mock empty config (no human prompts)
+    // Mock empty config (no human or AI prompts)
     fakeConfigS3Response(llmoConfig.defaultConfig());
-    
+
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
     await loadPromptsAndSendDetection({
       ...context,
       auditContext: {
         calendarWeek: { year: 2025, week: 33 },
-        parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
 
@@ -639,7 +628,7 @@ describe('Geo Brand Presence Handler', () => {
     // Set aiPlatform to undefined to simulate empty provider scenario
     audit.getAuditResult = () => ({ aiPlatform: undefined });
 
-    fakeParquetS3Response(fakeData());
+    fakeConfigS3Response(fakeAiTopicsConfig());
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
     // Temporarily empty the providers array
@@ -651,7 +640,6 @@ describe('Geo Brand Presence Handler', () => {
         ...context,
         auditContext: {
           calendarWeek: { year: 2025, week: 33 },
-          parquetFiles: ['some/parquet/file/data.parquet'],
         },
       }, getPresignedUrl);
 
@@ -667,7 +655,7 @@ describe('Geo Brand Presence Handler', () => {
     }
   });
 
-  it('should continue with human prompts only when import fails (success is false)', async () => {
+  it('should continue with config prompts when import fails (success is false)', async () => {
     const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
     fakeConfigS3Response({
       ...llmoConfig.defaultConfig(),
@@ -692,13 +680,12 @@ describe('Geo Brand Presence Handler', () => {
       auditContext: {
         success: false,
         calendarWeek: { year: 2025, week: 33 },
-        parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
 
-    // Should log warning and continue with human prompts
+    // Should log warning and continue with config prompts
     expect(log.warn).to.have.been.calledWith(
-      'GEO BRAND PRESENCE: Import failed for site id %s (%s). Continuing with human prompts only.',
+      'GEO BRAND PRESENCE: Import failed for site id %s (%s). Continuing with config prompts only.',
       site.getId(),
       site.getBaseURL(),
     );
@@ -709,8 +696,8 @@ describe('Geo Brand Presence Handler', () => {
     expect(message.type).to.equal('detect:geo-brand-presence');
   });
 
-  it('should skip sending message when import fails and no human prompts available', async () => {
-    // Empty config - no human prompts
+  it('should skip sending message when import fails and no config prompts available', async () => {
+    // Empty config - no prompts
     fakeConfigS3Response(llmoConfig.defaultConfig());
 
     await loadPromptsAndSendDetection({
@@ -718,13 +705,12 @@ describe('Geo Brand Presence Handler', () => {
       auditContext: {
         success: false,
         calendarWeek: { year: 2025, week: 33 },
-        parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
 
     // Should log warning about import failure
     expect(log.warn).to.have.been.calledWith(
-      'GEO BRAND PRESENCE: Import failed for site id %s (%s). Continuing with human prompts only.',
+      'GEO BRAND PRESENCE: Import failed for site id %s (%s). Continuing with config prompts only.',
       site.getId(),
       site.getBaseURL(),
     );
@@ -738,7 +724,6 @@ describe('Geo Brand Presence Handler', () => {
       ...context,
       auditContext: {
         calendarWeek: null,
-        parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
 
@@ -756,7 +741,6 @@ describe('Geo Brand Presence Handler', () => {
       ...context,
       auditContext: {
         calendarWeek: { year: 2025 },
-        parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
 
@@ -769,86 +753,27 @@ describe('Geo Brand Presence Handler', () => {
     );
   });
 
-  it('should skip sending message to Mystique in step 1 when parquetFiles is invalid', async () => {
-    await loadPromptsAndSendDetection({
-      ...context,
-      auditContext: {
-        calendarWeek: { year: 2025, week: 33 },
-        parquetFiles: 'not-an-array',
-      },
-    }, getPresignedUrl);
-
-    expect(sqs.sendMessage).to.not.have.been.called;
-    expect(log.error).to.have.been.calledWith(
-      'GEO BRAND PRESENCE: Invalid parquetFiles in auditContext for site id %s (%s). Cannot send data to Mystique',
-      site.getId(),
-      site.getBaseURL(),
-      sinon.match.object,
-    );
-  });
-
-  it('should skip sending message to Mystique in step 1 when parquetFiles contains non-strings', async () => {
-    await loadPromptsAndSendDetection({
-      ...context,
-      auditContext: {
-        calendarWeek: { year: 2025, week: 33 },
-        parquetFiles: ['valid.parquet', 123, 'another.parquet'],
-      },
-    }, getPresignedUrl);
-
-    expect(sqs.sendMessage).to.not.have.been.called;
-    expect(log.error).to.have.been.calledWith(
-      'GEO BRAND PRESENCE: Invalid parquetFiles in auditContext for site id %s (%s). Cannot send data to Mystique',
-      site.getId(),
-      site.getBaseURL(),
-      sinon.match.object,
-    );
-  });
-
   // NEW TESTS: Deduplication Logic (Step 1)
   describe('Deduplication Logic', () => {
     it('should remove duplicate AI prompts within same region/topic in step 1', async () => {
-      const duplicateData = [
-        {
-          prompt: 'what is adobe?',
-          region: 'us',
-          topic: 'general',
-          category: 'adobe',
-          url: 'https://adobe.com/page1',
-          keyword: 'adobe',
-          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
-          volume: 1000,
-          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
-          source: 'ahrefs',
+      const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+      fakeConfigS3Response({
+        ...llmoConfig.defaultConfig(),
+        categories: {
+          [cat1]: { name: 'adobe', region: ['us'] },
         },
-        {
-          prompt: 'What is Adobe?', // Duplicate (case insensitive)
-          region: 'US', // Same region (case insensitive)
-          topic: 'General', // Same topic (case insensitive)
-          category: 'adobe',
-          url: 'https://adobe.com/page2',
-          keyword: 'adobe',
-          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
-          volume: 2000,
-          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
-          source: 'ahrefs',
+        aiTopics: {
+          'a1a1a1a1-1111-4111-a111-111111111111': {
+            name: 'general',
+            category: cat1,
+            prompts: [
+              { prompt: 'what is adobe?', regions: ['us'], origin: 'ai', source: 'drs' },
+              { prompt: 'What is Adobe?', regions: ['us'], origin: 'ai', source: 'drs' }, // Duplicate (case insensitive)
+              { prompt: 'adobe pricing', regions: ['us'], origin: 'ai', source: 'drs' }, // Different prompt
+            ],
+          },
         },
-        {
-          prompt: 'adobe pricing', // Different prompt, same region/topic
-          region: 'us',
-          topic: 'general',
-          category: 'adobe',
-          url: 'https://adobe.com/page3',
-          keyword: 'adobe',
-          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
-          volume: 1500,
-          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
-          source: 'ahrefs',
-        },
-      ];
-
-      fakeParquetS3Response(duplicateData);
-      fakeConfigS3Response(); // Empty config
+      });
 
       getPresignedUrl.resolves('https://example.com/presigned-url');
 
@@ -856,7 +781,6 @@ describe('Geo Brand Presence Handler', () => {
         ...context,
         auditContext: {
           calendarWeek: { year: 2025, week: 33 },
-          parquetFiles: ['some/parquet/file/data.parquet'],
         },
       }, getPresignedUrl);
 
@@ -875,47 +799,32 @@ describe('Geo Brand Presence Handler', () => {
     });
 
     it('should keep same prompts in different regions/topics in step 1', async () => {
-      const samePromptDifferentContext = [
-        {
-          prompt: 'what is adobe?',
-          region: 'us',
-          topic: 'general',
-          category: 'adobe',
-          url: 'https://adobe.com/page1',
-          keyword: 'adobe',
-          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
-          volume: 1000,
-          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
-          source: 'ahrefs',
+      const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+      const topic1 = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+      const topic2 = 'b2c3d4e5-f6a7-8901-bcde-f12345678901';
+      fakeConfigS3Response({
+        ...llmoConfig.defaultConfig(),
+        categories: {
+          [cat1]: { name: 'adobe', region: ['us', 'uk'] },
         },
-        {
-          prompt: 'what is adobe?', // Same prompt
-          region: 'uk', // Different region
-          topic: 'general',
-          category: 'adobe',
-          url: 'https://adobe.com/page2',
-          keyword: 'adobe',
-          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
-          volume: 2000,
-          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
-          source: 'ahrefs',
+        aiTopics: {
+          [topic1]: {
+            name: 'general',
+            category: cat1,
+            prompts: [
+              { prompt: 'what is adobe?', regions: ['us'], origin: 'ai', source: 'drs' },
+              { prompt: 'what is adobe?', regions: ['uk'], origin: 'ai', source: 'drs' }, // Different region
+            ],
+          },
+          [topic2]: {
+            name: 'pricing',
+            category: cat1,
+            prompts: [
+              { prompt: 'what is adobe?', regions: ['us'], origin: 'ai', source: 'drs' }, // Different topic
+            ],
+          },
         },
-        {
-          prompt: 'what is adobe?', // Same prompt
-          region: 'us',
-          topic: 'pricing', // Different topic
-          category: 'adobe',
-          url: 'https://adobe.com/page3',
-          keyword: 'adobe',
-          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
-          volume: 1500,
-          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
-          source: 'ahrefs',
-        },
-      ];
-
-      fakeParquetS3Response(samePromptDifferentContext);
-      fakeConfigS3Response(); // Empty config
+      });
 
       getPresignedUrl.resolves('https://example.com/presigned-url');
 
@@ -923,7 +832,6 @@ describe('Geo Brand Presence Handler', () => {
         ...context,
         auditContext: {
           calendarWeek: { year: 2025, week: 33 },
-          parquetFiles: ['some/parquet/file/data.parquet'],
         },
       }, getPresignedUrl);
 
@@ -939,48 +847,25 @@ describe('Geo Brand Presence Handler', () => {
       );
     });
 
-    it('should skip empty and invalid prompts in step 1', async () => {
-      const mixedData = [
-        {
-          prompt: 'valid prompt',
-          region: 'us',
-          topic: 'general',
-          category: 'adobe',
-          url: 'https://adobe.com/page1',
-          keyword: 'adobe',
-          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
-          volume: 1000,
-          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
-          source: 'ahrefs',
+    it('should skip prompts with no regions in step 1', async () => {
+      const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+      const topic1 = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+      fakeConfigS3Response({
+        ...llmoConfig.defaultConfig(),
+        categories: {
+          [cat1]: { name: 'adobe', region: ['us'] },
         },
-        {
-          prompt: '', // Empty prompt (should be skipped)
-          region: 'us',
-          topic: 'general',
-          category: 'adobe',
-          url: 'https://adobe.com/page2',
-          keyword: 'adobe',
-          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
-          volume: 2000,
-          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
-          source: 'ahrefs',
+        aiTopics: {
+          [topic1]: {
+            name: 'general',
+            category: cat1,
+            prompts: [
+              { prompt: 'valid prompt', regions: ['us'], origin: 'ai', source: 'drs' },
+              { prompt: 'no regions prompt', regions: [], origin: 'ai', source: 'drs' }, // No regions
+            ],
+          },
         },
-        {
-          prompt: '   ', // Whitespace only (should be skipped)
-          region: 'us',
-          topic: 'general',
-          category: 'adobe',
-          url: 'https://adobe.com/page3',
-          keyword: 'adobe',
-          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
-          volume: 1500,
-          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
-          source: 'ahrefs',
-        },
-      ];
-
-      fakeParquetS3Response(mixedData);
-      fakeConfigS3Response(); // Empty config
+      });
 
       getPresignedUrl.resolves('https://example.com/presigned-url');
 
@@ -988,16 +873,15 @@ describe('Geo Brand Presence Handler', () => {
         ...context,
         auditContext: {
           calendarWeek: { year: 2025, week: 33 },
-          parquetFiles: ['some/parquet/file/data.parquet'],
         },
       }, getPresignedUrl);
 
-      // Should only keep the valid prompt
+      // Should only keep the prompt with regions
       expect(s3Client.send).calledWith(
         matchS3Cmd('PutObjectCommand', {
           Body: sinon.match((json) => {
             const data = JSON.parse(json);
-            expect(data).to.have.lengthOf(1); // Only valid prompt kept
+            expect(data).to.have.lengthOf(1); // Only prompt with regions kept
             expect(data[0].prompt).to.equal('valid prompt');
             return true;
           })
@@ -1026,107 +910,55 @@ describe('Geo Brand Presence Handler', () => {
     });
   }
 
-  function fakeParquetS3Response(response) {
-    const columnData = {
-      prompt: { data: [], name: 'prompt', type: 'STRING' },
-      region: { data: [], name: 'region', type: 'STRING' },
-      category: { data: [], name: 'category', type: 'STRING' },
-      topic: { data: [], name: 'topic', type: 'STRING' },
-      url: { data: [], name: 'url', type: 'STRING' },
-      keyword: { data: [], name: 'keyword', type: 'STRING' },
-      keywordImportTime: { data: [], name: 'keywordImportTime', type: 'TIMESTAMP' },
-      volume: { data: [], name: 'volume', type: 'INT32' },
-      volumeImportTime: { data: [], name: 'volumeImportTime', type: 'TIMESTAMP' },
-      source: { data: [], name: 'source', type: 'STRING' },
-    };
-    const keys = Object.keys(columnData);
-    for (const x of response) {
-      for (const key of keys) {
-        columnData[key].data.push(x[key]);
-      }
-    }
-
-    const buffer = parquetWriteBuffer({ columnData: Object.values(columnData) });
-
-    s3Client.send.withArgs(
-      matchS3Cmd(
-        'GetObjectCommand',
-        { Key: sinon.match(/[/]data[.]parquet$/) },
-      ),
-    ).resolves({
-      Body: {
-        async transformToByteArray() {
-          return new Uint8Array(buffer);
+  function fakeAiTopicsConfig() {
+    const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+    const cat2 = '2a2f9b39-126b-411e-af0b-ad2a48dfd9b1';
+    const cat3 = '3b3f9c49-236c-522f-bf1c-be3b59dfe0c2';
+    return {
+      ...llmoConfig.defaultConfig(),
+      categories: {
+        [cat1]: { name: 'adobe', region: ['us'] },
+        [cat2]: { name: 'photoshop', region: ['us'] },
+        [cat3]: { name: 'illustrator', region: ['us'] },
+      },
+      aiTopics: {
+        'a1a1a1a1-1111-4111-a111-111111111111': {
+          name: 'general',
+          category: cat1,
+          prompts: [
+            { prompt: 'what is adobe?', regions: ['us'], origin: 'ai', source: 'drs' },
+          ],
+        },
+        'b2b2b2b2-2222-4222-a222-222222222222': {
+          name: 'pricing',
+          category: cat1,
+          prompts: [
+            { prompt: 'adobe pricing', regions: ['us'], origin: 'ai', source: 'drs' },
+          ],
+        },
+        'c3c3c3c3-3333-4333-a333-333333333333': {
+          name: 'usage',
+          category: cat2,
+          prompts: [
+            { prompt: 'how to use photoshop?', regions: ['us'], origin: 'ai', source: 'drs' },
+          ],
+        },
+        'd4d4d4d4-4444-4444-a444-444444444444': {
+          name: 'product comparison',
+          category: cat3,
+          prompts: [
+            { prompt: 'is illustrator better than photoshop?', regions: ['us'], origin: 'ai', source: 'drs' },
+          ],
+        },
+        'e5e5e5e5-5555-4555-a555-555555555555': {
+          name: 'usage',
+          category: cat3,
+          prompts: [
+            { prompt: 'where can i learn how to use illustrator?', regions: ['us'], origin: 'ai', source: 'drs' },
+          ],
         },
       },
-    });
-  }
-
-  function fakeData(mapFn) {
-    const data = [
-      {
-        prompt: 'what is adobe?',
-        region: 'us',
-        category: 'adobe',
-        topic: 'general',
-        url: 'https://adobe.com/page1',
-        keyword: 'adobe',
-        keywordImportTime: new Date('2024-05-01T00:00:00Z'),
-        volume: 1000,
-        volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
-        source: 'ahrefs',
-      },
-      {
-        prompt: 'adobe pricing',
-        region: 'us',
-        category: 'adobe',
-        topic: 'pricing',
-        url: 'https://adobe.com/page1',
-        keyword: 'adobe',
-        keywordImportTime: new Date('2024-05-01T00:00:00Z'),
-        volume: 1000,
-        volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
-        source: 'ahrefs',
-      },
-      {
-        prompt: 'how to use photoshop?',
-        region: 'us',
-        category: 'photoshop',
-        topic: 'usage',
-        url: 'https://adobe.com/page2',
-        keyword: 'photoshop',
-        keywordImportTime: new Date('2024-05-01T00:00:00Z'),
-        volume: 5000,
-        volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
-        source: 'ahrefs',
-      },
-      {
-        prompt: 'is illustrator better than photoshop?',
-        region: 'us',
-        category: 'illustrator',
-        topic: 'product comparison',
-        url: 'https://adobe.com/page3',
-        keyword: 'illustrator',
-        keywordImportTime: new Date('2024-05-01T00:00:00Z'),
-        volume: 3000,
-        volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
-        source: 'ahrefs',
-      },
-      {
-        prompt: 'where can i learn how to use illustrator?',
-        region: 'us',
-        category: 'illustrator',
-        topic: 'usage',
-        url: 'https://adobe.com/page3',
-        keyword: 'illustrator',
-        keywordImportTime: new Date('2024-05-01T00:00:00Z'),
-        volume: 3000,
-        volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
-        source: 'ahrefs',
-      },
-    ];
-
-    return mapFn ? data.map(mapFn) : data;
+    };
   }
 });
 

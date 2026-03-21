@@ -11,39 +11,21 @@
  */
 
 import { getStaticContent, isoCalendarWeek, llmoConfig } from '@adobe/spacecat-shared-utils';
-import {
-  extractCustomerDomain,
-  resolveConsolidatedBucketName,
-} from '../../utils/cdn-utils.js';
 import { uploadToSharePoint } from '../../utils/report-uploader.js';
-
-export async function getS3Config(site, context) {
-  const customerDomain = extractCustomerDomain(site);
-  const domainParts = customerDomain.split(/[._]/);
-  /* c8 ignore next */
-  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const bucket = resolveConsolidatedBucketName(context);
-
-  return {
-    bucket,
-    customerName,
-    customerDomain,
-    databaseName: `cdn_logs_${customerDomain}`,
-    getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
-  };
-}
 
 export async function loadSql(filename, variables) {
   return getStaticContent(variables, `./src/cdn-logs-report/sql/${filename}.sql`);
 }
 
-export function validateCountryCode(code) {
+export function validateCountryCode(code, siteIgnoreList = []) {
   const DEFAULT_COUNTRY_CODE = 'GLOBAL';
   // these are codes that are not valid to be regions as these are small islands
-  const ignoreCountryCodes = ['TV', 'ST'];
+  const globalIgnoreCodes = ['TV', 'ST'];
   if (!code || typeof code !== 'string') return DEFAULT_COUNTRY_CODE;
 
   const upperCode = code.toUpperCase();
+  const upperSiteIgnoreList = siteIgnoreList.map((c) => c.toUpperCase());
+  const ignoreCountryCodes = [...globalIgnoreCodes, ...upperSiteIgnoreList];
 
   if (upperCode === DEFAULT_COUNTRY_CODE || ignoreCountryCodes.includes(upperCode)) {
     return DEFAULT_COUNTRY_CODE;

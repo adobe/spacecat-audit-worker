@@ -1427,6 +1427,7 @@ describe('Product MetaTags', () => {
           },
           Suggestion: {
             bulkUpdateStatus: sinon.stub(),
+            saveMany: sinon.stub().resolves(),
           },
         };
         context = {
@@ -1594,8 +1595,8 @@ describe('Product MetaTags', () => {
           toOverride: true,
         });
 
-        // Verify the suggestion was saved
-        expect(existingSuggestion.save).to.be.calledOnce;
+        // Verify the suggestions were saved via saveMany
+        expect(dataAccessStub.Suggestion.saveMany).to.be.calledOnce;
       });
 
       it('should throw error if suggestions fail to create', async () => {
@@ -2576,6 +2577,12 @@ describe('Product MetaTags', () => {
               query: sinon.stub().rejects(new Error('RUM API error')),
             }),
           },
+        },
+        '../../src/support/utils.js': {
+          calculateCPCValue: sinon.stub().resolves(2.5),
+        },
+        '../../src/common/index.js': {
+          wwwUrlResolver: sinon.stub().resolves('https://example.com'),
         },
       });
 
@@ -4804,6 +4811,7 @@ describe('Product MetaTags', () => {
         },
         Suggestion: {
           bulkUpdateStatus: sinon.stub(),
+          saveMany: sinon.stub().resolves(),
         },
       };
       context = {
@@ -4887,7 +4895,7 @@ describe('Product MetaTags', () => {
             }),
           },
           Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]), create: sinon.stub() },
-          Suggestion: { bulkUpdateStatus: sinon.stub() },
+          Suggestion: { bulkUpdateStatus: sinon.stub(), saveMany: sinon.stub().resolves() },
         },
       };
     });
@@ -5033,7 +5041,7 @@ describe('Product MetaTags', () => {
           }),
         },
         Site: { findById: sinon.stub().resolves(null) },
-        Suggestion: { bulkUpdateStatus: sinon.stub() },
+        Suggestion: { bulkUpdateStatus: sinon.stub(), saveMany: sinon.stub().resolves() },
       };
       context = {
         log: logStub,

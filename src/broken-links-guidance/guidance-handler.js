@@ -60,11 +60,30 @@ export default async function handler(message, context) {
     return ok();
   }
 
+  // Batch-fetch all suggestions in a single query instead of N individual findById calls
+  const suggestionIds = brokenLinks
+    .map((bl) => bl.suggestionId)
+    .filter(Boolean);
+
+  const { data: existingSuggestions = [] } = suggestionIds.length > 0
+    ? await Suggestion.batchGetByKeys(suggestionIds.map((id) => ({ suggestionId: id })))
+    : { data: [] };
+
+  const suggestionMap = new Map(existingSuggestions.map((s) => [s.getId(), s]));
+
+  // Filter and validate suggested URLs configured for the site
+  const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
+  const effectiveBaseURL = (overrideBaseURL && isValidUrl(overrideBaseURL))
+    ? overrideBaseURL
+    : site.getBaseURL();
+
+  const toSave = [];
+  // Process each broken link (URL filtering is async but not a DB call)
   await Promise.all(brokenLinks.map(async (brokenLink) => {
-    const suggestion = await Suggestion.findById(brokenLink.suggestionId);
+    const suggestion = suggestionMap.get(brokenLink.suggestionId);
     if (!suggestion) {
       log.error(`[${opportunity.getType()}] Suggestion not found for ID: ${brokenLink.suggestionId}`);
-      return {};
+      return;
     }
 
     const suggestedUrls = brokenLink.suggestedUrls || [];
@@ -77,18 +96,21 @@ export default async function handler(message, context) {
       );
     }
 
-    // Filter and validate suggested URLs
-    // Use overrideBaseURL if configured to ensure consistency with data collection
-    const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
-    const effectiveBaseURL = (overrideBaseURL && isValidUrl(overrideBaseURL))
-      ? overrideBaseURL
-      : site.getBaseURL();
-
     const validSuggestedUrls = Array.isArray(suggestedUrls) ? suggestedUrls : [];
     const filteredSuggestedUrls = await filterBrokenSuggestedUrls(
       validSuggestedUrls,
       effectiveBaseURL,
     );
+    const existingData = suggestion.getData() || {};
+    const existingSuggestedUrls = Array.isArray(existingData.urlsSuggested)
+      ? existingData.urlsSuggested.filter(Boolean)
+      : [];
+    let nextSuggestedUrls = filteredSuggestedUrls;
+    if (nextSuggestedUrls.length === 0) {
+      nextSuggestedUrls = existingSuggestedUrls.length > 0
+        ? existingSuggestedUrls
+        : [effectiveBaseURL];
+    }
 
     // Handle AI rationale - clear it if all URLs were filtered out
     // This prevents showing rationale for URLs that don't exist
@@ -96,21 +118,24 @@ export default async function handler(message, context) {
     if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length > 0) {
       // All URLs were filtered out (likely invalid/broken), clear rationale
       log.info('All the suggested URLs were filtered out');
-      aiRationale = '';
+      aiRationale = existingSuggestedUrls.length > 0 ? existingData.aiRationale || '' : '';
     } else if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length === 0) {
       // No URLs were provided by Mystique, clear rationale
       log.info('No suggested URLs provided by Mystique');
-      aiRationale = '';
+      aiRationale = existingSuggestedUrls.length > 0 ? existingData.aiRationale || '' : '';
     }
 
     suggestion.setData({
-      ...suggestion.getData(),
-      urlsSuggested: filteredSuggestedUrls,
+      ...existingData,
+      urlsSuggested: nextSuggestedUrls,
       aiRationale,
     });
-
-    return suggestion.save();
+    toSave.push(suggestion);
   }));
+
+  if (toSave.length > 0) {
+    await Suggestion.saveMany(toSave);
+  }
 
   return ok();
 }

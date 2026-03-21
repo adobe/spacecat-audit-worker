@@ -128,6 +128,7 @@ describe('Permissions Handler Tests', () => {
           Suggestion: {
             bulkUpdateStatus: sandbox.stub().resolves(),
             allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+            saveMany: sinon.stub().resolves(),
           },
         },
         dataContext: {
@@ -138,6 +139,7 @@ describe('Permissions Handler Tests', () => {
               NEW: 'NEW',
             },
             bulkUpdateStatus: sandbox.stub().resolves(),
+            saveMany: sinon.stub().resolves(),
           },
         },
       })
@@ -1700,8 +1702,7 @@ describe('Permissions Handler Tests', () => {
       const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
 
       expect(result).to.deep.equal({ status: 'complete' });
-      expect(mockSuggestion1.save).to.have.been.called;
-      expect(mockSuggestion2.save).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
     });
 
     it('should reopen FIXED suggestions when they appear again in the audit', async () => {
@@ -1738,7 +1739,7 @@ describe('Permissions Handler Tests', () => {
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(mockFixedSuggestion.setStatus).to.have.been.calledWith(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
-      expect(mockFixedSuggestion.save).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
       expect(context.log.warn).to.have.been.calledWith('Resolved suggestion found in audit. Possible regression.');
     });
 
@@ -1776,7 +1777,7 @@ describe('Permissions Handler Tests', () => {
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(mockFixedSuggestion.setStatus).to.have.been.calledWith(SuggestionDataAccess.STATUSES.NEW);
-      expect(mockFixedSuggestion.save).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
       expect(context.log.warn).to.have.been.calledWith('Resolved suggestion found in audit. Possible regression.');
     });
 
@@ -1813,7 +1814,7 @@ describe('Permissions Handler Tests', () => {
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(mockRejectedSuggestion.setStatus).to.not.have.been.called;
-      expect(mockRejectedSuggestion.save).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
       expect(context.log.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
     });
 

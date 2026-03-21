@@ -16,24 +16,7 @@ import SplunkAPIClient from '@adobe/spacecat-shared-splunk-client';
 
 import { postMessageSafe } from '../utils/slack-utils.js';
 
-const DEFAULT_MINUTES = 60;
-
-const DEFAULT_SPLUNK_FIELDS = {
-  envField: 'aem_envId',
-  programField: 'aem_program_id',
-  pathField: 'url',
-};
-
-const CONFIDENCE = {
-  acsredirectmanager: 0.95,
-  acsredirectmapmanager: 0.95,
-  redirectmapTxt: 0.90,
-  damredirectmgr: 0.85,
-};
-
-const MATCH_FIELD = 'matched_path';
-const DEFAULT_HEAD_LIMIT = 200;
-const RX_ANY_TAIL = '[^\\\\s\\\\\\"?]*';
+const DEFAULT_MINUTES = 3000; // 50 hours
 
 async function oneshotSearchCompat(client, searchString) {
   if (typeof client?.oneshotSearch === 'function') {
@@ -79,114 +62,47 @@ async function oneshotSearchCompat(client, searchString) {
   return response.json();
 }
 
-function buildBaseSearch({
-  minutes,
-  envField,
-  programField,
-  environmentId,
-  programId,
-}) {
-  // Keep the top-level search stable and narrow.
-  // Note: field names must be verified in Splunk for your index schema.
-  return [
-    'search',
-    'index=dx_aem_engineering',
-    `earliest=-${minutes}m@m`,
-    'latest=@m',
-    `${envField}="${environmentId}"`,
-    `${programField}="${programId}"`,
-  ].join(' ');
-}
-
-function withMatchExtraction(search, {
-  matchRegex,
-  headLimit = DEFAULT_HEAD_LIMIT,
-  pathField = 'url',
-  includeRaw = true,
-} = {}) {
-  const fields = [MATCH_FIELD];
-  if (typeof pathField === 'string' && pathField.length > 0) {
-    fields.push(pathField);
-  }
-  if (includeRaw) fields.push('_raw');
-  const tableFields = Array.from(new Set(fields)).join(' ');
-
-  return `${search} | rex field=_raw "(?<${MATCH_FIELD}>${matchRegex})" | where isnotnull(${MATCH_FIELD}) | table ${tableFields} | head ${headLimit}`;
-}
-
-function buildQueries(params) {
-  const { pathField } = params;
-  return [
-    {
-      id: 'acsredirectmanager',
-      confidence: CONFIDENCE.acsredirectmanager,
-      // IMPORTANT: naive /conf/ matching causes false positives. We require redirect context.
-      search: withMatchExtraction(
-        `${buildBaseSearch(params)} "/conf/" (redirect OR "acs-commons") NOT "/settings/wcm/templates/"`,
-        { matchRegex: `/conf/${RX_ANY_TAIL}`, pathField },
-      ),
-    },
-    {
-      id: 'acsredirectmapmanager',
-      confidence: CONFIDENCE.acsredirectmapmanager,
-      search: withMatchExtraction(
-        `${buildBaseSearch(params)} "/etc/acs-commons/redirect-maps"`,
-        { matchRegex: `/etc/acs-commons/redirect-maps${RX_ANY_TAIL}`, pathField },
-      ),
-    },
-    {
-      id: 'redirectmapTxt',
-      confidence: CONFIDENCE.redirectmapTxt,
-      search: withMatchExtraction(
-        `${buildBaseSearch(params)} "redirectmap.txt"`,
-        { matchRegex: `redirectmap\\\\.txt${RX_ANY_TAIL}`, pathField },
-      ),
-    },
-    {
-      id: 'damredirectmgr',
-      confidence: CONFIDENCE.damredirectmgr,
-      // IMPORTANT: DAM is noisy unless constrained to redirect context.
-      search: withMatchExtraction(
-        `${buildBaseSearch(params)} "/content/dam/" redirect`,
-        { matchRegex: `/content/dam/${RX_ANY_TAIL}`, pathField },
-      ),
-    },
-  ];
-}
-
-function scorePattern({ totalCount, confidence }) {
-  // Keep the displayed score as a float, but use an integer key for stable sorting/ties.
-  const confidenceWeight = Math.round(confidence * 100);
+function buildDispatcherQuery(serviceId, minutes) {
   return {
-    score: totalCount * confidence,
-    scoreKey: totalCount * confidenceWeight,
+    id: 'dispatcher-logs',
+    search: `search ( index=dx_aem_engineering OR index=dx_aem_engineering_prod OR index=dx_aem_engineering_restricted )
+      sourcetype=httpderror
+      namespace!=ns-team-buds*
+      level=managed_rewrite_maps*
+      earliest=-${minutes}m@m
+      latest=@m
+      aem_service="${serviceId}"
+      message="*mapping '*' from path '*'"
+      | rex field=message "^mapping '(?<orig>[^']*)' from path '(?<fileName>[^']*)' with params.*$"
+      | eval redirectMethodUsed = case(
+          match(fileName,"^/conf/"), "acsredirectmanager",
+          match(fileName,"^(/etc/acs-commons|/content/.*\\.redirectmap\\.txt$)"), "acsredirectmapmanager",
+          match(fileName,"^/content/dam/"), "damredirectmgr",
+          1=1, "Custom"
+        )
+      | stats count AS totalLogHits,
+              latest(_time) AS mostRecentEpoch,
+              first(fileName) AS "fileName",
+              values(aem_service) AS Services
+        BY redirectMethodUsed
+      | sort redirectMethodUsed
+    `,
   };
 }
 
-function computeTopMatches(values, limit = 10) {
-  const counts = new Map();
-  for (const v of values) {
-    counts.set(v, (counts.get(v) || 0) + 1);
-  }
-  return Array.from(counts.entries())
-    .sort((a, b) => (b[1] - a[1]) || String(a[0]).localeCompare(String(b[0])))
-    .slice(0, limit)
-    .map(([value, count]) => ({ value, count }));
-}
+export function pickWinner(patternResults) {
+  if (patternResults.error) return { redirectMethodUsed: 'none', fileName: 'none' };
+  if (patternResults.length === 0) return { redirectMethodUsed: 'vanityurlmgr', fileName: 'none' };
+  if (patternResults.every((r) => r.error)) return null;
 
-function pickWinner(patternResults) {
-  const successful = patternResults.filter((r) => !r.error);
-  if (successful.length === 0) return null;
-
-  // Sort by score desc, then by totalCount desc, then by confidence desc.
-  // Use scoreKey (integer) for stable comparisons.
-  successful.sort((a, b) => {
-    if (b.scoreKey !== a.scoreKey) return b.scoreKey - a.scoreKey;
-    if (b.totalCount !== a.totalCount) return b.totalCount - a.totalCount;
-    return b.confidence - a.confidence;
+  // Sort by most recent, then by totalLogHits; ties leave order unchanged
+  patternResults.sort((a, b) => {
+    if (b.mostRecentEpoch !== a.mostRecentEpoch) return b.mostRecentEpoch - a.mostRecentEpoch;
+    if (b.totalLogHits !== a.totalLogHits) return b.totalLogHits - a.totalLogHits;
+    return 0;
   });
 
-  return successful[0];
+  return patternResults[0];
 }
 
 function formatQueriesForSlack(queries) {
@@ -202,10 +118,10 @@ function formatResponsesPreviewForSlack(results, {
   let acc = '';
 
   for (const r of results) {
-    const header = `# ${r.id}\n`;
+    const header = `# ${r.redirectMethodUsed}\n`;
     const body = hasText(r.error)
       ? `error: ${String(r.error)}\n`
-      : `${r.rows.slice(0, maxRowsPerPattern).map((row) => JSON.stringify(row)).join('\n') || '(no rows)'}\n`;
+      : `${r.fileName}\n`;
 
     const block = `${header}${body}\n`;
     if (acc.length + block.length > totalLimit) {
@@ -232,33 +148,37 @@ function formatSlackMessage({
     + `AEM CS: programId=\`${programId}\`, environmentId=\`${environmentId}\`, window=\`last ${minutes}m\`\n`;
 
   const lines = results.map((r) => {
+    const methodUsed = r.redirectMethodUsed;
     const status = r.error
       ? `failed: ${r.error}`
-      : `rows=${r.rowsCount}, count=${r.totalCount}, score=${r.score.toFixed(2)}`;
-    return `- \`${r.id}\` (conf=${r.confidence}): ${status}`;
+      : `rows=${r.rowsCount ?? (r.rows?.length ?? 1)}, count=${r.totalCount ?? r.totalLogHits ?? 0}`;
+    return `- \`${methodUsed}\`: ${status}`;
   }).join('\n');
 
   if (!winner) {
     return `${header}\n*Results*\n${lines}\n\n*Winner*: none${formatQueriesForSlack(queries)}${formatResponsesPreviewForSlack(results)}`;
   }
 
-  const examples = (winner.examples || []).slice(0, 8).join('\n');
-  const examplesBlock = hasText(examples)
-    ? `\n\n*Top matched strings for winner (\`${winner.id}\`)*\n\`\`\`\n${examples}\n\`\`\``
+  const examplesBlock = hasText(winner.fileName)
+    ? `\n\n*Top matched strings for winner (\`${winner.redirectMethodUsed}\`)*\n\`\`\`\n${winner.fileName}\n\`\`\``
     : '';
 
-  return `${header}\n*Winner*: \`${winner.id}\`\n\n*Results*\n${lines}${examplesBlock}${formatQueriesForSlack(queries)}${formatResponsesPreviewForSlack(results)}`;
+  const methodUsed = winner.redirectMethodUsed;
+  return `${header}\n*Winner*: \`${methodUsed}\`\n\n*Results*\n${lines}${examplesBlock}${formatQueriesForSlack(queries)}${formatResponsesPreviewForSlack(results)}`;
 }
 
 export default async function identifyRedirects(message, context) {
   const { log } = context;
+  const { Site } = context.dataAccess;
+  const siteId = message?.siteId;
+  const site = hasText(siteId) ? await Site.findById(siteId) : null;
   const {
     baseURL,
     programId,
     environmentId,
     minutes = DEFAULT_MINUTES,
     slackContext,
-    splunkFields = {},
+    updateRedirects = false,
   } = message || {};
 
   const channelId = slackContext?.channelId;
@@ -282,8 +202,6 @@ export default async function identifyRedirects(message, context) {
     return ok({ status: 'error', reason: 'missing-inputs' });
   }
 
-  const { envField, programField, pathField } = { ...DEFAULT_SPLUNK_FIELDS, ...splunkFields };
-
   const client = SplunkAPIClient.createFrom(context);
 
   await postMessageSafe(
@@ -296,83 +214,45 @@ export default async function identifyRedirects(message, context) {
     },
   );
 
-  const queryParams = {
-    minutes,
-    envField,
-    programField,
-    pathField,
-    environmentId,
-    programId,
-  };
+  const serviceId = `cm-p${programId}-e${environmentId}`;
+  const query = buildDispatcherQuery(serviceId, minutes);
+  const queries = [query];
 
-  const queries = buildQueries(queryParams);
-
-  let settled;
+  let response;
   try {
-    // Ensure a single login, then run queries in parallel.
+    // Ensure a single login, then run the query.
     await client.login();
-    settled = await Promise.allSettled(queries.map((q) => oneshotSearchCompat(client, q.search)));
+    response = await oneshotSearchCompat(client, query.search);
   } catch (e) {
-    const text = `:x: Failed to query Splunk for redirect patterns for *${baseURL}*: ${e.message}`;
-    await postMessageSafe(context, channelId, text, {
-      threadTs,
-      ...(slackTarget && { target: slackTarget }),
-    });
-    return ok({ status: 'error', reason: 'splunk-query-failed' });
+    response = { rejected: true, error: e };
   }
 
-  const results = queries.map((q, idx) => {
-    const item = settled[idx];
-    if (item.status === 'rejected') {
-      return {
-        id: q.id,
-        confidence: q.confidence,
-        rowsCount: 0,
-        rows: [],
-        totalCount: 0,
-        score: 0,
-        scoreKey: 0,
-        topMatches: [],
-        examples: [],
-        error: item.reason?.message || String(item.reason),
-      };
-    }
-
-    const response = item.value || {};
-    const splunkResults = Array.isArray(response.results) ? response.results : [];
-    const totalCount = splunkResults.length;
-    const rows = splunkResults.slice(0, 3);
-    const matches = splunkResults
-      .map((r) => r[MATCH_FIELD])
-      .filter((v) => typeof v === 'string' && v.length > 0);
-    const examplesList = (matches.length > 0 ? matches : splunkResults.map((r) => r[pathField]))
-      .filter((v) => typeof v === 'string' && v.length > 0)
-      .slice(0, 8);
-    const examples = examplesList.length > 0 ? examplesList : null;
-
-    const topMatches = computeTopMatches(matches, 10);
-    const { score, scoreKey } = scorePattern({ totalCount, confidence: q.confidence });
-    return {
-      id: q.id,
-      confidence: q.confidence,
-      rowsCount: splunkResults.length,
-      rows,
-      totalCount,
-      score,
-      scoreKey,
-      topMatches,
-      examples,
-      error: null,
-    };
-  });
+  let results;
+  if (response.rejected) {
+    const err = response.error;
+    results = [{
+      redirectMethodUsed: query.id,
+      error: err?.message ?? String(err),
+    }];
+  } else if (response.error) {
+    results = [{
+      redirectMethodUsed: query.id,
+      rowsCount: 0,
+      rows: [],
+      totalCount: 0,
+      error: response.reason?.message || String(response.reason),
+    }];
+  } else {
+    results = response.results || [];
+  }
 
   const winner = pickWinner(results);
-  const allZero = results.every((r) => !r.error && r.totalCount === 0);
+  const allZero = results.every((r) => !r.error && r.totalLogHits === 0);
 
   const finalText = allZero
     ? `*Redirect pattern detection* for *${baseURL}*\n`
       + `AEM CS: programId=\`${programId}\`, environmentId=\`${environmentId}\`, window=\`last ${minutes}m\`\n\n`
-      + `No redirect patterns detected in the last ${minutes} minutes.`
+      + `No redirect patterns detected in the last ${minutes} minutes.\n\n*Winner*: \`${winner?.redirectMethodUsed ?? 'none'}\` (no patterns)`
       + `${formatQueriesForSlack(queries)}${formatResponsesPreviewForSlack(results)}`
     : formatSlackMessage({
       baseURL,
@@ -388,6 +268,29 @@ export default async function identifyRedirects(message, context) {
     threadTs,
     ...(slackTarget && { target: slackTarget }),
   });
+
+  if (updateRedirects && winner !== null) {
+    if (!site) {
+      const reason = !hasText(siteId) ? 'missing siteId' : 'site not found';
+      log.warn(`[identify-redirects] Skipping config update: ${reason}`);
+      await postMessageSafe(
+        context,
+        channelId,
+        `:warning: Could not update delivery config for *${baseURL}* (${reason}).`,
+        { threadTs, ...(slackTarget && { target: slackTarget }) },
+      );
+    } else {
+      const redirectsMode = winner.redirectMethodUsed;
+      const redirectsSource = redirectsMode === 'vanityurlmgr' ? 'none' : (winner.fileName || 'none');
+
+      site.setDeliveryConfig({
+        ...site.getDeliveryConfig(),
+        redirectsSource,
+        redirectsMode,
+      });
+      await site.save();
+    }
+  }
 
   return ok({ status: 'ok' });
 }

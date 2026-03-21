@@ -102,14 +102,23 @@ import permissions from './permissions/handler.js';
 import permissionsRedundant from './permissions/handler.redundant.js';
 import faqs from './faqs/handler.js';
 import faqsGuidance from './faqs/guidance-handler.js';
+import relatedUrls from './related-urls/handler.js';
+import relatedUrlsGuidance from './related-urls/guidance-handler.js';
 import pageCitability from './page-citability/handler.js';
 import healthCheck from './health-check/handler.js';
 import wikipediaAnalysis from './wikipedia-analysis/handler.js';
 import wikipediaAnalysisGuidance from './wikipedia-analysis/guidance-handler.js';
+import redditAnalysis from './reddit-analysis/handler.js';
+import redditAnalysisGuidance from './reddit-analysis/guidance-handler.js';
+import youtubeAnalysis from './youtube-analysis/handler.js';
+import youtubeAnalysisGuidance from './youtube-analysis/guidance-handler.js';
+import citedAnalysis from './cited-analysis/handler.js';
+import citedAnalysisGuidance from './cited-analysis/guidance-handler.js';
 import frescopaDataGeneration from './frescopa-data-generation/handler.js';
 import semanticValueVisibility from './semantic-value-visibility/handler.js';
 import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
 import drsPromptGeneration from './drs-prompt-generation/handler.js';
+import offsiteBrandPresence from './offsite-brand-presence/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -206,14 +215,23 @@ const HANDLERS = {
   'security-permissions-redundant': permissionsRedundant,
   faqs,
   'guidance:faqs': faqsGuidance,
+  'related-urls': relatedUrls,
+  'guidance:related-urls': relatedUrlsGuidance,
   'page-citability': pageCitability,
   'health-check': healthCheck,
   'wikipedia-analysis': wikipediaAnalysis,
   'guidance:wikipedia-analysis': wikipediaAnalysisGuidance,
+  'reddit-analysis': redditAnalysis,
+  'guidance:reddit-analysis': redditAnalysisGuidance,
+  'youtube-analysis': youtubeAnalysis,
+  'guidance:youtube-analysis': youtubeAnalysisGuidance,
+  'cited-analysis': citedAnalysis,
+  'guidance:cited-analysis': citedAnalysisGuidance,
   'frescopa-data-generation': frescopaDataGeneration,
   'semantic-value-visibility': semanticValueVisibility,
   'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
   'drs:prompt_generation_base_url': drsPromptGeneration,
+  'offsite-brand-presence': offsiteBrandPresence,
   dummy: (message) => ok(message),
 };
 
@@ -237,6 +255,9 @@ function normalizeDrsMessage(message) {
       resultLocation: message.result_location,
       providerId,
       source: metadata.source,
+      ...(metadata.brand_presence_batch_id && {
+        brandPresenceBatchId: metadata.brand_presence_batch_id,
+      }),
     },
   };
 }

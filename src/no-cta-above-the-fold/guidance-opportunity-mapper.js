@@ -79,6 +79,9 @@ export async function mapToSuggestion(
   pageGuidance = [],
 ) {
   const markdown = pageGuidance?.body?.markdown;
+  const contentFix = pageGuidance?.metadata?.content_fix
+    || pageGuidance?.metadata?.fix?.content_fix;
+  const ctaLinkSuggestion = pageGuidance?.metadata?.cta_link_suggestion;
   const requiresValidation = Boolean(context?.site?.requiresValidation);
 
   return {
@@ -96,6 +99,8 @@ export async function mapToSuggestion(
         },
       ],
       suggestionValue: `${sanitizeMarkdown(markdown)}`,
+      contentFix: contentFix || null,
+      ctaLinkSuggestion: ctaLinkSuggestion || null,
     },
   };
 }

@@ -87,6 +87,12 @@ describe('Image Alt Text Handler', () => {
               getType: sandbox.stub().returns('alt-text'),
             }),
           },
+          Configuration: {
+            findLatest: sandbox.stub().resolves({
+              getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
+              isHandlerEnabledForSite: sandbox.stub().returns(false),
+            }),
+          },
         },
         imsHost: 'test-ims-host',
         clientId: 'test-client-id',
@@ -118,25 +124,38 @@ describe('Image Alt Text Handler', () => {
     });
   });
 
+  describe('isDecorativeAgentEnabled', () => {
+    it('should return true when enabled sites is empty', async () => {
+      context.dataAccess.Configuration = {
+        findLatest: sandbox.stub().resolves({
+          getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
+        }),
+      };
+      const result = await handlerModule.isDecorativeAgentEnabled(context);
+      expect(result).to.be.true;
+    });
+
+    it('should return false when enabled sites is non-empty', async () => {
+      context.dataAccess.Configuration = {
+        findLatest: sandbox.stub().resolves({
+          getEnabledSiteIdsForHandler: sandbox.stub().returns(['site-1']),
+        }),
+      };
+      const result = await handlerModule.isDecorativeAgentEnabled(context);
+      expect(result).to.be.false;
+    });
+  });
+
   describe('processAltTextWithMystique', () => {
     let sendAltTextOpportunityToMystiqueStub;
-    let clearAltTextSuggestionsStub;
-    let isAuditEnabledForSiteStub;
 
     beforeEach(async () => {
       sendAltTextOpportunityToMystiqueStub = sandbox.stub().resolves();
-      clearAltTextSuggestionsStub = sandbox.stub().resolves();
-      isAuditEnabledForSiteStub = sandbox.stub().resolves(false); // Default to 100 page limit
-      // Mock the module with our stubs
       handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
         '@adobe/spacecat-shared-utils': { tracingFetch: tracingFetchStub },
         '../../../src/image-alt-text/opportunityHandler.js': {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
-          clearAltTextSuggestions: clearAltTextSuggestionsStub,
-        },
-        '../../../src/common/audit-utils.js': {
-          isAuditEnabledForSite: isAuditEnabledForSiteStub,
         },
       });
     });
@@ -157,6 +176,7 @@ describe('Image Alt Text Handler', () => {
         context,
         [],
         false,
+        true,
       );
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Processing alt-text with Mystique for site site-id',
@@ -217,16 +237,15 @@ describe('Image Alt Text Handler', () => {
 
       await handlerModule.processAltTextWithMystique(context);
 
-      // Should NOT call clearAltTextSuggestions anymore
-      expect(clearAltTextSuggestionsStub).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith(
         '[alt-text]: Updating opportunity for new audit run',
       );
 
-      // Should call setData with preserved existing data
+      // Should call setData with preserved existing data and topPagesOffset
       expect(mockOpportunity.setData).to.have.been.calledWith(
         sinon.match({
           existingData: 'value', // Existing data preserved
+          topPagesOffset: 0,
           mystiqueResponsesReceived: 0,
           mystiqueResponsesExpected: sinon.match.number,
           processedSuggestionIds: [],
@@ -255,6 +274,7 @@ describe('Image Alt Text Handler', () => {
 
       expect(mockOpportunity.setData).to.have.been.calledWith(
         sinon.match({
+          topPagesOffset: 0,
           mystiqueResponsesReceived: 0,
           mystiqueResponsesExpected: sinon.match.number,
           processedSuggestionIds: [],
@@ -273,7 +293,6 @@ describe('Image Alt Text Handler', () => {
 
       await handlerModule.processAltTextWithMystique(context);
 
-      expect(clearAltTextSuggestionsStub).to.not.have.been.called;
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Creating new opportunity for site site-id',
       );
@@ -298,6 +317,7 @@ describe('Image Alt Text Handler', () => {
         context,
         [],
         false,
+        true,
       );
     });
 
@@ -318,6 +338,7 @@ describe('Image Alt Text Handler', () => {
         context,
         [],
         false,
+        true,
       );
     });
 
@@ -338,6 +359,7 @@ describe('Image Alt Text Handler', () => {
         context,
         [],
         false,
+        true,
       );
     });
 
@@ -360,6 +382,7 @@ describe('Image Alt Text Handler', () => {
         context,
         [],
         false,
+        true,
       );
     });
 
@@ -652,6 +675,7 @@ describe('Image Alt Text Handler', () => {
           context,
           ['https://example.com/image1.jpg', 'https://example.com/image3.jpg'],
           false,
+          true,
         );
       });
 
@@ -704,6 +728,7 @@ describe('Image Alt Text Handler', () => {
           context,
           ['https://example.com/image2.jpg'],
           false,
+          true,
         );
       });
 
@@ -745,14 +770,16 @@ describe('Image Alt Text Handler', () => {
 
   describe('processScraping', () => {
     let s3ClientMock;
-    let isAuditEnabledForSiteStub;
+    let configurationMock;
 
     beforeEach(async () => {
       s3ClientMock = {
         send: sandbox.stub(),
       };
 
-      isAuditEnabledForSiteStub = sandbox.stub();
+      configurationMock = {
+        isHandlerEnabledForSite: sandbox.stub().returns(false),
+      };
 
       context = new MockContextBuilder()
         .withSandbox(sandbox)
@@ -773,20 +800,20 @@ describe('Image Alt Text Handler', () => {
                 { getUrl: () => 'https://example.com/page3' },
               ]),
             },
+            Opportunity: {
+              allBySiteIdAndStatus: sandbox.stub().resolves([]),
+            },
+            Configuration: {
+              findLatest: sandbox.stub().resolves(configurationMock),
+            },
           },
         })
         .build();
 
-      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
-        '../../../src/common/audit-utils.js': {
-          isAuditEnabledForSite: isAuditEnabledForSiteStub,
-        },
-      });
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {});
     });
 
     it('should check S3 for existing scrapes and return missing URLs', async () => {
-      isAuditEnabledForSiteStub.resolves(false); // Regular site, 100 page limit
-
       // Mock S3 responses: page1 exists, page2 and page3 don't
       s3ClientMock.send.callsFake((command) => {
         if (command instanceof HeadObjectCommand) {
@@ -822,8 +849,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should send first URL when all scrapes exist', async () => {
-      isAuditEnabledForSiteStub.resolves(false);
-
       // Mock S3 to return success for all pages
       s3ClientMock.send.resolves();
 
@@ -842,7 +867,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should throw error when no top pages found', async () => {
-      isAuditEnabledForSiteStub.resolves(false);
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
 
       await expect(handlerModule.processScraping(context))
@@ -850,7 +874,7 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should limit pages to 20 when summit-plg is enabled', async () => {
-      isAuditEnabledForSiteStub.resolves(true); // summit-plg enabled
+      configurationMock.isHandlerEnabledForSite.returns(true);
 
       // Create 25 pages to ensure slicing works
       const pages = Array.from({ length: 25 }, (_, i) => ({
@@ -876,8 +900,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should limit pages to 100 when summit-plg is disabled', async () => {
-      isAuditEnabledForSiteStub.resolves(false); // summit-plg disabled
-
       // Create 150 pages to ensure slicing works
       const pages = Array.from({ length: 150 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
@@ -900,8 +922,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should handle NoSuchKey error as missing scrape', async () => {
-      isAuditEnabledForSiteStub.resolves(false);
-
       const error = new Error('NoSuchKey');
       error.name = 'NoSuchKey';
       s3ClientMock.send.rejects(error);
@@ -917,8 +937,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should handle other S3 errors with fail-safe approach', async () => {
-      isAuditEnabledForSiteStub.resolves(false);
-
       const error = new Error('S3 Connection timeout');
       error.name = 'NetworkError';
       s3ClientMock.send.rejects(error);
@@ -933,8 +951,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should use correct S3 key format with pathname', async () => {
-      isAuditEnabledForSiteStub.resolves(false);
-
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
         { getUrl: () => 'https://example.com/products/item1' },
       ]);
@@ -951,8 +967,6 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should handle mix of existing and missing scrapes', async () => {
-      isAuditEnabledForSiteStub.resolves(false);
-
       // page1 exists, page2 doesn't, page3 exists
       s3ClientMock.send.callsFake((command) => {
         if (command instanceof HeadObjectCommand) {
@@ -979,11 +993,14 @@ describe('Image Alt Text Handler', () => {
 
   describe('processAltTextWithMystique with page limits', () => {
     let sendAltTextOpportunityToMystiqueStub;
-    let isAuditEnabledForSiteStub;
+    let configurationMock;
 
     beforeEach(async () => {
       sendAltTextOpportunityToMystiqueStub = sandbox.stub().resolves();
-      isAuditEnabledForSiteStub = sandbox.stub();
+      configurationMock = {
+        getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
+        isHandlerEnabledForSite: sandbox.stub().returns(false),
+      };
 
       context = new MockContextBuilder()
         .withSandbox(sandbox)
@@ -1012,6 +1029,9 @@ describe('Image Alt Text Handler', () => {
                 getType: sandbox.stub().returns('alt-text'),
               }),
             },
+            Configuration: {
+              findLatest: sandbox.stub().resolves(configurationMock),
+            },
           },
         })
         .build();
@@ -1022,14 +1042,11 @@ describe('Image Alt Text Handler', () => {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
         },
-        '../../../src/common/audit-utils.js': {
-          isAuditEnabledForSite: isAuditEnabledForSiteStub,
-        },
       });
     });
 
     it('should limit to 20 pages when summit-plg is enabled', async () => {
-      isAuditEnabledForSiteStub.resolves(true); // summit-plg enabled
+      configurationMock.isHandlerEnabledForSite.returns(true);
 
       // Create 50 pages
       const pages = Array.from({ length: 50 }, (_, i) => ({
@@ -1046,18 +1063,17 @@ describe('Image Alt Text Handler', () => {
       expect(sentUrls[0]).to.equal('https://example.com/page1');
       expect(sentUrls[19]).to.equal('https://example.com/page20');
       expect(callArgs[6]).to.equal(true);
+      expect(callArgs[7]).to.equal(true);
 
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Page limit set to 20 (summit-plg enabled: true)',
       );
       expect(context.log.debug).to.have.been.calledWith(
-        '[alt-text]: Using 20 top pages out of 50 (limit: 20)',
+        '[alt-text]: Using pages 0-19 of 50 (limit: 20)',
       );
     });
 
     it('should limit to 100 pages when summit-plg is disabled', async () => {
-      isAuditEnabledForSiteStub.resolves(false); // summit-plg disabled
-
       // Create 150 pages
       const pages = Array.from({ length: 150 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
@@ -1073,17 +1089,18 @@ describe('Image Alt Text Handler', () => {
       expect(sentUrls[0]).to.equal('https://example.com/page1');
       expect(sentUrls[99]).to.equal('https://example.com/page100');
       expect(callArgs[6]).to.equal(false);
+      expect(callArgs[7]).to.equal(true);
 
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Page limit set to 100 (summit-plg enabled: false)',
       );
       expect(context.log.debug).to.have.been.calledWith(
-        '[alt-text]: Using 100 top pages out of 150 (limit: 100)',
+        '[alt-text]: Using pages 0-99 of 150 (limit: 100)',
       );
     });
 
     it('should include includedURLs in addition to limited top pages', async () => {
-      isAuditEnabledForSiteStub.resolves(true); // 20 page limit
+      configurationMock.isHandlerEnabledForSite.returns(true);
 
       const pages = Array.from({ length: 25 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i + 1}`,
@@ -1114,16 +1131,513 @@ describe('Image Alt Text Handler', () => {
       expect(sentUrls).to.include('https://example.com/page20');
       expect(sentUrls).to.not.include('https://example.com/page21');
       expect(callArgs[6]).to.equal(true);
+      expect(callArgs[7]).to.equal(true);
     });
 
-    it('should handle when isAuditEnabledForSite throws error', async () => {
-      isAuditEnabledForSiteStub.rejects(new Error('Configuration error'));
+    it('should handle when Configuration.findLatest throws error', async () => {
+      context.dataAccess.Configuration.findLatest.rejects(new Error('Configuration error'));
 
       await expect(handlerModule.processAltTextWithMystique(context))
         .to.be.rejectedWith('Configuration error');
 
       expect(context.log.error).to.have.been.calledWith(
         '[alt-text]: Failed to process with Mystique: Configuration error',
+      );
+    });
+  });
+
+  describe('processAltTextWithMystique reads stored offset', () => {
+    let sendAltTextOpportunityToMystiqueStub;
+    let configurationMock;
+    let bulkUpdateStatusStub;
+
+    beforeEach(async () => {
+      sendAltTextOpportunityToMystiqueStub = sandbox.stub().resolves();
+      bulkUpdateStatusStub = sandbox.stub().resolves();
+      configurationMock = {
+        getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
+        isHandlerEnabledForSite: sandbox.stub().returns(true),
+      };
+
+      context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          site: {
+            getId: () => 'site-id',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({
+              getIncludedURLs: sandbox.stub().returns([]),
+            }),
+          },
+          audit: {
+            getId: () => 'audit-id',
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sandbox.stub(),
+            },
+            Opportunity: {
+              allBySiteIdAndStatus: sandbox.stub().resolves([]),
+              create: sandbox.stub().resolves({
+                getId: sandbox.stub().returns('opportunity-id'),
+                getData: sandbox.stub().returns({ topPagesOffset: 0 }),
+                setData: sandbox.stub(),
+                save: sandbox.stub().resolves(),
+                getType: sandbox.stub().returns('alt-text'),
+              }),
+            },
+            Suggestion: {
+              bulkUpdateStatus: bulkUpdateStatusStub,
+            },
+            Configuration: {
+              findLatest: sandbox.stub().resolves(configurationMock),
+            },
+          },
+        })
+        .build();
+
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '@adobe/spacecat-shared-utils': { tracingFetch: tracingFetchStub },
+        '../../../src/image-alt-text/opportunityHandler.js': {
+          default: sandbox.stub(),
+          sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
+        },
+      });
+    });
+
+    it('should use stored offset from opportunity to determine page window', async () => {
+      const pages = Array.from({ length: 50 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+
+      const mockOpportunity = {
+        getType: () => AUDIT_TYPE,
+        getId: () => 'opportunity-id',
+        getData: () => ({ topPagesOffset: 20 }),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves([]),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      // Should process pages 20-39 based on stored offset
+      const callArgs = sendAltTextOpportunityToMystiqueStub.getCall(0).args;
+      const sentUrls = callArgs[1];
+      expect(sentUrls).to.have.lengthOf(20);
+      expect(sentUrls[0]).to.equal('https://example.com/page21');
+      expect(sentUrls[19]).to.equal('https://example.com/page40');
+    });
+
+    it('should default to offset 0 when no opportunity exists', async () => {
+      const pages = Array.from({ length: 50 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      const callArgs = sendAltTextOpportunityToMystiqueStub.getCall(0).args;
+      const sentUrls = callArgs[1];
+      expect(sentUrls).to.have.lengthOf(20);
+      expect(sentUrls[0]).to.equal('https://example.com/page1');
+    });
+
+    it('should ignore offset for non-summit-plg sites (always starts at 0)', async () => {
+      configurationMock.isHandlerEnabledForSite.returns(false);
+
+      const pages = Array.from({ length: 150 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+
+      const mockOpportunity = {
+        getType: () => AUDIT_TYPE,
+        getId: () => 'opportunity-id',
+        getData: () => ({ topPagesOffset: 20 }),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves([]),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      const callArgs = sendAltTextOpportunityToMystiqueStub.getCall(0).args;
+      const sentUrls = callArgs[1];
+      expect(sentUrls).to.have.lengthOf(100);
+      expect(sentUrls[0]).to.equal('https://example.com/page1');
+    });
+
+    it('should store topPagesOffset: 0 when creating new opportunity', async () => {
+      const pages = Array.from({ length: 5 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledWith(
+        sinon.match({
+          data: sinon.match({ topPagesOffset: 0 }),
+        }),
+      );
+    });
+  });
+
+  describe('processScraping with page offset', () => {
+    let s3ClientMock;
+    let configurationMock;
+
+    beforeEach(async () => {
+      s3ClientMock = {
+        send: sandbox.stub(),
+      };
+
+      configurationMock = {
+        isHandlerEnabledForSite: sandbox.stub().returns(true),
+      };
+
+      context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          s3Client: s3ClientMock,
+          site: {
+            getId: () => 'site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          env: {
+            S3_SCRAPER_BUCKET_NAME: bucketName,
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sandbox.stub(),
+            },
+            Opportunity: {
+              allBySiteIdAndStatus: sandbox.stub().resolves([]),
+            },
+            Configuration: {
+              findLatest: sandbox.stub().resolves(configurationMock),
+            },
+          },
+        })
+        .build();
+
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {});
+    });
+
+    it('should advance offset when no NEW suggestions in current window', async () => {
+      const pages = Array.from({ length: 50 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+
+      const mockOpportunity = {
+        getType: () => AUDIT_TYPE,
+        getId: () => 'opportunity-id',
+        getData: () => ({ topPagesOffset: 0 }),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves([]), // No suggestions = advance
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      const error = new Error('NotFound');
+      error.name = 'NotFound';
+      s3ClientMock.send.rejects(error);
+
+      const result = await handlerModule.processScraping(context);
+
+      // Should process pages 20-39 (advanced from 0 to 20)
+      expect(result.urls).to.have.lengthOf(20);
+      expect(result.urls[0].url).to.equal('https://example.com/page21');
+      expect(result.urls[19].url).to.equal('https://example.com/page40');
+
+      // Should save the new offset
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ topPagesOffset: 20 }),
+      );
+      expect(mockOpportunity.save).to.have.been.called;
+    });
+
+    it('should keep offset when NEW suggestions exist in current window', async () => {
+      const pages = Array.from({ length: 50 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+
+      const mockOpportunity = {
+        getType: () => AUDIT_TYPE,
+        getId: () => 'opportunity-id',
+        getData: () => ({ topPagesOffset: 0 }),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves([
+          {
+            getData: () => ({
+              recommendations: [{
+                pageUrl: 'https://example.com/page1',
+                imageUrl: 'https://example.com/image1.jpg',
+              }],
+            }),
+            getStatus: () => 'NEW',
+          },
+        ]),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      const error = new Error('NotFound');
+      error.name = 'NotFound';
+      s3ClientMock.send.rejects(error);
+
+      const result = await handlerModule.processScraping(context);
+
+      // Should stay at pages 0-19
+      expect(result.urls).to.have.lengthOf(20);
+      expect(result.urls[0].url).to.equal('https://example.com/page1');
+
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ topPagesOffset: 0 }),
+      );
+    });
+
+    it('should advance when only OUTDATED/SKIPPED suggestions in window', async () => {
+      const pages = Array.from({ length: 50 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+
+      const mockOpportunity = {
+        getType: () => AUDIT_TYPE,
+        getId: () => 'opportunity-id',
+        getData: () => ({ topPagesOffset: 0 }),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves([
+          {
+            getData: () => ({
+              recommendations: [{
+                pageUrl: 'https://example.com/page1',
+                imageUrl: 'https://example.com/image1.jpg',
+              }],
+            }),
+            getStatus: () => 'OUTDATED',
+          },
+          {
+            getData: () => ({
+              recommendations: [{
+                pageUrl: 'https://example.com/page2',
+                imageUrl: 'https://example.com/image2.jpg',
+              }],
+            }),
+            getStatus: () => 'SKIPPED',
+          },
+        ]),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      const error = new Error('NotFound');
+      error.name = 'NotFound';
+      s3ClientMock.send.rejects(error);
+
+      const result = await handlerModule.processScraping(context);
+
+      // OUTDATED/SKIPPED are not NEW → should advance
+      expect(result.urls[0].url).to.equal('https://example.com/page21');
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ topPagesOffset: 20 }),
+      );
+    });
+
+    it('should wrap offset to 0 when it exceeds total pages', async () => {
+      const pages = Array.from({ length: 25 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+
+      const mockOpportunity = {
+        getType: () => AUDIT_TYPE,
+        getId: () => 'opportunity-id',
+        getData: () => ({ topPagesOffset: 20 }),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves([]),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      const error = new Error('NotFound');
+      error.name = 'NotFound';
+      s3ClientMock.send.rejects(error);
+
+      const result = await handlerModule.processScraping(context);
+
+      // 20 + 20 = 40, exceeds 25, wraps to 0
+      expect(result.urls[0].url).to.equal('https://example.com/page1');
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ topPagesOffset: 0 }),
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        '[alt-text]: Offset 40 exceeds 25 pages, wrapping to 0',
+      );
+    });
+
+    it('should advance from offset 20 to 40 when no NEW suggestions at 20', async () => {
+      const pages = Array.from({ length: 60 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+
+      const mockOpportunity = {
+        getType: () => AUDIT_TYPE,
+        getId: () => 'opportunity-id',
+        getData: () => ({ topPagesOffset: 20 }),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves([]),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      const error = new Error('NotFound');
+      error.name = 'NotFound';
+      s3ClientMock.send.rejects(error);
+
+      const result = await handlerModule.processScraping(context);
+
+      expect(result.urls).to.have.lengthOf(20);
+      expect(result.urls[0].url).to.equal('https://example.com/page41');
+      expect(result.urls[19].url).to.equal('https://example.com/page60');
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ topPagesOffset: 40 }),
+      );
+    });
+
+    it('should default to offset 0 when opportunity lookup fails', async () => {
+      const pages = Array.from({ length: 25 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('DB error'));
+
+      const error = new Error('NotFound');
+      error.name = 'NotFound';
+      s3ClientMock.send.rejects(error);
+
+      const result = await handlerModule.processScraping(context);
+
+      expect(result.urls).to.have.lengthOf(20);
+      expect(result.urls[0].url).to.equal('https://example.com/page1');
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to read opportunity offset, defaulting to 0/),
+      );
+    });
+
+    it('should not save offset when no opportunity exists', async () => {
+      const pages = Array.from({ length: 25 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+
+      const error = new Error('NotFound');
+      error.name = 'NotFound';
+      s3ClientMock.send.rejects(error);
+
+      const result = await handlerModule.processScraping(context);
+
+      // Should use offset 0 and process pages 0-19
+      expect(result.urls).to.have.lengthOf(20);
+      expect(result.urls[0].url).to.equal('https://example.com/page1');
+    });
+
+    it('should read stored offset without suggestion check for non-summit-plg', async () => {
+      configurationMock.isHandlerEnabledForSite.returns(false);
+
+      const pages = Array.from({ length: 150 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+
+      const mockOpportunity = {
+        getType: () => AUDIT_TYPE,
+        getId: () => 'opportunity-id',
+        getData: () => ({ topPagesOffset: 20 }),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      const error = new Error('NotFound');
+      error.name = 'NotFound';
+      s3ClientMock.send.rejects(error);
+
+      const result = await handlerModule.processScraping(context);
+
+      // Non-summit-plg ignores offset, always starts at 0 with limit 100
+      expect(result.urls).to.have.lengthOf(100);
+      expect(result.urls[0].url).to.equal('https://example.com/page1');
+    });
+
+    it('should handle opportunity getData returning null when saving offset', async () => {
+      const pages = Array.from({ length: 50 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+
+      const mockOpportunity = {
+        getType: () => AUDIT_TYPE,
+        getId: () => 'opportunity-id',
+        getData: sandbox.stub()
+          .onFirstCall().returns({ topPagesOffset: 0 })
+          .onSecondCall().returns(null),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves([]),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      const error = new Error('NotFound');
+      error.name = 'NotFound';
+      s3ClientMock.send.rejects(error);
+
+      const result = await handlerModule.processScraping(context);
+
+      expect(result.urls).to.have.lengthOf(20);
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({ topPagesOffset: 20 }),
+      );
+    });
+
+    it('should handle save offset failure gracefully', async () => {
+      const pages = Array.from({ length: 50 }, (_, i) => ({
+        getUrl: () => `https://example.com/page${i + 1}`,
+      }));
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+
+      const mockOpportunity = {
+        getType: () => AUDIT_TYPE,
+        getId: () => 'opportunity-id',
+        getData: () => ({ topPagesOffset: 0 }),
+        setData: sandbox.stub(),
+        save: sandbox.stub().rejects(new Error('Save failed')),
+        getSuggestions: sandbox.stub().resolves([]),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      const error = new Error('NotFound');
+      error.name = 'NotFound';
+      s3ClientMock.send.rejects(error);
+
+      // Should not throw — save failure is handled gracefully
+      const result = await handlerModule.processScraping(context);
+
+      expect(result.urls).to.have.lengthOf(20);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to save opportunity offset/),
       );
     });
   });

@@ -17,6 +17,7 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import esmock from 'esmock';
+import { getS3Config } from '../../../src/utils/cdn-utils.js';
 import * as reportUtils from '../../../src/cdn-logs-report/utils/report-utils.js';
 import { getConfigs } from '../../../src/cdn-logs-report/constants/report-configs.js';
 
@@ -62,11 +63,12 @@ describe('CDN Logs Report Utils', () => {
         getConfig: () => createSiteConfig(),
       };
 
-      const config = await reportUtils.getS3Config(mockSite, mockContext);
+      const config = getS3Config(mockSite, mockContext);
 
       expect(config).to.have.property('customerName', 'example');
       expect(config).to.have.property('customerDomain', 'example_com');
       expect(config).to.have.property('bucket', 'spacecat-test-cdn-logs-aggregates-us-east-1');
+      expect(config).to.have.property('region', 'us-east-1');
       expect(config).to.have.property('databaseName', 'cdn_logs_example_com');
     });
 
@@ -76,7 +78,7 @@ describe('CDN Logs Report Utils', () => {
         getConfig: () => createSiteConfig(),
       };
 
-      const config = await reportUtils.getS3Config(mockSite, mockContext);
+      const config = getS3Config(mockSite, mockContext);
 
       expect(config).to.have.property('customerName', 'sub');
       expect(config).to.have.property('customerDomain', 'sub_example_com');
@@ -88,10 +90,26 @@ describe('CDN Logs Report Utils', () => {
         getConfig: () => createSiteConfig(),
       };
 
-      const config = await reportUtils.getS3Config(mockSite, mockContext);
+      const config = getS3Config(mockSite, mockContext);
       const tempLocation = config.getAthenaTempLocation();
 
       expect(tempLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/temp/athena-results/');
+    });
+
+    it('uses site cdn config region when provided', async () => {
+      const mockSite = {
+        getBaseURL: () => 'https://www.example.com',
+        getConfig: () => createSiteConfig({
+          getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket', region: 'eu-west-1' }),
+        }),
+      };
+
+      const config = getS3Config(mockSite, mockContext);
+
+      expect(config).to.have.property('region', 'eu-west-1');
+      expect(config).to.have.property('bucket', 'spacecat-test-cdn-logs-aggregates-eu-west-1');
+      expect(config.getAthenaTempLocation())
+        .to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/temp/athena-results/');
     });
   });
   describe('generateReportingPeriods', () => {
@@ -134,6 +152,21 @@ describe('CDN Logs Report Utils', () => {
     it('handles GLOBAL country code correctly', () => {
       expect(reportUtils.validateCountryCode('GLOBAL')).to.equal('GLOBAL');
       expect(reportUtils.validateCountryCode('global')).to.equal('GLOBAL');
+    });
+
+    it('returns GLOBAL for codes in per-site ignore list', () => {
+      expect(reportUtils.validateCountryCode('PS', ['PS'])).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode('ps', ['PS'])).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode('AD', ['ad', 'ps'])).to.equal('GLOBAL');
+    });
+
+    it('returns valid code when not in per-site ignore list', () => {
+      expect(reportUtils.validateCountryCode('US', ['PS'])).to.equal('US');
+      expect(reportUtils.validateCountryCode('DE', ['PS', 'AD'])).to.equal('DE');
+    });
+
+    it('handles empty per-site ignore list', () => {
+      expect(reportUtils.validateCountryCode('US', [])).to.equal('US');
     });
   });
 
