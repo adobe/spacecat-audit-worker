@@ -420,6 +420,33 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(mapped1.data).to.deep.equal({ suggestionValue: 'Analysis B' });
     });
 
+    it('should default type to CONTENT_UPDATE when not provided', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            suggestions: [
+              {
+                id: 'sug_no_type',
+                rank: 0,
+                data: { suggestionValue: 'No type' },
+              },
+            ],
+          },
+        },
+      };
+
+      await handler.default(message, context);
+
+      const syncCall = syncSuggestionsStub.firstCall;
+      const { newData, mapNewSuggestion } = syncCall.args[0];
+
+      const mapped = mapNewSuggestion(newData[0]);
+      expect(mapped.type).to.equal('CONTENT_UPDATE');
+    });
+
     it('should use correct buildKey function', async () => {
       const message = {
         siteId,
