@@ -20,13 +20,8 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 
-const AUDIT_TYPE = Audit.AUDIT_TYPES.REDDIT_ANALYSIS;
+const AUDIT_TYPE = Audit.AUDIT_TYPES.CITED_ANALYSIS;
 
-/**
- * Gets rank based on priority
- * @param {string} priority - The priority level
- * @returns {number} The rank
- */
 function getRankFromPriority(priority) {
   const priorityRanks = {
     CRITICAL: 0,
@@ -37,21 +32,15 @@ function getRankFromPriority(priority) {
   return priorityRanks[priority] ?? 4;
 }
 
-/**
- * Handles Mystique response for Reddit analysis
- * @param {Object} message - Message from Mystique with analysis results
- * @param {Object} context - Context object with data access and logger
- * @returns {Promise<Object>} - HTTP response
- */
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Site, Audit: AuditModel } = dataAccess;
   const { siteId, auditId, data } = message;
 
-  log.info(`[Reddit] Received Reddit analysis guidance for siteId: ${siteId}, auditId: ${auditId}`);
+  log.info(`[Cited] Received cited analysis guidance for siteId: ${siteId}, auditId: ${auditId}`);
 
   if (data?.error) {
-    log.error(`[Reddit] Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}: ${data.errorMessage}`);
+    log.error(`[Cited] Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}: ${data.errorMessage}`);
     return noContent();
   }
 
@@ -60,17 +49,17 @@ export default async function handler(message, context) {
 
   if (presignedUrl) {
     try {
-      log.info(`[Reddit] Fetching analysis data from presigned URL: ${presignedUrl}`);
+      log.info(`[Cited] Fetching analysis data from presigned URL: ${presignedUrl}`);
       const response = await fetch(presignedUrl);
 
       if (!response.ok) {
-        log.error(`[Reddit] Failed to fetch analysis data: ${response.status} ${response.statusText}`);
+        log.error(`[Cited] Failed to fetch analysis data: ${response.status} ${response.statusText}`);
         return badRequest(`Failed to fetch analysis data: ${response.statusText}`);
       }
 
       analysisData = await response.json();
     } catch (error) {
-      log.error(`[Reddit] Error fetching from presigned URL: ${error.message}`);
+      log.error(`[Cited] Error fetching from presigned URL: ${error.message}`);
       return badRequest(`Error fetching analysis data: ${error.message}`);
     }
   } else if (data?.analysis) {
@@ -78,13 +67,13 @@ export default async function handler(message, context) {
   }
 
   if (!analysisData) {
-    log.error('[Reddit] No analysis data provided in message');
+    log.error('[Cited] No analysis data provided in message');
     return badRequest('Analysis data is required');
   }
 
   const site = await Site.findById(siteId);
   if (!site) {
-    log.error(`[Reddit] Site not found for siteId: ${siteId}`);
+    log.error(`[Cited] Site not found for siteId: ${siteId}`);
     return notFound('Site not found');
   }
 
@@ -93,7 +82,7 @@ export default async function handler(message, context) {
   if (auditId) {
     const audit = await AuditModel.findById(auditId);
     if (!audit) {
-      log.error(`[Reddit] Audit not found for auditId: ${auditId}`);
+      log.error(`[Cited] Audit not found for auditId: ${auditId}`);
       return notFound('Audit not found');
     }
   }
@@ -103,13 +92,11 @@ export default async function handler(message, context) {
     const opportunityData = analysisData.opportunity || {};
 
     if (suggestions.length === 0) {
-      log.info('[Reddit] No suggestions found in analysis');
+      log.info('[Cited] No suggestions found in analysis');
       return noContent();
     }
 
-    log.info(`[Reddit] Processing ${suggestions.length} suggestions for ${companyName}`);
-
-    const auditType = opportunityData.type || AUDIT_TYPE;
+    log.info(`[Cited] Processing ${suggestions.length} suggestions for ${companyName}`);
 
     const opportunity = await convertToOpportunity(
       baseUrl,
@@ -120,16 +107,15 @@ export default async function handler(message, context) {
       },
       context,
       createOpportunityData,
-      auditType,
+      AUDIT_TYPE,
       { opportunityData },
-      (oppty) => oppty.getAuditId() === auditId,
     );
 
     await syncSuggestions({
       context,
       opportunity,
       newData: suggestions,
-      buildKey: (suggestion) => `reddit::${suggestion.id}`,
+      buildKey: (suggestion) => `cited::${suggestion.id}`,
       mapNewSuggestion: (suggestion) => ({
         opportunityId: opportunity.getId(),
         type: 'CONTENT_UPDATE',
@@ -138,18 +124,16 @@ export default async function handler(message, context) {
       }),
     });
 
-    const status = opportunityData.status || 'NEW';
-    opportunity.setStatus(status);
     opportunity.setData({
       ...opportunity.getData(),
       fullAnalysis: analysisData,
     });
     await opportunity.save();
 
-    log.info(`[Reddit] Successfully processed Reddit analysis for site: ${siteId}, company: ${companyName}, ${suggestions.length} suggestions`);
+    log.info(`[Cited] Successfully processed cited analysis for site: ${siteId}, company: ${companyName}, ${suggestions.length} suggestions`);
     return ok();
   } catch (error) {
-    log.error(`[Reddit] Error processing Reddit analysis: ${error.message}`, error);
+    log.error(`[Cited] Error processing cited analysis: ${error.message}`, error);
     return badRequest(`Error processing analysis: ${error.message}`);
   }
 }

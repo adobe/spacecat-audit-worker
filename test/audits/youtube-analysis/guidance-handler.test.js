@@ -76,6 +76,7 @@ describe('YouTube Analysis Guidance Handler', () => {
       getId: sandbox.stub().returns('opportunity-123'),
       getData: sandbox.stub().returns({}),
       setData: sandbox.stub(),
+      setStatus: sandbox.stub(),
       save: sandbox.stub().resolves(),
     };
 
@@ -391,8 +392,51 @@ describe('YouTube Analysis Guidance Handler', () => {
 
       expect(mockConvertToOpportunity).to.have.been.calledOnce;
       expect(mockSyncSuggestions).to.have.been.calledOnce;
+      expect(mockOpportunity.setStatus).to.have.been.calledWith('NEW');
       expect(mockOpportunity.save).to.have.been.calledOnce;
       expect(response.status).to.equal(200);
+    });
+
+    it('should set status from opportunityData when provided by Mystique', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: { status: 'IGNORED' },
+            suggestions: [
+              { id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' },
+            ],
+          },
+        },
+      };
+
+      await guidanceHandler.default(message, context);
+
+      expect(mockOpportunity.setStatus).to.have.been.calledWith('IGNORED');
+    });
+
+    it('should pass comparisonFn that matches by auditId', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            suggestions: [
+              { id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' },
+            ],
+          },
+        },
+      };
+
+      await guidanceHandler.default(message, context);
+
+      const comparisonFn = mockConvertToOpportunity.firstCall.args[6];
+      expect(comparisonFn).to.be.a('function');
+      expect(comparisonFn({ getAuditId: () => auditId })).to.be.true;
+      expect(comparisonFn({ getAuditId: () => 'different-audit-id' })).to.be.false;
     });
 
     it('should map suggestion priorities to ranks correctly', async () => {
