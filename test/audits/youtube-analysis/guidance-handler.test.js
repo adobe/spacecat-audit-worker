@@ -473,12 +473,12 @@ describe('YouTube Analysis Guidance Handler', () => {
       const mapped0 = mapNewSuggestion(newData[0]);
       expect(mapped0.rank).to.equal(1);
       expect(mapped0.type).to.equal('CONTENT_UPDATE');
-      expect(mapped0.data).to.deep.equal({ suggestionValue: 'Analysis A' });
+      expect(mapped0.data).to.deep.equal({ suggestionValue: 'Analysis A', youtubeSuggestionId: 'sug-1' });
 
       const mapped1 = mapNewSuggestion(newData[1]);
       expect(mapped1.rank).to.equal(2);
       expect(mapped1.type).to.equal('METADATA_UPDATE');
-      expect(mapped1.data).to.deep.equal({ suggestionValue: 'Analysis B' });
+      expect(mapped1.data).to.deep.equal({ suggestionValue: 'Analysis B', youtubeSuggestionId: 'sug-2' });
     });
 
     it('should default type to CONTENT_UPDATE when not provided', async () => {
@@ -509,7 +509,7 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(mapped.type).to.equal('CONTENT_UPDATE');
     });
 
-    it('should use correct buildKey function', async () => {
+    it('should use correct buildKey function with id', async () => {
       const message = {
         siteId,
         auditId,
@@ -530,6 +530,29 @@ describe('YouTube Analysis Guidance Handler', () => {
       const key = buildKey({ id: 'my_suggestion_id' });
 
       expect(key).to.equal('youtube::my_suggestion_id');
+    });
+
+    it('should use youtubeSuggestionId in buildKey when available (existing suggestion data)', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          analysis: {
+            suggestions: [
+              { id: 'my_suggestion_id', priority: 'HIGH', title: 'Test', description: 'Test' },
+            ],
+          },
+          companyName: 'Example Corp',
+        },
+      };
+
+      await guidanceHandler.default(message, context);
+
+      const syncCall = mockSyncSuggestions.firstCall;
+      const { buildKey } = syncCall.args[0];
+      const key = buildKey({ youtubeSuggestionId: 'stored_id', suggestionValue: 'some value' });
+
+      expect(key).to.equal('youtube::stored_id');
     });
 
     it('should save full analysis data to opportunity', async () => {

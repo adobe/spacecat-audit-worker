@@ -114,12 +114,15 @@ export default async function handler(message, context) {
       context,
       opportunity,
       newData: suggestions,
-      buildKey: (suggestion) => `reddit::${suggestion.id}`,
+      buildKey: (suggestion) => `reddit::${suggestion.redditSuggestionId || suggestion.id}`,
       mapNewSuggestion: (suggestion) => ({
         opportunityId: opportunity.getId(),
         type: suggestion.type || 'CONTENT_UPDATE',
         rank: suggestion.rank,
-        data: suggestion.data,
+        data: {
+          ...suggestion.data,
+          redditSuggestionId: suggestion.id,
+        },
       }),
     });
 
