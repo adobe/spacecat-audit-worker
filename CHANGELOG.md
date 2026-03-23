@@ -1,3 +1,10 @@
+# [1.368.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.367.1...v1.368.0) (2026-03-23)
+
+
+### Features
+
+* LLMO-3628: Separate opportunity visibility between Site Optimizer (is… ([#2185](https://github.com/adobe/spacecat-audit-worker/issues/2185)) ([9cf78ff](https://github.com/adobe/spacecat-audit-worker/commit/9cf78ff15bc274d21f581feceda6f667bdc5d9ea))
+
 ## [1.367.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.367.0...v1.367.1) (2026-03-23)
 
 
