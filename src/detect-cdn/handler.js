@@ -16,10 +16,10 @@ import { hasText, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 
 import { postMessageSafe } from '../utils/slack-utils.js';
 import { detectCdnFromUrl } from './cdn-detector.js';
+import { toDeliveryConfigCdnToken } from './delivery-config-cdn.js';
 
 /**
- * Returns a fetch that skips TLS verification when NODE_TLS_REJECT_UNAUTHORIZED=0 (local dev only).
- * The shared tracingFetch does not pass this through, so we use @adobe/fetch context when set.
+ * Fetch for CDN probes: uses @adobe/fetch when NODE_TLS_REJECT_UNAUTHORIZED=0, else tracingFetch.
  */
 function getFetchForCdnDetection() {
   if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0') {
@@ -83,14 +83,12 @@ export default async function detectCdn(message, context) {
     ...(slackTarget && { target: slackTarget }),
   });
 
-  // Update site deliveryConfig when siteId is present (same pattern as identify-redirects handler).
-  const cdnValue = (error || cdn === 'unknown' || !hasText(cdn)) ? 'none' : cdn;
+  const cdnToken = toDeliveryConfigCdnToken(cdn, error, log);
   if (hasText(siteId) && !Site) {
-    log.warn('[detect-cdn] Skipping deliveryConfig update: dataAccess.Site not available (e.g. local server may not inject dataAccess)');
+    log.warn('[detect-cdn] Skipping deliveryConfig update: dataAccess.Site not available');
   }
   if (hasText(siteId) && Site) {
     try {
-      // Use site from context when index already fetched it (avoids duplicate DynamoDB get).
       const site = context.site?.getId?.() === siteId ? context.site : await Site.findById(siteId);
       if (!site) {
         log.warn('[detect-cdn] Site not found for deliveryConfig update', { siteId });
@@ -101,13 +99,13 @@ export default async function detectCdn(message, context) {
           { threadTs, ...(slackTarget && { target: slackTarget }) },
         );
       } else {
-        const existing = site.getDeliveryConfig();
+        const currentDeliveryConfig = site.getDeliveryConfig();
         site.setDeliveryConfig({
-          ...(typeof existing === 'object' && existing !== null ? existing : {}),
-          CDN: cdnValue,
+          ...currentDeliveryConfig,
+          cdn: cdnToken,
         });
         await site.save();
-        log.info('[detect-cdn] Updated site deliveryConfig.CDN', { siteId, CDN: cdnValue });
+        log.info('[detect-cdn] Updated site deliveryConfig.cdn', { siteId, cdn: cdnToken });
       }
     } catch (err) {
       log.error('[detect-cdn] Failed to update deliveryConfig', { siteId, error: err.message, stack: err.stack });
@@ -124,6 +122,7 @@ export default async function detectCdn(message, context) {
     status: 'ok',
     url,
     cdn,
+    cdnToken,
     error: error || null,
   });
 }

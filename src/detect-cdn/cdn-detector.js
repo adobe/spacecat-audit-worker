@@ -11,8 +11,8 @@
  */
 
 /**
- * CDN detection: HTTP headers, DNS CNAME (system + DoH), ASN (ipinfo), PTR/reverse DNS,
- * and keyword heuristics. Design informed by Nitr4x/whichCDN (multi-signal) without vendoring it.
+ * CDN detection from HTTP headers, DNS (resolver and DNS-over-HTTPS), ASN lookup (ipinfo),
+ * PTR records, and keyword matching on hostnames and header-derived strings.
  */
 import dns from 'node:dns';
 import { SPACECAT_USER_AGENT } from '@adobe/spacecat-shared-utils';
@@ -34,8 +34,7 @@ const CDN_DOMAIN_SIGNATURES = [
 ];
 
 /**
- * CDN identification by ASN (Autonomous System Number). Used as fallback when CNAME chain
- * does not match. Source: which-cdn and public ASN registries.
+ * CDN identification by ASN when the CNAME chain does not match a known provider domain.
  */
 const CDN_ASN_SIGNATURES = [
   { asns: [13335], cdn: 'Cloudflare' },
@@ -48,8 +47,8 @@ const CDN_ASN_SIGNATURES = [
 ];
 
 /**
- * Substring keywords matched against lowercased text (DNS output, headers, PTR names).
- * Inspired by Nitr4x/whichCDN CDNEngine; order matters — first match wins.
+ * Substring keywords matched against lowercased DNS names, header-derived text, and PTR names.
+ * First matching pattern wins.
  */
 const CDN_KEYWORD_SIGNATURES = [
   { patterns: ['clever-cloud', 'clever cloud'], cdn: 'Clever Cloud' },
@@ -69,9 +68,9 @@ const CDN_KEYWORD_SIGNATURES = [
 ];
 
 /**
- * Detects CDN by scanning text for known provider keywords (whichCDN-style).
+ * Detects CDN by substring match; input is lowercased before matching.
  *
- * @param {string} text - Arbitrary text (headers, DNS, PTR).
+ * @param {string} text - Hostnames, joined header values, or similar.
  * @returns {string|null} CDN name or null.
  */
 export function matchCdnByKeywords(text) {
@@ -88,10 +87,9 @@ export function matchCdnByKeywords(text) {
 }
 
 /**
- * Detects CDN from HTTP response headers (lowercase keys).
- * Matches the same patterns as my-workspace-tools/detect-cdn.sh.
+ * Detects CDN from HTTP response headers. Expects lowercase header names in `headers`.
  *
- * @param {Record<string, string>} headers - Map of lowercase header name -> value.
+ * @param {Record<string, string>} headers - Lowercase header name to value.
  * @returns {string} CDN name or 'unknown'.
  */
 export function detectCdnFromHeaders(headers) {
@@ -197,10 +195,7 @@ function headersFromResponse(response) {
   return { cdn };
 }
 
-/**
- * Google public DNS-over-HTTPS (JSON); works when OS resolver times out
- * (e.g. VPN/corporate DNS).
- */
+/** Google Public DNS JSON API over HTTPS; used when the system resolver fails or times out. */
 const DOH_GOOGLE_RESOLVE = 'https://dns.google/resolve';
 
 /**
@@ -241,7 +236,7 @@ function normalizeDohName(data) {
 }
 
 /**
- * CNAME chain via DNS-over-HTTPS (bypasses flaky local / corporate resolvers).
+ * CNAME chain resolution via DNS-over-HTTPS (Google Public DNS JSON API).
  * @param {string} hostname - Hostname to resolve.
  * @param {Function} fetchFn - Fetch implementation.
  * @param {object} [log] - Optional logger.
@@ -338,7 +333,7 @@ export async function getOneIp(hostname, log) {
 }
 
 /**
- * Reverse DNS (PTR) for an IPv4 address. whichCDN-style signal when ASN map misses.
+ * Reverse DNS (PTR) lookup for an IPv4 address; used when ASN does not map to a known CDN.
  *
  * @param {string} ip - IPv4 address.
  * @param {object} [log] - Optional logger.
@@ -486,7 +481,7 @@ export async function detectCdnFromDnsFallback(url, fetchFn, options = {}) {
     for (const ptr of ptrHostnames) {
       const fromPtrKw = matchCdnByKeywords(ptr);
       if (fromPtrKw) {
-        // Single-string message: some loggers only print arg1 and drop metadata objects.
+        // String log line with JSON payload (mirrors the PTR CNAME branch).
         log?.info?.(
           `[detect-cdn] Fallback: detected by PTR keywords ${JSON.stringify({ cdn: fromPtrKw, ip, ptr })}`,
         );
@@ -506,13 +501,11 @@ export async function detectCdnFromDnsFallback(url, fetchFn, options = {}) {
 }
 
 /**
- * Fetches URL (HEAD first, GET fallback) and detects CDN from response headers.
- * When headers yield 'unknown', falls back to CNAME chain and ASN lookup.
- * Some hosts (e.g. t-mobile.com) close the connection or send a truncated response for HEAD,
- * causing "unexpected end of file"; GET is retried in that case and only headers are used.
+ * Fetches the URL (HEAD, then GET on failure), detects CDN from headers, then DNS/ASN fallback.
+ * GET retry covers servers that close or truncate HEAD; only response headers are used from GET.
  *
- * @param {string} url - URL to request (will follow redirects).
- * @param {Function} fetchFn - Fetch implementation (e.g. context's fetch).
+ * @param {string} url - URL to request (redirects followed).
+ * @param {Function} fetchFn - Fetch implementation.
  * @param {object} [options] - Optional timeout, userAgent, log.
  * @returns {Promise<{ cdn: string, error?: string }>} Detected CDN or error.
  */

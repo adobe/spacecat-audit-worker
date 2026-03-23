@@ -384,6 +384,27 @@ describe('LLM Error Pages Handler', function () {
       }
     });
 
+    it('should run only current week when not Monday and no weekOffset', async () => {
+      const tuesday = new Date('2025-08-19T12:00:00Z'); // Tuesday UTC
+      const clock = sinon.useFakeTimers(tuesday.getTime());
+      try {
+        mockGenerateReportingPeriods.returns({
+          weeks: [{
+            weekNumber: 34,
+            year: 2025,
+            startDate: new Date('2025-08-18'),
+            endDate: new Date('2025-08-24'),
+            periodIdentifier: 'w34-2025',
+          }],
+        });
+        const result = await runAuditAndSendToMystique(context);
+        expect(result.auditResult).to.have.length(1);
+        expect(mockGenerateReportingPeriods).to.have.been.calledWith(sinon.match.date, [0]);
+      } finally {
+        clock.restore();
+      }
+    });
+
     it('should handle per-week query failure gracefully', async () => {
       mockAthenaClient.query.rejects(new Error('Database error'));
 

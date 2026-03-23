@@ -280,8 +280,31 @@ describe('detect-cdn handler', () => {
     }
   });
 
+  it('uses tracingFetch when NODE_TLS_REJECT_UNAUTHORIZED is not 0 (covers default fetch branch)', async () => {
+    const original = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '1';
+    try {
+      const { detectCdn, detectCdnFromUrlStub } = await loadHandler();
+      await detectCdn(
+        {
+          baseURL: 'https://example.com',
+          slackContext: { channelId: 'C1', threadTs: '123.456' },
+        },
+        context,
+      );
+      expect(detectCdnFromUrlStub).to.have.been.calledOnce;
+      expect(detectCdnFromUrlStub.firstCall.args[1]).to.be.a('function');
+    } finally {
+      if (original !== undefined) {
+        process.env.NODE_TLS_REJECT_UNAUTHORIZED = original;
+      } else {
+        delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+      }
+    }
+  });
+
   describe('deliveryConfig update (same pattern as identify-redirects)', () => {
-    it('updates site deliveryConfig.CDN when siteId is present and site is found', async () => {
+    it('updates site deliveryConfig.cdn when siteId is present and site is found', async () => {
       const { detectCdn, postMessageSafe } = await loadHandler();
       const setDeliveryConfig = sandbox.stub();
       const save = sandbox.stub().resolves();
@@ -309,13 +332,13 @@ describe('detect-cdn handler', () => {
       expect(findById).to.have.been.calledOnceWith('site-uuid-123');
       expect(setDeliveryConfig).to.have.been.calledOnceWith({
         programId: '12652',
-        CDN: 'Cloudflare',
+        cdn: 'cloudflare',
       });
       expect(save).to.have.been.calledOnce;
       expect(postMessageSafe).to.have.been.calledWithMatch(ctx, 'C1', sinon.match.string, sinon.match.object);
     });
 
-    it('sets deliveryConfig.CDN to "none" when detection returns unknown or error', async () => {
+    it('sets deliveryConfig.cdn to "none" when detection returns unknown or error', async () => {
       const { detectCdn } = await loadHandler(() => Promise.resolve({ cdn: 'unknown' }));
       const setDeliveryConfig = sandbox.stub();
       const save = sandbox.stub().resolves();
@@ -338,7 +361,7 @@ describe('detect-cdn handler', () => {
         ctx,
       );
 
-      expect(setDeliveryConfig).to.have.been.calledOnceWith({ CDN: 'none' });
+      expect(setDeliveryConfig).to.have.been.calledOnceWith({ cdn: 'none' });
       expect(save).to.have.been.calledOnce;
     });
 
@@ -492,7 +515,7 @@ describe('detect-cdn handler', () => {
       expect(findById).to.not.have.been.called;
       expect(setDeliveryConfig).to.have.been.calledOnceWith({
         programId: '12652',
-        CDN: 'Cloudflare',
+        cdn: 'cloudflare',
       });
       expect(save).to.have.been.calledOnce;
     });
@@ -520,7 +543,7 @@ describe('detect-cdn handler', () => {
         ctx,
       );
 
-      expect(setDeliveryConfig).to.have.been.calledOnceWith({ CDN: 'Cloudflare' });
+      expect(setDeliveryConfig).to.have.been.calledOnceWith({ cdn: 'cloudflare' });
       expect(save).to.have.been.calledOnce;
     });
 
@@ -547,7 +570,7 @@ describe('detect-cdn handler', () => {
         ctx,
       );
 
-      expect(setDeliveryConfig).to.have.been.calledOnceWith({ CDN: 'Cloudflare' });
+      expect(setDeliveryConfig).to.have.been.calledOnceWith({ cdn: 'cloudflare' });
       expect(save).to.have.been.calledOnce;
     });
   });
