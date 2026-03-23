@@ -174,6 +174,7 @@ describe('CDN Logs Report Handler', function test() {
         value: ['www.example.com'],
         key: 'host',
       }],
+      getLlmoCountryCodeIgnoreList: () => undefined,
     };
     return { ...defaultConfig, ...overrides };
   };

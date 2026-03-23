@@ -17,13 +17,15 @@ export async function loadSql(filename, variables) {
   return getStaticContent(variables, `./src/cdn-logs-report/sql/${filename}.sql`);
 }
 
-export function validateCountryCode(code) {
+export function validateCountryCode(code, siteIgnoreList = []) {
   const DEFAULT_COUNTRY_CODE = 'GLOBAL';
   // these are codes that are not valid to be regions as these are small islands
-  const ignoreCountryCodes = ['TV', 'ST'];
+  const globalIgnoreCodes = ['TV', 'ST'];
   if (!code || typeof code !== 'string') return DEFAULT_COUNTRY_CODE;
 
   const upperCode = code.toUpperCase();
+  const upperSiteIgnoreList = siteIgnoreList.map((c) => c.toUpperCase());
+  const ignoreCountryCodes = [...globalIgnoreCodes, ...upperSiteIgnoreList];
 
   if (upperCode === DEFAULT_COUNTRY_CODE || ignoreCountryCodes.includes(upperCode)) {
     return DEFAULT_COUNTRY_CODE;

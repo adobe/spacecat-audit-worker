@@ -66,8 +66,17 @@ async function fetchStoreData(siteId, context) {
   const urls = await storeClient.getUrls(siteId, URL_TYPES.YOUTUBE);
   log.info(`${LOG_PREFIX} Retrieved ${urls.length} YouTube URLs from URL Store`);
 
-  const auditType = GUIDELINE_TYPES.YOUTUBE_ANALYSIS;
-  const sentimentConfig = await storeClient.getGuidelines(siteId, auditType);
+  let sentimentConfig = { topics: [], guidelines: [] };
+  try {
+    const auditType = GUIDELINE_TYPES.YOUTUBE_ANALYSIS;
+    sentimentConfig = await storeClient.getGuidelines(siteId, auditType);
+  } catch (error) {
+    if (error instanceof StoreEmptyError) {
+      log.info(`${LOG_PREFIX} No sentiment config found, proceeding without guidelines`);
+    } else {
+      throw error;
+    }
+  }
   const topicCount = sentimentConfig.topics.length;
   const guidelineCount = sentimentConfig.guidelines.length;
   log.info(`${LOG_PREFIX} Retrieved ${topicCount} topics and ${guidelineCount} guidelines`);

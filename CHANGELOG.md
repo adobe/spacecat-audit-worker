@@ -1,3 +1,81 @@
+## [1.366.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.366.1...v1.366.2) (2026-03-22)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2176](https://github.com/adobe/spacecat-audit-worker/issues/2176)) ([f353080](https://github.com/adobe/spacecat-audit-worker/commit/f35308071e93043dfa373c7bab2b8e15e2db9328))
+
+## [1.366.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.366.0...v1.366.1) (2026-03-21)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2175](https://github.com/adobe/spacecat-audit-worker/issues/2175)) ([d11139e](https://github.com/adobe/spacecat-audit-worker/commit/d11139e0eb25a3d27ab94194dd72e0092018aa00))
+
+# [1.366.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.365.1...v1.366.0) (2026-03-20)
+
+
+### Features
+
+* support per-site country code ignore list in CDN logs report ([#2157](https://github.com/adobe/spacecat-audit-worker/issues/2157)) ([1e22fe7](https://github.com/adobe/spacecat-audit-worker/commit/1e22fe7fa26e23ebcf277205cb580dd6c4bbac6f))
+
+## [1.365.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.365.0...v1.365.1) (2026-03-20)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2171](https://github.com/adobe/spacecat-audit-worker/issues/2171)) ([b7a783d](https://github.com/adobe/spacecat-audit-worker/commit/b7a783df30e41cec9b83351f0800db26ea184cb3))
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.27.0 ([#2173](https://github.com/adobe/spacecat-audit-worker/issues/2173)) ([e4169a9](https://github.com/adobe/spacecat-audit-worker/commit/e4169a9bd64f3f7ae03c280a4e0872e8e9b45fbf))
+
+# [1.365.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.364.3...v1.365.0) (2026-03-19)
+
+
+### Features
+
+* add cited-analysis audit handler ([#2144](https://github.com/adobe/spacecat-audit-worker/issues/2144)) ([2de26c6](https://github.com/adobe/spacecat-audit-worker/commit/2de26c6c1c5b9f71519938b5abb9b138c55f6663))
+
+## [1.364.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.364.2...v1.364.3) (2026-03-19)
+
+
+### Bug Fixes
+
+* handle empty sentiment guidelines gracefully in Reddit and YouTube analysis ([#2169](https://github.com/adobe/spacecat-audit-worker/issues/2169)) ([b0a7c06](https://github.com/adobe/spacecat-audit-worker/commit/b0a7c06f462841667fd9d9513127664da8dfec62))
+
+## [1.364.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.364.1...v1.364.2) (2026-03-19)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2167](https://github.com/adobe/spacecat-audit-worker/issues/2167)) ([6af64f6](https://github.com/adobe/spacecat-audit-worker/commit/6af64f62af0f57610df9613494affd133a912b0a))
+
+## [1.364.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.364.0...v1.364.1) (2026-03-19)
+
+
+### Bug Fixes
+
+* add per-environment reserved concurrency via CLI flags ([#2158](https://github.com/adobe/spacecat-audit-worker/issues/2158)) ([88d862e](https://github.com/adobe/spacecat-audit-worker/commit/88d862ee822c9004bc7102efbb8927231ba3ba5f))
+
+# [1.364.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.363.2...v1.364.0) (2026-03-19)
+
+
+### Features
+
+* **ci:** migrate to centralized mysticat-ci workflow ([#2164](https://github.com/adobe/spacecat-audit-worker/issues/2164)) ([80242bd](https://github.com/adobe/spacecat-audit-worker/commit/80242bde9dd52ff0f9daf7a3aeb9b0dab6563b8a))
+
+## [1.363.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.363.1...v1.363.2) (2026-03-19)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.104.0 ([#2166](https://github.com/adobe/spacecat-audit-worker/issues/2166)) ([11c0c0f](https://github.com/adobe/spacecat-audit-worker/commit/11c0c0f8db9b0b499c091032b2553427a3aa1104))
+
+## [1.363.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.363.0...v1.363.1) (2026-03-18)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2162](https://github.com/adobe/spacecat-audit-worker/issues/2162)) ([b44db9e](https://github.com/adobe/spacecat-audit-worker/commit/b44db9e777dcca548e73dea2244e93511f34e0d9))
+
 # [1.363.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.362.0...v1.363.0) (2026-03-18)
 
 
