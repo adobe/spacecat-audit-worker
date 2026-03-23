@@ -32,24 +32,33 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
   const siteId = 'site-123';
   const opportunityId = 'opp-123';
   const suggestionId = 'sugg-123';
-  const defaultBucketName = 'mystique-bucket';
+  const reportBucket = 'starfish-results';
+  const reportPath = 'results/job-789/report.json';
+
+  const buildStarfishReport = (overrides = {}) => ({
+    taskId: 'audit-123',
+    jobId: 'job-789',
+    status: 'completed',
+    results: [
+      { suggestionId, status: 'applied', diff: 'diff --git a/pom.xml b/pom.xml\n...' },
+    ],
+    attempts: [],
+    usage: {},
+    ...overrides,
+  });
 
   const buildMessage = () => ({
     siteId,
     data: {
       opportunityId,
-      updates: [{
-        suggestion_id: suggestionId,
-        fixes: [{
-          code_fix_path: 'reports/report.json',
-        }],
-      }],
+      reportBucket,
+      reportPath,
     },
   });
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
-    getObjectFromKey = sandbox.stub().resolves({ diff: 'diff-content' });
+    getObjectFromKey = sandbox.stub().resolves(buildStarfishReport());
 
     ({ default: handler } = await esmock('../../src/vulnerabilities-code-fix/handler.js', {
       '../../src/utils/s3-utils.js': { getObjectFromKey },
@@ -70,7 +79,6 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
       getId: () => suggestionId,
       getData: () => ({ some: 'data' }),
       setData: sandbox.stub(),
-      save: sandbox.stub().resolves(),
     };
 
     context = new MockContextBuilder()
@@ -90,13 +98,11 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
             findById: sandbox.stub().resolves(opportunity),
           },
           Suggestion: {
-            findById: sandbox.stub().resolves(suggestion),
             batchGetByKeys: sandbox.stub().resolves({ data: [suggestion] }),
             saveMany: sandbox.stub().resolves(),
           },
         },
         s3Client: { send: sandbox.stub().resolves() },
-        env: { S3_STARFISH_BUCKET_NAME: defaultBucketName },
       })
       .build();
   });
@@ -105,195 +111,208 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
     sandbox.restore();
   });
 
+  // --- Envelope validation ---
+
   it('returns bad request when siteId is missing', async () => {
     message = { data: message.data };
-
     const response = await handler(message, context);
-
     expect(response.status).to.equal(400);
     expect(response.headers.get('x-error')).to.equal('No siteId provided in message');
-    expect(context.log.error).to.have.been.calledWith(sinon.match(/No siteId provided/));
   });
 
   it('returns not found when site does not exist', async () => {
     context.dataAccess.Site.findById.resolves(null);
-
     const response = await handler(message, context);
-
     expect(response.status).to.equal(404);
     expect(response.headers.get('x-error')).to.equal('Site not found');
-    expect(context.log.error).to.have.been.calledWith(sinon.match(/Site not found/));
   });
 
   it('returns bad request when data is missing', async () => {
     message = { siteId };
-
     const response = await handler(message, context);
-
     expect(response.status).to.equal(400);
     expect(response.headers.get('x-error')).to.equal('No data provided in message');
-    expect(context.log.error).to.have.been.calledWith(sinon.match(/No data provided/));
   });
 
   it('returns bad request when opportunityId is missing', async () => {
-    message.data = { updates: [] };
-
+    message.data = { reportBucket, reportPath };
     const response = await handler(message, context);
-
     expect(response.status).to.equal(400);
     expect(response.headers.get('x-error')).to.equal('No opportunityId provided in message data');
-    expect(context.log.error).to.have.been.calledWith(sinon.match(/No opportunityId/));
   });
 
   it('returns not found when opportunity does not exist', async () => {
     context.dataAccess.Opportunity.findById.resolves(null);
-
     const response = await handler(message, context);
-
     expect(response.status).to.equal(404);
     expect(response.headers.get('x-error')).to.equal('Opportunity not found');
-    expect(context.log.error).to.have.been.calledWith(sinon.match(/Opportunity not found/));
   });
 
   it('returns bad request when opportunity does not belong to site', async () => {
     opportunity.getSiteId = () => 'other-site-id';
-
     const response = await handler(message, context);
-
     expect(response.status).to.equal(400);
     expect(response.headers.get('x-error')).to.equal('Site ID mismatch');
-    expect(context.log.error).to.have.been.calledWith(sinon.match(/Site ID mismatch/));
   });
 
-  it('returns ok when updates are empty', async () => {
-    message.data.updates = [];
-
+  it('returns bad request when reportBucket is missing', async () => {
+    message.data = { opportunityId, reportPath };
     const response = await handler(message, context);
-
-    expect(response.status).to.equal(200);
-    expect(context.log.warn).to.have.been.calledWith(sinon.match(/Empty updates array/));
-    expect(context.dataAccess.Suggestion.batchGetByKeys).to.not.have.been.called;
+    expect(response.status).to.equal(400);
+    expect(response.headers.get('x-error')).to.equal('Missing reportBucket or reportPath in message data');
   });
 
-  it('skips updates when suggestionId is missing', async () => {
-    message.data.updates = [{ fixes: [{ code_fix_path: 'reports/report.json' }] }];
-
+  it('returns bad request when reportPath is missing', async () => {
+    message.data = { opportunityId, reportBucket };
     const response = await handler(message, context);
-
-    expect(response.status).to.equal(200);
-    expect(context.dataAccess.Suggestion.batchGetByKeys).to.not.have.been.called;
-    expect(context.log.error).to.have.been.calledWith(sinon.match(/No suggestionId/));
+    expect(response.status).to.equal(400);
+    expect(response.headers.get('x-error')).to.equal('Missing reportBucket or reportPath in message data');
   });
 
-  it('skips updates when suggestion is not found', async () => {
-    context.dataAccess.Suggestion.batchGetByKeys.resolves({ data: [] });
+  // --- S3 report reading ---
 
-    const response = await handler(message, context);
-
-    expect(response.status).to.equal(200);
-    expect(context.log.error).to.have.been.calledWith(sinon.match(/Suggestion not found/));
-    expect(suggestion.setData).to.not.have.been.called;
-  });
-
-  it('skips updates when fixes are empty', async () => {
-    message.data.updates[0].fixes = [];
-
-    const response = await handler(message, context);
-
-    expect(response.status).to.equal(200);
-    expect(context.log.error).to.have.been.calledWith(sinon.match(/No code-fixes in update data/));
-    expect(getObjectFromKey).to.not.have.been.called;
-  });
-
-  it('handles missing report data from S3', async () => {
+  it('returns ok when report is not found in S3', async () => {
     getObjectFromKey.resolves(null);
-
     const response = await handler(message, context);
-
     expect(response.status).to.equal(200);
-    expect(context.log.warn).to.have.been.calledWith(sinon.match(/No code change report found/));
-    expect(context.log.error).to.have.been.calledWith(sinon.match(/No code-fix report found/));
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/No report found at/));
     expect(suggestion.setData).to.not.have.been.called;
   });
 
-  it('handles invalid JSON report data from S3', async () => {
+  it('returns ok when S3 read throws an error', async () => {
+    getObjectFromKey.rejects(new Error('Access Denied'));
+    const response = await handler(message, context);
+    expect(response.status).to.equal(200);
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/Failed to read report/));
+    expect(suggestion.setData).to.not.have.been.called;
+  });
+
+  it('parses report from JSON string', async () => {
+    getObjectFromKey.resolves(JSON.stringify(buildStarfishReport()));
+    const response = await handler(message, context);
+    expect(response.status).to.equal(200);
+    expect(suggestion.setData).to.have.been.called;
+  });
+
+  it('returns ok when report JSON string is invalid', async () => {
     getObjectFromKey.resolves('not-json');
-
     const response = await handler(message, context);
-
     expect(response.status).to.equal(200);
-    expect(context.log.warn).to.have.been.calledWith(sinon.match(/Failed to parse report data as JSON/));
-    expect(context.log.error).to.have.been.calledWith(sinon.match(/No code-fix report found/));
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/Failed to read report/));
     expect(suggestion.setData).to.not.have.been.called;
   });
 
-  it('handles errors when fetching report data from S3', async () => {
-    getObjectFromKey.rejects(new Error('S3 failure'));
+  // --- Report-level checks ---
 
+  it('returns ok when report status is failed', async () => {
+    getObjectFromKey.resolves(buildStarfishReport({ status: 'failed', results: [] }));
     const response = await handler(message, context);
-
     expect(response.status).to.equal(200);
-    expect(context.log.error).to.have.been.calledWith(
-      sinon.match(/Error reading code change report from S3/),
-      sinon.match.instanceOf(Error),
-    );
-    expect(context.log.error).to.have.been.calledWith(sinon.match(/No code-fix report found/));
+    expect(context.log.warn).to.have.been.calledWith(sinon.match(/Job failed/));
+    expect(suggestion.setData).to.not.have.been.called;
   });
 
-  it('applies patch data and warns for multiple fixes', async () => {
-    message.data.updates[0].fixes = [
-      { code_fix_path: 'reports/report-a.json', code_fix_bucket: 'custom-bucket' },
-      { code_fix_path: 'reports/report-b.json' },
-    ];
-
+  it('returns ok when results array is empty', async () => {
+    getObjectFromKey.resolves(buildStarfishReport({ results: [] }));
     const response = await handler(message, context);
-
     expect(response.status).to.equal(200);
-    expect(context.log.warn).to.have.been.calledWith(sinon.match(/More than one code-fix/));
-    expect(context.log.info).to.have.been.calledWith(sinon.match(/Successfully read code change report/));
+    expect(context.log.warn).to.have.been.calledWith(sinon.match(/no results/));
+    expect(suggestion.setData).to.not.have.been.called;
+  });
+
+  it('returns ok when results is missing from report', async () => {
+    const report = buildStarfishReport();
+    delete report.results;
+    getObjectFromKey.resolves(report);
+    const response = await handler(message, context);
+    expect(response.status).to.equal(200);
+    expect(context.log.warn).to.have.been.calledWith(sinon.match(/no results/));
+  });
+
+  // --- Result-level filtering ---
+
+  it('returns ok with no updates when all results are skipped or failed', async () => {
+    getObjectFromKey.resolves(buildStarfishReport({
+      results: [
+        { suggestionId, status: 'skipped', message: 'Library not found' },
+        { suggestionId: 'sugg-456', status: 'failed', message: 'Conflict' },
+      ],
+    }));
+    const response = await handler(message, context);
+    expect(response.status).to.equal(200);
+    expect(context.log.info).to.have.been.calledWith(sinon.match(/No applied results/));
+    expect(context.dataAccess.Suggestion.batchGetByKeys).to.not.have.been.called;
+  });
+
+  it('skips applied result with missing diff', async () => {
+    getObjectFromKey.resolves(buildStarfishReport({
+      results: [{ suggestionId, status: 'applied' }],
+    }));
+    const response = await handler(message, context);
+    expect(response.status).to.equal(200);
+    expect(context.log.warn).to.have.been.calledWith(sinon.match(/has no diff/));
+    expect(suggestion.setData).to.not.have.been.called;
+  });
+
+  it('skips when suggestion not found in database', async () => {
+    context.dataAccess.Suggestion.batchGetByKeys.resolves({ data: [] });
+    const response = await handler(message, context);
+    expect(response.status).to.equal(200);
+    expect(context.log.warn).to.have.been.calledWith(sinon.match(/Suggestion not found/));
+    expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+  });
+
+  // --- Happy path ---
+
+  it('updates suggestion with diff from applied result', async () => {
+    const response = await handler(message, context);
+    expect(response.status).to.equal(200);
     expect(getObjectFromKey).to.have.been.calledWith(
       context.s3Client,
-      'custom-bucket',
-      'reports/report-a.json',
+      reportBucket,
+      reportPath,
       context.log,
     );
     expect(suggestion.setData).to.have.been.calledWith({
       some: 'data',
-      patchContent: 'diff-content',
+      patchContent: 'diff --git a/pom.xml b/pom.xml\n...',
       isCodeChangeAvailable: true,
     });
-    expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
+    expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledWith([suggestion]);
   });
 
-  it('skips fix when S3_STARFISH_BUCKET_NAME is not set and no code_fix_bucket provided', async () => {
-    context.env = {};
+  it('updates multiple suggestions from one report', async () => {
+    const suggestion2Id = 'sugg-456';
+    const suggestion2 = {
+      getId: () => suggestion2Id,
+      getData: () => ({ other: 'data' }),
+      setData: sandbox.stub(),
+    };
+
+    getObjectFromKey.resolves(buildStarfishReport({
+      results: [
+        { suggestionId, status: 'applied', diff: 'diff-1' },
+        { suggestionId: suggestion2Id, status: 'applied', diff: 'diff-2' },
+        { suggestionId: 'sugg-789', status: 'skipped', message: 'Not applicable' },
+      ],
+    }));
+
+    context.dataAccess.Suggestion.batchGetByKeys.resolves({ data: [suggestion, suggestion2] });
 
     const response = await handler(message, context);
-
     expect(response.status).to.equal(200);
-    expect(context.log.error).to.have.been.calledWith(sinon.match(/No S3 bucket configured/));
-    expect(getObjectFromKey).to.not.have.been.called;
-    expect(suggestion.setData).to.not.have.been.called;
-  });
 
-  it('parses report JSON strings and uses default bucket name', async () => {
-    getObjectFromKey.resolves(JSON.stringify({ diff: 'json-diff' }));
-
-    const response = await handler(message, context);
-
-    expect(response.status).to.equal(200);
-    expect(getObjectFromKey).to.have.been.calledWith(
-      context.s3Client,
-      defaultBucketName,
-      'reports/report.json',
-      context.log,
-    );
+    expect(getObjectFromKey).to.have.been.calledOnce;
     expect(suggestion.setData).to.have.been.calledWith({
       some: 'data',
-      patchContent: 'json-diff',
+      patchContent: 'diff-1',
       isCodeChangeAvailable: true,
     });
-    expect(context.dataAccess.Suggestion.saveMany).to.have.been.called;
+    expect(suggestion2.setData).to.have.been.calledWith({
+      other: 'data',
+      patchContent: 'diff-2',
+      isCodeChangeAvailable: true,
+    });
+    expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledWith([suggestion, suggestion2]);
   });
 });
-
