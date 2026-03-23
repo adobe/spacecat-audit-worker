@@ -12,6 +12,6 @@
 
 export const CONTENT_GAIN_THRESHOLD = 1.1;
 export const TOP_AGENTIC_URLS_LIMIT = 2000;
-export const DAILY_BATCH_SIZE = 300;
+export const DAILY_BATCH_SIZE = 320;
 export const TOP_ORGANIC_URLS_LIMIT = 200;
 export const MODE_AI_ONLY = 'ai-only';
