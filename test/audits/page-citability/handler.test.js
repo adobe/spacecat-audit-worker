@@ -327,6 +327,7 @@ describe('Page Citability Handler', () => {
           wordDifference: sinon.match.number,
           botWords: sinon.match.number,
           normalWords: sinon.match.number,
+          updatedBy: 'page-citability',
         }),
       );
     });
@@ -400,6 +401,7 @@ describe('Page Citability Handler', () => {
         setBotWords: sandbox.stub(),
         setNormalWords: sandbox.stub(),
         setIsDeployedAtEdge: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
         save: sandbox.stub().resolves(),
       };
 
@@ -417,6 +419,7 @@ describe('Page Citability Handler', () => {
       expect(mockExistingRecord.setBotWords).to.have.been.calledOnce;
       expect(mockExistingRecord.setNormalWords).to.have.been.calledOnce;
       expect(mockExistingRecord.setIsDeployedAtEdge).to.have.been.calledOnce;
+      expect(mockExistingRecord.setUpdatedBy).to.have.been.calledWith('page-citability');
       expect(mockExistingRecord.save).to.have.been.calledOnce;
       expect(mockPageCitability.create).to.not.have.been.called;
     });

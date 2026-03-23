@@ -958,9 +958,6 @@ export async function processOpportunityAndSuggestions(
       data: suggestion.key ? suggestion.data : mapSuggestionData(suggestion),
     }),
     scrapedUrlsSet,
-    // Phase 2d: only outdate suggestions older than 7 days that weren't scraped in this batch,
-    // aligning with the rolling 7-day batching cycle.
-    stalenessDays: 7,
     // Custom merge function: handle both types
     mergeDataFunction: (existingData, newDataItem) => {
       // Domain-wide suggestion: replace with new data
@@ -1031,6 +1028,7 @@ export async function writeToCitabilityRecords(comparisonResults, siteId, contex
         existing.setBotWords(wordCountBefore ?? null);
         existing.setNormalWords(wordCountAfter ?? null);
         existing.setIsDeployedAtEdge(isDeployedAtEdge ?? false);
+        existing.setUpdatedBy('prerender');
         await existing.save();
       } else {
         await PageCitability.create({
@@ -1042,6 +1040,7 @@ export async function writeToCitabilityRecords(comparisonResults, siteId, contex
           botWords: wordCountBefore ?? null,
           normalWords: wordCountAfter ?? null,
           isDeployedAtEdge: isDeployedAtEdge ?? false,
+          updatedBy: 'prerender',
         });
       }
       written += 1;
@@ -1262,6 +1261,21 @@ export async function processContentAndGenerateOpportunities(context) {
 
     const scrapedUrlsSet = new Set(successfulComparisons.map((r) => r.url));
 
+    // Extend scrapedUrlsSet with URLs recently processed by the page-citability audit (within 7
+    // days). This replaces the old stalenessDays check on the suggestion entity: instead of
+    // time-boxing suggestions directly, we use PageCitability.updatedAt to determine whether a
+    // URL was recently validated by either audit, preventing premature OUTDATED transitions.
+    const { PageCitability } = dataAccess;
+    if (PageCitability?.allBySiteId) {
+      const citabilityRecords = await PageCitability.allBySiteId(siteId);
+      const sevenDaysAgo = subDays(new Date(), 7);
+      for (const record of citabilityRecords) {
+        if (new Date(record.getUpdatedAt()) > sevenDaysAgo) {
+          scrapedUrlsSet.add(record.getUrl());
+        }
+      }
+    }
+
     const auditResult = {
       totalUrlsChecked: comparisonResults.length,
       urlsNeedingPrerender: urlsNeedingPrerender.length,
@@ -1322,7 +1336,6 @@ export async function processContentAndGenerateOpportunities(context) {
           buildKey: (suggestionData) => suggestionData.url,
           mapNewSuggestion: () => ({}),
           scrapedUrlsSet: scrapedUrlsForNoOppty,
-          stalenessDays: 7,
         });
       }
     }

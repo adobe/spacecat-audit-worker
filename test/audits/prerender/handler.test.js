@@ -6329,6 +6329,7 @@ describe('Prerender Audit', () => {
         botWords: 100,
         normalWords: 150,
         isDeployedAtEdge: false,
+        updatedBy: 'prerender',
       });
     });
 
@@ -6342,6 +6343,7 @@ describe('Prerender Audit', () => {
         setBotWords: sandbox.stub(),
         setNormalWords: sandbox.stub(),
         setIsDeployedAtEdge: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
         save: saveStub,
       };
       const context = {
@@ -6370,6 +6372,7 @@ describe('Prerender Audit', () => {
       expect(context.dataAccess.PageCitability.create).to.not.have.been.called;
       expect(existingRecord.setCitabilityScore).to.have.been.calledWith(0.9);
       expect(existingRecord.setIsDeployedAtEdge).to.have.been.calledWith(true);
+      expect(existingRecord.setUpdatedBy).to.have.been.calledWith('prerender');
       expect(saveStub).to.have.been.calledOnce;
     });
 
@@ -6442,6 +6445,7 @@ describe('Prerender Audit', () => {
         setBotWords: sandbox.stub(),
         setNormalWords: sandbox.stub(),
         setIsDeployedAtEdge: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
         save: saveStub,
       };
       const context = {
@@ -6493,13 +6497,14 @@ describe('Prerender Audit', () => {
         wordDifference: null,
         botWords: null,
         normalWords: null,
+        updatedBy: 'prerender',
         isDeployedAtEdge: false,
       });
     });
   });
 
-  describe('stalenessDays: 7 in syncSuggestions', () => {
-    it('should pass stalenessDays: 7 to syncSuggestions in processOpportunityAndSuggestions', async () => {
+  describe('PageCitability-based scrapedUrlsSet augmentation', () => {
+    it('should not pass stalenessDays to syncSuggestions in processOpportunityAndSuggestions', async () => {
       const syncSuggestionsStub = sinon.stub().resolves();
       const mockOpportunity = {
         getId: () => 'opp-id',
@@ -6543,13 +6548,14 @@ describe('Prerender Audit', () => {
 
       expect(syncSuggestionsStub).to.have.been.called;
       const syncCall = syncSuggestionsStub.firstCall.args[0];
-      expect(syncCall.stalenessDays).to.equal(7);
+      expect(syncCall).to.not.have.property('stalenessDays');
     });
 
-    it('should pass stalenessDays: 7 to syncSuggestions in the no-opportunity path', async () => {
+    it('should augment scrapedUrlsSet with PageCitability records updated within 7 days', async () => {
       const syncSuggestionsStub = sinon.stub().resolves();
       const mockOpportunity = {
         getId: () => 'opp-id',
+        getType: sinon.stub().returns('prerender'),
         getSuggestions: sinon.stub().resolves([]),
       };
 
@@ -6562,6 +6568,16 @@ describe('Prerender Audit', () => {
         },
       });
 
+      // One record updated 1 day ago (recent), one 10 days ago (stale)
+      const recentCitabilityRecord = {
+        getUrl: () => 'https://example.com/citability-page',
+        getUpdatedAt: () => new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+      const staleCitabilityRecord = {
+        getUrl: () => 'https://example.com/stale-page',
+        getUpdatedAt: () => new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+
       const context = {
         site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
         audit: { getId: () => 'audit-id' },
@@ -6570,7 +6586,7 @@ describe('Prerender Audit', () => {
             allBySiteIdAndStatus: sinon.stub().resolves([mockOpportunity]),
           },
           PageCitability: {
-            allBySiteId: sinon.stub().resolves([]),
+            allBySiteId: sinon.stub().resolves([recentCitabilityRecord, staleCitabilityRecord]),
             create: sinon.stub().resolves({}),
           },
         },
@@ -6585,13 +6601,14 @@ describe('Prerender Audit', () => {
         scrapeResultPaths: new Map([['https://example.com/page1', '/tmp/page1']]),
       };
 
-      mockOpportunity.getType = sinon.stub().returns('prerender');
-
       await mockHandler.processContentAndGenerateOpportunities(context);
 
       expect(syncSuggestionsStub).to.have.been.called;
       const syncCall = syncSuggestionsStub.firstCall.args[0];
-      expect(syncCall.stalenessDays).to.equal(7);
+      // Recent citability URL should be in scrapedUrlsSet; stale one should not
+      expect(syncCall.scrapedUrlsSet.has('https://example.com/citability-page')).to.be.true;
+      expect(syncCall.scrapedUrlsSet.has('https://example.com/stale-page')).to.be.false;
+      expect(syncCall).to.not.have.property('stalenessDays');
     });
   });
 });

@@ -197,6 +197,7 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
       existingRecord.setBotWords(scores.botWords);
       existingRecord.setNormalWords(scores.normalWords);
       existingRecord.setIsDeployedAtEdge(isDeployedAtEdge);
+      existingRecord.setUpdatedBy('page-citability');
       await existingRecord.save();
     } else {
       await PageCitability.create({
@@ -208,6 +209,7 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
         botWords: scores.botWords,
         normalWords: scores.normalWords,
         isDeployedAtEdge,
+        updatedBy: 'page-citability',
       });
     }
 
