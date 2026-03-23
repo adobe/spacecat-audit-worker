@@ -779,6 +779,79 @@ describe('Prerender Audit', () => {
           // organic-page was recently processed (2 days) → should NOT be in this batch
           expect(resultUrls).to.not.include(organicUrl);
         });
+
+        it('should silently ignore suggestions with invalid URLs when building recent pathnames', async () => {
+          // Suggestion with an empty URL — new URL('') throws, triggering catch { return null; }
+          // at handler.js:194-195. The null is filtered out so the URL is not treated as recent.
+          const invalidSuggestion = {
+            getData: () => ({ url: '' }),
+            getUpdatedAt: () => new Date().toISOString(), // recent timestamp
+          };
+          const mockOpportunity = {
+            getType: () => 'prerender',
+            getSuggestions: sandbox.stub().resolves([invalidSuggestion]),
+          };
+          const opportunityStub = {
+            allBySiteIdAndStatus: sandbox.stub().resolves([mockOpportunity]),
+          };
+          const mockHandler = await makeHandlerWithAgentic(['https://example.com/agentic-0']);
+          const context = makeContext(opportunityStub);
+
+          // Should not throw; agentic-0 is not blocked by the invalid suggestion
+          const result = await mockHandler.submitForScraping(context);
+          expect(result.urls.map((u) => u.url)).to.include('https://example.com/agentic-0');
+        });
+
+        it('should treat an organic URL that cannot be parsed as not recently processed', async () => {
+          // 'not-a-valid-url' is not an absolute URL — new URL('not-a-valid-url') throws,
+          // triggering catch { return false; } at handler.js:709-710 in hasRecentOrganic.
+          const opportunityStub = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+          const mockHandler = await makeHandlerWithAgentic([]);
+          const context = {
+            site: {
+              getId: () => 'test-site-id',
+              getBaseURL: () => 'https://example.com',
+              getConfig: () => ({ getIncludedURLs: () => [] }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                  { getUrl: () => 'not-a-valid-url' },
+                ]),
+              },
+              Opportunity: opportunityStub,
+            },
+            log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          };
+
+          // Should not throw; the invalid organic URL is treated as not-recently-processed
+          const result = await mockHandler.submitForScraping(context);
+          expect(result).to.be.an('object');
+          expect(result.urls).to.be.an('array');
+        });
+
+        it('should treat a suggestion without getUpdatedAt as not recently processed', async () => {
+          // Suggestion without getUpdatedAt — s.getUpdatedAt?.() short-circuits to undefined,
+          // hitting the optional-chaining null branch at handler.js:189.
+          // new Date(undefined || 0) is epoch (1970) → not recent → URL is included in batch.
+          const suggestionWithoutUpdatedAt = {
+            getData: () => ({ url: 'https://example.com/agentic-0' }),
+            // no getUpdatedAt method
+          };
+          const mockOpportunity = {
+            getType: () => 'prerender',
+            getSuggestions: sandbox.stub().resolves([suggestionWithoutUpdatedAt]),
+          };
+          const opportunityStub = {
+            allBySiteIdAndStatus: sandbox.stub().resolves([mockOpportunity]),
+          };
+          const mockHandler = await makeHandlerWithAgentic(['https://example.com/agentic-0']);
+          const context = makeContext(opportunityStub);
+
+          // Suggestion is not treated as recent → agentic-0 should still be in the batch
+          const result = await mockHandler.submitForScraping(context);
+          expect(result.urls.map((u) => u.url)).to.include('https://example.com/agentic-0');
+        });
       });
 
     });
@@ -6339,6 +6412,72 @@ describe('Prerender Audit', () => {
       await writeToCitabilityRecords([], 'site-1', context);
 
       expect(debugStub).to.have.been.calledWith(sinon.match('PageCitability not available'));
+    });
+
+    it('should fall back to null/false for undefined fields when updating an existing record', async () => {
+      // Exercises the ?? null / ?? false branches at handler.js:1028-1033
+      const saveStub = sandbox.stub().resolves();
+      const existingRecord = {
+        getUrl: () => 'https://example.com/page1',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStub,
+      };
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([existingRecord]),
+            create: sandbox.stub(),
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      // All metric fields are undefined — triggers the ?? null / ?? false fallbacks
+      const comparisonResults = [{ url: 'https://example.com/page1' }];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(existingRecord.setCitabilityScore).to.have.been.calledWith(null);
+      expect(existingRecord.setContentRatio).to.have.been.calledWith(null);
+      expect(existingRecord.setWordDifference).to.have.been.calledWith(null);
+      expect(existingRecord.setBotWords).to.have.been.calledWith(null);
+      expect(existingRecord.setNormalWords).to.have.been.calledWith(null);
+      expect(existingRecord.setIsDeployedAtEdge).to.have.been.calledWith(false);
+      expect(saveStub).to.have.been.calledOnce;
+    });
+
+    it('should fall back to null/false for undefined fields when creating a new record', async () => {
+      // Exercises the ?? null / ?? false branches at handler.js:1039+ in the create path
+      const createStub = sandbox.stub().resolves({});
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([]),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      // All metric fields are undefined — triggers the ?? null / ?? false fallbacks
+      const comparisonResults = [{ url: 'https://example.com/new-page' }];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(createStub).to.have.been.calledOnce;
+      expect(createStub.firstCall.args[0]).to.deep.equal({
+        siteId: 'site-1',
+        url: 'https://example.com/new-page',
+        citabilityScore: null,
+        contentRatio: null,
+        wordDifference: null,
+        botWords: null,
+        normalWords: null,
+        isDeployedAtEdge: false,
+      });
     });
   });
 
