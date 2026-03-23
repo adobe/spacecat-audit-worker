@@ -4039,8 +4039,14 @@ describe('Prerender Audit', () => {
           readFromSharePoint: async () => ({}),
         },
         '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'bucket',
-          extractCustomerDomain: () => 'acme_com',
+          getS3Config: () => ({
+            bucket: 'bucket',
+            region: 'us-east-1',
+            customerName: 'acme',
+            customerDomain: 'acme_com',
+            databaseName: 'cdn_logs_acme_com',
+            getAthenaTempLocation: () => 's3://bucket/temp/athena-results/',
+          }),
         },
       });
 
@@ -4082,8 +4088,14 @@ describe('Prerender Audit', () => {
           readFromSharePoint: async () => ({}),
         },
         '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'bucket',
-          extractCustomerDomain: () => 'acme_com',
+          getS3Config: () => ({
+            bucket: 'bucket',
+            region: 'us-east-1',
+            customerName: 'acme',
+            customerDomain: 'acme_com',
+            databaseName: 'cdn_logs_acme_com',
+            getAthenaTempLocation: () => 's3://bucket/temp/athena-results/',
+          }),
         },
       });
       const site = {
@@ -4096,34 +4108,39 @@ describe('Prerender Audit', () => {
     });
   });
   describe('Shared utils coverage', () => {
-    it('should return S3 config shape and temp location function', async () => {
+    it('loadLatestAgenticSheet uses shared CDN config fields', async () => {
       const shared = await esmock('../../../src/prerender/utils/shared.js', {
+        '../../../src/cdn-logs-report/utils/report-utils.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date('2025-11-17'), endDate: new Date('2025-11-23') }],
+          }),
+        },
+        '../../../src/llm-error-pages/utils.js': {
+          downloadExistingCdnSheet: async () => [{ url: '/x', number_of_hits: 1 }],
+        },
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: async () => ({}),
+          readFromSharePoint: async () => ({}),
+        },
         '../../../src/utils/cdn-utils.js': {
-          // Avoid depending on env; just return a deterministic bucket
-          resolveConsolidatedBucketName: () => 'bucket',
-          extractCustomerDomain: () => 'adobe_com',
+          getS3Config: () => ({
+            bucket: 'bucket',
+            region: 'us-east-1',
+            customerName: 'adobe',
+            customerDomain: 'www.adobe_com',
+            databaseName: 'cdn_logs_www.adobe_com',
+            tableName: 'aggregated_logs_www.adobe_com_consolidated',
+            getAthenaTempLocation: () => 's3://bucket/temp/athena-results/',
+          }),
         },
       });
-      const cfg = await shared.getS3Config({ getBaseURL: () => 'https://www.adobe.com' }, { });
-      expect(cfg).to.be.an('object');
-      expect(cfg).to.have.property('databaseName');
-      expect(cfg).to.have.property('tableName');
-      expect(cfg).to.have.property('getAthenaTempLocation');
-      expect(cfg.getAthenaTempLocation()).to.be.a('string');
-      expect(cfg.getAthenaTempLocation()).to.include('/temp/athena-results/');
-    });
-
-    it('should compute customerName correctly when domain starts with www', async () => {
-      const shared = await esmock('../../../src/prerender/utils/shared.js', {
-        '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'bucket',
-          extractCustomerDomain: () => 'www.adobe_com',
-        },
-      });
-      const cfg = await shared.getS3Config({ }, { });
-      expect(cfg.customerName).to.equal('adobe');
-      expect(cfg.databaseName).to.equal('cdn_logs_www.adobe_com');
-      expect(cfg.tableName).to.equal('aggregated_logs_www.adobe_com_consolidated');
+      const result = await shared.loadLatestAgenticSheet({
+        getBaseURL: () => 'https://www.adobe.com',
+        getConfig: () => ({ getLlmoDataFolder: () => null }),
+      }, { log: { info: () => {} } });
+      expect(result.outputLocation).to.equal('adobe/agentic-traffic');
+      expect(result.baseUrl).to.equal('https://www.adobe.com');
+      expect(result.rows).to.have.length(1);
     });
   });
   describe('Edge Cases and Error Handling', () => {

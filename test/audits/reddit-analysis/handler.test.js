@@ -186,14 +186,24 @@ describe('Reddit Analysis Handler', () => {
       expect(context.log.error).to.have.been.called;
     });
 
-    it('should return error when guidelinesStore returns empty', async () => {
+    it('should proceed with empty guidelines when guidelinesStore returns empty', async () => {
       mockStoreClient.getGuidelines.rejects(new StoreEmptyError('guidelinesStore', 'N/A', 'No guidelines found'));
 
       const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.storeData.sentimentConfig.topics).to.deep.equal([]);
+      expect(result.auditResult.storeData.sentimentConfig.guidelines).to.deep.equal([]);
+      expect(context.log.info).to.have.been.calledWithMatch(/No sentiment config found/);
+    });
+
+    it('should rethrow non-StoreEmptyError from getGuidelines', async () => {
+      mockStoreClient.getGuidelines.rejects(new Error('Network timeout'));
+
+      const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
+
       expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.include('guidelinesStore returned empty results');
-      expect(result.auditResult.storeName).to.equal('guidelinesStore');
+      expect(result.auditResult.error).to.include('Network timeout');
     });
 
     it('should return error when company name is not configured', async () => {
