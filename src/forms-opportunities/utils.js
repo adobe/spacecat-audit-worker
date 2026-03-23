@@ -100,48 +100,58 @@ function convertToLowViewOpptyData(metricObject) {
   const {
     formview: { total: formViews, mobile: formViewsMobile, desktop: formViewsDesktop },
     pageview: { total: pageViews, mobile: pageViewsMobile, desktop: pageViewsDesktop },
-    // trafficacquisition,
+    trafficacquisition: { sources: trafficAcquisitionSources } = {},
   } = metricObject;
+  const metrics = [
+    {
+      type: 'formViewRate',
+      device: '*',
+      value: {
+        page: calculateRate(formViews, pageViews),
+      },
+    },
+    {
+      type: 'formViewRate',
+      device: 'mobile',
+      value: {
+        page: calculateRate(formViewsMobile, pageViewsMobile),
+      },
+    },
+    {
+      type: 'formViewRate',
+      device: 'desktop',
+      value: {
+        page: calculateRate(formViewsDesktop, pageViewsDesktop),
+      },
+    },
+    {
+      type: 'traffic',
+      device: 'desktop',
+      value: {
+        page: pageViewsDesktop,
+      },
+    },
+    {
+      type: 'traffic',
+      device: 'mobile',
+      value: {
+        page: pageViewsMobile,
+      },
+    },
+  ];
+  if (Array.isArray(trafficAcquisitionSources) && trafficAcquisitionSources.length > 0) {
+    metrics.push({
+      type: 'trafficAcquisitionSource',
+      device: '*',
+      value: {
+        page: trafficAcquisitionSources,
+      },
+    });
+  }
   return {
     trackedFormKPIName: 'Form View Rate',
     trackedFormKPIValue: calculateRate(formViews, pageViews),
-    metrics: [
-      {
-        type: 'formViewRate',
-        device: '*',
-        value: {
-          page: calculateRate(formViews, pageViews),
-        },
-      },
-      {
-        type: 'formViewRate',
-        device: 'mobile',
-        value: {
-          page: calculateRate(formViewsMobile, pageViewsMobile),
-        },
-      },
-      {
-        type: 'formViewRate',
-        device: 'desktop',
-        value: {
-          page: calculateRate(formViewsDesktop, pageViewsDesktop),
-        },
-      },
-      {
-        type: 'traffic',
-        device: 'desktop',
-        value: {
-          page: pageViewsDesktop,
-        },
-      },
-      {
-        type: 'traffic',
-        device: 'mobile',
-        value: {
-          page: pageViewsMobile,
-        },
-      },
-    ],
+    metrics,
   };
 }
 
