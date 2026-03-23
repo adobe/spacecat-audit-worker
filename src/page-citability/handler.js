@@ -191,7 +191,6 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
     const existingRecord = existingRecordsMap.get(url);
 
     if (existingRecord) {
-      // Once prerender has taken ownership of a record, page-citability must not overwrite it.
       if (existingRecord.getUpdatedBy?.() === 'prerender') {
         log.debug(`${LOG_PREFIX} Skipping update for ${url} - already owned by prerender`);
         return {

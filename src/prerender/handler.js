@@ -168,10 +168,7 @@ async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) 
 }
 
 /**
- * Returns a Set of URL pathnames for PageCitability records last updated by prerender
- * within the last 7 days. Used to skip recently-processed URLs in the daily batching logic.
- * Only records written by prerender are considered — records written by the page-citability
- * audit are intentionally excluded so that prerender still processes those URLs.
+ * Returns pathnames from PageCitability records last updated by prerender within 7 days.
  * @param {Object} context
  * @param {string} siteId
  * @returns {Promise<Set<string>>}
@@ -309,9 +306,6 @@ async function compareHtmlContent(url, context) {
       throw new Error(`Missing HTML data for ${url} (server-side: ${!!serverSideHtml}, client-side: ${!!clientSideHtml})`);
     }
 
-    // Single calculateStats call via analyzeHtmlForPrerender — returns both prerender fields
-    // (needsPrerender, contentGainRatio, wordCountBefore/After) and citability fields
-    // (citabilityScore, contentRatio, wordDifference, botWords, normalWords).
     const analysis = await analyzeHtmlForPrerender(
       serverSideHtml,
       clientSideHtml,
@@ -1224,8 +1218,7 @@ export async function processContentAndGenerateOpportunities(context) {
       urlsToCheck.map((url) => compareHtmlContent(url, context)),
     );
 
-    // Phase 2c: write citability metrics to PageCitability entity so page-citability audit
-    // can detect recently-processed URLs via its 7-day staleness filter.
+    // Phase 2c: write citability metrics to PageCitability entity.
     await writeToCitabilityRecords(comparisonResults, siteId, context);
 
     const urlsNeedingPrerender = comparisonResults.filter((result) => result.needsPrerender);
@@ -1263,10 +1256,7 @@ export async function processContentAndGenerateOpportunities(context) {
 
     const scrapedUrlsSet = new Set(successfulComparisons.map((r) => r.url));
 
-    // Extend scrapedUrlsSet with URLs recently processed by the page-citability audit (within 7
-    // days). This replaces the old stalenessDays check on the suggestion entity: instead of
-    // time-boxing suggestions directly, we use PageCitability.updatedAt to determine whether a
-    // URL was recently validated by either audit, preventing premature OUTDATED transitions.
+    // Extend scrapedUrlsSet with URLs updated in PageCitability within the last 7 days.
     const { PageCitability } = dataAccess;
     if (PageCitability?.allBySiteId) {
       const citabilityRecords = await PageCitability.allBySiteId(siteId);
