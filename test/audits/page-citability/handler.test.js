@@ -392,9 +392,10 @@ describe('Page Citability Handler', () => {
         humanView: { rawPage: '<html><body><p>Human content with different text</p></body></html>' }
       });
 
-      // Mock existing record
+      // Mock existing record (not owned by prerender)
       const mockExistingRecord = {
         getUrl: () => `${baseURL}/page1`,
+        getUpdatedBy: () => 'page-citability',
         setCitabilityScore: sandbox.stub(),
         setContentRatio: sandbox.stub(),
         setWordDifference: sandbox.stub(),
@@ -421,6 +422,36 @@ describe('Page Citability Handler', () => {
       expect(mockExistingRecord.setIsDeployedAtEdge).to.have.been.calledOnce;
       expect(mockExistingRecord.setUpdatedBy).to.have.been.calledWith('page-citability');
       expect(mockExistingRecord.save).to.have.been.calledOnce;
+      expect(mockPageCitability.create).to.not.have.been.called;
+    });
+
+    it('should skip updating a record that is already owned by prerender', async () => {
+      context.scrapeResultPaths = new Map([
+        [`${baseURL}/page1`, 's3-key-1'],
+      ]);
+
+      getObjectFromKeyStub.resolves({
+        botView: { rawPage: '<html><body><p>Bot content with text</p></body></html>' },
+        humanView: { rawPage: '<html><body><p>Human content with different text</p></body></html>' }
+      });
+
+      const mockPrerenderedRecord = {
+        getUrl: () => `${baseURL}/page1`,
+        getUpdatedBy: () => 'prerender',
+        setCitabilityScore: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      mockPageCitability.allBySiteId.resolves([mockPrerenderedRecord]);
+
+      const result = await handler.steps['analyze-citability'].handler(context);
+
+      // Should still count as successful (not failed) — we just skipped the DB write
+      expect(result.auditResult.successfulPages).to.equal(1);
+      expect(result.auditResult.failedPages).to.equal(0);
+      // Must not have saved or created anything
+      expect(mockPrerenderedRecord.setCitabilityScore).to.not.have.been.called;
+      expect(mockPrerenderedRecord.save).to.not.have.been.called;
       expect(mockPageCitability.create).to.not.have.been.called;
     });
   });
