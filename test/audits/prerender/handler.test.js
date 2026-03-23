@@ -626,9 +626,9 @@ describe('Prerender Audit', () => {
       });
       describe('daily batching', () => {
         const makeAgenticUrls = (n, base = 'https://example.com/agentic-') => Array.from({ length: n }, (_, i) => `${base}${i}`);
-        const makeSuggestion = (path, updatedAtDaysAgo) => ({
-          getData: () => ({ url: `https://example.com${path}` }),
-          getStatus: () => 'NEW',
+        const makeCitabilityRecord = (path, updatedAtDaysAgo, updatedBy = 'prerender') => ({
+          getUrl: () => `https://example.com${path}`,
+          getUpdatedBy: () => updatedBy,
           getUpdatedAt: () => new Date(Date.now() - updatedAtDaysAgo * 24 * 60 * 60 * 1000).toISOString(),
         });
 
@@ -642,7 +642,7 @@ describe('Prerender Audit', () => {
           },
         });
 
-        const makeContext = (opportunityStub) => ({
+        const makeContext = (pageCitabilityRecords = []) => ({
           site: {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
@@ -650,64 +650,51 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-            Opportunity: opportunityStub,
+            PageCitability: { allBySiteId: sandbox.stub().resolves(pageCitabilityRecords) },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
         });
 
-        it('should cap agentic URLs to DAILY_BATCH_SIZE when no existing suggestions', async () => {
+        it('should cap agentic URLs to DAILY_BATCH_SIZE when no recent citability records exist', async () => {
           const agenticUrls = makeAgenticUrls(500);
-          const opportunityStub = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
-          const context = makeContext(opportunityStub);
+          const context = makeContext([]);
 
           const result = await mockHandler.submitForScraping(context);
 
           expect(result.urls.length).to.equal(DAILY_BATCH_SIZE);
         });
 
-        it('should filter out agentic URLs recently processed (within 7 days)', async () => {
+        it('should filter out agentic URLs recently processed by prerender (within 7 days)', async () => {
           const agenticUrls = [
             'https://example.com/agentic-0',
             'https://example.com/agentic-1',
             'https://example.com/agentic-2',
           ];
-          const recentSuggestion = makeSuggestion('/agentic-0', 3); // 3 days ago → recent
-          const mockOpportunity = {
-            getType: () => 'prerender',
-            getSuggestions: sandbox.stub().resolves([recentSuggestion]),
-          };
-          const opportunityStub = {
-            allBySiteIdAndStatus: sandbox.stub().resolves([mockOpportunity]),
-          };
+          // agentic-0 updated by prerender 3 days ago → recent → skip
+          const recentRecord = makeCitabilityRecord('/agentic-0', 3, 'prerender');
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
-          const context = makeContext(opportunityStub);
+          const context = makeContext([recentRecord]);
 
           const result = await mockHandler.submitForScraping(context);
           const resultUrls = result.urls.map((u) => u.url);
 
-          // agentic-0 was recently processed → should NOT be in this batch
+          // agentic-0 was recently processed by prerender → should NOT be in this batch
           expect(resultUrls).to.not.include('https://example.com/agentic-0');
           // agentic-1 and agentic-2 were not recently processed → should be included
           expect(resultUrls).to.include('https://example.com/agentic-1');
           expect(resultUrls).to.include('https://example.com/agentic-2');
         });
 
-        it('should include agentic URLs whose suggestions are older than 7 days', async () => {
+        it('should include agentic URLs whose citability records are older than 7 days', async () => {
           const agenticUrls = [
             'https://example.com/agentic-0',
             'https://example.com/agentic-1',
           ];
-          const staleSuggestion = makeSuggestion('/agentic-0', 8); // 8 days ago → stale
-          const mockOpportunity = {
-            getType: () => 'prerender',
-            getSuggestions: sandbox.stub().resolves([staleSuggestion]),
-          };
-          const opportunityStub = {
-            allBySiteIdAndStatus: sandbox.stub().resolves([mockOpportunity]),
-          };
+          // agentic-0 updated by prerender 8 days ago → stale → re-include
+          const staleRecord = makeCitabilityRecord('/agentic-0', 8, 'prerender');
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
-          const context = makeContext(opportunityStub);
+          const context = makeContext([staleRecord]);
 
           const result = await mockHandler.submitForScraping(context);
           const resultUrls = result.urls.map((u) => u.url);
@@ -717,9 +704,8 @@ describe('Prerender Audit', () => {
           expect(resultUrls).to.include('https://example.com/agentic-1');
         });
 
-        it('should include organic URLs when none were recently processed', async () => {
+        it('should include organic URLs when no citability records exist', async () => {
           const agenticUrls = makeAgenticUrls(5);
-          const opportunityStub = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
 
           const organicUrl = 'https://example.com/organic-page';
@@ -733,7 +719,7 @@ describe('Prerender Audit', () => {
               SiteTopPage: {
                 allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => organicUrl }]),
               },
-              Opportunity: opportunityStub,
+              PageCitability: { allBySiteId: sandbox.stub().resolves([]) },
             },
             log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
           };
@@ -741,21 +727,15 @@ describe('Prerender Audit', () => {
           const result = await mockHandler.submitForScraping(context);
           const resultUrls = result.urls.map((u) => u.url);
 
-          // No organic suggestions processed recently → include organic URL
+          // No recent prerender citability records → include organic URL
           expect(resultUrls).to.include(organicUrl);
         });
 
-        it('should skip organic URLs when they were recently processed', async () => {
+        it('should skip organic URLs recently processed by prerender', async () => {
           const agenticUrls = makeAgenticUrls(5);
           const organicUrl = 'https://example.com/organic-page';
-          const recentOrganicSuggestion = makeSuggestion('/organic-page', 2); // 2 days ago
-          const mockOpportunity = {
-            getType: () => 'prerender',
-            getSuggestions: sandbox.stub().resolves([recentOrganicSuggestion]),
-          };
-          const opportunityStub = {
-            allBySiteIdAndStatus: sandbox.stub().resolves([mockOpportunity]),
-          };
+          // organic-page updated by prerender 2 days ago → recent → skip
+          const recentRecord = makeCitabilityRecord('/organic-page', 2, 'prerender');
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
 
           const context = {
@@ -768,7 +748,7 @@ describe('Prerender Audit', () => {
               SiteTopPage: {
                 allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => organicUrl }]),
               },
-              Opportunity: opportunityStub,
+              PageCitability: { allBySiteId: sandbox.stub().resolves([recentRecord]) },
             },
             log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
           };
@@ -776,36 +756,40 @@ describe('Prerender Audit', () => {
           const result = await mockHandler.submitForScraping(context);
           const resultUrls = result.urls.map((u) => u.url);
 
-          // organic-page was recently processed (2 days) → should NOT be in this batch
+          // organic-page was recently processed by prerender (2 days) → should NOT be in batch
           expect(resultUrls).to.not.include(organicUrl);
         });
 
-        it('should silently ignore suggestions with invalid URLs when building recent pathnames', async () => {
-          // Suggestion with an empty URL — new URL('') throws, triggering catch { return null; }
-          // at handler.js:194-195. The null is filtered out so the URL is not treated as recent.
-          const invalidSuggestion = {
-            getData: () => ({ url: '' }),
-            getUpdatedAt: () => new Date().toISOString(), // recent timestamp
-          };
-          const mockOpportunity = {
-            getType: () => 'prerender',
-            getSuggestions: sandbox.stub().resolves([invalidSuggestion]),
-          };
-          const opportunityStub = {
-            allBySiteIdAndStatus: sandbox.stub().resolves([mockOpportunity]),
+        it('should not skip URLs whose citability records were updated by page-citability', async () => {
+          // Records updated by page-citability should NOT count as recently processed by prerender
+          const recentRecord = makeCitabilityRecord('/agentic-0', 1, 'page-citability');
+          const mockHandler = await makeHandlerWithAgentic(['https://example.com/agentic-0']);
+          const context = makeContext([recentRecord]);
+
+          const result = await mockHandler.submitForScraping(context);
+          // agentic-0 was updated by page-citability, not prerender → should still be in batch
+          expect(result.urls.map((u) => u.url)).to.include('https://example.com/agentic-0');
+        });
+
+        it('should silently ignore citability records with invalid URLs when building recent pathnames', async () => {
+          // Record with an empty URL — new URL('') throws, triggering catch { return null; }
+          // The null is filtered out so the URL is not treated as recent.
+          const invalidRecord = {
+            getUrl: () => '',
+            getUpdatedBy: () => 'prerender',
+            getUpdatedAt: () => new Date().toISOString(),
           };
           const mockHandler = await makeHandlerWithAgentic(['https://example.com/agentic-0']);
-          const context = makeContext(opportunityStub);
+          const context = makeContext([invalidRecord]);
 
-          // Should not throw; agentic-0 is not blocked by the invalid suggestion
+          // Should not throw; agentic-0 is not blocked by the invalid record
           const result = await mockHandler.submitForScraping(context);
           expect(result.urls.map((u) => u.url)).to.include('https://example.com/agentic-0');
         });
 
         it('should treat an organic URL that cannot be parsed as not recently processed', async () => {
           // 'not-a-valid-url' is not an absolute URL — new URL('not-a-valid-url') throws,
-          // triggering catch { return false; } at handler.js:709-710 in hasRecentOrganic.
-          const opportunityStub = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+          // triggering catch { return false; } in hasRecentOrganic.
           const mockHandler = await makeHandlerWithAgentic([]);
           const context = {
             site: {
@@ -819,7 +803,7 @@ describe('Prerender Audit', () => {
                   { getUrl: () => 'not-a-valid-url' },
                 ]),
               },
-              Opportunity: opportunityStub,
+              PageCitability: { allBySiteId: sandbox.stub().resolves([]) },
             },
             log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
           };
@@ -830,25 +814,18 @@ describe('Prerender Audit', () => {
           expect(result.urls).to.be.an('array');
         });
 
-        it('should treat a suggestion without getUpdatedAt as not recently processed', async () => {
-          // Suggestion without getUpdatedAt — s.getUpdatedAt?.() short-circuits to undefined,
-          // hitting the optional-chaining null branch at handler.js:189.
-          // new Date(undefined || 0) is epoch (1970) → not recent → URL is included in batch.
-          const suggestionWithoutUpdatedAt = {
-            getData: () => ({ url: 'https://example.com/agentic-0' }),
+        it('should treat a citability record without getUpdatedAt as not recently processed', async () => {
+          // Record without getUpdatedAt — r.getUpdatedAt?.() short-circuits to undefined,
+          // hitting the optional-chaining null branch. new Date(undefined || 0) is epoch → not recent.
+          const recordWithoutUpdatedAt = {
+            getUrl: () => 'https://example.com/agentic-0',
+            getUpdatedBy: () => 'prerender',
             // no getUpdatedAt method
           };
-          const mockOpportunity = {
-            getType: () => 'prerender',
-            getSuggestions: sandbox.stub().resolves([suggestionWithoutUpdatedAt]),
-          };
-          const opportunityStub = {
-            allBySiteIdAndStatus: sandbox.stub().resolves([mockOpportunity]),
-          };
           const mockHandler = await makeHandlerWithAgentic(['https://example.com/agentic-0']);
-          const context = makeContext(opportunityStub);
+          const context = makeContext([recordWithoutUpdatedAt]);
 
-          // Suggestion is not treated as recent → agentic-0 should still be in the batch
+          // Record is not treated as recent → agentic-0 should still be in the batch
           const result = await mockHandler.submitForScraping(context);
           expect(result.urls.map((u) => u.url)).to.include('https://example.com/agentic-0');
         });

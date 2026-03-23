@@ -168,8 +168,10 @@ async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) 
 }
 
 /**
- * Returns a Set of URL pathnames for suggestions updated within the last 7 days.
- * Used to skip recently-processed URLs in the daily batching logic.
+ * Returns a Set of URL pathnames for PageCitability records last updated by prerender
+ * within the last 7 days. Used to skip recently-processed URLs in the daily batching logic.
+ * Only records written by prerender are considered — records written by the page-citability
+ * audit are intentionally excluded so that prerender still processes those URLs.
  * @param {Object} context
  * @param {string} siteId
  * @returns {Promise<Set<string>>}
@@ -177,19 +179,19 @@ async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) 
 async function getRecentlyProcessedPathnames(context, siteId) {
   const { dataAccess, log } = context;
   try {
-    const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
-    const opportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
-    if (!opportunity) {
+    const { PageCitability } = dataAccess;
+    if (!PageCitability?.allBySiteId) {
       return new Set();
     }
-    const suggestions = await opportunity.getSuggestions();
+    const records = await PageCitability.allBySiteId(siteId);
     const sevenDaysAgo = subDays(new Date(), 7);
     return new Set(
-      suggestions
-        .filter((s) => new Date(s.getUpdatedAt?.() || 0) > sevenDaysAgo)
-        .map((s) => {
+      records
+        .filter((r) => r.getUpdatedBy?.() === 'prerender'
+          && new Date(r.getUpdatedAt?.() || 0) > sevenDaysAgo)
+        .map((r) => {
           try {
-            return new URL(s.getData()?.url || '').pathname;
+            return new URL(r.getUrl()).pathname;
           } catch {
             return null;
           }
