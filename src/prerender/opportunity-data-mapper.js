@@ -20,7 +20,7 @@ import { CONTENT_GAIN_THRESHOLD } from './utils/constants.js';
  */
 export function createOpportunityData(auditData) {
   const { auditResult } = auditData || {};
-  const { scrapeForbidden } = auditResult || {};
+  const { scrapeForbidden, scrapeForbiddenCount } = auditResult || {};
 
   return {
     runbook: '',
@@ -49,6 +49,7 @@ export function createOpportunityData(auditData) {
         'Better LLM indexing and search results',
       ],
       scrapeForbidden: (scrapeForbidden === true),
+      scrapeForbiddenCount: scrapeForbiddenCount ?? 0,
     },
   };
 }

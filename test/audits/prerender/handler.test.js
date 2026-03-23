@@ -228,6 +228,25 @@ describe('Prerender Audit', () => {
 
       expect(opportunityData.data).to.have.property('scrapeForbidden', false);
     });
+
+    it('should include scrapeForbiddenCount when provided', () => {
+      const auditData = {
+        auditResult: {
+          scrapeForbidden: true,
+          scrapeForbiddenCount: 3,
+        },
+      };
+
+      const opportunityData = createOpportunityData(auditData);
+
+      expect(opportunityData.data).to.have.property('scrapeForbiddenCount', 3);
+    });
+
+    it('should default scrapeForbiddenCount to 0 when not provided', () => {
+      const opportunityData = createOpportunityData({ auditResult: { scrapeForbidden: false } });
+
+      expect(opportunityData.data).to.have.property('scrapeForbiddenCount', 0);
+    });
   });
 
   describe('Step Functions', () => {
@@ -1514,6 +1533,177 @@ describe('Prerender Audit', () => {
         // Should log success message
         const infoLogs = context.log.info.args.map((call) => call[0]);
         expect(infoLogs.some((msg) => msg.includes('Successfully uploaded status summary to S3'))).to.be.true;
+      });
+
+      it('should move NEW suggestions to SKIPPED when domain-wide has edgeDeployed', async () => {
+        const domainWideSuggestion = { getData: () => ({ isDomainWide: true, edgeDeployed: true }) };
+        const mockNewSuggestion = { getId: () => 'suggestion-new-1' };
+        const mockOpportunity = {
+          getId: () => 'existing-opportunity-id',
+          getType: () => 'prerender',
+          getSuggestions: sandbox.stub().resolves([domainWideSuggestion]),
+        };
+
+        const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([mockNewSuggestion]);
+        const bulkUpdateStatusStub = sandbox.stub().resolves();
+        const allBySiteIdAndStatusStub = sandbox.stub().resolves([mockOpportunity]);
+        const syncSuggestionsStub = sandbox.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: {
+            getId: () => 'audit-id',
+            getFullAuditRef: () => 'https://example.com',
+            getAuditedAt: () => '2024-01-01T00:00:00Z',
+            getInvocationId: () => 'invocation-123',
+          },
+          dataAccess: {
+            Opportunity: { allBySiteIdAndStatus: allBySiteIdAndStatusStub },
+            Suggestion: {
+              STATUSES: { NEW: 'NEW', SKIPPED: 'SKIPPED' },
+              allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub,
+              bulkUpdateStatus: bulkUpdateStatusStub,
+            },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+          s3Client: {
+            send: sandbox.stub().resolves({
+              Body: { transformToString: () => Promise.resolve('') },
+            }),
+          },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+          scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(result.status).to.equal('complete');
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        expect(allByOpportunityIdAndStatusStub).to.have.been.calledWith('existing-opportunity-id', 'NEW');
+        expect(bulkUpdateStatusStub).to.have.been.calledWith([mockNewSuggestion], 'SKIPPED');
+        const infoLogs = context.log.info.args.map((call) => call[0]).filter(Boolean);
+        expect(infoLogs.some((msg) => msg.includes('All domain deployed: moving 1 NEW suggestions to SKIPPED'))).to.be.true;
+      });
+
+      it('should not call bulkUpdateStatus when no NEW suggestions exist (moveNewSuggestionsToSkipped early return)', async () => {
+        const domainWideSuggestion = { getData: () => ({ isDomainWide: true, edgeDeployed: true }) };
+        const mockOpportunity = {
+          getId: () => 'existing-opportunity-id',
+          getType: () => 'prerender',
+          getSuggestions: sandbox.stub().resolves([domainWideSuggestion]),
+        };
+
+        const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([]);
+        const bulkUpdateStatusStub = sandbox.stub().resolves();
+        const allBySiteIdAndStatusStub = sandbox.stub().resolves([mockOpportunity]);
+        const syncSuggestionsStub = sandbox.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+        });
+
+        const context = {
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+          audit: {
+            getId: () => 'audit-id',
+            getFullAuditRef: () => 'https://example.com',
+            getAuditedAt: () => '2024-01-01T00:00:00Z',
+            getInvocationId: () => 'invocation-123',
+          },
+          dataAccess: {
+            Opportunity: { allBySiteIdAndStatus: allBySiteIdAndStatusStub },
+            Suggestion: {
+              STATUSES: { NEW: 'NEW', SKIPPED: 'SKIPPED' },
+              allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub,
+              bulkUpdateStatus: bulkUpdateStatusStub,
+            },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+          s3Client: {
+            send: sandbox.stub().resolves({
+              Body: { transformToString: () => Promise.resolve('') },
+            }),
+          },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+          scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(result.status).to.equal('complete');
+        expect(allByOpportunityIdAndStatusStub).to.have.been.calledWith('existing-opportunity-id', 'NEW');
+        expect(bulkUpdateStatusStub).to.not.have.been.called;
+      });
+
+      it('should not call bulkUpdateStatus when Suggestion lacks allByOpportunityIdAndStatus', async () => {
+        const domainWideSuggestion = { getData: () => ({ isDomainWide: true, edgeDeployed: true }) };
+        const mockOpportunity = {
+          getId: () => 'existing-opportunity-id',
+          getType: () => 'prerender',
+          getSuggestions: sandbox.stub().resolves([domainWideSuggestion]),
+        };
+
+        const bulkUpdateStatusStub = sandbox.stub().resolves();
+        const allBySiteIdAndStatusStub = sandbox.stub().resolves([mockOpportunity]);
+        const syncSuggestionsStub = sandbox.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+        });
+
+        const context = {
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+          audit: {
+            getId: () => 'audit-id',
+            getFullAuditRef: () => 'https://example.com',
+            getAuditedAt: () => '2024-01-01T00:00:00Z',
+            getInvocationId: () => 'invocation-123',
+          },
+          dataAccess: {
+            Opportunity: { allBySiteIdAndStatus: allBySiteIdAndStatusStub },
+            Suggestion: {
+              STATUSES: { NEW: 'NEW', SKIPPED: 'SKIPPED' },
+              bulkUpdateStatus: bulkUpdateStatusStub,
+            },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+          s3Client: {
+            send: sandbox.stub().resolves({
+              Body: { transformToString: () => Promise.resolve('') },
+            }),
+          },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+          scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(result.status).to.equal('complete');
+        expect(bulkUpdateStatusStub).to.not.have.been.called;
       });
     });
 
@@ -5411,14 +5601,14 @@ describe('Prerender Audit', () => {
         url: 'https://example.com/page1',
         scrapingStatus: 'success',
         needsPrerender: true,
+        isDeployedAtEdge: false,
         wordCountBefore: 100,
         wordCountAfter: 250,
         contentGainRatio: 2.5,
       });
 
-      expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Successfully uploaded status summary to S3.*baseUrl=https:\/\/example\.com, siteId=test-site-id/)
-      );
+      const infoCalls = context.log.info.getCalls().map((c) => c.args[0]);
+      expect(infoCalls.some((msg) => typeof msg === 'string' && msg.includes('Successfully uploaded status summary to S3'))).to.be.true;
     });
 
     it('should mark pages with errors as scraping status error', async () => {
@@ -5654,6 +5844,7 @@ describe('Prerender Audit', () => {
         url: 'https://example.com/page1',
         scrapingStatus: 'success',
         needsPrerender: false,
+        isDeployedAtEdge: false,
         wordCountBefore: 0,
         wordCountAfter: 0,
         contentGainRatio: 0,
