@@ -1,3 +1,10 @@
+## [1.367.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.367.0...v1.367.1) (2026-03-23)
+
+
+### Bug Fixes
+
+* Broken Internal links - referring page is a 404 page ([#2163](https://github.com/adobe/spacecat-audit-worker/issues/2163)) ([171cfd0](https://github.com/adobe/spacecat-audit-worker/commit/171cfd051ca3c9e6d588272ea66d6c12178d50b3))
+
 # [1.367.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.366.2...v1.367.0) (2026-03-23)
 
 

@@ -378,8 +378,8 @@ describe('Reddit Analysis Guidance Handler', () => {
     });
   });
 
-  describe('Priority ranking', () => {
-    it('should map priorities to correct ranks', async () => {
+  describe('Suggestion mapping', () => {
+    it('should pass rank and data from Mystique suggestion', async () => {
       const message = {
         siteId,
         auditId,
@@ -387,11 +387,18 @@ describe('Reddit Analysis Guidance Handler', () => {
           companyName: 'Example Corp',
           analysis: {
             suggestions: [
-              { id: 'sug_a', priority: 'CRITICAL', title: 'A', description: 'A' },
-              { id: 'sug_b', priority: 'HIGH', title: 'B', description: 'B' },
-              { id: 'sug_c', priority: 'MEDIUM', title: 'C', description: 'C' },
-              { id: 'sug_d', priority: 'LOW', title: 'D', description: 'D' },
-              { id: 'sug_e', priority: 'UNKNOWN', title: 'E', description: 'E' },
+              {
+                id: 'sug_a',
+                rank: 1,
+                type: 'CONTENT_UPDATE',
+                data: { suggestionValue: 'Analysis A' },
+              },
+              {
+                id: 'sug_b',
+                rank: 2,
+                type: 'METADATA_UPDATE',
+                data: { suggestionValue: 'Analysis B' },
+              },
             ],
           },
         },
@@ -402,11 +409,42 @@ describe('Reddit Analysis Guidance Handler', () => {
       const syncCall = syncSuggestionsStub.firstCall;
       const { newData, mapNewSuggestion } = syncCall.args[0];
 
-      expect(mapNewSuggestion(newData[0]).rank).to.equal(0); // CRITICAL
-      expect(mapNewSuggestion(newData[1]).rank).to.equal(1); // HIGH
-      expect(mapNewSuggestion(newData[2]).rank).to.equal(2); // MEDIUM
-      expect(mapNewSuggestion(newData[3]).rank).to.equal(3); // LOW
-      expect(mapNewSuggestion(newData[4]).rank).to.equal(4); // UNKNOWN (default)
+      const mapped0 = mapNewSuggestion(newData[0]);
+      expect(mapped0.rank).to.equal(1);
+      expect(mapped0.type).to.equal('CONTENT_UPDATE');
+      expect(mapped0.data).to.deep.equal({ suggestionValue: 'Analysis A' });
+
+      const mapped1 = mapNewSuggestion(newData[1]);
+      expect(mapped1.rank).to.equal(2);
+      expect(mapped1.type).to.equal('METADATA_UPDATE');
+      expect(mapped1.data).to.deep.equal({ suggestionValue: 'Analysis B' });
+    });
+
+    it('should default type to CONTENT_UPDATE when not provided', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            suggestions: [
+              {
+                id: 'sug_no_type',
+                rank: 0,
+                data: { suggestionValue: 'No type' },
+              },
+            ],
+          },
+        },
+      };
+
+      await handler.default(message, context);
+
+      const syncCall = syncSuggestionsStub.firstCall;
+      const { newData, mapNewSuggestion } = syncCall.args[0];
+
+      const mapped = mapNewSuggestion(newData[0]);
+      expect(mapped.type).to.equal('CONTENT_UPDATE');
     });
 
     it('should use correct buildKey function', async () => {
