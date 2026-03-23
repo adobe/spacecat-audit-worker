@@ -417,6 +417,28 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(mockOpportunity.setStatus).to.have.been.calledWith('IGNORED');
     });
 
+    it('should pass comparisonFn that matches by auditId', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            suggestions: [
+              { id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' },
+            ],
+          },
+        },
+      };
+
+      await guidanceHandler.default(message, context);
+
+      const comparisonFn = mockConvertToOpportunity.firstCall.args[6];
+      expect(comparisonFn).to.be.a('function');
+      expect(comparisonFn({ getAuditId: () => auditId })).to.be.true;
+      expect(comparisonFn({ getAuditId: () => 'different-audit-id' })).to.be.false;
+    });
+
     it('should map suggestion priorities to ranks correctly', async () => {
       const message = {
         siteId,

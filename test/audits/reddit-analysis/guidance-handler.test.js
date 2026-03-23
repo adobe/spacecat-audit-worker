@@ -158,6 +158,28 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(propsArg.opportunityData).to.deep.equal(opportunityData);
     });
 
+    it('should pass comparisonFn that matches by auditId', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            suggestions: [
+              { id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' },
+            ],
+          },
+        },
+      };
+
+      await handler.default(message, context);
+
+      const comparisonFn = convertToOpportunityStub.firstCall.args[6];
+      expect(comparisonFn).to.be.a('function');
+      expect(comparisonFn({ getAuditId: () => auditId })).to.be.true;
+      expect(comparisonFn({ getAuditId: () => 'different-audit-id' })).to.be.false;
+    });
+
     it('should set status from opportunityData when provided by Mystique', async () => {
       const message = {
         siteId,

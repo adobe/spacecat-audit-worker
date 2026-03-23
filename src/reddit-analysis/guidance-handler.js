@@ -122,6 +122,7 @@ export default async function handler(message, context) {
       createOpportunityData,
       auditType,
       { opportunityData },
+      (oppty) => oppty.getAuditId() === auditId,
     );
 
     await syncSuggestions({
