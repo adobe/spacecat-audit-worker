@@ -1,3 +1,10 @@
+# [1.369.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.368.0...v1.369.0) (2026-03-23)
+
+
+### Features
+
+* Llmo 3493 Content summarization: tighter precheck on existing items ([#2145](https://github.com/adobe/spacecat-audit-worker/issues/2145)) ([3ee5d96](https://github.com/adobe/spacecat-audit-worker/commit/3ee5d9640f1e9862e0634f4de8233de94d4b373c))
+
 # [1.368.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.367.1...v1.368.0) (2026-03-23)
 
 
