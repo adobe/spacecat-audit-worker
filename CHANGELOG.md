@@ -1,3 +1,16 @@
+# [1.367.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.366.2...v1.367.0) (2026-03-23)
+
+
+### Bug Fixes
+
+* tests ([#2181](https://github.com/adobe/spacecat-audit-worker/issues/2181)) ([b5465f9](https://github.com/adobe/spacecat-audit-worker/commit/b5465f9b743190e47437498450dec364c8bbc4ab))
+
+
+### Features
+
+* add auditId comparison function to guidance handlers for reddit and youtube ([#2180](https://github.com/adobe/spacecat-audit-worker/issues/2180)) ([2238cc6](https://github.com/adobe/spacecat-audit-worker/commit/2238cc6dee340d3fa977a0cf21d1b3acb390cd69))
+* rewrite vulnerabilities code-fix handler for new result contract ([#2174](https://github.com/adobe/spacecat-audit-worker/issues/2174)) ([f9f7ad6](https://github.com/adobe/spacecat-audit-worker/commit/f9f7ad6ee76652eb50395dcbf83e20641a2bdb2a))
+
 ## [1.366.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.366.1...v1.366.2) (2026-03-22)
 
 
