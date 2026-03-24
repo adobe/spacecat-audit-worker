@@ -112,6 +112,7 @@ describe('data-access', () => {
         getSuggestions: sandbox.stub(),
         addSuggestions: sandbox.stub(),
         getSiteId: () => 'site-id',
+        getType: () => 'test-type',
       };
 
       mockLogger = {
