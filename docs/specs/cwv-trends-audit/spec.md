@@ -6,6 +6,13 @@ A weekly audit (`cwv-trends-audit`) that reads pre-imported CWV and engagement d
 
 The audit runs once per site. The device type (mobile or desktop) is determined from the site's handler configuration, defaulting to `mobile`.
 
+**Date Handling:**
+- **Scheduling:** Audit is registered to run `every-sunday` (scheduling handled by Jobs Dispatcher)
+- **Date Range:** Uses rolling 28-day window ending on the audit run date (no lastSunday calculation)
+- `endDate = new Date()` — Current date when audit executes
+- `startDate = endDate - 27 days` — Creates 28-day window
+- The audit reads whatever data is available in S3 for those dates
+
 ### Acceptance Criteria
 
 - [x] Scheduled as `every-sunday`
@@ -181,16 +188,25 @@ The opportunity handler uses `convertToOpportunity` with a `comparisonFn` that m
 
 ### Suggestions
 
-One suggestion per URL in `urlDetails`, synced via `syncSuggestions`:
+**One suggestion per opportunity** containing the full audit result, synced via `syncSuggestions`:
 
 ```javascript
 {
   opportunityId: opportunity.getId(),
   type: 'CONTENT_UPDATE',
-  rank: entry.pageviews,
-  data: { ...entry }
+  rank: auditResult.summary.totalUrls,
+  data: {
+    metadata: { domain, deviceType, startDate, endDate },
+    trendData: [...], // Daily good/NI/poor counts
+    summary: { good, needsImprovement, poor, totalUrls },
+    urlDetails: [...] // All URL entries with metrics and changes
+  }
 }
 ```
+
+**Key:** `${deviceType}-report` (e.g., `mobile-report`, `desktop-report`)
+
+This ensures one suggestion per device type per site, containing the complete Web Performance Trends Report data for UI consumption.
 
 > **Note:** Suggestion type `CONTENT_UPDATE` matches the ESO API pattern in `experience-system-outages/src/services/spaceCatForwarder.cjs`. ESO doesn't set tags; we add `['Web Performance', 'CWV']` for UI filtering.
 

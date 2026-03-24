@@ -106,12 +106,17 @@ describe('CWV Trends Opportunity Handler', () => {
     expect(comparisonFn({ getTitle: () => 'Mobile Web Performance Trends Report' })).to.be.true;
   });
 
-  it('syncs suggestions with urlDetails', async () => {
-    const urlDetails = [
-      { url: 'https://ex.com/p1', pageviews: 5000 },
-      { url: 'https://ex.com/p2', pageviews: 3000 },
-    ];
-    const auditData = { auditResult: { metadata: { deviceType: 'desktop' }, urlDetails } };
+  it('creates single suggestion with full audit result', async () => {
+    const auditResult = {
+      metadata: { deviceType: 'desktop', domain: 'ex.com' },
+      trendData: [{ date: '2025-11-01', good: 2, needsImprovement: 1, poor: 3 }],
+      summary: { totalUrls: 6 },
+      urlDetails: [
+        { url: 'https://ex.com/p1', pageviews: 5000 },
+        { url: 'https://ex.com/p2', pageviews: 3000 },
+      ],
+    };
+    const auditData = { auditResult };
     const context = { dataAccess: {}, log: { info: sinon.spy() } };
 
     await opportunityHandler('https://ex.com', auditData, context);
@@ -119,22 +124,28 @@ describe('CWV Trends Opportunity Handler', () => {
     expect(syncSuggestionsStub).to.have.been.calledOnce;
     const args = syncSuggestionsStub.firstCall.args[0];
     expect(args.opportunity).to.equal(mockOpportunity);
-    expect(args.newData).to.equal(urlDetails);
+    expect(args.newData).to.deep.equal([auditResult]); // Single item array
   });
 
-  it('maps suggestions correctly', async () => {
-    const urlDetails = [{ url: 'https://ex.com/p1', pageviews: 5000, lcp: 2000 }];
-    const auditData = { auditResult: { metadata: { deviceType: 'mobile' }, urlDetails } };
+  it('maps single suggestion with full audit result data', async () => {
+    const auditResult = {
+      metadata: { deviceType: 'mobile', domain: 'ex.com' },
+      trendData: [{ date: '2025-11-01', good: 2, needsImprovement: 1, poor: 3 }],
+      summary: { totalUrls: 7 },
+      urlDetails: [{ url: 'https://ex.com/p1', pageviews: 5000, lcp: 2000 }],
+    };
+    const auditData = { auditResult };
     const context = { dataAccess: {}, log: { info: sinon.spy() } };
 
     await opportunityHandler('https://ex.com', auditData, context);
 
     const { mapNewSuggestion, buildKey } = syncSuggestionsStub.firstCall.args[0];
-    const suggestion = mapNewSuggestion(urlDetails[0]);
+    const suggestion = mapNewSuggestion(auditResult);
     expect(suggestion.opportunityId).to.equal('opp-123');
     expect(suggestion.type).to.equal('CONTENT_UPDATE');
-    expect(suggestion.rank).to.equal(5000);
-    expect(buildKey(urlDetails[0])).to.equal('https://ex.com/p1');
+    expect(suggestion.rank).to.equal(7); // totalUrls
+    expect(suggestion.data).to.deep.equal(auditResult); // Full audit result
+    expect(buildKey()).to.equal('mobile-report');
   });
 
   it('returns auditData', async () => {

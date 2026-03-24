@@ -18,6 +18,8 @@ import { AUDIT_TYPE, OPPORTUNITY_TITLES } from './constants.js';
 /**
  * Post-processor that creates/updates the opportunity and syncs suggestions.
  * Matches existing opportunities by title so mobile and desktop remain separate.
+ * Creates a single suggestion containing the full audit result
+ * (metadata, trendData, summary, urlDetails).
  */
 export default async function opportunityHandler(finalUrl, auditData, context) {
   const { auditResult } = auditData;
@@ -36,16 +38,17 @@ export default async function opportunityHandler(finalUrl, auditData, context) {
     comparisonFn,
   );
 
+  // Create a single suggestion containing the full audit result
   await syncSuggestions({
     opportunity,
-    newData: auditResult.urlDetails,
+    newData: [auditResult], // Single item array with full result
     context,
-    buildKey: (data) => data.url,
-    mapNewSuggestion: (entry) => ({
+    buildKey: () => `${deviceType}-report`, // Single key per device type
+    mapNewSuggestion: (result) => ({
       opportunityId: opportunity.getId(),
       type: 'CONTENT_UPDATE',
-      rank: entry.pageviews,
-      data: { ...entry },
+      rank: result.summary.totalUrls,
+      data: result, // Full audit result: metadata, trendData, summary, urlDetails
     }),
   });
 
