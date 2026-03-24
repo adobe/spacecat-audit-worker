@@ -21,12 +21,11 @@ import * as handlerConstants from '../../src/offsite-brand-presence/constants.js
 import { SCRAPE_DATASET_IDS } from '@adobe/spacecat-shared-drs-client';
 
 const {
-  DRS_TOP_URLS_LIMIT,
+  DRS_URLS_LIMIT,
   FETCH_PAGE_SIZE,
   INCLUDE_COLUMNS,
   PROVIDERS,
   REDDIT_COMMENTS_DAYS_BACK,
-  TOP_CITED_URLS_LIMIT,
 } = handlerConstants;
 
 use(sinonChai);
@@ -103,6 +102,10 @@ describe('Offsite Brand Presence Handler', () => {
       AuditUrl: {
         create: sandbox.stub().resolves({}),
       },
+      SentimentTopic: {
+        allBySiteId: sandbox.stub().resolves({ data: [] }),
+        create: sandbox.stub().resolves({}),
+      },
     };
 
     site = {
@@ -144,12 +147,16 @@ describe('Offsite Brand Presence Handler', () => {
 
   function makeBrandPresenceData(sources) {
     return {
-      data: sources.map((s) => ({
-        Sources: s,
-        Region: 'US',
-        Mentions: 'true',
-        Citations: 'true',
-      })),
+      data: sources.map((s) => {
+        if (typeof s === 'string') {
+          return {
+            Sources: s, Region: 'US', Mentions: 'true', Citations: 'true',
+          };
+        }
+        return {
+          Sources: s.Sources, Region: s.Region || 'US', Mentions: 'true', Citations: 'true', Topic: s.Topic, Category: s.Category, Prompt: s.Prompt,
+        };
+      }),
     };
   }
 
@@ -921,7 +928,7 @@ describe('Offsite Brand Presence Handler', () => {
   describe('Top URLs Per Domain', () => {
     it('should limit both DRS and URL store to top-N URLs per domain', async () => {
       const urls = [];
-      const urlCount = DRS_TOP_URLS_LIMIT + 10;
+      const urlCount = DRS_URLS_LIMIT + 10;
       for (let i = 0; i < urlCount; i += 1) {
         urls.push(`https://youtube.com/shorts/vid${i}`);
       }
@@ -942,8 +949,8 @@ describe('Offsite Brand Presence Handler', () => {
       const videosCall = mockSubmitScrapeJob.getCalls().find(
         (c) => c.args[0].datasetId === 'youtube_videos',
       );
-      expect(videosCall.args[0].urls).to.have.lengthOf(DRS_TOP_URLS_LIMIT);
-      expect(dataAccess.AuditUrl.create.callCount).to.equal(DRS_TOP_URLS_LIMIT);
+      expect(videosCall.args[0].urls).to.have.lengthOf(DRS_URLS_LIMIT);
+      expect(dataAccess.AuditUrl.create.callCount).to.equal(DRS_URLS_LIMIT);
     });
 
     it('should select most frequent URLs for DRS when counts differ', async () => {
@@ -1046,9 +1053,9 @@ describe('Offsite Brand Presence Handler', () => {
       }));
     });
 
-    it('should respect TOP_CITED_URLS_LIMIT', async () => {
+    it('should respect DRS_URLS_LIMIT for top-cited URLs', async () => {
       const urls = [];
-      const totalUrls = TOP_CITED_URLS_LIMIT + 10;
+      const totalUrls = DRS_URLS_LIMIT + 10;
       for (let i = 0; i < totalUrls; i += 1) {
         urls.push(`https://example${i}.com/page`);
       }
@@ -1063,7 +1070,290 @@ describe('Offsite Brand Presence Handler', () => {
 
       const createCalls = dataAccess.AuditUrl.create.getCalls();
       const topCitedCalls = createCalls.filter((c) => c.args[0].audits[0] === 'top-cited-analysis');
-      expect(topCitedCalls).to.have.lengthOf(TOP_CITED_URLS_LIMIT);
+      expect(topCitedCalls).to.have.lengthOf(DRS_URLS_LIMIT);
+    });
+  });
+
+  describe('Guideline Store Integration', () => {
+    function stubWithTopicRows(rows, { providerCount = 1 } = {}) {
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i < providerCount) return stubProviderData(rows);
+        return okJsonResponse({});
+      });
+      stubFetchSequence(buildHappyResponses({ providerResponses }));
+    }
+
+    it('should create SentimentTopic entities from brand presence data with topics', async () => {
+      const rows = [
+        {
+          Sources: 'https://youtube.com/watch?v=abc;https://example.com/page1',
+          Topic: 'BMW XM Latest',
+          Category: 'BMW',
+          Prompt: 'What is the BMW XM?',
+        },
+        {
+          Sources: 'https://youtube.com/watch?v=abc;https://example.com/page2',
+          Topic: 'BMW XM Latest',
+          Category: 'BMW',
+          Prompt: 'BMW XM review',
+        },
+      ];
+      stubWithTopicRows(rows);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(dataAccess.SentimentTopic.allBySiteId).to.have.been.calledOnceWith(SITE_ID);
+      expect(dataAccess.SentimentTopic.create).to.have.been.calledOnce;
+
+      const createArg = dataAccess.SentimentTopic.create.firstCall.args[0];
+      expect(createArg.siteId).to.equal(SITE_ID);
+      expect(createArg.name).to.equal('BMW XM Latest');
+      expect(createArg.description).to.equal('');
+      expect(createArg.enabled).to.equal(true);
+      expect(createArg.createdBy).to.equal('system');
+
+      const ytUrl = createArg.urls.find((u) => u.url === 'https://youtu.be/abc');
+      expect(ytUrl).to.exist;
+      expect(ytUrl.timesCited).to.equal(2);
+      expect(ytUrl.category).to.equal('BMW');
+      expect(ytUrl.subPrompts).to.have.members(['What is the BMW XM?', 'BMW XM review']);
+
+      const page1Url = createArg.urls.find((u) => u.url === 'https://example.com/page1');
+      expect(page1Url).to.exist;
+      expect(page1Url.timesCited).to.equal(1);
+      expect(page1Url.subPrompts).to.deep.equal(['What is the BMW XM?']);
+    });
+
+    it('should create multiple topics from different rows', async () => {
+      const rows = [
+        {
+          Sources: 'https://youtube.com/watch?v=abc', Topic: 'Topic A', Category: 'Cat1', Prompt: 'Prompt 1',
+        },
+        {
+          Sources: 'https://reddit.com/r/test', Topic: 'Topic B', Category: 'Cat2', Prompt: 'Prompt 2',
+        },
+      ];
+      stubWithTopicRows(rows);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(dataAccess.SentimentTopic.create).to.have.been.calledTwice;
+      const names = dataAccess.SentimentTopic.create.getCalls().map((c) => c.args[0].name);
+      expect(names).to.include('Topic A');
+      expect(names).to.include('Topic B');
+    });
+
+    it('should update existing topics in place', async () => {
+      const mockExistingTopic = {
+        getName: () => 'Existing Topic',
+        setDescription: sandbox.stub(),
+        setUrls: sandbox.stub(),
+        setEnabled: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+      dataAccess.SentimentTopic.allBySiteId.resolves({ data: [mockExistingTopic] });
+
+      stubWithTopicRows([
+        {
+          Sources: 'https://example.com/page1', Topic: 'Existing Topic', Category: 'Cat1', Prompt: 'Prompt 1',
+        },
+      ]);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(mockExistingTopic.setDescription).to.have.been.calledOnceWith('');
+      expect(mockExistingTopic.setUrls).to.have.been.calledOnceWith([
+        {
+          url: 'https://example.com/page1',
+          timesCited: 1,
+          category: 'Cat1',
+          subPrompts: ['Prompt 1'],
+        },
+      ]);
+      expect(mockExistingTopic.setEnabled).to.have.been.calledOnceWith(true);
+      expect(mockExistingTopic.setUpdatedBy).to.have.been.calledOnceWith('system');
+      expect(mockExistingTopic.save).to.have.been.calledOnce;
+      expect(dataAccess.SentimentTopic.create).to.not.have.been.called;
+    });
+
+    it('should load existing topics across all pages when matching by name', async () => {
+      const pageOneTopic = {
+        getName: () => 'Other Topic',
+        setDescription: sandbox.stub(),
+        setUrls: sandbox.stub(),
+        setEnabled: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+      const pagedTopic = {
+        getName: () => 'Paged Topic',
+        setDescription: sandbox.stub(),
+        setUrls: sandbox.stub(),
+        setEnabled: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+      dataAccess.SentimentTopic.allBySiteId
+        .onFirstCall()
+        .resolves({ data: [pageOneTopic], cursor: 'next-page' });
+      dataAccess.SentimentTopic.allBySiteId
+        .onSecondCall()
+        .resolves({ data: [pagedTopic], cursor: null });
+
+      stubWithTopicRows([
+        {
+          Sources: 'https://example.com/page1', Topic: 'Paged Topic', Category: 'Cat1', Prompt: 'Prompt 1',
+        },
+      ]);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(dataAccess.SentimentTopic.allBySiteId.firstCall).to.have.been.calledWithExactly(SITE_ID, {});
+      expect(dataAccess.SentimentTopic.allBySiteId.secondCall).to.have.been.calledWithExactly(SITE_ID, { cursor: 'next-page' });
+      expect(pageOneTopic.save).to.not.have.been.called;
+      expect(pagedTopic.setDescription).to.have.been.calledOnceWith('');
+      expect(pagedTopic.setEnabled).to.have.been.calledOnceWith(true);
+      expect(pagedTopic.setUpdatedBy).to.have.been.calledOnceWith('system');
+      expect(pagedTopic.save).to.have.been.calledOnce;
+      expect(dataAccess.SentimentTopic.create).to.not.have.been.called;
+    });
+
+    it('should deduplicate subPrompts across providers', async () => {
+      const sharedPrompt = 'What is the BMW XM?';
+      const rows = [
+        {
+          Sources: 'https://example.com/page1', Topic: 'BMW XM', Category: 'BMW', Prompt: sharedPrompt,
+        },
+      ];
+      stubWithTopicRows(rows, { providerCount: 2 });
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createArg = dataAccess.SentimentTopic.create.firstCall.args[0];
+      expect(createArg.urls[0].subPrompts).to.deep.equal([sharedPrompt]);
+    });
+
+    it('should use global timesCited count from allUrls', async () => {
+      const rows = [
+        {
+          Sources: 'https://example.com/shared', Topic: 'Topic A', Category: 'Cat1', Prompt: 'Prompt 1',
+        },
+        {
+          Sources: 'https://example.com/shared', Topic: 'Topic B', Category: 'Cat2', Prompt: 'Prompt 2',
+        },
+        { Sources: 'https://example.com/shared' },
+      ];
+      stubWithTopicRows(rows);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.SentimentTopic.create.getCalls();
+      for (const call of createCalls) {
+        const urlEntry = call.args[0].urls.find((u) => u.url === 'https://example.com/shared');
+        expect(urlEntry.timesCited).to.equal(3);
+      }
+    });
+
+    it('should skip topic creation when no topics are present in data', async () => {
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData(['https://youtube.com/watch?v=abc']);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(dataAccess.SentimentTopic.allBySiteId).to.not.have.been.called;
+      expect(dataAccess.SentimentTopic.create).to.not.have.been.called;
+    });
+
+    it('should handle topic create failure gracefully', async () => {
+      dataAccess.SentimentTopic.create.rejects(new Error('DynamoDB error'));
+      stubWithTopicRows([
+        {
+          Sources: 'https://example.com/page1', Topic: 'Failing Topic', Category: 'Cat1', Prompt: 'Prompt 1',
+        },
+      ]);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to save topic Failing Topic/),
+      );
+    });
+
+    it('should handle topic save failure gracefully for existing topics', async () => {
+      const mockExistingTopic = {
+        getName: () => 'Existing Topic',
+        setDescription: sandbox.stub(),
+        setUrls: sandbox.stub(),
+        setEnabled: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().rejects(new Error('DynamoDB error')),
+      };
+      dataAccess.SentimentTopic.allBySiteId.resolves({ data: [mockExistingTopic] });
+      stubWithTopicRows([
+        {
+          Sources: 'https://example.com/page1', Topic: 'Existing Topic', Category: 'Cat1', Prompt: 'Prompt 1',
+        },
+      ]);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(mockExistingTopic.save).to.have.been.calledOnce;
+      expect(dataAccess.SentimentTopic.create).to.not.have.been.called;
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to save topic Existing Topic/),
+      );
+    });
+
+    it('should handle allBySiteId returning result with no data property', async () => {
+      dataAccess.SentimentTopic.allBySiteId.resolves({});
+      stubWithTopicRows([
+        {
+          Sources: 'https://example.com/page1', Topic: 'New Topic', Category: 'Cat1', Prompt: 'Prompt 1',
+        },
+      ]);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(dataAccess.SentimentTopic.create).to.have.been.calledOnce;
+      expect(dataAccess.SentimentTopic.create.firstCall.args[0].name).to.equal('New Topic');
+    });
+
+    it('should skip topic when all its URLs are invalid', async () => {
+      stubWithTopicRows([
+        {
+          Sources: 'not-a-valid-url;also-not-valid', Topic: 'Empty Topic', Category: 'Cat', Prompt: 'Prompt',
+        },
+      ]);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(dataAccess.SentimentTopic.allBySiteId).to.not.have.been.called;
+      expect(dataAccess.SentimentTopic.create).to.not.have.been.called;
+    });
+
+    it('should skip rows without Topic field for topic tracking but still count URLs', async () => {
+      stubWithTopicRows([
+        {
+          Sources: 'https://youtube.com/watch?v=abc', Topic: 'My Topic', Category: 'Cat', Prompt: 'Prompt A',
+        },
+        { Sources: 'https://youtube.com/watch?v=abc' },
+      ]);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(dataAccess.SentimentTopic.create).to.have.been.calledOnce;
+      const createArg = dataAccess.SentimentTopic.create.firstCall.args[0];
+      expect(createArg.urls[0].timesCited).to.equal(2);
+      expect(createArg.urls[0].subPrompts).to.deep.equal(['Prompt A']);
     });
   });
 

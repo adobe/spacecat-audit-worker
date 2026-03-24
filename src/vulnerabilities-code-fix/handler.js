@@ -12,79 +12,24 @@
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_VULNERABILITIES;
 
 /**
- * Duplicate of: common/codefix-handler.js#readCodeChangeReport
- * Reads code change report from S3 bucket
- * @param {Object} s3Client - The S3 client instance
- * @param {string} bucketName - The S3 bucket name
- * @param {string} reportKey - The S3 key path to the report
- * @param {Object} log - Logger instance
- * @returns {Promise<Object|null>} - The report data or null if not found
+ * Handler for processing vulnerabilities code fix results from starfish-auto-code.
  *
- * Expected report.json structure:
- * {
- *   updatedFiles: ["blocks/form/form.js"],
- *   diff: "diff --git ...",
- *   createdAt: "",
- *   updatedAt: ""
- * }
- */
-async function readCodeChangeReport(s3Client, bucketName, reportKey, log) {
-  try {
-    log.info(`Reading code change report from S3: ${reportKey}`);
-
-    const reportData = await getObjectFromKey(s3Client, bucketName, reportKey, log);
-
-    if (!reportData) {
-      log.warn(`No code change report found for key: ${reportKey}`);
-      return null;
-    }
-
-    // If reportData is a plain string, try to parse it as JSON
-    if (typeof reportData === 'string') {
-      try {
-        return JSON.parse(reportData);
-      } catch (error) {
-        log.warn(`Failed to parse report data as JSON for key: ${reportKey}, returning null`);
-        return null;
-      }
-    }
-
-    log.info(`Successfully read code change report from S3: ${reportKey}`);
-    return reportData;
-  } catch (error) {
-    log.error(`Error reading code change report from S3: ${error.message}`, error);
-    return null;
-  }
-}
-
-/**
- * Handler for processing vulnerabilities code fix responses from starfish-auto-code
+ * Receives a pointer to an S3 report, reads it once, and updates matching
+ * suggestions with the diffs from applied results.
  *
- * This handler receives code fix results and updates suggestions with the generated fixes.
- *
- * Example message format:
+ * Expected message format:
  * {
  *   "siteId": "<site-id>",
  *   "type": "codefix:security-vulnerabilities",
  *   "data": {
  *     "opportunityId": "<uuid>",
- *     "updates": [
- *       {
- *         "suggestion_id": "<suggestion-id>", // required - used to match suggestions
- *         "fixes": [
- *           {
- *             "code_fix_path": "<s3-path>", // required - S3 path to report.json
- *             "code_fix_bucket": "<s3-bucket>" // optional - S3 bucket name
- *           }
- *         ]
- *       }
- *     ]
+ *     "reportBucket": "<s3-bucket>",
+ *     "reportPath": "results/<job-id>/report.json"
  *   }
  * }
  *
@@ -93,13 +38,11 @@ async function readCodeChangeReport(s3Client, bucketName, reportKey, log) {
  * @returns {Promise<Response>} - HTTP response
  */
 export default async function handler(message, context) {
-  const {
-    log, dataAccess, s3Client, env,
-  } = context;
+  const { log, dataAccess, s3Client } = context;
   const { siteId, data } = message;
   const { Site, Opportunity, Suggestion } = dataAccess;
 
-  log.debug(`[${AUDIT_TYPE} Code-Fix] Message received in vulnerabilities code-fix handler: ${JSON.stringify(message, null, 2)}`);
+  log.debug(`[${AUDIT_TYPE} Code-Fix] Message received: ${JSON.stringify(message, null, 2)}`);
 
   // Validate siteId
   if (!siteId) {
@@ -117,9 +60,7 @@ export default async function handler(message, context) {
     log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] No data provided in message`);
     return badRequest('No data provided in message');
   }
-  const {
-    opportunityId, updates,
-  } = data;
+  const { opportunityId, reportBucket, reportPath } = data;
 
   // Verify opportunityId
   if (!opportunityId) {
@@ -134,76 +75,82 @@ export default async function handler(message, context) {
 
   // Verify the opportunity belongs to the correct site
   if (opportunity.getSiteId() !== siteId) {
-    const errorMsg = `[${AUDIT_TYPE} Code-Fix] [Opportunity: ${opportunityId}] Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`;
-    log.error(errorMsg);
+    log.error(`[${AUDIT_TYPE} Code-Fix] [Opportunity: ${opportunityId}] Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`);
     return badRequest('Site ID mismatch');
   }
 
-  const defaultBucketName = env.S3_STARFISH_BUCKET_NAME;
+  // Validate report pointer
+  if (!reportBucket || !reportPath) {
+    log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Missing reportBucket or reportPath in message data`);
+    return badRequest('Missing reportBucket or reportPath in message data');
+  }
 
-  // Process updates
-  if (!isNonEmptyArray(updates)) {
-    log.warn(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Empty updates array provided in message data. Skipping processing!`);
+  // Fetch report from S3
+  let reportData;
+  try {
+    const raw = await getObjectFromKey(s3Client, reportBucket, reportPath, log);
+    if (!raw) {
+      log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] No report found at s3://${reportBucket}/${reportPath}`);
+      return ok();
+    }
+    reportData = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Failed to read report from s3://${reportBucket}/${reportPath}: ${error.message}`);
     return ok();
   }
-  await Promise.all(updates.map(async (update) => {
-    const {
-      suggestion_id: suggestionId,
-      fixes,
-    } = update;
 
-    // Validate suggestionId
-    if (!suggestionId) {
-      log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] No suggestionId provided in update data`);
-      return;
+  // Check job-level status
+  if (reportData.status === 'failed') {
+    log.warn(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Job failed (report status: failed). No results to process.`);
+    return ok();
+  }
+
+  // Validate results array
+  const { results } = reportData;
+  if (!Array.isArray(results) || results.length === 0) {
+    log.warn(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Report has no results to process.`);
+    return ok();
+  }
+
+  // Collect applied suggestion IDs and batch-fetch
+  const appliedResults = results.filter((r) => r.status === 'applied');
+  if (appliedResults.length === 0) {
+    log.info(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] No applied results in report. Nothing to update.`);
+    return ok();
+  }
+
+  const suggestionIds = appliedResults.map((r) => r.suggestionId);
+  const { data: existingSuggestions = [] } = await Suggestion.batchGetByKeys(
+    suggestionIds.map((id) => ({ suggestionId: id })),
+  );
+  const suggestionMap = new Map(existingSuggestions.map((s) => [s.getId(), s]));
+
+  // Update matching suggestions
+  const toSave = [];
+  for (const result of appliedResults) {
+    const { suggestionId, diff } = result;
+
+    if (!diff) {
+      log.warn(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Applied result for suggestion ${suggestionId} has no diff. Skipping.`);
+    } else {
+      const suggestion = suggestionMap.get(suggestionId);
+      if (!suggestion) {
+        log.warn(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Suggestion not found for ID: ${suggestionId}. Skipping.`);
+      } else {
+        suggestion.setData({
+          ...suggestion.getData(),
+          patchContent: diff,
+          isCodeChangeAvailable: true,
+        });
+        toSave.push(suggestion);
+      }
     }
-    const suggestion = await Suggestion.findById(suggestionId);
-    if (!suggestion) {
-      log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Suggestion not found for ID: ${update.suggestionId}`);
-      return;
-    }
+  }
 
-    log.info(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Processing update for suggestion: ${suggestionId}`);
+  if (toSave.length > 0) {
+    await Suggestion.saveMany(toSave);
+  }
 
-    if (!isNonEmptyArray(fixes)) {
-      log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] No code-fixes in update data`);
-      return;
-    }
-
-    // Right now we only expect one fix; the array is just used for future-proofing
-    if (fixes.length > 1) {
-      log.warn(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] More than one code-fix in update data. This is unexpected behaviour!`);
-    }
-    const { code_fix_path: codeFixPath, code_fix_bucket: codeFixBucket } = fixes[0];
-
-    const bucketName = codeFixBucket || defaultBucketName;
-
-    if (!bucketName) {
-      log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] No S3 bucket configured (S3_STARFISH_BUCKET_NAME) and no code_fix_bucket provided for suggestion: ${suggestionId}`);
-      return;
-    }
-
-    // Retrieve code-fix
-    const reportData = await readCodeChangeReport(
-      s3Client,
-      bucketName,
-      codeFixPath,
-      log,
-    );
-
-    if (!reportData) {
-      log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] No code-fix report found for suggestion: ${update.suggestionId}`);
-      return;
-    }
-
-    suggestion.setData({
-      ...suggestion.getData(),
-      patchContent: reportData.diff,
-      isCodeChangeAvailable: true,
-    });
-
-    suggestion.save();
-  }));
-
+  log.info(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Updated ${toSave.length} suggestions from report.`);
   return ok();
 }

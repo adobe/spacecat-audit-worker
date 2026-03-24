@@ -15,7 +15,6 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { sendAltTextOpportunityToMystique, chunkArray } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
 import { MYSTIQUE_BATCH_SIZE, SUMMIT_PLG_PAGE_LIMIT, DEFAULT_PAGE_LIMIT } from './constants.js';
-import { isAuditEnabledForSite } from '../common/audit-utils.js';
 import { getScrapeJsonPath } from '../headings/utils.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
@@ -41,8 +40,10 @@ export async function isDecorativeAgentEnabled(context) {
  * @returns {Promise<number>} - Page limit (20 for summit-plg enabled, 100 otherwise)
  */
 async function getTopPagesLimit(site, context) {
-  const { log } = context;
-  const isSummitPlgEnabled = await isAuditEnabledForSite('summit-plg', site, context);
+  const { log, dataAccess } = context;
+  const { Configuration } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  const isSummitPlgEnabled = configuration.isHandlerEnabledForSite('summit-plg', site);
   const pageLimit = isSummitPlgEnabled ? SUMMIT_PLG_PAGE_LIMIT : DEFAULT_PAGE_LIMIT;
   log.debug(`[${AUDIT_TYPE}]: Page limit set to ${pageLimit} (summit-plg enabled: ${isSummitPlgEnabled})`);
   return { pageLimit, isSummitPlg: isSummitPlgEnabled };
@@ -385,14 +386,6 @@ export async function processAltTextWithMystique(context) {
     );
 
     log.debug(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);
-
-    // Clean up outdated suggestions
-    // Small delay to ensure no concurrent operations
-    // comment for now to avoid having empty optty in case M blows up
-    // await new Promise((resolve) => {
-    //   setTimeout(resolve, 1000);
-    // });
-    // await cleanupOutdatedSuggestions(altTextOppty, log);
   } catch (error) {
     log.error(`[${AUDIT_TYPE}]: Failed to process with Mystique: ${error.message}`);
     throw error;

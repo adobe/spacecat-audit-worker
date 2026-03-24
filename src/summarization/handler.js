@@ -14,6 +14,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
+import { detectExistingContent } from './existing-content-detector.js';
 import { filterOutDynamicUrls } from './dynamic-content-filter.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -129,7 +130,7 @@ export async function submitForScraping(context) {
  */
 export async function sendToMystique(context) {
   const {
-    site, audit, dataAccess, log, sqs, env, scrapeResultPaths,
+    site, audit, dataAccess, log, sqs, env, scrapeResultPaths, s3Client,
   } = context;
 
   const auditResult = audit.getAuditResult();
@@ -184,8 +185,24 @@ export async function sendToMystique(context) {
   // Use URLs from scrapeResultPaths Map; exclude dynamic pages (defense in depth)
   const scrapedUrls = Array.from(scrapeResultPaths.keys());
   const staticScrapedUrls = filterOutDynamicUrls(scrapedUrls);
-  const scrapedUrlsToSend = staticScrapedUrls.slice(0, MAX_PAGES_TO_MYSTIQUE);
-  const topPagesPayload = scrapedUrlsToSend.map((url) => ({
+
+  // Pre-check: exclude pages that already have both summary and key points (LLMO-3493)
+  let urlsToSend = staticScrapedUrls.slice(0, MAX_PAGES_TO_MYSTIQUE);
+  if (s3Client && env?.S3_SCRAPER_BUCKET_NAME) {
+    const existingContent = await detectExistingContent(
+      s3Client,
+      env.S3_SCRAPER_BUCKET_NAME,
+      scrapeResultPaths,
+      log,
+    );
+    urlsToSend = urlsToSend.filter((url) => {
+      const detected = existingContent.get(url);
+      const hasBoth = detected?.hasSummary && detected?.hasKeyPoints;
+      return !hasBoth;
+    });
+  }
+
+  const topPagesPayload = urlsToSend.map((url) => ({
     page_url: url,
     keyword: '',
     questions: [],

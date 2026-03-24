@@ -44,6 +44,13 @@ describe('Metatags Guidance Handler', () => {
       save: sinon.stub().resolves(),
     };
 
+    // Helper to create ID-aware suggestion stubs sharing the same getData/setData
+    const makeSuggestionWithId = (id) => ({
+      getId: sinon.stub().returns(id),
+      getData: suggestionStub.getData,
+      setData: suggestionStub.setData,
+    });
+
     opportunityStub = {
       getSiteId: sinon.stub().returns('site-123'),
       getType: sinon.stub().returns('guidance:metatags'),
@@ -69,6 +76,10 @@ describe('Metatags Guidance Handler', () => {
       },
       Suggestion: {
         findById: sinon.stub().resolves(suggestionStub),
+        batchGetByKeys: sinon.stub().callsFake((keys) => Promise.resolve({
+          data: keys.map((k) => makeSuggestionWithId(k.suggestionId)),
+        })),
+        saveMany: sinon.stub().resolves(),
       },
     };
 
@@ -110,8 +121,8 @@ describe('Metatags Guidance Handler', () => {
     expect(dataAccessStub.Site.findById).to.have.been.calledWith('site-123');
     expect(dataAccessStub.Audit.findById).to.have.been.calledWith('audit-123');
     expect(dataAccessStub.Opportunity.findById).to.have.been.calledWith('opp-123');
-    expect(dataAccessStub.Suggestion.findById).to.have.been.calledTwice;
-    expect(suggestionStub.save).to.have.been.calledTwice;
+    expect(dataAccessStub.Suggestion.batchGetByKeys).to.have.been.calledOnce;
+    expect(dataAccessStub.Suggestion.saveMany).to.have.been.calledOnce;
     expect(logStub.info).to.have.been.calledWith(sinon.match(/Successfully updated 2 suggestions/));
   });
 
@@ -176,18 +187,33 @@ describe('Metatags Guidance Handler', () => {
 
     expect(result.status).to.equal(ok().status);
     expect(logStub.info).to.have.been.calledWith(sinon.match(/No suggestions provided/));
-    expect(suggestionStub.save).to.not.have.been.called;
+    expect(dataAccessStub.Suggestion.saveMany).to.not.have.been.called;
+  });
+
+  it('should handle suggestions with no valid suggestionIds', async () => {
+    message.data.suggestions = [
+      { aiSuggestion: 'test', aiRationale: 'test' },
+    ];
+
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(ok().status);
+    expect(dataAccessStub.Suggestion.batchGetByKeys).to.not.have.been.called;
+    expect(logStub.error).to.have.been.calledWith(sinon.match(/Suggestion not found/));
   });
 
   it('should handle when a suggestion is not found in database', async () => {
-    dataAccessStub.Suggestion.findById.onFirstCall().resolves(suggestionStub);
-    dataAccessStub.Suggestion.findById.onSecondCall().resolves(null);
+    // batchGetByKeys returns only sugg-001, not sugg-002
+    dataAccessStub.Suggestion.batchGetByKeys.callsFake(() => Promise.resolve({
+      data: [{ getId: () => 'sugg-001', getData: suggestionStub.getData, setData: suggestionStub.setData }],
+    }));
 
     const result = await handler(message, context);
 
     expect(result.status).to.equal(ok().status);
     expect(logStub.error).to.have.been.calledWith(sinon.match(/Suggestion not found for ID: sugg-002/));
-    expect(suggestionStub.save).to.have.been.calledOnce; // Only first suggestion saved
+    // Only the first suggestion is saved
+    expect(dataAccessStub.Suggestion.saveMany).to.have.been.calledOnce;
   });
 
   it('should warn when aiSuggestion is missing', async () => {
@@ -226,7 +252,7 @@ describe('Metatags Guidance Handler', () => {
       aiSuggestion: '',
       aiRationale: '',
     }));
-    expect(suggestionStub.save).to.have.been.called;
+    expect(dataAccessStub.Suggestion.saveMany).to.have.been.called;
   });
 
   it('should preserve existing suggestion data when updating', async () => {

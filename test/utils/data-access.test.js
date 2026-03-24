@@ -19,6 +19,7 @@ import sinonChai from 'sinon-chai';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import {
   retrieveSiteBySiteId,
+  getTopPagesForSiteId,
   syncSuggestions,
   syncSuggestionsWithPublishDetection,
   getImsOrgId,
@@ -86,6 +87,63 @@ describe('data-access', () => {
       await expect(retrieveSiteBySiteId(mockDataAccess, 'site1', mockLog)).to.be.rejectedWith('Error getting site site1: database error');
       expect(mockDataAccess.Site.findById).to.have.been.calledOnceWith('site1');
       expect(mockLog.warn).to.not.have.been.called;
+    });
+  });
+
+  describe('getTopPagesForSiteId', () => {
+    let mockDataAccess;
+    let mockLog;
+
+    beforeEach(() => {
+      mockDataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub(),
+        },
+      };
+
+      mockLog = {
+        info: sinon.stub(),
+        error: sinon.stub(),
+      };
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('returns mapped top-page urls when ahrefs pages are found', async () => {
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+        { getUrl: sinon.stub().returns('https://example.com/one') },
+        { getUrl: sinon.stub().returns('https://example.com/two') },
+      ]);
+
+      const result = await getTopPagesForSiteId(mockDataAccess, 'site-1', {}, mockLog);
+
+      expect(result).to.deep.equal([
+        { url: 'https://example.com/one' },
+        { url: 'https://example.com/two' },
+      ]);
+      expect(mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo)
+        .to.have.been.calledOnceWith('site-1', 'ahrefs', 'global');
+      expect(mockLog.info).to.have.been.calledWith('Received top pages response:', sinon.match.string);
+      expect(mockLog.info).to.have.been.calledWith('Found 2 top pages');
+    });
+
+    it('returns an empty array when no top pages are found', async () => {
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(null);
+
+      const result = await getTopPagesForSiteId(mockDataAccess, 'site-1', {}, mockLog);
+
+      expect(result).to.deep.equal([]);
+      expect(mockLog.info).to.have.been.calledWith('No top pages found');
+    });
+
+    it('logs and rethrows errors from SiteTopPage lookup', async () => {
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.rejects(new Error('lookup failed'));
+
+      await expect(getTopPagesForSiteId(mockDataAccess, 'site-1', {}, mockLog))
+        .to.be.rejectedWith('lookup failed');
+      expect(mockLog.error).to.have.been.calledWith('Error retrieving top pages for site site-1: lookup failed');
     });
   });
 
@@ -333,7 +391,8 @@ describe('data-access', () => {
 
       expect(existingSuggestions[0].setStatus).to.have.been
         .calledWith(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
-      expect(existingSuggestions[0].save).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
     });
 
     it('should update OUTDATED suggestions to NEW when site does not require validation', async () => {
@@ -369,7 +428,8 @@ describe('data-access', () => {
 
       expect(existingSuggestions[0].setStatus).to.have
         .been.calledWith(SuggestionDataAccess.STATUSES.NEW);
-      expect(existingSuggestions[0].save).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
     });
 
     it('should preserve REJECTED status when same suggestion appears again with no data changes', async () => {
@@ -406,8 +466,9 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       // Verify that debug log is called with the correct message
       expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-      // Verify that save is called
-      expect(existingSuggestions[0].save).to.have.been.called;
+      // Verify that saveMany is called with the updated suggestion
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
       // Verify that setData is called to update the data
       expect(existingSuggestions[0].setData).to.have.been.called;
     });
@@ -446,8 +507,9 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       // Verify that debug log is called with the correct message
       expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-      // Verify that save is called
-      expect(existingSuggestions[0].save).to.have.been.called;
+      // Verify that saveMany is called with the updated suggestion
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
       // Verify that setData is called to update the data
       expect(existingSuggestions[0].setData).to.have.been.called;
     });
@@ -491,8 +553,9 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       // Verify that debug log is called with the correct message
       expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-      // Verify that save is called
-      expect(existingSuggestions[0].save).to.have.been.called;
+      // Verify that saveMany is called with the updated suggestion
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
       // Verify that setData is called to update the data
       expect(existingSuggestions[0].setData).to.have.been.called;
     });
@@ -534,7 +597,8 @@ describe('data-access', () => {
       // Verify that REJECTED status is NOT changed (setStatus should not be called)
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-      expect(existingSuggestions[0].save).to.have.been.called;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
       expect(existingSuggestions[0].setData).to.have.been.called;
     });
 
@@ -768,7 +832,8 @@ describe('data-access', () => {
 
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
       expect(existingSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
-      expect(existingSuggestions[0].save).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been
         .calledOnceWith([existingSuggestions[1]], 'OUTDATED');
     });
@@ -805,7 +870,8 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setStatus).to.have.been
         .calledOnceWith(SuggestionDataAccess.STATUSES.NEW);
       expect(mockLogger.warn).to.have.been.calledOnceWith('Outdated suggestion found in audit. Possible regression.');
-      expect(existingSuggestions[0].save).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith([existingSuggestions[0]]);
     });
 
     it('should log errors if there are items with errors', async () => {
@@ -1639,7 +1705,8 @@ describe('data-access', () => {
       expect(mockOpportunity.getSuggestions).to.not.have.been.called;
       // Verify the pre-fetched suggestions were used
       expect(prefetchedSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
-      expect(prefetchedSuggestions[0].save).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been
+        .calledOnceWith(prefetchedSuggestions);
     });
   });
 
@@ -1815,6 +1882,7 @@ describe('data-access', () => {
   describe('reconcileDisappearedSuggestions', () => {
     let mockLogger;
     let mockOpportunity;
+    let mockSuggestionCollection;
 
     beforeEach(() => {
       mockLogger = {
@@ -1826,6 +1894,9 @@ describe('data-access', () => {
       mockOpportunity = {
         getId: sinon.stub().returns('opp-id'),
         addFixEntities: sinon.stub().resolves({ createdItems: [], errorItems: [] }),
+      };
+      mockSuggestionCollection = {
+        saveMany: sinon.stub().resolves(),
       };
     });
 
@@ -1854,10 +1925,11 @@ describe('data-access', () => {
           status: 'PUBLISHED',
           suggestions: [s.getId()],
         }),
+        Suggestion: mockSuggestionCollection,
       });
 
       expect(suggestion.setStatus).to.have.been.calledWith(SuggestionDataAccess.STATUSES.FIXED);
-      expect(suggestion.save).to.have.been.called;
+      expect(mockSuggestionCollection.saveMany).to.have.been.called;
       expect(mockOpportunity.addFixEntities).to.have.been.called;
     });
 
@@ -1906,6 +1978,7 @@ describe('data-access', () => {
         isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
         buildFixEntityPayload: buildFixEntityPayloadStub,
         isAuthorOnly: true,
+        Suggestion: mockSuggestionCollection,
       });
 
       expect(buildFixEntityPayloadStub).to.have.been.calledWith(
@@ -1915,14 +1988,17 @@ describe('data-access', () => {
       );
     });
 
-    it('should log warning when suggestion.save() throws', async () => {
+    it('should log warning when Suggestion.saveMany() throws', async () => {
       const suggestion = {
         getId: sinon.stub().returns('sugg-1'),
         getData: sinon.stub().returns({ key: '1' }),
         getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
         setStatus: sinon.stub(),
         setUpdatedBy: sinon.stub(),
-        save: sinon.stub().rejects(new Error('DB error')),
+      };
+
+      const failingSuggestionCollection = {
+        saveMany: sinon.stub().rejects(new Error('DB error')),
       };
 
       await reconcileDisappearedSuggestions({
@@ -1931,10 +2007,11 @@ describe('data-access', () => {
         log: mockLogger,
         isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
         buildFixEntityPayload: sinon.stub(),
+        Suggestion: failingSuggestionCollection,
       });
 
       expect(mockLogger.warn).to.have.been.calledWith(
-        'Failed to mark suggestion sugg-1 as FIXED: DB error',
+        'Failed to mark 1 suggestions as FIXED: DB error',
       );
     });
 
@@ -1954,6 +2031,7 @@ describe('data-access', () => {
         log: mockLogger,
         isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
         buildFixEntityPayload: sinon.stub().throws(new Error('Payload error')),
+        Suggestion: mockSuggestionCollection,
       });
 
       expect(mockLogger.warn).to.have.been.calledWith(
@@ -1968,7 +2046,6 @@ describe('data-access', () => {
         getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
         setStatus: sinon.stub(),
         setUpdatedBy: sinon.stub(),
-        save: sinon.stub().resolves(),
       };
 
       mockOpportunity.addFixEntities.rejects(new Error('Add fix entities error'));
@@ -1979,6 +2056,7 @@ describe('data-access', () => {
         log: mockLogger,
         isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
         buildFixEntityPayload: sinon.stub().returns({ id: 'fix-1' }),
+        Suggestion: mockSuggestionCollection,
       });
 
       expect(mockLogger.warn).to.have.been.calledWith(
@@ -2042,6 +2120,7 @@ describe('data-access', () => {
       mockDataAccess = {
         FixEntity: {
           allByOpportunityIdAndStatus: sinon.stub().resolves([]),
+          saveMany: sinon.stub().resolves(),
         },
         Suggestion: {
           getFixEntitiesBySuggestionId: sinon.stub().resolves({ data: [] }),
@@ -2226,11 +2305,11 @@ describe('data-access', () => {
       });
 
       expect(fixEntity.setStatus).to.have.been.called;
-      expect(fixEntity.save).to.have.been.called;
+      expect(mockDataAccess.FixEntity.saveMany).to.have.been.called;
       expect(mockLogger.info).to.have.been.calledWith('Published fix entity fix-5');
     });
 
-    it('should log debug when fixEntity.save() throws', async () => {
+    it('should log debug when FixEntity.saveMany() throws', async () => {
       const suggestion = {
         getData: sinon.stub().returns({ key: 'resolved-key' }),
       };
@@ -2239,10 +2318,11 @@ describe('data-access', () => {
         getId: sinon.stub().returns('fix-6'),
         getSuggestionIds: sinon.stub().returns(['sugg-1']),
         setStatus: sinon.stub(),
-        save: sinon.stub().rejects(new Error('Save error')),
+        save: sinon.stub().resolves(),
       };
 
       mockDataAccess.FixEntity.allByOpportunityIdAndStatus.resolves([fixEntity]);
+      mockDataAccess.FixEntity.saveMany.rejects(new Error('Save error'));
       mockDataAccess.Suggestion.getFixEntitiesBySuggestionId.resolves({ data: [suggestion] });
 
       await publishDeployedFixEntities({
@@ -2251,7 +2331,7 @@ describe('data-access', () => {
         isIssueResolvedOnProduction: sinon.stub().resolves(true),
       });
 
-      expect(mockLogger.debug).to.have.been.calledWith('Failed to save fix entity: Save error');
+      expect(mockLogger.debug).to.have.been.calledWith('Failed to save fix entities: Save error');
     });
 
     it('should log warning on outer catch when unexpected error occurs', async () => {
@@ -2295,6 +2375,7 @@ describe('data-access', () => {
         dataAccess: {
           Suggestion: {
             bulkUpdateStatus: sinon.stub().resolves(),
+            saveMany: sinon.stub().resolves(),
             getFixEntitiesBySuggestionId: sinon.stub().resolves({ data: [] }),
           },
           FixEntity: {
