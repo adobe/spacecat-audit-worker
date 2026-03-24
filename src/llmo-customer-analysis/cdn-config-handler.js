@@ -150,7 +150,15 @@ export async function handleCdnBucketConfigChanges(context, data) {
   const site = await context.dataAccess.Site.findById(siteId);
   if (!site) throw new Error(`Site with ID ${siteId} not found`);
 
+  const baseURL = site.getBaseURL();
+  const previousConfig = site.getConfig()?.getLlmoCdnBucketConfig() ?? {};
+
   if (!cdnProvider) {
+    log.warn('CDN_CONFIG_DELETED: CDN provider removed — this will break CDN log reporting', {
+      siteId,
+      baseURL,
+      before: previousConfig,
+    });
     // if no cdn provider is provided, remove the bucket configuration
     await handleBucketConfiguration(siteId, null, null, null, context);
     // disable cdn-logs-analysis and page-citability audits
@@ -188,6 +196,18 @@ export async function handleCdnBucketConfigChanges(context, data) {
   if (bucketName || pathId || region) {
     await handleBucketConfiguration(siteId, bucketName, pathId, region, context);
   }
+
+  log.info('CDN_CONFIG_CHANGED: CDN bucket configuration updated', {
+    siteId,
+    baseURL,
+    cdnProvider,
+    before: previousConfig,
+    after: {
+      ...(bucketName && { bucketName }),
+      ...(pathId && { orgId: pathId }),
+      ...(region && { region }),
+    },
+  });
 
   // enable cdn-logs-analysis audit
   const configuration = await Configuration.findLatest();
