@@ -54,7 +54,7 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, l
 
   // Add new suggestions to oppty
   if (isNonEmptyArray(suggestionsToAdd)) {
-    const opportunityType = opportunity.getType?.();
+    const opportunityType = opportunity.getType();
     suggestionsToAdd.forEach((s) => warnOnInvalidSuggestionData(s.data, opportunityType, log));
     const updateResult = await opportunity.addSuggestions(suggestionsToAdd);
 
@@ -254,7 +254,7 @@ export async function addAltTextSuggestions({ opportunity, newSuggestionDTOs, lo
     return;
   }
 
-  const opportunityType = opportunity.getType?.();
+  const opportunityType = opportunity.getType();
   newSuggestionDTOs.forEach((s) => warnOnInvalidSuggestionData(s.data, opportunityType, log));
   const updateResult = await opportunity.addSuggestions(newSuggestionDTOs);
 

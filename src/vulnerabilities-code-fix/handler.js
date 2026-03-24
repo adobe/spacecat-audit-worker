@@ -197,7 +197,7 @@ export default async function handler(message, context) {
       patchContent: reportData.diff,
       isCodeChangeAvailable: true,
     };
-    warnOnInvalidSuggestionData(updatedData, AUDIT_TYPE, log);
+    warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
     suggestion.setData(updatedData);
 
     suggestion.save();

@@ -367,7 +367,7 @@ export async function syncSuggestions({
 
   log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
-  const opportunityType = opportunity.getType?.();
+  const opportunityType = opportunity.getType();
 
   // Update existing suggestions - O(N) with Map lookup
   await Promise.all(
@@ -402,15 +402,13 @@ export async function syncSuggestions({
     .filter((data) => !existingSuggestionKeys.has(buildKey(data)))
     .map((data) => {
       const suggestion = mapNewSuggestion(data);
-      return {
+      const result = {
         ...suggestion,
         status: requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
           : SuggestionDataAccess.STATUSES.NEW,
       };
-    })
-    .map((suggestion) => {
-      warnOnInvalidSuggestionData(suggestion.data, opportunityType, log);
-      return suggestion;
+      warnOnInvalidSuggestionData(result.data, opportunityType, log);
+      return result;
     });
 
   // Add new suggestions if any
@@ -695,7 +693,7 @@ export async function syncSuggestionsWithPublishDetection({
   const { log } = context;
 
   // Determine if this is an author-only opportunity type
-  const opportunityType = opportunity.getType?.();
+  const opportunityType = opportunity.getType();
   const isAuthorOnly = AUTHOR_ONLY_OPPORTUNITY_TYPES.includes(opportunityType);
 
   // Compute disappeared suggestions for reconcile step

@@ -64,6 +64,7 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
     opportunity = {
       getId: () => opportunityId,
       getSiteId: () => siteId,
+      getType: () => 'security-vulnerabilities',
     };
 
     suggestion = {
