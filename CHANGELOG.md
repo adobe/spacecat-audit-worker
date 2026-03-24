@@ -1,3 +1,10 @@
+## [1.369.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.369.1...v1.369.2) (2026-03-24)
+
+
+### Bug Fixes
+
+* add logging to fetchRemotePatterns ([#2178](https://github.com/adobe/spacecat-audit-worker/issues/2178)) ([7f60710](https://github.com/adobe/spacecat-audit-worker/commit/7f6071070a5a9e6f0a40eb47ea86ae819106bdaa))
+
 ## [1.369.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.369.0...v1.369.1) (2026-03-24)
 
 
