@@ -1,3 +1,10 @@
+## [1.369.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.369.2...v1.369.3) (2026-03-24)
+
+
+### Bug Fixes
+
+* rename env var ([#2188](https://github.com/adobe/spacecat-audit-worker/issues/2188)) ([19b1e6f](https://github.com/adobe/spacecat-audit-worker/commit/19b1e6f132f78892c9c0978a3be4c669835aea51))
+
 ## [1.369.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.369.1...v1.369.2) (2026-03-24)
 
 

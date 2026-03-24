@@ -51,7 +51,7 @@ function getPreviousWeek() {
  * @returns {Promise<object|null>} Parsed JSON data or null if the request failed
  */
 async function fetchQueryIndex(siteId, env, log) {
-  const apiBase = env.SPACECAT_API_URI;
+  const apiBase = env.SPACECAT_API_BASE_URL;
   const apiKey = env.SPACECAT_API_KEY;
   const url = `${apiBase}/sites/${siteId}/llmo/data/query-index.json`;
 
@@ -86,7 +86,7 @@ async function fetchQueryIndex(siteId, env, log) {
  * @returns {Promise<object|null>} Parsed JSON data or null if not found
  */
 async function fetchBrandPresenceData(siteId, fileName, env, log) {
-  const apiBase = env.SPACECAT_API_URI;
+  const apiBase = env.SPACECAT_API_BASE_URL;
   const apiKey = env.SPACECAT_API_KEY;
   const headers = { 'x-api-key': apiKey };
   const baseUrl = `${apiBase}/sites/${siteId}/llmo/data/${fileName}?sheet=all&include=${INCLUDE_COLUMNS}`;
@@ -633,10 +633,10 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
 
   log.info(`${LOG_PREFIX} Starting audit for site: ${siteId} (${baseURL})`);
 
-  if (!env.SPACECAT_API_URI || !env.SPACECAT_API_KEY) {
-    log.error(`${LOG_PREFIX} SPACECAT_API_URI or SPACECAT_API_KEY not configured`);
+  if (!env.SPACECAT_API_BASE_URL || !env.SPACECAT_API_KEY) {
+    log.error(`${LOG_PREFIX} SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured`);
     return {
-      auditResult: { success: false, error: 'SPACECAT_API_URI or SPACECAT_API_KEY not configured' },
+      auditResult: { success: false, error: 'SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured' },
       fullAuditRef: finalUrl,
     };
   }
