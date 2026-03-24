@@ -84,16 +84,17 @@ export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1)
 /**
  * Fetches remote patterns for a site
  */
-export async function fetchRemotePatterns(site) {
+export async function fetchRemotePatterns(site, log = console) {
   const dataFolder = site.getConfig()?.getLlmoDataFolder();
 
   if (!dataFolder) {
+    log.warn('fetchRemotePatterns: no dataFolder configured for site, skipping patterns fetch');
     return null;
   }
 
-  try {
-    const url = `https://main--project-elmo-ui-data--adobe.aem.live/${dataFolder}/agentic-traffic/patterns/patterns.json`;
+  const url = `https://main--project-elmo-ui-data--adobe.aem.live/${dataFolder}/agentic-traffic/patterns/patterns.json`;
 
+  try {
     const res = await fetch(url, {
       headers: {
         'User-Agent': 'spacecat-audit-worker',
@@ -102,16 +103,20 @@ export async function fetchRemotePatterns(site) {
     });
 
     if (!res.ok) {
+      log.error(`fetchRemotePatterns: failed to fetch patterns from ${url} — status ${res.status} ${res.statusText}`);
       return null;
     }
 
     const data = await res.json();
 
+    log.info(`fetchRemotePatterns: successfully loaded patterns — ${data.pagetype?.data?.length || 0} page patterns, ${data.products?.data?.length || 0} topic patterns`);
+
     return {
       pagePatterns: data.pagetype?.data || [],
       topicPatterns: data.products?.data || [],
     };
-  } catch {
+  } catch (e) {
+    log.error(`fetchRemotePatterns: error fetching patterns from ${url} — ${e.message}`);
     return null;
   }
 }
