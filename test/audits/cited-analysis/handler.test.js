@@ -337,6 +337,31 @@ describe('Cited Analysis Handler', () => {
       expect(sentMessage.data.urls).to.deep.equal(mockUrls);
     });
 
+    it('should limit URLs sent to Mystique to MYSTIQUE_URLS_LIMIT', async () => {
+      const manyUrls = Array.from({ length: 80 }, (_, i) => ({
+        url: `https://example.com/page-${i}`, type: 'cited-analysis', metadata: {},
+      }));
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: {
+            urls: manyUrls,
+            sentimentConfig: { topics: [], guidelines: [] },
+          },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.urls).to.have.lengthOf(50);
+    });
+
     it('should skip sending message when audit failed', async () => {
       const auditData = {
         siteId,

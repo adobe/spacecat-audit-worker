@@ -12,7 +12,9 @@
 
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import StoreClient, { StoreEmptyError, URL_TYPES, GUIDELINE_TYPES } from '../utils/store-client.js';
+import StoreClient, {
+  StoreEmptyError, URL_TYPES, GUIDELINE_TYPES, MYSTIQUE_URLS_LIMIT,
+} from '../utils/store-client.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 
 const LOG_PREFIX = '[Cited]';
@@ -181,7 +183,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
     const { config, storeData } = auditResult;
     const { urls, sentimentConfig } = storeData;
-    const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics);
+    const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
+      .slice(0, MYSTIQUE_URLS_LIMIT);
 
     const message = {
       type: 'guidance:cited-analysis',
@@ -204,7 +207,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     };
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`${LOG_PREFIX} Queued cited analysis request to Mystique for ${config.companyName} with ${urls.length} URLs`);
+    log.info(`${LOG_PREFIX} Queued cited analysis request to Mystique for ${config.companyName} with ${enrichedUrls.length} URLs`);
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
     throw error;
