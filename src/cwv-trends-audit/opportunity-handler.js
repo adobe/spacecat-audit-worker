@@ -48,7 +48,9 @@ export default async function opportunityHandler(finalUrl, auditData, context) {
       opportunityId: opportunity.getId(),
       type: 'CONTENT_UPDATE',
       rank: result.summary.totalUrls,
-      data: result, // Full audit result: metadata, trendData, summary, urlDetails
+      data: {
+        suggestionValue: JSON.stringify(result), // Stringified full audit result
+      },
     }),
   });
 

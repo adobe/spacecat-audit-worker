@@ -144,7 +144,8 @@ describe('CWV Trends Opportunity Handler', () => {
     expect(suggestion.opportunityId).to.equal('opp-123');
     expect(suggestion.type).to.equal('CONTENT_UPDATE');
     expect(suggestion.rank).to.equal(7); // totalUrls
-    expect(suggestion.data).to.deep.equal(auditResult); // Full audit result
+    expect(suggestion.data.suggestionValue).to.be.a('string'); // Stringified
+    expect(JSON.parse(suggestion.data.suggestionValue)).to.deep.equal(auditResult); // Parses back to audit result
     expect(buildKey()).to.equal('mobile-report');
   });
 

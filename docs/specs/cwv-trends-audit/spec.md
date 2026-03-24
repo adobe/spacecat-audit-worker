@@ -196,10 +196,12 @@ The opportunity handler uses `convertToOpportunity` with a `comparisonFn` that m
   type: 'CONTENT_UPDATE',
   rank: auditResult.summary.totalUrls,
   data: {
-    metadata: { domain, deviceType, startDate, endDate },
-    trendData: [...], // Daily good/NI/poor counts
-    summary: { good, needsImprovement, poor, totalUrls },
-    urlDetails: [...] // All URL entries with metrics and changes
+    suggestionValue: JSON.stringify({
+      metadata: { domain, deviceType, startDate, endDate },
+      trendData: [...], // Daily good/NI/poor counts
+      summary: { good, needsImprovement, poor, totalUrls },
+      urlDetails: [...] // All URL entries with metrics and changes
+    })
   }
 }
 ```
@@ -207,6 +209,8 @@ The opportunity handler uses `convertToOpportunity` with a `comparisonFn` that m
 **Key:** `${deviceType}-report` (e.g., `mobile-report`, `desktop-report`)
 
 This ensures one suggestion per device type per site, containing the complete Web Performance Trends Report data for UI consumption.
+
+> **Note:** The audit result is JSON-stringified and wrapped in `suggestionValue` to match the UI's expected data structure. The `WebPerformanceTrendsReportPage` component accesses `suggestions[0].data.suggestionValue` and expects it to be a JSON string that it parses with `parsePayload()`.
 
 > **Note:** Suggestion type `CONTENT_UPDATE` matches the ESO API pattern in `experience-system-outages/src/services/spaceCatForwarder.cjs`. ESO doesn't set tags; we add `['Web Performance', 'CWV']` for UI filtering.
 
