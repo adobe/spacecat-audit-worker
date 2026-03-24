@@ -54,12 +54,12 @@ export const URL_TYPES = {
   CITED: Audit.AUDIT_TYPES.CITED_ANALYSIS,
 };
 
+export const MYSTIQUE_URLS_LIMIT = 50;
+
 /**
  * Audit types for guidelines queries
  * These are used as the ?audit= query parameter in /sites/{siteId}/sentiment/config
  */
-export const MYSTIQUE_URLS_LIMIT = 50;
-
 export const GUIDELINE_TYPES = {
   WIKIPEDIA_ANALYSIS: Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS,
   REDDIT_ANALYSIS: Audit.AUDIT_TYPES.REDDIT_ANALYSIS,

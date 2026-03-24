@@ -16,6 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
+import { MYSTIQUE_URLS_LIMIT } from '../../../src/utils/store-client.js';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
 
@@ -338,7 +339,7 @@ describe('Cited Analysis Handler', () => {
     });
 
     it('should limit URLs sent to Mystique to MYSTIQUE_URLS_LIMIT', async () => {
-      const manyUrls = Array.from({ length: 80 }, (_, i) => ({
+      const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 30 }, (_, i) => ({
         url: `https://example.com/page-${i}`, type: 'cited-analysis', metadata: {},
       }));
 
@@ -359,7 +360,7 @@ describe('Cited Analysis Handler', () => {
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(50);
+      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
     });
 
     it('should skip sending message when audit failed', async () => {
