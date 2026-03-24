@@ -51,8 +51,10 @@ export const URL_TYPES = {
   WIKIPEDIA: Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS,
   REDDIT: Audit.AUDIT_TYPES.REDDIT_ANALYSIS,
   YOUTUBE: Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS,
-  CITED: 'top-cited-analysis',
+  CITED: Audit.AUDIT_TYPES.CITED_ANALYSIS,
 };
+
+export const MYSTIQUE_URLS_LIMIT = 50;
 
 /**
  * Audit types for guidelines queries

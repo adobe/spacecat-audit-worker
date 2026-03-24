@@ -413,6 +413,47 @@ describe('Summarization Handler', () => {
       );
       expect(sqs.sendMessage).to.have.been.calledOnce;
     });
+
+    it('should exclude pages that already have both summary and key points (LLMO-3493)', async () => {
+      const mockDetectExistingContent = sandbox.stub().resolves(
+        new Map([
+          ['https://adobe.com/page1', { hasSummary: true, hasKeyPoints: true }],
+          ['https://adobe.com/page2', { hasSummary: false, hasKeyPoints: false }],
+          ['https://adobe.com/page3', { hasSummary: true, hasKeyPoints: false }],
+        ]),
+      );
+      context.s3Client = {};
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+
+      const handler = await esmock('../../../src/summarization/handler.js', {
+        '../../../src/summarization/existing-content-detector.js': { detectExistingContent: mockDetectExistingContent },
+      });
+
+      const result = await handler.sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(mockDetectExistingContent).to.have.been.calledOnce;
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.pages).to.have.lengthOf(2);
+      const pageUrls = sentMessage.data.pages.map((p) => p.page_url);
+      expect(pageUrls).to.include('https://adobe.com/page2');
+      expect(pageUrls).to.include('https://adobe.com/page3');
+      expect(pageUrls).not.to.include('https://adobe.com/page1');
+      expect(log.info).to.have.been.calledWith(
+        '[SUMMARIZATION] Sent 2 pages to Mystique for site site-id-123',
+      );
+    });
+
+    it('should skip pre-check when s3Client or bucket not configured', async () => {
+      context.s3Client = null;
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+
+      const result = await sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.pages).to.have.lengthOf(3);
+    });
   });
 });
 
