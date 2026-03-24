@@ -9,9 +9,10 @@ The audit runs once per site. The device type (mobile or desktop) is determined 
 **Date Handling:**
 - **Scheduling:** Audit is registered to run `every-sunday` (scheduling handled by Jobs Dispatcher)
 - **Date Range:** Uses rolling 28-day window ending on the audit run date (no lastSunday calculation)
-- `endDate = new Date()` — Current date when audit executes
+- `endDate` — Defaults to current date when audit executes, or can be specified via `auditContext.endDate` parameter
 - `startDate = endDate - 27 days` — Creates 28-day window
 - The audit reads whatever data is available in S3 for those dates
+- **Optional Parameter:** Pass `endDate` (YYYY-MM-DD format) via bot command: `@spacecat run audit www.example.com cwv-trends-audit 2026-03-23`
 
 ### Acceptance Criteria
 
@@ -159,6 +160,25 @@ The data from S3 already contains P75 values for the last 7 days, so we use the 
 
 - Device type read from: `site.getConfig().getHandlers()['cwv-trends-audit'].deviceType`
 - Defaults to `'mobile'` if not configured or if config is absent
+
+---
+
+## Audit Parameters
+
+The audit accepts optional parameters via `auditContext`:
+
+### `endDate` (optional)
+
+Specifies the end date for the 28-day analysis window.
+
+- **Format:** `YYYY-MM-DD` (e.g., `2026-03-23`)
+- **Default:** Current date when audit executes
+- **Validation:** Invalid formats or dates default to current date with a warning
+- **Bot Command Examples:**
+  - With custom date: `@spacecat run audit www.krisshop.com cwv-trends-audit 2026-03-23`
+  - With default date: `@spacecat run audit www.krisshop.com cwv-trends-audit`
+
+When `endDate` is specified, the audit analyzes data from `endDate - 27 days` to `endDate`, allowing historical analysis of CWV trends.
 
 ---
 

@@ -232,7 +232,32 @@ function emptyResult(domain, deviceType, startDate, endDate) {
  * Falls back to DEFAULT_DEVICE_TYPE ('mobile') when not configured.
  * Requires minimum 28 days of data.
  */
-export default async function cwvTrendsRunner(finalUrl, context, site) {
+/**
+ * Parses a date string (YYYY-MM-DD) or returns the current date if invalid.
+ */
+function parseEndDate(dateString, log) {
+  if (!dateString || typeof dateString !== 'string') {
+    return new Date();
+  }
+
+  const match = dateString.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    log?.warn(`[${AUDIT_TYPE}] Invalid endDate format "${dateString}", using current date`);
+    return new Date();
+  }
+
+  const [, year, month, day] = match;
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+
+  if (Number.isNaN(date.getTime())) {
+    log?.warn(`[${AUDIT_TYPE}] Invalid endDate "${dateString}", using current date`);
+    return new Date();
+  }
+
+  return date;
+}
+
+export default async function cwvTrendsRunner(finalUrl, context, site, auditContext = {}) {
   const { s3Client, log, env } = context;
   const bucketName = env.S3_IMPORTER_BUCKET_NAME;
   const domain = finalUrl;
@@ -240,7 +265,7 @@ export default async function cwvTrendsRunner(finalUrl, context, site) {
   const handlerConfig = site.getConfig?.()?.getHandlers?.()?.[AUDIT_TYPE] || {};
   const deviceType = handlerConfig.deviceType || DEFAULT_DEVICE_TYPE;
 
-  const endDate = new Date();
+  const endDate = parseEndDate(auditContext.endDate, log);
   const startDate = subtractDays(endDate, TREND_DAYS - 1);
 
   log.info(`[${AUDIT_TYPE}] siteId: ${site.getId()} | device: ${deviceType} | Reading ${TREND_DAYS} days of S3 data`);

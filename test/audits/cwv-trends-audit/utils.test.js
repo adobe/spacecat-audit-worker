@@ -438,6 +438,92 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     expect(summary.good.change).to.equal(0);
   });
 
+  it('uses custom endDate from auditContext when provided', async () => {
+    const dates = makeDates(28, '2026-03-01');
+    const urls = [buildUrl('https://ex.com/p1', 'mobile')];
+    readTrendDataStub.resolves(buildDays(dates, urls));
+
+    const site = makeSite({ deviceType: 'mobile' });
+    const context = makeContext();
+    const auditContext = { endDate: '2026-03-28' };
+
+    const result = await cwvTrendsRunner('https://ex.com', context, site, auditContext);
+
+    expect(result.auditResult.metadata.endDate).to.equal('2026-03-28');
+    expect(result.auditResult.metadata.startDate).to.equal('2026-03-01');
+  });
+
+  it('uses current date when auditContext.endDate is not provided', async () => {
+    const now = new Date();
+    // Create dates ending today (going back 27 days)
+    const startDate = new Date(now);
+    startDate.setDate(startDate.getDate() - 27);
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const dates = makeDates(28, startDateStr);
+    const urls = [buildUrl('https://ex.com/p1', 'mobile')];
+    readTrendDataStub.resolves(buildDays(dates, urls));
+
+    const site = makeSite({ deviceType: 'mobile' });
+    const context = makeContext();
+
+    const result = await cwvTrendsRunner('https://ex.com', context, site);
+
+    // Should use current date (within a few seconds)
+    const resultEndDate = new Date(result.auditResult.metadata.endDate);
+    const diffMs = Math.abs(resultEndDate - now);
+    expect(diffMs).to.be.lessThan(5000); // Within 5 seconds
+  });
+
+  it('uses current date when auditContext.endDate is invalid', async () => {
+    const now = new Date();
+    // Create dates ending today (going back 27 days)
+    const startDate = new Date(now);
+    startDate.setDate(startDate.getDate() - 27);
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const dates = makeDates(28, startDateStr);
+    const urls = [buildUrl('https://ex.com/p1', 'mobile')];
+    readTrendDataStub.resolves(buildDays(dates, urls));
+
+    const site = makeSite({ deviceType: 'mobile' });
+    const context = makeContext();
+    const auditContext = { endDate: 'invalid-date' };
+
+    const result = await cwvTrendsRunner('https://ex.com', context, site, auditContext);
+
+    // Should use current date and log warning
+    const resultEndDate = new Date(result.auditResult.metadata.endDate);
+    const diffMs = Math.abs(resultEndDate - now);
+    expect(diffMs).to.be.lessThan(5000);
+    expect(log.warn).to.have.been.calledWith(
+      sinon.match(/Invalid endDate format "invalid-date"/),
+    );
+  });
+
+  it('handles auditContext.endDate with invalid date values', async () => {
+    const now = new Date();
+    // Create dates ending today (going back 27 days)
+    const startDate = new Date(now);
+    startDate.setDate(startDate.getDate() - 27);
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const dates = makeDates(28, startDateStr);
+    const urls = [buildUrl('https://ex.com/p1', 'mobile')];
+    readTrendDataStub.resolves(buildDays(dates, urls));
+
+    const site = makeSite({ deviceType: 'mobile' });
+    const context = makeContext();
+    const auditContext = { endDate: '2026-02-30' }; // Invalid day for February
+
+    const result = await cwvTrendsRunner('https://ex.com', context, site, auditContext);
+
+    // Should use current date and log warning
+    const resultEndDate = new Date(result.auditResult.metadata.endDate);
+    const diffMs = Math.abs(resultEndDate - now);
+    expect(diffMs).to.be.lessThan(5000);
+    expect(log.warn).to.have.been.calledWith(
+      sinon.match(/Invalid endDate "2026-02-30"/),
+    );
+  });
+
 });
 
 describe('CWV Trends Audit Runner (utils.js) - Edge Cases', function () {
