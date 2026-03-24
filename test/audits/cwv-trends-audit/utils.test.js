@@ -21,6 +21,7 @@ use(sinonChai);
 describe('CWV Trends Audit Runner (utils.js)', () => {
   let sandbox;
   let cwvTrendsRunner;
+  let parseEndDate;
   let readTrendDataStub;
   let log;
 
@@ -80,6 +81,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     });
 
     cwvTrendsRunner = module.default;
+    parseEndDate = module.parseEndDate;
   });
 
   afterEach(() => { sandbox.restore(); });
@@ -454,33 +456,43 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
   });
 
   it('uses current date when auditContext.endDate is not provided', async () => {
-    const now = new Date();
-    // Create dates ending today (going back 27 days)
-    const startDate = new Date(now);
-    startDate.setDate(startDate.getDate() - 27);
-    const startDateStr = startDate.toISOString().split('T')[0];
-    const dates = makeDates(28, startDateStr);
+    // Use a fixed date for the test to avoid timing issues
+    const testDate = new Date('2026-03-24');
+    const testDateStr = '2026-03-24';
+    const dates = makeDates(28, '2026-02-26'); // 28 days ending on 2026-03-24
     const urls = [buildUrl('https://ex.com/p1', 'mobile')];
     readTrendDataStub.resolves(buildDays(dates, urls));
 
     const site = makeSite({ deviceType: 'mobile' });
     const context = makeContext();
 
+    // Stub Date constructor to return our fixed test date
+    const OriginalDate = global.Date;
+    global.Date = class extends OriginalDate {
+      constructor(...args) {
+        if (args.length === 0) {
+          return testDate;
+        }
+        return new OriginalDate(...args);
+      }
+    };
+    global.Date.UTC = OriginalDate.UTC;
+
     const result = await cwvTrendsRunner('https://ex.com', context, site);
 
-    // Should use current date (within a few seconds)
-    const resultEndDate = new Date(result.auditResult.metadata.endDate);
-    const diffMs = Math.abs(resultEndDate - now);
-    expect(diffMs).to.be.lessThan(5000); // Within 5 seconds
+    // Restore original Date
+    global.Date = OriginalDate;
+
+    // Should use the test date
+    expect(result.auditResult.metadata.endDate).to.equal(testDateStr);
+    expect(result.auditResult.metadata.startDate).to.equal('2026-02-26');
   });
 
   it('uses current date when auditContext.endDate is invalid', async () => {
-    const now = new Date();
-    // Create dates ending today (going back 27 days)
-    const startDate = new Date(now);
-    startDate.setDate(startDate.getDate() - 27);
-    const startDateStr = startDate.toISOString().split('T')[0];
-    const dates = makeDates(28, startDateStr);
+    // Use a fixed date for the test to avoid timing issues
+    const testDate = new Date('2026-03-24');
+    const testDateStr = '2026-03-24';
+    const dates = makeDates(28, '2026-02-26'); // 28 days ending on 2026-03-24
     const urls = [buildUrl('https://ex.com/p1', 'mobile')];
     readTrendDataStub.resolves(buildDays(dates, urls));
 
@@ -488,40 +500,53 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     const context = makeContext();
     const auditContext = { endDate: 'invalid-date' };
 
+    // Stub Date constructor to return our fixed test date
+    const OriginalDate = global.Date;
+    global.Date = class extends OriginalDate {
+      constructor(...args) {
+        if (args.length === 0) {
+          return testDate;
+        }
+        return new OriginalDate(...args);
+      }
+    };
+    global.Date.UTC = OriginalDate.UTC;
+
     const result = await cwvTrendsRunner('https://ex.com', context, site, auditContext);
 
+    // Restore original Date
+    global.Date = OriginalDate;
+
     // Should use current date and log warning
-    const resultEndDate = new Date(result.auditResult.metadata.endDate);
-    const diffMs = Math.abs(resultEndDate - now);
-    expect(diffMs).to.be.lessThan(5000);
+    expect(result.auditResult.metadata.endDate).to.equal(testDateStr);
     expect(log.warn).to.have.been.calledWith(
       sinon.match(/Invalid endDate format "invalid-date"/),
     );
   });
 
-  it('handles auditContext.endDate with invalid date values', async () => {
+  it('parseEndDate handles Date objects that return NaN', () => {
     const now = new Date();
-    // Create dates ending today (going back 27 days)
-    const startDate = new Date(now);
-    startDate.setDate(startDate.getDate() - 27);
-    const startDateStr = startDate.toISOString().split('T')[0];
-    const dates = makeDates(28, startDateStr);
-    const urls = [buildUrl('https://ex.com/p1', 'mobile')];
-    readTrendDataStub.resolves(buildDays(dates, urls));
 
-    const site = makeSite({ deviceType: 'mobile' });
-    const context = makeContext();
-    const auditContext = { endDate: '2026-02-30' }; // Invalid day for February
+    // Stub Date.UTC to return a value that creates an invalid Date
+    const originalDateUTC = Date.UTC;
+    const dateUTCStub = sandbox.stub(Date, 'UTC').callsFake((year, month, day) => {
+      // For our test input, return a value beyond JavaScript's Date range
+      if (year === 9999 && month === 11 && day === 31) {
+        return 8640000000000001; // Just beyond max safe Date value
+      }
+      return originalDateUTC(year, month, day);
+    });
 
-    const result = await cwvTrendsRunner('https://ex.com', context, site, auditContext);
+    const result = parseEndDate('9999-12-31', log);
 
-    // Should use current date and log warning
-    const resultEndDate = new Date(result.auditResult.metadata.endDate);
-    const diffMs = Math.abs(resultEndDate - now);
+    // Should fall back to current date and log warning
+    const diffMs = Math.abs(result - now);
     expect(diffMs).to.be.lessThan(5000);
     expect(log.warn).to.have.been.calledWith(
-      sinon.match(/Invalid endDate "2026-02-30"/),
+      sinon.match(/Invalid endDate "9999-12-31"/),
     );
+
+    dateUTCStub.restore();
   });
 
 });

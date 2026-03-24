@@ -234,8 +234,9 @@ function emptyResult(domain, deviceType, startDate, endDate) {
  */
 /**
  * Parses a date string (YYYY-MM-DD) or returns the current date if invalid.
+ * Exported for testing.
  */
-function parseEndDate(dateString, log) {
+export function parseEndDate(dateString, log) {
   if (!dateString || typeof dateString !== 'string') {
     return new Date();
   }
