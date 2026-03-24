@@ -10,7 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import { createInternalLinksConfigResolver } from './config.js';
+import {
+  createInternalLinksConfigResolver,
+} from './config.js';
 import { createInternalLinksStepLogger } from './logging.js';
 
 export function createOpportunityAndSuggestionsStep({

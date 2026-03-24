@@ -19,21 +19,35 @@ const DEFAULT_MAX_RESULTS = 10000;
 const TRANSIENT_SPLUNK_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
 const SPLUNK_REQUEST_MAX_RETRIES = 3;
 const SPLUNK_RETRY_BASE_DELAY_MS = 1000;
+const DEFAULT_SPLUNK_SEARCH_NAMESPACE = 'admin/search';
 
 function escapeSplunkString(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function buildScopeFilter(scopeBaseURL) {
+  if (!scopeBaseURL) {
+    return null;
+  }
+
+  try {
+    const { pathname } = new URL(scopeBaseURL);
+    if (!pathname || pathname === '/') {
+      return null;
+    }
+
+    const repoScopedPrefix = `/content/ASO${pathname}`;
+    return `| where like(urlFrom, "${escapeSplunkString(repoScopedPrefix)}%") OR like(urlFrom, "${escapeSplunkString(pathname)}%")`;
+  } catch (error) {
+    return null;
+  }
 }
 
 function getSplunkSearchNamespace(context = {}) {
   const configuredNamespace = context?.env?.SPLUNK_SEARCH_NAMESPACE;
   /* c8 ignore next - fallback coercion branch */
   const normalizedNamespace = String(configuredNamespace || '').replace(/^\/+|\/+$/g, '');
-
-  if (!normalizedNamespace) {
-    throw new Error('SPLUNK_SEARCH_NAMESPACE must be configured for internal-links LinkChecker');
-  }
-
-  return normalizedNamespace;
+  return normalizedNamespace || DEFAULT_SPLUNK_SEARCH_NAMESPACE;
 }
 
 async function fetchSplunkAPIWithRetry(client, request, log) {
@@ -87,13 +101,15 @@ export function buildLinkCheckerQuery({
   environmentId,
   lookbackMinutes = DEFAULT_LOOKBACK_MINUTES,
   maxResults = DEFAULT_MAX_RESULTS,
+  scopeBaseURL,
 }) {
   // Query structure:
   // 1. Base index and time range
   // 2. Filter by program and environment (automatically logged by AEM)
   // 3. Filter for LinkChecker internal link removal events (FT_SITES-39847)
-  // 4. Parse JSON structure
-  // 5. Extract fields and limit results
+  // 4. Parse the top-level event JSON, then extract the embedded JSON payload from msg
+  // 5. Parse embedded LinkChecker payload, extract fields, and limit results
+  const scopeFilter = buildScopeFilter(scopeBaseURL);
   return [
     'search',
     'index=dx_aem_engineering',
@@ -101,8 +117,10 @@ export function buildLinkCheckerQuery({
     'latest=@m',
     `aem_program_id="${escapeSplunkString(programId)}"`,
     `aem_envId="${escapeSplunkString(environmentId)}"`,
-    '"linkchecker.removed_internal_link"', // FT_SITES-39847 ensures this field exists
-    '| spath', // Parse JSON structure
+    'msg="*linkchecker.removed_internal_link*"',
+    '| spath', // Parse top-level Skyline event JSON
+    '| rex field=msg "LinkCheckerTransformer (?<linkchecker_json>\\{.*\\})$"',
+    '| spath input=linkchecker_json', // Parse embedded LinkChecker payload from msg
     '| rename linkchecker.removed_internal_link.urlFrom as urlFrom',
     '| rename linkchecker.removed_internal_link.urlTo as urlTo',
     '| rename linkchecker.removed_internal_link.validity as validity',
@@ -113,6 +131,7 @@ export function buildLinkCheckerQuery({
     '| rename linkchecker.removed_internal_link.httpStatus as httpStatus',
     '| rename linkchecker.removed_internal_link.timestamp as timestamp',
     '| where isnotnull(urlFrom) AND isnotnull(urlTo)',
+    ...(scopeFilter ? [scopeFilter] : []),
     '| dedup urlFrom, urlTo, itemType',
     '| table urlFrom, urlTo, validity, elementName, attributeName, itemType, anchorText, httpStatus, timestamp',
     `| head ${maxResults}`,

@@ -11,6 +11,7 @@
  */
 
 import { createInternalLinksStepLogger } from './logging.js';
+import { getInternalLinksFetchConfig } from './base-url.js';
 
 const RUM_VALIDATION_CONCURRENCY = 10;
 
@@ -41,6 +42,7 @@ export function createInternalLinksRumSteps({
   auditType,
   interval,
   createContextLogger,
+  createConfigResolver = () => ({ isLinkCheckerEnabled: () => false }),
   createRUMAPIClient,
   resolveFinalUrl,
   isLinkInaccessible,
@@ -57,11 +59,14 @@ export function createInternalLinksRumSteps({
       auditType,
       siteId: site.getId(),
       auditId,
-      step: 'rum-detection',
+      step: 'rum-detector-phase',
     });
     const finalUrl = context?.finalUrl || await resolveFinalUrl(site, context);
+    const siteBaseURL = site.getBaseURL();
+    const { overrideBaseURL } = getInternalLinksFetchConfig(site);
 
-    log.info('====== RUM Detection Phase ======');
+    log.info('====== RUM Detection Phase started ======');
+    log.info(`RUM resolver v2: siteBaseURL=${siteBaseURL}, overrideBaseURL=${overrideBaseURL || 'none'}, resolvedRumDomain=${finalUrl}`);
     log.info(`Site: ${site.getId()}, Domain: ${finalUrl}`);
 
     try {
@@ -92,7 +97,7 @@ export function createInternalLinksRumSteps({
         };
       }
 
-      const baseURL = site.getBaseURL();
+      const baseURL = siteBaseURL;
       const scopedInternal404Links = internal404Links.filter((link) => (
         isWithinAuditScope(link.url_from, baseURL)
         && isWithinAuditScope(link.url_to, baseURL)
@@ -197,7 +202,7 @@ export function createInternalLinksRumSteps({
 
   async function runAuditAndImportTopPagesStep(context) {
     const {
-      site, log: baseLog, finalUrl, audit,
+      site, log: baseLog, finalUrl, audit, env,
     } = context;
     /* c8 ignore next - defensive logger context when audit is absent or incomplete */
     const auditId = audit && typeof audit.getId === 'function' ? audit.getId() : undefined;
@@ -221,8 +226,28 @@ export function createInternalLinksRumSteps({
     const { success } = internalLinksAuditRunnerResult.auditResult;
 
     if (!success) {
-      log.error('RUM detection audit failed');
-      throw new Error('Audit failed, skip scraping and suggestion generation');
+      const { error: rumError } = internalLinksAuditRunnerResult.auditResult;
+      const config = createConfigResolver(site, env);
+      if (config.isLinkCheckerEnabled()) {
+        log.warn(`RUM detection audit failed, continuing with LinkChecker enabled: ${rumError}`);
+        return {
+          auditResult: {
+            ...internalLinksAuditRunnerResult.auditResult,
+            brokenInternalLinks: [],
+            success: true,
+            auditContext: {
+              interval,
+              rumError,
+            },
+          },
+          fullAuditRef: finalUrl,
+          type: 'top-pages',
+          siteId: site.getId(),
+        };
+      }
+
+      log.error(`RUM detection audit failed: ${rumError}`);
+      throw new Error(rumError);
     }
 
     log.info(`RUM detection complete. Found ${internalLinksAuditRunnerResult.auditResult.brokenInternalLinks?.length || 0} broken links`);

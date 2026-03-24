@@ -73,7 +73,8 @@ function getSourceItemType(parentTag) {
 function getAssetTypeFromUrl(url, pageUrl = 'https://example.com') {
   try {
     const pathname = new URL(url, pageUrl).pathname.toLowerCase();
-    if (/\.(svg|png|jpe?g|gif|webp|avif)$/.test(pathname)) return 'image';
+    if (/\.svg$/.test(pathname)) return 'svg';
+    if (/\.(png|jpe?g|gif|webp|avif)$/.test(pathname)) return 'image';
     /* c8 ignore start - Asset type branches covered by integration tests at extraction level */
     if (/\.css$/.test(pathname)) return 'css';
     if (/\.js$/.test(pathname)) return 'js';

@@ -10,7 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import { createInternalLinksConfigResolver } from './config.js';
+import {
+  createInternalLinksConfigResolver,
+} from './config.js';
 import { createInternalLinksStepLogger } from './logging.js';
 
 export function createSubmitForScraping({
@@ -79,6 +81,7 @@ export function createSubmitForScraping({
       log.warn('No URLs available for scraping');
       log.info('==========================================');
       return {
+        status: 'skipped',
         auditResult: audit.getAuditResult(),
         fullAuditRef: audit.getFullAuditRef(),
         urls: [],

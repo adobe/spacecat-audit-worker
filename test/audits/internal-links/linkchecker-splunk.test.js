@@ -79,8 +79,10 @@ describe('linkchecker-splunk', () => {
       expect(query).to.include('latest=@m');
       expect(query).to.include('aem_program_id="program123"');
       expect(query).to.include('aem_envId="env456"');
-      expect(query).to.include('"linkchecker.removed_internal_link"');
+      expect(query).to.include('msg="*linkchecker.removed_internal_link*"');
       expect(query).to.include('| spath');
+      expect(query).to.include('| rex field=msg "LinkCheckerTransformer (?<linkchecker_json>\\{.*\\})$"');
+      expect(query).to.include('| spath input=linkchecker_json');
       expect(query).to.include('| rename linkchecker.removed_internal_link.urlFrom as urlFrom');
       expect(query).to.include('| where isnotnull(urlFrom) AND isnotnull(urlTo)');
       expect(query).to.include('| head 10000');
@@ -115,6 +117,36 @@ describe('linkchecker-splunk', () => {
       expect(query).to.include('aem_program_id="program\\"123"');
       expect(query).to.include('aem_envId="env\\\\456"');
     });
+
+    it('adds a scope filter when scopeBaseURL has a subpath', () => {
+      const query = buildLinkCheckerQuery({
+        programId: 'program123',
+        environmentId: 'env456',
+        scopeBaseURL: 'https://publish.example.com/wknd-abhigarg-0001/us/en',
+      });
+
+      expect(query).to.include('| where like(urlFrom, "/content/ASO/wknd-abhigarg-0001/us/en%") OR like(urlFrom, "/wknd-abhigarg-0001/us/en%")');
+    });
+
+    it('does not add a scope filter when scopeBaseURL has no subpath', () => {
+      const query = buildLinkCheckerQuery({
+        programId: 'program123',
+        environmentId: 'env456',
+        scopeBaseURL: 'https://publish.example.com',
+      });
+
+      expect(query).to.not.include('like(urlFrom');
+    });
+
+    it('does not add a scope filter when scopeBaseURL is invalid', () => {
+      const query = buildLinkCheckerQuery({
+        programId: 'program123',
+        environmentId: 'env456',
+        scopeBaseURL: 'not a valid url',
+      });
+
+      expect(query).to.not.include('like(urlFrom');
+    });
   });
 
   describe('submitSplunkJob', () => {
@@ -146,17 +178,32 @@ describe('linkchecker-splunk', () => {
       );
     });
 
-    it('throws when configured Splunk namespace is blank after normalization', async () => {
+    it('falls back to admin/search when configured Splunk namespace is blank after normalization', async () => {
       mockClient.env = { SPLUNK_SEARCH_NAMESPACE: '///' };
-      await expect(submitSplunkJob(mockClient, 'search query', mockLog))
-        .to.be.rejectedWith('SPLUNK_SEARCH_NAMESPACE must be configured');
+      mockClient.fetchAPI.resolves({
+        status: 201,
+        json: sandbox.stub().resolves({ sid: 'job-id-123' }),
+      });
+
+      await submitSplunkJob(mockClient, 'search query', mockLog);
+
+      expect(mockClient.fetchAPI.firstCall.args[0]).to.equal(
+        'https://splunk.example.com:8089/servicesNS/admin/search/search/search/jobs',
+      );
     });
 
-    it('throws when client env is missing', async () => {
+    it('falls back to admin/search when client env is missing', async () => {
       mockClient.env = undefined;
+      mockClient.fetchAPI.resolves({
+        status: 201,
+        json: sandbox.stub().resolves({ sid: 'job-id-123' }),
+      });
 
-      await expect(submitSplunkJob(mockClient, 'search query', mockLog))
-        .to.be.rejectedWith('SPLUNK_SEARCH_NAMESPACE must be configured');
+      await submitSplunkJob(mockClient, 'search query', mockLog);
+
+      expect(mockClient.fetchAPI.firstCall.args[0]).to.equal(
+        'https://splunk.example.com:8089/servicesNS/admin/search/search/search/jobs',
+      );
     });
 
     it('throws error if submission fails', async () => {

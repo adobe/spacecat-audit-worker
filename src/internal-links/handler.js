@@ -14,7 +14,6 @@ import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { wwwUrlResolver } from '../common/base-audit.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createContextLogger } from '../common/context-logger.js';
 import { isUnscrapeable, filterBrokenSuggestedUrls } from '../utils/url-utils.js';
@@ -72,6 +71,7 @@ import { createInternalLinksOrchestration } from './orchestration.js';
 import { createInternalLinksConfigResolver } from './config.js';
 import { createSplunkClient } from './splunk-client.js';
 import { extractLocalePathPrefix } from './scope-utils.js';
+import { resolveInternalLinksRumDomain } from './base-url.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30;
@@ -91,8 +91,9 @@ export const {
   auditType: AUDIT_TYPE,
   interval: INTERVAL,
   createContextLogger,
+  createConfigResolver: createInternalLinksConfigResolver,
   createRUMAPIClient: (context) => RUMAPIClient.createFrom(context),
-  resolveFinalUrl: wwwUrlResolver,
+  resolveFinalUrl: resolveInternalLinksRumDomain,
   isLinkInaccessible,
   calculatePriority,
   isWithinAuditScope,
@@ -163,7 +164,7 @@ export const {
 });
 
 export default new AuditBuilder()
-  .withUrlResolver(wwwUrlResolver)
+  .withUrlResolver(resolveInternalLinksRumDomain)
   .addStep(
     'runAuditAndImportTopPagesStep',
     runAuditAndImportTopPagesStep,

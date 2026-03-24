@@ -16,7 +16,9 @@ import { expect } from 'chai';
 import {
   InternalLinksConfigResolver,
   createInternalLinksConfigResolver,
+  resolveInternalLinksBaseURL,
 } from '../../../src/internal-links/config.js';
+import { resolveInternalLinksRumDomain } from '../../../src/internal-links/base-url.js';
 
 function createSite(config = {}, deliveryConfig = {}) {
   return {
@@ -218,6 +220,130 @@ describe('internal-links config resolver', () => {
 
     expect(resolver.getLinkCheckerProgramId()).to.equal('program-123');
     expect(resolver.getLinkCheckerEnvironmentId()).to.equal('env-456');
+  });
+
+  it('supports the camelCase site-config flag for enabling LinkChecker', () => {
+    const resolver = new InternalLinksConfigResolver(createSite({
+      isLinkCheckerEnabled: true,
+    }), {});
+
+    expect(resolver.isLinkCheckerEnabled()).to.equal(true);
+  });
+
+  it('supports the legacy site-config flag for enabling LinkChecker', () => {
+    const resolver = new InternalLinksConfigResolver(createSite({
+      isLinkcheckerEnabled: true,
+    }), {});
+
+    expect(resolver.isLinkCheckerEnabled()).to.equal(true);
+  });
+
+  it('exposes LinkChecker flag debug info for troubleshooting', () => {
+    const resolver = new InternalLinksConfigResolver(createSite({
+      isLinkCheckerEnabled: true,
+      isLinkcheckerEnabled: false,
+    }), {});
+
+    expect(resolver.getLinkCheckerFlagDebugInfo()).to.deep.equal({
+      enabled: true,
+      source: 'isLinkCheckerEnabled',
+      camelCaseRaw: true,
+      legacyRaw: false,
+      camelCaseValue: true,
+      legacyValue: false,
+    });
+  });
+
+  it('prefers the legacy LinkChecker flag in debug info when camelCase is absent', () => {
+    const resolver = new InternalLinksConfigResolver(createSite({
+      isLinkcheckerEnabled: true,
+    }), {});
+
+    expect(resolver.getLinkCheckerFlagDebugInfo()).to.deep.equal({
+      enabled: true,
+      source: 'isLinkcheckerEnabled',
+      camelCaseRaw: undefined,
+      legacyRaw: true,
+      camelCaseValue: undefined,
+      legacyValue: true,
+    });
+  });
+
+  it('prefers fetchConfig.overrideBaseURL for internal-links scope when valid', () => {
+    const site = {
+      getBaseURL: () => 'https://example.com/en.html',
+      getConfig: () => ({
+        getFetchConfig: () => ({
+          overrideBaseURL: 'https://example.com/en',
+        }),
+      }),
+    };
+
+    expect(resolveInternalLinksBaseURL(site)).to.equal('https://example.com/en');
+  });
+
+  it('reads overrideBaseURL from nested config.fetchConfig fallback', () => {
+    const site = {
+      getBaseURL: () => 'https://example.com/en.html',
+      getConfig: () => ({
+        config: {
+          fetchConfig: {
+            overrideBaseURL: 'https://example.com/en',
+          },
+        },
+      }),
+    };
+
+    expect(resolveInternalLinksBaseURL(site)).to.equal('https://example.com/en');
+  });
+
+  it('falls back to site baseURL when overrideBaseURL is missing or invalid', () => {
+    const invalidOverrideSite = {
+      getBaseURL: () => 'https://example.com/en.html',
+      getConfig: () => ({
+        getFetchConfig: () => ({
+          overrideBaseURL: 'not-a-valid-url',
+        }),
+      }),
+    };
+    const missingOverrideSite = {
+      getBaseURL: () => 'https://example.com/en.html',
+      getConfig: () => ({
+        getFetchConfig: () => ({}),
+      }),
+    };
+
+    expect(resolveInternalLinksBaseURL(invalidOverrideSite)).to.equal('https://example.com/en.html');
+    expect(resolveInternalLinksBaseURL(missingOverrideSite)).to.equal('https://example.com/en.html');
+  });
+
+  it('resolves rum domain without using overrideBaseURL', async () => {
+    const site = {
+      getBaseURL: () => 'https://publish-p165653-e1774234.adobeaemcloud.com/wknd-abhigarg-0001/us/en.html',
+      getConfig: () => ({
+        getFetchConfig: () => ({
+          overrideBaseURL: 'https://publish-p165653-e1774234.adobeaemcloud.com/wknd-abhigarg-0001/us/en',
+        }),
+      }),
+    };
+    const context = {
+      log: {
+        debug: () => {},
+        error: () => {},
+      },
+      rumApiClient: {
+        retrieveDomainkey: async (domain) => {
+          if (domain === 'www.publish-p165653-e1774234.adobeaemcloud.com') {
+            return { domain };
+          }
+          throw new Error('not found');
+        },
+      },
+    };
+
+    const result = await resolveInternalLinksRumDomain(site, context);
+
+    expect(result).to.equal('publish-p165653-e1774234.adobeaemcloud.com');
   });
 
   it('prefers deliveryConfig program and environment IDs over handler config', () => {

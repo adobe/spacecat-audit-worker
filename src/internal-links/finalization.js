@@ -15,6 +15,7 @@ import { createInternalLinksStepLogger } from './logging.js';
 import { classifyStatusBucket, isLinkInaccessible } from './helpers.js';
 import { isWithinAuditScope } from './subpath-filter.js';
 import { isSharedInternalResource } from './scope-utils.js';
+import { resolveInternalLinksBaseURL } from './base-url.js';
 
 function isOnAuditHost(url, baseURL) {
   try {
@@ -27,8 +28,50 @@ function isOnAuditHost(url, baseURL) {
   }
 }
 
+function normalizeLinkCheckerUrl(url, baseURL) {
+  if (!url || !baseURL) {
+    return url;
+  }
+
+  try {
+    const parsedBaseURL = new URL(prependSchema(baseURL));
+    const trimmedUrl = String(url).trim();
+
+    if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
+      return trimmedUrl;
+    }
+
+    let normalizedPath = trimmedUrl;
+
+    // LinkChecker emits repository-style content paths for source pages in AEM CS logs.
+    // Resolve them back onto the publish host so they can be scoped like crawl/RUM URLs.
+    if (normalizedPath.startsWith('/content/ASO/')) {
+      normalizedPath = normalizedPath.replace(/^\/content\/ASO/, '');
+    }
+
+    return new URL(normalizedPath, `${parsedBaseURL.protocol}//${parsedBaseURL.host}`).toString();
+  } catch (error) {
+    return url;
+  }
+}
+
 function normalizeLinkCheckerValidity(validity) {
   return String(validity || 'UNKNOWN').trim().toUpperCase();
+}
+
+const LINKCHECKER_VALIDITY_ONLY_ASSET_TYPES = new Set([
+  'image',
+  'svg',
+  'css',
+  'js',
+  'iframe',
+  'video',
+  'audio',
+  'media',
+]);
+
+function requiresExplicitBrokenStatus(itemType) {
+  return LINKCHECKER_VALIDITY_ONLY_ASSET_TYPES.has(itemType);
 }
 
 function disableEventLoopWait(context) {
@@ -130,7 +173,7 @@ export function createFinalizeCrawlDetection({
       step: 'finalize-crawl-detection',
     });
     const shouldCleanup = !skipCrawlDetection;
-    const baseURL = typeof site.getBaseURL === 'function' ? site.getBaseURL() : '';
+    const baseURL = resolveInternalLinksBaseURL(site);
     let finalizationLockAcquired = false;
     let finalizationLockEtag = null;
 
@@ -149,6 +192,7 @@ export function createFinalizeCrawlDetection({
     const timeoutStatus = getTimeoutStatus(lambdaStartTime, context);
     log.info('====== Finalize: Merge and Generate Suggestions ======');
     log.info(`auditId: ${auditId}`);
+    log.info(`Using audit scope URL for finalization: ${baseURL}`);
     log.info(`Timeout status: ${timeoutStatus.percentUsed.toFixed(1)}% used, ${Math.floor(timeoutStatus.safeTimeRemaining / 1000)}s safe time remaining`);
 
     /* c8 ignore next 4 - Defensive timeout warning path depends on invocation timing */
@@ -191,41 +235,57 @@ export function createFinalizeCrawlDetection({
         log.info(`Crawl detected ${crawlLinks.length} broken links`);
 
         /* c8 ignore start - defensive normalization defaults */
-        let skippedLinkCheckerRows = 0;
+        const linkCheckerSkipReasons = {
+          missingUrl: 0,
+          noBrokenSignal: 0,
+          outsideScope: 0,
+        };
+        let normalizedLinkCheckerUrls = 0;
+        let normalizedRepositoryPaths = 0;
         const linkCheckerLinks = linkCheckerResults
           .map((lc) => {
+            const normalizedUrlFrom = normalizeLinkCheckerUrl(lc.urlFrom, baseURL);
+            const normalizedUrlTo = normalizeLinkCheckerUrl(lc.urlTo, baseURL);
+            if (normalizedUrlFrom !== lc.urlFrom || normalizedUrlTo !== lc.urlTo) {
+              normalizedLinkCheckerUrls += 1;
+            }
+            if (String(lc.urlFrom || '').startsWith('/content/ASO/')) {
+              normalizedRepositoryPaths += 1;
+            }
             const itemType = lc.itemType || 'link';
             const validity = normalizeLinkCheckerValidity(lc.validity);
             const httpStatus = Number.parseInt(lc.httpStatus, 10);
             const statusBucket = classifyStatusBucket(httpStatus);
             const isExplicitBrokenValidity = validity === 'INVALID';
             const hasBrokenStatus = Boolean(statusBucket);
+            const requireBrokenStatus = requiresExplicitBrokenStatus(itemType);
 
-            if (!lc.urlFrom || !lc.urlTo) {
-              skippedLinkCheckerRows += 1;
+            if (!normalizedUrlFrom || !normalizedUrlTo) {
+              linkCheckerSkipReasons.missingUrl += 1;
               return null;
             }
 
-            if (!hasBrokenStatus && !isExplicitBrokenValidity) {
-              skippedLinkCheckerRows += 1;
+            if ((requireBrokenStatus && !hasBrokenStatus)
+              || (!hasBrokenStatus && !isExplicitBrokenValidity)) {
+              linkCheckerSkipReasons.noBrokenSignal += 1;
               return null;
             }
 
             if (baseURL) {
-              const targetInScope = isWithinAuditScope(lc.urlTo, baseURL)
-                || isSharedInternalResource(lc.urlTo, baseURL, itemType);
-              if (!(isOnAuditHost(lc.urlFrom, baseURL)
-                && isOnAuditHost(lc.urlTo, baseURL)
-                && isWithinAuditScope(lc.urlFrom, baseURL)
+              const targetInScope = isWithinAuditScope(normalizedUrlTo, baseURL)
+                || isSharedInternalResource(normalizedUrlTo, baseURL, itemType);
+              if (!(isOnAuditHost(normalizedUrlFrom, baseURL)
+                && isOnAuditHost(normalizedUrlTo, baseURL)
+                && isWithinAuditScope(normalizedUrlFrom, baseURL)
                 && targetInScope)) {
-                skippedLinkCheckerRows += 1;
+                linkCheckerSkipReasons.outsideScope += 1;
                 return null;
               }
             }
 
             return {
-              urlFrom: lc.urlFrom,
-              urlTo: lc.urlTo,
+              urlFrom: normalizedUrlFrom,
+              urlTo: normalizedUrlTo,
               anchorText: lc.anchorText || '',
               itemType,
               detectionSource: 'linkchecker',
@@ -238,9 +298,20 @@ export function createFinalizeCrawlDetection({
           .filter(Boolean);
         /* c8 ignore stop */
 
+        log.info(
+          `LinkChecker normalization v2 active: normalized=${normalizedLinkCheckerUrls}, `
+          + `repositoryPaths=${normalizedRepositoryPaths}`,
+        );
         log.info(`LinkChecker links transformed: ${linkCheckerLinks.length} broken links`);
+        const skippedLinkCheckerRows = Object.values(linkCheckerSkipReasons)
+          .reduce((sum, count) => sum + count, 0);
         if (skippedLinkCheckerRows > 0) {
-          log.info(`Skipped ${skippedLinkCheckerRows} LinkChecker rows without a broken signal or outside audit scope`);
+          log.info(
+            `Skipped ${skippedLinkCheckerRows} LinkChecker rows `
+            + `(missingUrl=${linkCheckerSkipReasons.missingUrl}, `
+            + `noBrokenSignal=${linkCheckerSkipReasons.noBrokenSignal}, `
+            + `outsideScope=${linkCheckerSkipReasons.outsideScope})`,
+          );
         }
 
         const preValidationStatus = getTimeoutStatus(lambdaStartTime, context);

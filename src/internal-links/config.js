@@ -14,6 +14,11 @@ import { hasText } from '@adobe/spacecat-shared-utils';
 import { PAGES_PER_BATCH } from './crawl-detection.js';
 import { MAX_BROKEN_LINKS_REPORTED } from './result-utils.js';
 
+export {
+  getInternalLinksFetchConfig,
+  resolveInternalLinksBaseURL,
+} from './base-url.js';
+
 const MAX_URLS_TO_PROCESS = 100;
 const DEFAULT_LINKCHECKER_MIN_TIME_NEEDED_MS = 5 * 60 * 1000;
 const MAX_BROKEN_LINKS = 100;
@@ -131,7 +136,36 @@ export class InternalLinksConfigResolver {
   }
 
   isLinkCheckerEnabled() {
-    return this.handlerConfig.isLinkcheckerEnabled ?? false;
+    const camelCaseValue = getBooleanConfig(this.handlerConfig.isLinkCheckerEnabled, undefined);
+    const legacyValue = getBooleanConfig(this.handlerConfig.isLinkcheckerEnabled, undefined);
+
+    if (typeof camelCaseValue === 'boolean') {
+      return camelCaseValue;
+    }
+    if (typeof legacyValue === 'boolean') {
+      return legacyValue;
+    }
+    return false;
+  }
+
+  getLinkCheckerFlagDebugInfo() {
+    const camelCaseValue = getBooleanConfig(this.handlerConfig.isLinkCheckerEnabled, undefined);
+    const legacyValue = getBooleanConfig(this.handlerConfig.isLinkcheckerEnabled, undefined);
+    let source = 'default:false';
+    if (typeof camelCaseValue === 'boolean') {
+      source = 'isLinkCheckerEnabled';
+    } else if (typeof legacyValue === 'boolean') {
+      source = 'isLinkcheckerEnabled';
+    }
+
+    return {
+      enabled: this.isLinkCheckerEnabled(),
+      source,
+      camelCaseRaw: this.handlerConfig.isLinkCheckerEnabled,
+      legacyRaw: this.handlerConfig.isLinkcheckerEnabled,
+      camelCaseValue,
+      legacyValue,
+    };
   }
 
   getLinkCheckerProgramId() {
