@@ -45,6 +45,13 @@ function getCitedConfig(site) {
   };
 }
 
+/**
+ * Fetches all required data from stores for Cited analysis
+ * @param {string} siteId - The site ID
+ * @param {Object} context - The audit context
+ * @returns {Promise<Object>} Object containing urls and sentimentConfig
+ * @throws {StoreEmptyError} If any store returns empty results
+ */
 async function fetchStoreData(siteId, context) {
   const { log } = context;
   const storeClient = StoreClient.createFrom(context);
@@ -57,7 +64,6 @@ async function fetchStoreData(siteId, context) {
   let sentimentConfig = { topics: [], guidelines: [] };
   try {
     sentimentConfig = await storeClient.getGuidelines(siteId, GUIDELINE_TYPES.CITED_ANALYSIS);
-    log.info(`${LOG_PREFIX} Retrieved ${sentimentConfig.topics.length} topics and ${sentimentConfig.guidelines.length} guidelines`);
   } catch (error) {
     if (error instanceof StoreEmptyError) {
       log.info(`${LOG_PREFIX} No guidelines configured for cited-analysis, proceeding without`);
@@ -66,17 +72,28 @@ async function fetchStoreData(siteId, context) {
     }
   }
 
+  const topicCount = sentimentConfig.topics.length;
+  const guidelineCount = sentimentConfig.guidelines.length;
+  log.info(`${LOG_PREFIX} Retrieved ${topicCount} topics and ${guidelineCount} guidelines`);
+
   return {
     urls,
     sentimentConfig,
   };
 }
 
+/**
+ * Run Cited Analysis audit
+ * @param {string} url - The resolved URL for the audit
+ * @param {Object} context - The audit context
+ * @param {Object} site - The site being audited
+ * @returns {Promise<Object>} Audit result
+ */
 async function runCitedAnalysisAudit(url, context, site) {
   const { log } = context;
   const siteId = site.getId();
 
-  log.info(`${LOG_PREFIX} Starting cited analysis audit for site: ${siteId}`);
+  log.info(`${LOG_PREFIX} Starting Cited analysis audit for site: ${siteId}`);
 
   try {
     const citedConfig = getCitedConfig(site);
@@ -131,6 +148,13 @@ async function runCitedAnalysisAudit(url, context, site) {
   }
 }
 
+/**
+ * Post processor to send Cited analysis request to Mystique
+ * @param {string} auditUrl - The audit URL
+ * @param {Object} auditData - The audit data
+ * @param {Object} context - The context object
+ * @returns {Promise<Object>} Updated audit data
+ */
 async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
   const {
     log, sqs, env, dataAccess, audit,
@@ -157,9 +181,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
     const { config, storeData } = auditResult;
     const { urls, sentimentConfig } = storeData;
-    const enrichedUrls = sentimentConfig.topics.length > 0
-      ? enrichUrlsWithTopicData(urls, sentimentConfig.topics)
-      : urls;
+    const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics);
 
     const message = {
       type: 'guidance:cited-analysis',

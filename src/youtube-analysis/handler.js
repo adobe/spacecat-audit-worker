@@ -68,15 +68,15 @@ async function fetchStoreData(siteId, context) {
 
   let sentimentConfig = { topics: [], guidelines: [] };
   try {
-    const auditType = GUIDELINE_TYPES.YOUTUBE_ANALYSIS;
-    sentimentConfig = await storeClient.getGuidelines(siteId, auditType);
+    sentimentConfig = await storeClient.getGuidelines(siteId, GUIDELINE_TYPES.YOUTUBE_ANALYSIS);
   } catch (error) {
     if (error instanceof StoreEmptyError) {
-      log.info(`${LOG_PREFIX} No sentiment config found, proceeding without guidelines`);
+      log.info(`${LOG_PREFIX} No guidelines configured for youtube-analysis, proceeding without`);
     } else {
       throw error;
     }
   }
+
   const topicCount = sentimentConfig.topics.length;
   const guidelineCount = sentimentConfig.guidelines.length;
   log.info(`${LOG_PREFIX} Retrieved ${topicCount} topics and ${guidelineCount} guidelines`);
@@ -155,6 +155,10 @@ async function runYouTubeAnalysisAudit(url, context, site) {
 
 /**
  * Post processor to send YouTube analysis request to Mystique
+ * @param {string} auditUrl - The audit URL
+ * @param {Object} auditData - The audit data
+ * @param {Object} context - The context object
+ * @returns {Promise<Object>} Updated audit data
  */
 async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
   const {
