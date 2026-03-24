@@ -82,6 +82,7 @@ describe('Readability Opportunities Guidance Handler', () => {
     mockOpportunity = {
       getId: sinon.stub().returns('opp-1'),
       getAuditId: sinon.stub().returns('audit-123'),
+      getType: () => 'readability',
     };
 
     mockS3Client = {

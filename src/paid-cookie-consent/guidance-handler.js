@@ -14,6 +14,7 @@ import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { mapToPaidOpportunity, mapToPaidSuggestion, isLowSeverityGuidanceBody } from './guidance-opportunity-mapper.js';
 import { getAuditData } from './audit-data-provider.js';
 import { createPaidLogger } from '../paid/paid-log.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 const GUIDANCE_TYPE = 'paid-cookie-consent';
 
@@ -76,6 +77,7 @@ export default async function handler(message, context) {
     url,
     guidanceParsed,
   );
+  warnOnInvalidSuggestionData(suggestionData.data, opportunity.getType(), log);
   await Suggestion.create(suggestionData);
   paidLog.createdSuggestion(opportunity.getId(), siteId, url, auditId);
 

@@ -1076,6 +1076,7 @@ describe('data-processing utility functions', () => {
     beforeEach(() => {
       mockOpportunity = {
         addSuggestions: sandbox.stub(),
+        getType: () => 'accessibility',
       };
       mockAuditData = {
         siteId: 'test-site-123',

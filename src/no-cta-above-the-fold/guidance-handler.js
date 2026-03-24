@@ -15,6 +15,7 @@ import {
   mapToSuggestion,
 } from './guidance-opportunity-mapper.js';
 import { createPaidLogger } from '../paid/paid-log.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 const GUIDANCE_TYPE = 'no-cta-above-the-fold';
 
@@ -90,6 +91,7 @@ export default async function handler(message, context) {
     guidanceParsed,
   );
 
+  warnOnInvalidSuggestionData(suggestionData.data, opportunity.getType(), log);
   await Suggestion.create(suggestionData);
   paidLog.createdSuggestion(opportunity.getId(), siteId, url, auditId);
 

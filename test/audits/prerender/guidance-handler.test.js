@@ -95,6 +95,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       getId: sinon.stub().returns('opportunity-123'),
       getSiteId: sinon.stub().returns('site-123'),
       getSuggestions: sinon.stub().resolves(mockSuggestions),
+      getType: () => 'prerender',
     };
 
     Site = {

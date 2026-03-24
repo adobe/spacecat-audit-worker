@@ -21,6 +21,7 @@ import { createAccessibilityAssistiveOpportunity, createAccessibilityColorContra
 import {
   syncSuggestions,
   keepSameDataFunction,
+  warnOnInvalidSuggestionData,
 } from '../../utils/data-access.js';
 import {
   successCriteriaLinks, accessibilityOpportunitiesMap, URL_SOURCE_SEPARATOR, issueTypesForCodeFix,
@@ -1106,6 +1107,7 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
         };
 
         // Update the suggestion
+        warnOnInvalidSuggestionData(updatedSuggestionData, opportunity.getType(), log);
         targetSuggestion.setData(updatedSuggestionData);
         processingPromises.push({
           promise: targetSuggestion.save(),

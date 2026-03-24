@@ -30,6 +30,7 @@ import {
   reconcileDisappearedSuggestions,
   publishDeployedFixEntities,
   AUTHOR_ONLY_OPPORTUNITY_TYPES,
+  warnOnInvalidSuggestionData,
 } from '../../src/utils/data-access.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -169,6 +170,7 @@ describe('data-access', () => {
         getSuggestions: sandbox.stub(),
         addSuggestions: sandbox.stub(),
         getSiteId: () => 'site-id',
+        getType: () => 'test-type',
       };
 
       mockLogger = {
@@ -2513,6 +2515,35 @@ describe('data-access', () => {
       // Verify getSuggestions is only called ONCE, not twice
       // (once in wrapper, passed to syncSuggestions to avoid double query)
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
+    });
+  });
+
+  describe('warnOnInvalidSuggestionData', () => {
+    let mockLog;
+
+    beforeEach(() => {
+      mockLog = {
+        warn: sinon.stub(),
+        info: sinon.stub(),
+        debug: sinon.stub(),
+        error: sinon.stub(),
+      };
+    });
+
+    it('passes silently when data is valid', () => {
+      warnOnInvalidSuggestionData({ key: 'value' }, 'test-type', mockLog);
+      expect(mockLog.warn).to.not.have.been.called;
+    });
+
+    it('logs a warning when validation fails', () => {
+      // Pass invalid data that will trigger a validation error
+      warnOnInvalidSuggestionData(null, 'test-type', mockLog);
+      expect(mockLog.warn).to.have.been.calledOnce;
+      expect(mockLog.warn.firstCall.args[0]).to.include('Suggestion data validation warning');
+    });
+
+    it('does not throw even when validation fails', () => {
+      expect(() => warnOnInvalidSuggestionData(null, 'test-type', mockLog)).to.not.throw();
     });
   });
 });

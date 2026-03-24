@@ -1206,6 +1206,7 @@ describe('createIndividualOpportunity', () => {
       getId: sandbox.stub().returns('test-id'),
       getSiteId: sandbox.stub().returns('test-site'),
       getAuditId: sandbox.stub().returns('test-audit'),
+      getType: () => 'accessibility',
     };
     mockContext = {
       log: {
@@ -1294,6 +1295,7 @@ describe('createIndividualOpportunitySuggestions', () => {
       getSiteId: sandbox.stub().returns('test-site'),
       getAuditId: sandbox.stub().returns('test-audit'),
       getSuggestions: sandbox.stub().resolves([]),
+      getType: () => 'accessibility',
     };
     mockLog = {
       info: sandbox.stub(),
@@ -1885,6 +1887,7 @@ describe('createAccessibilityIndividualOpportunities', () => {
       getSiteId: sandbox.stub().returns('test-site'),
       getAuditId: sandbox.stub().returns('test-audit'),
       getSuggestions: sandbox.stub().resolves([]),
+      getType: () => 'accessibility',
     };
     mockIsAuditEnabledForSite = sandbox.stub().returns(true);
     mockContext = {

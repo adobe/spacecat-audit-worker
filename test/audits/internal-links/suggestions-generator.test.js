@@ -1383,6 +1383,7 @@ describe('syncBrokenInternalLinksSuggestions', () => {
         createdItems: [],
         errorItems: [],
       }),
+      getType: () => 'broken-internal-links',
     };
 
     ({ syncBrokenInternalLinksSuggestions } = await import('../../../src/internal-links/suggestions-generator.js'));

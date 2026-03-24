@@ -21,6 +21,7 @@ describe('internal-links opportunity suggestions step', () => {
     const sqs = { sendMessage: sinon.stub().resolves() };
     const opportunity = {
       getId: () => 'oppty-1',
+      getType: () => 'broken-internal-links',
     };
 
     const step = createOpportunityAndSuggestionsStep({
@@ -134,6 +135,7 @@ describe('internal-links opportunity suggestions step', () => {
     const sqs = { sendMessage: sinon.stub().resolves() };
     const opportunity = {
       getId: () => 'oppty-1',
+      getType: () => 'broken-internal-links',
     };
 
     const step = createOpportunityAndSuggestionsStep({

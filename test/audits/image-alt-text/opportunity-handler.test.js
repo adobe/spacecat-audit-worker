@@ -43,6 +43,7 @@ describe('addAltTextSuggestions', () => {
         errorItems: [],
         createdItems: [1, 2],
       }),
+      getType: () => 'image-alt-text',
     };
 
     const newSuggestionDTOs = [
@@ -75,6 +76,7 @@ describe('addAltTextSuggestions', () => {
   it('should handle case when no suggestions are provided', async () => {
     const mockOpportunity = {
       addSuggestions: sinon.stub(),
+      getType: () => 'image-alt-text',
     };
 
     await addAltTextSuggestions({
@@ -92,6 +94,7 @@ describe('addAltTextSuggestions', () => {
   it('should handle case when newSuggestionDTOs is null/undefined', async () => {
     const mockOpportunity = {
       addSuggestions: sinon.stub(),
+      getType: () => 'image-alt-text',
     };
 
     await addAltTextSuggestions({
@@ -118,6 +121,7 @@ describe('addAltTextSuggestions', () => {
         ],
         createdItems: [1], // At least one successful creation
       }),
+      getType: () => 'image-alt-text',
     };
 
     const newSuggestionDTOs = [
@@ -158,6 +162,7 @@ describe('addAltTextSuggestions', () => {
         ],
         createdItems: [], // No successful creations
       }),
+      getType: () => 'image-alt-text',
     };
 
     const newSuggestionDTOs = [
