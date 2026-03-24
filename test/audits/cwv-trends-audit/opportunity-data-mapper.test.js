@@ -36,7 +36,7 @@ describe('CWV Trends Opportunity Data Mapper', () => {
     expect(result.origin).to.equal('AUTOMATION');
     expect(result.guidance.steps).to.be.an('array').that.is.not.empty;
     expect(result.tags).to.include('CWV');
-    expect(result.data.dataSources).to.be.an('array').with.lengthOf(2);
+    expect(result.data.dataSources).to.be.an('array').with.lengthOf(1);
     expect(result.description).to.be.a('string').that.is.not.empty;
   });
 });

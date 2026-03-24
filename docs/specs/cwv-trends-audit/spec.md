@@ -175,7 +175,7 @@ The opportunity handler uses `convertToOpportunity` with a `comparisonFn` that m
   description: 'Web Performance Trends Report tracking CWV metrics over time.',
   guidance: { steps: [...] },
   tags: ['Web Performance', 'CWV'],
-  data: { deviceType, dataSources: ['rum', 'site'] }
+  data: { deviceType, dataSources: ['rum'] }
 }
 ```
 

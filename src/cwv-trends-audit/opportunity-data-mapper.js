@@ -39,7 +39,7 @@ export function createOpportunityData(props) {
     tags: ['Web Performance', 'CWV'],
     data: {
       deviceType,
-      dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.SITE],
+      dataSources: [DATA_SOURCES.RUM],
     },
   };
 }
