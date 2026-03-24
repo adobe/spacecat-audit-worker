@@ -684,7 +684,10 @@ export async function submitForScraping(context) {
   const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
 
   // Fetch Top Agentic URLs (limited by TOP_AGENTIC_URLS_LIMIT)
-  const agenticUrls = await getTopAgenticUrls(site, context);
+  // Use overrideBaseURL if configured so agentic URLs are constructed with the correct base
+  const overrideBaseURL = site.getConfig()?.getFetchConfig?.()?.overrideBaseURL;
+  const agenticContext = overrideBaseURL ? { ...context, finalUrl: overrideBaseURL } : context;
+  const agenticUrls = await getTopAgenticUrls(site, agenticContext);
 
   // Daily batching: filter URLs recently processed within the last 7 days
   const recentPathnames = await getRecentlyProcessedPathnames(context, siteId);
@@ -1003,9 +1006,9 @@ export async function writeToCitabilityRecords(comparisonResults, siteId, contex
   const existingRecordsMap = new Map(existingRecords.map((r) => [r.getUrl(), r]));
 
   const successful = comparisonResults.filter((r) => !r.error);
-  let written = 0;
+  const WRITE_BATCH_SIZE = 10;
 
-  await Promise.all(successful.map(async (result) => {
+  const writeOne = async (result) => {
     const {
       url,
       citabilityScore,
@@ -1039,11 +1042,20 @@ export async function writeToCitabilityRecords(comparisonResults, siteId, contex
           updatedBy: 'prerender',
         });
       }
-      written += 1;
+      return true;
     } catch (e) {
       log.warn(`${LOG_PREFIX} Failed to write PageCitability for ${url}: ${e.message}`);
+      return false;
     }
-  }));
+  };
+
+  let written = 0;
+  for (let i = 0; i < successful.length; i += WRITE_BATCH_SIZE) {
+    const batch = successful.slice(i, i + WRITE_BATCH_SIZE);
+    // eslint-disable-next-line no-await-in-loop
+    const results = await Promise.all(batch.map(writeOne));
+    written += results.filter(Boolean).length;
+  }
 
   log.info(`${LOG_PREFIX} Wrote PageCitability records: ${written}/${successful.length}`);
 }

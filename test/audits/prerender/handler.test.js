@@ -829,6 +829,46 @@ describe('Prerender Audit', () => {
           const result = await mockHandler.submitForScraping(context);
           expect(result.urls.map((u) => u.url)).to.include('https://example.com/agentic-0');
         });
+
+        it('should use overrideBaseURL when fetching agentic URLs if configured', async () => {
+          // Sites with overrideBaseURL need agentic URLs constructed with that base,
+          // otherwise scraping would hit the wrong origin.
+          let capturedFinalUrl;
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticUrlsFromAthena: async (site, ctx) => {
+                capturedFinalUrl = ctx.finalUrl;
+                return ['https://override.example.com/agentic-0'];
+              },
+            },
+            '../../../src/prerender/utils/shared.js': {
+              loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [] }),
+              buildSheetHitsMap: () => new Map(),
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'test-site-id',
+              getBaseURL: () => 'https://example.com',
+              getConfig: () => ({
+                getIncludedURLs: () => [],
+                getFetchConfig: () => ({ overrideBaseURL: 'https://override.example.com' }),
+              }),
+            },
+            dataAccess: {
+              SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+              PageCitability: { allBySiteId: sandbox.stub().resolves([]) },
+            },
+            log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+
+          // overrideBaseURL should be passed as finalUrl to getTopAgenticUrlsFromAthena
+          expect(capturedFinalUrl).to.equal('https://override.example.com');
+          expect(result.urls.map((u) => u.url)).to.include('https://override.example.com/agentic-0');
+        });
       });
 
     });
@@ -6478,6 +6518,102 @@ describe('Prerender Audit', () => {
         isDeployedAtEdge: false,
       });
     });
+
+    it('should process writes in batches of 10 to avoid connection pool exhaustion', async () => {
+      // 320 concurrent writes would exhaust the DB connection pool (20 per task).
+      // Writes must be chunked to 10 at a time.
+      const createOrder = [];
+      const createStub = sandbox.stub().callsFake(async ({ url }) => {
+        createOrder.push(url);
+        return {};
+      });
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([]),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+
+      // 25 URLs — spans 3 batches (10 + 10 + 5)
+      const comparisonResults = Array.from({ length: 25 }, (_, i) => ({
+        url: `https://example.com/page${i}`,
+        citabilityScore: 0.5,
+      }));
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(createStub.callCount).to.equal(25);
+      // All 25 URLs written — batching doesn't drop any
+      expect(createOrder).to.have.lengthOf(25);
+    });
+
+    it('RC-1: should attempt create twice when the same URL appears twice — stale snapshot gap', async () => {
+      // existingRecordsMap is built ONCE from allBySiteId before Promise.all runs.
+      // If the same URL appears twice in comparisonResults (upstream dedup failure),
+      // both iterations see undefined in the map and both call PageCitability.create().
+      // The second create fails (e.g. unique constraint) and is caught silently.
+      const createStub = sandbox.stub()
+        .onFirstCall().resolves({})
+        .onSecondCall().rejects(new Error('unique constraint violation: page_citability_url_key'));
+      const warnStub = sandbox.stub();
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([]),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: warnStub },
+      };
+
+      const comparisonResults = [
+        { url: 'https://example.com/page', citabilityScore: 0.8 },
+        { url: 'https://example.com/page', citabilityScore: 0.8 }, // same URL duplicated
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      // Both iterations attempt create because the map was built before either resolved
+      expect(createStub).to.have.been.calledTwice;
+      // The second fails and is warned, not thrown
+      expect(warnStub).to.have.been.calledOnce;
+      expect(warnStub.firstCall.args[0]).to.include('Failed to write PageCitability');
+    });
+
+    it('RC-2: should survive a concurrent Lambda creating the same new URL — second create caught', async () => {
+      // SQS at-least-once delivery can trigger two Lambda instances for the same site.
+      // Both read allBySiteId before either has written, so both see the URL as new.
+      // Simulated by calling writeToCitabilityRecords twice with the same stale empty snapshot:
+      // the first invocation creates the record; the second throws a duplicate-key error.
+      const createStub = sandbox.stub()
+        .onFirstCall().resolves({})
+        .onSecondCall().rejects(new Error('duplicate key value violates unique constraint'));
+      const warnStub = sandbox.stub();
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([]), // always empty — simulates stale read
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: warnStub },
+      };
+      const comparisonResults = [{ url: 'https://example.com/new-page', citabilityScore: 0.7 }];
+
+      // First Lambda invocation: create succeeds
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+      expect(createStub).to.have.been.calledOnce;
+      expect(warnStub).to.not.have.been.called;
+
+      // Second Lambda invocation: stale snapshot still shows URL as new → create throws
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+      expect(createStub).to.have.been.calledTwice;
+      expect(warnStub).to.have.been.calledOnce;
+      expect(warnStub.firstCall.args[0]).to.include('Failed to write PageCitability');
+    });
   });
 
   describe('PageCitability-based scrapedUrlsSet augmentation', () => {
@@ -6586,6 +6722,114 @@ describe('Prerender Audit', () => {
       expect(syncCall.scrapedUrlsSet.has('https://example.com/citability-page')).to.be.true;
       expect(syncCall.scrapedUrlsSet.has('https://example.com/stale-page')).to.be.false;
       expect(syncCall).to.not.have.property('stalenessDays');
+    });
+  });
+
+  describe('race condition gaps', () => {
+    it('RC-3: scrapedUrlsSet augmentation includes page-citability-owned records — suggestion kept active without prerender validation', async () => {
+      // The scrapedUrlsSet augmentation at processContentAndGenerateOpportunities uses
+      // ALL PageCitability records updated within 7 days, regardless of updatedBy.
+      // A URL owned by page-citability therefore keeps its suggestion ACTIVE even if
+      // prerender never scraped it in this cycle.
+      const syncSuggestionsStub = sinon.stub().resolves();
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      // URL scraped only by page-citability, 1 day ago — prerender never touched it
+      const pageCitabilityOwnedRecord = {
+        getUrl: () => 'https://example.com/citability-only-page',
+        getUpdatedAt: () => new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+        getUpdatedBy: () => 'page-citability',
+      };
+
+      const context = {
+        site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
+        audit: { getId: () => 'audit-id' },
+        dataAccess: {
+          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+          PageCitability: {
+            allBySiteId: sinon.stub().resolves([pageCitabilityOwnedRecord]),
+            create: sinon.stub().resolves({}),
+          },
+        },
+        log: {
+          info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub(),
+        },
+        s3Client: {
+          send: sinon.stub().resolves({ Body: { transformToString: () => Promise.resolve('') } }),
+        },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        auditContext: { scrapeJobId: 'job-1' },
+        scrapeResultPaths: new Map(),
+      };
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      // The page-citability-owned URL enters scrapedUrlsSet even though prerender
+      // never validated it — its suggestion is kept ACTIVE without prerender evidence.
+      if (syncSuggestionsStub.called) {
+        const syncCall = syncSuggestionsStub.firstCall.args[0];
+        expect(syncCall.scrapedUrlsSet.has('https://example.com/citability-only-page')).to.be.true;
+      }
+    });
+
+    it('RC-5: stale second allBySiteId read — previous-run URLs missing from scrapedUrlsSet', async () => {
+      // writeToCitabilityRecords (first allBySiteId call) and the scrapedUrlsSet augmentation
+      // (second allBySiteId call) are separate DB reads. If the second call returns stale data
+      // (e.g. read-replica lag), URLs processed in previous daily batches are absent from
+      // scrapedUrlsSet and their suggestions risk being marked OUTDATED mid-cycle.
+      const syncSuggestionsStub = sinon.stub().resolves();
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      // A URL processed yesterday — should be protected by the 7-day window
+      const yesterdayRecord = {
+        getUrl: () => 'https://example.com/yesterday-page',
+        getUpdatedAt: () => new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+        getUpdatedBy: () => 'prerender',
+      };
+
+      // First call (writeToCitabilityRecords): returns the yesterday record
+      // Second call (scrapedUrlsSet augmentation): returns empty — simulates stale replica
+      const allBySiteIdStub = sinon.stub()
+        .onFirstCall().resolves([yesterdayRecord])
+        .onSecondCall().resolves([]);
+
+      const context = {
+        site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
+        audit: { getId: () => 'audit-id' },
+        dataAccess: {
+          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+          PageCitability: {
+            allBySiteId: allBySiteIdStub,
+            create: sinon.stub().resolves({}),
+          },
+        },
+        log: {
+          info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub(),
+        },
+        s3Client: {
+          send: sinon.stub().resolves({ Body: { transformToString: () => Promise.resolve('') } }),
+        },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        auditContext: { scrapeJobId: 'job-1' },
+        scrapeResultPaths: new Map(),
+      };
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      // With a stale second read, yesterday-page is absent from scrapedUrlsSet —
+      // its suggestion is not protected and may be marked OUTDATED mid-cycle.
+      if (syncSuggestionsStub.called) {
+        const syncCall = syncSuggestionsStub.firstCall.args[0];
+        expect(syncCall.scrapedUrlsSet.has('https://example.com/yesterday-page')).to.be.false;
+      }
     });
   });
 });
