@@ -992,7 +992,7 @@ describe('Offsite Brand Presence Handler', () => {
   });
 
   describe('Top Cited URLs', () => {
-    it('should add non-offsite URLs to URL store with top-cited-analysis audit type', async () => {
+    it('should add non-offsite URLs to URL store with cited-analysis audit type', async () => {
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
         if (i === 0) return stubProviderData(['https://example.com/page1;https://other.com/page2']);
         return okJsonResponse({});
@@ -1005,7 +1005,7 @@ describe('Offsite Brand Presence Handler', () => {
       const createCalls = dataAccess.AuditUrl.create.getCalls();
       expect(createCalls).to.have.lengthOf(2);
       for (const call of createCalls) {
-        expect(call.args[0].audits).to.deep.equal(['top-cited-analysis']);
+        expect(call.args[0].audits).to.deep.equal(['cited-analysis']);
       }
     });
 
@@ -1023,7 +1023,7 @@ describe('Offsite Brand Presence Handler', () => {
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       const createCalls = dataAccess.AuditUrl.create.getCalls();
-      const topCitedCalls = createCalls.filter((c) => c.args[0].audits[0] === 'top-cited-analysis');
+      const topCitedCalls = createCalls.filter((c) => c.args[0].audits[0] === 'cited-analysis');
       expect(topCitedCalls).to.have.lengthOf(1);
       expect(topCitedCalls[0].args[0].url).to.equal('https://example.com/page');
     });
@@ -1069,7 +1069,7 @@ describe('Offsite Brand Presence Handler', () => {
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       const createCalls = dataAccess.AuditUrl.create.getCalls();
-      const topCitedCalls = createCalls.filter((c) => c.args[0].audits[0] === 'top-cited-analysis');
+      const topCitedCalls = createCalls.filter((c) => c.args[0].audits[0] === 'cited-analysis');
       expect(topCitedCalls).to.have.lengthOf(DRS_URLS_LIMIT);
     });
   });
@@ -1553,7 +1553,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.fullAuditRef).to.equal(FINAL_URL);
 
       const createCalls = dataAccess.AuditUrl.create.getCalls();
-      const topCitedCalls = createCalls.filter((c) => c.args[0].audits[0] === 'top-cited-analysis');
+      const topCitedCalls = createCalls.filter((c) => c.args[0].audits[0] === 'cited-analysis');
       expect(topCitedCalls).to.have.lengthOf(1);
       expect(topCitedCalls[0].args[0].url).to.equal('https://example.com/unrelated');
 

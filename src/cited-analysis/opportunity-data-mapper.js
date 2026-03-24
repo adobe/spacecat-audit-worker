@@ -13,8 +13,6 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
 
-const CITED_ANALYSIS_TYPE = Audit.AUDIT_TYPES.CITED_ANALYSIS;
-
 /**
  * Creates opportunity data for cited URL analysis.
  * When a BO JSON opportunity object is provided (from Mystique), uses its values.
@@ -27,7 +25,7 @@ export function createOpportunityData({ opportunityData } = {}) {
   return {
     runbook: opportunityData?.runbook || '',
     origin: 'AUTOMATION',
-    type: opportunityData?.type || CITED_ANALYSIS_TYPE,
+    type: opportunityData?.type || Audit.AUDIT_TYPES.CITED_ANALYSIS,
     title: opportunityData?.title || 'LLM discoverability: Improve cited URL presence',
     description: opportunityData?.description
       || 'Enhance your company\'s presence across top-cited URLs to improve visibility in Large Language Model (LLM) responses. '

@@ -194,7 +194,7 @@ describe('Reddit Analysis Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.storeData.sentimentConfig.topics).to.deep.equal([]);
       expect(result.auditResult.storeData.sentimentConfig.guidelines).to.deep.equal([]);
-      expect(context.log.info).to.have.been.calledWithMatch(/No sentiment config found/);
+      expect(context.log.info).to.have.been.calledWithMatch(/No guidelines configured for reddit-analysis/);
     });
 
     it('should rethrow non-StoreEmptyError from getGuidelines', async () => {
