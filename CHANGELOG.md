@@ -1,3 +1,10 @@
+# [1.370.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.369.3...v1.370.0) (2026-03-24)
+
+
+### Features
+
+* implement URL limit for Mystique messages in analysis handlers ([#2189](https://github.com/adobe/spacecat-audit-worker/issues/2189)) ([677a03b](https://github.com/adobe/spacecat-audit-worker/commit/677a03b63abffcca8a30819695e98c7977aefc03))
+
 ## [1.369.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.369.2...v1.369.3) (2026-03-24)
 
 
