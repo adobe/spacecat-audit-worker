@@ -417,18 +417,47 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(mockOpportunity.setStatus).to.have.been.calledWith('IGNORED');
     });
 
-    it('should map suggestion priorities to ranks correctly', async () => {
+    it('should pass comparisonFn that matches by auditId', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            suggestions: [
+              { id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' },
+            ],
+          },
+        },
+      };
+
+      await guidanceHandler.default(message, context);
+
+      const comparisonFn = mockConvertToOpportunity.firstCall.args[6];
+      expect(comparisonFn).to.be.a('function');
+      expect(comparisonFn({ getAuditId: () => auditId })).to.be.true;
+      expect(comparisonFn({ getAuditId: () => 'different-audit-id' })).to.be.false;
+    });
+
+    it('should pass rank and data from Mystique suggestion', async () => {
       const message = {
         siteId,
         auditId,
         data: {
           analysis: {
             suggestions: [
-              { id: 'sug-1', priority: 'CRITICAL', title: 'A', description: 'A' },
-              { id: 'sug-2', priority: 'HIGH', title: 'B', description: 'B' },
-              { id: 'sug-3', priority: 'MEDIUM', title: 'C', description: 'C' },
-              { id: 'sug-4', priority: 'LOW', title: 'D', description: 'D' },
-              { id: 'sug-5', priority: 'UNKNOWN', title: 'E', description: 'E' },
+              {
+                id: 'sug-1',
+                rank: 1,
+                type: 'CONTENT_UPDATE',
+                data: { suggestionValue: 'Analysis A' },
+              },
+              {
+                id: 'sug-2',
+                rank: 2,
+                type: 'METADATA_UPDATE',
+                data: { suggestionValue: 'Analysis B' },
+              },
             ],
             opportunity: {},
           },
@@ -441,11 +470,43 @@ describe('YouTube Analysis Guidance Handler', () => {
       const syncCall = mockSyncSuggestions.firstCall;
       const { newData, mapNewSuggestion } = syncCall.args[0];
 
-      expect(mapNewSuggestion(newData[0]).rank).to.equal(0); // CRITICAL
-      expect(mapNewSuggestion(newData[1]).rank).to.equal(1); // HIGH
-      expect(mapNewSuggestion(newData[2]).rank).to.equal(2); // MEDIUM
-      expect(mapNewSuggestion(newData[3]).rank).to.equal(3); // LOW
-      expect(mapNewSuggestion(newData[4]).rank).to.equal(4); // UNKNOWN (default)
+      const mapped0 = mapNewSuggestion(newData[0]);
+      expect(mapped0.rank).to.equal(1);
+      expect(mapped0.type).to.equal('CONTENT_UPDATE');
+      expect(mapped0.data).to.deep.equal({ suggestionValue: 'Analysis A' });
+
+      const mapped1 = mapNewSuggestion(newData[1]);
+      expect(mapped1.rank).to.equal(2);
+      expect(mapped1.type).to.equal('METADATA_UPDATE');
+      expect(mapped1.data).to.deep.equal({ suggestionValue: 'Analysis B' });
+    });
+
+    it('should default type to CONTENT_UPDATE when not provided', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          analysis: {
+            suggestions: [
+              {
+                id: 'sug_no_type',
+                rank: 0,
+                data: { suggestionValue: 'No type' },
+              },
+            ],
+            opportunity: {},
+          },
+          companyName: 'Example Corp',
+        },
+      };
+
+      await guidanceHandler.default(message, context);
+
+      const syncCall = mockSyncSuggestions.firstCall;
+      const { newData, mapNewSuggestion } = syncCall.args[0];
+
+      const mapped = mapNewSuggestion(newData[0]);
+      expect(mapped.type).to.equal('CONTENT_UPDATE');
     });
 
     it('should use correct buildKey function', async () => {

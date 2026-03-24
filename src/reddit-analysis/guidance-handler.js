@@ -23,21 +23,6 @@ import { convertToOpportunity } from '../common/opportunity.js';
 const AUDIT_TYPE = Audit.AUDIT_TYPES.REDDIT_ANALYSIS;
 
 /**
- * Gets rank based on priority
- * @param {string} priority - The priority level
- * @returns {number} The rank
- */
-function getRankFromPriority(priority) {
-  const priorityRanks = {
-    CRITICAL: 0,
-    HIGH: 1,
-    MEDIUM: 2,
-    LOW: 3,
-  };
-  return priorityRanks[priority] ?? 4;
-}
-
-/**
  * Handles Mystique response for Reddit analysis
  * @param {Object} message - Message from Mystique with analysis results
  * @param {Object} context - Context object with data access and logger
@@ -122,6 +107,7 @@ export default async function handler(message, context) {
       createOpportunityData,
       auditType,
       { opportunityData },
+      (oppty) => oppty.getAuditId() === auditId,
     );
 
     await syncSuggestions({
@@ -131,9 +117,9 @@ export default async function handler(message, context) {
       buildKey: (suggestion) => `reddit::${suggestion.id}`,
       mapNewSuggestion: (suggestion) => ({
         opportunityId: opportunity.getId(),
-        type: 'CONTENT_UPDATE',
-        rank: getRankFromPriority(suggestion.priority),
-        data: suggestion,
+        type: suggestion.type || 'CONTENT_UPDATE',
+        rank: suggestion.rank,
+        data: suggestion.data,
       }),
     });
 
