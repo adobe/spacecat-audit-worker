@@ -685,7 +685,7 @@ export async function submitForScraping(context) {
 
   // Fetch Top Agentic URLs (limited by TOP_AGENTIC_URLS_LIMIT)
   // Use overrideBaseURL if configured so agentic URLs are constructed with the correct base
-  const overrideBaseURL = site.getConfig()?.getFetchConfig?.()?.overrideBaseURL;
+  const overrideBaseURL = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL;
   const agenticContext = overrideBaseURL ? { ...context, finalUrl: overrideBaseURL } : context;
   const agenticUrls = await getTopAgenticUrls(site, agenticContext);
 
