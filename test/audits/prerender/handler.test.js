@@ -5405,6 +5405,7 @@ describe('Prerender Audit', () => {
       expect(uploadedData.totalUrlsChecked).to.equal(5);
       expect(uploadedData.urlsNeedingPrerender).to.equal(2);
       expect(uploadedData.scrapeForbidden).to.equal(false);
+      expect(uploadedData.errorsByStatusCode).to.deep.equal({});
       expect(uploadedData.pages).to.have.lengthOf(2);
 
       expect(uploadedData.pages[0]).to.deep.equal({
@@ -5501,6 +5502,9 @@ describe('Prerender Audit', () => {
       expect(uploadedData.pages[1].url).to.equal('https://example.com/success-page');
       expect(uploadedData.pages[1].scrapingStatus).to.equal('success');
       expect(uploadedData.pages[1]).to.not.have.property('scrapeError');
+
+      // errorsByStatusCode should count the one 403 error
+      expect(uploadedData.errorsByStatusCode).to.deep.equal({ 403: 1 });
     });
 
     it('should skip upload when auditResult is missing', async () => {
@@ -5658,6 +5662,32 @@ describe('Prerender Audit', () => {
         wordCountAfter: 0,
         contentGainRatio: 0,
       });
+    });
+
+    it('should aggregate errorsByStatusCode across multiple error types', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          totalUrlsChecked: 5,
+          urlsNeedingPrerender: 0,
+          results: [
+            { url: 'https://example.com/p1', error: true, scrapeError: { statusCode: 403 } },
+            { url: 'https://example.com/p2', error: true, scrapeError: { statusCode: 403 } },
+            { url: 'https://example.com/p3', error: true, scrapeError: { statusCode: 500 } },
+            { url: 'https://example.com/p4', error: true, scrapeError: { message: 'no code' } },
+            { url: 'https://example.com/p5', error: false, needsPrerender: false },
+          ],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(mockS3Client.send.getCall(0).args[0].input.Body);
+
+      // Two 403s and one 500; scrapeError without statusCode and success page are not counted
+      expect(uploadedData.errorsByStatusCode).to.deep.equal({ 403: 2, 500: 1 });
     });
   });
 });

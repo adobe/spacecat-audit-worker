@@ -940,6 +940,16 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       return;
     }
 
+    // Aggregate scrape errors by HTTP status code across all result URLs
+    const errorsByStatusCode = {};
+    (auditResult.results || []).forEach((result) => {
+      const code = result.scrapeError?.statusCode;
+      if (code != null) {
+        const key = String(code);
+        errorsByStatusCode[key] = (errorsByStatusCode[key] || 0) + 1;
+      }
+    });
+
     // Extract status information for all pages
     const statusSummary = {
       baseUrl: auditUrl,
@@ -954,6 +964,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       scrapingErrorRate: auditResult.scrapingErrorRate ?? null,
       scrapeForbidden: auditResult.scrapeForbidden || false,
       lastAuditSuccess: auditResult.lastAuditSuccess !== false,
+      errorsByStatusCode,
       pages: auditResult.results?.map((result) => {
         const pageStatus = {
           url: result.url,
