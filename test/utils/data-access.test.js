@@ -281,6 +281,7 @@ describe('data-access', () => {
       const opportunityWithoutSiteId = {
         getSuggestions: sandbox.stub().resolves([]),
         addSuggestions: sandbox.stub().resolves(suggestionsResult),
+        getType: () => 'test-type',
       };
 
       await syncSuggestions({
@@ -2536,14 +2537,14 @@ describe('data-access', () => {
     });
 
     it('logs a warning when validation fails', () => {
-      // Pass invalid data that will trigger a validation error
-      warnOnInvalidSuggestionData(null, 'test-type', mockLog);
+      // Use a real opportunity type with a schema so null data triggers validation
+      warnOnInvalidSuggestionData(null, 'structured-data', mockLog);
       expect(mockLog.warn).to.have.been.calledOnce;
       expect(mockLog.warn.firstCall.args[0]).to.include('Suggestion data validation warning');
     });
 
     it('does not throw even when validation fails', () => {
-      expect(() => warnOnInvalidSuggestionData(null, 'test-type', mockLog)).to.not.throw();
+      expect(() => warnOnInvalidSuggestionData(null, 'structured-data', mockLog)).to.not.throw();
     });
   });
 });
