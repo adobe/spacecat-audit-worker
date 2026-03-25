@@ -1,3 +1,10 @@
+## [1.371.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.3...v1.371.4) (2026-03-25)
+
+
+### Bug Fixes
+
+* isAllDomainDeployedAtEdge & debug logs ([#2196](https://github.com/adobe/spacecat-audit-worker/issues/2196)) ([12fdd13](https://github.com/adobe/spacecat-audit-worker/commit/12fdd13fe4dac7c182723cfb84201fa04f029791))
+
 ## [1.371.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.2...v1.371.3) (2026-03-25)
 
 
