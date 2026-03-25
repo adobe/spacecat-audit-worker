@@ -198,7 +198,6 @@ export const handleOutdatedSuggestions = async ({
       SuggestionDataAccess.STATUSES.REJECTED,
       SuggestionDataAccess.STATUSES.APPROVED,
       SuggestionDataAccess.STATUSES.IN_PROGRESS,
-      SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
     ].includes(existing.getStatus()))
     .filter((existing) => {
       // Preserve suggestions that have been deployed (tokowakaDeployed or edgeDeployed)
