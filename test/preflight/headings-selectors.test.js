@@ -161,7 +161,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       mockDomSelector.toElementTargets.returns({});
 
       const headingsModule = await esmock('../../src/preflight/headings.js', {
-        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
         '../../src/metatags/seo-checks.js': {
           default: class {
@@ -230,7 +230,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       });
 
       const headingsModule = await esmock('../../src/preflight/headings.js', {
-        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
         '../../src/metatags/seo-checks.js': {
           default: class {
@@ -298,7 +298,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       });
 
       const headingsModule = await esmock('../../src/preflight/headings.js', {
-        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
         '../../src/metatags/seo-checks.js': {
           default: class {
@@ -366,7 +366,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       });
 
       const headingsModule = await esmock('../../src/preflight/headings.js', {
-        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
         '../../src/metatags/seo-checks.js': {
           default: class {
@@ -428,7 +428,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       });
 
       const headingsModule = await esmock('../../src/preflight/headings.js', {
-        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
         '../../src/metatags/seo-checks.js': {
           default: class {
@@ -493,7 +493,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       });
 
       const headingsModule = await esmock('../../src/preflight/headings.js', {
-        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
         '../../src/metatags/seo-checks.js': {
           default: class {
@@ -557,7 +557,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       });
 
       const headingsModule = await esmock('../../src/preflight/headings.js', {
-        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/headings/handler.js': mockHeadingsHandler,
         '../../src/metatags/seo-checks.js': {
           default: class {

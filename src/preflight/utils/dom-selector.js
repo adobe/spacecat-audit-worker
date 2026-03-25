@@ -60,11 +60,13 @@ function cssEscape(value) {
   return result;
 }
 
+const MAX_PARENT_LEVELS = 5;
+
 /**
  * Generates a unique CSS selector for any DOM element.
  * Priority order:
  * 1. Universal Editor: data-aue-* attributes
- * 2. Standard CSS: id, classes, nth-of-type, parent chain (max 3 levels)
+ * 2. Standard CSS: id, classes, nth-of-type, parent chain (max MAX_PARENT_LEVELS levels)
  *
  * @param {Element} element
  * @returns {string|null} A CSS selector string, or null.
@@ -125,7 +127,7 @@ export function getDomElementSelector(element) {
   let current = parent;
   let levels = 0;
 
-  while (current && current.name && current.name.toLowerCase() !== 'html' && levels < 5) {
+  while (current && current.name && current.name.toLowerCase() !== 'html' && levels < MAX_PARENT_LEVELS) {
     let parentSelector = current.name.toLowerCase();
 
     // If parent has Universal Editor attribute, use it and stop
