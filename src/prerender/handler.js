@@ -1065,7 +1065,8 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     }));
 
     const { pages: _, ...logSummary } = statusSummary;
-    log.info(`${LOG_PREFIX} prerender_status_upload: statusKey=${statusKey}, pagesCount=${statusSummary.pages.length}, ${JSON.stringify(logSummary)}`);
+    const logFields = Object.entries(logSummary).map(([k, v]) => `${k}=${v}`).join(', ');
+    log.info(`${LOG_PREFIX} prerender_status_upload: statusKey=${statusKey}, pagesCount=${statusSummary.pages.length}, ${logFields}`);
   } catch (error) {
     log.error(`Prerender - Failed to upload status summary to S3: ${error.message}. baseUrl=${auditUrl}, siteId=${siteId}`, error);
     // Don't throw - this is a non-critical post-processing step
