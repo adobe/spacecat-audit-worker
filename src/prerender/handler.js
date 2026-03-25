@@ -76,11 +76,14 @@ function shouldPreserveDomainWideSuggestion(suggestion) {
  * @returns {Promise<boolean>}
  */
 async function isAllDomainDeployedAtEdge(opportunity) {
-  if (!opportunity) return false;
+  if (!opportunity || typeof opportunity.getSuggestions !== 'function') return false;
   const suggestions = await opportunity.getSuggestions();
-  const domainWide = suggestions.find((s) => isDomainWideSuggestionData(s.getData()));
-  const data = domainWide?.getData();
-  return !!(data && data.edgeDeployed);
+  const domainWide = suggestions.find((s) => {
+    const d = s.getData();
+    return s.getStatus() !== Suggestion.STATUSES.OUTDATED
+      && isDomainWideSuggestionData(d) && !!d?.edgeDeployed;
+  });
+  return !!domainWide;
 }
 
 /**
@@ -93,6 +96,9 @@ async function moveNewSuggestionsToSkipped(opportunity, context) {
   const { dataAccess, log, site } = context;
   const SuggestionDA = dataAccess?.Suggestion;
 
+  const baseUrl = site?.getBaseURL?.() || '';
+  const siteId = site?.getId?.() || '';
+
   if (!SuggestionDA?.allByOpportunityIdAndStatus || !SuggestionDA?.bulkUpdateStatus) {
     return;
   }
@@ -103,11 +109,9 @@ async function moveNewSuggestionsToSkipped(opportunity, context) {
   );
 
   if (newSuggestions.length === 0) {
+    log.info(`${LOG_PREFIX} moveNewSuggestionsToSkipped: no NEW suggestions found. baseUrl=${baseUrl}, siteId=${siteId}`);
     return;
   }
-
-  const baseUrl = site.getBaseURL();
-  const siteId = site.getId();
   log.info(`${LOG_PREFIX} All domain deployed: moving ${newSuggestions.length} NEW suggestions to SKIPPED. baseUrl=${baseUrl}, siteId=${siteId}`);
   await SuggestionDA.bulkUpdateStatus(newSuggestions, Suggestion.STATUSES.SKIPPED);
 }
@@ -119,7 +123,11 @@ async function moveNewSuggestionsToSkipped(opportunity, context) {
  * @returns {Promise<void>}
  */
 async function skipNewSuggestionsWhenDeployed(opportunity, context) {
-  if (!(await isAllDomainDeployedAtEdge(opportunity))) return;
+  const { log, site } = context;
+  const baseUrl = site?.getBaseURL?.() || '';
+  const isDeployed = await isAllDomainDeployedAtEdge(opportunity);
+  log.info(`${LOG_PREFIX} skipNewSuggestionsWhenDeployed: isAllDomainDeployedAtEdge=${isDeployed}, baseUrl=${baseUrl}`);
+  if (!isDeployed) return;
   await moveNewSuggestionsToSkipped(opportunity, context);
 }
 
