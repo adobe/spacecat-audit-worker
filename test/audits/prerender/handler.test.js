@@ -6184,6 +6184,8 @@ describe('Prerender Audit', () => {
 
       expect(allByOpportunityIdAndStatusStub).to.have.been.calledOnce;
       expect(bulkUpdateStatusStub).to.have.been.calledOnceWith([newSuggestion1, newSuggestion2], 'SKIPPED');
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/isAllDomainDeployedAtEdge=true/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/All domain deployed: moving 2 NEW suggestions to SKIPPED/));
     });
 
     it('should skip bulk update when no NEW suggestions exist', async () => {
@@ -6205,6 +6207,81 @@ describe('Prerender Audit', () => {
 
       expect(allByOpportunityIdAndStatusStub).to.have.been.calledOnce;
       expect(bulkUpdateStatusStub).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/moveNewSuggestionsToSkipped: no NEW suggestions found/));
+    });
+
+    it('should log isAllDomainDeployedAtEdge=false and skip when domain is not deployed', async () => {
+      const nonDeployedSuggestion = { getStatus: () => 'NEW', getData: () => ({ isDomainWide: true }) };
+
+      const bulkUpdateStatusStub = sandbox.stub().resolves();
+      const mockHandler = await buildMockHandler(sandbox, [nonDeployedSuggestion]);
+      const context = buildContext(sandbox, {
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          Suggestion: { bulkUpdateStatus: bulkUpdateStatusStub },
+        },
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(bulkUpdateStatusStub).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/isAllDomainDeployedAtEdge=false/));
+    });
+
+    it('should return true when edgeDeployed suggestion is not the first domain-wide in the list', async () => {
+      // Simulate the production scenario: multiple domain-wide suggestions (OUTDATED ones first,
+      // the deployed one last). A naive find() on the first match would return OUTDATED without
+      // edgeDeployed and incorrectly return false.
+      const outdatedDomainWide1 = { getStatus: () => 'OUTDATED', getData: () => ({ isDomainWide: true }) };
+      const outdatedDomainWide2 = { getStatus: () => 'OUTDATED', getData: () => ({ isDomainWide: true }) };
+      const deployedDomainWide = { getStatus: () => 'NEW', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
+      const newSuggestion = { getId: () => 's1' };
+
+      const bulkUpdateStatusStub = sandbox.stub().resolves();
+      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion]);
+
+      // OUTDATED suggestions appear before the deployed one — this is the real-world order
+      const mockHandler = await buildMockHandler(
+        sandbox,
+        [outdatedDomainWide1, outdatedDomainWide2, deployedDomainWide],
+      );
+      const context = buildContext(sandbox, {
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, bulkUpdateStatus: bulkUpdateStatusStub },
+        },
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/isAllDomainDeployedAtEdge=true/));
+      expect(bulkUpdateStatusStub).to.have.been.calledOnceWith([newSuggestion], 'SKIPPED');
+    });
+
+    it('should return false when all domain-wide suggestions lack edgeDeployed', async () => {
+      const outdatedDomainWide1 = { getStatus: () => 'OUTDATED', getData: () => ({ isDomainWide: true }) };
+      const outdatedDomainWide2 = { getStatus: () => 'OUTDATED', getData: () => ({ isDomainWide: true }) };
+      const newDomainWideNoEdge = { getStatus: () => 'NEW', getData: () => ({ isDomainWide: true }) };
+
+      const bulkUpdateStatusStub = sandbox.stub().resolves();
+      const mockHandler = await buildMockHandler(
+        sandbox,
+        [outdatedDomainWide1, outdatedDomainWide2, newDomainWideNoEdge],
+      );
+      const context = buildContext(sandbox, {
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          Suggestion: { bulkUpdateStatus: bulkUpdateStatusStub },
+        },
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/isAllDomainDeployedAtEdge=false/));
+      expect(bulkUpdateStatusStub).to.not.have.been.called;
     });
 
     it('should skip when SuggestionDA methods are missing', async () => {
@@ -6222,6 +6299,31 @@ describe('Prerender Audit', () => {
       // Should not throw
       const result = await mockHandler.processContentAndGenerateOpportunities(context);
       expect(result.status).to.equal('complete');
+    });
+
+    it('should use empty string fallback for baseUrl/siteId when site getBaseURL/getId return empty', async () => {
+      // Covers the || '' branches on lines 98-99 and 126
+      const domainWideSuggestion = { getStatus: () => 'NEW', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
+      const newSuggestion = { getId: () => 's1' };
+
+      const bulkUpdateStatusStub = sandbox.stub().resolves();
+      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion]);
+
+      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
+      const context = buildContext(sandbox, {
+        // getBaseURL and getId return '' — triggers the || '' fallback on lines 98-99 and 126
+        site: { getId: () => '', getBaseURL: () => '' },
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, bulkUpdateStatus: bulkUpdateStatusStub },
+        },
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(bulkUpdateStatusStub).to.have.been.calledOnceWith([newSuggestion], 'SKIPPED');
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/isAllDomainDeployedAtEdge=true/));
     });
   });
 });
