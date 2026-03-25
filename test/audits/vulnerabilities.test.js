@@ -622,6 +622,96 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       );
     });
 
+    it('should send to alternate queue when site matches alternate site ID', async () => {
+      const mockOpportunity = {
+        getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+        getSuggestions: sandbox.stub()
+          .onCall(0)
+          .resolves([])
+          .onCall(1)
+          .resolves([
+            { getId: () => 'suggestion-new', getStatus: () => 'NEW' },
+          ]),
+      };
+
+      context.dataAccess.Opportunity.create.resolves(mockOpportunity);
+      context.dataAccess.Opportunity.findById.resolves(null);
+
+      const configuration = {
+        isHandlerEnabledForSite: sandbox.stub(),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+      configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities').returns(true);
+      configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities-auto-suggest').returns(true);
+
+      // Set site ID to the alternate site ID
+      context.site.getId = () => 'd440f2b0-9820-4947-8c1e-f02112ae1676';
+
+      context.audit = {
+        getAuditResult: () => ({
+          vulnerabilityReport: VULNERABILITY_REPORT_WITH_VULNERABILITIES,
+          success: true,
+        }),
+        getId: () => 'test-audit-id',
+      };
+
+      context.data = {
+        importResults: [{
+          result: [{
+            codeBucket: 'spacecat-importer-bucket',
+            codePath: 'code/test/repository.zip',
+          }],
+        }],
+      };
+
+      const result = await opportunityAndSuggestionsStep(context);
+      expect(result).to.deep.equal({ status: 'complete' });
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const messageCall = context.sqs.sendMessage.getCall(0);
+      expect(messageCall.args[0]).to.equal('https://sqs.us-east-1.amazonaws.com/471112529073/mysticat-to-starfish-dev2');
+      expect(messageCall.args[1]).to.have.property('type', 'codefix:security-vulnerabilities');
+      expect(messageCall.args[1]).to.have.property('siteId', 'd440f2b0-9820-4947-8c1e-f02112ae1676');
+    });
+
+    it('should skip when alternate site has no sqs', async () => {
+      const configuration = {
+        isHandlerEnabledForSite: sandbox.stub(),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+      configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities').returns(true);
+      configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities-auto-suggest').returns(true);
+
+      context.site.getId = () => 'd440f2b0-9820-4947-8c1e-f02112ae1676';
+
+      context.audit = {
+        getAuditResult: () => ({
+          vulnerabilityReport: VULNERABILITY_REPORT_WITH_VULNERABILITIES,
+          success: true,
+        }),
+        getId: () => 'test-audit-id',
+      };
+
+      context.data = {
+        importResults: [{
+          result: [{
+            codeBucket: 'spacecat-importer-bucket',
+            codePath: 'code/test/repository.zip',
+          }],
+        }],
+      };
+
+      context.sqs = null;
+
+      const result = await opportunityAndSuggestionsStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.log.warn).to.have.been.calledWithMatch(/alternate queue/);
+    });
+
     it('should skip starfish-auto-code when queue env var is not configured', async () => {
       const configuration = {
         isHandlerEnabledForSite: sandbox.stub(),

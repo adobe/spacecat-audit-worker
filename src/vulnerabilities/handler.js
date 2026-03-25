@@ -26,6 +26,8 @@ import { noopUrlResolver } from '../common/index.js';
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 1; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_VULNERABILITIES;
+const AUTOFIX_ALTERNATE_SITE_ID = 'd440f2b0-9820-4947-8c1e-f02112ae1676';
+const AUTOFIX_ALTERNATE_QUEUE_URL = 'https://sqs.us-east-1.amazonaws.com/471112529073/mysticat-to-starfish-dev2';
 
 /**
  * Fetches vulnerability report for a given AEM Cloud Service site from the starfish API.
@@ -308,10 +310,15 @@ export const opportunityAndSuggestionsStep = async (context) => {
     return { status: 'complete' };
   }
 
-  if (!sqs || !env?.QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE) {
+  const useAlternateQueue = site.getId() === AUTOFIX_ALTERNATE_SITE_ID;
+  const queueUrl = useAlternateQueue
+    ? AUTOFIX_ALTERNATE_QUEUE_URL
+    : env?.QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE;
+
+  if (!sqs || !queueUrl) {
     log.warn(
       `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with starfish-auto-code, because
-      QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE is not configured.`,
+      ${useAlternateQueue ? 'alternate queue' : 'QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE'} is not configured.`,
     );
     return { status: 'complete' };
   }
@@ -337,8 +344,8 @@ export const opportunityAndSuggestionsStep = async (context) => {
     },
   };
 
-  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] sending message to starfish-auto-code for code fix generation: ${JSON.stringify(message)}`);
-  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE, message);
+  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] sending message to ${useAlternateQueue ? 'alternate autofix queue' : 'starfish-auto-code'} for code fix generation: ${JSON.stringify(message)}`);
+  await sqs.sendMessage(queueUrl, message);
   return { status: 'complete' };
 };
 
