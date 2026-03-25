@@ -33,6 +33,7 @@ xdescribe('geo-brand-presence detect handler', () => {
     Audit.findById.resolves(dummyAudit);
     dummyOpportunity = {
       getId: sinon.stub().returns('existing-oppty-id'),
+      getType: sinon.stub().returns('geo-brand-presence'),
       getSuggestions: sinon.stub().resolves([]),
       getData: sinon.stub().returns({ subType: 'detect:geo-brand-presence' }),
       setAuditId: sinon.stub(),

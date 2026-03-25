@@ -61,6 +61,7 @@ describe('Opportunity Handler Tests', () => {
     beforeEach(() => {
       mockOpportunity = {
         addSuggestions: sinon.stub(),
+        getType: () => 'readability',
         getSiteId: () => 'test-site-id',
       };
 

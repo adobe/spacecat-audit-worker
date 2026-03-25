@@ -1009,6 +1009,7 @@ describe('Hreflang Audit', () => {
 
       const mockOpportunity = {
         getId: sinon.stub().returns('new-oppty-789'),
+        getType: () => 'hreflang',
         getSuggestions: sinon.stub().resolves([]),
         setAuditId: sinon.stub(),
         save: sinon.stub().resolves(),

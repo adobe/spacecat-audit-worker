@@ -576,6 +576,7 @@ describe('Permissions Handler Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves({
         getId: () => 'opp-123',
+        getType: () => 'security-permissions',
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub(),
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
@@ -610,6 +611,7 @@ describe('Permissions Handler Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves({
         getId: () => 'opp-123',
+        getType: () => 'security-permissions',
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub(),
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
@@ -677,6 +679,7 @@ describe('Permissions Handler Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves({
         getId: () => 'opp-123',
+        getType: () => 'security-permissions',
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub(),
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
@@ -711,6 +714,7 @@ describe('Permissions Handler Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves({
         getId: () => 'opp-123',
+        getType: () => 'security-permissions',
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub(),
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
@@ -893,6 +897,7 @@ describe('Permissions Handler Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves({
         getId: () => 'opp-123',
+        getType: () => 'security-permissions',
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub(),
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
@@ -982,6 +987,7 @@ describe('Permissions Handler Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves({
         getId: () => 'opp-123',
+        getType: () => 'security-permissions',
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub(),
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
@@ -1067,6 +1073,7 @@ describe('Permissions Handler Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves({
         getId: () => 'opp-123',
+        getType: () => 'security-permissions',
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub(),
         addSuggestions: addSuggestionStub,
@@ -1127,6 +1134,7 @@ describe('Permissions Handler Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves({
         getId: () => 'opp-123',
+        getType: () => 'security-permissions',
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub(),
         addSuggestions: sandbox.stub().rejects(new Error('Sync suggestions failed')),
@@ -1217,6 +1225,7 @@ describe('Permissions Handler Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves({
         getId: () => 'opp-123',
+        getType: () => 'security-permissions',
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub(),
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
@@ -1321,6 +1330,7 @@ describe('Permissions Handler Tests', () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves({
         getId: () => 'opp-123',
+        getType: () => 'security-permissions',
         setUpdatedBy: sandbox.stub(),
         save: sandbox.stub(),
         addSuggestions: sandbox.stub().rejects(new Error('Sync suggestions failed')),

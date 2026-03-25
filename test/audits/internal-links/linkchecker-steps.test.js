@@ -147,6 +147,7 @@ describe('LinkChecker Steps Tests', function () {
           Opportunity: {
             create: sandbox.stub().resolves({
               getId: () => 'oppty-1',
+              getType: () => 'broken-internal-links',
               setStatus: sandbox.stub(),
               getSuggestions: sandbox.stub().resolves([]),
               addSuggestions: sandbox.stub().resolves([]),

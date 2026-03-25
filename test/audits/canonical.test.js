@@ -2835,6 +2835,7 @@ describe('Canonical URL Tests', () => {
               allBySiteIdAndStatus: sinon.stub().resolves([opportunityNoMetrics, opportunityNullMetrics]),
               create: sinon.stub().resolves({
                 getId: () => 'new-oppty-id',
+                getType: () => 'canonical',
                 getSuggestions: sinon.stub().resolves([]),
                 addSuggestions: sinon.stub().resolves({ createdItems: [] }),
               }),
@@ -2906,6 +2907,7 @@ describe('Canonical URL Tests', () => {
               allBySiteIdAndStatus: sinon.stub().resolves([opportunityBadMetrics]),
               create: sinon.stub().resolves({
                 getId: () => 'new-oppty-id',
+                getType: () => 'canonical',
                 getSuggestions: sinon.stub().resolves([]),
                 addSuggestions: sinon.stub().resolves({ createdItems: [] }),
               }),
