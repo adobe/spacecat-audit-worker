@@ -303,6 +303,7 @@ describe("No CTA above the fold guidance handler", () => {
 
     Opportunity.create.resolves({
       getId: () => "new-oppty",
+      getType: () => "no-cta-above-the-fold",
     });
 
     const result = await handler(

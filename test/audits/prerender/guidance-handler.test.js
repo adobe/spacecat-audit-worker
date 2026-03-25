@@ -894,6 +894,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       const mockOpp = {
         getId: () => 'opportunity-123',
         getSiteId: () => 'site-123',
+        getType: () => 'prerender',
         getSuggestions: sinon.stub().resolves([
           {
             getId: () => 's1',

@@ -838,7 +838,7 @@ describe('Experimentation Opportunities Tests', () => {
         }),
       };
 
-      const createdOpportunity = { getId: () => 'oppty-3' };
+      const createdOpportunity = { getId: () => 'oppty-3', getType: () => 'experimentation-high-organic-low-ctr' };
 
       context.site.requiresValidation = true;
       context.dataAccess = {

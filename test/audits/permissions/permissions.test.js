@@ -1843,6 +1843,7 @@ describe('Permissions Handler Tests', () => {
 
       const mockOpportunity = {
         getId: () => 'opp-123',
+        getType: () => 'security-permissions-redundant',
         getSiteId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
         getSuggestions: sandbox.stub().resolves([]),
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [{ id: 'sugg1' }, { id: 'sugg2' }] }),
