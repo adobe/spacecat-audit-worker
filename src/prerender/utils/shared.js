@@ -23,6 +23,7 @@ import {
 import { createLLMOSharepointClient, readFromSharePoint } from '../../utils/report-uploader.js';
 import { downloadExistingCdnSheet } from '../../llm-error-pages/utils.js';
 
+export { getS3Config };
 export { downloadExistingCdnSheet };
 // Re-export query builders used by prerender to avoid cross-audit imports in handler
 export { weeklyBreakdownQueries } from '../../cdn-logs-report/utils/query-builder.js';

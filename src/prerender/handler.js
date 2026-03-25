@@ -981,7 +981,9 @@ export async function processOpportunityAndSuggestions(
  * @returns {Promise<void>}
  */
 export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
-  const { log, s3Client, env } = context;
+  const {
+    log, s3Client, env, dataAccess,
+  } = context;
   const {
     auditResult,
     siteId,
@@ -993,6 +995,48 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     if (!auditResult) {
       log.warn('Prerender - Missing auditResult, skipping status summary upload');
       return;
+    }
+
+    const pages = (auditResult.results ?? []).map((result) => ({
+      url: result.url,
+      scrapingStatus: result.error ? 'error' : 'success',
+      needsPrerender: result.needsPrerender || false,
+      isDeployedAtEdge: !!result.isDeployedAtEdge,
+      wordCountBefore: result.wordCountBefore || 0,
+      wordCountAfter: result.wordCountAfter || 0,
+      contentGainRatio: result.contentGainRatio || 0,
+      ...(result.scrapeError && { scrapeError: result.scrapeError }),
+    }));
+
+    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+
+    // Append URLs that were submitted to the scraper but produced no S3 result files.
+    // For each, try to read their scrape.json to surface the error stored during scraping.
+    if (scrapeJobId && dataAccess?.ScrapeUrl) {
+      try {
+        const allScrapeUrls = await dataAccess.ScrapeUrl.allByScrapeJobId(scrapeJobId);
+        const auditResultUrlSet = new Set(pages.map((p) => p.url));
+
+        const missingPages = await Promise.all(
+          allScrapeUrls
+            .filter((su) => !auditResultUrlSet.has(su.getUrl()))
+            .map(async (su) => {
+              const url = su.getUrl();
+              const scrapeJsonKey = getS3Path(url, scrapeJobId, 'scrape.json');
+              const metadata = await getObjectFromKey(s3Client, bucketName, scrapeJsonKey, log)
+                .catch(() => null);
+              return {
+                url,
+                scrapingStatus: 'failed',
+                needsPrerender: false,
+                ...(metadata?.error && { scrapeError: metadata.error }),
+              };
+            }),
+        );
+        pages.push(...missingPages);
+      } catch (e) {
+        log.warn(`${LOG_PREFIX} Failed to append missing scrape URLs to status.json for scrapeJobId=${scrapeJobId}: ${e.message}`);
+      }
     }
 
     // Extract status information for all pages
@@ -1010,27 +1054,8 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       scrapeForbidden: auditResult.scrapeForbidden || false,
       scrapeForbiddenCount: auditResult.scrapeForbiddenCount ?? 0,
       lastAuditSuccess: auditResult.lastAuditSuccess !== false,
-      pages: auditResult.results?.map((result) => {
-        const pageStatus = {
-          url: result.url,
-          scrapingStatus: result.error ? 'error' : 'success',
-          needsPrerender: result.needsPrerender || false,
-          isDeployedAtEdge: !!result.isDeployedAtEdge,
-          wordCountBefore: result.wordCountBefore || 0,
-          wordCountAfter: result.wordCountAfter || 0,
-          contentGainRatio: result.contentGainRatio || 0,
-        };
-
-        // Include scrape error details if available
-        if (result.scrapeError) {
-          pageStatus.scrapeError = result.scrapeError;
-        }
-
-        return pageStatus;
-      }) || [],
+      pages,
     };
-
-    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
     const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
     await s3Client.send(new PutObjectCommand({
       Bucket: bucketName,
@@ -1039,24 +1064,8 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       ContentType: 'application/json',
     }));
 
-    log.info(
-      `${LOG_PREFIX} Successfully uploaded status summary to S3: ${statusKey}. baseUrl=${auditUrl}, siteId=${siteId}`,
-    );
-    log.info(`
-      ${LOG_PREFIX} prerender_status_upload:
-      statusKey=${statusKey},
-      scrapeJobId=${scrapeJobId},
-      lastUpdated=${auditedAt},
-      totalUrlsChecked=${statusSummary.totalUrlsChecked},
-      urlsNeedingPrerender=${statusSummary.urlsNeedingPrerender},
-      urlsScrapedSuccessfully=${statusSummary.urlsScrapedSuccessfully},
-      scrapingErrorRate=${statusSummary.scrapingErrorRate},
-      scrapeForbidden=${statusSummary.scrapeForbidden},
-      scrapeForbiddenCount=${statusSummary.scrapeForbiddenCount},
-      lastAuditSuccess=${statusSummary.lastAuditSuccess},
-      pagesCount=${statusSummary.pages.length},
-      baseUrl=${auditUrl},
-      siteId=${siteId},`);
+    const { pages: _, ...logSummary } = statusSummary;
+    log.info(`${LOG_PREFIX} prerender_status_upload: statusKey=${statusKey}, pagesCount=${statusSummary.pages.length}, ${JSON.stringify(logSummary)}`);
   } catch (error) {
     log.error(`Prerender - Failed to upload status summary to S3: ${error.message}. baseUrl=${auditUrl}, siteId=${siteId}`, error);
     // Don't throw - this is a non-critical post-processing step
