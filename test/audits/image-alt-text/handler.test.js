@@ -32,6 +32,7 @@ describe('Image Alt Text Handler', () => {
   let context;
   let tracingFetchStub;
   let handlerModule;
+  let getTopPageUrlsStub;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -41,6 +42,10 @@ describe('Image Alt Text Handler', () => {
       arrayBuffer: () => Promise.resolve(Buffer.from('test-blob')),
       headers: new Map([['Content-Length', '100']]),
     });
+    getTopPageUrlsStub = sandbox.stub().resolves([
+      'https://example.com/page1',
+      'https://example.com/page2',
+    ]);
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
@@ -56,9 +61,7 @@ describe('Image Alt Text Handler', () => {
         site: {
           getId: () => 'site-id',
           resolveFinalURL: () => 'https://example.com',
-          getConfig: () => ({
-            getIncludedURLs: sandbox.stub().returns([]),
-          }),
+          getBaseURL: () => 'https://example.com',
         },
         audit: {
           getId: () => 'audit-id',
@@ -71,12 +74,6 @@ describe('Image Alt Text Handler', () => {
           IMS_CLIENT_SECRET: 'test-client-secret',
         },
         dataAccess: {
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-              { getUrl: () => 'https://example.com/page1' },
-              { getUrl: () => 'https://example.com/page2' },
-            ]),
-          },
           Opportunity: {
             allBySiteIdAndStatus: sandbox.stub().resolves([]),
             create: sandbox.stub().resolves({
@@ -104,6 +101,9 @@ describe('Image Alt Text Handler', () => {
     // Mock the module using esmock
     handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
       '@adobe/spacecat-shared-utils': { tracingFetch: tracingFetchStub },
+      '../../../src/image-alt-text/url-utils.js': {
+        getTopPageUrls: getTopPageUrlsStub,
+      },
     });
   });
 
@@ -157,6 +157,9 @@ describe('Image Alt Text Handler', () => {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
         },
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
       });
     });
 
@@ -187,7 +190,7 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should handle case when no top pages found', async () => {
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+      getTopPageUrlsStub.resolves([]);
       context.site = {
         getId: () => 'site-id',
         getBaseURL: () => 'https://example.com',
@@ -298,20 +301,22 @@ describe('Image Alt Text Handler', () => {
       );
     });
 
-    it('should handle includedURLs when site.getConfig is available', async () => {
+    it('should pass URLs from getTopPageUrls directly to Mystique', async () => {
+      getTopPageUrlsStub.resolves([
+        'https://example.com/rum-page1',
+        'https://example.com/rum-page2',
+        'https://example.com/rum-page3',
+      ]);
       context.site = {
         getId: () => 'site-id',
         getBaseURL: () => 'https://example.com',
-        getConfig: () => ({
-          getIncludedURLs: sandbox.stub().withArgs('alt-text').returns(['https://example.com/included']),
-        }),
       };
 
       await handlerModule.processAltTextWithMystique(context);
 
       expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
         'https://example.com',
-        ['https://example.com/page1', 'https://example.com/page2', 'https://example.com/included'],
+        ['https://example.com/rum-page1', 'https://example.com/rum-page2', 'https://example.com/rum-page3'],
         'site-id',
         'audit-id',
         context,
@@ -321,79 +326,11 @@ describe('Image Alt Text Handler', () => {
       );
     });
 
-    it('should handle when site.getConfig is null', async () => {
+    it('should handle case when all URL sources return empty', async () => {
+      getTopPageUrlsStub.resolves([]);
       context.site = {
         getId: () => 'site-id',
         getBaseURL: () => 'https://example.com',
-        getConfig: () => null,
-      };
-
-      await handlerModule.processAltTextWithMystique(context);
-
-      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
-        'https://example.com',
-        ['https://example.com/page1', 'https://example.com/page2'],
-        'site-id',
-        'audit-id',
-        context,
-        [],
-        false,
-        true,
-      );
-    });
-
-    it('should handle when site.getConfig is undefined', async () => {
-      context.site = {
-        getId: () => 'site-id',
-        getBaseURL: () => 'https://example.com',
-        getConfig: undefined,
-      };
-
-      await handlerModule.processAltTextWithMystique(context);
-
-      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
-        'https://example.com',
-        ['https://example.com/page1', 'https://example.com/page2'],
-        'site-id',
-        'audit-id',
-        context,
-        [],
-        false,
-        true,
-      );
-    });
-
-    it('should handle when getIncludedURLs returns null', async () => {
-      context.site = {
-        getId: () => 'site-id',
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({
-          getIncludedURLs: sandbox.stub().withArgs('alt-text').returns(null),
-        }),
-      };
-
-      await handlerModule.processAltTextWithMystique(context);
-
-      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
-        'https://example.com',
-        ['https://example.com/page1', 'https://example.com/page2'],
-        'site-id',
-        'audit-id',
-        context,
-        [],
-        false,
-        true,
-      );
-    });
-
-    it('should handle case when no top pages and no included URLs found', async () => {
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
-      context.site = {
-        getId: () => 'site-id',
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({
-          getIncludedURLs: sandbox.stub().withArgs('alt-text').returns([]),
-        }),
       };
 
       await expect(handlerModule.processAltTextWithMystique(context))
@@ -781,6 +718,12 @@ describe('Image Alt Text Handler', () => {
         isHandlerEnabledForSite: sandbox.stub().returns(false),
       };
 
+      getTopPageUrlsStub.resolves([
+        'https://example.com/page1',
+        'https://example.com/page2',
+        'https://example.com/page3',
+      ]);
+
       context = new MockContextBuilder()
         .withSandbox(sandbox)
         .withOverrides({
@@ -793,13 +736,6 @@ describe('Image Alt Text Handler', () => {
             S3_SCRAPER_BUCKET_NAME: bucketName,
           },
           dataAccess: {
-            SiteTopPage: {
-              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-                { getUrl: () => 'https://example.com/page1' },
-                { getUrl: () => 'https://example.com/page2' },
-                { getUrl: () => 'https://example.com/page3' },
-              ]),
-            },
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
             },
@@ -810,7 +746,11 @@ describe('Image Alt Text Handler', () => {
         })
         .build();
 
-      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {});
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
+      });
     });
 
     it('should check S3 for existing scrapes and return missing URLs', async () => {
@@ -867,7 +807,7 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should throw error when no top pages found', async () => {
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+      getTopPageUrlsStub.resolves([]);
 
       await expect(handlerModule.processScraping(context))
         .to.be.rejectedWith('No top pages found for site site-id');
@@ -876,11 +816,9 @@ describe('Image Alt Text Handler', () => {
     it('should limit pages to 20 when summit-plg is enabled', async () => {
       configurationMock.isHandlerEnabledForSite.returns(true);
 
-      // Create 25 pages to ensure slicing works
-      const pages = Array.from({ length: 25 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      // Create 25 page URLs to ensure slicing works
+      const pageUrls = Array.from({ length: 25 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       // All scrapes missing
       const error = new Error('NotFound');
@@ -900,11 +838,9 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should limit pages to 100 when summit-plg is disabled', async () => {
-      // Create 150 pages to ensure slicing works
-      const pages = Array.from({ length: 150 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      // Create 150 page URLs to ensure slicing works
+      const pageUrls = Array.from({ length: 150 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       // All scrapes missing
       const error = new Error('NotFound');
@@ -951,8 +887,8 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should use correct S3 key format with pathname', async () => {
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
-        { getUrl: () => 'https://example.com/products/item1' },
+      getTopPageUrlsStub.resolves([
+        'https://example.com/products/item1',
       ]);
 
       s3ClientMock.send.resolves();
@@ -1008,17 +944,11 @@ describe('Image Alt Text Handler', () => {
           site: {
             getId: () => 'site-id',
             getBaseURL: () => 'https://example.com',
-            getConfig: () => ({
-              getIncludedURLs: sandbox.stub().returns([]),
-            }),
           },
           audit: {
             getId: () => 'audit-id',
           },
           dataAccess: {
-            SiteTopPage: {
-              allBySiteIdAndSourceAndGeo: sandbox.stub(),
-            },
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
               create: sandbox.stub().resolves({
@@ -1042,17 +972,18 @@ describe('Image Alt Text Handler', () => {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
         },
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
       });
     });
 
     it('should limit to 20 pages when summit-plg is enabled', async () => {
       configurationMock.isHandlerEnabledForSite.returns(true);
 
-      // Create 50 pages
-      const pages = Array.from({ length: 50 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      // Create 50 page URLs
+      const pageUrls = Array.from({ length: 50 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       await handlerModule.processAltTextWithMystique(context);
 
@@ -1074,11 +1005,9 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should limit to 100 pages when summit-plg is disabled', async () => {
-      // Create 150 pages
-      const pages = Array.from({ length: 150 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      // Create 150 page URLs
+      const pageUrls = Array.from({ length: 150 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       await handlerModule.processAltTextWithMystique(context);
 
@@ -1099,34 +1028,20 @@ describe('Image Alt Text Handler', () => {
       );
     });
 
-    it('should include includedURLs in addition to limited top pages', async () => {
+    it('should pass all URLs from getTopPageUrls through page window', async () => {
       configurationMock.isHandlerEnabledForSite.returns(true);
 
-      const pages = Array.from({ length: 25 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
-
-      context.site = {
-        getId: () => 'site-id',
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({
-          getIncludedURLs: sandbox.stub().withArgs('alt-text').returns([
-            'https://example.com/included1',
-            'https://example.com/included2',
-          ]),
-        }),
-      };
+      // getTopPageUrls now handles the fallback chain including includedURLs
+      const pageUrls = Array.from({ length: 25 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       await handlerModule.processAltTextWithMystique(context);
 
       const callArgs = sendAltTextOpportunityToMystiqueStub.getCall(0).args;
       const sentUrls = callArgs[1];
 
-      // Should have 20 top pages + 2 included URLs = 22 total
-      expect(sentUrls).to.have.lengthOf(22);
-      expect(sentUrls).to.include('https://example.com/included1');
-      expect(sentUrls).to.include('https://example.com/included2');
+      // Should have 20 pages (summit-plg limit)
+      expect(sentUrls).to.have.lengthOf(20);
       expect(sentUrls).to.include('https://example.com/page1');
       expect(sentUrls).to.include('https://example.com/page20');
       expect(sentUrls).to.not.include('https://example.com/page21');
@@ -1157,6 +1072,7 @@ describe('Image Alt Text Handler', () => {
       configurationMock = {
         getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
         isHandlerEnabledForSite: sandbox.stub().returns(true),
+
       };
 
       context = new MockContextBuilder()
@@ -1165,17 +1081,11 @@ describe('Image Alt Text Handler', () => {
           site: {
             getId: () => 'site-id',
             getBaseURL: () => 'https://example.com',
-            getConfig: () => ({
-              getIncludedURLs: sandbox.stub().returns([]),
-            }),
           },
           audit: {
             getId: () => 'audit-id',
           },
           dataAccess: {
-            SiteTopPage: {
-              allBySiteIdAndSourceAndGeo: sandbox.stub(),
-            },
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
               create: sandbox.stub().resolves({
@@ -1202,14 +1112,15 @@ describe('Image Alt Text Handler', () => {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
         },
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
       });
     });
 
     it('should use stored offset from opportunity to determine page window', async () => {
-      const pages = Array.from({ length: 50 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 50 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
@@ -1232,10 +1143,8 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should default to offset 0 when no opportunity exists', async () => {
-      const pages = Array.from({ length: 50 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 50 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
 
       await handlerModule.processAltTextWithMystique(context);
@@ -1249,10 +1158,8 @@ describe('Image Alt Text Handler', () => {
     it('should ignore offset for non-summit-plg sites (always starts at 0)', async () => {
       configurationMock.isHandlerEnabledForSite.returns(false);
 
-      const pages = Array.from({ length: 150 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 150 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
@@ -1273,10 +1180,8 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should store topPagesOffset: 0 when creating new opportunity', async () => {
-      const pages = Array.from({ length: 5 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 5 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
 
       await handlerModule.processAltTextWithMystique(context);
@@ -1314,9 +1219,6 @@ describe('Image Alt Text Handler', () => {
             S3_SCRAPER_BUCKET_NAME: bucketName,
           },
           dataAccess: {
-            SiteTopPage: {
-              allBySiteIdAndSourceAndGeo: sandbox.stub(),
-            },
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
             },
@@ -1327,14 +1229,16 @@ describe('Image Alt Text Handler', () => {
         })
         .build();
 
-      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {});
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
+      });
     });
 
     it('should advance offset when no NEW suggestions in current window', async () => {
-      const pages = Array.from({ length: 50 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 50 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
@@ -1365,10 +1269,8 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should keep offset when NEW suggestions exist in current window', async () => {
-      const pages = Array.from({ length: 50 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 50 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
@@ -1406,10 +1308,8 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should advance when only OUTDATED/SKIPPED suggestions in window', async () => {
-      const pages = Array.from({ length: 50 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 50 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
@@ -1454,10 +1354,8 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should wrap offset to 0 when it exceeds total pages', async () => {
-      const pages = Array.from({ length: 25 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 25 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
@@ -1486,10 +1384,8 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should advance from offset 20 to 40 when no NEW suggestions at 20', async () => {
-      const pages = Array.from({ length: 60 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 60 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
@@ -1516,10 +1412,8 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should default to offset 0 when opportunity lookup fails', async () => {
-      const pages = Array.from({ length: 25 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 25 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('DB error'));
 
@@ -1537,10 +1431,8 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should not save offset when no opportunity exists', async () => {
-      const pages = Array.from({ length: 25 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 25 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
 
       const error = new Error('NotFound');
@@ -1557,10 +1449,8 @@ describe('Image Alt Text Handler', () => {
     it('should read stored offset without suggestion check for non-summit-plg', async () => {
       configurationMock.isHandlerEnabledForSite.returns(false);
 
-      const pages = Array.from({ length: 150 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 150 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
@@ -1583,10 +1473,8 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should handle opportunity getData returning null when saving offset', async () => {
-      const pages = Array.from({ length: 50 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 50 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
@@ -1613,10 +1501,8 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should handle save offset failure gracefully', async () => {
-      const pages = Array.from({ length: 50 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 50 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
