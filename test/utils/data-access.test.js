@@ -2531,8 +2531,14 @@ describe('data-access', () => {
       };
     });
 
-    it('passes silently when data is valid', () => {
-      warnOnInvalidSuggestionData({ key: 'value' }, 'test-type', mockLog);
+    it('passes silently when data is valid for a real schema type', () => {
+      // Use a real opportunity type with a registered schema to confirm valid data passes
+      warnOnInvalidSuggestionData({ url: 'https://example.com', type: 'Product', errors: [] }, 'structured-data', mockLog);
+      expect(mockLog.warn).to.not.have.been.called;
+    });
+
+    it('passes silently when opportunity type has no schema', () => {
+      warnOnInvalidSuggestionData({ key: 'value' }, 'unknown-type', mockLog);
       expect(mockLog.warn).to.not.have.been.called;
     });
 
