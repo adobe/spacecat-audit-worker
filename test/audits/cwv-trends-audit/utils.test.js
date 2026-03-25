@@ -441,25 +441,25 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
   });
 
   it('uses custom endDate from auditContext when provided', async () => {
-    const dates = makeDates(28, '2026-03-01');
+    const dates = makeDates(28, '2026-02-28');
     const urls = [buildUrl('https://ex.com/p1', 'mobile')];
     readTrendDataStub.resolves(buildDays(dates, urls));
 
     const site = makeSite({ deviceType: 'mobile' });
     const context = makeContext();
-    const auditContext = { endDate: '2026-03-28' };
+    const auditContext = { endDate: '2026-03-27' };
 
     const result = await cwvTrendsRunner('https://ex.com', context, site, auditContext);
 
-    expect(result.auditResult.metadata.endDate).to.equal('2026-03-28');
-    expect(result.auditResult.metadata.startDate).to.equal('2026-03-01');
+    expect(result.auditResult.metadata.endDate).to.equal('2026-03-27');
+    expect(result.auditResult.metadata.startDate).to.equal('2026-02-28');
   });
 
   it('uses current date when auditContext.endDate is not provided', async () => {
     // Use a fixed date for the test to avoid timing issues
     const testDate = new Date('2026-03-24');
     const testDateStr = '2026-03-24';
-    const dates = makeDates(28, '2026-02-26'); // 28 days ending on 2026-03-24
+    const dates = makeDates(28, '2026-02-25'); // 28 days: 2026-02-25 to 2026-03-24
     const urls = [buildUrl('https://ex.com/p1', 'mobile')];
     readTrendDataStub.resolves(buildDays(dates, urls));
 
@@ -485,14 +485,14 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
 
     // Should use the test date
     expect(result.auditResult.metadata.endDate).to.equal(testDateStr);
-    expect(result.auditResult.metadata.startDate).to.equal('2026-02-26');
+    expect(result.auditResult.metadata.startDate).to.equal('2026-02-25');
   });
 
   it('uses current date when auditContext.endDate is invalid', async () => {
     // Use a fixed date for the test to avoid timing issues
     const testDate = new Date('2026-03-24');
     const testDateStr = '2026-03-24';
-    const dates = makeDates(28, '2026-02-26'); // 28 days ending on 2026-03-24
+    const dates = makeDates(28, '2026-02-25'); // 28 days: 2026-02-25 to 2026-03-24
     const urls = [buildUrl('https://ex.com/p1', 'mobile')];
     readTrendDataStub.resolves(buildDays(dates, urls));
 
