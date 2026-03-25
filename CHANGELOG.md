@@ -1,3 +1,38 @@
+## [1.371.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.1...v1.371.2) (2026-03-25)
+
+
+### Bug Fixes
+
+* hardening prerender audit ([#2183](https://github.com/adobe/spacecat-audit-worker/issues/2183)) ([08c5305](https://github.com/adobe/spacecat-audit-worker/commit/08c53058baedc4bfc969c37605fa7490cd0091f3)), closes [#784](https://github.com/adobe/spacecat-audit-worker/issues/784)
+
+## [1.371.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.0...v1.371.1) (2026-03-25)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.30.0 ([#2191](https://github.com/adobe/spacecat-audit-worker/issues/2191)) ([00ad4e6](https://github.com/adobe/spacecat-audit-worker/commit/00ad4e615bf71f9c9568e5a81b6a2ce88909b5f6))
+
+# [1.371.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.370.0...v1.371.0) (2026-03-25)
+
+
+### Features
+
+* added rum and getIncludedURLs as fallback for urls for alt-text audit ([#2193](https://github.com/adobe/spacecat-audit-worker/issues/2193)) ([c5541a0](https://github.com/adobe/spacecat-audit-worker/commit/c5541a0e953e96ecca4ed427ddab66c4cfd1fb90))
+
+# [1.370.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.369.3...v1.370.0) (2026-03-24)
+
+
+### Features
+
+* implement URL limit for Mystique messages in analysis handlers ([#2189](https://github.com/adobe/spacecat-audit-worker/issues/2189)) ([677a03b](https://github.com/adobe/spacecat-audit-worker/commit/677a03b63abffcca8a30819695e98c7977aefc03))
+
+## [1.369.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.369.2...v1.369.3) (2026-03-24)
+
+
+### Bug Fixes
+
+* rename env var ([#2188](https://github.com/adobe/spacecat-audit-worker/issues/2188)) ([19b1e6f](https://github.com/adobe/spacecat-audit-worker/commit/19b1e6f132f78892c9c0978a3be4c669835aea51))
+
 ## [1.369.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.369.1...v1.369.2) (2026-03-24)
 
 

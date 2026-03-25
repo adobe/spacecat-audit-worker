@@ -186,8 +186,8 @@ export default async function handler(message, context) {
 
       const updatedData = {
         ...currentData,
-        // Treat "Not available" (case-insensitive) as empty string for better UX
-        aiSummary: hasValidAiSummary ? aiSummary : '',
+        // Use new summary if valid; otherwise preserve existing (don't overwrite with empty)
+        aiSummary: hasValidAiSummary ? aiSummary : (currentData.aiSummary ?? ''),
         // Default to true if not provided, but respect explicit boolean from Mystique
         valuable: isValuable,
       };
