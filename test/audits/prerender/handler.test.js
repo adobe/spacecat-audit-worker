@@ -626,9 +626,8 @@ describe('Prerender Audit', () => {
       });
       describe('daily batching', () => {
         const makeAgenticUrls = (n, base = 'https://example.com/agentic-') => Array.from({ length: n }, (_, i) => `${base}${i}`);
-        const makeCitabilityRecord = (path, updatedAtDaysAgo, updatedBy = 'prerender') => ({
+        const makeCitabilityRecord = (path, updatedAtDaysAgo) => ({
           getUrl: () => `https://example.com${path}`,
-          getUpdatedBy: () => updatedBy,
           getUpdatedAt: () => new Date(Date.now() - updatedAtDaysAgo * 24 * 60 * 60 * 1000).toISOString(),
         });
 
@@ -671,15 +670,15 @@ describe('Prerender Audit', () => {
             'https://example.com/agentic-1',
             'https://example.com/agentic-2',
           ];
-          // agentic-0 updated by prerender 3 days ago → recent → skip
-          const recentRecord = makeCitabilityRecord('/agentic-0', 3, 'prerender');
+          // agentic-0 updated 3 days ago → recent → skip
+          const recentRecord = makeCitabilityRecord('/agentic-0', 3);
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
           const context = makeContext([recentRecord]);
 
           const result = await mockHandler.submitForScraping(context);
           const resultUrls = result.urls.map((u) => u.url);
 
-          // agentic-0 was recently processed by prerender → should NOT be in this batch
+          // agentic-0 was recently processed → should NOT be in this batch
           expect(resultUrls).to.not.include('https://example.com/agentic-0');
           // agentic-1 and agentic-2 were not recently processed → should be included
           expect(resultUrls).to.include('https://example.com/agentic-1');
@@ -691,8 +690,8 @@ describe('Prerender Audit', () => {
             'https://example.com/agentic-0',
             'https://example.com/agentic-1',
           ];
-          // agentic-0 updated by prerender 8 days ago → stale → re-include
-          const staleRecord = makeCitabilityRecord('/agentic-0', 8, 'prerender');
+          // agentic-0 updated 8 days ago → stale → re-include
+          const staleRecord = makeCitabilityRecord('/agentic-0', 8);
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
           const context = makeContext([staleRecord]);
 
@@ -727,15 +726,15 @@ describe('Prerender Audit', () => {
           const result = await mockHandler.submitForScraping(context);
           const resultUrls = result.urls.map((u) => u.url);
 
-          // No recent prerender citability records → include organic URL
+          // No recent citability records → include organic URL
           expect(resultUrls).to.include(organicUrl);
         });
 
         it('should skip organic URLs recently processed by prerender', async () => {
           const agenticUrls = makeAgenticUrls(5);
           const organicUrl = 'https://example.com/organic-page';
-          // organic-page updated by prerender 2 days ago → recent → skip
-          const recentRecord = makeCitabilityRecord('/organic-page', 2, 'prerender');
+          // organic-page updated 2 days ago → recent → skip
+          const recentRecord = makeCitabilityRecord('/organic-page', 2);
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
 
           const context = {
@@ -756,19 +755,8 @@ describe('Prerender Audit', () => {
           const result = await mockHandler.submitForScraping(context);
           const resultUrls = result.urls.map((u) => u.url);
 
-          // organic-page was recently processed by prerender (2 days) → should NOT be in batch
+          // organic-page was recently processed (2 days) → should NOT be in batch
           expect(resultUrls).to.not.include(organicUrl);
-        });
-
-        it('should not skip URLs whose citability records were updated by page-citability', async () => {
-          // Records updated by page-citability should NOT count as recently processed by prerender
-          const recentRecord = makeCitabilityRecord('/agentic-0', 1, 'page-citability');
-          const mockHandler = await makeHandlerWithAgentic(['https://example.com/agentic-0']);
-          const context = makeContext([recentRecord]);
-
-          const result = await mockHandler.submitForScraping(context);
-          // agentic-0 was updated by page-citability, not prerender → should still be in batch
-          expect(result.urls.map((u) => u.url)).to.include('https://example.com/agentic-0');
         });
 
         it('should silently ignore citability records with invalid URLs when building recent pathnames', async () => {
@@ -776,7 +764,6 @@ describe('Prerender Audit', () => {
           // The null is filtered out so the URL is not treated as recent.
           const invalidRecord = {
             getUrl: () => '',
-            getUpdatedBy: () => 'prerender',
             getUpdatedAt: () => new Date().toISOString(),
           };
           const mockHandler = await makeHandlerWithAgentic(['https://example.com/agentic-0']);
@@ -819,7 +806,6 @@ describe('Prerender Audit', () => {
           // hitting the optional-chaining null branch. new Date(undefined || 0) is epoch → not recent.
           const recordWithoutUpdatedAt = {
             getUrl: () => 'https://example.com/agentic-0',
-            getUpdatedBy: () => 'prerender',
             // no getUpdatedAt method
           };
           const mockHandler = await makeHandlerWithAgentic(['https://example.com/agentic-0']);
@@ -6346,7 +6332,6 @@ describe('Prerender Audit', () => {
         botWords: 100,
         normalWords: 150,
         isDeployedAtEdge: false,
-        updatedBy: 'prerender',
       });
     });
 
@@ -6360,7 +6345,6 @@ describe('Prerender Audit', () => {
         setBotWords: sandbox.stub(),
         setNormalWords: sandbox.stub(),
         setIsDeployedAtEdge: sandbox.stub(),
-        setUpdatedBy: sandbox.stub(),
         save: saveStub,
       };
       const context = {
@@ -6389,7 +6373,6 @@ describe('Prerender Audit', () => {
       expect(context.dataAccess.PageCitability.create).to.not.have.been.called;
       expect(existingRecord.setCitabilityScore).to.have.been.calledWith(0.9);
       expect(existingRecord.setIsDeployedAtEdge).to.have.been.calledWith(true);
-      expect(existingRecord.setUpdatedBy).to.have.been.calledWith('prerender');
       expect(saveStub).to.have.been.calledOnce;
     });
 
@@ -6462,7 +6445,6 @@ describe('Prerender Audit', () => {
         setBotWords: sandbox.stub(),
         setNormalWords: sandbox.stub(),
         setIsDeployedAtEdge: sandbox.stub(),
-        setUpdatedBy: sandbox.stub(),
         save: saveStub,
       };
       const context = {
@@ -6514,7 +6496,6 @@ describe('Prerender Audit', () => {
         wordDifference: null,
         botWords: null,
         normalWords: null,
-        updatedBy: 'prerender',
         isDeployedAtEdge: false,
       });
     });
@@ -6676,9 +6657,6 @@ describe('Prerender Audit', () => {
         '../../../src/utils/data-access.js': {
           syncSuggestions: syncSuggestionsStub,
         },
-        '../../../src/page-citability/analyzer.js': {
-          calculateCitabilityScore: sinon.stub().resolves({}),
-        },
       });
 
       // One record updated 1 day ago (recent), one 10 days ago (stale)
@@ -6726,11 +6704,9 @@ describe('Prerender Audit', () => {
   });
 
   describe('race condition gaps', () => {
-    it('RC-3: scrapedUrlsSet augmentation includes page-citability-owned records — suggestion kept active without prerender validation', async () => {
+    it('RC-3: scrapedUrlsSet augmentation includes recent PageCitability records — suggestion kept active without prerender validation', async () => {
       // The scrapedUrlsSet augmentation at processContentAndGenerateOpportunities uses
-      // ALL PageCitability records updated within 7 days, regardless of updatedBy.
-      // A URL owned by page-citability therefore keeps its suggestion ACTIVE even if
-      // prerender never scraped it in this cycle.
+      // ALL PageCitability records updated within 7 days.
       const syncSuggestionsStub = sinon.stub().resolves();
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '../../../src/utils/data-access.js': {
@@ -6738,11 +6714,10 @@ describe('Prerender Audit', () => {
         },
       });
 
-      // URL scraped only by page-citability, 1 day ago — prerender never touched it
+      // URL with a recent citability record, 1 day ago — prerender never touched it this cycle
       const pageCitabilityOwnedRecord = {
         getUrl: () => 'https://example.com/citability-only-page',
         getUpdatedAt: () => new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-        getUpdatedBy: () => 'page-citability',
       };
 
       const context = {
@@ -6768,8 +6743,8 @@ describe('Prerender Audit', () => {
 
       await mockHandler.processContentAndGenerateOpportunities(context);
 
-      // The page-citability-owned URL enters scrapedUrlsSet even though prerender
-      // never validated it — its suggestion is kept ACTIVE without prerender evidence.
+      // The recent citability URL enters scrapedUrlsSet even though prerender
+      // never validated it this cycle — its suggestion is kept ACTIVE.
       if (syncSuggestionsStub.called) {
         const syncCall = syncSuggestionsStub.firstCall.args[0];
         expect(syncCall.scrapedUrlsSet.has('https://example.com/citability-only-page')).to.be.true;
@@ -6792,7 +6767,6 @@ describe('Prerender Audit', () => {
       const yesterdayRecord = {
         getUrl: () => 'https://example.com/yesterday-page',
         getUpdatedAt: () => new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-        getUpdatedBy: () => 'prerender',
       };
 
       // First call (writeToCitabilityRecords): returns the yesterday record

@@ -191,19 +191,12 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
     const existingRecord = existingRecordsMap.get(url);
 
     if (existingRecord) {
-      if (existingRecord.getUpdatedBy?.() === 'prerender') {
-        log.debug(`${LOG_PREFIX} Skipping update for ${url} - already owned by prerender`);
-        return {
-          url, success: true, ...scores, isDeployedAtEdge,
-        };
-      }
       existingRecord.setCitabilityScore(scores.citabilityScore);
       existingRecord.setContentRatio(scores.contentRatio);
       existingRecord.setWordDifference(scores.wordDifference);
       existingRecord.setBotWords(scores.botWords);
       existingRecord.setNormalWords(scores.normalWords);
       existingRecord.setIsDeployedAtEdge(isDeployedAtEdge);
-      existingRecord.setUpdatedBy('page-citability');
       await existingRecord.save();
     } else {
       await PageCitability.create({
@@ -215,7 +208,6 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
         botWords: scores.botWords,
         normalWords: scores.normalWords,
         isDeployedAtEdge,
-        updatedBy: 'page-citability',
       });
     }
 

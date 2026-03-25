@@ -168,7 +168,7 @@ async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) 
 }
 
 /**
- * Returns pathnames from PageCitability records last updated by prerender within 7 days.
+ * Returns pathnames from PageCitability records updated within 7 days.
  * @param {Object} context
  * @param {string} siteId
  * @returns {Promise<Set<string>>}
@@ -184,8 +184,7 @@ async function getRecentlyProcessedPathnames(context, siteId) {
     const sevenDaysAgo = subDays(new Date(), 7);
     return new Set(
       records
-        .filter((r) => r.getUpdatedBy?.() === 'prerender'
-          && new Date(r.getUpdatedAt?.() || 0) > sevenDaysAgo)
+        .filter((r) => new Date(r.getUpdatedAt?.() || 0) > sevenDaysAgo)
         .map((r) => {
           try {
             return new URL(r.getUrl()).pathname;
@@ -1027,7 +1026,6 @@ export async function writeToCitabilityRecords(comparisonResults, siteId, contex
         existing.setBotWords(wordCountBefore ?? null);
         existing.setNormalWords(wordCountAfter ?? null);
         existing.setIsDeployedAtEdge(isDeployedAtEdge ?? false);
-        existing.setUpdatedBy('prerender');
         await existing.save();
       } else {
         await PageCitability.create({
@@ -1039,7 +1037,6 @@ export async function writeToCitabilityRecords(comparisonResults, siteId, contex
           botWords: wordCountBefore ?? null,
           normalWords: wordCountAfter ?? null,
           isDeployedAtEdge: isDeployedAtEdge ?? false,
-          updatedBy: 'prerender',
         });
       }
       return true;
