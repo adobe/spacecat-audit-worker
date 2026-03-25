@@ -6284,6 +6284,28 @@ describe('Prerender Audit', () => {
       expect(bulkUpdateStatusStub).to.not.have.been.called;
     });
 
+    it('should return false when only OUTDATED domain-wide suggestions have edgeDeployed', async () => {
+      // An OUTDATED domain-wide suggestion with edgeDeployed should NOT count —
+      // only active (non-OUTDATED) suggestions are considered.
+      const outdatedWithEdge = { getStatus: () => 'OUTDATED', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
+      const newNoEdge = { getStatus: () => 'NEW', getData: () => ({ isDomainWide: true }) };
+
+      const bulkUpdateStatusStub = sandbox.stub().resolves();
+      const mockHandler = await buildMockHandler(sandbox, [outdatedWithEdge, newNoEdge]);
+      const context = buildContext(sandbox, {
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          Suggestion: { bulkUpdateStatus: bulkUpdateStatusStub },
+        },
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/isAllDomainDeployedAtEdge=false/));
+      expect(bulkUpdateStatusStub).to.not.have.been.called;
+    });
+
     it('should skip when SuggestionDA methods are missing', async () => {
       const domainWideSuggestion = { getStatus: () => 'NEW', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
 

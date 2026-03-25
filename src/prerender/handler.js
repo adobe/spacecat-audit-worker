@@ -80,7 +80,8 @@ async function isAllDomainDeployedAtEdge(opportunity) {
   const suggestions = await opportunity.getSuggestions();
   const domainWide = suggestions.find((s) => {
     const d = s.getData();
-    return isDomainWideSuggestionData(d) && !!d?.edgeDeployed;
+    return s.getStatus() !== Suggestion.STATUSES.OUTDATED
+      && isDomainWideSuggestionData(d) && !!d?.edgeDeployed;
   });
   return !!domainWide;
 }
