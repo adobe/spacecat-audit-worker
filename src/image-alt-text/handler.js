@@ -16,6 +16,7 @@ import { sendAltTextOpportunityToMystique, chunkArray } from './opportunityHandl
 import { DATA_SOURCES } from '../common/constants.js';
 import { MYSTIQUE_BATCH_SIZE, SUMMIT_PLG_PAGE_LIMIT, DEFAULT_PAGE_LIMIT } from './constants.js';
 import { getScrapeJsonPath } from '../headings/utils.js';
+import { getTopPageUrls } from './url-utils.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
@@ -93,7 +94,7 @@ export async function processScraping(context) {
   const {
     log, site, dataAccess, s3Client, env,
   } = context;
-  const { SiteTopPage, Opportunity } = dataAccess;
+  const { Opportunity } = dataAccess;
   const siteId = site.getId();
 
   log.debug(`[${AUDIT_TYPE}]: Processing scraping step for site ${siteId}`);
@@ -101,10 +102,12 @@ export async function processScraping(context) {
   // Get page limit based on summit-plg configuration
   const { pageLimit, isSummitPlg } = await getTopPagesLimit(site, context);
 
-  // Get top pages from ahrefs
-  const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+  // Get top page URLs via fallback chain (Ahrefs -> RUM -> includedURLs)
+  const allTopPageUrls = await getTopPageUrls({
+    siteId, site, dataAccess, context, log,
+  });
 
-  if (allTopPages.length === 0) {
+  if (allTopPageUrls.length === 0) {
     throw new Error(`No top pages found for site ${siteId}`);
   }
 
@@ -122,9 +125,8 @@ export async function processScraping(context) {
       if (isSummitPlg) {
         // Check for NEW suggestions in the current window
         const suggestions = await altTextOppty.getSuggestions();
-        const windowPages = allTopPages
-          .slice(storedOffset, storedOffset + pageLimit)
-          .map((p) => p.getUrl());
+        const windowPages = allTopPageUrls
+          .slice(storedOffset, storedOffset + pageLimit);
         const windowSet = new Set(windowPages);
 
         const newSuggestionsInWindow = suggestions.filter((s) => {
@@ -150,7 +152,7 @@ export async function processScraping(context) {
   }
 
   // Compute page window using offset (handles wrap-around)
-  const window = getTopPagesWindow(allTopPages, pageLimit, topPagesOffset, isSummitPlg, log);
+  const window = getTopPagesWindow(allTopPageUrls, pageLimit, topPagesOffset, isSummitPlg, log);
   const { topPages, effectiveOffset } = window;
 
   // Save the effective offset back to the opportunity
@@ -172,8 +174,7 @@ export async function processScraping(context) {
 
   // Check S3 for existing scrapes in parallel
   const scrapeCheckResults = await Promise.allSettled(
-    topPages.map(async (page) => {
-      const url = page.getUrl();
+    topPages.map(async (url) => {
       try {
         const s3Key = getScrapeJsonPath(url, siteId);
 
@@ -208,7 +209,7 @@ export async function processScraping(context) {
   if (urlsToScrape.length === 0) {
     log.debug(`[${AUDIT_TYPE}]: All scrapes exist, sending first URL to ensure scrape client step completes`);
     return {
-      urls: [{ url: topPages[0].getUrl() }],
+      urls: [{ url: topPages[0] }],
       siteId,
       type: 'default',
       allowCache: true,
@@ -240,9 +241,10 @@ export async function processAltTextWithMystique(context) {
     // Get page limit based on summit-plg configuration
     const { pageLimit, isSummitPlg } = await getTopPagesLimit(site, context);
 
-    // Get top pages and included URLs
-    const { SiteTopPage } = dataAccess;
-    const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    // Get top page URLs via fallback chain (Ahrefs -> RUM -> includedURLs)
+    const allTopPageUrls = await getTopPageUrls({
+      siteId, site, dataAccess, context, log,
+    });
 
     // Look up existing opportunity to read stored offset
     const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
@@ -254,12 +256,10 @@ export async function processAltTextWithMystique(context) {
     const topPagesOffset = altTextOppty?.getData()?.topPagesOffset || 0;
     const {
       topPages, effectiveOffset,
-    } = getTopPagesWindow(allTopPages, pageLimit, topPagesOffset, isSummitPlg, log);
-
-    const includedURLs = await site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
+    } = getTopPagesWindow(allTopPageUrls, pageLimit, topPagesOffset, isSummitPlg, log);
 
     // Get ALL page URLs to send to Mystique
-    const pageUrls = [...new Set([...topPages.map((page) => page.getUrl()), ...includedURLs])];
+    const pageUrls = [...topPages];
     if (pageUrls.length === 0) {
       throw new Error(`No top pages found for site ${site.getId()}`);
     }
