@@ -50,18 +50,23 @@ export default async function detectCdn(message, context) {
   } = message || {};
 
   const { channelId, threadTs, target: slackTarget } = slackContext;
+  const slackEnabled = hasText(channelId) && hasText(threadTs);
 
-  if (!hasText(channelId) || !hasText(threadTs)) {
-    log.warn('[detect-cdn] Missing slackContext.channelId or slackContext.threadTs');
-    return ok({ status: 'ignored', reason: 'missing-slack-context' });
+  if (!slackEnabled && !hasText(siteId)) {
+    log.warn('[detect-cdn] Missing slackContext and siteId; nothing to do');
+    return ok({ status: 'ignored', reason: 'missing-slack-and-site' });
   }
 
   const url = normalizeUrl(baseURL);
   if (!url) {
-    await postMessageSafe(context, channelId, ':warning: detect-cdn: missing or invalid URL.', {
-      threadTs,
-      ...(slackTarget && { target: slackTarget }),
-    });
+    if (slackEnabled) {
+      await postMessageSafe(context, channelId, ':warning: detect-cdn: missing or invalid URL.', {
+        threadTs,
+        ...(slackTarget && { target: slackTarget }),
+      });
+    } else {
+      log.warn('[detect-cdn] Missing or invalid URL (onboarding-style job, no Slack)');
+    }
     return ok({ status: 'error', reason: 'missing-url' });
   }
 
@@ -70,18 +75,20 @@ export default async function detectCdn(message, context) {
   const fetchFn = getFetchForCdnDetection();
   const { cdn, error } = await detectCdnFromUrl(url, fetchFn, { timeout: 10000, log: context.log });
 
-  const siteNote = siteId ? ` (siteId: \`${siteId}\`)` : '';
-  let text;
-  if (error) {
-    text = `:x: *CDN detection* for *${url}*${siteNote}\n\nCould not fetch URL: \`${error}\``;
-  } else {
-    text = `:mag: *CDN detection* for *${url}*${siteNote}\n\n*Detected CDN:* \`${cdn}\``;
-  }
+  if (slackEnabled) {
+    const siteNote = siteId ? ` (siteId: \`${siteId}\`)` : '';
+    let text;
+    if (error) {
+      text = `:x: *CDN detection* for *${url}*${siteNote}\n\nCould not fetch URL: \`${error}\``;
+    } else {
+      text = `:mag: *CDN detection* for *${url}*${siteNote}\n\n*Detected CDN:* \`${cdn}\``;
+    }
 
-  await postMessageSafe(context, channelId, text, {
-    threadTs,
-    ...(slackTarget && { target: slackTarget }),
-  });
+    await postMessageSafe(context, channelId, text, {
+      threadTs,
+      ...(slackTarget && { target: slackTarget }),
+    });
+  }
 
   const cdnToken = toDeliveryConfigCdnToken(cdn, error, log);
   if (hasText(siteId) && !Site) {
@@ -92,12 +99,14 @@ export default async function detectCdn(message, context) {
       const site = context.site?.getId?.() === siteId ? context.site : await Site.findById(siteId);
       if (!site) {
         log.warn('[detect-cdn] Site not found for deliveryConfig update', { siteId });
-        await postMessageSafe(
-          context,
-          channelId,
-          `:warning: Could not update delivery config for *${url}* (site not found).`,
-          { threadTs, ...(slackTarget && { target: slackTarget }) },
-        );
+        if (slackEnabled) {
+          await postMessageSafe(
+            context,
+            channelId,
+            `:warning: Could not update delivery config for *${url}* (site not found).`,
+            { threadTs, ...(slackTarget && { target: slackTarget }) },
+          );
+        }
       } else {
         const currentDeliveryConfig = site.getDeliveryConfig();
         site.setDeliveryConfig({
@@ -109,12 +118,14 @@ export default async function detectCdn(message, context) {
       }
     } catch (err) {
       log.error('[detect-cdn] Failed to update deliveryConfig', { siteId, error: err.message, stack: err.stack });
-      await postMessageSafe(
-        context,
-        channelId,
-        `:warning: Could not update delivery config for *${url}*: ${err.message}`,
-        { threadTs, ...(slackTarget && { target: slackTarget }) },
-      );
+      if (slackEnabled) {
+        await postMessageSafe(
+          context,
+          channelId,
+          `:warning: Could not update delivery config for *${url}*: ${err.message}`,
+          { threadTs, ...(slackTarget && { target: slackTarget }) },
+        );
+      }
     }
   }
 

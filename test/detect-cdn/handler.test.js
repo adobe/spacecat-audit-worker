@@ -59,7 +59,7 @@ describe('detect-cdn handler', () => {
     sandbox.restore();
   });
 
-  it('ignores messages missing slackContext.channelId or threadTs', async () => {
+  it('ignores when neither Slack context nor siteId is present', async () => {
     const { detectCdn, postMessageSafe } = await loadHandler();
     const resp = await detectCdn(
       { baseURL: 'https://example.com', slackContext: {} },
@@ -67,7 +67,7 @@ describe('detect-cdn handler', () => {
     );
     expect(resp).to.exist;
     expect(resp.status).to.equal(200);
-    expect(context.log.warn).to.have.been.calledWithMatch('Missing slackContext.channelId');
+    expect(context.log.warn).to.have.been.calledWithMatch('Missing slackContext and siteId');
     expect(postMessageSafe).to.not.have.been.called;
   });
 
@@ -76,11 +76,11 @@ describe('detect-cdn handler', () => {
     const resp = await detectCdn(undefined, context);
     expect(resp).to.exist;
     expect(resp.status).to.equal(200);
-    expect(context.log.warn).to.have.been.calledWithMatch('Missing slackContext');
+    expect(context.log.warn).to.have.been.calledWithMatch('Missing slackContext and siteId');
     expect(postMessageSafe).to.not.have.been.called;
   });
 
-  it('ignores when channelId is missing', async () => {
+  it('ignores when channelId is missing and no siteId', async () => {
     const { detectCdn, postMessageSafe } = await loadHandler();
     await detectCdn(
       {
@@ -89,11 +89,11 @@ describe('detect-cdn handler', () => {
       },
       context,
     );
-    expect(context.log.warn).to.have.been.calledWithMatch('Missing slackContext.channelId');
+    expect(context.log.warn).to.have.been.calledWithMatch('Missing slackContext and siteId');
     expect(postMessageSafe).to.not.have.been.called;
   });
 
-  it('ignores when threadTs is missing', async () => {
+  it('ignores when threadTs is missing and no siteId', async () => {
     const { detectCdn, postMessageSafe } = await loadHandler();
     await detectCdn(
       {
@@ -102,8 +102,39 @@ describe('detect-cdn handler', () => {
       },
       context,
     );
-    expect(context.log.warn).to.have.been.calledWithMatch('Missing slackContext');
+    expect(context.log.warn).to.have.been.calledWithMatch('Missing slackContext and siteId');
     expect(postMessageSafe).to.not.have.been.called;
+  });
+
+  it('runs CDN detection without Slack when siteId is present (onboarding)', async () => {
+    const { detectCdn, detectCdnFromUrlStub, postMessageSafe } = await loadHandler();
+    const setDeliveryConfig = sandbox.stub();
+    const save = sandbox.stub().resolves();
+    const getDeliveryConfig = sandbox.stub().returns({ foo: 'bar' });
+    const mockSite = { setDeliveryConfig, getDeliveryConfig, save };
+    const findById = sandbox.stub().resolves(mockSite);
+    const ctx = {
+      ...context,
+      dataAccess: { Site: { findById } },
+    };
+
+    const resp = await detectCdn(
+      {
+        baseURL: 'https://example.com',
+        siteId: 'onboard-site-id',
+        slackContext: {},
+      },
+      ctx,
+    );
+
+    expect(resp.status).to.equal(200);
+    expect(detectCdnFromUrlStub).to.have.been.calledOnce;
+    expect(postMessageSafe).to.not.have.been.called;
+    expect(setDeliveryConfig).to.have.been.calledOnceWith({
+      foo: 'bar',
+      cdn: 'cloudflare',
+    });
+    expect(save).to.have.been.calledOnce;
   });
 
   it('posts warning when baseURL is missing or empty', async () => {
