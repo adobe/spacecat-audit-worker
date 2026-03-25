@@ -6158,7 +6158,10 @@ describe('Prerender Audit', () => {
       return esmock('../../../src/prerender/handler.js', {
         '../../../src/common/opportunity.js': { convertToOpportunity: sandbox.stub().resolves(mockOpportunity) },
         '../../../src/utils/data-access.js': { syncSuggestions: sandbox.stub().resolves() },
-        '../../../src/prerender/utils/utils.js': { isPaidLLMOCustomer: sandbox.stub().resolves(false), mergeAndGetUniqueHtmlUrls: sandbox.stub().returns([]) },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sandbox.stub().resolves(false),
+          mergeAndGetUniqueHtmlUrls: sandbox.stub().returns({ urls: [], filteredCount: 0 }),
+        },
         ...extraMocks,
       });
     };

@@ -48,6 +48,7 @@ describe('Readability Opportunities Handler', () => {
     mockSite = {
       getId: sinon.stub().returns('site-123'),
       getBaseURL: sinon.stub().returns('https://example.com'),
+      getConfig: sinon.stub().returns({ getIncludedURLs: sinon.stub().returns([]) }),
     };
 
     mockAudit = {
@@ -153,7 +154,7 @@ describe('Readability Opportunities Handler', () => {
       );
     });
 
-    it('should return NO_OPPORTUNITIES when no top pages found ', async () => {
+    it('should return NO_OPPORTUNITIES when no URLs are found ', async () => {
       mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
 
       const context = {
@@ -168,10 +169,10 @@ describe('Readability Opportunities Handler', () => {
 
       expect(result).to.deep.equal({
         status: 'NO_OPPORTUNITIES',
-        message: 'No top pages found, skipping audit',
+        message: 'No URLs found, skipping audit',
       });
       expect(mockLog.info).to.have.been.calledWith(
-        '[ReadabilityAudit] No top pages found for site site-123 (https://example.com), skipping audit',
+        '[ReadabilityAudit] No URLs found for site site-123 (https://example.com), skipping audit',
       );
     });
 
@@ -242,7 +243,7 @@ describe('Readability Opportunities Handler', () => {
       );
     });
 
-    it('should log found top pages count ', async () => {
+    it('should log merged URL input counts ', async () => {
       const topPages = [
         { getUrl: () => 'https://example.com/page1', getTraffic: () => 100, getId: () => 'page-1' },
       ];
@@ -259,8 +260,58 @@ describe('Readability Opportunities Handler', () => {
       await scrapeReadabilityData(context);
 
       expect(mockLog.info).to.have.been.calledWith(
-        '[ReadabilityAudit] Found 1 top pages for site https://example.com',
+        '[ReadabilityAudit] URL inputs: topPages=1, agentic=0, includedURLs=0, filteredOutUrls=0, finalUrls=1',
       );
+    });
+
+    it('should include site-config URLs in scrape inputs', async () => {
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+      mockSite.getConfig.returns({
+        getIncludedURLs: sinon.stub().returns(['https://example.com/included-page']),
+      });
+
+      const context = {
+        site: mockSite,
+        log: mockLog,
+        finalUrl: 'https://example.com',
+        env: mockEnv,
+        dataAccess: mockDataAccess,
+      };
+
+      const result = await scrapeReadabilityData(context);
+
+      expect(result.auditResult.status).to.equal('SCRAPING_REQUESTED');
+      expect(result.urls).to.deep.equal([
+        {
+          url: 'https://example.com/included-page',
+          traffic: 0,
+          urlId: 'merged-0',
+        },
+      ]);
+    });
+
+    it('should default traffic and urlId when top pages do not provide them', async () => {
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+        { getUrl: () => 'https://example.com/page-without-metadata' },
+      ]);
+
+      const context = {
+        site: mockSite,
+        log: mockLog,
+        finalUrl: 'https://example.com',
+        env: mockEnv,
+        dataAccess: mockDataAccess,
+      };
+
+      const result = await scrapeReadabilityData(context);
+
+      expect(result.urls).to.deep.equal([
+        {
+          url: 'https://example.com/page-without-metadata',
+          traffic: 0,
+          urlId: 'https://example.com/page-without-metadata',
+        },
+      ]);
     });
   });
 
@@ -1014,7 +1065,7 @@ describe('Readability Opportunities Handler', () => {
   });
 
   describe('scrapeReadabilityData - Athena/Ahrefs fallback', () => {
-    it('should use Athena URLs when available', async () => {
+    it('should include Athena URLs when available', async () => {
       mockGetTopAgenticUrlsFromAthena.resolves([
         'https://example.com/athena-page1',
         'https://example.com/athena-page2',
@@ -1034,14 +1085,10 @@ describe('Readability Opportunities Handler', () => {
       expect(result.urls).to.have.lengthOf(2);
       expect(result.urls[0].url).to.equal('https://example.com/athena-page1');
       expect(result.urls[1].url).to.equal('https://example.com/athena-page2');
-      // Ahrefs was NOT called
-      expect(mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
-      expect(mockLog.info).to.have.been.calledWith(
-        '[ReadabilityAudit] Found 2 agentic URLs from Athena for site https://example.com',
-      );
+      expect(mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledOnce;
     });
 
-    it('should fall back to Ahrefs when Athena returns empty array', async () => {
+    it('should use Ahrefs URLs when Athena returns empty array', async () => {
       mockGetTopAgenticUrlsFromAthena.resolves([]);
 
       const topPages = [
@@ -1061,12 +1108,9 @@ describe('Readability Opportunities Handler', () => {
 
       expect(result.auditResult.status).to.equal('SCRAPING_REQUESTED');
       expect(result.urls[0].url).to.equal('https://example.com/ahrefs-page1');
-      expect(mockLog.info).to.have.been.calledWith(
-        '[ReadabilityAudit] No agentic URLs from Athena, falling back to Ahrefs',
-      );
     });
 
-    it('should fall back to Ahrefs when Athena returns null', async () => {
+    it('should use Ahrefs URLs when Athena returns null', async () => {
       mockGetTopAgenticUrlsFromAthena.resolves(null);
 
       const topPages = [
@@ -1088,7 +1132,7 @@ describe('Readability Opportunities Handler', () => {
       expect(result.urls[0].url).to.equal('https://example.com/ahrefs-page1');
     });
 
-    it('should map Athena URLs with index-based IDs and zero traffic', async () => {
+    it('should map agentic-only URLs with merged IDs and zero traffic', async () => {
       mockGetTopAgenticUrlsFromAthena.resolves([
         'https://example.com/athena-page1',
         'https://example.com/athena-page2',
@@ -1107,12 +1151,12 @@ describe('Readability Opportunities Handler', () => {
       expect(result.urls[0]).to.deep.equal({
         url: 'https://example.com/athena-page1',
         traffic: 0,
-        urlId: 'athena-0',
+        urlId: 'merged-0',
       });
       expect(result.urls[1]).to.deep.equal({
         url: 'https://example.com/athena-page2',
         traffic: 0,
-        urlId: 'athena-1',
+        urlId: 'merged-1',
       });
     });
   });
