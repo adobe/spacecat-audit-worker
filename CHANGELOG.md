@@ -1,3 +1,10 @@
+# [1.371.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.370.0...v1.371.0) (2026-03-25)
+
+
+### Features
+
+* added rum and getIncludedURLs as fallback for urls for alt-text audit ([#2193](https://github.com/adobe/spacecat-audit-worker/issues/2193)) ([c5541a0](https://github.com/adobe/spacecat-audit-worker/commit/c5541a0e953e96ecca4ed427ddab66c4cfd1fb90))
+
 # [1.370.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.369.3...v1.370.0) (2026-03-24)
 
 
