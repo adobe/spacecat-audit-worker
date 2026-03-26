@@ -305,7 +305,7 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log) {
       continue;
     }
 
-    const topicName = row.Topic?.trim();
+    const topicName = row.Topics?.trim();
     const prompt = row.Prompt?.trim();
     const category = row.Category?.trim() || '';
 
