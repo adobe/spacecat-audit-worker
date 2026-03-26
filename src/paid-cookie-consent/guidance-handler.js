@@ -88,11 +88,13 @@ export default async function handler(message, context) {
     .filter((oppty) => oppty.getId() !== opportunity.getId()); // Exclude the newly created one
 
   if (existingMatches.length > 0) {
-    await Promise.all(existingMatches.map(async (oldOppty) => {
+    existingMatches.forEach((oldOppty) => {
       oldOppty.setStatus('IGNORED');
-      await oldOppty.save();
+    });
+    await Opportunity.saveMany(existingMatches);
+    existingMatches.forEach((oldOppty) => {
       paidLog.markedIgnored(oldOppty.getId(), siteId, url, auditId);
-    }));
+    });
   }
 
   return ok();

@@ -126,7 +126,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
     context.dataAccess.Configuration.findLatest.resolves(configuration);
 
     const mockTierClient = {
-      checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+      checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
     };
     if (TierClient.createForSite && TierClient.createForSite.restore) {
       TierClient.createForSite.restore();

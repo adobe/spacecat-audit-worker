@@ -69,6 +69,7 @@ export async function syncOpportunitiesAndSuggestions(context) {
       rank: entry.type === 'group' ? maxOrganicForUrls + entry.organic : entry.organic,
       data: {
         ...entry,
+        jiraLink: '',
       },
     }),
   });

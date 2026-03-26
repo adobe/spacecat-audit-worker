@@ -64,13 +64,13 @@ async function alertPromptGenerationFailure(context, siteId, drsJobId, reason) {
 
 /**
  * Downloads DRS result and writes prompts to the LLMO config as aiTopics.
- * Non-fatal — returns false on failure so the handler can continue.
+ * Non-fatal — returns a result object so the handler can continue even on failure.
  *
  * @param {string} resultLocation - Presigned URL to the DRS result JSON
  * @param {string} jobId - DRS job ID
  * @param {string} siteId - Site identifier
  * @param {object} context - Universal context (env, s3Client, log)
- * @returns {Promise<boolean>} true if prompts were written successfully
+ * @returns {Promise<{success: boolean, configVersion?: string}>}
  */
 async function processDrsResult(resultLocation, jobId, siteId, context) {
   const { env, s3Client, log } = context;
@@ -89,19 +89,19 @@ async function processDrsResult(resultLocation, jobId, siteId, context) {
 
     if (drsPrompts.length === 0) {
       log.warn(`DRS job ${jobId} returned no prompts for site ${siteId}`);
-      return false;
+      return { success: false };
     }
 
     const bucket = env.S3_IMPORTER_BUCKET_NAME;
-    await writeDrsPromptsToLlmoConfig({
+    const writeResult = await writeDrsPromptsToLlmoConfig({
       drsPrompts, siteId, s3Client, s3Bucket: bucket, log,
     });
 
     log.info(`Wrote ${drsPrompts.length} DRS prompts to LLMO config for site ${siteId}`);
-    return true;
+    return { success: true, configVersion: writeResult?.version };
   } catch (error) {
     log.error(`DRS result processing failed for job ${jobId}, site ${siteId}: ${error.message}`);
-    return false;
+    return { success: false };
   }
 }
 
@@ -149,7 +149,8 @@ export default async function drsPromptGenerationHandler(message, context) {
   log.info(`DRS prompt generation completed for site ${siteId}, job ${drsJobId}, result: ${resultLocation}`);
 
   // Download DRS result and write prompts to LLMO config (non-fatal)
-  const success = await processDrsResult(resultLocation, drsJobId, siteId, context);
+  const drsResult = await processDrsResult(resultLocation, drsJobId, siteId, context);
+  const { success, configVersion } = drsResult;
 
   if (!success) {
     await alertPromptGenerationFailure(
@@ -174,6 +175,7 @@ export default async function drsPromptGenerationHandler(message, context) {
     auditContext: {
       drsJobId,
       resultLocation,
+      ...(configVersion && { configVersion }),
     },
   });
 

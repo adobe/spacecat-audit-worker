@@ -84,9 +84,12 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
     Suggestion = {
       create: sandbox.stub().resolves(),
+      saveMany: sandbox.stub().resolves(),
       STATUSES: SuggestionDataAccess.STATUSES,
       TYPES: SuggestionDataAccess.TYPES,
     };
+
+    Opportunity.saveMany = sandbox.stub().resolves();
 
     context = {
       log: {

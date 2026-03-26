@@ -113,7 +113,7 @@ export async function processAutoSuggest(context, opportunity, site) {
 
     // Get code repository information only if auto-fix is enabled
     const codeInfo = (isAutoFixEnabled && site) ? await getCodeInfo(site, 'cwv', context) : null;
-    const hasCodeInfo = codeInfo && codeInfo.codeBucket && codeInfo.codePath !== undefined;
+    const hasCodeInfo = codeInfo && codeInfo.codeBucket && codeInfo.codePath && String(codeInfo.codePath).trim() !== '';
 
     // Send one SQS message per suggestion that needs auto-suggest
     for (const suggestion of suggestions) {

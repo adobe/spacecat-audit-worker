@@ -280,6 +280,7 @@ describe('CDN Config Handler', () => {
       
       mockSiteConfig = {
         updateLlmoCdnBucketConfig: sandbox.stub(),
+        getLlmoCdnBucketConfig: sandbox.stub().returns({ bucketName: 'old-bucket', orgId: 'old-org' }),
       };
 
       mockSite = {
@@ -330,6 +331,23 @@ describe('CDN Config Handler', () => {
       expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('cdn-logs-analysis', mockSite);
       expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('page-citability', mockSite);
       expect(mockConfiguration.save).to.have.been.called;
+      expect(context.log.warn).to.have.been.calledWith(
+        'CDN_CONFIG_DELETED: CDN provider removed — this will break CDN log reporting',
+        sinon.match({ siteId: 'site-123', baseURL: 'https://example.com', before: { bucketName: 'old-bucket', orgId: 'old-org' } }),
+      );
+    });
+
+    it('should handle missing previous config gracefully on deletion', async () => {
+      mockSiteConfig.getLlmoCdnBucketConfig.returns(null);
+      mockConfiguration.disableHandlerForSite = sandbox.stub();
+
+      await expect(cdnConfigHandler.handleCdnBucketConfigChanges(context, {}))
+        .to.be.rejectedWith('CDN provider is required for CDN configuration');
+
+      expect(context.log.warn).to.have.been.calledWith(
+        'CDN_CONFIG_DELETED: CDN provider removed — this will break CDN log reporting',
+        sinon.match({ before: {} }),
+      );
     });
 
     it('should handle commerce-fastly provider with service found', async () => {
@@ -357,6 +375,16 @@ describe('CDN Config Handler', () => {
 
       expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ bucketName: 'test-bucket' });
       expect(mockSite.save).to.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        'CDN_CONFIG_CHANGED: CDN bucket configuration updated',
+        sinon.match({
+          siteId: 'site-123',
+          baseURL: 'https://example.com',
+          cdnProvider: 'commerce-fastly',
+          before: { bucketName: 'old-bucket', orgId: 'old-org' },
+          after: { bucketName: 'test-bucket' },
+        }),
+      );
     });
 
     it('should handle bucket configuration when allowedPaths provided', async () => {
@@ -376,6 +404,18 @@ describe('CDN Config Handler', () => {
       expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({
         bucketName: 'test-bucket',
         orgId: 'test-org',
+      });
+      expect(mockSite.save).to.have.been.called;
+    });
+
+    it('should persist region in bucket configuration when provided', async () => {
+      const data = { bucketName: 'test-bucket', region: 'eu-west-1', cdnProvider: 'commerce-fastly' };
+
+      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+      expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({
+        bucketName: 'test-bucket',
+        region: 'eu-west-1',
       });
       expect(mockSite.save).to.have.been.called;
     });

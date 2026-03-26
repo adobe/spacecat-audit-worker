@@ -10,7 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import { composeBaseURL, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import {
+  composeBaseURL, hasText, isString, tracingFetch as fetch,
+} from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { retrievePageAuthentication } from '@adobe/spacecat-shared-ims-client';
 
@@ -33,6 +35,13 @@ import { isAuthUrl } from '../support/utils.js';
 
 const auditType = Audit.AUDIT_TYPES.CANONICAL;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
+
+const REACHABILITY_CHECKS = [
+  CANONICAL_CHECKS.CANONICAL_URL_STATUS_OK.check,
+  CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.check,
+];
+
+const EMPTY_CANONICAL_RESULT = Object.freeze({ url: null, checks: [] });
 
 /**
  * Step 1: Import top pages (used in multi-step audit)
@@ -139,26 +148,24 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = 
   }
 
   // Check if the canonical URL is fully uppercased
-  if (canonicalUrl) {
-    if (typeof canonicalUrl === 'string') {
-      const isAllCaps = canonicalUrl === canonicalUrl.toUpperCase();
-      if (isAllCaps) {
-        checks.push({
-          check: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.check,
-          success: false,
-          explanation: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.explanation,
-        });
-      } else {
-        checks.push({
-          check: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.check,
-          success: true,
-        });
-      }
+  if (isString(canonicalUrl)) {
+    const isAllCaps = canonicalUrl === canonicalUrl.toUpperCase();
+    if (isAllCaps) {
+      checks.push({
+        check: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.check,
+        success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.explanation,
+      });
     } else {
-      log.error(`[canonical] Canonical URL is not a string: ${typeof canonicalUrl}`);
-      // Skip adding check for invalid type - validation errors should only be logged
-      return checks;
+      checks.push({
+        check: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.check,
+        success: true,
+      });
     }
+  } else if (canonicalUrl) {
+    log.error(`[canonical] Canonical URL is not a string: ${typeof canonicalUrl}`);
+    // Skip adding check for invalid type - validation errors should only be logged
+    return checks;
   }
 
   // Check if the canonical URL is absolute (case-insensitive protocol check)
@@ -174,10 +181,10 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = 
       check: CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.check,
       success: true,
     });
-    let url;
+    let canonical;
 
     try {
-      url = new URL(canonicalUrl);
+      canonical = new URL(canonicalUrl);
     } catch {
       log.error(`[canonical] Invalid canonical URL: ${canonicalUrl}`);
       // Skip adding check for invalid URL - validation errors should only be logged
@@ -185,7 +192,7 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = 
     }
 
     // Check if the canonical URL has the same protocol as the base URL
-    if (!url.href.startsWith(base.protocol)) {
+    if (canonical.protocol !== base.protocol) {
       checks.push({
         check: CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.check,
         success: false,
@@ -200,7 +207,7 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = 
 
     // Check if the canonical URL has the same domain as the base URL
     if (!isPreview) {
-      if (composeBaseURL(url.hostname) !== composeBaseURL(base.hostname)) {
+      if (composeBaseURL(canonical.hostname) !== composeBaseURL(base.hostname)) {
         checks.push({
           check: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.check,
           success: false,
@@ -326,6 +333,24 @@ export async function validateCanonicalRecursively(
 }
 
 /**
+ * Checks whether two URLs are self-referencing by comparing their normalized pathnames.
+ *
+ * @param {string} url1 - First URL to compare.
+ * @param {string} url2 - Second URL to compare.
+ * @returns {boolean} True if both URLs resolve to the same pathname (case-insensitive).
+ */
+export function isSelfReferencing(url1, url2) {
+  const normalizePath = (u) => {
+    try {
+      return new URL(u).pathname.toLowerCase();
+    } catch {
+      return u.toLowerCase();
+    }
+  };
+  return normalizePath(url1) === normalizePath(url2);
+}
+
+/**
  * Generates a suggestion for fixing a canonical issue based on the check type.
  *
  * @param {string} checkType - The type of canonical check that failed.
@@ -391,31 +416,34 @@ export async function processScrapedContent(context) {
         return null;
       }
 
-      if (!scrapedObject?.scrapeResult?.canonical) {
-        log.warn(`[canonical] No canonical metadata in S3 object: ${key}`);
-        return null;
-      }
-
-      const url = scrapedObject.url || scrapedObject.finalUrl;
-      if (!url) {
+      const { finalUrl } = scrapedObject;
+      if (!finalUrl) {
         log.warn(`[canonical] No URL found in S3 object: ${key}`);
         return null;
       }
 
-      const finalUrl = scrapedObject.finalUrl || url;
+      if (!scrapedObject?.scrapeResult?.canonical) {
+        log.warn(`[canonical] No canonical metadata in S3 object: ${key}`);
+        return {
+          url: finalUrl,
+          checks: [{
+            check: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
+            success: false,
+            explanation: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.explanation,
+          }],
+        };
+      }
 
       // Filter out scraped pages that redirected to auth/login pages or PDFs
       // This prevents false positives when a legitimate page redirects to login
       if (isAuthUrl(finalUrl)) {
-        log.info(`[canonical] Skipping ${url} - redirected to auth page: ${finalUrl}`);
+        log.info(`[canonical] Skipping ${finalUrl} - auth page`);
         return null;
       }
       if (isPdfUrl(finalUrl)) {
-        log.info(`[canonical] Skipping ${url} - redirected to PDF: ${finalUrl}`);
+        log.info(`[canonical] Skipping ${finalUrl} - PDF`);
         return null;
       }
-
-      const isPreview = isPreviewPage(baseURL);
 
       // Use canonical metadata already extracted by the scraper (Puppeteer)
       const canonicalMetadata = scrapedObject.scrapeResult.canonical;
@@ -423,11 +451,18 @@ export async function processScrapedContent(context) {
       const canonicalTagChecks = [];
 
       // Check if canonical tag exists
-      if (!canonicalMetadata.exists || !canonicalUrl) {
+      if (!canonicalMetadata.exists) {
         canonicalTagChecks.push({
           check: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
           success: false,
           explanation: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.explanation,
+        });
+      } else if (!canonicalUrl) {
+        // Tag exists but href attribute is absent or empty
+        canonicalTagChecks.push({
+          check: CANONICAL_CHECKS.CANONICAL_TAG_NO_HREF.check,
+          success: false,
+          explanation: CANONICAL_CHECKS.CANONICAL_TAG_NO_HREF.explanation,
         });
       } else {
         // Canonical tag exists
@@ -465,7 +500,7 @@ export async function processScrapedContent(context) {
         }
 
         // Check if canonical is nonempty
-        if (!canonicalUrl || canonicalUrl.trim() === '') {
+        if (!hasText(canonicalUrl) || !canonicalUrl.trim()) {
           canonicalTagChecks.push({
             check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
             success: false,
@@ -478,21 +513,7 @@ export async function processScrapedContent(context) {
           });
         }
 
-        // Check if canonical is self-referenced (ignoring protocol, domain, query, hash, case)
-        const normalizeUrl = (u) => {
-          try {
-            const urlObj = new URL(u);
-            // Remove protocol, domain, query params, and hash; lowercase; keep only pathname
-            return urlObj.pathname.toLowerCase();
-          } catch {
-            return u.toLowerCase();
-          }
-        };
-        const normalizedCanonical = normalizeUrl(canonicalUrl);
-        const normalizedFinal = normalizeUrl(finalUrl);
-
-        // Canonical should match the final URL path (what was actually served)
-        const isSelfReferenced = normalizedCanonical === normalizedFinal;
+        const isSelfReferenced = isSelfReferencing(canonicalUrl, finalUrl);
         if (isSelfReferenced) {
           canonicalTagChecks.push({
             check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
@@ -508,6 +529,7 @@ export async function processScrapedContent(context) {
       }
 
       const checks = [...canonicalTagChecks];
+      const isPreview = isPreviewPage(baseURL);
 
       if (canonicalUrl) {
         const urlFormatChecks = validateCanonicalFormat(canonicalUrl, baseURL, log, isPreview);
@@ -533,19 +555,13 @@ export async function processScrapedContent(context) {
           // invalid URL; accessibility check may still run and report fetch error
         }
 
-        // Skip accessibility only when self-referenced, same domain, and same protocol.
+        // Skip HTTP reachability checks when self-referenced with matching domain and protocol —
+        // the canonical URL is the current page, so no fetch is needed.
         const shouldCheckAccessibility = !isSelfReferenced
           || canonicalDifferentDomain
           || canonicalDifferentProtocol;
         if (!shouldCheckAccessibility) {
-          checks.push({
-            check: CANONICAL_CHECKS.CANONICAL_URL_STATUS_OK.check,
-            success: true,
-          });
-          checks.push({
-            check: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.check,
-            success: true,
-          });
+          checks.push(...REACHABILITY_CHECKS.map((check) => ({ check, success: true })));
         } else {
           const options = await getPreviewAuthOptions(isPreview, baseURL, site, context, log);
 
@@ -554,10 +570,10 @@ export async function processScrapedContent(context) {
         }
       }
 
-      return { url, checks };
+      return { url: finalUrl, checks };
     } catch (error) {
       log.error(`[canonical] Error processing scraped content from ${key}: ${error.message}`);
-      return null;
+      return EMPTY_CANONICAL_RESULT;
     }
   });
 

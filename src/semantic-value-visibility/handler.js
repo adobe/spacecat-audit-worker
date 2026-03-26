@@ -14,40 +14,36 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { GUIDANCE_TYPE } from './constants.js';
 
-/**
- * Audit runner for semantic value visibility.
- *
- * Sends a request to Mystique via SQS to analyze marketing images on the site.
- * Mystique runs the image pipeline (Playwright → OCR → Vision LLM → Agent)
- * and sends the results back to the guidance handler.
- */
 export async function auditRunner(auditUrl, context, site) {
+  return {
+    auditResult: { siteId: site.getId(), url: auditUrl, status: 'pending-mystique' },
+    fullAuditRef: auditUrl,
+  };
+}
+
+export async function sendToMystique(auditUrl, auditData, context, site) {
   const {
     log, sqs, env,
   } = context;
   const siteId = site.getId();
+  const auditId = auditData.id;
 
-  log.info(`[semantic-value-visibility] Starting audit for siteId: ${siteId}, url: ${auditUrl}`);
-
-  const message = {
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, {
     type: GUIDANCE_TYPE,
     siteId,
+    auditId,
     url: auditUrl,
     deliveryType: site.getDeliveryType(),
     time: new Date().toISOString(),
-  };
+    data: { url: auditUrl },
+  });
 
-  log.info(`[semantic-value-visibility] Sending request to Mystique for siteId: ${siteId}`);
-  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-  log.info(`[semantic-value-visibility] Request sent to Mystique for siteId: ${siteId}`);
-
-  return {
-    auditResult: { siteId, url: auditUrl, status: 'sent-to-mystique' },
-    fullAuditRef: auditUrl,
-  };
+  log.info('[semantic-value-visibility] Request sent to Mystique');
+  return auditData;
 }
 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(auditRunner)
+  .withPostProcessors([sendToMystique])
   .build();

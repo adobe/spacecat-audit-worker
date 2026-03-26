@@ -55,6 +55,9 @@ describe('AccessibilityCodeFixHandler', () => {
       Opportunity: {
         findById: sandbox.stub().resolves(mockOpportunity),
       },
+      Suggestion: {
+        saveMany: sandbox.stub().resolves(),
+      },
     };
 
     getObjectFromKeyStub = sandbox.stub();
@@ -146,7 +149,7 @@ describe('AccessibilityCodeFixHandler', () => {
         patchContent: 'mock diff content',
         isCodeChangeAvailable: false,
       });
-      expect(mockSuggestion.save).to.have.been.called;
+      expect(mockDataAccess.Suggestion.saveMany).to.have.been.called;
     });
 
     it('should return badRequest when no data provided', async () => {
@@ -406,7 +409,33 @@ describe('AccessibilityCodeFixHandler', () => {
       };
 
       mockSuggestion.getData.returns(suggestionData);
-      mockSuggestion.save.rejects(new Error('Save failed'));
+      // Suggestion.saveMany rejects to simulate batch save failure
+      mockDataAccess.Suggestion.saveMany.rejects(new Error('Save failed'));
+      getObjectFromKeyStub.resolves(mockReportData);
+
+      const handler = await esmock('../../../../src/common/codefix-response-handler.js', {
+        '../../../../src/common/codefix-handler.js': await esmock('../../../../src/common/codefix-handler.js', {
+          '../../../../src/utils/s3-utils.js': {
+            getObjectFromKey: getObjectFromKeyStub,
+          },
+        }),
+      });
+
+      const result = await handler.default(validMessage, context);
+
+      expect(result.status).to.equal(500);
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Unexpected error for codefix:accessibility/),
+      );
+    });
+
+    it('should handle errors in updateSuggestionsWithCodeChange when getData throws', async () => {
+      const mockReportData = {
+        diff: 'mock diff content',
+      };
+
+      // Make getData throw to trigger the catch block in updateSuggestionsWithCodeChange
+      mockSuggestion.getData.throws(new Error('getData exploded'));
       getObjectFromKeyStub.resolves(mockReportData);
 
       const handler = await esmock('../../../../src/common/codefix-response-handler.js', {
@@ -957,7 +986,7 @@ describe('AccessibilityCodeFixHandler', () => {
         patchContent: mockDiffContent,
         isCodeChangeAvailable: false,
       });
-      expect(mockSuggestion.save).to.have.been.called;
+      expect(mockDataAccess.Suggestion.saveMany).to.have.been.called;
     });
 
     it('should update multiple suggestions with same aggregation_key', async () => {
@@ -1058,8 +1087,7 @@ describe('AccessibilityCodeFixHandler', () => {
         patchContent: 'mock diff content for aria-prohibited-attr',
         isCodeChangeAvailable: false,
       });
-      expect(mockSuggestion.save).to.have.been.called;
-      expect(mockSuggestion2.save).to.have.been.called;
+      expect(mockDataAccess.Suggestion.saveMany).to.have.been.called;
     });
 
     it('should throw CodeFixConfigurationError when S3_MYSTIQUE_BUCKET_NAME is not set (new format)', async () => {

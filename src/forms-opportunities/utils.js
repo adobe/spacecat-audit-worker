@@ -540,7 +540,7 @@ export async function sendMessageToFormsQualityAgent(context, opportunity, forms
   }
 }
 
-export async function sendMessageToMystiqueForGuidance(context, opportunity) {
+export async function sendMessageToMystiqueForGuidance(context, opportunity, options = {}) {
   const {
     log, sqs, env, site,
   } = context;
@@ -550,6 +550,7 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
     const opptyData = JSON.parse(JSON.stringify(opportunity));
     const mystiqueMessage = {
       type: `guidance:${opptyData.type}`,
+      ...options,
       siteId: opptyData.siteId,
       auditId: opptyData.auditId,
       deliveryType: site ? site.getDeliveryType() : 'aem_cs',

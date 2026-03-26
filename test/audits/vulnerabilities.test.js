@@ -522,7 +522,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(springSuggestion.data.cves[1].score).to.equal(5.5);
     });
 
-    it('should skip mystique when auto suggest is disabled', async () => {
+    it('should skip starfish-auto-code when auto suggest is disabled', async () => {
       const configuration = {
         isHandlerEnabledForSite: sandbox.stub(),
       };
@@ -545,7 +545,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
-    it('should handle auto suggest to trigger mystique', async () => {
+    it('should handle auto suggest to trigger starfish-auto-code', async () => {
       const mockOpportunity = {
         getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
@@ -591,15 +591,17 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       ];
 
       context.data = { importResults: codeData };
+      context.env.QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE = 'test-starfish-queue';
 
       const result = await opportunityAndSuggestionsStep(context);
       expect(result).to.deep.equal({ status: 'complete' });
 
-      // Verify SQS message to mystique was sent
+      // Verify SQS message to starfish-auto-code was sent
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
 
-      // Verify the message structure
+      // Verify the queue URL and message structure
       const messageCall = context.sqs.sendMessage.getCall(0);
+      expect(messageCall.args[0]).to.equal('test-starfish-queue');
       const message = messageCall.args[1];
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
@@ -618,6 +620,41 @@ describe('Vulnerabilities Handler Integration Tests', () => {
         'codePath',
         'code/ad3d5bb7-9e85-4195-94e8-833cc5a73253/github/adobe/mystique-project/main/repository.zip',
       );
+    });
+
+    it('should skip starfish-auto-code when queue env var is not configured', async () => {
+      const configuration = {
+        isHandlerEnabledForSite: sandbox.stub(),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+      configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities').returns(true);
+      configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities-auto-suggest').returns(true);
+
+      context.audit = {
+        getAuditResult: () => ({
+          vulnerabilityReport: VULNERABILITY_REPORT_WITH_VULNERABILITIES,
+          success: true,
+        }),
+        getId: () => 'test-audit-id',
+      };
+
+      context.data = {
+        importResults: [{
+          result: [{
+            codeBucket: 'spacecat-importer-bucket',
+            codePath: 'code/test/repository.zip',
+          }],
+        }],
+      };
+
+      // QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE is not set in context.env
+
+      const result = await opportunityAndSuggestionsStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(context.log.warn).to.have.been.calledWithMatch(/QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE is not configured/);
     });
 
     it('should handle configuration lookup failure gracefully', async () => {

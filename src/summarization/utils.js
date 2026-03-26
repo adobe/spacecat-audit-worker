@@ -52,9 +52,11 @@ export function getJsonSummarySuggestion(suggestions) {
     const scrapedAt = suggestion.scrapedAt || new Date().toISOString();
     const pageTransformRules = getPageSummaryTransformRules(suggestion.pageSummary);
 
-    // handle page level summary - only add if summary text is present
+    // handle page level summary - only add if summary text is present and not already on page
     const pageSummaryText = suggestion.pageSummary?.formatted_summary;
-    if (hasSummaryText(pageSummaryText)) {
+    const pageSummaryAlreadyPresent = suggestion.page_summary_present === true
+      || suggestion.hasExistingSummary === true;
+    if (hasSummaryText(pageSummaryText) && !pageSummaryAlreadyPresent) {
       suggestionValues.push({
         summarizationText: pageSummaryText,
         fullPage: true,
@@ -66,9 +68,11 @@ export function getJsonSummarySuggestion(suggestions) {
       });
     }
 
-    // handle key points summary - only add if there are key points
+    // handle key points summary - only add if there are key points and not already on page
     const keyPointsText = joinKeyPoints(suggestion.keyPoints?.formatted_items);
-    if (hasSummaryText(keyPointsText)) {
+    const keyPointsAlreadyPresent = suggestion.key_points_present === true
+      || suggestion.hasExistingKeyPoints === true;
+    if (hasSummaryText(keyPointsText) && !keyPointsAlreadyPresent) {
       suggestionValues.push({
         summarizationText: keyPointsText,
         fullPage: true,

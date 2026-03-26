@@ -15,44 +15,44 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import { auditRunner } from '../../../src/semantic-value-visibility/handler.js';
+import { auditRunner, sendToMystique } from '../../../src/semantic-value-visibility/handler.js';
 
 use(sinonChai);
 
 describe('Semantic Value Visibility Handler', () => {
-  let context;
   let sandbox;
   let site;
-  let log;
-  let sqs;
-  let env;
+  let context;
+  let sqsStub;
+  let logStub;
+
+  const auditUrl = 'https://example.com';
+  const siteId = 'site-123';
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
 
     site = {
-      getId: () => 'site-123',
+      getId: () => siteId,
       getDeliveryType: () => 'aem_edge',
     };
 
-    log = {
+    sqsStub = {
+      sendMessage: sandbox.stub().resolves(),
+    };
+
+    logStub = {
       info: sandbox.stub(),
       warn: sandbox.stub(),
       error: sandbox.stub(),
     };
 
-    sqs = {
-      sendMessage: sandbox.stub().resolves({}),
-    };
-
-    env = {
-      QUEUE_SPACECAT_TO_MYSTIQUE: 'spacecat-to-mystique-queue',
-    };
-
     context = {
-      log,
-      sqs,
-      env,
+      log: logStub,
+      sqs: sqsStub,
+      env: {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'spacecat-to-mystique-queue',
+      },
     };
   });
 
@@ -61,53 +61,63 @@ describe('Semantic Value Visibility Handler', () => {
   });
 
   describe('auditRunner', () => {
-    it('should send message to Mystique queue', async () => {
-      const auditUrl = 'https://example.com';
-
+    it('should return pending result without sending SQS', async () => {
       const result = await auditRunner(auditUrl, context, site);
 
-      expect(sqs.sendMessage).to.have.been.calledOnce;
-      expect(sqs.sendMessage).to.have.been.calledWith(
-        'spacecat-to-mystique-queue',
-        sinon.match({
-          type: 'guidance:semantic-value-visibility',
-          siteId: 'site-123',
-          url: 'https://example.com',
-          deliveryType: 'aem_edge',
-        }),
-      );
-      expect(result.auditResult.status).to.equal('sent-to-mystique');
-      expect(result.auditResult.siteId).to.equal('site-123');
-      expect(result.auditResult.url).to.equal('https://example.com');
-      expect(result.fullAuditRef).to.equal('https://example.com');
+      expect(result.auditResult).to.deep.equal({
+        siteId,
+        url: auditUrl,
+        status: 'pending-mystique',
+      });
+      expect(result.fullAuditRef).to.equal(auditUrl);
+      expect(sqsStub.sendMessage).not.to.have.been.called;
     });
+  });
 
-    it('should include timestamp in message', async () => {
-      const auditUrl = 'https://example.com';
+  describe('sendToMystique', () => {
+    it('should send message to Mystique with auditId and data', async () => {
+      const auditData = { id: 'audit-456', auditResult: { siteId } };
 
-      await auditRunner(auditUrl, context, site);
+      const result = await sendToMystique(auditUrl, auditData, context, site);
 
-      const call = sqs.sendMessage.getCall(0);
-      const message = call.args[1];
+      expect(result).to.equal(auditData);
+      expect(sqsStub.sendMessage).to.have.been.calledOnce;
 
+      const message = sqsStub.sendMessage.getCall(0).args[1];
+      expect(message).to.deep.include({
+        type: 'guidance:semantic-value-visibility',
+        siteId,
+        auditId: 'audit-456',
+        url: auditUrl,
+        deliveryType: 'aem_edge',
+      });
+      expect(message.data).to.deep.equal({ url: auditUrl });
       expect(message.time).to.be.a('string');
       expect(new Date(message.time)).to.be.instanceOf(Date);
     });
 
-    it('should log audit start and completion', async () => {
-      const auditUrl = 'https://example.com';
+    it('should send to the correct queue', async () => {
+      await sendToMystique(auditUrl, {}, context, site);
 
-      await auditRunner(auditUrl, context, site);
+      expect(sqsStub.sendMessage).to.have.been.calledWith(
+        'spacecat-to-mystique-queue',
+        sinon.match.object,
+      );
+    });
 
-      expect(log.info).to.have.been.calledWith(
-        sinon.match(/Starting audit for siteId: site-123/),
+    it('should log completion', async () => {
+      await sendToMystique(auditUrl, {}, context, site);
+
+      expect(logStub.info).to.have.been.calledWith(
+        '[semantic-value-visibility] Request sent to Mystique',
       );
-      expect(log.info).to.have.been.calledWith(
-        sinon.match(/Sending request to Mystique/),
-      );
-      expect(log.info).to.have.been.calledWith(
-        sinon.match(/Request sent to Mystique/),
-      );
+    });
+
+    it('should handle missing auditData id gracefully', async () => {
+      await sendToMystique(auditUrl, {}, context, site);
+
+      const message = sqsStub.sendMessage.getCall(0).args[1];
+      expect(message.auditId).to.be.undefined;
     });
   });
 });

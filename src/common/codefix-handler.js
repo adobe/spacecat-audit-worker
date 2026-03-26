@@ -129,7 +129,6 @@ async function updateSuggestionsWithCodeChange(
   const updatedSuggestions = [];
 
   try {
-    const promises = [];
     for (const suggestion of suggestions) {
       const suggestionData = suggestion.getData();
 
@@ -169,13 +168,11 @@ async function updateSuggestionsWithCodeChange(
         };
 
         suggestion.setData(updatedData);
-        promises.push(suggestion.save());
         updatedSuggestions.push(suggestion);
       }
     }
 
-    await Promise.all(promises);
-    log.info(`Updated ${updatedSuggestions.length} suggestions with code change data`);
+    log.info(`Matched ${updatedSuggestions.length} suggestions with code change data`);
     return updatedSuggestions;
   } catch (error) {
     log.error(`Error updating suggestions with code change: ${error.message}`, error);
@@ -205,7 +202,7 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
   const {
     log, dataAccess, s3Client, env,
   } = context;
-  const { Opportunity } = dataAccess;
+  const { Opportunity, Suggestion } = dataAccess;
 
   // Validation
   if (!opportunityId) {
@@ -246,9 +243,9 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
   // Default bucket name from environment
   const defaultBucketName = env.S3_MYSTIQUE_BUCKET_NAME;
 
-  let totalUpdatedSuggestions = 0;
+  const allUpdatedSuggestions = [];
 
-  // Process each update
+  // Process each update (S3 reads run in parallel, saves are batched at the end)
   await Promise.all(updates.map(async (update) => {
     const {
       url,
@@ -303,7 +300,7 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
         return;
       }
 
-      // Update matching suggestions with the code change data
+      // Update matching suggestions in-memory (no save yet)
       const updatedSuggestions = await updateSuggestionsWithCodeChange(
         suggestions,
         url,
@@ -313,7 +310,7 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
         true, // useAggregationKey = true for new format
         log,
       );
-      totalUpdatedSuggestions += updatedSuggestions.length;
+      allUpdatedSuggestions.push(...updatedSuggestions);
       return;
     }
 
@@ -347,7 +344,7 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
         return;
       }
 
-      // Update matching suggestions with the code change data
+      // Update matching suggestions in-memory (no save yet)
       const updatedSuggestions = await updateSuggestionsWithCodeChange(
         suggestions,
         url,
@@ -357,10 +354,19 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
         false, // useAggregationKey = false for old format (use ruleId)
         log,
       );
-      totalUpdatedSuggestions += updatedSuggestions.length;
+      allUpdatedSuggestions.push(...updatedSuggestions);
     }));
   }));
 
-  log.info(`[CodeFixProcessor] Successfully processed all updates. Total suggestions updated: ${totalUpdatedSuggestions}`);
-  return totalUpdatedSuggestions;
+  // Deduplicate (a suggestion may match multiple updates) and batch-save
+  const uniqueSuggestions = [...new Map(
+    allUpdatedSuggestions.map((s) => [s.getId(), s]),
+  ).values()];
+
+  if (uniqueSuggestions.length > 0) {
+    await Suggestion.saveMany(uniqueSuggestions);
+  }
+
+  log.info(`[CodeFixProcessor] Successfully processed all updates. Total suggestions updated: ${uniqueSuggestions.length}`);
+  return uniqueSuggestions.length;
 }

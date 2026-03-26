@@ -712,7 +712,7 @@ describe('Preflight Audit', () => {
         TierClient.createForSite.restore();
       }
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       sinon.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -756,6 +756,12 @@ describe('Preflight Audit', () => {
               transformToString: sinon.stub().resolves(JSON.stringify({
                 scrapeResult: {
                   rawBody: html.replaceAll('https://example.com', 'https://main--example--page.aem.page'),
+                  canonical: {
+                    exists: true,
+                    count: 1,
+                    href: 'https://main--example--page.aem.page/wrong',
+                    inHead: true,
+                  },
                   tags: {
                     title: 'Page 1 Title',
                     description: 'Page 1 Description',
@@ -1306,6 +1312,12 @@ describe('Preflight Audit', () => {
               transformToString: sinon.stub().resolves(JSON.stringify({
                 scrapeResult: {
                   rawBody: html,
+                  canonical: {
+                    exists: true,
+                    count: 1,
+                    href: 'https://main--example--page.aem.page/readability-test',
+                    inHead: true,
+                  },
                   tags: {
                     title: 'Readability Test Page',
                     description: 'Test page for readability',
@@ -1992,7 +2004,7 @@ describe('Preflight Audit', () => {
 
       // Ensure entitlement checks pass for accessibility
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       if (TierClient.createForSite && TierClient.createForSite.restore) {
         TierClient.createForSite.restore();
@@ -3130,7 +3142,7 @@ describe('Preflight Audit', () => {
 
         // Ensure entitlement checks pass for polling tests; avoid double-stubbing
         const mockTierClient = {
-          checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+          checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
         };
         if (TierClient.createForSite && TierClient.createForSite.restore) {
           TierClient.createForSite.restore();
@@ -3394,7 +3406,7 @@ describe('Preflight Audit', () => {
 
       // Ensure entitlement checks pass for coverage tests
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -4702,7 +4714,7 @@ describe('Preflight Audit', () => {
 
       // Ensure entitlement checks pass for enabled checks calculation
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       if (TierClient.createForSite && TierClient.createForSite.restore) {
         TierClient.createForSite.restore();

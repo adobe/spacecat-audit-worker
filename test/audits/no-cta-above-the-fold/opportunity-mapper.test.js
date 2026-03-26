@@ -77,8 +77,34 @@ describe("No Engageable Content opportunity mapper", () => {
   });
 
   describe("mapToSuggestion", () => {
-    it("creates suggestion payload with provided markdown", async () => {
-      const recommendation = { body: { markdown: "Test markdown" } };
+    it("creates suggestion payload with provided markdown, link suggestion and content fix", async () => {
+      const contentFix = {
+        attempted: true,
+        succeeded: true,
+        page_patch: {
+          changes: {
+            type: "patch",
+            patch: {
+              operations: [{ op: "add", path: "/properties/ctaText", value: "Learn More" }],
+            },
+          },
+          original_page_url: "https://example.com/testpage",
+        },
+      };
+      const ctaLinkSuggestion = {
+        decision: "link_to_section",
+        target_url: "https://example.com/testpage",
+        suggested_anchor_id: "pricing",
+      };
+      const recommendation = {
+        body: { markdown: "Test markdown" },
+        metadata: {
+          fix: {
+            content_fix: contentFix,
+          },
+          cta_link_suggestion: ctaLinkSuggestion,
+        },
+      };
       const suggestion = await mapToSuggestion(
         { site: { requiresValidation: false } },
         "oppty-id",
@@ -90,6 +116,8 @@ describe("No Engageable Content opportunity mapper", () => {
       expect(suggestion.status).to.equal("NEW");
       expect(suggestion.data.recommendations[0].pageUrl).to.equal(pageUrl);
       expect(suggestion.data.suggestionValue).to.equal("Test markdown");
+      expect(suggestion.data.contentFix).to.deep.equal(contentFix);
+      expect(suggestion.data.ctaLinkSuggestion).to.deep.equal(ctaLinkSuggestion);
     });
 
     it("returns sanitized suggestion value for markdown with escaped newlines", async () => {
