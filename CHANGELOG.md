@@ -1,3 +1,10 @@
+## [1.371.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.5...v1.371.6) (2026-03-26)
+
+
+### Bug Fixes
+
+* stagger llmo cdn analysis fanout ([#2202](https://github.com/adobe/spacecat-audit-worker/issues/2202)) ([58f17d9](https://github.com/adobe/spacecat-audit-worker/commit/58f17d9a03c410380b999ba56937e4dc8f06c1b6))
+
 ## [1.371.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.4...v1.371.5) (2026-03-26)
 
 
