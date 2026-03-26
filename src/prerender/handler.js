@@ -1213,6 +1213,19 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       ...existingPages.filter((p) => !currentUrlSet.has(p.url)),
     ];
 
+    // Derive aggregate metrics from the full merged page set
+    const totalUrlsChecked = mergedPages.length;
+    const urlsNeedingPrerender = mergedPages.filter((p) => p.needsPrerender).length;
+    const urlsScrapedSuccessfully = mergedPages.filter((p) => p.scrapingStatus === 'success').length;
+    const urlsSubmittedForScraping = mergedPages
+      .filter((p) => p.scrapingStatus !== undefined).length;
+    const scrapingErrorRate = urlsSubmittedForScraping > 0
+      ? ((urlsSubmittedForScraping - urlsScrapedSuccessfully) / urlsSubmittedForScraping) * 100
+      : null;
+    const scrapeForbiddenCount = mergedPages.filter(
+      (p) => p.scrapeError?.statusCode === 403,
+    ).length;
+
     // Extract status information for all pages
     const statusSummary = {
       baseUrl: auditUrl,
@@ -1220,13 +1233,13 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       auditType: AUDIT_TYPE,
       scrapeJobId: scrapeJobId || null,
       lastUpdated: scrapedAt,
-      totalUrlsChecked: auditResult.totalUrlsChecked || 0,
-      urlsNeedingPrerender: auditResult.urlsNeedingPrerender || 0,
-      urlsSubmittedForScraping: auditResult.urlsSubmittedForScraping ?? null,
-      urlsScrapedSuccessfully: auditResult.urlsScrapedSuccessfully ?? null,
-      scrapingErrorRate: auditResult.scrapingErrorRate ?? null,
-      scrapeForbidden: auditResult.scrapeForbidden || false,
-      scrapeForbiddenCount: auditResult.scrapeForbiddenCount ?? 0,
+      totalUrlsChecked,
+      urlsNeedingPrerender,
+      urlsSubmittedForScraping,
+      urlsScrapedSuccessfully,
+      scrapingErrorRate,
+      scrapeForbidden: scrapeForbiddenCount > 0,
+      scrapeForbiddenCount,
       lastAuditSuccess: auditResult.lastAuditSuccess !== false,
       pages: mergedPages,
     };

@@ -5541,32 +5541,32 @@ describe('Prerender Audit', () => {
       };
     });
 
-    it('should upload status summary to S3 with scraping metrics', async () => {
+    it('should derive aggregate metrics from merged pages', async () => {
       const auditUrl = 'https://example.com';
       const auditData = {
         siteId: 'test-site-id',
         scrapeJobId: 'scrape-job-999',
         auditedAt: '2025-01-01T00:00:00.000Z',
         auditResult: {
-          totalUrlsChecked: 5,
-          urlsNeedingPrerender: 2,
-          urlsSubmittedForScraping: 10,
-          urlsScrapedSuccessfully: 5,
-          scrapingErrorRate: 50,
-          scrapeForbidden: false,
-          results: [],
+          results: [
+            { url: 'https://example.com/page1', error: false, needsPrerender: true },
+            { url: 'https://example.com/page2', error: true, needsPrerender: false, scrapeError: { statusCode: 403, message: 'Forbidden' } },
+            { url: 'https://example.com/page3', error: false, needsPrerender: false },
+          ],
         },
       };
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      const putCall = getPutCall(mockS3Client.send);
-      expect(putCall).to.exist;
-      const uploadedData = JSON.parse(putCall.args[0].input.Body);
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
-      expect(uploadedData.urlsSubmittedForScraping).to.equal(10);
-      expect(uploadedData.urlsScrapedSuccessfully).to.equal(5);
-      expect(uploadedData.scrapingErrorRate).to.equal(50);
+      expect(uploadedData.totalUrlsChecked).to.equal(3);
+      expect(uploadedData.urlsNeedingPrerender).to.equal(1);
+      expect(uploadedData.urlsSubmittedForScraping).to.equal(3);
+      expect(uploadedData.urlsScrapedSuccessfully).to.equal(2);
+      expect(uploadedData.scrapingErrorRate).to.be.closeTo(33.33, 0.01);
+      expect(uploadedData.scrapeForbidden).to.be.true;
+      expect(uploadedData.scrapeForbiddenCount).to.equal(1);
     });
 
     it('should upload status summary to S3 with complete audit data', async () => {
@@ -5618,8 +5618,8 @@ describe('Prerender Audit', () => {
       expect(uploadedData.auditType).to.equal('prerender');
       expect(uploadedData.scrapeJobId).to.equal('scrape-job-999');
       expect(uploadedData.lastUpdated).to.equal('2025-01-01T00:00:00.000Z');
-      expect(uploadedData.totalUrlsChecked).to.equal(5);
-      expect(uploadedData.urlsNeedingPrerender).to.equal(2);
+      expect(uploadedData.totalUrlsChecked).to.equal(2); // derived from mergedPages.length
+      expect(uploadedData.urlsNeedingPrerender).to.equal(1); // derived: page1 needsPrerender=true
       expect(uploadedData.scrapeForbidden).to.equal(false);
       expect(uploadedData.pages).to.have.lengthOf(2);
 
@@ -5738,8 +5738,6 @@ describe('Prerender Audit', () => {
         siteId: 'test-site-id',
         auditedAt: '2025-01-01T00:00:00.000Z',
         auditResult: {
-          totalUrlsChecked: 0,
-          urlsNeedingPrerender: 0,
           results: [],
         },
       };
@@ -5750,6 +5748,8 @@ describe('Prerender Audit', () => {
 
       expect(uploadedData.pages).to.deep.equal([]);
       expect(uploadedData.totalUrlsChecked).to.equal(0);
+      expect(uploadedData.urlsNeedingPrerender).to.equal(0);
+      expect(uploadedData.scrapingErrorRate).to.equal(null);
     });
 
     it('should handle undefined results (fallback to empty array)', async () => {
@@ -6107,6 +6107,49 @@ describe('Prerender Audit', () => {
       expect(page1.scrapedAt).to.equal('2025-02-01T00:00:00.000Z');
       expect(page1.needsPrerender).to.equal(true);
       expect(page2.scrapedAt).to.equal('2025-01-01T00:00:00.000Z'); // preserved
+    });
+
+    it('should aggregate metrics across runs from merged pages', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-02-01T00:00:00.000Z',
+        auditResult: {
+          results: [
+            { url: 'https://example.com/new-page', error: false, needsPrerender: true },
+          ],
+        },
+      };
+
+      const existingStatus = {
+        pages: [
+          { url: 'https://example.com/old-page', scrapingStatus: 'success', needsPrerender: true, scrapedAt: '2025-01-01T00:00:00.000Z' },
+          { url: 'https://example.com/forbidden', scrapingStatus: 'error', needsPrerender: false, scrapeError: { statusCode: 403, message: 'Forbidden' }, scrapedAt: '2025-01-01T00:00:00.000Z' },
+        ],
+      };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.resolve({
+            Body: { transformToString: () => Promise.resolve(JSON.stringify(existingStatus)) },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+
+      // 3 unique pages across both runs
+      expect(uploadedData.totalUrlsChecked).to.equal(3);
+      // new-page + old-page both needsPrerender=true
+      expect(uploadedData.urlsNeedingPrerender).to.equal(2);
+      // new-page (success) + old-page (success) = 2 scraped successfully; forbidden = error
+      expect(uploadedData.urlsScrapedSuccessfully).to.equal(2);
+      expect(uploadedData.urlsSubmittedForScraping).to.equal(3);
+      expect(uploadedData.scrapeForbidden).to.be.true;
+      expect(uploadedData.scrapeForbiddenCount).to.equal(1);
     });
 
     it('should treat missing existing status.json (NoSuchKey) as empty and not warn', async () => {
