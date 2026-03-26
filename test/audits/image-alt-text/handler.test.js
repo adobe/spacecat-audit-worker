@@ -1106,6 +1106,9 @@ describe('Image Alt Text Handler', () => {
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/Missing scrapes for 1\/2 URLs/),
       );
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Failed to process with Mystique.*Cannot proceed/),
+      );
       expect(sendAltTextOpportunityToMystiqueStub).to.not.have.been.called;
     });
 

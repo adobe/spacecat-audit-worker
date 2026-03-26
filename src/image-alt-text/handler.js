@@ -13,7 +13,10 @@ import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/space
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendAltTextOpportunityToMystique, chunkArray } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
-import { MYSTIQUE_BATCH_SIZE, SUMMIT_PLG_PAGE_LIMIT, DEFAULT_PAGE_LIMIT } from './constants.js';
+import {
+  MYSTIQUE_BATCH_SIZE, SUMMIT_PLG_PAGE_LIMIT, DEFAULT_PAGE_LIMIT,
+  SCRAPE_MAX_AGE_HOURS, SCRAPE_PAGE_LOAD_TIMEOUT,
+} from './constants.js';
 import { getTopPageUrls } from './url-utils.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
@@ -84,9 +87,10 @@ export async function processImportStep(context) {
 }
 
 /**
- * Checks for existing scrapes and submits missing URLs to scrape client
+ * Sends all top page URLs to the scrape client for scraping.
+ * The scrape client handles caching via maxScrapeAge.
  * @param {Object} context - Lambda context
- * @returns {Promise<Object>} - Scraping payload with missing URLs
+ * @returns {Promise<Object>} - Scraping payload with all top page URLs
  */
 export async function processScraping(context) {
   const {
@@ -171,15 +175,15 @@ export async function processScraping(context) {
   // and only re-scrapes stale/missing URLs. This ensures all URLs are registered
   // in the scrape job's DynamoDB records, making them discoverable by downstream
   // consumers (e.g., mystique) through the scrape jobs API.
-  log.info(`[${AUDIT_TYPE}]: Sending ${topPages.length} URLs to scrape client (maxScrapeAge: 24h)`);
+  log.info(`[${AUDIT_TYPE}]: Sending ${topPages.length} URLs to scrape client (maxScrapeAge: ${SCRAPE_MAX_AGE_HOURS}h)`);
 
   return {
     urls: topPages.map((url) => ({ url })),
     siteId,
     type: 'default',
-    maxScrapeAge: 24,
+    maxScrapeAge: SCRAPE_MAX_AGE_HOURS,
     options: {
-      pageLoadTimeout: 45000,
+      pageLoadTimeout: SCRAPE_PAGE_LOAD_TIMEOUT,
     },
   };
 }
