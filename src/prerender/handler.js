@@ -791,15 +791,17 @@ export async function submitForScraping(context) {
 
   log.info(`
     ${LOG_PREFIX} prerender_submit_scraping_metrics:
+    submittedUrls=${finalUrls.length},
+    agenticUrls=${agenticUrls.length},
+    topPagesUrls=${topPagesUrls.length},
+    includedURLs=${includedURLs.length},
+    filteredOutUrls=${filteredCount},
     currentTotal=${currentTotal},
     currentAgentic=${currentAgentic},
     currentOrganic=${currentOrganic},
     currentIncludedUrls=${currentIncludedUrls},
-    agenticTotal=${agenticUrls.length},
-    agenticNewThisCycle=${filteredAgenticUrls.length},
     isFirstRunOfCycle=${isFirstRunOfCycle},
-    topPagesUrls=${topPagesUrls.length},
-    filteredOutUrls=${filteredCount},
+    agenticNewThisCycle=${filteredAgenticUrls.length},
     baseUrl=${site.getBaseURL()},
     siteId=${siteId},`);
 
