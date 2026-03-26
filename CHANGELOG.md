@@ -1,3 +1,10 @@
+## [1.371.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.7...v1.371.8) (2026-03-26)
+
+
+### Bug Fixes
+
+* improve preflight selector granularity and lorem-ipsum check accuracy ([#2110](https://github.com/adobe/spacecat-audit-worker/issues/2110)) ([97aeee6](https://github.com/adobe/spacecat-audit-worker/commit/97aeee605164ec65b2e947c07ca8be11f3dad9f0)), closes [tag#id](https://github.com/tag/issues/id) [#id](https://github.com/adobe/spacecat-audit-worker/issues/id)
+
 ## [1.371.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.6...v1.371.7) (2026-03-26)
 
 
