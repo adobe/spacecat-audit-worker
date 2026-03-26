@@ -218,6 +218,16 @@ describe('Audit Utils Tests', () => {
       expect(result).to.be.false;
     });
 
+    it('returns false when siteEnrollment is null', async () => {
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: null }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const result = await checkProductCodeEntitlements(['ASO'], site, context);
+      expect(result).to.be.false;
+    });
+
     it('returns false when entitlement check fails for all product codes', async () => {
       // Mock TierClient: All entitlement checks throw errors
       const mockTierClient = {

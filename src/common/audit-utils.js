@@ -53,14 +53,13 @@ export async function isAuditEnabledForSite(type, site, context) {
   const handler = configuration.getHandlers()?.[type];
   // Check if handler has productCodes and verify site enrollment for those products
   if (isNonEmptyArray(handler?.productCodes)) {
-    const hasValidEntitlement = await checkProductCodeEntitlements(
+    const hasValidEnrollment = await checkProductCodeEntitlements(
       handler.productCodes,
       site,
       context,
     );
-    if (!hasValidEntitlement) {
-      context.log.error(`No valid entitlement for handler ${type} with product codes 
-        ${handler.productCodes} for site ${site.getId()}`);
+    if (!hasValidEnrollment) {
+      context.log.error(`No valid site enrollment for handler ${type} with product codes ${handler.productCodes} for site ${site.getId()}`);
       return false;
     }
   } else {
