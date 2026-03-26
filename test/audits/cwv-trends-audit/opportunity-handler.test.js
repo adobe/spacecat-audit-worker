@@ -93,8 +93,10 @@ describe('CWV Trends Opportunity Handler', () => {
     const mobileArgs = createStub.firstCall.args[0];
     const desktopArgs = createStub.secondCall.args[0];
     expect(mobileArgs.type).to.equal('generic-opportunity');
+    expect(mobileArgs.status).to.equal('NEW');
     expect(mobileArgs.title).to.equal('Mobile Web Performance Trends Report');
     expect(desktopArgs.type).to.equal('generic-opportunity');
+    expect(desktopArgs.status).to.equal('NEW');
     expect(desktopArgs.title).to.equal('Desktop Web Performance Trends Report');
   });
 
@@ -184,6 +186,22 @@ describe('CWV Trends Opportunity Handler', () => {
     expect(suggestion.data.suggestionValue).to.be.a('string');
     expect(JSON.parse(suggestion.data.suggestionValue)).to.deep.equal(deviceResult);
     expect(buildKey()).to.equal('mobile-report');
+  });
+
+  it('mergeDataFunction replaces suggestionValue with new result', async () => {
+    allBySiteIdAndStatusStub.resolves([]);
+    createStub.resolves(makeMockOpportunity());
+
+    await opportunityHandler('https://ex.com', makeAuditData(['mobile']), makeContext());
+
+    const { mergeDataFunction } = syncSuggestionsStub.firstCall.args[0];
+    const existingData = { suggestionValue: '{"old":"data"}', otherField: 'keep' };
+    const newResult = makeDeviceResult('mobile');
+    const merged = mergeDataFunction(existingData, newResult);
+
+    expect(merged.otherField).to.equal('keep');
+    expect(merged.suggestionValue).to.be.a('string');
+    expect(JSON.parse(merged.suggestionValue)).to.deep.equal(newResult);
   });
 
   it('returns auditData', async () => {

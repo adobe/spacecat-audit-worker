@@ -41,6 +41,7 @@ async function findOrCreateOpportunity(
         auditId: auditData.id,
         runbook: opportunityInstance.runbook,
         type: OPPORTUNITY_TYPE,
+        status: Oppty.STATUSES.NEW,
         origin: opportunityInstance.origin,
         title: opportunityInstance.title,
         description: opportunityInstance.description,
@@ -109,6 +110,10 @@ export default async function opportunityHandler(finalUrl, auditData, context) {
         data: {
           suggestionValue: JSON.stringify(result),
         },
+      }),
+      mergeDataFunction: (existingData, newResult) => ({
+        ...existingData,
+        suggestionValue: JSON.stringify(newResult),
       }),
     });
   }));

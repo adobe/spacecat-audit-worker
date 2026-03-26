@@ -181,7 +181,7 @@ The opportunity handler directly finds or creates a `generic-opportunity` by mat
 
 - Searches existing opportunities with status `NEW` and type `generic-opportunity`
 - Matches by title: "Mobile Web Performance Trends Report" / "Desktop Web Performance Trends Report"
-- If a matching opportunity is found, it is updated; otherwise a new one is created
+- If a matching opportunity is found, it is updated; otherwise a new one is created with status `NEW`
 - No Google Search Console check is performed (data source is RUM only)
 
 ### Opportunity Data
@@ -219,6 +219,8 @@ The opportunity handler directly finds or creates a `generic-opportunity` by mat
 ```
 
 **Key:** `${deviceType}-report` (e.g., `mobile-report`, `desktop-report`)
+
+**Merge behavior:** A custom `mergeDataFunction` ensures that on subsequent audit runs, the `suggestionValue` field is fully replaced with the latest audit result (JSON-stringified). The default shallow merge would not update `suggestionValue` since the raw device result doesn't contain that key.
 
 This ensures one suggestion per device type per site, containing the complete Web Performance Trends Report data for UI consumption.
 
