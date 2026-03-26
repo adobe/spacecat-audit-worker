@@ -461,6 +461,7 @@ export async function runAuditAndProcessResults(context) {
     });
 
   // Send separate enrichment requests per storeViewCode group
+  log.info(`${LOG_PREFIX} Step 3: Sending enrichment for ${groups.size} group(s): ${[...groups.entries()].map(([key, g]) => `${key}=${g.products.length} products`).join(', ')}`);
   let enrichmentResponse = null;
   const enrichmentPromises = [...groups.entries()].map(([groupKey, group]) => {
     const groupCategoryScrapes = resolvedCategoryScrapes
