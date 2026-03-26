@@ -143,12 +143,14 @@ describe('Summarization Handler', () => {
         type: 'top-pages',
         siteId: 'site-id-123',
         auditResult: {
-          success: false,
+          success: true,
           topPages: [],
         },
         fullAuditRef: 'https://adobe.com',
       });
-      expect(log.warn).to.have.been.calledWith('[SUMMARIZATION] No top pages found for site');
+      expect(log.info).to.have.been.calledWith(
+        '[SUMMARIZATION] No Ahrefs top pages found for site; continuing with fallback URL sources',
+      );
     });
 
     it('should handle errors gracefully', async () => {
@@ -241,15 +243,32 @@ describe('Summarization Handler', () => {
       const result = await submitForScraping(context);
 
       expect(result.urls).to.deep.equal([
+        { url: 'https://adobe.com/included-page' },
         { url: 'https://adobe.com/page1' },
         { url: 'https://adobe.com/page2' },
         { url: 'https://adobe.com/page3' },
-        { url: 'https://adobe.com/included-page' },
       ]);
       expect(result.auditContext.summarizationUrls).to.deep.equal([
+        'https://adobe.com/included-page',
         'https://adobe.com/page1',
         'https://adobe.com/page2',
         'https://adobe.com/page3',
+      ]);
+    });
+
+    it('should handle null Ahrefs top pages when included URLs are present', async () => {
+      audit.getAuditResult.returns({ success: true });
+      site.getConfig = () => ({
+        getIncludedURLs: () => ['https://adobe.com/included-page'],
+      });
+      dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(null);
+
+      const result = await submitForScraping(context);
+
+      expect(result.urls).to.deep.equal([
+        { url: 'https://adobe.com/included-page' },
+      ]);
+      expect(result.auditContext.summarizationUrls).to.deep.equal([
         'https://adobe.com/included-page',
       ]);
     });
@@ -291,6 +310,9 @@ describe('Summarization Handler', () => {
         getUrl: () => `https://adobe.com/page${i}`,
       }));
       dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(manyPages);
+      context.auditContext = {
+        summarizationUrls: manyPages.map((page) => page.getUrl()),
+      };
       
       // Provide scrape results for 120 pages (80% availability, exceeds 100 page limit)
       const scrapeMap = new Map();
@@ -452,12 +474,17 @@ describe('Summarization Handler', () => {
 
       const result = await sendToMystique(context);
 
-      // 5/3 = 166.7% - should pass easily
       expect(result).to.deep.equal({ status: 'complete' });
       expect(log.info).to.have.been.calledWith(
-        '[SUMMARIZATION] Scrape availability: 5/3 (166.7%)',
+        '[SUMMARIZATION] Scrape availability: 3/3 (100.0%)',
       );
       expect(sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.pages.map((page) => page.page_url)).to.deep.equal([
+        'https://adobe.com/page1',
+        'https://adobe.com/page2',
+        'https://adobe.com/page3',
+      ]);
     });
 
     it('should exclude pages that already have both summary and key points (LLMO-3493)', async () => {
@@ -588,7 +615,7 @@ describe('Summarization Handler - Athena/Ahrefs fallback', () => {
     expect(mockGetTopAgenticUrlsFromAthena).to.not.have.been.called;
   });
 
-  it('should return failure in importTopPages when no Ahrefs pages found (importTopPages only uses Ahrefs)', async () => {
+  it('should keep importTopPages successful when no Ahrefs pages are found', async () => {
     mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
 
     const handler = await esmock('../../../src/summarization/handler.js', {
@@ -612,13 +639,11 @@ describe('Summarization Handler - Athena/Ahrefs fallback', () => {
 
     const result = await handler.importTopPages(context);
 
-    // importTopPages only uses Ahrefs, not Athena, so when Ahrefs returns empty, it fails
-    expect(result.auditResult.success).to.be.false;
+    expect(result.auditResult.success).to.be.true;
     expect(result.auditResult.topPages).to.deep.equal([]);
-    expect(context.log.warn).to.have.been.calledWith(
-      '[SUMMARIZATION] No top pages found for site',
+    expect(context.log.info).to.have.been.calledWith(
+      '[SUMMARIZATION] No Ahrefs top pages found for site; continuing with fallback URL sources',
     );
-    // Athena is not used in importTopPages
     expect(mockGetTopAgenticUrlsFromAthena).to.not.have.been.called;
   });
 
@@ -894,7 +919,7 @@ describe('Summarization Handler - Athena/Ahrefs fallback', () => {
     );
   });
 
-  it('should merge included URLs with Ahrefs and Athena URLs in submitForScraping', async () => {
+  it('should prioritize included URLs, then Athena, then Ahrefs sorted by traffic in submitForScraping', async () => {
     mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([
       'https://adobe.com/agentic-page1',
     ]);
@@ -905,7 +930,10 @@ describe('Summarization Handler - Athena/Ahrefs fallback', () => {
       },
     });
 
-    const topPages = [{ getUrl: () => 'https://adobe.com/ahrefs-page1' }];
+    const topPages = [
+      { getUrl: () => 'https://adobe.com/ahrefs-page1', getTraffic: () => 100 },
+      { getUrl: () => 'https://adobe.com/ahrefs-page2', getTraffic: () => 500 },
+    ];
 
     const context = {
       log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
@@ -925,9 +953,54 @@ describe('Summarization Handler - Athena/Ahrefs fallback', () => {
     const result = await handler.submitForScraping(context);
 
     expect(result.urls).to.deep.equal([
-      { url: 'https://adobe.com/ahrefs-page1' },
-      { url: 'https://adobe.com/agentic-page1' },
       { url: 'https://adobe.com/included-page1' },
+      { url: 'https://adobe.com/agentic-page1' },
+      { url: 'https://adobe.com/ahrefs-page2' },
+      { url: 'https://adobe.com/ahrefs-page1' },
     ]);
+  });
+
+  it('should keep included URLs first, then Athena, then Ahrefs when cutting off at 200', async () => {
+    const includedUrls = Array.from({ length: 3 }, (_, i) => `https://adobe.com/included-${i}`);
+    const athenaUrls = Array.from({ length: 3 }, (_, i) => `https://adobe.com/athena-${i}`);
+    const ahrefsPages = Array.from({ length: 250 }, (_, i) => ({
+      getUrl: () => `https://adobe.com/ahrefs-${i}`,
+      getTraffic: () => 1000 - i,
+    }));
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves(athenaUrls);
+
+    const handler = await esmock('../../../src/summarization/handler.js', {
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://adobe.com',
+        getId: () => 'site-123',
+        getConfig: () => ({ getIncludedURLs: () => includedUrls }),
+      },
+      audit: { getAuditResult: () => ({ success: true }) },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(ahrefsPages),
+        },
+      },
+    };
+
+    const result = await handler.submitForScraping(context);
+
+    expect(result.urls).to.have.lengthOf(200);
+    expect(result.auditContext.summarizationUrls.slice(0, 6)).to.deep.equal([
+      'https://adobe.com/included-0',
+      'https://adobe.com/included-1',
+      'https://adobe.com/included-2',
+      'https://adobe.com/athena-0',
+      'https://adobe.com/athena-1',
+      'https://adobe.com/athena-2',
+    ]);
+    expect(result.auditContext.summarizationUrls[199]).to.equal('https://adobe.com/ahrefs-193');
   });
 });

@@ -25,6 +25,15 @@ const SCRAPE_AVAILABILITY_THRESHOLD = 0.5; // 50%
 const MAX_TOP_PAGES = 200;
 const MAX_PAGES_TO_MYSTIQUE = 100;
 
+function sortTopPagesByTraffic(topPages) {
+  return topPages
+    .map((page) => ({
+      url: page.getUrl(),
+      traffic: page.getTraffic?.() ?? 0,
+    }))
+    .sort((a, b) => b.traffic - a.traffic);
+}
+
 async function getSummarizationInputUrls(context) {
   const { site, dataAccess, log } = context;
   const result = await getMergedAuditInputUrls({
@@ -32,6 +41,14 @@ async function getSummarizationInputUrls(context) {
     dataAccess,
     auditType: AUDIT_TYPE,
     getAgenticUrls: () => getTopAgenticUrlsFromAthena(site, context, MAX_TOP_PAGES),
+    getTopPages: async () => {
+      const topPages = await dataAccess?.SiteTopPage?.allBySiteIdAndSourceAndGeo?.(
+        site.getId(),
+        'ahrefs',
+        'global',
+      );
+      return sortTopPagesByTraffic(topPages || []);
+    },
     topOrganicLimit: MAX_TOP_PAGES,
   });
 
@@ -45,7 +62,8 @@ async function getSummarizationInputUrls(context) {
 }
 
 /**
- * Step 1: Import top pages (Athena first, then Ahrefs fallback)
+ * Step 1: Import Ahrefs top pages metadata for reporting.
+ * Downstream URL selection may still proceed with included or agentic URLs when Ahrefs is empty.
  */
 /* c8 ignore next 1 - function declaration line often not attributed when called from tests */
 export async function importTopPages(context) {
@@ -58,12 +76,12 @@ export async function importTopPages(context) {
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
     if (topPages.length === 0) {
-      log.warn('[SUMMARIZATION] No top pages found for site');
+      log.info('[SUMMARIZATION] No Ahrefs top pages found for site; continuing with fallback URL sources');
       return {
         type: 'top-pages',
         siteId: site.getId(),
         auditResult: {
-          success: false,
+          success: true,
           topPages: [],
         },
         fullAuditRef: site.getBaseURL(),
@@ -172,7 +190,8 @@ export async function sendToMystique(context) {
     throw new Error('No scrape results available');
   }
 
-  const availableCount = scrapeResultPaths.size;
+  const availableUrls = urlsToCheck.filter((url) => scrapeResultPaths.has(url));
+  const availableCount = availableUrls.length;
   const totalCount = urlsToCheck.length;
   const availabilityPercentage = availableCount / totalCount;
 
@@ -188,7 +207,7 @@ export async function sendToMystique(context) {
   }
 
   // Use URLs from scrapeResultPaths Map; exclude dynamic pages (defense in depth)
-  const scrapedUrls = Array.from(scrapeResultPaths.keys());
+  const scrapedUrls = availableUrls;
   const staticScrapedUrls = filterOutDynamicUrls(scrapedUrls);
 
   // Pre-check: exclude pages that already have both summary and key points (LLMO-3493)

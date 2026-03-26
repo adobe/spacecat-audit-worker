@@ -21,6 +21,7 @@ const NON_HTML_EXTENSIONS = new Set([
   '.json', '.xml', '.css', '.js', '.ts', '.map',
   '.woff', '.woff2', '.ttf', '.eot', '.otf',
 ]);
+const TRAILING_SLASH_RE = /\/+$/;
 
 function hasNonHtmlExtension(pathname) {
   const lowerPath = pathname.toLowerCase();
@@ -58,7 +59,7 @@ export function mergeAndGetUniqueHtmlUrls(...urlArrays) {
 
       let normalizedPath = pathname;
       if (normalizedPath.length > 1) {
-        normalizedPath = normalizedPath.replace(/\/+$/, '');
+        normalizedPath = normalizedPath.replace(TRAILING_SLASH_RE, '');
       }
 
       if (!seenPaths.has(normalizedPath)) {
@@ -77,15 +78,17 @@ export function mergeAndGetUniqueHtmlUrls(...urlArrays) {
 }
 
 /**
- * Loads top organic, agentic, and manually included URLs for an audit and applies
- * the prerender-style merge/deduping/filtering rules.
+ * Loads manually included, agentic, and top organic URLs for an audit and applies
+ * merge/deduping/filtering rules.
  * @param {Object} options
  * @param {Object} options.site - Site model
  * @param {Object} options.dataAccess - Data access container
  * @param {string} options.auditType - Audit type used for included URLs lookup
  * @param {Function} options.getAgenticUrls - Async function returning agentic URLs
- * @param {Array} [options.topPages] - Optional preloaded top pages to use instead of loading them.
- * Supports either page models with `getUrl()` or normalized objects with `url`.
+ * @param {Array|Promise<Array>} [options.topPages] - Optional preloaded top pages to use instead
+ * of loading them. Supports either page models with `getUrl()` or normalized objects with `url`.
+ * @param {Function} [options.getTopPages] - Optional async function returning top pages. Useful
+ * when top pages should be loaded lazily or in parallel with other inputs.
  * @param {number} [options.topOrganicLimit] - Optional cap for Ahrefs URLs
  * @param {Function} [options.topPagesToUrls] - Maps Ahrefs page records to URL strings
  * @returns {Promise<Object>}
@@ -96,6 +99,7 @@ export async function getMergedAuditInputUrls({
   auditType,
   getAgenticUrls,
   topPages: providedTopPages,
+  getTopPages,
   topOrganicLimit,
   topPagesToUrls = defaultTopPagesToUrls,
 }) {
@@ -103,6 +107,8 @@ export async function getMergedAuditInputUrls({
   let topPagesPromise;
   if (providedTopPages !== undefined) {
     topPagesPromise = Promise.resolve(providedTopPages);
+  } else if (getTopPages) {
+    topPagesPromise = Promise.resolve(getTopPages());
   } else if (SiteTopPage?.allBySiteIdAndSourceAndGeo) {
     topPagesPromise = SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
   } else {
@@ -121,9 +127,9 @@ export async function getMergedAuditInputUrls({
   const topPagesUrls = topPagesToUrls(limitedTopPages);
   const includedURLs = await siteConfig?.getIncludedURLs?.(auditType) || [];
   const { urls, filteredCount } = mergeAndGetUniqueHtmlUrls(
-    topPagesUrls,
-    agenticUrls || [],
     includedURLs,
+    agenticUrls || [],
+    topPagesUrls,
   );
 
   return {

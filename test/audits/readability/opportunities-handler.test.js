@@ -290,6 +290,52 @@ describe('Readability Opportunities Handler', () => {
       ]);
     });
 
+    it('should prioritize included URLs, then Athena, then Ahrefs sorted by traffic', async () => {
+      mockGetTopAgenticUrlsFromAthena.resolves([
+        'https://example.com/agentic-page1',
+      ]);
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+        { getUrl: () => 'https://example.com/ahrefs-page1', getTraffic: () => 100, getId: () => 'page-1' },
+        { getUrl: () => 'https://example.com/ahrefs-page2', getTraffic: () => 500, getId: () => 'page-2' },
+      ]);
+      mockSite.getConfig.returns({
+        getIncludedURLs: sinon.stub().returns(['https://example.com/included-page']),
+      });
+
+      const context = {
+        site: mockSite,
+        log: mockLog,
+        finalUrl: 'https://example.com',
+        env: mockEnv,
+        dataAccess: mockDataAccess,
+      };
+
+      const result = await scrapeReadabilityData(context);
+
+      expect(result.urls).to.deep.equal([
+        {
+          url: 'https://example.com/included-page',
+          traffic: 0,
+          urlId: 'merged-0',
+        },
+        {
+          url: 'https://example.com/agentic-page1',
+          traffic: 0,
+          urlId: 'merged-1',
+        },
+        {
+          url: 'https://example.com/ahrefs-page2',
+          traffic: 500,
+          urlId: 'page-2',
+        },
+        {
+          url: 'https://example.com/ahrefs-page1',
+          traffic: 100,
+          urlId: 'page-1',
+        },
+      ]);
+    });
+
     it('should default traffic and urlId when top pages do not provide them', async () => {
       mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
         { getUrl: () => 'https://example.com/page-without-metadata' },
@@ -1158,6 +1204,39 @@ describe('Readability Opportunities Handler', () => {
         traffic: 0,
         urlId: 'merged-1',
       });
+    });
+
+    it('should proceed when agentic and Ahrefs URLs fully overlap', async () => {
+      mockGetTopAgenticUrlsFromAthena.resolves([
+        'https://example.com/shared-page',
+      ]);
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+        {
+          getUrl: () => 'https://example.com/shared-page',
+          getTraffic: () => 250,
+          getId: () => 'shared-1',
+        },
+      ]);
+
+      const context = {
+        site: mockSite,
+        log: mockLog,
+        finalUrl: 'https://example.com',
+        env: mockEnv,
+        dataAccess: mockDataAccess,
+      };
+
+      const result = await scrapeReadabilityData(context);
+
+      expect(result.status).to.be.undefined;
+      expect(result.auditResult.status).to.equal('SCRAPING_REQUESTED');
+      expect(result.urls).to.deep.equal([
+        {
+          url: 'https://example.com/shared-page',
+          traffic: 250,
+          urlId: 'shared-1',
+        },
+      ]);
     });
   });
 });

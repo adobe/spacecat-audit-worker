@@ -46,6 +46,21 @@ describe('audit-input-urls', () => {
         filteredCount: 1,
       });
     });
+
+    it('should keep invalid URLs as-is', () => {
+      const result = mergeAndGetUniqueHtmlUrls([
+        'not-a-valid-url',
+        'https://example.com/page',
+      ]);
+
+      expect(result).to.deep.equal({
+        urls: [
+          'not-a-valid-url',
+          'https://example.com/page',
+        ],
+        filteredCount: 0,
+      });
+    });
   });
 
   describe('getMergedAuditInputUrls', () => {
@@ -68,8 +83,8 @@ describe('audit-input-urls', () => {
       expect(result.agenticUrls).to.deep.equal(['https://example.com/agentic']);
       expect(result.includedURLs).to.deep.equal(['https://example.com/included']);
       expect(result.urls).to.deep.equal([
-        'https://example.com/agentic',
         'https://example.com/included',
+        'https://example.com/agentic',
       ]);
     });
 
@@ -156,6 +171,60 @@ describe('audit-input-urls', () => {
       expect(result.topPagesUrls).to.deep.equal([
         'https://example.com/page2',
         'https://example.com/page1',
+      ]);
+    });
+
+    it('should use provided getTopPages callback without calling dataAccess', async () => {
+      const site = {
+        getId: () => 'site-123',
+        getConfig: async () => null,
+      };
+      const dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: () => {
+            throw new Error('should not be called');
+          },
+        },
+      };
+
+      const result = await getMergedAuditInputUrls({
+        site,
+        dataAccess,
+        auditType: 'readability',
+        getAgenticUrls: async () => [],
+        getTopPages: async () => [
+          { url: 'https://example.com/callback-page', traffic: 200, urlId: 'cb1' },
+        ],
+      });
+
+      expect(result.topPages).to.deep.equal([
+        { url: 'https://example.com/callback-page', traffic: 200, urlId: 'cb1' },
+      ]);
+      expect(result.topPagesUrls).to.deep.equal([
+        'https://example.com/callback-page',
+      ]);
+    });
+
+    it('should map top page models with getUrl by default', async () => {
+      const site = {
+        getId: () => 'site-123',
+        getConfig: async () => null,
+      };
+
+      const result = await getMergedAuditInputUrls({
+        site,
+        auditType: 'summarization',
+        getAgenticUrls: async () => [],
+        topPages: [
+          { getUrl: () => 'https://example.com/model-page' },
+        ],
+      });
+
+      expect(result.topPagesUrls).to.deep.equal([
+        'https://example.com/model-page',
+      ]);
+      expect(result.urls).to.deep.equal([
+        'https://example.com/model-page',
       ]);
     });
   });

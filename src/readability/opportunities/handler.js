@@ -38,15 +38,19 @@ function sortTopPagesByTraffic(topPages) {
 
 async function getReadabilityUrlsToScrape(context) {
   const { site, dataAccess, log } = context;
-  const sortedTopPages = Promise.resolve(
-    dataAccess?.SiteTopPage?.allBySiteIdAndSourceAndGeo?.(site.getId(), 'ahrefs', 'global'),
-  ).then((topPages) => sortTopPagesByTraffic(topPages || []));
   const result = await getMergedAuditInputUrls({
     site,
     dataAccess,
     auditType: AUDIT_TYPE,
     getAgenticUrls: () => getTopAgenticUrlsFromAthena(site, context, TOP_PAGES_LIMIT),
-    topPages: sortedTopPages,
+    getTopPages: async () => {
+      const topPages = await dataAccess?.SiteTopPage?.allBySiteIdAndSourceAndGeo?.(
+        site.getId(),
+        'ahrefs',
+        'global',
+      );
+      return sortTopPagesByTraffic(topPages || []);
+    },
   });
 
   log.info(
