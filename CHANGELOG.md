@@ -1,3 +1,10 @@
+## [1.371.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.4...v1.371.5) (2026-03-26)
+
+
+### Bug Fixes
+
+* fix entitlement gate ([#2200](https://github.com/adobe/spacecat-audit-worker/issues/2200)) ([181f5df](https://github.com/adobe/spacecat-audit-worker/commit/181f5df60c080add6684f2d27d64f225e0eb91a8))
+
 ## [1.371.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.3...v1.371.4) (2026-03-25)
 
 
