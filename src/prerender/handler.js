@@ -744,36 +744,35 @@ export async function submitForScraping(context) {
   let topPagesUrls;
   let agenticUrls;
   if (context.env?.PRERENDER_STATIC_TEST_URLS === 'true') {
-    const tempBase = site.getBaseURL();
     topPagesUrls = [
-      '/en-us/product/airless-gen1-bskt-black-wz1016103idv',
-      '/en-us/product/dynapwr-carbon-drv-wg1p0365',
-      '/en-us/product/nba-official-game-basketball-wz10025',
-      '/en-us/product/pro-staff-97-v14-frm-wr12570',
-      '/en-us/product/evolution-game-basketball-wz10012',
-    ].map((r) => `${tempBase}${r}`);
+      'https://www.lovesac.com/',
+      'https://lovesac.com/sacs-learn',
+      'https://lovesac.com/designed-for-life',
+      'https://www.lovesac.com/sactionals/build',
+      'https://www.lovesac.com/learn-about-reclining-seat',
+    ];
     agenticUrls = [
-      '/en-us/',
-      '/en-us/tennis/tennis-racket-grips/tennis-racket-overgrips',
-      '/en-us/blog/volleyball/how-tos/beach-volleyball-rules',
-      '/en-us/shoes/collections/tennis',
-      '/en-us/baseball/baseball-gloves/infield-gloves',
-      '/fr-fr/golf',
-      '/es-es/blog/basketball/how-choose-basketball',
-      '/en-gb/blog/padel/how-choose-padel-racket',
-      '/en-gb/',
-      '/es-es/sportswear',
-      '/en-us/custom/gloves/',
-      '/en-us/golf/clubs/golf-drivers',
-      '/en-gb/tennis/tennis-bags',
-      '/en-us/explore/military-discount',
-      '/es-es/tennis/tennis-rackets',
-      '/en-us/golf/clubs',
-      '/en-us/product/hyper-hammer-5-3-tennis-racket-wrt5861',
-      '/en-us/specialty-shops/holiday-gift-shop/tennis',
-      '/en-us/fastpitch/fastpitch-softball-gloves/a2000',
-      '/de-de/blog/tennis/how-choose-tennis-racket',
-    ].map((r) => `${tempBase}${r}`);
+      'https://lovesac.com/learn-about-sactionals',
+      'https://lovesac.com/know-your-fabrics',
+      'https://www.lovesac.com/sacs',
+      'https://lovesac.com/help-center',
+      'https://lovesac.com/sactionals/covers/select/sactional-roll-arm-side-insert-and-cover-amethyst-corded-velvet',
+      'https://www.lovesac.com/products/mini-swatch-carbon-crossweave',
+      'https://lovesac.com/products/sactionals-deep-angled-side-insert-standard',
+      'https://www.lovesac.com/snugg/build/2-cushion-sofa',
+      'https://lovesac.com/learn-how-sactionals-adapt',
+      'https://www.lovesac.com/products/mini-swatch-venetian-taupe-corded-velvet',
+      'https://www.lovesac.com/products/citysac-cover-silver-liger-phur',
+      'https://www.lovesac.com/products/loveseat-stealthtech-existing-configuration',
+      'https://www.lovesac.com/sacs/limited-edition',
+      'https://www.lovesac.com/products/sactionals-storage-seat-insert-set-lovesoft',
+      'https://www.lovesac.com/products/2-seats-4-sides-sactional',
+      'https://lovesac.com/products/sactionals-deep-back-pillow-insert-lovesoft',
+      'https://lovesac.com/sactionals/inserts/select',
+      'https://www.lovesac.com/accessories',
+      'https://www.lovesac.com/customer/account/login/',
+      'https://lovesac.com/products/sactionals-deep-storage-seat-insert-set-standard',
+    ];
     log.info(`${LOG_PREFIX} PRERENDER_STATIC_TEST_URLS enabled: using ${topPagesUrls.length} organic and ${agenticUrls.length} agentic static URLs. siteId=${siteId}`);
   } else {
     topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
