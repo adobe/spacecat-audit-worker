@@ -15,11 +15,12 @@ import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { retrieveAuditById } from '../utils/data-access.js';
 
 /**
- * Check if site has valid entitlement for any of the product codes
+ * Check if site has site enrollment for any of the product codes
+ * (org entitlement alone is not enough).
  * @param {string[]} productCodes - Array of product codes to check
  * @param {Object} site - Site object
  * @param {Object} context - Lambda context
- * @returns {Promise<boolean>} - True if site has entitlement for any product code
+ * @returns {Promise<boolean>} - True if site has enrollment for any product code
  */
 export async function checkProductCodeEntitlements(productCodes, site, context) {
   if (!isNonEmptyArray(productCodes)) {
@@ -27,21 +28,19 @@ export async function checkProductCodeEntitlements(productCodes, site, context) 
   }
 
   try {
-    // Check entitlements for each product code
-    const entitlementChecks = await Promise.all(
+    const enrollmentChecks = await Promise.all(
       productCodes.map(async (productCode) => {
         try {
           const tierClient = await TierClient.createForSite(context, site, productCode);
           const tierResult = await tierClient.checkValidEntitlement();
-          return tierResult.entitlement || false;
+          return tierResult.siteEnrollment || false;
         } catch (error) {
           context.log.error(`Failed to check entitlement for product code ${productCode}:`, error);
           return false;
         }
       }),
     );
-    // Return true if site has entitlement for any of the product codes
-    return entitlementChecks.some((hasEntitlement) => hasEntitlement);
+    return enrollmentChecks.some((hasEnrollment) => hasEnrollment);
   } catch (error) {
     context.log.error('Error checking product code entitlements:', error);
     return false; // Fail safe - deny audit if entitlement check fails
@@ -52,16 +51,15 @@ export async function isAuditEnabledForSite(type, site, context) {
   const { Configuration } = context.dataAccess;
   const configuration = await Configuration.findLatest();
   const handler = configuration.getHandlers()?.[type];
-  // Check if handler has productCodes and verify entitlements
+  // Check if handler has productCodes and verify site enrollment for those products
   if (isNonEmptyArray(handler?.productCodes)) {
-    const hasValidEntitlement = await checkProductCodeEntitlements(
+    const hasValidEnrollment = await checkProductCodeEntitlements(
       handler.productCodes,
       site,
       context,
     );
-    if (!hasValidEntitlement) {
-      context.log.error(`No valid entitlement for handler ${type} with product codes 
-        ${handler.productCodes} for site ${site.getId()}`);
+    if (!hasValidEnrollment) {
+      context.log.error(`No valid site enrollment for handler ${type} with product codes ${handler.productCodes} for site ${site.getId()}`);
       return false;
     }
   } else {
