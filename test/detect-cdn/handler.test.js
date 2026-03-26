@@ -166,6 +166,29 @@ describe('detect-cdn handler', () => {
     expect(postMessageSafe.firstCall.args[2]).to.include('missing or invalid URL');
   });
 
+  it('logs warn when baseURL missing with siteId and no Slack (onboarding)', async () => {
+    const { detectCdn, detectCdnFromUrlStub, postMessageSafe } = await loadHandler();
+    const ctx = {
+      ...context,
+      dataAccess: { Site: { findById: sandbox.stub() } },
+    };
+
+    const resp = await detectCdn(
+      {
+        siteId: 'onboard-site-id',
+        slackContext: {},
+      },
+      ctx,
+    );
+
+    expect(resp.status).to.equal(200);
+    expect(context.log.warn).to.have.been.calledWithMatch(
+      '[detect-cdn] Missing or invalid URL (onboarding-style job, no Slack)',
+    );
+    expect(detectCdnFromUrlStub).to.not.have.been.called;
+    expect(postMessageSafe).to.not.have.been.called;
+  });
+
   it('includes slack target in missing-URL warning when provided', async () => {
     const { detectCdn, postMessageSafe } = await loadHandler();
     await detectCdn(
