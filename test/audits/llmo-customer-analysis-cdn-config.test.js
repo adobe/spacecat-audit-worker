@@ -410,6 +410,23 @@ describe('CDN Config Handler', () => {
       );
     });
 
+    it('should stagger aem-cs-fastly cdn-logs-analysis messages by 5 seconds per day', async () => {
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({}), getFullAuditRef: () => '' });
+
+      const data = { cdnProvider: 'aem-cs-fastly' };
+
+      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+      const cdnLogsAnalysisCalls = context.sqs.sendMessage
+        .getCalls()
+        .filter((call) => call.args[1].type === 'cdn-logs-analysis');
+
+      expect(cdnLogsAnalysisCalls.length).to.be.greaterThan(0);
+      cdnLogsAnalysisCalls.forEach((call, index) => {
+        expect(call.args[3]).to.equal(index * 5);
+      });
+    });
+
     it('should skip aem-cs-fastly processing when site already has cdn-logs-analysis with fullAuditRef', async () => {
       context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ 
         getAuditResult: () => ({ providers: ['fastly'] }), 
