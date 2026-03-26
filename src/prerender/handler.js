@@ -744,26 +744,27 @@ export async function submitForScraping(context) {
   let topPagesUrls;
   let agenticUrls;
   if (context.env?.PRERENDER_STATIC_TEST_URLS === 'true') {
+    const tempBase = site.getBaseURL();
     topPagesUrls = [
-      'https://www.lovesac.com',
-      'https://www.lovesac.com/help-center',
-      'https://lovesac.com/sacs',
-      'https://www.lovesac.com/sactionals',
-      'https://lovesac.com/how-to',
-    ];
+      '/',
+      '/help-center',
+      '/sacs',
+      '/sactionals',
+      '/how-to',
+    ].map((r) => `${tempBase}${r}`);
     agenticUrls = [
-      'https://lovesac.com/products/sactionals-seat-insert-set-standard',
-      'https://lovesac.com/snugg/build/3-cushion-sofa',
-      'https://lovesac.com/snugg/build/loveseat',
-      'https://lovesac.com/products/sactionals-seat-cushion-insert-lovesoft',
-      'https://lovesac.com/products/sactionals-deep-seat-insert-set-standard',
-      'https://lovesac.com/sactional-roll-arm-side-insert-and-cover-amethyst-corded-velvet.html',
-      'https://lovesac.com/products/sactionals-seat-cushion-insert-standard',
-      'https://lovesac.com/sactionals-with-stealthtech-sound-charge',
-      'https://lovesac.com/products/sactionals-deep-side-insert-standard',
-      'https://lovesac.com/visit-the-lovesac-roadshow',
-      'https://lovesac.com/product-reviews',
-    ];
+      '/products/sactionals-seat-insert-set-standard',
+      '/snugg/build/3-cushion-sofa',
+      '/snugg/build/loveseat',
+      '/products/sactionals-seat-cushion-insert-lovesoft',
+      '/products/sactionals-deep-seat-insert-set-standard',
+      '/sactional-roll-arm-side-insert-and-cover-amethyst-corded-velvet.html',
+      '/products/sactionals-seat-cushion-insert-standard',
+      '/sactionals-with-stealthtech-sound-charge',
+      '/products/sactionals-deep-side-insert-standard',
+      '/visit-the-lovesac-roadshow',
+      '/product-reviews',
+    ].map((r) => `${tempBase}${r}`);
     log.info(`${LOG_PREFIX} PRERENDER_STATIC_TEST_URLS enabled: using ${topPagesUrls.length} organic and ${agenticUrls.length} agentic static URLs. siteId=${siteId}`);
   } else {
     topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
