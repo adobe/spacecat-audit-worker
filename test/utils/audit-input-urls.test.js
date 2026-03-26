@@ -16,9 +16,49 @@ import { expect } from 'chai';
 import {
   getMergedAuditInputUrls,
   mergeAndGetUniqueHtmlUrls,
+  sortTopPagesByTraffic,
 } from '../../src/utils/audit-input-urls.js';
 
 describe('audit-input-urls', () => {
+  describe('sortTopPagesByTraffic', () => {
+    it('should normalize top pages and sort them by traffic descending', () => {
+      const result = sortTopPagesByTraffic([
+        { getUrl: () => 'https://example.com/low', getTraffic: () => 10 },
+        { getUrl: () => 'https://example.com/high', getTraffic: () => 100 },
+        { getUrl: () => 'https://example.com/missing' },
+      ]);
+
+      expect(result).to.deep.equal([
+        { url: 'https://example.com/high', traffic: 100 },
+        { url: 'https://example.com/low', traffic: 10 },
+        { url: 'https://example.com/missing', traffic: 0 },
+      ]);
+    });
+
+    it('should include extra mapped fields when requested', () => {
+      const result = sortTopPagesByTraffic(
+        [
+          {
+            getUrl: () => 'https://example.com/page',
+            getTraffic: () => 50,
+            getId: () => 'page-1',
+          },
+        ],
+        (page) => ({
+          urlId: page.getId(),
+        }),
+      );
+
+      expect(result).to.deep.equal([
+        {
+          url: 'https://example.com/page',
+          traffic: 50,
+          urlId: 'page-1',
+        },
+      ]);
+    });
+  });
+
   describe('mergeAndGetUniqueHtmlUrls', () => {
     it('should merge unique HTML URLs and filter non-HTML URLs', () => {
       const result = mergeAndGetUniqueHtmlUrls(

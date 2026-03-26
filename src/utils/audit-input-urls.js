@@ -36,6 +36,26 @@ function defaultTopPagesToUrls(topPages) {
   return topPages.map((page) => page.url ?? page.getUrl());
 }
 
+function defaultTopPageExtraFields() {
+  return {};
+}
+
+/**
+ * Normalizes top pages and sorts them by descending traffic.
+ * @param {Array} topPages
+ * @param {Function} [getExtraFields]
+ * @returns {Array}
+ */
+export function sortTopPagesByTraffic(topPages, getExtraFields = defaultTopPageExtraFields) {
+  return topPages
+    .map((page) => ({
+      url: page.getUrl(),
+      traffic: page.getTraffic?.() ?? 0,
+      ...getExtraFields(page),
+    }))
+    .sort((a, b) => b.traffic - a.traffic);
+}
+
 /**
  * Merges multiple URL arrays, ensures uniqueness by path, and filters out non-HTML URLs.
  * URLs with the same path are treated as duplicates even when the hostname differs.

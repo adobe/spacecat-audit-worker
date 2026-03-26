@@ -14,7 +14,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
-import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
+import { getMergedAuditInputUrls, sortTopPagesByTraffic } from '../utils/audit-input-urls.js';
 import { detectExistingContent } from './existing-content-detector.js';
 import { filterOutDynamicUrls } from './dynamic-content-filter.js';
 
@@ -24,15 +24,6 @@ const AUDIT_CONTEXT_URLS_KEY = 'summarizationUrls';
 const SCRAPE_AVAILABILITY_THRESHOLD = 0.5; // 50%
 const MAX_TOP_PAGES = 200;
 const MAX_PAGES_TO_MYSTIQUE = 100;
-
-function sortTopPagesByTraffic(topPages) {
-  return topPages
-    .map((page) => ({
-      url: page.getUrl(),
-      traffic: page.getTraffic?.() ?? 0,
-    }))
-    .sort((a, b) => b.traffic - a.traffic);
-}
 
 async function getSummarizationInputUrls(context) {
   const { site, dataAccess, log } = context;

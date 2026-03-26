@@ -17,7 +17,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestions } from '../../utils/data-access.js';
 import { wwwUrlResolver } from '../../common/base-audit.js';
 import { analyzePageReadability, sendReadabilityToMystique } from '../shared/analysis-utils.js';
-import { getMergedAuditInputUrls } from '../../utils/audit-input-urls.js';
+import { getMergedAuditInputUrls, sortTopPagesByTraffic } from '../../utils/audit-input-urls.js';
 import {
   TOP_PAGES_LIMIT,
 } from '../shared/constants.js';
@@ -25,16 +25,6 @@ import { getTopAgenticUrlsFromAthena } from '../../utils/agentic-urls.js';
 
 const { AUDIT_STEP_DESTINATIONS, AUDIT_TYPES } = Audit;
 const AUDIT_TYPE = 'readability';
-
-function sortTopPagesByTraffic(topPages) {
-  return topPages
-    .map((page) => ({
-      url: page.getUrl(),
-      traffic: page.getTraffic?.() ?? 0,
-      urlId: page.getId?.() ?? page.getUrl(),
-    }))
-    .sort((a, b) => b.traffic - a.traffic);
-}
 
 async function getReadabilityUrlsToScrape(context) {
   const { site, dataAccess, log } = context;
@@ -49,7 +39,9 @@ async function getReadabilityUrlsToScrape(context) {
         'ahrefs',
         'global',
       );
-      return sortTopPagesByTraffic(topPages || []);
+      return sortTopPagesByTraffic(topPages || [], (page) => ({
+        urlId: page.getId?.() ?? page.getUrl(),
+      }));
     },
   });
 
