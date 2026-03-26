@@ -479,7 +479,8 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
 
       // Skip OUTDATED suggestions (stale data from previous audit runs)
       const status = s.getStatus();
-      if (status === 'OUTDATED') {
+      const isDeployedOrFixed = status === Suggestion.STATUSES.FIXED || !!data?.edgeDeployed;
+      if (status === Suggestion.STATUSES.OUTDATED || isDeployedOrFixed) {
         return;
       }
 
