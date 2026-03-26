@@ -1145,7 +1145,11 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       return;
     }
 
-    const pages = (auditResult.results ?? []).map((result) => ({
+    const scrapedAt = auditedAt || new Date().toISOString();
+    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+    const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
+
+    const currentPages = (auditResult.results ?? []).map((result) => ({
       url: result.url,
       scrapingStatus: result.error ? 'error' : 'success',
       needsPrerender: result.needsPrerender || false,
@@ -1153,17 +1157,16 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       wordCountBefore: result.wordCountBefore || 0,
       wordCountAfter: result.wordCountAfter || 0,
       contentGainRatio: result.contentGainRatio || 0,
+      scrapedAt,
       ...(result.scrapeError && { scrapeError: result.scrapeError }),
     }));
-
-    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
 
     // Append URLs that were submitted to the scraper but produced no S3 result files.
     // For each, try to read their scrape.json to surface the error stored during scraping.
     if (scrapeJobId && dataAccess?.ScrapeUrl) {
       try {
         const allScrapeUrls = await dataAccess.ScrapeUrl.allByScrapeJobId(scrapeJobId);
-        const auditResultUrlSet = new Set(pages.map((p) => p.url));
+        const auditResultUrlSet = new Set(currentPages.map((p) => p.url));
 
         const missingPages = await Promise.all(
           allScrapeUrls
@@ -1177,15 +1180,38 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
                 url,
                 scrapingStatus: 'failed',
                 needsPrerender: false,
+                scrapedAt,
                 ...(metadata?.error && { scrapeError: metadata.error }),
               };
             }),
         );
-        pages.push(...missingPages);
+        currentPages.push(...missingPages);
       } catch (e) {
         log.warn(`${LOG_PREFIX} Failed to append missing scrape URLs to status.json for scrapeJobId=${scrapeJobId}: ${e.message}`);
       }
     }
+
+    // Read existing status.json and merge pages so previous runs are not lost.
+    // Pages from the current run overwrite any prior entry for the same URL.
+    let existingPages = [];
+    try {
+      const existing = await s3Client.send(new GetObjectCommand({
+        Bucket: bucketName,
+        Key: statusKey,
+      }));
+      const existingData = JSON.parse(await existing.Body.transformToString());
+      existingPages = Array.isArray(existingData.pages) ? existingData.pages : [];
+    } catch (e) {
+      if (e.name !== 'NoSuchKey') {
+        log.warn(`${LOG_PREFIX} Could not read existing status.json for merge, starting fresh: ${e.message}`);
+      }
+    }
+
+    const currentUrlSet = new Set(currentPages.map((p) => p.url));
+    const mergedPages = [
+      ...currentPages,
+      ...existingPages.filter((p) => !currentUrlSet.has(p.url)),
+    ];
 
     // Extract status information for all pages
     const statusSummary = {
@@ -1193,7 +1219,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       siteId,
       auditType: AUDIT_TYPE,
       scrapeJobId: scrapeJobId || null,
-      lastUpdated: auditedAt || new Date().toISOString(),
+      lastUpdated: scrapedAt,
       totalUrlsChecked: auditResult.totalUrlsChecked || 0,
       urlsNeedingPrerender: auditResult.urlsNeedingPrerender || 0,
       urlsSubmittedForScraping: auditResult.urlsSubmittedForScraping ?? null,
@@ -1202,9 +1228,8 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       scrapeForbidden: auditResult.scrapeForbidden || false,
       scrapeForbiddenCount: auditResult.scrapeForbiddenCount ?? 0,
       lastAuditSuccess: auditResult.lastAuditSuccess !== false,
-      pages,
+      pages: mergedPages,
     };
-    const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
     await s3Client.send(new PutObjectCommand({
       Bucket: bucketName,
       Key: statusKey,

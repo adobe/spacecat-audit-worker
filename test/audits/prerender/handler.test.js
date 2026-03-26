@@ -1530,7 +1530,7 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.error).to.equal('Audit failed');
-        const putCall = s3SendStub.getCalls().find((c) => c.args[0]?.input?.Key === 'prerender/scrapes/test-site-id/status.json');
+        const putCall = s3SendStub.getCalls().find((c) => c.args[0]?.constructor?.name === 'PutObjectCommand' && c.args[0]?.input?.Key === 'prerender/scrapes/test-site-id/status.json');
         expect(putCall).to.exist;
         const statusBody = JSON.parse(putCall.args[0].input.Body);
         expect(statusBody.lastAuditSuccess).to.be.false;
@@ -1587,7 +1587,7 @@ describe('Prerender Audit', () => {
         expect(context.log.error).to.have.been.called;
         expect(syncSuggestionsStub).to.have.been.calledOnce;
 
-        const putCall = s3SendStub.getCalls().find((c) => c.args[0]?.input?.Key === 'prerender/scrapes/test-site-id/status.json');
+        const putCall = s3SendStub.getCalls().find((c) => c.args[0]?.constructor?.name === 'PutObjectCommand' && c.args[0]?.input?.Key === 'prerender/scrapes/test-site-id/status.json');
         expect(putCall).to.exist;
         const statusBody = JSON.parse(putCall.args[0].input.Body);
         expect(statusBody.lastAuditSuccess).to.be.false;
@@ -5508,9 +5508,24 @@ describe('Prerender Audit', () => {
     let mockS3Client;
     let context;
 
+    const noSuchKeyError = () => {
+      const err = new Error('NoSuchKey');
+      err.name = 'NoSuchKey';
+      return err;
+    };
+
+    // Helper: find the PutObjectCommand call
+    const getPutCall = (stub) => stub.getCalls().find((c) => c.args[0].constructor.name === 'PutObjectCommand');
+
     beforeEach(() => {
       mockS3Client = {
-        send: sandbox.stub().resolves({}),
+        // By default: GET status.json → NoSuchKey (no prior run), PUT → success
+        send: sandbox.stub().callsFake((command) => {
+          if (command.constructor.name === 'GetObjectCommand') {
+            return Promise.reject(noSuchKeyError());
+          }
+          return Promise.resolve({});
+        }),
       };
 
       context = {
@@ -5545,9 +5560,9 @@ describe('Prerender Audit', () => {
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      expect(mockS3Client.send).to.have.been.calledOnce;
-      const call = mockS3Client.send.getCall(0);
-      const uploadedData = JSON.parse(call.args[0].input.Body);
+      const putCall = getPutCall(mockS3Client.send);
+      expect(putCall).to.exist;
+      const uploadedData = JSON.parse(putCall.args[0].input.Body);
 
       expect(uploadedData.urlsSubmittedForScraping).to.equal(10);
       expect(uploadedData.urlsScrapedSuccessfully).to.equal(5);
@@ -5589,9 +5604,9 @@ describe('Prerender Audit', () => {
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      expect(mockS3Client.send).to.have.been.calledOnce;
-      const call = mockS3Client.send.getCall(0);
-      const command = call.args[0];
+      const putCall = getPutCall(mockS3Client.send);
+      expect(putCall).to.exist;
+      const command = putCall.args[0];
 
       expect(command.input.Bucket).to.equal('test-bucket');
       expect(command.input.Key).to.equal('prerender/scrapes/test-site-id/status.json');
@@ -5616,6 +5631,7 @@ describe('Prerender Audit', () => {
         wordCountBefore: 100,
         wordCountAfter: 250,
         contentGainRatio: 2.5,
+        scrapedAt: '2025-01-01T00:00:00.000Z',
       });
 
       expect(context.log.info).to.have.been.calledWith(
@@ -5643,9 +5659,7 @@ describe('Prerender Audit', () => {
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      const call = mockS3Client.send.getCall(0);
-      const command = call.args[0];
-      const uploadedData = JSON.parse(command.input.Body);
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
       expect(uploadedData.pages[0].scrapingStatus).to.equal('error');
       expect(uploadedData.pages[0].wordCountBefore).to.equal(0);
@@ -5687,9 +5701,7 @@ describe('Prerender Audit', () => {
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      const call = mockS3Client.send.getCall(0);
-      const command = call.args[0];
-      const uploadedData = JSON.parse(command.input.Body);
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
       // First page should have scrape error
       expect(uploadedData.pages[0].url).to.equal('https://example.com/forbidden-page');
@@ -5734,10 +5746,7 @@ describe('Prerender Audit', () => {
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      expect(mockS3Client.send).to.have.been.calledOnce;
-      const call = mockS3Client.send.getCall(0);
-      const command = call.args[0];
-      const uploadedData = JSON.parse(command.input.Body);
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
       expect(uploadedData.pages).to.deep.equal([]);
       expect(uploadedData.totalUrlsChecked).to.equal(0);
@@ -5757,10 +5766,7 @@ describe('Prerender Audit', () => {
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      expect(mockS3Client.send).to.have.been.calledOnce;
-      const call = mockS3Client.send.getCall(0);
-      const command = call.args[0];
-      const uploadedData = JSON.parse(command.input.Body);
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
       expect(uploadedData.pages).to.deep.equal([]);
     });
@@ -5779,10 +5785,7 @@ describe('Prerender Audit', () => {
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      expect(mockS3Client.send).to.have.been.calledOnce;
-      const call = mockS3Client.send.getCall(0);
-      const command = call.args[0];
-      const uploadedData = JSON.parse(command.input.Body);
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
       expect(uploadedData.pages).to.deep.equal([]);
     });
@@ -5800,9 +5803,7 @@ describe('Prerender Audit', () => {
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
       const afterTime = Date.now();
 
-      const call = mockS3Client.send.getCall(0);
-      const command = call.args[0];
-      const uploadedData = JSON.parse(command.input.Body);
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
       // Verify the timestamp is valid ISO string and within time range
       const uploadedTime = new Date(uploadedData.lastUpdated).getTime();
@@ -5848,9 +5849,7 @@ describe('Prerender Audit', () => {
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      const call = mockS3Client.send.getCall(0);
-      const command = call.args[0];
-      const uploadedData = JSON.parse(command.input.Body);
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
       expect(uploadedData.pages[0]).to.deep.equal({
         url: 'https://example.com/page1',
@@ -5860,6 +5859,7 @@ describe('Prerender Audit', () => {
         wordCountBefore: 0,
         wordCountAfter: 0,
         contentGainRatio: 0,
+        scrapedAt: '2025-01-01T00:00:00.000Z',
       });
     });
 
@@ -5881,6 +5881,10 @@ describe('Prerender Audit', () => {
       const scrapeError = { statusCode: 500, message: 'Connection timeout' };
       mockS3Client.send.callsFake((command) => {
         if (command.constructor.name === 'GetObjectCommand') {
+          if (command.input.Key.endsWith('status.json')) {
+            return Promise.reject(noSuchKeyError());
+          }
+          // scrape.json for missing pages
           return Promise.resolve({
             ContentType: 'application/json',
             Body: {
@@ -5902,7 +5906,7 @@ describe('Prerender Audit', () => {
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      const putCall = mockS3Client.send.getCalls().find((c) => c.args[0].constructor.name === 'PutObjectCommand');
+      const putCall = getPutCall(mockS3Client.send);
       const uploadedData = JSON.parse(putCall.args[0].input.Body);
 
       expect(uploadedData.pages).to.have.lengthOf(2);
@@ -5910,6 +5914,7 @@ describe('Prerender Audit', () => {
         url: 'https://example.com/missing-page',
         scrapingStatus: 'failed',
         needsPrerender: false,
+        scrapedAt: '2025-01-01T00:00:00.000Z',
         scrapeError,
       });
     });
@@ -5923,9 +5928,10 @@ describe('Prerender Audit', () => {
         auditResult: { totalUrlsChecked: 0, urlsNeedingPrerender: 0, results: [] },
       };
 
+      // All GETs (status.json and scrape.json) return NoSuchKey
       mockS3Client.send.callsFake((command) => {
         if (command.constructor.name === 'GetObjectCommand') {
-          return Promise.reject(new Error('NoSuchKey'));
+          return Promise.reject(noSuchKeyError());
         }
         return Promise.resolve({});
       });
@@ -5940,14 +5946,14 @@ describe('Prerender Audit', () => {
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      const putCall = mockS3Client.send.getCalls().find((c) => c.args[0].constructor.name === 'PutObjectCommand');
-      const uploadedData = JSON.parse(putCall.args[0].input.Body);
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
       expect(uploadedData.pages).to.have.lengthOf(1);
       expect(uploadedData.pages[0]).to.deep.equal({
         url: 'https://example.com/missing-page',
         scrapingStatus: 'failed',
         needsPrerender: false,
+        scrapedAt: '2025-01-01T00:00:00.000Z',
       });
       expect(uploadedData.pages[0]).to.not.have.property('scrapeError');
     });
@@ -5963,6 +5969,10 @@ describe('Prerender Audit', () => {
 
       mockS3Client.send.callsFake((command) => {
         if (command.constructor.name === 'GetObjectCommand') {
+          if (command.input.Key.endsWith('status.json')) {
+            return Promise.reject(noSuchKeyError());
+          }
+          // scrape.json — no error field
           return Promise.resolve({
             ContentType: 'application/json',
             Body: { transformToString: () => Promise.resolve(JSON.stringify({ status: 'pending' })) },
@@ -5981,8 +5991,7 @@ describe('Prerender Audit', () => {
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      const putCall = mockS3Client.send.getCalls().find((c) => c.args[0].constructor.name === 'PutObjectCommand');
-      const uploadedData = JSON.parse(putCall.args[0].input.Body);
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
       expect(uploadedData.pages[0]).to.not.have.property('scrapeError');
     });
@@ -6005,7 +6014,7 @@ describe('Prerender Audit', () => {
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
       expect(context.log.warn).to.have.been.calledWith(sinon.match(/Failed to append missing scrape URLs.*scrapeJobId=scrape-job-123/));
-      expect(mockS3Client.send).to.have.been.calledOnce; // upload still proceeds
+      expect(getPutCall(mockS3Client.send)).to.exist; // upload still proceeds
     });
 
     it('should skip missing pages block when scrapeJobId is absent', async () => {
@@ -6037,7 +6046,108 @@ describe('Prerender Audit', () => {
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      expect(mockS3Client.send).to.have.been.calledOnce; // only the PutObjectCommand
+      expect(getPutCall(mockS3Client.send)).to.exist;
+    });
+
+    it('should merge pages from existing status.json, current run overrides same URLs', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-02-01T00:00:00.000Z',
+        auditResult: {
+          totalUrlsChecked: 1,
+          urlsNeedingPrerender: 1,
+          results: [
+            {
+              url: 'https://example.com/page1',
+              error: false,
+              needsPrerender: true,
+              wordCountBefore: 10,
+              wordCountAfter: 200,
+              contentGainRatio: 20,
+            },
+          ],
+        },
+      };
+
+      const existingStatus = {
+        pages: [
+          {
+            url: 'https://example.com/page1',
+            scrapingStatus: 'success',
+            needsPrerender: false,
+            scrapedAt: '2025-01-01T00:00:00.000Z',
+          },
+          {
+            url: 'https://example.com/page2',
+            scrapingStatus: 'success',
+            needsPrerender: true,
+            scrapedAt: '2025-01-01T00:00:00.000Z',
+          },
+        ],
+      };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.resolve({
+            Body: { transformToString: () => Promise.resolve(JSON.stringify(existingStatus)) },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+
+      // page1 overwritten by current run, page2 preserved from prior run
+      expect(uploadedData.pages).to.have.lengthOf(2);
+      const page1 = uploadedData.pages.find((p) => p.url === 'https://example.com/page1');
+      const page2 = uploadedData.pages.find((p) => p.url === 'https://example.com/page2');
+      expect(page1.scrapedAt).to.equal('2025-02-01T00:00:00.000Z');
+      expect(page1.needsPrerender).to.equal(true);
+      expect(page2.scrapedAt).to.equal('2025-01-01T00:00:00.000Z'); // preserved
+    });
+
+    it('should treat missing existing status.json (NoSuchKey) as empty and not warn', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: { totalUrlsChecked: 0, urlsNeedingPrerender: 0, results: [] },
+      };
+
+      // default stub already returns NoSuchKey for GET
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      expect(context.log.warn).to.not.have.been.calledWith(sinon.match(/Could not read existing status\.json/));
+      expect(getPutCall(mockS3Client.send)).to.exist;
+    });
+
+    it('should warn and start fresh when existing status.json is unreadable (non-NoSuchKey error)', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          totalUrlsChecked: 1,
+          urlsNeedingPrerender: 1,
+          results: [{ url: 'https://example.com/page1', error: false, needsPrerender: true }],
+        },
+      };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.reject(new Error('AccessDenied'));
+        }
+        return Promise.resolve({});
+      });
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      expect(context.log.warn).to.have.been.calledWith(sinon.match(/Could not read existing status\.json.*starting fresh/));
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+      expect(uploadedData.pages).to.have.lengthOf(1);
     });
   });
 
