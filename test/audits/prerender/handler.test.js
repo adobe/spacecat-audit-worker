@@ -357,6 +357,50 @@ describe('Prerender Audit', () => {
         expect(result.urls.map((u) => u.url)).to.include('https://example.com/special');
       });
 
+      it('should skip includedURLs on non-first-run (organic URLs recently processed)', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-athena-client': {
+            AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
+          },
+          '../../../src/prerender/utils/shared.js': {
+            generateReportingPeriods: () => ({ weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }] }),
+            getS3Config: async () => ({ databaseName: 'db', tableName: 'tbl', getAthenaTempLocation: () => 's3://tmp/' }),
+            weeklyBreakdownQueries: { createAgenticReportQuery: async () => 'SELECT 1' },
+            loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [] }),
+          },
+        });
+
+        const recentUrl = 'https://example.com/organic-page';
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => ['https://example.com/special'] }),
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                { getUrl: () => recentUrl },
+              ]),
+            },
+            // PageCitability returns the organic URL as recently processed → hasRecentOrganic=true
+            PageCitability: {
+              allBySiteId: sandbox.stub().resolves([{
+                getUrl: () => recentUrl,
+                getUpdatedAt: () => new Date().toISOString(),
+              }]),
+            },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+        const urls = result.urls.map((u) => u.url);
+        expect(urls).to.not.include('https://example.com/special');
+      });
+
       it('should use Sheet URLs when sheet returns data', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/prerender/utils/shared.js': {

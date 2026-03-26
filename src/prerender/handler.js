@@ -767,7 +767,12 @@ export async function submitForScraping(context) {
   });
   const batchedOrganicUrls = hasRecentOrganic ? [] : topPagesUrls;
 
-  // Cap combined organic + agentic batch to DAILY_BATCH_SIZE (includedURLs always pass through)
+  // includedURLs are only submitted on the first run of each weekly cycle (no recently processed
+  // organic URLs means we're at the start of the cycle). On daily follow-up runs they are skipped.
+  const isFirstRunOfCycle = !hasRecentOrganic;
+  const batchedIncludedURLs = isFirstRunOfCycle ? includedURLs : [];
+
+  // Cap combined organic + agentic batch to DAILY_BATCH_SIZE (includedURLs added outside the cap)
   const priorityUrls = [...batchedOrganicUrls, ...filteredAgenticUrls];
   const batchedUrls = priorityUrls.slice(0, DAILY_BATCH_SIZE);
 
@@ -775,25 +780,25 @@ export async function submitForScraping(context) {
   // Also filters out non-HTML URLs (PDFs, images, etc.) in a single pass
   const { urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
     batchedUrls,
-    includedURLs,
+    batchedIncludedURLs,
   );
 
   log.info(`
     ${LOG_PREFIX} prerender_submit_scraping_metrics:
     submittedUrls=${finalUrls.length},
-    agenticUrls=${agenticUrls.length},
-    filteredAgenticUrls=${filteredAgenticUrls.length},
-    batchedUrls=${batchedUrls.length},
-    organicIncluded=${batchedOrganicUrls.length > 0},
+    agenticTotal=${agenticUrls.length},
+    agenticNewThisCycle=${filteredAgenticUrls.length},
+    agenticInBatch=${batchedUrls.length - batchedOrganicUrls.length},
+    isFirstRunOfCycle=${isFirstRunOfCycle},
     topPagesUrls=${topPagesUrls.length},
-    includedURLs=${includedURLs.length},
+    includedURLs=${batchedIncludedURLs.length},
     filteredOutUrls=${filteredCount},
     baseUrl=${site.getBaseURL()},
     siteId=${siteId},`);
 
   log.info(`${LOG_PREFIX} prerender_url_details: organicUrls=[${batchedOrganicUrls.join(', ')}], siteId=${siteId}`);
   log.info(`${LOG_PREFIX} prerender_url_details: agenticUrls(batched)=[${filteredAgenticUrls.slice(0, batchedUrls.length - batchedOrganicUrls.length).join(', ')}], siteId=${siteId}`);
-  log.info(`${LOG_PREFIX} prerender_url_details: includedURLs=[${includedURLs.join(', ')}], siteId=${siteId}`);
+  log.info(`${LOG_PREFIX} prerender_url_details: includedURLs=[${batchedIncludedURLs.join(', ')}], siteId=${siteId}`);
   log.info(`${LOG_PREFIX} prerender_url_details: recentPathnames(count=${recentPathnames.size})=[${[...recentPathnames].join(', ')}], siteId=${siteId}`);
   log.info(`${LOG_PREFIX} prerender_url_details: finalUrls=[${finalUrls.join(', ')}], siteId=${siteId}`);
 
