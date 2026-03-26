@@ -1,3 +1,10 @@
+## [1.371.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.8...v1.371.9) (2026-03-26)
+
+
+### Bug Fixes
+
+* harden prerender guidance and suggestion save ([#2201](https://github.com/adobe/spacecat-audit-worker/issues/2201)) ([0d4f704](https://github.com/adobe/spacecat-audit-worker/commit/0d4f70460c8b4b6ed13dfe377d1e59a307eb35ae))
+
 ## [1.371.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.7...v1.371.8) (2026-03-26)
 
 
