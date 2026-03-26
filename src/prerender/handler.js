@@ -738,14 +738,53 @@ export async function submitForScraping(context) {
   }
 
   const siteId = site.getId();
-  const topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
-  const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
 
-  // Fetch Top Agentic URLs (limited by TOP_AGENTIC_URLS_LIMIT)
-  // Use overrideBaseURL if configured so agentic URLs are constructed with the correct base
-  const overrideBaseURL = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL;
-  const agenticContext = overrideBaseURL ? { ...context, finalUrl: overrideBaseURL } : context;
-  const agenticUrls = await getTopAgenticUrls(site, agenticContext);
+  // TEMP: static URLs for dev testing — enabled via PRERENDER_STATIC_TEST_URLS=true
+  /* c8 ignore next 35 */
+  let topPagesUrls;
+  let agenticUrls;
+  if (context.env?.PRERENDER_STATIC_TEST_URLS === 'true') {
+    const tempBase = site.getBaseURL();
+    topPagesUrls = [
+      '/',
+      '/in/smartphones/galaxy-s/galaxy-s24-fe-blue-128gb-sm-s721blbbins/',
+      '/levant/smartphones/galaxy-s24-ultra/',
+      '/de/watches/galaxy-watch8/buy/',
+      '/fr/smartphones/galaxy-s24/',
+    ].map((r) => `${tempBase}${r}`);
+    agenticUrls = [
+      '/jp/smartphones/galaxy-s25/',
+      '/in/smartphones/galaxy-z-fold7/buy/',
+      '/pk/smartphones/galaxy-s24-ultra/buy/',
+      '/uk/smartphones/all-smartphones/',
+      '/us/smartphones/galaxy-a16-5g/',
+      '/mx/smartphones/galaxy-s/galaxy-s23-ultra-green-512gb-sm-s918bzgvltm/',
+      '/in/smartphones/galaxy-z/',
+      '/pk/smartphones/galaxy-a/galaxy-a16-black-256gb-sm-a165fzkipkd/buy/',
+      '/pl/',
+      '/id/smartphones/galaxy-a/galaxy-a26-5g-black-256gb-sm-a266bzkhxid/',
+      '/levant/smartphones/galaxy-s22-ultra/buy/',
+      '/us/support/answer/ANS10004856/',
+      '/in/smartphones/galaxy-s24/',
+      '/in/smartphones/galaxy-a/galaxy-a16-5g-blue-black-128gb-sm-a166pzkbins/',
+      '/jp/smartphones/galaxy-a/galaxy-a25-5g-light-blue-64gb-sm-a253qlbasjp/',
+      '/us/smartphones/galaxy-s25/',
+      '/id/smartphones/galaxy-a/galaxy-a56-5g-awesome-pink-256gb-sm-a566blitxid/',
+      '/co/',
+      '/in/smartphones/galaxy-z-fold6/buy/',
+      '/us/smartphones/galaxy-z-flip7/',
+    ].map((r) => `${tempBase}${r}`);
+    log.info(`${LOG_PREFIX} PRERENDER_STATIC_TEST_URLS enabled: using ${topPagesUrls.length} organic and ${agenticUrls.length} agentic static URLs. siteId=${siteId}`);
+  } else {
+    topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
+    // Fetch Top Agentic URLs (limited by TOP_AGENTIC_URLS_LIMIT)
+    // Use overrideBaseURL if configured so agentic URLs are constructed with the correct base
+    const overrideBaseURL = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL;
+    const agenticContext = overrideBaseURL ? { ...context, finalUrl: overrideBaseURL } : context;
+    agenticUrls = await getTopAgenticUrls(site, agenticContext);
+  }
+
+  const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
 
   // Daily batching: filter URLs recently processed within the last 7 days
   const recentPathnames = await getRecentlyProcessedPathnames(context, siteId);
