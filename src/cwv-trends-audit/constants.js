@@ -16,6 +16,7 @@ export const CURRENT_WEEK_DAYS = 7;
 export const S3_BASE_PATH = 'metrics';
 export const MIN_PAGEVIEWS = 1000;
 export const DEFAULT_DEVICE_TYPE = 'mobile';
+export const DEVICE_TYPES = ['mobile', 'desktop'];
 
 // Core Web Vitals thresholds based on https://web.dev/articles/vitals
 export const CWV_THRESHOLDS = {

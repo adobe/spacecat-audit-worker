@@ -54,17 +54,27 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     });
   }
 
-  function makeSite(handlerConfig = {}) {
+  function makeSite() {
     return {
       getId: () => 'site-1',
       getConfig: () => ({
-        getHandlers: () => ({ 'cwv-trends-audit': handlerConfig }),
+        getHandlers: () => ({ 'cwv-trends-audit': {} }),
       }),
     };
   }
 
   function makeContext() {
     return { s3Client: {}, log, env: { S3_IMPORTER_BUCKET_NAME: 'bucket' } };
+  }
+
+  // Helper to get the mobile result (index 0) from the array
+  function mobileResult(result) {
+    return result.auditResult[0];
+  }
+
+  // Helper to get the desktop result (index 1) from the array
+  function desktopResult(result) {
+    return result.auditResult[1];
   }
 
   beforeEach(async () => {
@@ -86,62 +96,24 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
 
   afterEach(() => { sandbox.restore(); });
 
-  it('produces audit result with correct structure', async () => {
-    const urls = [buildUrl('https://ex.com/p1', 'mobile')];
+  it('produces audit result as array with both mobile and desktop', async () => {
+    const urls = [
+      buildUrl('https://ex.com/p1', 'mobile'),
+      buildUrl('https://ex.com/p2', 'desktop'),
+    ];
     readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
 
-    expect(result.auditResult).to.have.all.keys('metadata', 'trendData', 'summary', 'urlDetails');
-    expect(result.auditResult.metadata.deviceType).to.equal('mobile');
-    expect(result.auditResult.trendData).to.have.lengthOf(28);
+    expect(result.auditResult).to.be.an('array').with.lengthOf(2);
+    expect(mobileResult(result)).to.have.all.keys('metadata', 'trendData', 'summary', 'urlDetails');
+    expect(mobileResult(result).metadata.deviceType).to.equal('mobile');
+    expect(desktopResult(result).metadata.deviceType).to.equal('desktop');
+    expect(mobileResult(result).trendData).to.have.lengthOf(28);
     expect(result).to.have.property('fullAuditRef');
   });
 
-  it('reads device type from site config', async () => {
-    const urls = [buildUrl('https://ex.com/p1', 'desktop')];
-    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
-
-    const result = await cwvTrendsRunner(
-      'https://ex.com',
-      makeContext(),
-      makeSite({ deviceType: 'desktop' }),
-    );
-
-    expect(result.auditResult.metadata.deviceType).to.equal('desktop');
-    expect(result.auditResult.urlDetails).to.have.lengthOf(1);
-  });
-
-  it('defaults to mobile when config has no deviceType', async () => {
-    const urls = [buildUrl('https://ex.com/p1', 'mobile')];
-    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
-
-    const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
-
-    expect(result.auditResult.metadata.deviceType).to.equal('mobile');
-  });
-
-  it('defaults to mobile when site has no config', async () => {
-    const urls = [buildUrl('https://ex.com/p1', 'mobile')];
-    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
-
-    const site = { getId: () => 'site-1', getConfig: () => null };
-    const result = await cwvTrendsRunner('https://ex.com', makeContext(), site);
-
-    expect(result.auditResult.metadata.deviceType).to.equal('mobile');
-  });
-
-  it('defaults to mobile when getConfig is undefined', async () => {
-    const urls = [buildUrl('https://ex.com/p1', 'mobile')];
-    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
-
-    const site = { getId: () => 'site-1' };
-    const result = await cwvTrendsRunner('https://ex.com', makeContext(), site);
-
-    expect(result.auditResult.metadata.deviceType).to.equal('mobile');
-  });
-
-  it('filters URLs by device type', async () => {
+  it('mobile result only contains mobile URLs', async () => {
     const urls = [
       buildUrl('https://ex.com/m', 'mobile'),
       buildUrl('https://ex.com/d', 'desktop'),
@@ -150,8 +122,10 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
 
-    expect(result.auditResult.urlDetails).to.have.lengthOf(1);
-    expect(result.auditResult.urlDetails[0].url).to.equal('https://ex.com/m');
+    expect(mobileResult(result).urlDetails).to.have.lengthOf(1);
+    expect(mobileResult(result).urlDetails[0].url).to.equal('https://ex.com/m');
+    expect(desktopResult(result).urlDetails).to.have.lengthOf(1);
+    expect(desktopResult(result).urlDetails[0].url).to.equal('https://ex.com/d');
   });
 
   it('filters URLs below MIN_PAGEVIEWS', async () => {
@@ -163,8 +137,8 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
 
-    expect(result.auditResult.urlDetails).to.have.lengthOf(1);
-    expect(result.auditResult.urlDetails[0].url).to.equal('https://ex.com/high');
+    expect(mobileResult(result).urlDetails).to.have.lengthOf(1);
+    expect(mobileResult(result).urlDetails[0].url).to.equal('https://ex.com/high');
   });
 
   it('sorts URLs by pageviews descending with sequential IDs', async () => {
@@ -176,13 +150,14 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
+    const details = mobileResult(result).urlDetails;
 
-    expect(result.auditResult.urlDetails[0].url).to.equal('https://ex.com/high');
-    expect(result.auditResult.urlDetails[0].id).to.equal('1');
-    expect(result.auditResult.urlDetails[1].url).to.equal('https://ex.com/mid');
-    expect(result.auditResult.urlDetails[1].id).to.equal('2');
-    expect(result.auditResult.urlDetails[2].url).to.equal('https://ex.com/low');
-    expect(result.auditResult.urlDetails[2].id).to.equal('3');
+    expect(details[0].url).to.equal('https://ex.com/high');
+    expect(details[0].id).to.equal('1');
+    expect(details[1].url).to.equal('https://ex.com/mid');
+    expect(details[1].id).to.equal('2');
+    expect(details[2].url).to.equal('https://ex.com/low');
+    expect(details[2].id).to.equal('3');
   });
 
   it('includes CWV status (good/needsImprovement/poor) per URL in urlDetails', async () => {
@@ -194,7 +169,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
-    const details = result.auditResult.urlDetails;
+    const details = mobileResult(result).urlDetails;
 
     expect(details[0].status).to.equal('good');
     expect(details[1].status).to.equal('needsImprovement');
@@ -209,7 +184,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
 
-    expect(result.auditResult.urlDetails[0].status).to.be.null;
+    expect(mobileResult(result).urlDetails[0].status).to.be.null;
   });
 
   it('converts bounceRate, engagement, clickRate to percentages', async () => {
@@ -219,7 +194,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
-    const d = result.auditResult.urlDetails[0];
+    const d = mobileResult(result).urlDetails[0];
 
     expect(d.bounceRate).to.equal(25.3);
     expect(d.engagement).to.equal(78.5);
@@ -233,7 +208,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
-    const d = result.auditResult.urlDetails[0];
+    const d = mobileResult(result).urlDetails[0];
 
     expect(d.bounceRate).to.be.null;
     expect(d.engagement).to.be.null;
@@ -249,7 +224,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
-    const t = result.auditResult.trendData[0];
+    const t = mobileResult(result).trendData[0];
 
     expect(t.good).to.equal(1);
     expect(t.needsImprovement).to.equal(1);
@@ -261,7 +236,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
-    const { summary } = result.auditResult;
+    const { summary } = mobileResult(result);
 
     expect(summary.good).to.have.all.keys('current', 'previous', 'change', 'percentageChange', 'status');
     expect(summary.good.status).to.equal('good');
@@ -270,31 +245,29 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     expect(summary.totalUrls).to.equal(1);
   });
 
-  it('returns empty result when no S3 data', async () => {
+  it('returns empty results for both device types when no S3 data', async () => {
     readTrendDataStub.resolves([]);
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
 
-    expect(result.auditResult.trendData).to.deep.equal([]);
-    expect(result.auditResult.urlDetails).to.deep.equal([]);
-    expect(result.auditResult.summary.totalUrls).to.equal(0);
+    expect(result.auditResult).to.be.an('array').with.lengthOf(2);
+    expect(mobileResult(result).trendData).to.deep.equal([]);
+    expect(mobileResult(result).urlDetails).to.deep.equal([]);
+    expect(mobileResult(result).summary.totalUrls).to.equal(0);
+    expect(mobileResult(result).metadata.deviceType).to.equal('mobile');
+    expect(desktopResult(result).metadata.deviceType).to.equal('desktop');
     expect(log.warn).to.have.been.calledWith(sinon.match(/No S3 data found/));
   });
 
-  it('skips URLs with undefined device type', async () => {
+  it('excludes URLs that only have undefined device type metrics', async () => {
     const urls = [buildUrl('https://ex.com/p', 'undefined', { pageviews: 5000 })];
     readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
-    const site = {
-      getId: () => 'site-1',
-      getConfig: () => ({
-        getHandlers: () => ({ 'cwv-trends-audit': { deviceType: 'undefined' } }),
-      }),
-    };
-    const result = await cwvTrendsRunner('https://ex.com', makeContext(), site);
+    const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
 
-    expect(result.auditResult.urlDetails).to.have.lengthOf(0);
-    expect(log.warn).to.have.been.calledWith(sinon.match(/undefined device type/));
+    // URLs with 'undefined' device type don't match mobile or desktop
+    expect(mobileResult(result).urlDetails).to.have.lengthOf(0);
+    expect(desktopResult(result).urlDetails).to.have.lengthOf(0);
   });
 
   it('handles null CWV metrics in categorization', async () => {
@@ -306,9 +279,9 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
 
-    expect(result.auditResult.urlDetails).to.have.lengthOf(2);
-    expect(result.auditResult.trendData[0].good).to.equal(1);
-    expect(result.auditResult.trendData[0].poor).to.equal(0);
+    expect(mobileResult(result).urlDetails).to.have.lengthOf(2);
+    expect(mobileResult(result).trendData[0].good).to.equal(1);
+    expect(mobileResult(result).trendData[0].poor).to.equal(0);
   });
 
   it('skips invalid URLs', async () => {
@@ -322,8 +295,8 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
 
-    expect(result.auditResult.urlDetails).to.have.lengthOf(1);
-    expect(result.auditResult.urlDetails[0].url).to.equal('https://ex.com/valid');
+    expect(mobileResult(result).urlDetails).to.have.lengthOf(1);
+    expect(mobileResult(result).urlDetails[0].url).to.equal('https://ex.com/valid');
     expect(log.warn).to.have.been.calledWith(sinon.match(/invalid URL/i));
   });
 
@@ -351,7 +324,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     readTrendDataStub.resolves(dailyData);
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
-    const detail = result.auditResult.urlDetails[0];
+    const detail = mobileResult(result).urlDetails[0];
 
     // Point-to-point: day 27 (curr) - day 20 (prev)
     expect(detail.pageviewsChange).to.equal(2000);
@@ -374,7 +347,6 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
   });
 
   it('handles percentage change when previous is 0 and current is 0', async () => {
-    // Build data where good count goes from 0 to 0
     const urlsDay1 = [buildUrl('https://ex.com/poor', 'mobile', { lcp: 5000, cls: 0.30, inp: 600 })];
     const urlsDay2 = [buildUrl('https://ex.com/poor', 'mobile', { lcp: 5000, cls: 0.30, inp: 600 })];
 
@@ -390,16 +362,14 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     readTrendDataStub.resolves(dailyData);
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
-    const { summary } = result.auditResult;
+    const { summary } = mobileResult(result);
 
-    // When both current and previous are 0, percentage change should be 0
     expect(summary.good.current).to.equal(0);
     expect(summary.good.previous).to.equal(0);
     expect(summary.good.percentageChange).to.equal(0);
   });
 
   it('handles percentage change when previous is 0 and current is not 0', async () => {
-    // Build data where good count goes from 0 to some positive number
     const urlsDay1 = [buildUrl('https://ex.com/poor', 'mobile', { lcp: 5000, cls: 0.30, inp: 600 })];
     const urlsDay2 = [buildUrl('https://ex.com/good', 'mobile', { lcp: 2000, cls: 0.05, inp: 100 })];
 
@@ -415,9 +385,8 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     readTrendDataStub.resolves(dailyData);
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
-    const { summary } = result.auditResult;
+    const { summary } = mobileResult(result);
 
-    // When previous is 0 and current is not, percentage change should be 100
     expect(summary.good.current).to.equal(1);
     expect(summary.good.previous).to.equal(0);
     expect(summary.good.percentageChange).to.equal(100);
@@ -426,13 +395,10 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
   it('handles summary with less than 8 days of data (uses day 0 as previous)', async () => {
     const urls = [buildUrl('https://ex.com/good', 'mobile', { lcp: 2000, cls: 0.05, inp: 100 })];
 
-    // Create exactly 28 days, but test that if we had < 8 days, it would use day 0
-    // We can't actually test < 8 days since we require 28 days minimum
-    // But we can verify the 28-day case works correctly
     readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
-    const { summary } = result.auditResult;
+    const { summary } = mobileResult(result);
 
     // Should compare day 27 to day 20
     expect(summary.good.current).to.equal(1);
@@ -445,28 +411,26 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     const urls = [buildUrl('https://ex.com/p1', 'mobile')];
     readTrendDataStub.resolves(buildDays(dates, urls));
 
-    const site = makeSite({ deviceType: 'mobile' });
+    const site = makeSite();
     const context = makeContext();
     const auditContext = { endDate: '2026-03-27' };
 
     const result = await cwvTrendsRunner('https://ex.com', context, site, auditContext);
 
-    expect(result.auditResult.metadata.endDate).to.equal('2026-03-27');
-    expect(result.auditResult.metadata.startDate).to.equal('2026-02-28');
+    expect(mobileResult(result).metadata.endDate).to.equal('2026-03-27');
+    expect(mobileResult(result).metadata.startDate).to.equal('2026-02-28');
   });
 
   it('uses current date when auditContext.endDate is not provided', async () => {
-    // Use a fixed date for the test to avoid timing issues
     const testDate = new Date('2026-03-24');
     const testDateStr = '2026-03-24';
-    const dates = makeDates(28, '2026-02-25'); // 28 days: 2026-02-25 to 2026-03-24
+    const dates = makeDates(28, '2026-02-25');
     const urls = [buildUrl('https://ex.com/p1', 'mobile')];
     readTrendDataStub.resolves(buildDays(dates, urls));
 
-    const site = makeSite({ deviceType: 'mobile' });
+    const site = makeSite();
     const context = makeContext();
 
-    // Stub Date constructor to return our fixed test date
     const OriginalDate = global.Date;
     global.Date = class extends OriginalDate {
       constructor(...args) {
@@ -480,27 +444,23 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
 
     const result = await cwvTrendsRunner('https://ex.com', context, site);
 
-    // Restore original Date
     global.Date = OriginalDate;
 
-    // Should use the test date
-    expect(result.auditResult.metadata.endDate).to.equal(testDateStr);
-    expect(result.auditResult.metadata.startDate).to.equal('2026-02-25');
+    expect(mobileResult(result).metadata.endDate).to.equal(testDateStr);
+    expect(mobileResult(result).metadata.startDate).to.equal('2026-02-25');
   });
 
   it('uses current date when auditContext.endDate is invalid', async () => {
-    // Use a fixed date for the test to avoid timing issues
     const testDate = new Date('2026-03-24');
     const testDateStr = '2026-03-24';
-    const dates = makeDates(28, '2026-02-25'); // 28 days: 2026-02-25 to 2026-03-24
+    const dates = makeDates(28, '2026-02-25');
     const urls = [buildUrl('https://ex.com/p1', 'mobile')];
     readTrendDataStub.resolves(buildDays(dates, urls));
 
-    const site = makeSite({ deviceType: 'mobile' });
+    const site = makeSite();
     const context = makeContext();
     const auditContext = { endDate: 'invalid-date' };
 
-    // Stub Date constructor to return our fixed test date
     const OriginalDate = global.Date;
     global.Date = class extends OriginalDate {
       constructor(...args) {
@@ -514,11 +474,9 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
 
     const result = await cwvTrendsRunner('https://ex.com', context, site, auditContext);
 
-    // Restore original Date
     global.Date = OriginalDate;
 
-    // Should use current date and log warning
-    expect(result.auditResult.metadata.endDate).to.equal(testDateStr);
+    expect(mobileResult(result).metadata.endDate).to.equal(testDateStr);
     expect(log.warn).to.have.been.calledWith(
       sinon.match(/Invalid endDate format "invalid-date"/),
     );
@@ -527,19 +485,16 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
   it('parseEndDate handles Date objects that return NaN', () => {
     const now = new Date();
 
-    // Stub Date.UTC to return a value that creates an invalid Date
     const originalDateUTC = Date.UTC;
     const dateUTCStub = sandbox.stub(Date, 'UTC').callsFake((year, month, day) => {
-      // For our test input, return a value beyond JavaScript's Date range
       if (year === 9999 && month === 11 && day === 31) {
-        return 8640000000000001; // Just beyond max safe Date value
+        return 8640000000000001;
       }
       return originalDateUTC(year, month, day);
     });
 
     const result = parseEndDate('9999-12-31', log);
 
-    // Should fall back to current date and log warning
     const diffMs = Math.abs(result - now);
     expect(diffMs).to.be.lessThan(5000);
     expect(log.warn).to.have.been.calledWith(
@@ -570,6 +525,7 @@ describe('CWV Trends Audit Runner (utils.js) - Edge Cases', function () {
         TREND_DAYS: 7,
         S3_BASE_PATH: 'metrics',
         DEFAULT_DEVICE_TYPE: 'mobile',
+        DEVICE_TYPES: ['mobile', 'desktop'],
         AUDIT_TYPE: 'cwv-trends-audit',
       },
       '../../../src/cwv-trends-audit/data-reader.js': {
@@ -627,9 +583,10 @@ describe('CWV Trends Audit Runner (utils.js) - Edge Cases', function () {
       s3Client: {}, log, env: { S3_IMPORTER_BUCKET_NAME: 'bucket' },
     }, site);
 
-    // With 7 days (< 8), should compare day 6 (last) to day 0 (first)
-    expect(result.auditResult.summary.good.current).to.equal(1);
-    expect(result.auditResult.summary.good.previous).to.equal(1);
-    expect(result.auditResult.summary.good.change).to.equal(0);
+    // Mobile result (index 0) — with 7 days (< 8), should compare day 6 (last) to day 0 (first)
+    const mobile = result.auditResult[0];
+    expect(mobile.summary.good.current).to.equal(1);
+    expect(mobile.summary.good.previous).to.equal(1);
+    expect(mobile.summary.good.change).to.equal(0);
   });
 });

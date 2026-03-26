@@ -14,7 +14,7 @@
 import { expect } from 'chai';
 import {
   AUDIT_TYPE, TREND_DAYS, CURRENT_WEEK_DAYS, S3_BASE_PATH,
-  MIN_PAGEVIEWS, DEFAULT_DEVICE_TYPE, CWV_THRESHOLDS, OPPORTUNITY_TITLES,
+  MIN_PAGEVIEWS, DEFAULT_DEVICE_TYPE, DEVICE_TYPES, CWV_THRESHOLDS, OPPORTUNITY_TITLES,
 } from '../../../src/cwv-trends-audit/constants.js';
 
 describe('CWV Trends Audit Constants', () => {
@@ -46,6 +46,10 @@ describe('CWV Trends Audit Constants', () => {
     expect(CWV_THRESHOLDS.LCP).to.deep.equal({ GOOD: 2500, POOR: 4000 });
     expect(CWV_THRESHOLDS.CLS).to.deep.equal({ GOOD: 0.1, POOR: 0.25 });
     expect(CWV_THRESHOLDS.INP).to.deep.equal({ GOOD: 200, POOR: 500 });
+  });
+
+  it('should define DEVICE_TYPES as mobile and desktop', () => {
+    expect(DEVICE_TYPES).to.deep.equal(['mobile', 'desktop']);
   });
 
   it('should define opportunity titles', () => {

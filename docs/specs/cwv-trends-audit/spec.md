@@ -4,7 +4,7 @@
 
 A weekly audit (`cwv-trends-audit`) that reads pre-imported CWV and engagement data from S3, classifies URLs as Good / Needs Improvement / Poor over a 28-day rolling window, and creates device-specific **Web Performance Trends Report** opportunities in SpaceCat.
 
-The audit runs once per site. The device type (mobile or desktop) is determined from the site's handler configuration, defaulting to `mobile`.
+The audit runs once per site and processes **both mobile and desktop** device types from the same S3 data, creating separate opportunities for each.
 
 **Date Handling:**
 - **Scheduling:** Audit is registered to run `every-sunday` (scheduling handled by Jobs Dispatcher)
@@ -20,9 +20,9 @@ The audit runs once per site. The device type (mobile or desktop) is determined 
 - [x] Reads 28 days of pre-imported CWV data from S3
 - [x] Requires minimum 28 days of data (fails with error if less)
 - [x] CWV metrics categorized using standard thresholds (LCP ≤ 2500/4000, CLS ≤ 0.1/0.25, INP ≤ 200/500)
-- [x] Device type read from `site.getConfig().getHandlers()['cwv-trends-audit'].deviceType`
-- [x] Creates/updates "Mobile Web Performance Trends Report" or "Desktop Web Performance Trends Report" opportunity by title match
-- [x] Audit result payload matches schema: `metadata`, `trendData`, `summary`, `urlDetails`
+- [x] Processes both mobile and desktop device types in a single run
+- [x] Creates/updates both "Mobile Web Performance Trends Report" and "Desktop Web Performance Trends Report" generic opportunities
+- [x] Audit result payload is an array of per-device results, each with: `metadata`, `trendData`, `summary`, `urlDetails`
 - [x] URLs filtered by minimum 1000 pageviews, sorted descending
 - [x] URL validation added (rejects invalid/malformed URLs)
 - [x] JSON size validation (max 15 MB per file)
@@ -49,15 +49,17 @@ S3 Bucket (pre-imported by cwv-trends-daily import)
   ▼
 cwv-trends-audit runner
   ├─ Read 28 days from: metrics/{siteId}/rum/cwv-trends/cwv-trends-daily-{date}.json
-  ├─ Filter URLs by device type + MIN_PAGEVIEWS (1000)
-  ├─ Categorize URLs (Good/NI/Poor) per day → trendData
-  ├─ Build summary (point-to-point: current day vs 7 days before)
-  ├─ Build urlDetails (sorted by pageviews, sequential id, change values)
+  ├─ For each device type (mobile, desktop):
+  │   ├─ Filter URLs by device type + MIN_PAGEVIEWS (1000)
+  │   ├─ Categorize URLs (Good/NI/Poor) per day → trendData
+  │   ├─ Build summary (point-to-point: current day vs 7 days before)
+  │   └─ Build urlDetails (sorted by pageviews, sequential id, change values)
   │
   └─ Post-processor: opportunityHandler
-     ├─ Find existing opportunity by title (comparisonFn)
-     ├─ Create opportunity if not found, update if found
-     └─ syncSuggestions (one per URL, keyed by url)
+     ├─ Fetch existing generic-opportunity records for the site
+     ├─ For each device result:
+     │   ├─ Find/create generic-opportunity by type + title match
+     │   └─ syncSuggestions (one suggestion per device type)
 ```
 
 ---
@@ -148,18 +150,7 @@ The data from S3 already contains P75 values for the last 7 days, so we use the 
 
 ## Site Configuration
 
-```json
-{
-  "handlers": {
-    "cwv-trends-audit": {
-      "deviceType": "mobile"
-    }
-  }
-}
-```
-
-- Device type read from: `site.getConfig().getHandlers()['cwv-trends-audit'].deviceType`
-- Defaults to `'mobile'` if not configured or if config is absent
+No device-type configuration is needed — the audit always processes both mobile and desktop from the same S3 data.
 
 ---
 
@@ -241,44 +232,52 @@ This ensures one suggestion per device type per site, containing the complete We
 
 ```json
 {
-  "auditResult": {
-    "metadata": {
-      "domain": "www.example.com",
-      "deviceType": "mobile",
-      "startDate": "2025-11-01",
-      "endDate": "2025-11-28"
+  "auditResult": [
+    {
+      "metadata": {
+        "domain": "www.example.com",
+        "deviceType": "mobile",
+        "startDate": "2025-11-01",
+        "endDate": "2025-11-28"
+      },
+      "trendData": [
+        { "date": "2025-11-01", "good": 2, "needsImprovement": 1, "poor": 3 }
+      ],
+      "summary": {
+        "good": { "current": 4, "previous": 2, "change": 2, "percentageChange": 100, "status": "good" },
+        "needsImprovement": { "current": 2, "previous": 1, "change": 1, "percentageChange": 100, "status": "needsImprovement" },
+        "poor": { "current": 1, "previous": 3, "change": -2, "percentageChange": -66.67, "status": "poor" },
+        "totalUrls": 7
+      },
+      "urlDetails": [
+        {
+          "id": "1",
+          "url": "https://www.example.com/products",
+          "status": "needsImprovement",
+          "pageviews": 4400,
+          "pageviewsChange": 1200,
+          "lcp": 2756,
+          "lcpChange": 856,
+          "cls": 0.011,
+          "clsChange": -0.005,
+          "inp": 56,
+          "inpChange": -24,
+          "bounceRate": 45.5,
+          "bounceRateChange": -5.2,
+          "engagement": 65.3,
+          "engagementChange": 8.1,
+          "clickRate": 28.7,
+          "clickRateChange": 3.4
+        }
+      ]
     },
-    "trendData": [
-      { "date": "2025-11-01", "good": 2, "needsImprovement": 1, "poor": 3 }
-    ],
-    "summary": {
-      "good": { "current": 4, "previous": 2, "change": 2, "percentageChange": 100, "status": "good" },
-      "needsImprovement": { "current": 2, "previous": 1, "change": 1, "percentageChange": 100, "status": "needsImprovement" },
-      "poor": { "current": 1, "previous": 3, "change": -2, "percentageChange": -66.67, "status": "poor" },
-      "totalUrls": 7
-    },
-    "urlDetails": [
-      {
-        "id": "1",
-        "url": "https://www.example.com/products",
-        "status": "needsImprovement",
-        "pageviews": 4400,
-        "pageviewsChange": 1200,
-        "lcp": 2756,
-        "lcpChange": 856,
-        "cls": 0.011,
-        "clsChange": -0.005,
-        "inp": 56,
-        "inpChange": -24,
-        "bounceRate": 45.5,
-        "bounceRateChange": -5.2,
-        "engagement": 65.3,
-        "engagementChange": 8.1,
-        "clickRate": 28.7,
-        "clickRateChange": 3.4
-      }
-    ]
-  },
+    {
+      "metadata": { "domain": "www.example.com", "deviceType": "desktop", "...": "..." },
+      "trendData": ["..."],
+      "summary": {"...": "..."},
+      "urlDetails": ["..."]
+    }
+  ],
   "fullAuditRef": "metrics/{siteId}/rum/cwv-trends/"
 }
 ```

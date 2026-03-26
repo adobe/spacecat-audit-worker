@@ -12,7 +12,7 @@
 
 import {
   MIN_PAGEVIEWS, TREND_DAYS, S3_BASE_PATH,
-  DEFAULT_DEVICE_TYPE, AUDIT_TYPE,
+  DEVICE_TYPES, AUDIT_TYPE,
 } from './constants.js';
 import { readTrendData, formatDate, subtractDays } from './data-reader.js';
 import { categorizeUrl } from './cwv-categorizer.js';
@@ -45,11 +45,6 @@ function filterUrls(urlEntries, deviceType, log) {
       const metrics = entry.metrics?.find((m) => m.deviceType === deviceType);
       if (!metrics) return null;
       if (metrics.pageviews < MIN_PAGEVIEWS) return null;
-
-      if (deviceType === 'undefined') {
-        log.warn(`Skipping URL with undefined device type: ${entry.url}`);
-        return null;
-      }
 
       return {
         url: entry.url,
@@ -198,40 +193,57 @@ function buildUrlDetails(dailyData, filteredCache, deviceType, log) {
   });
 }
 
-function emptyResult(siteId, domain, deviceType, startDate, endDate) {
+function emptyDeviceResult(domain, deviceType, startDate, endDate) {
   return {
-    auditResult: {
-      metadata: {
-        domain,
-        deviceType,
-        startDate: formatDate(startDate),
-        endDate: formatDate(endDate),
-      },
-      trendData: [],
-      summary: {
-        good: {
-          current: 0, previous: 0, change: 0, percentageChange: 0, status: 'good',
-        },
-        needsImprovement: {
-          current: 0, previous: 0, change: 0, percentageChange: 0, status: 'needsImprovement',
-        },
-        poor: {
-          current: 0, previous: 0, change: 0, percentageChange: 0, status: 'poor',
-        },
-        totalUrls: 0,
-      },
-      urlDetails: [],
+    metadata: {
+      domain,
+      deviceType,
+      startDate: formatDate(startDate),
+      endDate: formatDate(endDate),
     },
-    fullAuditRef: `${S3_BASE_PATH}/${siteId}/rum/cwv-trends/`,
+    trendData: [],
+    summary: {
+      good: {
+        current: 0, previous: 0, change: 0, percentageChange: 0, status: 'good',
+      },
+      needsImprovement: {
+        current: 0, previous: 0, change: 0, percentageChange: 0, status: 'needsImprovement',
+      },
+      poor: {
+        current: 0, previous: 0, change: 0, percentageChange: 0, status: 'poor',
+      },
+      totalUrls: 0,
+    },
+    urlDetails: [],
   };
 }
 
 /**
- * CWV Trends audit runner.
- * Reads device type from site config (handler-level config under the audit type key).
- * Falls back to DEFAULT_DEVICE_TYPE ('mobile') when not configured.
- * Requires minimum 28 days of data.
+ * Builds the audit result for a single device type from the daily data.
  */
+function buildDeviceResult(dailyData, domain, deviceType, startDate, endDate, log) {
+  const { trendData, filteredCache } = buildTrendData(dailyData, deviceType, log);
+  const latestDay = dailyData[dailyData.length - 1];
+  const latestUrls = filteredCache.get(latestDay.date);
+  const totalUrls = latestUrls.length;
+  const summary = buildSummary(trendData, totalUrls);
+  const urlDetails = buildUrlDetails(dailyData, filteredCache, deviceType, log);
+
+  log.info(`[${AUDIT_TYPE}] device: ${deviceType} | Processed ${totalUrls} URLs`);
+
+  return {
+    metadata: {
+      domain,
+      deviceType,
+      startDate: formatDate(startDate),
+      endDate: formatDate(endDate),
+    },
+    trendData,
+    summary,
+    urlDetails,
+  };
+}
+
 /**
  * Parses a date string (YYYY-MM-DD) or returns the current date if invalid.
  * Exported for testing.
@@ -258,25 +270,35 @@ export function parseEndDate(dateString, log) {
   return date;
 }
 
+/**
+ * CWV Trends audit runner.
+ * Processes both mobile and desktop device types from the same S3 data.
+ * Returns auditResult as an array of per-device results so that the
+ * opportunity handler can create one opportunity per device type.
+ * Requires minimum 28 days of data.
+ */
 export default async function cwvTrendsRunner(finalUrl, context, site, auditContext = {}) {
   const { s3Client, log, env } = context;
   const bucketName = env.S3_IMPORTER_BUCKET_NAME;
   const domain = finalUrl;
 
   const siteId = site.getId();
-  const handlerConfig = site.getConfig?.()?.getHandlers?.()?.[AUDIT_TYPE] || {};
-  const deviceType = handlerConfig.deviceType || DEFAULT_DEVICE_TYPE;
 
   const endDate = parseEndDate(auditContext.endDate, log);
   const startDate = subtractDays(endDate, TREND_DAYS - 1);
 
-  log.info(`[${AUDIT_TYPE}] siteId: ${siteId} | device: ${deviceType} | Reading ${TREND_DAYS} days of S3 data`);
+  log.info(`[${AUDIT_TYPE}] siteId: ${siteId} | Reading ${TREND_DAYS} days of S3 data`);
 
   const dailyData = await readTrendData(s3Client, bucketName, siteId, endDate, TREND_DAYS, log);
 
   if (dailyData.length === 0) {
     log.warn(`[${AUDIT_TYPE}] No S3 data found for any date`);
-    return emptyResult(siteId, domain, deviceType, startDate, endDate);
+    return {
+      auditResult: DEVICE_TYPES.map(
+        (dt) => emptyDeviceResult(domain, dt, startDate, endDate),
+      ),
+      fullAuditRef: `${S3_BASE_PATH}/${siteId}/rum/cwv-trends/`,
+    };
   }
 
   // Require minimum 28 days of data
@@ -286,27 +308,14 @@ export default async function cwvTrendsRunner(finalUrl, context, site, auditCont
     throw new Error(error);
   }
 
-  const { trendData, filteredCache } = buildTrendData(dailyData, deviceType, log);
-  const latestDay = dailyData[dailyData.length - 1];
-  const latestUrls = filteredCache.get(latestDay.date);
-  const totalUrls = latestUrls.length;
-  const summary = buildSummary(trendData, totalUrls);
-  const urlDetails = buildUrlDetails(dailyData, filteredCache, deviceType, log);
+  const auditResult = DEVICE_TYPES.map(
+    (dt) => buildDeviceResult(dailyData, domain, dt, startDate, endDate, log),
+  );
 
-  log.info(`[${AUDIT_TYPE}] Processed ${totalUrls} URLs, ${dailyData.length} days of data`);
+  log.info(`[${AUDIT_TYPE}] Processed results for ${DEVICE_TYPES.join(', ')} | ${dailyData.length} days of data`);
 
   return {
-    auditResult: {
-      metadata: {
-        domain,
-        deviceType,
-        startDate: formatDate(startDate),
-        endDate: formatDate(endDate),
-      },
-      trendData,
-      summary,
-      urlDetails,
-    },
+    auditResult,
     fullAuditRef: `${S3_BASE_PATH}/${siteId}/rum/cwv-trends/`,
   };
 }

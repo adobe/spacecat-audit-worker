@@ -18,34 +18,21 @@ import { OPPORTUNITY_TITLES } from './constants.js';
 const OPPORTUNITY_TYPE = 'generic-opportunity';
 
 /**
- * Post-processor that creates/updates the opportunity and syncs suggestions.
- * Matches existing generic opportunities by title so mobile and desktop remain separate.
- * Creates a single suggestion containing the full audit result
- * (metadata, trendData, summary, urlDetails).
+ * Finds or creates a generic opportunity for a specific device type.
  */
-export default async function opportunityHandler(finalUrl, auditData, context) {
-  const { auditResult } = auditData;
-  const { deviceType } = auditResult.metadata;
-  const { dataAccess, log } = context;
-  const { Opportunity } = dataAccess;
-
+async function findOrCreateOpportunity(
+  deviceType,
+  existingOpportunities,
+  auditData,
+  Opportunity,
+  log,
+) {
   const expectedTitle = OPPORTUNITY_TITLES[deviceType] || OPPORTUNITY_TITLES.mobile;
   const opportunityInstance = createOpportunityData({ deviceType });
 
-  let opportunity;
-
-  try {
-    const opportunities = await Opportunity.allBySiteIdAndStatus(
-      auditData.siteId,
-      Oppty.STATUSES.NEW,
-    );
-    opportunity = opportunities.find(
-      (oppty) => oppty.getType() === OPPORTUNITY_TYPE && oppty.getTitle() === expectedTitle,
-    );
-  } catch (e) {
-    log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
-    throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
-  }
+  let opportunity = existingOpportunities.find(
+    (oppty) => oppty.getType() === OPPORTUNITY_TYPE && oppty.getTitle() === expectedTitle,
+  );
 
   try {
     if (!opportunity) {
@@ -75,21 +62,56 @@ export default async function opportunityHandler(finalUrl, auditData, context) {
     throw e;
   }
 
-  // Create a single suggestion containing the full audit result
-  await syncSuggestions({
-    opportunity,
-    newData: [auditResult], // Single item array with full result
-    context,
-    buildKey: () => `${deviceType}-report`, // Single key per device type
-    mapNewSuggestion: (result) => ({
-      opportunityId: opportunity.getId(),
-      type: 'CONTENT_UPDATE',
-      rank: result.summary.totalUrls,
-      data: {
-        suggestionValue: JSON.stringify(result), // Stringified full audit result
-      },
-    }),
-  });
+  return opportunity;
+}
+
+/**
+ * Post-processor that creates/updates opportunities and syncs suggestions
+ * for each device type (mobile and desktop).
+ * auditData.auditResult is an array of per-device results.
+ */
+export default async function opportunityHandler(finalUrl, auditData, context) {
+  const { auditResult } = auditData;
+  const { dataAccess, log } = context;
+  const { Opportunity } = dataAccess;
+
+  let existingOpportunities;
+  try {
+    existingOpportunities = await Opportunity.allBySiteIdAndStatus(
+      auditData.siteId,
+      Oppty.STATUSES.NEW,
+    );
+  } catch (e) {
+    log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
+    throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
+  }
+
+  await Promise.all(auditResult.map(async (deviceResult) => {
+    const { deviceType } = deviceResult.metadata;
+
+    const opportunity = await findOrCreateOpportunity(
+      deviceType,
+      existingOpportunities,
+      auditData,
+      Opportunity,
+      log,
+    );
+
+    await syncSuggestions({
+      opportunity,
+      newData: [deviceResult],
+      context,
+      buildKey: () => `${deviceType}-report`,
+      mapNewSuggestion: (result) => ({
+        opportunityId: opportunity.getId(),
+        type: 'CONTENT_UPDATE',
+        rank: result.summary.totalUrls,
+        data: {
+          suggestionValue: JSON.stringify(result),
+        },
+      }),
+    });
+  }));
 
   return auditData;
 }
