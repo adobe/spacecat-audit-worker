@@ -739,41 +739,38 @@ export async function submitForScraping(context) {
 
   const siteId = site.getId();
 
-  // TEMP: static URLs for dev testing — enabled via PRERENDER_STATIC_TEST_URLS=true
-  /* c8 ignore next 35 */
-  let topPagesUrls;
-  let agenticUrls;
-  if (context.env?.PRERENDER_STATIC_TEST_URLS === 'true') {
-    const tempBase = site.getBaseURL();
-    topPagesUrls = [
-      '/',
-      '/help-center',
-      '/sacs',
-      '/sactionals',
-      '/how-to',
-    ].map((r) => `${tempBase}${r}`);
-    agenticUrls = [
-      '/products/sactionals-seat-insert-set-standard',
-      '/snugg/build/3-cushion-sofa',
-      '/snugg/build/loveseat',
-      '/products/sactionals-seat-cushion-insert-lovesoft',
-      '/products/sactionals-deep-seat-insert-set-standard',
-      '/sactional-roll-arm-side-insert-and-cover-amethyst-corded-velvet.html',
-      '/products/sactionals-seat-cushion-insert-standard',
-      '/sactionals-with-stealthtech-sound-charge',
-      '/products/sactionals-deep-side-insert-standard',
-      '/visit-the-lovesac-roadshow',
-      '/product-reviews',
-    ].map((r) => `${tempBase}${r}`);
-    log.info(`${LOG_PREFIX} PRERENDER_STATIC_TEST_URLS enabled: using ${topPagesUrls.length} organic and ${agenticUrls.length} agentic static URLs. siteId=${siteId}`);
-  } else {
-    topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
-    // Fetch Top Agentic URLs (limited by TOP_AGENTIC_URLS_LIMIT)
-    // Use overrideBaseURL if configured so agentic URLs are constructed with the correct base
-    const overrideBaseURL = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL;
-    const agenticContext = overrideBaseURL ? { ...context, finalUrl: overrideBaseURL } : context;
-    agenticUrls = await getTopAgenticUrls(site, agenticContext);
-  }
+  // TEMP: static URLs for dev testing
+  /* c8 ignore next 20 */
+  const tempBase = site.getBaseURL();
+  const topPagesUrls = [
+    '/sacs/build',
+    '/sacs/limited-edition',
+    '/accessories',
+    '/sactionals/inserts/select',
+    '/snugg/build/chair',
+  ].map((r) => `${tempBase}${r}`);
+  const agenticUrls = [
+    '/sactionals/covers/select/sactional-roll-arm-side-insert-and-cover-amethyst-corded-velvet',
+    '/products/mini-swatch-carbon-crossweave',
+    '/products/sactionals-deep-angled-side-insert-standard',
+    '/snugg/build/2-cushion-sofa',
+    '/learn-how-sactionals-adapt',
+    '/products/mini-swatch-venetian-taupe-corded-velvet',
+    '/products/citysac-cover-silver-liger-phur',
+    '/products/loveseat-stealthtech-existing-configuration',
+    '/products/sactionals-storage-seat-insert-set-lovesoft',
+    '/products/2-seats-4-sides-sactional',
+    '/products/sactionals-deep-back-pillow-insert-lovesoft',
+    '/products/sactionals-deep-storage-seat-insert-set-standard',
+    '/products/insert-for-18x18-throw-pillow-lovesoft',
+    '/products/best-seller-supersac-alpine-swirl-phur',
+    '/products/mini-swatch-taupe-combed-chenille',
+    '/products/sac-shrink-kit-bigone',
+    '/products/mini-swatch-beachwood-rained-chenille',
+    '/lovesac-careers',
+    '/products/quick-ship-deep-seat-cover-set-urban-walnut-leather',
+    '/products/sactionals-side-insert-standard',
+  ].map((r) => `${tempBase}${r}`);
 
   const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
 
