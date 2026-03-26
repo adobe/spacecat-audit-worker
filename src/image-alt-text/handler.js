@@ -10,12 +10,10 @@
  * governing permissions and limitations under the License.
  */
 import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
-import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendAltTextOpportunityToMystique, chunkArray } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
 import { MYSTIQUE_BATCH_SIZE, SUMMIT_PLG_PAGE_LIMIT, DEFAULT_PAGE_LIMIT } from './constants.js';
-import { getScrapeJsonPath } from '../headings/utils.js';
 import { getTopPageUrls } from './url-utils.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
@@ -92,7 +90,7 @@ export async function processImportStep(context) {
  */
 export async function processScraping(context) {
   const {
-    log, site, dataAccess, s3Client, env,
+    log, site, dataAccess,
   } = context;
   const { Opportunity } = dataAccess;
   const siteId = site.getId();
@@ -168,62 +166,21 @@ export async function processScraping(context) {
       log.warn(`[${AUDIT_TYPE}]: Failed to save opportunity offset: ${error.message}`);
     }
   }
-  log.debug(`[${AUDIT_TYPE}]: Checking scrapes for ${topPages.length} top pages (limit: ${pageLimit})`);
+  // Send ALL top page URLs to SCRAPE_CLIENT.
+  // The scrape client handles caching via maxScrapeAge — it reuses recent scrapes
+  // and only re-scrapes stale/missing URLs. This ensures all URLs are registered
+  // in the scrape job's DynamoDB records, making them discoverable by downstream
+  // consumers (e.g., mystique) through the scrape jobs API.
+  log.info(`[${AUDIT_TYPE}]: Sending ${topPages.length} URLs to scrape client (maxScrapeAge: 24h)`);
 
-  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
-
-  // Check S3 for existing scrapes in parallel
-  const scrapeCheckResults = await Promise.allSettled(
-    topPages.map(async (url) => {
-      try {
-        const s3Key = getScrapeJsonPath(url, siteId);
-
-        await s3Client.send(new HeadObjectCommand({
-          Bucket: bucketName,
-          Key: s3Key,
-        }));
-
-        // If HeadObjectCommand succeeds, scrape exists
-        return { url, exists: true };
-      } catch (error) {
-        // If NotFound or NoSuchKey, scrape doesn't exist
-        // For any other error, assume scrape is missing (fail-safe)
-        if (error.name === 'NotFound' || error.name === 'NoSuchKey') {
-          log.debug(`[${AUDIT_TYPE}]: Scrape not found for ${url}`);
-        } else {
-          log.warn(`[${AUDIT_TYPE}]: Error checking scrape for ${url}: ${error.message}, assuming missing`);
-        }
-        return { url, exists: false };
-      }
-    }),
-  );
-
-  // Collect URLs that need scraping
-  const urlsToScrape = scrapeCheckResults
-    .filter((result) => result.status === 'fulfilled' && !result.value.exists)
-    .map((result) => ({ url: result.value.url }));
-
-  log.info(`[${AUDIT_TYPE}]: Found ${urlsToScrape.length} URLs needing scraping out of ${topPages.length} top pages`);
-
-  // If no URLs need scraping, send the first URL anyway to ensure next step can proceed
-  if (urlsToScrape.length === 0) {
-    log.debug(`[${AUDIT_TYPE}]: All scrapes exist, sending first URL to ensure scrape client step completes`);
-    return {
-      urls: [{ url: topPages[0] }],
-      siteId,
-      type: 'default',
-      allowCache: true,
-      maxScrapeAge: 0,
-    };
-  }
-
-  // Return payload for SCRAPE_CLIENT
   return {
-    urls: urlsToScrape,
+    urls: topPages.map((url) => ({ url })),
     siteId,
     type: 'default',
-    allowCache: false,
-    maxScrapeAge: 0,
+    maxScrapeAge: 24,
+    options: {
+      pageLoadTimeout: 45000,
+    },
   };
 }
 
@@ -262,6 +219,24 @@ export async function processAltTextWithMystique(context) {
     const pageUrls = [...topPages];
     if (pageUrls.length === 0) {
       throw new Error(`No top pages found for site ${site.getId()}`);
+    }
+
+    // Verify scrapes exist for all page URLs before sending to Mystique.
+    // Uses scrapeResultPaths (Map<url, s3Path>) from the SCRAPE_CLIENT step,
+    // which is the same data source mystique queries via scrape jobs API.
+    const { scrapeResultPaths } = context;
+    if (scrapeResultPaths) {
+      const missingScrapesUrls = pageUrls.filter((url) => !scrapeResultPaths.has(url));
+      if (missingScrapesUrls.length > 0) {
+        log.error(`[${AUDIT_TYPE}]: Missing scrapes for ${missingScrapesUrls.length}/${pageUrls.length} URLs: ${missingScrapesUrls.join(', ')}`);
+        throw new Error(
+          `Cannot proceed: ${missingScrapesUrls.length} of ${pageUrls.length} URLs have no scrape results. `
+          + 'Mystique will not be able to find content for these pages.',
+        );
+      }
+      log.info(`[${AUDIT_TYPE}]: Verified scrapes exist for all ${pageUrls.length} page URLs`);
+    } else {
+      log.warn(`[${AUDIT_TYPE}]: No scrapeResultPaths in context, skipping scrape verification`);
     }
 
     const urlBatches = chunkArray(pageUrls, MYSTIQUE_BATCH_SIZE);
