@@ -193,6 +193,7 @@ async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
 
     const byUrl = buildSheetHitsMap(rows);
     const top = Array.from(byUrl.entries())
+      .filter(([path]) => path !== 'Other')
       .sort((a, b) => b[1] - a[1])
       .slice(0, limit)
       .map(([path]) => {

@@ -428,6 +428,39 @@ describe('Prerender Audit', () => {
         expect(result.urls.map((u) => u.url)).to.include('https://example.com/sheet-page2');
       });
 
+      it('should filter out /Other sheet entry from agentic URLs', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/prerender/utils/shared.js': {
+            loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [{}] }),
+            buildSheetHitsMap: () => new Map([
+              ['Other', 100],
+              ['/valid-page', 30],
+              ['/another/valid', 20],
+            ]),
+          },
+        });
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+        };
+        const result = await mockHandler.submitForScraping(context);
+        const urls = result.urls.map((u) => u.url);
+        // 'Other' is a bare sheet category label (no leading slash) — must be excluded
+        expect(urls).to.not.include('https://example.com/Other');
+        expect(urls).to.not.include('Other');
+        expect(urls).to.include('https://example.com/valid-page');
+        expect(urls).to.include('https://example.com/another/valid');
+      });
+
       it('should cap top organic pages to TOP_ORGANIC_URLS_LIMIT', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-athena-client': {
