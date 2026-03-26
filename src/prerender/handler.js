@@ -805,11 +805,7 @@ export async function submitForScraping(context) {
     baseUrl=${site.getBaseURL()},
     siteId=${siteId},`);
 
-  log.info(`${LOG_PREFIX} prerender_url_details: organicUrls=[${batchedOrganicUrls.join(', ')}], siteId=${siteId}`);
-  log.info(`${LOG_PREFIX} prerender_url_details: agenticUrls(batched)=[${filteredAgenticUrls.slice(0, batchedUrls.length - batchedOrganicUrls.length).join(', ')}], siteId=${siteId}`);
-  log.info(`${LOG_PREFIX} prerender_url_details: includedURLs=[${batchedIncludedURLs.join(', ')}], siteId=${siteId}`);
-  log.info(`${LOG_PREFIX} prerender_url_details: recentPathnames(count=${recentPathnames.size})=[${[...recentPathnames].join(', ')}], siteId=${siteId}`);
-  log.info(`${LOG_PREFIX} prerender_url_details: finalUrls=[${finalUrls.join(', ')}], siteId=${siteId}`);
+  log.info(`${LOG_PREFIX} prerender_url_details: siteId=${siteId}, organicUrls=[${batchedOrganicUrls.join(', ')}], agenticUrls=[${filteredAgenticUrls.slice(0, currentAgentic).join(', ')}], includedURLs=[${batchedIncludedURLs.join(', ')}], recentPathnames(${recentPathnames.size})=[${[...recentPathnames].join(', ')}], finalUrls=[${finalUrls.join(', ')}]`);
 
   if (finalUrls.length === 0) {
     // Fallback to base URL if no URLs found
