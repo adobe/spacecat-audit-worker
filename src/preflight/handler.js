@@ -20,7 +20,7 @@ import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js
 import {
   getPrefixedPageAuthToken, isValidUrls, saveIntermediateResults,
 } from './utils.js';
-import { getDomElementSelector, toElementTargets } from '../utils/dom-selector.js';
+import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
 import { AUDIT_ALT_TEXT } from './audit-constants.js';
 import canonical from './canonical.js';
 import metatags from './metatags.js';
@@ -250,9 +250,22 @@ export const preflightAudit = async (context) => {
         }
 
         if (loremIpsumEnabled && /lorem ipsum/i.test(textContent)) {
-          const loremElements = $('p, div, span, li, section, article, h1, h2, h3, h4, h5, h6')
+          const allLoremElements = $('p, div, span, li, section, article, h1, h2, h3, h4, h5, h6')
             .toArray()
             .filter((el) => /lorem ipsum/i.test($(el).text()));
+          // Keep only innermost matches — discard ancestors whose text matched
+          // solely because a descendant contains "Lorem ipsum".
+          const loremElements = allLoremElements.filter(
+            (el) => !allLoremElements.some((other) => {
+              if (other === el) return false;
+              let cursor = other.parent;
+              while (cursor) {
+                if (cursor === el) return true;
+                cursor = cursor.parent;
+              }
+              return false;
+            }),
+          );
           const loremSelectors = loremElements.map(
             (el) => getDomElementSelector(el),
           ).filter(Boolean);

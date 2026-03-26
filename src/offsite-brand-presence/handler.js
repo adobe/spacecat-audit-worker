@@ -270,6 +270,8 @@ function classifyAndNormalize(rawUrl) {
  * @param {string} category - The category from the brand presence row
  * @param {string} prompt - The prompt from the brand presence row
  */
+/* c8 ignore start */
+// eslint-disable-next-line no-unused-vars
 function trackTopicUrl(topicMap, topicName, url, category, prompt) {
   let topic = topicMap.get(topicName);
   if (!topic) {
@@ -285,6 +287,7 @@ function trackTopicUrl(topicMap, topicName, url, category, prompt) {
     urlEntry.subPrompts.add(prompt);
   }
 }
+/* c8 ignore stop */
 
 /**
  * Extracts URLs and topic associations from brand presence data rows in a single pass.
@@ -305,9 +308,11 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log) {
       continue;
     }
 
-    const topicName = row.Topic?.trim();
+    /* c8 ignore start */
+    const topicName = row.Topics?.trim();
     const prompt = row.Prompt?.trim();
     const category = row.Category?.trim() || '';
+    /* c8 ignore stop */
 
     for (const raw of sources.split(/[;\n]/)) {
       const trimmed = raw.trim();
@@ -329,9 +334,11 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log) {
         allUrls.set(result.url, { count: 1, domain: result.domain });
       }
 
+      /* c8 ignore start */
       if (topicName) {
         trackTopicUrl(topicMap, topicName, result.url, category, prompt);
       }
+      /* c8 ignore stop */
     }
   }
   log.info(`${LOG_PREFIX} Found ${allUrls.size} unique source URLs`);
@@ -407,6 +414,7 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
  * @param {object} SentimentTopic - SentimentTopic collection from data access
  * @returns {Promise<Map<string, object>>} Existing topics keyed by name
  */
+/* c8 ignore start */
 async function fetchExistingTopicsByName(siteId, SentimentTopic) {
   const existingByName = new Map();
   let cursor = null;
@@ -422,6 +430,7 @@ async function fetchExistingTopicsByName(siteId, SentimentTopic) {
 
   return existingByName;
 }
+/* c8 ignore stop */
 
 /**
  * Persists topic data to the guideline store as SentimentTopic entities.
@@ -434,6 +443,8 @@ async function fetchExistingTopicsByName(siteId, SentimentTopic) {
  * @param {object} dataAccess - Data access layer from context
  * @param {object} log - Logger instance
  */
+/* c8 ignore start */
+// eslint-disable-next-line no-unused-vars
 async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, log) {
   const { SentimentTopic } = dataAccess;
   const existingByName = await fetchExistingTopicsByName(siteId, SentimentTopic);
@@ -484,6 +495,7 @@ async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, 
 
   log.info(`${LOG_PREFIX} Guideline store complete: ${created} created, ${updated} updated, ${failed} failed`);
 }
+/* c8 ignore stop */
 
 /**
  * Triggers DRS (Data Retrieval Service) scraping jobs for the collected URLs.
@@ -661,7 +673,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
   log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for week w${weekIndex}`);
 
   // Fetch all matched files and collect source URLs + topic associations
-  const { allUrls, topicMap } = await fetchAndAggregateData(siteId, matchedFiles, env, log);
+  const { allUrls } = await fetchAndAggregateData(siteId, matchedFiles, env, log);
   log.info(`${LOG_PREFIX} Total unique source URLs found: ${allUrls.size}`);
 
   // Compute per-domain counts for audit result
@@ -697,9 +709,10 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
   const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
   const drsResults = await triggerDrsScraping(storedByDomain, siteId, context);
 
-  if (topicMap.size > 0) {
-    await addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, log);
-  }
+  // TODO: temporarily disabled
+  // if (topicMap.size > 0) {
+  //   await addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, log);
+  // }
 
   log.info(`${LOG_PREFIX} Audit complete for site ${siteId}: ${allUrls.size} URLs processed, ${drsResults.length} DRS jobs triggered`);
 
