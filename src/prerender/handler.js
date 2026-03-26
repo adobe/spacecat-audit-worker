@@ -784,15 +784,21 @@ export async function submitForScraping(context) {
     batchedIncludedURLs,
   );
 
+  const currentAgentic = batchedUrls.length - batchedOrganicUrls.length;
+  const currentOrganic = batchedOrganicUrls.length;
+  const currentIncludedUrls = batchedIncludedURLs.length;
+  const currentTotal = finalUrls.length;
+
   log.info(`
     ${LOG_PREFIX} prerender_submit_scraping_metrics:
-    submittedUrls=${finalUrls.length},
+    currentTotal=${currentTotal},
+    currentAgentic=${currentAgentic},
+    currentOrganic=${currentOrganic},
+    currentIncludedUrls=${currentIncludedUrls},
     agenticTotal=${agenticUrls.length},
     agenticNewThisCycle=${filteredAgenticUrls.length},
-    agenticInBatch=${batchedUrls.length - batchedOrganicUrls.length},
     isFirstRunOfCycle=${isFirstRunOfCycle},
     topPagesUrls=${topPagesUrls.length},
-    includedURLs=${batchedIncludedURLs.length},
     filteredOutUrls=${filteredCount},
     baseUrl=${site.getBaseURL()},
     siteId=${siteId},`);
