@@ -31,7 +31,7 @@ describe('CWV Trends Audit Constants', () => {
   });
 
   it('should define correct S3 base path', () => {
-    expect(S3_BASE_PATH).to.equal('metrics/cwv-trends');
+    expect(S3_BASE_PATH).to.equal('metrics');
   });
 
   it('should define MIN_PAGEVIEWS as 1000', () => {

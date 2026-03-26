@@ -198,7 +198,7 @@ function buildUrlDetails(dailyData, filteredCache, deviceType, log) {
   });
 }
 
-function emptyResult(domain, deviceType, startDate, endDate) {
+function emptyResult(siteId, domain, deviceType, startDate, endDate) {
   return {
     auditResult: {
       metadata: {
@@ -222,7 +222,7 @@ function emptyResult(domain, deviceType, startDate, endDate) {
       },
       urlDetails: [],
     },
-    fullAuditRef: `${S3_BASE_PATH}/`,
+    fullAuditRef: `${S3_BASE_PATH}/${siteId}/rum/cwv-trends/`,
   };
 }
 
@@ -263,19 +263,20 @@ export default async function cwvTrendsRunner(finalUrl, context, site, auditCont
   const bucketName = env.S3_IMPORTER_BUCKET_NAME;
   const domain = finalUrl;
 
+  const siteId = site.getId();
   const handlerConfig = site.getConfig?.()?.getHandlers?.()?.[AUDIT_TYPE] || {};
   const deviceType = handlerConfig.deviceType || DEFAULT_DEVICE_TYPE;
 
   const endDate = parseEndDate(auditContext.endDate, log);
   const startDate = subtractDays(endDate, TREND_DAYS - 1);
 
-  log.info(`[${AUDIT_TYPE}] siteId: ${site.getId()} | device: ${deviceType} | Reading ${TREND_DAYS} days of S3 data`);
+  log.info(`[${AUDIT_TYPE}] siteId: ${siteId} | device: ${deviceType} | Reading ${TREND_DAYS} days of S3 data`);
 
-  const dailyData = await readTrendData(s3Client, bucketName, endDate, TREND_DAYS, log);
+  const dailyData = await readTrendData(s3Client, bucketName, siteId, endDate, TREND_DAYS, log);
 
   if (dailyData.length === 0) {
     log.warn(`[${AUDIT_TYPE}] No S3 data found for any date`);
-    return emptyResult(domain, deviceType, startDate, endDate);
+    return emptyResult(siteId, domain, deviceType, startDate, endDate);
   }
 
   // Require minimum 28 days of data
@@ -306,6 +307,6 @@ export default async function cwvTrendsRunner(finalUrl, context, site, auditCont
       summary,
       urlDetails,
     },
-    fullAuditRef: `${S3_BASE_PATH}/`,
+    fullAuditRef: `${S3_BASE_PATH}/${siteId}/rum/cwv-trends/`,
   };
 }

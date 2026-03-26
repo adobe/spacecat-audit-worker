@@ -26,8 +26,8 @@ export function subtractDays(date, days) {
   return result;
 }
 
-function buildS3Key(dateStr) {
-  return `${S3_BASE_PATH}/cwv-trends-daily-${dateStr}.json`;
+function buildS3Key(siteId, dateStr) {
+  return `${S3_BASE_PATH}/${siteId}/rum/cwv-trends/cwv-trends-daily-${dateStr}.json`;
 }
 
 /**
@@ -76,18 +76,19 @@ function validateJsonData(raw, dateStr, log) {
  *
  * @param {object} s3Client - AWS S3 client
  * @param {string} bucketName - S3 bucket name
+ * @param {string} siteId - Site identifier
  * @param {Date} endDate - End date (inclusive)
  * @param {number} days - Number of days to read
  * @param {object} log - Logger instance
  * @returns {Promise<Array<{date: string, data: Array}>>} Daily data sorted chronologically
  */
-export async function readTrendData(s3Client, bucketName, endDate, days, log) {
+export async function readTrendData(s3Client, bucketName, siteId, endDate, days, log) {
   const promises = [];
 
   for (let i = days - 1; i >= 0; i -= 1) {
     const date = subtractDays(endDate, i);
     const dateStr = formatDate(date);
-    const key = buildS3Key(dateStr);
+    const key = buildS3Key(siteId, dateStr);
 
     promises.push(
       getObjectFromKey(s3Client, bucketName, key, log)

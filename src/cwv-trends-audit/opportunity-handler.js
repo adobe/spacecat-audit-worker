@@ -10,33 +10,70 @@
  * governing permissions and limitations under the License.
  */
 
+import { Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../utils/data-access.js';
-import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { AUDIT_TYPE, OPPORTUNITY_TITLES } from './constants.js';
+import { OPPORTUNITY_TITLES } from './constants.js';
+
+const OPPORTUNITY_TYPE = 'generic-opportunity';
 
 /**
  * Post-processor that creates/updates the opportunity and syncs suggestions.
- * Matches existing opportunities by title so mobile and desktop remain separate.
+ * Matches existing generic opportunities by title so mobile and desktop remain separate.
  * Creates a single suggestion containing the full audit result
  * (metadata, trendData, summary, urlDetails).
  */
 export default async function opportunityHandler(finalUrl, auditData, context) {
   const { auditResult } = auditData;
   const { deviceType } = auditResult.metadata;
+  const { dataAccess, log } = context;
+  const { Opportunity } = dataAccess;
 
   const expectedTitle = OPPORTUNITY_TITLES[deviceType] || OPPORTUNITY_TITLES.mobile;
-  const comparisonFn = (oppty) => oppty.getTitle() === expectedTitle;
+  const opportunityInstance = createOpportunityData({ deviceType });
 
-  const opportunity = await convertToOpportunity(
-    finalUrl,
-    auditData,
-    context,
-    createOpportunityData,
-    AUDIT_TYPE,
-    { deviceType },
-    comparisonFn,
-  );
+  let opportunity;
+
+  try {
+    const opportunities = await Opportunity.allBySiteIdAndStatus(
+      auditData.siteId,
+      Oppty.STATUSES.NEW,
+    );
+    opportunity = opportunities.find(
+      (oppty) => oppty.getType() === OPPORTUNITY_TYPE && oppty.getTitle() === expectedTitle,
+    );
+  } catch (e) {
+    log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
+    throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
+  }
+
+  try {
+    if (!opportunity) {
+      opportunity = await Opportunity.create({
+        siteId: auditData.siteId,
+        auditId: auditData.id,
+        runbook: opportunityInstance.runbook,
+        type: OPPORTUNITY_TYPE,
+        origin: opportunityInstance.origin,
+        title: opportunityInstance.title,
+        description: opportunityInstance.description,
+        guidance: opportunityInstance.guidance,
+        tags: opportunityInstance.tags,
+        data: opportunityInstance.data,
+      });
+    } else {
+      opportunity.setAuditId(auditData.id);
+      opportunity.setData({
+        ...opportunity.getData(),
+        dataSources: opportunityInstance.data?.dataSources,
+      });
+      opportunity.setUpdatedBy('system');
+      await opportunity.save();
+    }
+  } catch (e) {
+    log.error(`Failed to create/update opportunity for siteId ${auditData.siteId}: ${e.message}`);
+    throw e;
+  }
 
   // Create a single suggestion containing the full audit result
   await syncSuggestions({

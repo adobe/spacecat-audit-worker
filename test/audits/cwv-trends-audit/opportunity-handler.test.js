@@ -20,19 +20,36 @@ use(sinonChai);
 
 describe('CWV Trends Opportunity Handler', () => {
   let sandbox;
-  let convertToOpportunityStub;
   let syncSuggestionsStub;
   let opportunityHandler;
-
-  const mockOpportunity = { getId: () => 'opp-123' };
+  let mockOpportunity;
+  let OpportunityMock;
+  let allBySiteIdAndStatusStub;
+  let createStub;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
-    convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
     syncSuggestionsStub = sandbox.stub().resolves();
+    allBySiteIdAndStatusStub = sandbox.stub();
+    createStub = sandbox.stub();
+
+    mockOpportunity = {
+      getId: () => 'opp-123',
+      getType: () => 'generic-opportunity',
+      getTitle: () => 'Mobile Web Performance Trends Report',
+      getData: () => ({ deviceType: 'mobile' }),
+      setAuditId: sandbox.spy(),
+      setData: sandbox.spy(),
+      setUpdatedBy: sandbox.spy(),
+      save: sandbox.stub().resolves(),
+    };
+
+    OpportunityMock = {
+      allBySiteIdAndStatus: allBySiteIdAndStatusStub,
+      create: createStub,
+    };
 
     const module = await esmock('../../../src/cwv-trends-audit/opportunity-handler.js', {
-      '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
       '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
     });
 
@@ -41,119 +58,171 @@ describe('CWV Trends Opportunity Handler', () => {
 
   afterEach(() => { sandbox.restore(); });
 
-  it('calls convertToOpportunity with correct audit type, device type, and comparisonFn', async () => {
-    const auditData = {
+  function makeContext() {
+    return {
+      dataAccess: { Opportunity: OpportunityMock },
+      log: { info: sandbox.spy(), error: sandbox.spy() },
+    };
+  }
+
+  function makeAuditData(deviceType = 'mobile') {
+    return {
+      siteId: 'site-1',
+      id: 'audit-1',
       auditResult: {
-        metadata: { deviceType: 'mobile' },
+        metadata: { deviceType },
+        trendData: [{ date: '2025-11-01', good: 2, needsImprovement: 1, poor: 3 }],
+        summary: { totalUrls: 6 },
         urlDetails: [{ url: 'https://ex.com/p1', pageviews: 5000 }],
       },
     };
-    const context = { dataAccess: {}, log: { info: sinon.spy() } };
+  }
 
-    await opportunityHandler('https://ex.com', auditData, context);
+  it('creates a new generic-opportunity when none exists', async () => {
+    allBySiteIdAndStatusStub.resolves([]);
+    createStub.resolves(mockOpportunity);
 
-    expect(convertToOpportunityStub).to.have.been.calledOnce;
-    const [, , , , auditType, props, comparisonFn] = convertToOpportunityStub.firstCall.args;
-    expect(auditType).to.equal('cwv-trends-audit');
-    expect(props).to.deep.equal({ deviceType: 'mobile' });
-    expect(comparisonFn).to.be.a('function');
+    await opportunityHandler('https://ex.com', makeAuditData(), makeContext());
+
+    expect(createStub).to.have.been.calledOnce;
+    const createArgs = createStub.firstCall.args[0];
+    expect(createArgs.type).to.equal('generic-opportunity');
+    expect(createArgs.siteId).to.equal('site-1');
+    expect(createArgs.title).to.equal('Mobile Web Performance Trends Report');
   });
 
-  it('comparisonFn matches by opportunity title for mobile', async () => {
-    const auditData = {
-      auditResult: {
-        metadata: { deviceType: 'mobile' },
-        urlDetails: [],
-      },
-    };
-    const context = { dataAccess: {}, log: { info: sinon.spy() } };
+  it('updates existing generic-opportunity when found by title', async () => {
+    allBySiteIdAndStatusStub.resolves([mockOpportunity]);
 
-    await opportunityHandler('https://ex.com', auditData, context);
+    await opportunityHandler('https://ex.com', makeAuditData(), makeContext());
 
-    const comparisonFn = convertToOpportunityStub.firstCall.args[6];
-    expect(comparisonFn({ getTitle: () => 'Mobile Web Performance Trends Report' })).to.be.true;
-    expect(comparisonFn({ getTitle: () => 'Desktop Web Performance Trends Report' })).to.be.false;
+    expect(createStub).to.not.have.been.called;
+    expect(mockOpportunity.setAuditId).to.have.been.calledWith('audit-1');
+    expect(mockOpportunity.setUpdatedBy).to.have.been.calledWith('system');
+    expect(mockOpportunity.save).to.have.been.calledOnce;
   });
 
-  it('comparisonFn matches by opportunity title for desktop', async () => {
-    const auditData = {
-      auditResult: {
-        metadata: { deviceType: 'desktop' },
-        urlDetails: [],
-      },
+  it('does not match opportunities with wrong type', async () => {
+    const wrongTypeOppty = {
+      ...mockOpportunity,
+      getType: () => 'cwv-trends-audit',
+      getTitle: () => 'Mobile Web Performance Trends Report',
     };
-    const context = { dataAccess: {}, log: { info: sinon.spy() } };
+    allBySiteIdAndStatusStub.resolves([wrongTypeOppty]);
+    createStub.resolves(mockOpportunity);
 
-    await opportunityHandler('https://ex.com', auditData, context);
+    await opportunityHandler('https://ex.com', makeAuditData(), makeContext());
 
-    const comparisonFn = convertToOpportunityStub.firstCall.args[6];
-    expect(comparisonFn({ getTitle: () => 'Desktop Web Performance Trends Report' })).to.be.true;
-    expect(comparisonFn({ getTitle: () => 'Mobile Web Performance Trends Report' })).to.be.false;
+    expect(createStub).to.have.been.calledOnce;
   });
 
-  it('comparisonFn defaults to mobile title for unknown device type', async () => {
-    const auditData = {
-      auditResult: {
-        metadata: { deviceType: 'unknown' },
-        urlDetails: [],
-      },
+  it('does not match opportunities with wrong title', async () => {
+    const wrongTitleOppty = {
+      ...mockOpportunity,
+      getTitle: () => 'Desktop Web Performance Trends Report',
     };
-    const context = { dataAccess: {}, log: { info: sinon.spy() } };
+    allBySiteIdAndStatusStub.resolves([wrongTitleOppty]);
+    createStub.resolves(mockOpportunity);
 
-    await opportunityHandler('https://ex.com', auditData, context);
+    await opportunityHandler('https://ex.com', makeAuditData(), makeContext());
 
-    const comparisonFn = convertToOpportunityStub.firstCall.args[6];
-    expect(comparisonFn({ getTitle: () => 'Mobile Web Performance Trends Report' })).to.be.true;
+    expect(createStub).to.have.been.calledOnce;
+  });
+
+  it('matches desktop opportunity by title', async () => {
+    const desktopOppty = {
+      ...mockOpportunity,
+      getTitle: () => 'Desktop Web Performance Trends Report',
+    };
+    allBySiteIdAndStatusStub.resolves([desktopOppty]);
+
+    await opportunityHandler('https://ex.com', makeAuditData('desktop'), makeContext());
+
+    expect(createStub).to.not.have.been.called;
+    expect(desktopOppty.setAuditId).to.have.been.calledWith('audit-1');
+  });
+
+  it('defaults to mobile title for unknown device type', async () => {
+    allBySiteIdAndStatusStub.resolves([]);
+    createStub.resolves(mockOpportunity);
+
+    await opportunityHandler('https://ex.com', makeAuditData('unknown'), makeContext());
+
+    const createArgs = createStub.firstCall.args[0];
+    expect(createArgs.title).to.equal('Mobile Web Performance Trends Report');
   });
 
   it('creates single suggestion with full audit result', async () => {
-    const auditResult = {
-      metadata: { deviceType: 'desktop', domain: 'ex.com' },
-      trendData: [{ date: '2025-11-01', good: 2, needsImprovement: 1, poor: 3 }],
-      summary: { totalUrls: 6 },
-      urlDetails: [
-        { url: 'https://ex.com/p1', pageviews: 5000 },
-        { url: 'https://ex.com/p2', pageviews: 3000 },
-      ],
-    };
-    const auditData = { auditResult };
-    const context = { dataAccess: {}, log: { info: sinon.spy() } };
+    allBySiteIdAndStatusStub.resolves([]);
+    createStub.resolves(mockOpportunity);
+    const auditData = makeAuditData('desktop');
 
-    await opportunityHandler('https://ex.com', auditData, context);
+    await opportunityHandler('https://ex.com', auditData, makeContext());
 
     expect(syncSuggestionsStub).to.have.been.calledOnce;
     const args = syncSuggestionsStub.firstCall.args[0];
     expect(args.opportunity).to.equal(mockOpportunity);
-    expect(args.newData).to.deep.equal([auditResult]); // Single item array
+    expect(args.newData).to.deep.equal([auditData.auditResult]);
   });
 
   it('maps single suggestion with full audit result data', async () => {
-    const auditResult = {
-      metadata: { deviceType: 'mobile', domain: 'ex.com' },
-      trendData: [{ date: '2025-11-01', good: 2, needsImprovement: 1, poor: 3 }],
-      summary: { totalUrls: 7 },
-      urlDetails: [{ url: 'https://ex.com/p1', pageviews: 5000, lcp: 2000 }],
-    };
-    const auditData = { auditResult };
-    const context = { dataAccess: {}, log: { info: sinon.spy() } };
+    allBySiteIdAndStatusStub.resolves([]);
+    createStub.resolves(mockOpportunity);
+    const auditData = makeAuditData();
 
-    await opportunityHandler('https://ex.com', auditData, context);
+    await opportunityHandler('https://ex.com', auditData, makeContext());
 
     const { mapNewSuggestion, buildKey } = syncSuggestionsStub.firstCall.args[0];
-    const suggestion = mapNewSuggestion(auditResult);
+    const suggestion = mapNewSuggestion(auditData.auditResult);
     expect(suggestion.opportunityId).to.equal('opp-123');
     expect(suggestion.type).to.equal('CONTENT_UPDATE');
-    expect(suggestion.rank).to.equal(7); // totalUrls
-    expect(suggestion.data.suggestionValue).to.be.a('string'); // Stringified
-    expect(JSON.parse(suggestion.data.suggestionValue)).to.deep.equal(auditResult); // Parses back to audit result
+    expect(suggestion.rank).to.equal(6);
+    expect(suggestion.data.suggestionValue).to.be.a('string');
+    expect(JSON.parse(suggestion.data.suggestionValue)).to.deep.equal(auditData.auditResult);
     expect(buildKey()).to.equal('mobile-report');
   });
 
   it('returns auditData', async () => {
-    const auditData = { auditResult: { metadata: { deviceType: 'mobile' }, urlDetails: [] } };
-    const context = { dataAccess: {}, log: { info: sinon.spy() } };
+    allBySiteIdAndStatusStub.resolves([]);
+    createStub.resolves(mockOpportunity);
+    const auditData = makeAuditData();
 
-    const result = await opportunityHandler('https://ex.com', auditData, context);
+    const result = await opportunityHandler('https://ex.com', auditData, makeContext());
     expect(result).to.equal(auditData);
+  });
+
+  it('throws when fetching opportunities fails', async () => {
+    allBySiteIdAndStatusStub.rejects(new Error('DB error'));
+
+    try {
+      await opportunityHandler('https://ex.com', makeAuditData(), makeContext());
+      expect.fail('Should have thrown');
+    } catch (err) {
+      expect(err.message).to.include('Failed to fetch opportunities');
+    }
+  });
+
+  it('throws when creating opportunity fails', async () => {
+    allBySiteIdAndStatusStub.resolves([]);
+    createStub.rejects(new Error('Create failed'));
+
+    try {
+      await opportunityHandler('https://ex.com', makeAuditData(), makeContext());
+      expect.fail('Should have thrown');
+    } catch (err) {
+      expect(err.message).to.equal('Create failed');
+    }
+  });
+
+  it('throws when saving opportunity fails', async () => {
+    mockOpportunity.save.rejects(new Error('Save failed'));
+    allBySiteIdAndStatusStub.resolves([mockOpportunity]);
+
+    try {
+      await opportunityHandler('https://ex.com', makeAuditData(), makeContext());
+      expect.fail('Should have thrown');
+    } catch (err) {
+      expect(err.message).to.equal('Save failed');
+    }
   });
 });

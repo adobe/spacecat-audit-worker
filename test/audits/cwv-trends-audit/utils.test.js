@@ -568,7 +568,7 @@ describe('CWV Trends Audit Runner (utils.js) - Edge Cases', function () {
       '../../../src/cwv-trends-audit/constants.js': {
         MIN_PAGEVIEWS: 1000,
         TREND_DAYS: 7,
-        S3_BASE_PATH: 'metrics/cwv-trends',
+        S3_BASE_PATH: 'metrics',
         DEFAULT_DEVICE_TYPE: 'mobile',
         AUDIT_TYPE: 'cwv-trends-audit',
       },

@@ -13,7 +13,7 @@
 export const AUDIT_TYPE = 'cwv-trends-audit';
 export const TREND_DAYS = 28;
 export const CURRENT_WEEK_DAYS = 7;
-export const S3_BASE_PATH = 'metrics/cwv-trends';
+export const S3_BASE_PATH = 'metrics';
 export const MIN_PAGEVIEWS = 1000;
 export const DEFAULT_DEVICE_TYPE = 'mobile';
 

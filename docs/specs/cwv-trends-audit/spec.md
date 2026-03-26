@@ -48,10 +48,10 @@ S3 Bucket (pre-imported by cwv-trends-daily import)
   │
   ▼
 cwv-trends-audit runner
-  ├─ Read 28 days from: metrics/cwv-trends/cwv-trends-daily-{date}.json
+  ├─ Read 28 days from: metrics/{siteId}/rum/cwv-trends/cwv-trends-daily-{date}.json
   ├─ Filter URLs by device type + MIN_PAGEVIEWS (1000)
   ├─ Categorize URLs (Good/NI/Poor) per day → trendData
-  ├─ Build summary (current week avg vs previous week avg)
+  ├─ Build summary (point-to-point: current day vs 7 days before)
   ├─ Build urlDetails (sorted by pageviews, sequential id, change values)
   │
   └─ Post-processor: opportunityHandler
@@ -65,7 +65,7 @@ cwv-trends-audit runner
 ## S3 Data Source
 
 - **Bucket:** `S3_IMPORTER_BUCKET_NAME` (from environment)
-- **Key pattern:** `metrics/cwv-trends/cwv-trends-daily-{YYYY-MM-DD}.json`
+- **Key pattern:** `metrics/{siteId}/rum/cwv-trends/cwv-trends-daily-{YYYY-MM-DD}.json`
 - **Content:** JSON array of URL entries, each with a `metrics` array containing device-specific CWV data
 - **Size limit:** Max 15 MB per JSON file (typical files are 9-10 MB)
 - **Minimum data:** Requires 28 days of data; audit fails with error if less than 28 days available
@@ -186,11 +186,12 @@ When `endDate` is specified, the audit analyzes data from `endDate - 27 days` to
 
 ### Opportunity Matching
 
-The opportunity handler uses `convertToOpportunity` with a `comparisonFn` that matches by **title**:
+The opportunity handler directly finds or creates a `generic-opportunity` by matching **type + title**:
 
-- If an existing opportunity with the matching title is found (status `NEW`), it is updated
-- If no match, a new opportunity is created
-- Titles: "Mobile Web Performance Trends Report" / "Desktop Web Performance Trends Report"
+- Searches existing opportunities with status `NEW` and type `generic-opportunity`
+- Matches by title: "Mobile Web Performance Trends Report" / "Desktop Web Performance Trends Report"
+- If a matching opportunity is found, it is updated; otherwise a new one is created
+- No Google Search Console check is performed (data source is RUM only)
 
 ### Opportunity Data
 
@@ -278,7 +279,7 @@ This ensures one suggestion per device type per site, containing the complete We
       }
     ]
   },
-  "fullAuditRef": "metrics/cwv-trends/"
+  "fullAuditRef": "metrics/{siteId}/rum/cwv-trends/"
 }
 ```
 
@@ -293,7 +294,7 @@ src/cwv-trends-audit/
 ├── data-reader.js            # readTrendData(), formatDate(), subtractDays()
 ├── handler.js                # AuditBuilder entry point (runner + post-processor)
 ├── opportunity-data-mapper.js # createOpportunityData({ deviceType })
-├── opportunity-handler.js    # Post-processor: convertToOpportunity + syncSuggestions
+├── opportunity-handler.js    # Post-processor: generic-opportunity find/create + syncSuggestions
 └── utils.js                  # Main runner logic (cwvTrendsRunner)
 
 test/audits/cwv-trends-audit/

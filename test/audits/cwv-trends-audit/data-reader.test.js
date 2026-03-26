@@ -62,14 +62,14 @@ describe('CWV Trends Data Reader', () => {
   describe('readTrendData', () => {
     it('reads data for the specified number of days', async () => {
       getObjectFromKeyStub.resolves(sampleData);
-      const result = await readTrendData({}, 'bucket', new Date('2025-11-28T00:00:00Z'), 3, log);
+      const result = await readTrendData({}, 'bucket', 'site-1', new Date('2025-11-28T00:00:00Z'), 3, log);
       expect(result).to.have.lengthOf(3);
       expect(getObjectFromKeyStub).to.have.callCount(3);
     });
 
     it('returns results in chronological order', async () => {
       getObjectFromKeyStub.resolves(sampleData);
-      const result = await readTrendData({}, 'bucket', new Date('2025-11-28T00:00:00Z'), 3, log);
+      const result = await readTrendData({}, 'bucket', 'site-1', new Date('2025-11-28T00:00:00Z'), 3, log);
       expect(result[0].date).to.equal('2025-11-26');
       expect(result[2].date).to.equal('2025-11-28');
     });
@@ -77,49 +77,49 @@ describe('CWV Trends Data Reader', () => {
     it('skips dates with missing data', async () => {
       getObjectFromKeyStub.onFirstCall().resolves(sampleData).onSecondCall().resolves(null)
         .onThirdCall().resolves(sampleData);
-      const result = await readTrendData({}, 'bucket', new Date('2025-11-28T00:00:00Z'), 3, log);
+      const result = await readTrendData({}, 'bucket', 'site-1', new Date('2025-11-28T00:00:00Z'), 3, log);
       expect(result).to.have.lengthOf(2);
       expect(log.warn).to.have.been.called;
     });
 
     it('handles JSON string response from S3', async () => {
       getObjectFromKeyStub.resolves(JSON.stringify(sampleData));
-      const result = await readTrendData({}, 'bucket', new Date('2025-11-28T00:00:00Z'), 1, log);
+      const result = await readTrendData({}, 'bucket', 'site-1', new Date('2025-11-28T00:00:00Z'), 1, log);
       expect(result).to.have.lengthOf(1);
       expect(result[0].data).to.deep.equal(sampleData);
     });
 
     it('skips invalid JSON strings', async () => {
       getObjectFromKeyStub.resolves('not-json');
-      const result = await readTrendData({}, 'bucket', new Date('2025-11-28T00:00:00Z'), 1, log);
+      const result = await readTrendData({}, 'bucket', 'site-1', new Date('2025-11-28T00:00:00Z'), 1, log);
       expect(result).to.have.lengthOf(0);
     });
 
     it('skips non-array responses', async () => {
       getObjectFromKeyStub.resolves({ notAnArray: true });
-      const result = await readTrendData({}, 'bucket', new Date('2025-11-28T00:00:00Z'), 1, log);
+      const result = await readTrendData({}, 'bucket', 'site-1', new Date('2025-11-28T00:00:00Z'), 1, log);
       expect(result).to.have.lengthOf(0);
     });
 
     it('returns empty array when all dates are missing', async () => {
       getObjectFromKeyStub.resolves(null);
-      const result = await readTrendData({}, 'bucket', new Date('2025-11-28T00:00:00Z'), 3, log);
+      const result = await readTrendData({}, 'bucket', 'site-1', new Date('2025-11-28T00:00:00Z'), 3, log);
       expect(result).to.have.lengthOf(0);
     });
 
     it('handles getObjectFromKey rejecting', async () => {
       getObjectFromKeyStub.rejects(new Error('boom'));
-      const result = await readTrendData({}, 'bucket', new Date('2025-11-28T00:00:00Z'), 2, log);
+      const result = await readTrendData({}, 'bucket', 'site-1', new Date('2025-11-28T00:00:00Z'), 2, log);
       expect(result).to.have.lengthOf(0);
       expect(log.warn).to.have.been.calledTwice;
     });
 
     it('constructs correct S3 keys', async () => {
       getObjectFromKeyStub.resolves(sampleData);
-      await readTrendData('s3', 'bucket', new Date('2025-11-28T00:00:00Z'), 1, log);
+      await readTrendData('s3', 'bucket', 'site-1', new Date('2025-11-28T00:00:00Z'), 1, log);
       expect(getObjectFromKeyStub).to.have.been.calledWith(
         's3', 'bucket',
-        'metrics/cwv-trends/cwv-trends-daily-2025-11-28.json',
+        'metrics/site-1/rum/cwv-trends/cwv-trends-daily-2025-11-28.json',
         log,
       );
     });
@@ -135,7 +135,7 @@ describe('CWV Trends Data Reader', () => {
         }],
       });
       getObjectFromKeyStub.resolves(JSON.stringify(largeData));
-      const result = await readTrendData({}, 'bucket', new Date('2025-11-28T00:00:00Z'), 1, log);
+      const result = await readTrendData({}, 'bucket', 'site-1', new Date('2025-11-28T00:00:00Z'), 1, log);
       expect(result).to.have.lengthOf(0);
       expect(log.warn).to.have.been.calledWith(sinon.match(/exceeds size limit/));
     });
@@ -144,7 +144,7 @@ describe('CWV Trends Data Reader', () => {
       // Create normal-sized data (~10 KB)
       const normalData = Array(10).fill(sampleData[0]);
       getObjectFromKeyStub.resolves(JSON.stringify(normalData));
-      const result = await readTrendData({}, 'bucket', new Date('2025-11-28T00:00:00Z'), 1, log);
+      const result = await readTrendData({}, 'bucket', 'site-1', new Date('2025-11-28T00:00:00Z'), 1, log);
       expect(result).to.have.lengthOf(1);
     });
 
@@ -159,7 +159,7 @@ describe('CWV Trends Data Reader', () => {
       });
       // Pass already-parsed object (not string)
       getObjectFromKeyStub.resolves(largeData);
-      const result = await readTrendData({}, 'bucket', new Date('2025-11-28T00:00:00Z'), 1, log);
+      const result = await readTrendData({}, 'bucket', 'site-1', new Date('2025-11-28T00:00:00Z'), 1, log);
       expect(result).to.have.lengthOf(0);
       expect(log.warn).to.have.been.calledWith(sinon.match(/exceeds size limit/));
     });
