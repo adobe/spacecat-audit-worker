@@ -1,3 +1,17 @@
+## [1.371.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.6...v1.371.7) (2026-03-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.31.1 ([#2203](https://github.com/adobe/spacecat-audit-worker/issues/2203)) ([8178b20](https://github.com/adobe/spacecat-audit-worker/commit/8178b20456dd3048bac411aa15d36a243b503ea2))
+
+## [1.371.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.5...v1.371.6) (2026-03-26)
+
+
+### Bug Fixes
+
+* stagger llmo cdn analysis fanout ([#2202](https://github.com/adobe/spacecat-audit-worker/issues/2202)) ([58f17d9](https://github.com/adobe/spacecat-audit-worker/commit/58f17d9a03c410380b999ba56937e4dc8f06c1b6))
+
 ## [1.371.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.4...v1.371.5) (2026-03-26)
 
 
