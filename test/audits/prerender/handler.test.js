@@ -613,7 +613,7 @@ describe('Prerender Audit', () => {
         expect(urls.length).to.equal(3);
       });
 
-      it('should cap agentic URLs from sheet to TOP_AGENTIC_URLS_LIMIT (40)', async () => {
+      it('should cap agentic URLs from sheet to TOP_AGENTIC_URLS_LIMIT (20)', async () => {
         // Provide more than TOP_AGENTIC_URLS_LIMIT URLs via sheet and verify result is capped
         const overLimit = TOP_AGENTIC_URLS_LIMIT + 10;
         const bigMap = new Map(Array.from({ length: overLimit }, (_, i) => [`/p${i}`, overLimit - i]));
@@ -636,7 +636,7 @@ describe('Prerender Audit', () => {
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
         };
         await mockHandler.submitForScraping(context);
-        expect(TOP_AGENTIC_URLS_LIMIT).to.equal(40);
+        expect(TOP_AGENTIC_URLS_LIMIT).to.equal(20);
       });
 
       it('should handle undefined topPages list from SiteTopPage gracefully', async () => {
