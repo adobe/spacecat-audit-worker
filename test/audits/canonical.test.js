@@ -2326,6 +2326,7 @@ describe('Canonical URL Tests', () => {
               allBySiteIdAndStatus: sinon.stub().resolves([]),
               create: sinon.stub().resolves({
                 getId: () => 'test-oppty-id',
+                getType: () => 'canonical',
                 getSuggestions: sinon.stub().resolves([]),
                 addSuggestions: sinon.stub().resolves({ createdItems: [] }),
               }),
@@ -2397,6 +2398,7 @@ describe('Canonical URL Tests', () => {
               allBySiteIdAndStatus: sinon.stub().resolves([]),
               create: sinon.stub().resolves({
                 getId: () => 'test-oppty-id',
+                getType: () => 'canonical',
                 getSiteId: () => 'test-site-id',
                 getSuggestions: sinon.stub().resolves([]),
                 addSuggestions: addSuggestionsStub,
@@ -2576,6 +2578,7 @@ describe('Canonical URL Tests', () => {
               allBySiteIdAndStatus: sinon.stub().resolves([]),
               create: sinon.stub().resolves({
                 getId: () => 'test-oppty-id',
+                getType: () => 'canonical',
                 getSuggestions: sinon.stub().resolves([]),
                 addSuggestions: sinon.stub().resolves({ createdItems: [] }),
               }),
@@ -2636,6 +2639,7 @@ describe('Canonical URL Tests', () => {
               allBySiteIdAndStatus: sinon.stub().resolves([]),
               create: sinon.stub().resolves({
                 getId: () => 'test-oppty-id',
+                getType: () => 'canonical',
                 getSuggestions: sinon.stub().resolves([]),
                 addSuggestions: sinon.stub().resolves({ createdItems: [] }),
               }),
@@ -2753,6 +2757,7 @@ describe('Canonical URL Tests', () => {
               allBySiteIdAndStatus: sinon.stub().resolves([existingOpportunity]),
               create: sinon.stub().resolves({
                 getId: () => 'test-oppty-id',
+                getType: () => 'canonical',
                 getSuggestions: sinon.stub().resolves([]),
                 addSuggestions: sinon.stub().resolves({ createdItems: [] }),
               }),
@@ -2830,6 +2835,7 @@ describe('Canonical URL Tests', () => {
               allBySiteIdAndStatus: sinon.stub().resolves([opportunityNoMetrics, opportunityNullMetrics]),
               create: sinon.stub().resolves({
                 getId: () => 'new-oppty-id',
+                getType: () => 'canonical',
                 getSuggestions: sinon.stub().resolves([]),
                 addSuggestions: sinon.stub().resolves({ createdItems: [] }),
               }),
@@ -2901,6 +2907,7 @@ describe('Canonical URL Tests', () => {
               allBySiteIdAndStatus: sinon.stub().resolves([opportunityBadMetrics]),
               create: sinon.stub().resolves({
                 getId: () => 'new-oppty-id',
+                getType: () => 'canonical',
                 getSuggestions: sinon.stub().resolves([]),
                 addSuggestions: sinon.stub().resolves({ createdItems: [] }),
               }),
@@ -2965,6 +2972,7 @@ describe('Canonical URL Tests', () => {
               allBySiteIdAndStatus: sinon.stub().resolves([]),
               create: sinon.stub().resolves({
                 getId: () => 'test-oppty-id',
+                getType: () => 'canonical',
                 getSuggestions: sinon.stub().resolves([]),
                 addSuggestions: sinon.stub().resolves({ createdItems: [] }),
               }),
@@ -3029,6 +3037,7 @@ describe('Canonical URL Tests', () => {
               allBySiteIdAndStatus: sinon.stub().resolves([]),
               create: sinon.stub().resolves({
                 getId: () => 'test-oppty-id',
+                getType: () => 'canonical',
                 getSuggestions: sinon.stub().resolves([]),
                 addSuggestions: sinon.stub().resolves({ createdItems: [] }),
               }),
@@ -3095,6 +3104,7 @@ describe('Canonical URL Tests', () => {
               allBySiteIdAndStatus: sinon.stub().resolves([]),
               create: sinon.stub().resolves({
                 getId: () => 'test-oppty-id',
+                getType: () => 'canonical',
                 getSuggestions: sinon.stub().resolves([]),
                 addSuggestions: sinon.stub().resolves({ createdItems: [] }),
               }),
@@ -3219,6 +3229,7 @@ describe('Canonical URL Tests', () => {
               allBySiteIdAndStatus: sinon.stub().resolves([]),
               create: sinon.stub().resolves({
                 getId: () => 'test-oppty-id',
+                getType: () => 'canonical',
                 getSuggestions: sinon.stub().resolves([]),
                 addSuggestions: sinon.stub().resolves({ createdItems: [] }),
               }),
@@ -3286,6 +3297,7 @@ describe('Canonical URL Tests', () => {
               allBySiteIdAndStatus: sinon.stub().resolves([]),
               create: sinon.stub().resolves({
                 getId: () => 'test-oppty-id',
+                getType: () => 'canonical',
                 getSuggestions: sinon.stub().resolves([]),
                 addSuggestions: sinon.stub().resolves({ createdItems: [] }),
               }),
@@ -3356,6 +3368,7 @@ describe('Canonical URL Tests', () => {
               allBySiteIdAndStatus: sinon.stub().resolves([]),
               create: sinon.stub().resolves({
                 getId: () => 'test-oppty-id',
+                getType: () => 'canonical',
                 getSuggestions: sinon.stub().resolves([]),
                 addSuggestions: sinon.stub().resolves({ createdItems: [] }),
               }),
@@ -3427,6 +3440,7 @@ describe('Canonical URL Tests', () => {
               allBySiteIdAndStatus: sinon.stub().resolves([]),
               create: sinon.stub().resolves({
                 getId: () => 'test-oppty-id',
+                getType: () => 'canonical',
                 getSuggestions: sinon.stub().resolves([]),
                 addSuggestions: sinon.stub().resolves({ createdItems: [] }),
               }),
@@ -3515,6 +3529,7 @@ describe('Canonical URL Tests', () => {
               allBySiteIdAndStatus: sinon.stub().resolves([]),
               create: sinon.stub().resolves({
                 getId: () => 'test-oppty-id',
+                getType: () => 'canonical',
                 getSuggestions: sinon.stub().resolves([]),
                 addSuggestions: sinon.stub().resolves({ createdItems: [] }),
               }),
@@ -3745,6 +3760,7 @@ describe('Canonical URL Tests', () => {
               allBySiteIdAndStatus: sinon.stub().resolves([]),
               create: sinon.stub().resolves({
                 getId: () => 'test-oppty-id',
+                getType: () => 'canonical',
                 getSuggestions: sinon.stub().resolves([]),
                 addSuggestions: sinon.stub().resolves({ createdItems: [] }),
               }),
@@ -3812,6 +3828,7 @@ describe('Canonical URL Tests', () => {
               allBySiteIdAndStatus: sinon.stub().resolves([]),
               create: sinon.stub().resolves({
                 getId: () => 'test-oppty-id',
+                getType: () => 'canonical',
                 getSuggestions: sinon.stub().resolves([]),
                 addSuggestions: sinon.stub().resolves({ createdItems: [] }),
               }),

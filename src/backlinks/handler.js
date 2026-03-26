@@ -21,7 +21,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import calculateKpiMetrics from './kpi-metrics.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { syncSuggestionsWithPublishDetection } from '../utils/data-access.js';
+import { syncSuggestionsWithPublishDetection, warnOnInvalidSuggestionData } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
 import {
   filterBrokenSuggestedUrls,
@@ -429,11 +429,13 @@ export const generateSuggestionData = async (context) => {
         return;
       }
 
-      suggestion.setData({
+      const updatedData = {
         ...suggestion.getData(),
         urlsSuggested,
         aiRationale: `The suggested URL is chosen based on top search results for closely matching keywords from the broken URL. Keywords used: "${keywords}".`,
-      });
+      };
+      warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
+      suggestion.setData(updatedData);
 
       await suggestion.save();
       resolvedByBrightData.add(brokenLink.suggestionId);

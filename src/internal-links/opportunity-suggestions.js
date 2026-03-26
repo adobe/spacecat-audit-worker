@@ -12,6 +12,7 @@
 
 import { createInternalLinksConfigResolver } from './config.js';
 import { createInternalLinksStepLogger } from './logging.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 export function createOpportunityAndSuggestionsStep({
   auditType,
@@ -253,11 +254,13 @@ export function createOpportunityAndSuggestionsStep({
           return;
         }
 
-        suggestion.setData({
+        const updatedData = {
           ...suggestion.getData(),
           urlsSuggested,
           aiRationale: `The suggested URL is chosen based on top search results for closely matching keywords from the broken URL. Keywords used: "${keywords}".`,
-        });
+        };
+        warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
+        suggestion.setData(updatedData);
 
         await suggestion.save();
         resolvedByBrightData.add(brokenLink.suggestionId);

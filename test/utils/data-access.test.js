@@ -30,6 +30,7 @@ import {
   reconcileDisappearedSuggestions,
   publishDeployedFixEntities,
   AUTHOR_ONLY_OPPORTUNITY_TYPES,
+  warnOnInvalidSuggestionData,
 } from '../../src/utils/data-access.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -169,6 +170,7 @@ describe('data-access', () => {
         getSuggestions: sandbox.stub(),
         addSuggestions: sandbox.stub(),
         getSiteId: () => 'site-id',
+        getType: () => 'test-type',
       };
 
       mockLogger = {
@@ -279,6 +281,7 @@ describe('data-access', () => {
       const opportunityWithoutSiteId = {
         getSuggestions: sandbox.stub().resolves([]),
         addSuggestions: sandbox.stub().resolves(suggestionsResult),
+        getType: () => 'test-type',
       };
 
       await syncSuggestions({
@@ -2513,6 +2516,41 @@ describe('data-access', () => {
       // Verify getSuggestions is only called ONCE, not twice
       // (once in wrapper, passed to syncSuggestions to avoid double query)
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
+    });
+  });
+
+  describe('warnOnInvalidSuggestionData', () => {
+    let mockLog;
+
+    beforeEach(() => {
+      mockLog = {
+        warn: sinon.stub(),
+        info: sinon.stub(),
+        debug: sinon.stub(),
+        error: sinon.stub(),
+      };
+    });
+
+    it('passes silently when data is valid for a real schema type', () => {
+      // Use a real opportunity type with a registered schema to confirm valid data passes
+      warnOnInvalidSuggestionData({ url: 'https://example.com', type: 'Product', errors: [] }, 'structured-data', mockLog);
+      expect(mockLog.warn).to.not.have.been.called;
+    });
+
+    it('passes silently when opportunity type has no schema', () => {
+      warnOnInvalidSuggestionData({ key: 'value' }, 'unknown-type', mockLog);
+      expect(mockLog.warn).to.not.have.been.called;
+    });
+
+    it('logs a warning when validation fails', () => {
+      // Use a real opportunity type with a schema so null data triggers validation
+      warnOnInvalidSuggestionData(null, 'structured-data', mockLog);
+      expect(mockLog.warn).to.have.been.calledOnce;
+      expect(mockLog.warn.firstCall.args[0]).to.include('Suggestion data validation warning');
+    });
+
+    it('does not throw even when validation fails', () => {
+      expect(() => warnOnInvalidSuggestionData(null, 'structured-data', mockLog)).to.not.throw();
     });
   });
 });

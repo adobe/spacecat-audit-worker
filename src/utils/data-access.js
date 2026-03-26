@@ -32,6 +32,22 @@ export const AUTHOR_ONLY_OPPORTUNITY_TYPES = [
 ];
 
 /**
+ * Validates suggestion data against the Joi schema for the given opportunity type.
+ * Logs a warning if validation fails but does not block the operation.
+ *
+ * @param {Object} data - Suggestion data to validate.
+ * @param {string} opportunityType - The opportunity type from OPPORTUNITY_TYPES enum.
+ * @param {Object} log - Logger object.
+ */
+export function warnOnInvalidSuggestionData(data, opportunityType, log) {
+  try {
+    SuggestionDataAccess.validateData(data, opportunityType);
+  } catch (error) {
+    log.warn(`Suggestion data validation warning [${opportunityType}]: ${error.message}`);
+  }
+}
+
+/**
  * Safely stringify an object for logging, truncating large arrays to prevent
  * exceeding JavaScript's maximum string length.
  *
@@ -351,6 +367,8 @@ export async function syncSuggestions({
 
   log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
+  const opportunityType = opportunity.getType();
+
   // Update existing suggestions - O(N) with Map lookup
   const { Suggestion } = context.dataAccess;
   const toUpdate = existingSuggestions
@@ -362,7 +380,9 @@ export async function syncSuggestions({
   toUpdate.forEach((existing) => {
     const existingKey = buildKey(existing.getData());
     const newDataItem = newDataByKey.get(existingKey);
-    existing.setData(mergeDataFunction(existing.getData(), newDataItem));
+    const mergedData = mergeDataFunction(existing.getData(), newDataItem);
+    warnOnInvalidSuggestionData(mergedData, opportunityType, log);
+    existing.setData(mergedData);
 
     // Use the merge status function to determine if status should change
     const newStatus = mergeStatusFunction(existing, newDataItem, context);
@@ -385,11 +405,13 @@ export async function syncSuggestions({
     .filter((data) => !existingSuggestionKeys.has(buildKey(data)))
     .map((data) => {
       const suggestion = mapNewSuggestion(data);
-      return {
+      const result = {
         ...suggestion,
         status: requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
           : SuggestionDataAccess.STATUSES.NEW,
       };
+      warnOnInvalidSuggestionData(result.data, opportunityType, log);
+      return result;
     });
 
   // Add new suggestions if any
@@ -685,7 +707,7 @@ export async function syncSuggestionsWithPublishDetection({
   const { log } = context;
 
   // Determine if this is an author-only opportunity type
-  const opportunityType = opportunity.getType?.();
+  const opportunityType = opportunity.getType();
   const isAuthorOnly = AUTHOR_ONLY_OPPORTUNITY_TYPES.includes(opportunityType);
 
   // Compute disappeared suggestions for reconcile step

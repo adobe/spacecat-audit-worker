@@ -26,6 +26,7 @@ describe('Suggestion Validation Tests', () => {
     // Mock opportunity
     opportunity = {
       getId: sinon.stub().returns('opportunity-id'),
+      getType: sinon.stub().returns('test-type'),
       getSiteId: sinon.stub().returns('site-id'),
       getSuggestions: sinon.stub().resolves([]),
       addSuggestions: sinon.stub().resolves({

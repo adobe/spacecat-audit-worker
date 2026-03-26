@@ -63,6 +63,7 @@ describe('guidance-broken-links-remediation handler', () => {
     mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
       getSiteId: () => mockMessage.siteId,
       getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
     });
     const mockSetData = sandbox.stub();
     const mockSaveMany = sandbox.stub().resolves();

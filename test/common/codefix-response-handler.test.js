@@ -32,6 +32,7 @@ describe('CodeFixResponseHandler', () => {
 
     mockOpportunity = {
       getId: sandbox.stub().returns('opportunity-123'),
+      getType: sandbox.stub().returns('codefix'),
       getSiteId: sandbox.stub().returns('site-123'),
       getSuggestions: sandbox.stub().resolves([]),
     };
