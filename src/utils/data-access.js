@@ -333,6 +333,9 @@ export async function syncSuggestions({
   // Use pre-fetched suggestions if provided, otherwise fetch from DB
   const existingSuggestions = prefetchedSuggestions ?? await opportunity.getSuggestions();
 
+  // isElmo opportunities skip PENDING_VALIDATION — suggestions go straight to NEW
+  const isElmoOpportunity = (opportunity.getTags?.() || []).includes('isElmo');
+
   // Pre-compute Maps for O(1) lookups instead of O(N*M)
   const newDataByKey = new Map(newData.map((data) => [buildKey(data), data]));
   const existingSuggestionKeys = new Set(
@@ -368,7 +371,12 @@ export async function syncSuggestions({
     const newStatus = mergeStatusFunction(existing, newDataItem, context);
     // null indicates to keep existing status
     if (newStatus !== null) {
-      existing.setStatus(newStatus);
+      // isElmo opportunities never enter PENDING_VALIDATION — fall back to NEW
+      const finalStatus = (isElmoOpportunity
+        && newStatus === SuggestionDataAccess.STATUSES.PENDING_VALIDATION)
+        ? SuggestionDataAccess.STATUSES.NEW
+        : newStatus;
+      existing.setStatus(finalStatus);
     }
     existing.setUpdatedBy('system');
   });
@@ -387,7 +395,8 @@ export async function syncSuggestions({
       const suggestion = mapNewSuggestion(data);
       return {
         ...suggestion,
-        status: requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+        status: (!isElmoOpportunity && requiresValidation)
+          ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
           : SuggestionDataAccess.STATUSES.NEW,
       };
     });
