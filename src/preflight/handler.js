@@ -253,6 +253,8 @@ export const preflightAudit = async (context) => {
           const allLoremElements = $('p, div, span, li, section, article, h1, h2, h3, h4, h5, h6')
             .toArray()
             .filter((el) => /lorem ipsum/i.test($(el).text()));
+          // Keep only innermost matches — discard ancestors whose text matched
+          // solely because a descendant contains "Lorem ipsum".
           const loremElements = allLoremElements.filter(
             (el) => !allLoremElements.some((other) => {
               if (other === el) return false;

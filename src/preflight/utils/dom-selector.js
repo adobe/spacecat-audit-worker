@@ -66,7 +66,7 @@ const MAX_PARENT_LEVELS = 5;
  * Generates a unique CSS selector for any DOM element.
  * Priority order:
  * 1. Universal Editor: data-aue-* attributes
- * 2. Standard CSS: id, classes, nth-of-type, parent chain (max MAX_PARENT_LEVELS levels)
+ * 2. Standard CSS: id, classes, nth-of-type, parent chain (upto MAX_PARENT_LEVELS ancestors)
  *
  * @param {Element} element
  * @returns {string|null} A CSS selector string, or null.
@@ -178,6 +178,8 @@ export function getDomElementSelector(element) {
  * Normalizes selector(s) into the payload expected by consumers.
  * Returns a unified format for spreading into opportunity objects
  * across all selector types (Universal Editor or standard CSS).
+ * Universal Editor: { elements: [{ selector: "div[data-aue-resource=\"...\"]" }, ...] }
+ * Standard CSS: { elements: [{ selector: "body > div.content > a[href=\"...\"]" }, ...] }
  *
  * @param {string|string[]} selectors
  * @param {number} [limit=Infinity]
