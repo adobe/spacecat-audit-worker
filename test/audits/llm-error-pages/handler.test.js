@@ -384,6 +384,18 @@ describe('LLM Error Pages Handler', function () {
       }
     });
 
+    it('should use current week only when not Monday and no weekOffset', async () => {
+      const wednesday = new Date('2025-08-20T12:00:00Z'); // Wednesday
+      const clock = sinon.useFakeTimers(wednesday.getTime());
+      try {
+        const result = await runAuditAndSendToMystique(context);
+        expect(result.auditResult).to.have.length(1);
+        expect(mockGenerateReportingPeriods).to.have.been.calledWith(sinon.match.date, [0]);
+      } finally {
+        clock.restore();
+      }
+    });
+
     it('should handle per-week query failure gracefully', async () => {
       mockAthenaClient.query.rejects(new Error('Database error'));
 

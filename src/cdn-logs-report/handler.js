@@ -79,7 +79,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     }
 
     if (reportConfig.name === 'agentic') {
-      const existingPatterns = await fetchRemotePatterns(site);
+      const existingPatterns = await fetchRemotePatterns(site, log);
 
       if (!existingPatterns || auditContext?.categoriesUpdated) {
         log.info('Patterns not found, generating patterns workbook...');

@@ -712,7 +712,7 @@ describe('Preflight Audit', () => {
         TierClient.createForSite.restore();
       }
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       sinon.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -2004,7 +2004,7 @@ describe('Preflight Audit', () => {
 
       // Ensure entitlement checks pass for accessibility
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       if (TierClient.createForSite && TierClient.createForSite.restore) {
         TierClient.createForSite.restore();
@@ -3142,7 +3142,7 @@ describe('Preflight Audit', () => {
 
         // Ensure entitlement checks pass for polling tests; avoid double-stubbing
         const mockTierClient = {
-          checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+          checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
         };
         if (TierClient.createForSite && TierClient.createForSite.restore) {
           TierClient.createForSite.restore();
@@ -3406,7 +3406,7 @@ describe('Preflight Audit', () => {
 
       // Ensure entitlement checks pass for coverage tests
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -4714,7 +4714,7 @@ describe('Preflight Audit', () => {
 
       // Ensure entitlement checks pass for enabled checks calculation
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       if (TierClient.createForSite && TierClient.createForSite.restore) {
         TierClient.createForSite.restore();

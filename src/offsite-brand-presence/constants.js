@@ -11,6 +11,7 @@
  */
 
 import { SCRAPE_DATASET_IDS } from '@adobe/spacecat-shared-drs-client';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 
 export const PROVIDERS = Object.freeze([
   'ai-mode',
@@ -32,15 +33,15 @@ export const URL_STORE_STATUS = Object.freeze({
 
 export const OFFSITE_DOMAINS = Object.freeze({
   'youtube.com': {
-    auditType: 'youtube-analysis',
+    auditType: Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS,
     datasetIds: [SCRAPE_DATASET_IDS.YOUTUBE_VIDEOS, SCRAPE_DATASET_IDS.YOUTUBE_COMMENTS],
   },
   'reddit.com': {
-    auditType: 'reddit-analysis',
+    auditType: Audit.AUDIT_TYPES.REDDIT_ANALYSIS,
     datasetIds: [SCRAPE_DATASET_IDS.REDDIT_POSTS, SCRAPE_DATASET_IDS.REDDIT_COMMENTS],
   },
   'wikipedia.org': {
-    auditType: 'wikipedia-analysis',
+    auditType: Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS,
     datasetIds: [SCRAPE_DATASET_IDS.WIKIPEDIA],
   },
 });
@@ -50,7 +51,7 @@ export const FETCH_PAGE_SIZE = 80000;
 export const FETCH_TIMEOUT_MS = 60000;
 export const INCLUDE_COLUMNS = ['Sources', 'Region', 'answer_contains_brandname', 'Mentions', 'Citations', 'Prompt', 'Topic', 'Category'].join(',');
 export const REDDIT_COMMENTS_DAYS_BACK = 30;
-export const TOP_CITED_DRS_CONFIG = Object.freeze({
-  auditType: 'top-cited-analysis',
+export const CITED_ANALYSIS_DRS_CONFIG = Object.freeze({
+  auditType: Audit.AUDIT_TYPES.CITED_ANALYSIS,
   datasetIds: [SCRAPE_DATASET_IDS.TOP_CITED],
 });

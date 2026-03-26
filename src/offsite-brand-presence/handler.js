@@ -23,7 +23,7 @@ import {
   REDDIT_COMMENTS_DAYS_BACK,
   OFFSITE_DOMAINS,
   PROVIDERS_SET,
-  TOP_CITED_DRS_CONFIG,
+  CITED_ANALYSIS_DRS_CONFIG,
 } from './constants.js';
 
 const LOG_PREFIX = '[OffsiteBrandPresence]';
@@ -51,7 +51,7 @@ function getPreviousWeek() {
  * @returns {Promise<object|null>} Parsed JSON data or null if the request failed
  */
 async function fetchQueryIndex(siteId, env, log) {
-  const apiBase = env.SPACECAT_API_URI;
+  const apiBase = env.SPACECAT_API_BASE_URL;
   const apiKey = env.SPACECAT_API_KEY;
   const url = `${apiBase}/sites/${siteId}/llmo/data/query-index.json`;
 
@@ -86,7 +86,7 @@ async function fetchQueryIndex(siteId, env, log) {
  * @returns {Promise<object|null>} Parsed JSON data or null if not found
  */
 async function fetchBrandPresenceData(siteId, fileName, env, log) {
-  const apiBase = env.SPACECAT_API_URI;
+  const apiBase = env.SPACECAT_API_BASE_URL;
   const apiKey = env.SPACECAT_API_KEY;
   const headers = { 'x-api-key': apiKey };
   const baseUrl = `${apiBase}/sites/${siteId}/llmo/data/${fileName}?sheet=all&include=${INCLUDE_COLUMNS}`;
@@ -361,7 +361,7 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
     log.info(`${LOG_PREFIX} Selected top ${urls.length} ${domain} URLs (limit ${DRS_URLS_LIMIT})`);
   }
   for (const url of topCited) {
-    entries.push({ url, audits: [TOP_CITED_DRS_CONFIG.auditType] });
+    entries.push({ url, audits: [CITED_ANALYSIS_DRS_CONFIG.auditType] });
   }
   log.info(`${LOG_PREFIX} Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${DRS_URLS_LIMIT})`);
   log.info(`${LOG_PREFIX} Adding ${entries.length} URLs to URL store`);
@@ -488,7 +488,7 @@ async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, 
 /**
  * Triggers DRS (Data Retrieval Service) scraping jobs for the collected URLs.
  * For each domain, one job is created per dataset_id defined in OFFSITE_DOMAINS.
- * Top-cited URLs use TOP_CITED_DRS_CONFIG for their dataset configuration.
+ * Top-cited URLs use CITED_ANALYSIS_DRS_CONFIG for their dataset configuration.
  *
  * @param {object} urlsByDomain - Map of domain/bucket to array of URL strings
  * @param {string} siteId - The site ID
@@ -513,7 +513,7 @@ async function triggerDrsScraping(urlsByDomain, siteId, context) {
       continue;
     }
 
-    const { datasetIds } = OFFSITE_DOMAINS[domain] || TOP_CITED_DRS_CONFIG;
+    const { datasetIds } = OFFSITE_DOMAINS[domain] || CITED_ANALYSIS_DRS_CONFIG;
 
     for (const datasetId of datasetIds) {
       const params = { datasetId, siteId, urls: urlList };
@@ -633,10 +633,10 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
 
   log.info(`${LOG_PREFIX} Starting audit for site: ${siteId} (${baseURL})`);
 
-  if (!env.SPACECAT_API_URI || !env.SPACECAT_API_KEY) {
-    log.error(`${LOG_PREFIX} SPACECAT_API_URI or SPACECAT_API_KEY not configured`);
+  if (!env.SPACECAT_API_BASE_URL || !env.SPACECAT_API_KEY) {
+    log.error(`${LOG_PREFIX} SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured`);
     return {
-      auditResult: { success: false, error: 'SPACECAT_API_URI or SPACECAT_API_KEY not configured' },
+      auditResult: { success: false, error: 'SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured' },
       fullAuditRef: finalUrl,
     };
   }
