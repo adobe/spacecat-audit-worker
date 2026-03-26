@@ -168,7 +168,7 @@ describe('Preflight Links - Insecure Links Coverage Tests', () => {
       };
 
       const module = await esmock('../../src/preflight/handler.js', {
-        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/preflight/links-checks.js': mockLinksChecks,
       });
 
@@ -227,7 +227,7 @@ describe('Preflight Links - Insecure Links Coverage Tests', () => {
       };
 
       const module = await esmock('../../src/preflight/handler.js', {
-        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/preflight/links-checks.js': mockLinksChecks,
       });
 
@@ -291,7 +291,7 @@ describe('Preflight Links - Insecure Links Coverage Tests', () => {
       };
 
       const module = await esmock('../../src/preflight/handler.js', {
-        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/preflight/links-checks.js': mockLinksChecks,
       });
 
@@ -350,7 +350,7 @@ describe('Preflight Links - Insecure Links Coverage Tests', () => {
       };
 
       const module = await esmock('../../src/preflight/handler.js', {
-        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
         '../../src/preflight/links-checks.js': mockLinksChecks,
       });
 
