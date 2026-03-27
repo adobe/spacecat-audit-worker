@@ -245,18 +245,17 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     expect(summary.totalUrls).to.equal(1);
   });
 
-  it('returns empty results for both device types when no S3 data', async () => {
+  it('fails when no S3 data is found', async () => {
     readTrendDataStub.resolves([]);
 
-    const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
-
-    expect(result.auditResult).to.be.an('array').with.lengthOf(2);
-    expect(mobileResult(result).trendData).to.deep.equal([]);
-    expect(mobileResult(result).urlDetails).to.deep.equal([]);
-    expect(mobileResult(result).summary.totalUrls).to.equal(0);
-    expect(mobileResult(result).metadata.deviceType).to.equal('mobile');
-    expect(desktopResult(result).metadata.deviceType).to.equal('desktop');
-    expect(log.warn).to.have.been.calledWith(sinon.match(/No S3 data found/));
+    try {
+      await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
+      expect.fail('Should have thrown error');
+    } catch (err) {
+      expect(err.message).to.include('Insufficient data');
+      expect(err.message).to.include('0 days found');
+      expect(err.message).to.include('28 required');
+    }
   });
 
   it('excludes URLs that only have undefined device type metrics', async () => {
@@ -280,7 +279,8 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
 
     expect(mobileResult(result).urlDetails).to.have.lengthOf(2);
-    expect(mobileResult(result).trendData[0].good).to.equal(1);
+    // Null CWV metrics default to 'good' in both trendData and urlDetails
+    expect(mobileResult(result).trendData[0].good).to.equal(2);
     expect(mobileResult(result).trendData[0].poor).to.equal(0);
   });
 
@@ -442,12 +442,14 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     };
     global.Date.UTC = OriginalDate.UTC;
 
-    const result = await cwvTrendsRunner('https://ex.com', context, site);
+    try {
+      const result = await cwvTrendsRunner('https://ex.com', context, site);
 
-    global.Date = OriginalDate;
-
-    expect(mobileResult(result).metadata.endDate).to.equal(testDateStr);
-    expect(mobileResult(result).metadata.startDate).to.equal('2026-02-25');
+      expect(mobileResult(result).metadata.endDate).to.equal(testDateStr);
+      expect(mobileResult(result).metadata.startDate).to.equal('2026-02-25');
+    } finally {
+      global.Date = OriginalDate;
+    }
   });
 
   it('uses current date when auditContext.endDate is invalid', async () => {
@@ -472,14 +474,16 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     };
     global.Date.UTC = OriginalDate.UTC;
 
-    const result = await cwvTrendsRunner('https://ex.com', context, site, auditContext);
+    try {
+      const result = await cwvTrendsRunner('https://ex.com', context, site, auditContext);
 
-    global.Date = OriginalDate;
-
-    expect(mobileResult(result).metadata.endDate).to.equal(testDateStr);
-    expect(log.warn).to.have.been.calledWith(
-      sinon.match(/Invalid endDate format "invalid-date"/),
-    );
+      expect(mobileResult(result).metadata.endDate).to.equal(testDateStr);
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Invalid endDate format "invalid-date"/),
+      );
+    } finally {
+      global.Date = OriginalDate;
+    }
   });
 
   it('parseEndDate handles Date objects that return NaN', () => {

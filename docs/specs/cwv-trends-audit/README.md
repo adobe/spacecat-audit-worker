@@ -31,8 +31,9 @@ S3 (cwv-trends-daily import)
 | **Suggestion status forced to `NEW`** | Sites with `requiresValidation: true` would otherwise get `PENDING_VALIDATION`, which the UI filters out. Report-style opportunities don't need human validation |
 | **Custom `mergeDataFunction`** | The default shallow merge in `syncSuggestions` wouldn't update `suggestionValue` on re-runs since the raw device result doesn't contain that key. The custom function JSON-stringifies the new result into `suggestionValue` |
 | **Null values default to `0`** | The UI calls `.toFixed()` on numeric fields without null guards. All numeric fields (`lcp`, `cls`, `inp`, `*Change`, etc.) default to `0`, and status defaults to `good` when no CWV metrics are available |
-| **No Google Search Console check** | Data source is RUM only. The handler bypasses `convertToOpportunity` (which includes `checkGoogleConnection`) and directly manages opportunity lifecycle |
-| **28-day minimum required** | Audit throws an error if fewer than 28 days of S3 data exist, ensuring trend calculations have sufficient data |
+| **No Google Search Console check** | Data source is RUM only. The handler bypasses `convertToOpportunity` (which includes `checkGoogleConnection`) and directly manages opportunity lifecycle via a custom `findOrCreateOpportunity` function. The shared `convertToOpportunity` utility bundles Google connection checks and uses a single opportunity per audit type, whereas this audit needs per-device-type opportunities matched by title |
+| **`siteEnrollment` check in `audit-utils.js`** | The `checkProductCodeEntitlements` function uses `tierResult.siteEnrollment` (site-level enrollment) rather than `tierResult.entitlement` (org-level). This only affects audits with `productCodes` configured — audits without product codes are unaffected. The default fallback behavior (deny when no enrollment) matches the previous behavior |
+| **28-day minimum required** | Audit throws an error if fewer than 28 days of S3 data exist (including zero days), ensuring trend calculations have sufficient data |
 
 ## CWV Thresholds
 

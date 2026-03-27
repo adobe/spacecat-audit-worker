@@ -109,8 +109,15 @@ describe('CWV Trends Opportunity Handler', () => {
 
     expect(createStub).to.not.have.been.called;
     expect(mobileOppty.setAuditId).to.have.been.calledWith('audit-1');
+    expect(mobileOppty.setData).to.have.been.calledOnce;
+    const mobileSetDataArg = mobileOppty.setData.firstCall.args[0];
+    expect(mobileSetDataArg).to.have.property('deviceType', 'mobile');
+    expect(mobileSetDataArg).to.have.property('dataSources').that.deep.equals(['RUM']);
     expect(mobileOppty.save).to.have.been.calledOnce;
     expect(desktopOppty.setAuditId).to.have.been.calledWith('audit-1');
+    expect(desktopOppty.setData).to.have.been.calledOnce;
+    const desktopSetDataArg = desktopOppty.setData.firstCall.args[0];
+    expect(desktopSetDataArg).to.have.property('dataSources').that.deep.equals(['RUM']);
     expect(desktopOppty.save).to.have.been.calledOnce;
   });
 

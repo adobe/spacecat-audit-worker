@@ -76,7 +76,7 @@ function buildTrendData(dailyData, deviceType, log) {
     let poor = 0;
 
     for (const url of urls) {
-      const category = categorizeUrl(url.lcp, url.cls, url.inp);
+      const category = categorizeUrl(url.lcp, url.cls, url.inp) || 'good';
       if (category === 'good') good += 1;
       else if (category === 'needsImprovement') needsImprovement += 1;
       else if (category === 'poor') poor += 1;
@@ -128,17 +128,6 @@ function buildSummary(trendData, totalUrls) {
   };
 }
 
-/**
- * Finds a URL's value for a specific field from cached filtered URLs.
- */
-function getUrlValueFromCache(urlKey, cachedUrls, field) {
-  const match = cachedUrls.find((u) => u.url === urlKey);
-  if (match && match[field] !== null && match[field] !== undefined) {
-    return match[field];
-  }
-  return null;
-}
-
 function round(value, decimals) {
   const factor = 10 ** decimals;
   return Math.round(value * factor) / factor;
@@ -164,6 +153,8 @@ function buildUrlDetails(dailyData, filteredCache, deviceType, log) {
   const fields = ['pageviews', 'lcp', 'cls', 'inp', 'bounceRate', 'engagement', 'clickRate'];
   const pctFields = new Set(['bounceRate', 'engagement', 'clickRate']);
 
+  const previousUrlMap = new Map(previousUrls.map((u) => [u.url, u]));
+
   return latestUrls.map((url, index) => {
     const detail = {
       id: String(index + 1),
@@ -171,51 +162,26 @@ function buildUrlDetails(dailyData, filteredCache, deviceType, log) {
       status: categorizeUrl(url.lcp, url.cls, url.inp) || 'good',
     };
 
+    const prevUrl = previousUrlMap.get(url.url);
     for (const field of fields) {
       const rawValue = url[field];
-      const currentValue = getUrlValueFromCache(url.url, latestUrls, field);
-      const previousValue = getUrlValueFromCache(url.url, previousUrls, field);
+      const previousValue = prevUrl?.[field] ?? null;
 
       if (pctFields.has(field)) {
         detail[field] = rawValue != null ? round(rawValue * 100, 1) : 0;
-        detail[`${field}Change`] = (currentValue != null && previousValue != null)
-          ? round((currentValue - previousValue) * 100, 1)
+        detail[`${field}Change`] = (rawValue != null && previousValue != null)
+          ? round((rawValue - previousValue) * 100, 1)
           : 0;
       } else {
         detail[field] = rawValue != null ? round(rawValue, 3) : 0;
-        detail[`${field}Change`] = (currentValue != null && previousValue != null)
-          ? round(currentValue - previousValue, 3)
+        detail[`${field}Change`] = (rawValue != null && previousValue != null)
+          ? round(rawValue - previousValue, 3)
           : 0;
       }
     }
 
     return detail;
   });
-}
-
-function emptyDeviceResult(domain, deviceType, startDate, endDate) {
-  return {
-    metadata: {
-      domain,
-      deviceType,
-      startDate: formatDate(startDate),
-      endDate: formatDate(endDate),
-    },
-    trendData: [],
-    summary: {
-      good: {
-        current: 0, previous: 0, change: 0, percentageChange: 0, status: 'good',
-      },
-      needsImprovement: {
-        current: 0, previous: 0, change: 0, percentageChange: 0, status: 'needsImprovement',
-      },
-      poor: {
-        current: 0, previous: 0, change: 0, percentageChange: 0, status: 'poor',
-      },
-      totalUrls: 0,
-    },
-    urlDetails: [],
-  };
 }
 
 /**
@@ -290,16 +256,6 @@ export default async function cwvTrendsRunner(finalUrl, context, site, auditCont
   log.info(`[${AUDIT_TYPE}] siteId: ${siteId} | Reading ${TREND_DAYS} days of S3 data`);
 
   const dailyData = await readTrendData(s3Client, bucketName, siteId, endDate, TREND_DAYS, log);
-
-  if (dailyData.length === 0) {
-    log.warn(`[${AUDIT_TYPE}] No S3 data found for any date`);
-    return {
-      auditResult: DEVICE_TYPES.map(
-        (dt) => emptyDeviceResult(domain, dt, startDate, endDate),
-      ),
-      fullAuditRef: `${S3_BASE_PATH}/${siteId}/rum/cwv-trends/`,
-    };
-  }
 
   // Require minimum 28 days of data
   if (dailyData.length < TREND_DAYS) {
