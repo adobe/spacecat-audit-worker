@@ -16,6 +16,7 @@ import { Suggestion } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../../src/utils/data-access.js';
 
 describe('Suggestion Validation Tests', () => {
+  let sandbox;
   let context;
   let opportunity;
   let buildKey;
@@ -23,37 +24,38 @@ describe('Suggestion Validation Tests', () => {
   let newData;
 
   beforeEach(() => {
-    // Mock opportunity
+    sandbox = sinon.createSandbox();
+
     opportunity = {
-      getId: sinon.stub().returns('opportunity-id'),
-      getSiteId: sinon.stub().returns('site-id'),
-      getSuggestions: sinon.stub().resolves([]),
-      addSuggestions: sinon.stub().resolves({
+      getId: sandbox.stub().returns('opportunity-id'),
+      getSiteId: sandbox.stub().returns('site-id'),
+      getTags: sandbox.stub().returns([]),
+      getSuggestions: sandbox.stub().resolves([]),
+      addSuggestions: sandbox.stub().resolves({
         createdItems: [{ id: 'suggestion-id' }],
         errorItems: [],
       }),
     };
 
-    // Mock context
     context = {
       log: {
-        debug: sinon.spy(),
-        info: sinon.spy(),
-        warn: sinon.spy(),
-        error: sinon.spy(),
+        debug: sandbox.stub(),
+        info: sandbox.stub(),
+        warn: sandbox.stub(),
+        error: sandbox.stub(),
       },
       site: {
-        getId: sinon.stub().returns('site-id'),
+        getId: sandbox.stub().returns('site-id'),
         requiresValidation: false,
       },
       dataAccess: {
         Suggestion: {
-          bulkUpdateStatus: sinon.stub().resolves(),
+          bulkUpdateStatus: sandbox.stub().resolves(),
+          saveMany: sandbox.stub().resolves(),
         },
       },
     };
 
-    // Mock functions
     buildKey = (data) => data.id;
     mapNewSuggestion = (data) => ({
       opportunityId: opportunity.getId(),
@@ -62,7 +64,6 @@ describe('Suggestion Validation Tests', () => {
       data: { ...data },
     });
 
-    // Mock data
     newData = [
       { id: 'item1', value: 'test1', rank: 1 },
       { id: 'item2', value: 'test2', rank: 2 },
@@ -70,11 +71,10 @@ describe('Suggestion Validation Tests', () => {
   });
 
   afterEach(() => {
-    sinon.restore();
+    sandbox.restore();
   });
 
   it('should set status to NEW for sites without requiresValidation flag', async () => {
-    // Site without requiresValidation flag
     context.site.requiresValidation = false;
 
     await syncSuggestions({
@@ -85,7 +85,6 @@ describe('Suggestion Validation Tests', () => {
       mapNewSuggestion,
     });
 
-    // Check if addSuggestions was called with correct status
     const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
     expect(addSuggestionsCall).to.exist;
 
@@ -95,8 +94,7 @@ describe('Suggestion Validation Tests', () => {
     expect(suggestions[1].status).to.equal(Suggestion.STATUSES.NEW);
   });
 
-  it('should set status to PENDING_VALIDATION for sites with requiresValidation flag', async () => {
-    // Site with requiresValidation flag
+  it('should set status to PENDING_VALIDATION for non-isElmo sites with requiresValidation flag', async () => {
     context.site.requiresValidation = true;
 
     await syncSuggestions({
@@ -107,7 +105,6 @@ describe('Suggestion Validation Tests', () => {
       mapNewSuggestion,
     });
 
-    // Check if addSuggestions was called with correct status
     const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
     expect(addSuggestionsCall).to.exist;
 
@@ -117,5 +114,103 @@ describe('Suggestion Validation Tests', () => {
     expect(suggestions[1].status).to.equal(Suggestion.STATUSES.PENDING_VALIDATION);
   });
 
-  // Removed legacy list test; relies on entitlement-driven requiresValidation only
+  it('should set status to NEW for isElmo opportunities even when requiresValidation is true', async () => {
+    context.site.requiresValidation = true;
+    opportunity.getTags.returns(['isElmo', 'content']);
+
+    await syncSuggestions({
+      context,
+      opportunity,
+      newData,
+      buildKey,
+      mapNewSuggestion,
+    });
+
+    const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
+    expect(addSuggestionsCall).to.exist;
+
+    const suggestions = addSuggestionsCall.args[0];
+    expect(suggestions).to.be.an('array').with.lengthOf(2);
+    expect(suggestions[0].status).to.equal(Suggestion.STATUSES.NEW);
+    expect(suggestions[1].status).to.equal(Suggestion.STATUSES.NEW);
+    expect(suggestions.map((suggestion) => suggestion.status)).to.not.include(
+      Suggestion.STATUSES.PENDING_VALIDATION,
+    );
+  });
+
+  it('should warn and keep PENDING_VALIDATION when getTags is missing', async () => {
+    context.site.requiresValidation = true;
+    delete opportunity.getTags;
+
+    await syncSuggestions({
+      context,
+      opportunity,
+      newData,
+      buildKey,
+      mapNewSuggestion,
+    });
+
+    const suggestions = opportunity.addSuggestions.getCall(0).args[0];
+    expect(suggestions[0].status).to.equal(Suggestion.STATUSES.PENDING_VALIDATION);
+    expect(suggestions[1].status).to.equal(Suggestion.STATUSES.PENDING_VALIDATION);
+    sinon.assert.calledWith(
+      context.log.warn,
+      '[syncSuggestions] opportunity.getTags is not a function. Treating as non-isElmo.',
+    );
+  });
+
+  it('should warn and keep PENDING_VALIDATION when getTags returns null', async () => {
+    context.site.requiresValidation = true;
+    opportunity.getTags.returns(null);
+
+    await syncSuggestions({
+      context,
+      opportunity,
+      newData,
+      buildKey,
+      mapNewSuggestion,
+    });
+
+    const suggestions = opportunity.addSuggestions.getCall(0).args[0];
+    expect(suggestions[0].status).to.equal(Suggestion.STATUSES.PENDING_VALIDATION);
+    expect(suggestions[1].status).to.equal(Suggestion.STATUSES.PENDING_VALIDATION);
+    sinon.assert.calledWith(
+      context.log.warn,
+      '[syncSuggestions] opportunity.getTags() returned non-array: null. Treating as non-isElmo.',
+    );
+  });
+
+  it('should override PENDING_VALIDATION to NEW for existing isElmo suggestions and log it', async () => {
+    context.site.requiresValidation = true;
+    opportunity.getTags.returns(['isElmo']);
+
+    const existingSuggestion = {
+      getId: sandbox.stub().returns('existing-suggestion-id'),
+      getData: sandbox.stub().returns({ id: 'item1', value: 'existing' }),
+      setData: sandbox.stub(),
+      getStatus: sandbox.stub().returns(Suggestion.STATUSES.OUTDATED),
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+    };
+    opportunity.getSuggestions.resolves([existingSuggestion]);
+
+    await syncSuggestions({
+      context,
+      opportunity,
+      newData: [{ id: 'item1', value: 'updated', rank: 1 }],
+      buildKey,
+      mapNewSuggestion,
+    });
+
+    sinon.assert.calledOnceWithExactly(existingSuggestion.setStatus, Suggestion.STATUSES.NEW);
+    sinon.assert.neverCalledWithMatch(
+      existingSuggestion.setStatus,
+      Suggestion.STATUSES.PENDING_VALIDATION,
+    );
+    sinon.assert.calledOnce(context.dataAccess.Suggestion.saveMany);
+    sinon.assert.calledWith(
+      context.log.info,
+      '[syncSuggestions] isElmo opportunity: overriding PENDING_VALIDATION -> NEW for suggestion existing-suggestion-id',
+    );
+  });
 });

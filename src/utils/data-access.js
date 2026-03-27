@@ -18,6 +18,7 @@ import { limitConcurrencyAllSettled } from '../support/utils.js';
 
 // Max concurrent HTTP calls to prevent Lambda timeout (15 min)
 const MAX_CONCURRENT_CHECKS = 5;
+const ELMO_TAG = 'isElmo';
 
 /**
  * Opportunity types that only make changes in the author environment (no publish state).
@@ -256,6 +257,22 @@ const defaultMergeDataFunction = (existingData, newData) => ({
   ...newData,
 });
 
+function isElmoOpportunity(opportunity, log) {
+  if (typeof opportunity.getTags !== 'function') {
+    log.warn('[syncSuggestions] opportunity.getTags is not a function. Treating as non-isElmo.');
+    return false;
+  }
+
+  const tags = opportunity.getTags();
+  if (!Array.isArray(tags)) {
+    const tagType = tags === null ? 'null' : typeof tags;
+    log.warn(`[syncSuggestions] opportunity.getTags() returned non-array: ${tagType}. Treating as non-isElmo.`);
+    return false;
+  }
+
+  return tags.includes(ELMO_TAG);
+}
+
 /**
  * Default merge function for determining the status of an existing suggestion.
  * This function encapsulates the default behavior for status transitions:
@@ -334,7 +351,7 @@ export async function syncSuggestions({
   const existingSuggestions = prefetchedSuggestions ?? await opportunity.getSuggestions();
 
   // isElmo opportunities skip PENDING_VALIDATION — suggestions go straight to NEW
-  const isElmoOpportunity = (opportunity.getTags?.() || []).includes('isElmo');
+  const isElmoTaggedOpportunity = isElmoOpportunity(opportunity, log);
 
   // Pre-compute Maps for O(1) lookups instead of O(N*M)
   const newDataByKey = new Map(newData.map((data) => [buildKey(data), data]));
@@ -372,10 +389,14 @@ export async function syncSuggestions({
     // null indicates to keep existing status
     if (newStatus !== null) {
       // isElmo opportunities never enter PENDING_VALIDATION — fall back to NEW
-      const finalStatus = (isElmoOpportunity
+      const finalStatus = (isElmoTaggedOpportunity
         && newStatus === SuggestionDataAccess.STATUSES.PENDING_VALIDATION)
         ? SuggestionDataAccess.STATUSES.NEW
         : newStatus;
+      if (isElmoTaggedOpportunity
+        && newStatus === SuggestionDataAccess.STATUSES.PENDING_VALIDATION) {
+        log.info(`[syncSuggestions] isElmo opportunity: overriding PENDING_VALIDATION -> NEW for suggestion ${existing.getId?.() ?? 'unknown'}`);
+      }
       existing.setStatus(finalStatus);
     }
     existing.setUpdatedBy('system');
@@ -395,7 +416,7 @@ export async function syncSuggestions({
       const suggestion = mapNewSuggestion(data);
       return {
         ...suggestion,
-        status: (!isElmoOpportunity && requiresValidation)
+        status: (!isElmoTaggedOpportunity && requiresValidation)
           ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
           : SuggestionDataAccess.STATUSES.NEW,
       };
