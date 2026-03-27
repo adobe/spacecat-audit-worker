@@ -12,17 +12,14 @@
 
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
-import { subHours } from 'date-fns';
+import { subDays } from 'date-fns';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
+import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
-import {
-  loadLatestAgenticSheet,
-  buildSheetHitsMap,
-} from './utils/shared.js';
 import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
 import {
   CONTENT_GAIN_THRESHOLD,
@@ -175,53 +172,14 @@ async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIM
 }
 
 /**
- * Fetch top Agentic URLs from the weekly Excel sheet (fallback).
- * @param {any} site
- * @param {any} context
- * @param {number} limit
- * @returns {Promise<Array<string>>}
- */
-async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
-  const { log } = context;
-  try {
-    const { weekId, baseUrl, rows } = await loadLatestAgenticSheet(site, context);
-
-    if (!rows || rows.length === 0) {
-      log.warn(`Prerender - No agentic traffic rows found in sheet for ${weekId}. baseUrl=${baseUrl}`);
-      return [];
-    }
-
-    const byUrl = buildSheetHitsMap(rows);
-    const top = Array.from(byUrl.entries())
-      .filter(([path]) => path !== 'Other')
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, limit)
-      .map(([path]) => {
-        try {
-          return new URL(path, baseUrl).toString();
-        } catch {
-          return path;
-        }
-      });
-
-    log.info(`Prerender - Selected ${top.length} top agentic URLs via Sheet (${weekId}). baseUrl=${baseUrl}`);
-    return top;
-  } catch (e) {
-    log?.warn?.(`Prerender - Sheet-based agentic URL fetch failed: ${e?.message || e}. baseUrl=${site.getBaseURL()}`);
-    return [];
-  }
-}
-
-/**
- * Wrapper: Try Athena first, then fall back to sheet if needed.
+ * Fetch top Agentic URLs from Athena.
  * @param {any} site
  * @param {any} context
  * @param {number} limit
  * @returns {Promise<Array<string>>}
  */
 async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
-  // TEMP: skip Athena and use sheet directly for dev testing
-  return getTopAgenticUrlsFromSheet(site, context, limit);
+  return getTopAgenticUrlsFromAthena(site, context, limit);
 }
 
 /**
@@ -238,7 +196,7 @@ async function getRecentlyProcessedPathnames(context, siteId) {
       return new Set();
     }
     const records = await PageCitability.allBySiteId(siteId);
-    const sevenDaysAgo = subHours(new Date(), 3.5);
+    const sevenDaysAgo = subDays(new Date(), 7);
     return new Set(
       records
         .filter((r) => new Date(r.getUpdatedAt?.() || 0) > sevenDaysAgo)
@@ -739,38 +697,13 @@ export async function submitForScraping(context) {
 
   const siteId = site.getId();
 
-  // TEMP: static URLs for dev testing
-  /* c8 ignore next 20 */
-  const tempBase = site.getBaseURL();
-  const topPagesUrls = [
-    '/sacs/build',
-    '/sacs/limited-edition',
-    '/accessories',
-    '/sactionals/inserts/select',
-    '/snugg/build/chair',
-  ].map((r) => `${tempBase}${r}`);
-  const agenticUrls = [
-    '/sactionals/covers/select/sactional-roll-arm-side-insert-and-cover-amethyst-corded-velvet',
-    '/products/mini-swatch-carbon-crossweave',
-    '/products/sactionals-deep-angled-side-insert-standard',
-    '/snugg/build/2-cushion-sofa',
-    '/learn-how-sactionals-adapt',
-    '/products/mini-swatch-venetian-taupe-corded-velvet',
-    '/products/citysac-cover-silver-liger-phur',
-    '/products/loveseat-stealthtech-existing-configuration',
-    '/products/sactionals-storage-seat-insert-set-lovesoft',
-    '/products/2-seats-4-sides-sactional',
-    '/products/sactionals-deep-back-pillow-insert-lovesoft',
-    '/products/sactionals-deep-storage-seat-insert-set-standard',
-    '/products/insert-for-18x18-throw-pillow-lovesoft',
-    '/products/best-seller-supersac-alpine-swirl-phur',
-    '/products/mini-swatch-taupe-combed-chenille',
-    '/products/sac-shrink-kit-bigone',
-    '/products/mini-swatch-beachwood-rained-chenille',
-    '/lovesac-careers',
-    '/products/quick-ship-deep-seat-cover-set-urban-walnut-leather',
-    '/products/sactionals-side-insert-standard',
-  ].map((r) => `${tempBase}${r}`);
+  const topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
+  let agenticUrls = [];
+  try {
+    agenticUrls = await getTopAgenticUrls(site, context);
+  } catch (e) {
+    log.warn(`Prerender - Failed to fetch agentic URLs: ${e.message}. baseUrl=${site.getBaseURL()}`);
+  }
 
   const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
 
@@ -793,7 +726,9 @@ export async function submitForScraping(context) {
       return false;
     }
   });
-  const batchedOrganicUrls = hasRecentOrganic ? [] : topPagesUrls;
+  const batchedOrganicUrls = hasRecentOrganic
+    ? []
+    : topPagesUrls.slice(0, TOP_ORGANIC_URLS_LIMIT);
 
   // includedURLs are only submitted on the first run of each weekly cycle (no recently processed
   // organic URLs means we're at the start of the cycle). On daily follow-up runs they are skipped.
@@ -801,8 +736,9 @@ export async function submitForScraping(context) {
   const batchedIncludedURLs = isFirstRunOfCycle ? includedURLs : [];
 
   // Cap combined organic + agentic batch to DAILY_BATCH_SIZE (includedURLs added outside the cap)
-  const priorityUrls = [...batchedOrganicUrls, ...filteredAgenticUrls];
-  const batchedUrls = priorityUrls.slice(0, DAILY_BATCH_SIZE);
+  const remainingSlots = Math.max(DAILY_BATCH_SIZE - batchedOrganicUrls.length, 0);
+  const batchedAgenticUrls = filteredAgenticUrls.slice(0, remainingSlots);
+  const batchedUrls = [...batchedOrganicUrls, ...batchedAgenticUrls];
 
   // Merge URLs ensuring uniqueness while handling www vs non-www differences
   // Also filters out non-HTML URLs (PDFs, images, etc.) in a single pass
@@ -811,7 +747,7 @@ export async function submitForScraping(context) {
     batchedIncludedURLs,
   );
 
-  const currentAgentic = batchedUrls.length - batchedOrganicUrls.length;
+  const currentAgentic = batchedAgenticUrls.length;
   const currentOrganic = batchedOrganicUrls.length;
   const currentIncludedUrls = batchedIncludedURLs.length;
   const currentTotal = finalUrls.length;
@@ -832,7 +768,7 @@ export async function submitForScraping(context) {
     baseUrl=${site.getBaseURL()},
     siteId=${siteId},`);
 
-  log.info(`${LOG_PREFIX} prerender_url_details: siteId=${siteId}, organicUrls=[${batchedOrganicUrls.join(', ')}], agenticUrls=[${filteredAgenticUrls.slice(0, currentAgentic).join(', ')}], includedURLs=[${batchedIncludedURLs.join(', ')}], recentPathnames(${recentPathnames.size})=[${[...recentPathnames].join(', ')}], finalUrls=[${finalUrls.join(', ')}]`);
+  log.info(`${LOG_PREFIX} prerender_url_details: siteId=${siteId}, organicUrls=[${batchedOrganicUrls.join(', ')}], agenticUrls=[${batchedAgenticUrls.join(', ')}], includedURLs=[${batchedIncludedURLs.join(', ')}], recentPathnames(${recentPathnames.size})=[${[...recentPathnames].join(', ')}], finalUrls=[${finalUrls.join(', ')}]`);
 
   if (finalUrls.length === 0) {
     // Fallback to base URL if no URLs found
@@ -1443,7 +1379,7 @@ export async function processContentAndGenerateOpportunities(context) {
     const { PageCitability } = dataAccess;
     if (PageCitability?.allBySiteId) {
       const citabilityRecords = await PageCitability.allBySiteId(siteId);
-      const sevenDaysAgo = subHours(new Date(), 3.5);
+      const sevenDaysAgo = subDays(new Date(), 7);
       for (const record of citabilityRecords) {
         if (new Date(record.getUpdatedAt()) > sevenDaysAgo) {
           scrapedUrlsSet.add(record.getUrl());

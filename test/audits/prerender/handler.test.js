@@ -613,14 +613,13 @@ describe('Prerender Audit', () => {
         expect(urls.length).to.equal(3);
       });
 
-      it('should cap agentic URLs from sheet to TOP_AGENTIC_URLS_LIMIT (20)', async () => {
-        // Provide more than TOP_AGENTIC_URLS_LIMIT URLs via sheet and verify result is capped
-        const overLimit = TOP_AGENTIC_URLS_LIMIT + 10;
-        const bigMap = new Map(Array.from({ length: overLimit }, (_, i) => [`/p${i}`, overLimit - i]));
+      it('should request agentic URLs using TOP_AGENTIC_URLS_LIMIT', async () => {
+        const getTopAgenticUrlsFromAthena = sandbox.stub().resolves(
+          Array.from({ length: TOP_AGENTIC_URLS_LIMIT + 10 }, (_, i) => `https://example.com/p${i}`),
+        );
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/prerender/utils/shared.js': {
-            loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [{}] }),
-            buildSheetHitsMap: () => bigMap,
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena,
           },
         });
         const context = {
@@ -636,7 +635,9 @@ describe('Prerender Audit', () => {
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
         };
         await mockHandler.submitForScraping(context);
-        expect(TOP_AGENTIC_URLS_LIMIT).to.equal(20);
+        expect(getTopAgenticUrlsFromAthena).to.have.been.calledOnce;
+        expect(getTopAgenticUrlsFromAthena.firstCall.args[2]).to.equal(TOP_AGENTIC_URLS_LIMIT);
+        expect(TOP_AGENTIC_URLS_LIMIT).to.equal(2000);
       });
 
       it('should handle undefined topPages list from SiteTopPage gracefully', async () => {
@@ -698,9 +699,8 @@ describe('Prerender Audit', () => {
         });
 
         const makeHandlerWithAgentic = async (agenticUrls) => esmock('../../../src/prerender/handler.js', {
-          '../../../src/prerender/utils/shared.js': {
-            loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [{}] }),
-            buildSheetHitsMap: () => new Map(agenticUrls.map((url, i) => [new URL(url).pathname, agenticUrls.length - i])),
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: sandbox.stub().resolves(agenticUrls),
           },
         });
 
@@ -998,11 +998,10 @@ describe('Prerender Audit', () => {
         expect(result.auditResult).to.be.an('object');
       });
 
-      it('should warn when sheet fallback fails', async () => {
+      it('should warn when agentic URL fetch fails', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/prerender/utils/shared.js': {
-            loadLatestAgenticSheet: async () => { throw new Error('sheet load failed'); },
-            buildSheetHitsMap: () => new Map(),
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => { throw new Error('athena fetch failed'); },
           },
         });
 
@@ -1040,9 +1039,9 @@ describe('Prerender Audit', () => {
         expect(result.status).to.equal('complete');
         expect(result.auditResult).to.be.an('object');
 
-        // Should warn about sheet fallback failure
+        // Should warn about agentic URL fetch failure
         expect(context.log.warn).to.have.been.calledWith(
-          'Prerender - Sheet-based agentic URL fetch failed: sheet load failed. baseUrl=https://example.com',
+          'Prerender - Failed to fetch agentic URLs for fallback: athena fetch failed. baseUrl=https://example.com',
         );
       });
 
@@ -3843,9 +3842,8 @@ describe('Prerender Audit', () => {
     it('should log detailed fallback message when building URL list from fallbacks', async () => {
       const html = '<html><body><p>x</p></body></html>';
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/prerender/utils/shared.js': {
-          loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [{}] }),
-          buildSheetHitsMap: () => new Map([['/agentic', 10]]),
+        '../../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: async () => ['https://example.com/agentic'],
         },
         '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
@@ -7494,7 +7492,7 @@ describe('Prerender Audit', () => {
       expect(syncCall).to.not.have.property('stalenessDays');
     });
 
-    it('should augment scrapedUrlsSet with PageCitability records updated within 7 hours', async () => {
+    it('should augment scrapedUrlsSet with PageCitability records updated within 7 days', async () => {
       const syncSuggestionsStub = sinon.stub().resolves();
       const mockOpportunity = {
         getId: () => 'opp-id',
