@@ -1041,7 +1041,7 @@ describe('Prerender Audit', () => {
 
         // Should warn about agentic URL fetch failure
         expect(context.log.warn).to.have.been.calledWith(
-          'Prerender - Failed to fetch agentic URLs for fallback: athena fetch failed. baseUrl=https://example.com',
+          '[prerender] Failed to fetch agentic URLs for fallback: athena fetch failed. baseUrl=https://example.com',
         );
       });
 
@@ -1122,7 +1122,7 @@ describe('Prerender Audit', () => {
         expect(result.status).to.equal('complete');
         expect(result.auditResult.totalUrlsChecked).to.equal(1);
         // Should have logged about fallback to base URL
-        expect(context.log.info).to.have.been.calledWith('Prerender - No URLs found for comparison. baseUrl=https://example.com, siteId=test-site-id');
+        expect(context.log.info).to.have.been.calledWith('[prerender] No URLs found for comparison. baseUrl=https://example.com, siteId=test-site-id');
       });
 
       it('should trigger opportunity processing path when prerender is detected', async () => {
@@ -1317,7 +1317,7 @@ describe('Prerender Audit', () => {
         expect(convertToOpportunityStub).to.have.been.calledOnce;
         expect(convertToOpportunityStub.firstCall.args[0]).to.equal('https://example.com');
         expect(context.log.info).to.have.been.calledWith(
-          'Prerender - Creating dummy opportunity for forbidden scraping. baseUrl=https://example.com, siteId=test-site-id, isPaidLLMOCustomer=true'
+          '[prerender] Creating dummy opportunity for forbidden scraping. baseUrl=https://example.com, siteId=test-site-id, isPaidLLMOCustomer=true'
         );
       });
     });
@@ -1861,7 +1861,7 @@ describe('Prerender Audit', () => {
 
         await processOpportunityAndSuggestions('https://example.com', auditData, context, false);
 
-        expect(logStub).to.have.been.calledWith('Prerender - No prerender opportunities found, skipping opportunity creation. baseUrl=https://example.com, siteId=undefined');
+        expect(logStub).to.have.been.calledWith('[prerender] No prerender opportunities found, skipping opportunity creation. baseUrl=https://example.com, siteId=undefined');
       });
 
       it('should skip processing when no URLs in results need prerender', async () => {
@@ -1881,7 +1881,7 @@ describe('Prerender Audit', () => {
 
         await processOpportunityAndSuggestions('https://example.com', auditData, context, false);
 
-        expect(logStub).to.have.been.calledWith('Prerender - No URLs needing prerender found, skipping opportunity creation. baseUrl=https://example.com, siteId=undefined');
+        expect(logStub).to.have.been.calledWith('[prerender] No URLs needing prerender found, skipping opportunity creation. baseUrl=https://example.com, siteId=undefined');
       });
 
       it('should attempt to process opportunities when URLs need prerender', async () => {
@@ -1913,7 +1913,7 @@ describe('Prerender Audit', () => {
           // But we can verify the function attempts to process
         }
 
-        expect(logStub).to.have.been.calledWith('Prerender - Generated 1 prerender suggestions for baseUrl=https://example.com, siteId=test-site-id');
+        expect(logStub).to.have.been.calledWith('[prerender] Generated 1 prerender suggestions for baseUrl=https://example.com, siteId=test-site-id');
       });
 
       it('should call processOpportunityAndSuggestions correctly with full mock setup', async () => {
@@ -1967,7 +1967,7 @@ describe('Prerender Audit', () => {
         }
 
         // Verify that we logged the correct number of suggestions
-        expect(logStub).to.have.been.calledWith('Prerender - Generated 2 prerender suggestions for baseUrl=https://example.com, siteId=test-site-id');
+        expect(logStub).to.have.been.calledWith('[prerender] Generated 2 prerender suggestions for baseUrl=https://example.com, siteId=test-site-id');
       });
 
       it('should successfully execute opportunity creation flow and cover syncSuggestions', async () => {
@@ -2014,7 +2014,7 @@ describe('Prerender Audit', () => {
         }
 
         // Should have logged about generating suggestions
-        expect(logStub).to.have.been.calledWith('Prerender - Generated 1 prerender suggestions for baseUrl=https://example.com, siteId=test-site-id');
+        expect(logStub).to.have.been.calledWith('[prerender] Generated 1 prerender suggestions for baseUrl=https://example.com, siteId=test-site-id');
       });
 
       it('should create domain-wide aggregate suggestion with correct aggregate metrics', async () => {
@@ -3884,7 +3884,7 @@ describe('Prerender Audit', () => {
 
       const loggedFallback = info.args
         .map((a) => String(a[0]))
-        .find((msg) => msg.includes('Prerender - Fallback for baseUrl=https://example.com, siteId=site.'));
+        .find((msg) => msg.includes('[prerender] Fallback for baseUrl=https://example.com, siteId=site.'));
 
       expect(loggedFallback).to.exist;
       expect(loggedFallback).to.include('agenticURLs=1');
@@ -5803,7 +5803,7 @@ describe('Prerender Audit', () => {
 
       expect(mockS3Client.send).to.not.have.been.called;
       expect(context.log.warn).to.have.been.calledWith(
-        'Prerender - Missing auditResult, skipping status summary upload'
+        '[prerender] Missing auditResult, skipping status summary upload'
       );
     });
 
