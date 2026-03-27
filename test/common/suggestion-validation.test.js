@@ -50,6 +50,11 @@ describe('Suggestion Validation Tests', () => {
         Suggestion: {
           bulkUpdateStatus: sinon.stub().resolves(),
         },
+        Configuration: {
+          findLatest: sinon.stub().resolves({
+            isHandlerEnabledForSite: sinon.stub().returns(false),
+          }),
+        },
       },
     };
 

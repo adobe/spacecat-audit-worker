@@ -378,15 +378,28 @@ export async function syncSuggestions({
   log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
   // Prepare new suggestions - O(N) with Set lookup
-  const { site } = context;
+  const { site, dataAccess } = context;
   const requiresValidation = Boolean(site?.requiresValidation);
+
+  // PLG/Freemium sites bypass manual validation — suggestions go directly to NEW status
+  let isSummitPlg = false;
+  if (requiresValidation && site) {
+    const { Configuration } = dataAccess;
+    const configuration = await Configuration.findLatest();
+    isSummitPlg = configuration.isHandlerEnabledForSite('summit-plg', site);
+    if (isSummitPlg) {
+      log.info(`[syncSuggestions] PLG site ${site.getId()} - skipping manual validation for suggestions`);
+    }
+  }
+
   const newSuggestions = newData
     .filter((data) => !existingSuggestionKeys.has(buildKey(data)))
     .map((data) => {
       const suggestion = mapNewSuggestion(data);
       return {
         ...suggestion,
-        status: requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+        status: (requiresValidation && !isSummitPlg)
+          ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
           : SuggestionDataAccess.STATUSES.NEW,
       };
     });

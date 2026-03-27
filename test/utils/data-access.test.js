@@ -192,6 +192,11 @@ describe('data-access', () => {
           log: mockLogger,
         })
         .build();
+
+      // Default: non-PLG configuration (summit-plg disabled)
+      context.dataAccess.Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sandbox.stub().returns(false),
+      });
     });
 
     afterEach(() => {
@@ -265,6 +270,97 @@ describe('data-access', () => {
       expect(actualArgs[1].status).to.equal('PENDING_VALIDATION');
       expect(actualArgs[1].data).to.deep.equal({ key: '4' });
       expect(mockLogger.error).to.not.have.been.called;
+    });
+
+    it('should use NEW status for PLG sites even when requiresValidation is true', async () => {
+      const newData = [{ key: '1' }, { key: '2' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+      const mockSite = {
+        requiresValidation: true,
+        getId: sandbox.stub().returns('plg-site-id'),
+      };
+      context.site = mockSite;
+
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sandbox.stub().returns(true),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(context.dataAccess.Configuration.findLatest).to.have.been.calledOnce;
+      expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith('summit-plg', mockSite);
+      expect(mockLogger.info).to.have.been.calledWith(
+        '[syncSuggestions] PLG site plg-site-id - skipping manual validation for suggestions',
+      );
+
+      const actualArgs = mockOpportunity.addSuggestions.getCall(0).args[0];
+      expect(actualArgs[0].status).to.equal('NEW');
+      expect(actualArgs[1].status).to.equal('NEW');
+    });
+
+    it('should use PENDING_VALIDATION for non-PLG sites when requiresValidation is true', async () => {
+      const newData = [{ key: '1' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+      const mockSite = {
+        requiresValidation: true,
+        getId: sandbox.stub().returns('regular-site-id'),
+      };
+      context.site = mockSite;
+
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sandbox.stub().returns(false),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith('summit-plg', mockSite);
+      expect(mockLogger.info).to.not.have.been.calledWith(
+        sinon.match('skipping manual validation'),
+      );
+
+      const actualArgs = mockOpportunity.addSuggestions.getCall(0).args[0];
+      expect(actualArgs[0].status).to.equal('PENDING_VALIDATION');
+    });
+
+    it('should not check PLG config when requiresValidation is false', async () => {
+      const newData = [{ key: '1' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+      context.site = { requiresValidation: false };
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(context.dataAccess.Configuration.findLatest).to.not.have.been.called;
+
+      const actualArgs = mockOpportunity.addSuggestions.getCall(0).args[0];
+      expect(actualArgs[0].status).to.equal('NEW');
     });
 
     it('should use "unknown" as siteId when getSiteId is undefined', async () => {
