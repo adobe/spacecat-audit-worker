@@ -15,7 +15,7 @@ import { load as cheerioLoad } from 'cheerio';
 import { saveIntermediateResults } from './utils.js';
 import { metatagsAutoDetect } from '../metatags/handler.js';
 import metatagsAutoSuggest from '../metatags/metatags-auto-suggest.js';
-import { getDomElementSelector, toElementTargets } from '../utils/dom-selector.js';
+import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
 
 export const PREFLIGHT_METATAGS = 'metatags';
 

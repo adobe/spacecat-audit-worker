@@ -1597,6 +1597,63 @@ describe('Preflight Audit', () => {
       expect(audits.find((a) => a.name === AUDIT_H1_COUNT)).to.not.exist;
     });
 
+    it('lorem ipsum filter keeps only innermost elements when nested', async () => {
+      job.getMetadata = () => ({
+        payload: {
+          step: PREFLIGHT_STEP_IDENTIFY,
+          urls: ['https://main--example--page.aem.page/page1'],
+        },
+      });
+
+      const nestedHtml = '<body>'
+        + '<div id="outer">Lorem ipsum dolor sit amet'
+        + '<p id="inner">Lorem ipsum nested text</p>'
+        + '</div>'
+        + '</body>';
+
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({
+            Contents: [
+              { Key: 'scrapes/site-123/page1/scrape.json' },
+            ],
+            IsTruncated: false,
+          });
+        }
+        return Promise.resolve({
+          ContentType: 'application/json',
+          Body: {
+            transformToString: sinon.stub().resolves(JSON.stringify({
+              scrapeResult: {
+                rawBody: nestedHtml,
+              },
+              finalUrl: 'https://main--example--page.aem.page/page1',
+            })),
+          },
+        });
+      });
+
+      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_LOREM_IPSUM}-preflight`, site).returns(true);
+
+      await preflightAuditFunction(context);
+
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+      const result = finalJobEntity.setResult.getCall(0).args[0];
+
+      const { audits } = result[0];
+      const loremIpsumAudit = audits.find((a) => a.name === AUDIT_LOREM_IPSUM);
+      expect(loremIpsumAudit).to.exist;
+      expect(loremIpsumAudit.opportunities).to.have.lengthOf(1);
+      expect(loremIpsumAudit.opportunities[0].check).to.equal('placeholder-text');
+
+      const { elements } = loremIpsumAudit.opportunities[0];
+      expect(elements).to.be.an('array');
+      expect(elements).to.have.lengthOf(1);
+      expect(elements[0].selector).to.include('p#inner');
+      expect(elements[0].selector).to.not.match(/^(body > )?div#outer$/);
+    });
+
     it('handles individual AUDIT_H1_COUNT check', async () => {
       job.getMetadata = () => ({
         payload: {
