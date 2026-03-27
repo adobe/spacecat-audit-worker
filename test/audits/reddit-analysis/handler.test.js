@@ -17,6 +17,7 @@ import chaiAsPromised from 'chai-as-promised';
 import {
   MYSTIQUE_URLS_LIMIT,
   URL_TYPES,
+  GUIDELINE_TYPES,
   resolveMystiqueUrlLimit as realResolveMystiqueUrlLimit,
 } from '../../../src/utils/store-client.js';
 import esmock from 'esmock';
@@ -58,7 +59,16 @@ describe('Reddit Analysis Handler', () => {
     },
   ];
 
-  const expectedSentimentConfig = { topics: mockComputedTopics, guidelines: [] };
+  const mockGuidelines = [
+    { guidelineId: 'guide-1', name: 'Reddit Best Practices', instruction: 'Focus on threads', audits: ['reddit-analysis'] },
+  ];
+
+  const mockGuidelinesApiResponse = {
+    topics: [{ topicId: 'legacy', name: 'Ignored from sentiment API' }],
+    guidelines: mockGuidelines,
+  };
+
+  const expectedSentimentConfig = { topics: mockComputedTopics, guidelines: mockGuidelines };
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -76,6 +86,7 @@ describe('Reddit Analysis Handler', () => {
 
     mockStoreClient = {
       getUrls: sandbox.stub().resolves(mockUrls),
+      getGuidelines: sandbox.stub().resolves(mockGuidelinesApiResponse),
     };
 
     const mockStoreClientClass = {
@@ -87,6 +98,7 @@ describe('Reddit Analysis Handler', () => {
         default: mockStoreClientClass,
         StoreEmptyError,
         URL_TYPES,
+        GUIDELINE_TYPES,
         MYSTIQUE_URLS_LIMIT,
         resolveMystiqueUrlLimit: realResolveMystiqueUrlLimit,
       },
@@ -163,13 +175,16 @@ describe('Reddit Analysis Handler', () => {
   });
 
   describe('runRedditAnalysisAudit (via runner)', () => {
-    it('temporary test hook: returns Test only after store fetch (pending_analysis path disabled in handler)', async () => {
+    it('should return pending_analysis with config and store data when successful', async () => {
       const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.equal('Test only');
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.status).to.equal('pending_analysis');
+      expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
+      expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(expectedSentimentConfig);
       expect(result.fullAuditRef).to.equal(baseURL);
       expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'reddit-analysis');
+      expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, GUIDELINE_TYPES.REDDIT_ANALYSIS);
       expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
     });
 
@@ -177,14 +192,14 @@ describe('Reddit Analysis Handler', () => {
       await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'reddit-analysis');
+      expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, GUIDELINE_TYPES.REDDIT_ANALYSIS);
       expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
     });
 
-    it('should log auditContext and mystiqueUrlLimit', async () => {
+    it('should log auditContext (mystiqueUrlLimit is resolved in post processor)', async () => {
       await redditAnalysisHandler.default.runner(baseURL, context, mockSite, { messageData: { urlLimit: '3' } });
 
       expect(context.log.info).to.have.been.calledWith('[Reddit] auditContext: {"messageData":{"urlLimit":"3"}}');
-      expect(context.log.info).to.have.been.calledWith('[Reddit] mystiqueUrlLimit=3 (URLs sent to Mystique)');
     });
 
     it('should log debug payload for brand-presence topics', async () => {
@@ -206,14 +221,40 @@ describe('Reddit Analysis Handler', () => {
       expect(context.log.error).to.have.been.called;
     });
 
-    it('temporary test hook: returns Test only when brand presence returns no topics', async () => {
+    it('should succeed when brand presence returns no topics', async () => {
       mockComputeTopicsFromBrandPresence.resolves([]);
 
       const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.equal('Test only');
+      expect(result.auditResult.success).to.be.true;
       expect(context.log.debug).to.have.been.calledWith('[Reddit] Brand-presence topics payload: []');
+    });
+
+    it('should proceed without guidelines when guidelinesStore returns empty', async () => {
+      mockStoreClient.getGuidelines.rejects(new StoreEmptyError('guidelinesStore', 'N/A', 'No guidelines found'));
+
+      const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(context.log.info).to.have.been.calledWithMatch(/No guidelines configured for reddit-analysis/);
+    });
+
+    it('should rethrow non-StoreEmptyError from getGuidelines', async () => {
+      mockStoreClient.getGuidelines.rejects(new Error('Network timeout'));
+
+      const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.include('Network timeout');
+    });
+
+    it('should use empty guidelines when sentiment API omits guidelines', async () => {
+      mockStoreClient.getGuidelines.resolves({ topics: [{ topicId: 'legacy-only' }] });
+
+      const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(context.log.info).to.have.been.calledWith('[Reddit] Retrieved 0 guidelines');
     });
 
     it('should return error when company name is not configured', async () => {
@@ -233,7 +274,7 @@ describe('Reddit Analysis Handler', () => {
       expect(context.log.warn).to.have.been.called;
     });
 
-    it('should use baseURL as companyName before temporary test hook exit', async () => {
+    it('should use baseURL as companyName when company name is not configured', async () => {
       mockSite.getConfig.returns({
         getCompanyName: sandbox.stub().returns(null),
         getCompetitors: sandbox.stub().returns([]),
@@ -248,11 +289,10 @@ describe('Reddit Analysis Handler', () => {
       expect(context.log.info).to.have.been.calledWith(
         '[Reddit] Config: companyName=https://bmw.com, website=https://bmw.com',
       );
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.equal('Test only');
+      expect(result.auditResult.success).to.be.true;
     });
 
-    it('should handle missing config and use baseURL before temporary test hook exit', async () => {
+    it('should handle missing config and use baseURL', async () => {
       mockSite.getConfig.returns(null);
       mockSite.getBaseURL.returns('https://test-company.com');
 
@@ -261,8 +301,7 @@ describe('Reddit Analysis Handler', () => {
       expect(context.log.info).to.have.been.calledWith(
         '[Reddit] Config: companyName=https://test-company.com, website=https://test-company.com',
       );
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.equal('Test only');
+      expect(result.auditResult.success).to.be.true;
     });
 
     it('should handle general errors during execution', async () => {
@@ -277,13 +316,12 @@ describe('Reddit Analysis Handler', () => {
   });
 
   describe('Post Processor - sendMystiqueMessagePostProcessor', () => {
-    it('should send message to Mystique queue with all store data when audit is successful', async () => {
+    it('resolves mystiqueUrlLimit from auditContext, then test hook throws before SQS', async () => {
       const auditData = {
         siteId,
         auditResult: {
           success: true,
           status: 'pending_analysis',
-          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: {
             companyName: 'Example Corp',
             companyWebsite: baseURL,
@@ -300,36 +338,42 @@ describe('Reddit Analysis Handler', () => {
       };
 
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
-      await postProcessor(baseURL, auditData, context);
+      await expect(
+        postProcessor(baseURL, auditData, context, mockSite, {}),
+      ).to.be.rejectedWith('Test only');
 
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
-      expect(context.sqs.sendMessage).to.have.been.calledWith(
-        'spacecat-to-mystique',
-        sinon.match({
-          type: 'guidance:reddit-analysis',
-          siteId,
-          url: baseURL,
-          auditId,
-          deliveryType: 'aem_edge',
-          data: sinon.match({
-            companyName: 'Example Corp',
-            companyWebsite: baseURL,
-            competitors: ['Competitor A'],
-            competitorRegion: 'US',
-            industry: 'Technology',
-            brandKeywords: ['example'],
-            topics: mockComputedTopics,
-            guidelines: [],
-          }),
-        }),
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        `[Reddit] mystiqueUrlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
       );
-      const sent = context.sqs.sendMessage.firstCall.args[1];
-      expect(sent.data.urls).to.have.lengthOf(mockUrls.length);
-      expect(sent.data.urls[0]).to.include({ url: mockUrls[0].url, type: mockUrls[0].type });
-      expect(sent.data.urls[0].timesCited).to.equal(1);
+      expect(context.log.info).to.have.been.calledWith(
+        `[Reddit] Test hook: ${mockUrls.length} URL(s) prepared for Mystique (SQS send disabled)`,
+      );
     });
 
-    it('should limit URLs sent to Mystique to MYSTIQUE_URLS_LIMIT', async () => {
+    it('should apply auditContext.messageData.urlLimit in post processor', async () => {
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: {
+            urls: mockUrls,
+            sentimentConfig: expectedSentimentConfig,
+          },
+        },
+      };
+
+      const postProcessor = redditAnalysisHandler.default.postProcessors[0];
+      await expect(
+        postProcessor(baseURL, auditData, context, mockSite, { messageData: { urlLimit: '1' } }),
+      ).to.be.rejectedWith('Test only');
+
+      expect(context.log.info).to.have.been.calledWith('[Reddit] mystiqueUrlLimit=1 (URLs sent to Mystique)');
+      expect(context.log.info).to.have.been.calledWith('[Reddit] Test hook: 1 URL(s) prepared for Mystique (SQS send disabled)');
+    });
+
+    it('should limit URLs to MYSTIQUE_URLS_LIMIT when many URLs exist', async () => {
       const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 30 }, (_, i) => ({
         url: `https://reddit.com/r/test/page-${i}`, type: 'reddit-analysis', metadata: {},
       }));
@@ -338,7 +382,6 @@ describe('Reddit Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
-          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: {
             urls: manyUrls,
@@ -348,11 +391,11 @@ describe('Reddit Analysis Handler', () => {
       };
 
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
-      await postProcessor(baseURL, auditData, context);
+      await expect(postProcessor(baseURL, auditData, context, mockSite, {})).to.be.rejectedWith('Test only');
 
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
-      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
+      expect(context.log.info).to.have.been.calledWith(
+        `[Reddit] Test hook: ${MYSTIQUE_URLS_LIMIT} URL(s) prepared for Mystique (SQS send disabled)`,
+      );
     });
 
     it('should limit URLs to mystiqueUrlLimit when set below cap', async () => {
@@ -364,7 +407,6 @@ describe('Reddit Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
-          mystiqueUrlLimit: 4,
           config: { companyName: 'Test' },
           storeData: {
             urls: manyUrls,
@@ -374,13 +416,15 @@ describe('Reddit Analysis Handler', () => {
       };
 
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
-      await postProcessor(baseURL, auditData, context);
+      await expect(
+        postProcessor(baseURL, auditData, context, mockSite, { messageData: { urlLimit: '4' } }),
+      ).to.be.rejectedWith('Test only');
 
-      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(4);
+      expect(context.log.info).to.have.been.calledWith('[Reddit] mystiqueUrlLimit=4 (URLs sent to Mystique)');
+      expect(context.log.info).to.have.been.calledWith('[Reddit] Test hook: 4 URL(s) prepared for Mystique (SQS send disabled)');
     });
 
-    it('should fall back to MYSTIQUE_URLS_LIMIT when mystiqueUrlLimit is absent', async () => {
+    it('should fall back to MYSTIQUE_URLS_LIMIT when urlLimit is absent', async () => {
       const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 5 }, (_, i) => ({
         url: `https://reddit.com/r/test/page-${i}`, type: 'reddit-analysis', metadata: {},
       }));
@@ -398,10 +442,11 @@ describe('Reddit Analysis Handler', () => {
       };
 
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
-      await postProcessor(baseURL, auditData, context);
+      await expect(postProcessor(baseURL, auditData, context, mockSite, {})).to.be.rejectedWith('Test only');
 
-      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
+      expect(context.log.info).to.have.been.calledWith(
+        `[Reddit] mystiqueUrlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
+      );
     });
 
     it('should skip sending message when audit failed', async () => {
@@ -428,7 +473,6 @@ describe('Reddit Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
-          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
         },
@@ -448,7 +492,6 @@ describe('Reddit Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
-          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
         },
@@ -467,7 +510,6 @@ describe('Reddit Analysis Handler', () => {
         siteId: 'non-existent-site',
         auditResult: {
           success: true,
-          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
         },
@@ -481,22 +523,21 @@ describe('Reddit Analysis Handler', () => {
       expect(context.log.warn).to.have.been.calledWith('[Reddit] Site not found, skipping Mystique message');
     });
 
-    it('should throw error when SQS send fails', async () => {
-      context.sqs.sendMessage.rejects(new Error('SQS Error'));
+    it('should log and rethrow non-test errors from post processor', async () => {
+      context.dataAccess.Site.findById.rejects(new Error('DB down'));
 
       const auditData = {
         siteId,
         auditResult: {
           success: true,
-          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: mockUrls, sentimentConfig: expectedSentimentConfig },
         },
       };
 
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
-      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
-      expect(context.log.error).to.have.been.calledWith('[Reddit] Failed to send Mystique message: SQS Error');
+      await expect(postProcessor(baseURL, auditData, context, mockSite, {})).to.be.rejectedWith('DB down');
+      expect(context.log.error).to.have.been.calledWith('[Reddit] Failed to send Mystique message: DB down');
     });
   });
 });

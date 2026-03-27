@@ -13,8 +13,9 @@
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import StoreClient, {
-  StoreEmptyError, URL_TYPES, GUIDELINE_TYPES, MYSTIQUE_URLS_LIMIT, resolveMystiqueUrlLimit,
+  StoreEmptyError, URL_TYPES, GUIDELINE_TYPES, resolveMystiqueUrlLimit,
 } from '../utils/store-client.js';
+import { computeTopicsFromBrandPresence } from '../utils/brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 
 const LOG_PREFIX = '[Cited]';
@@ -24,7 +25,7 @@ const LOG_PREFIX = '[Cited]';
  *
  * This audit performs cited URL analysis by:
  * 1. Fetching top-cited URLs from the URL Store (discovered during brand presence analysis)
- * 2. Optionally fetching analysis topics and guidelines from the Sentiment Config
+ * 2. Computing topics from LLMO brand-presence data; optional guidelines from Sentiment Config
  * 3. Sending all data to Mystique for analysis
  *
  * Mystique will fetch the actual page content from the Content Store directly
@@ -63,9 +64,14 @@ async function fetchStoreData(siteId, context) {
   const urls = await storeClient.getUrls(siteId, URL_TYPES.CITED);
   log.info(`${LOG_PREFIX} Retrieved ${urls.length} cited URLs from URL Store`);
 
-  let sentimentConfig = { topics: [], guidelines: [] };
+  const topics = await computeTopicsFromBrandPresence(siteId, context);
+  log.info(`${LOG_PREFIX} Computed ${topics.length} topics from brand presence data`);
+  log.debug(`${LOG_PREFIX} Brand-presence topics payload: ${JSON.stringify(topics)}`);
+
+  let guidelines = [];
   try {
-    sentimentConfig = await storeClient.getGuidelines(siteId, GUIDELINE_TYPES.CITED_ANALYSIS);
+    const sentimentConfig = await storeClient.getGuidelines(siteId, GUIDELINE_TYPES.CITED_ANALYSIS);
+    guidelines = sentimentConfig.guidelines ?? [];
   } catch (error) {
     if (error instanceof StoreEmptyError) {
       log.info(`${LOG_PREFIX} No guidelines configured for cited-analysis, proceeding without`);
@@ -74,13 +80,11 @@ async function fetchStoreData(siteId, context) {
     }
   }
 
-  const topicCount = sentimentConfig.topics.length;
-  const guidelineCount = sentimentConfig.guidelines.length;
-  log.info(`${LOG_PREFIX} Retrieved ${topicCount} topics and ${guidelineCount} guidelines`);
+  log.info(`${LOG_PREFIX} Retrieved ${guidelines.length} guidelines`);
 
   return {
     urls,
-    sentimentConfig,
+    sentimentConfig: { topics, guidelines },
   };
 }
 
@@ -89,7 +93,8 @@ async function fetchStoreData(siteId, context) {
  * @param {string} url - The resolved URL for the audit
  * @param {Object} context - The audit context
  * @param {Object} site - The site being audited
- * @param {Object} [auditContext] - SQS audit context (e.g. urlLimit from Slack)
+ * @param {Object} [auditContext] - SQS audit context; optional `messageData` from `message.data`
+ *   (e.g. urlLimit from Slack)
  * @returns {Promise<Object>} Audit result
  */
 async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
@@ -115,11 +120,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
 
     log.info(`${LOG_PREFIX} Config: companyName=${citedConfig.companyName}, website=${citedConfig.companyWebsite}`);
 
-    const mystiqueUrlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
-    log.info(`${LOG_PREFIX} mystiqueUrlLimit=${mystiqueUrlLimit} (URLs sent to Mystique)`);
-
     const storeData = await fetchStoreData(siteId, context);
-
     log.info(`${LOG_PREFIX} Successfully fetched all store data for ${citedConfig.companyName}`);
 
     return {
@@ -128,7 +129,6 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
         status: 'pending_analysis',
         config: citedConfig,
         storeData,
-        mystiqueUrlLimit,
       },
       fullAuditRef: url,
     };
@@ -161,9 +161,17 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
  * @param {string} auditUrl - The audit URL
  * @param {Object} auditData - The audit data
  * @param {Object} context - The context object
+ * @param {Object} [_site] - Site model from BaseAudit (unused)
+ * @param {Object} [auditContext] - SQS audit context (e.g. `messageData.urlLimit`)
  * @returns {Promise<Object>} Updated audit data
  */
-async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
+async function sendMystiqueMessagePostProcessor(
+  auditUrl,
+  auditData,
+  context,
+  _site,
+  auditContext = {},
+) {
   const {
     log, sqs, env, dataAccess, audit,
   } = context;
@@ -187,10 +195,13 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       return auditData;
     }
 
-    const { config, storeData, mystiqueUrlLimit } = auditResult;
+    const mystiqueUrlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
+    log.info(`${LOG_PREFIX} mystiqueUrlLimit=${mystiqueUrlLimit} (URLs sent to Mystique)`);
+
+    const { config, storeData } = auditResult;
     const { urls, sentimentConfig } = storeData;
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
-      .slice(0, mystiqueUrlLimit ?? MYSTIQUE_URLS_LIMIT);
+      .slice(0, mystiqueUrlLimit);
 
     const message = {
       type: 'guidance:cited-analysis',
@@ -212,14 +223,24 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       },
     };
 
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`${LOG_PREFIX} Queued cited analysis request to Mystique for ${config.companyName} with ${enrichedUrls.length} URLs`);
+    log.debug(`${LOG_PREFIX} Built Mystique message type ${message.type}`);
+    log.info(
+      `${LOG_PREFIX} Test hook: ${enrichedUrls.length} URL(s) prepared for Mystique (SQS send disabled)`,
+    );
+    // TODO: remove test hook — uncomment below when shipping
+    // await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    // log.info(
+    //   `${LOG_PREFIX} Queued Cited analysis request to Mystique for ${config.companyName} ` +
+    //     `with ${enrichedUrls.length} URLs`,
+    // );
+    throw new Error('Test only');
   } catch (error) {
-    log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
+    if (error.message !== 'Test only') {
+      log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
+    }
     throw error;
   }
-
-  return auditData;
+  // return auditData;
 }
 
 export default new AuditBuilder()

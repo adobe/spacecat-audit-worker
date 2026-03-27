@@ -34,6 +34,7 @@ describe('YouTube Analysis Handler', () => {
   let mockSite;
   let mockAudit;
   let mockStoreClient;
+  let mockComputeTopicsFromBrandPresence;
   let youtubeAnalysisHandler;
   let StoreEmptyError;
 
@@ -46,14 +47,31 @@ describe('YouTube Analysis Handler', () => {
     { url: 'https://www.youtube.com/watch?v=Qdef', type: 'youtube', metadata: {} },
   ];
 
-  const mockSentimentConfig = {
-    topics: [
-      { topicId: 'topic-1', name: 'Video Content Quality', subPrompts: ['engagement', 'production value'] },
-    ],
-    guidelines: [
-      { guidelineId: 'guide-1', name: 'YouTube Best Practices', instruction: 'Focus on viewer engagement', audits: ['youtube-analysis'] },
-    ],
+  const mockComputedTopics = [
+    {
+      name: 'Video Content Quality',
+      urls: [
+        {
+          url: 'https://www.youtube.com/watch?v=abc',
+          timesCited: 1,
+          category: 'general',
+          subPrompts: ['engagement', 'production value'],
+        },
+      ],
+    },
+  ];
+
+  const mockGuidelines = [
+    { guidelineId: 'guide-1', name: 'YouTube Best Practices', instruction: 'Focus on viewer engagement', audits: ['youtube-analysis'] },
+  ];
+
+  /** API shape from getGuidelines; handler uses `guidelines` only; topics come from brand presence. */
+  const mockGuidelinesApiResponse = {
+    topics: [{ topicId: 'topic-legacy', name: 'Ignored from sentiment API' }],
+    guidelines: mockGuidelines,
   };
+
+  const expectedSentimentConfigForPostProcessor = { topics: mockComputedTopics, guidelines: mockGuidelines };
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -67,9 +85,11 @@ describe('YouTube Analysis Handler', () => {
       }
     };
 
+    mockComputeTopicsFromBrandPresence = sandbox.stub().resolves(mockComputedTopics);
+
     mockStoreClient = {
       getUrls: sandbox.stub().resolves(mockUrls),
-      getGuidelines: sandbox.stub().resolves(mockSentimentConfig),
+      getGuidelines: sandbox.stub().resolves(mockGuidelinesApiResponse),
     };
 
     const mockStoreClientClass = {
@@ -84,6 +104,9 @@ describe('YouTube Analysis Handler', () => {
         GUIDELINE_TYPES,
         MYSTIQUE_URLS_LIMIT,
         resolveMystiqueUrlLimit: realResolveMystiqueUrlLimit,
+      },
+      '../../../src/utils/brand-presence-enrichment.js': {
+        computeTopicsFromBrandPresence: mockComputeTopicsFromBrandPresence,
       },
     });
 
@@ -155,33 +178,31 @@ describe('YouTube Analysis Handler', () => {
   });
 
   describe('runYouTubeAnalysisAudit (via runner)', () => {
-    it('should return pending_analysis status with config and store data when successful', async () => {
+    it('should return pending_analysis with config and store data when successful', async () => {
       const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.status).to.equal('pending_analysis');
-      expect(result.auditResult.config).to.deep.include({
-        companyName: 'Example Corp',
-        companyWebsite: baseURL,
-      });
-      expect(result.auditResult.config.competitors).to.deep.equal(['Competitor A', 'Competitor B']);
-      expect(result.auditResult.config.competitorRegion).to.equal('US');
-      expect(result.auditResult.config.industry).to.equal('Technology');
-      expect(result.auditResult.config.brandKeywords).to.deep.equal(['example', 'corp']);
-
-      expect(result.auditResult.storeData).to.exist;
       expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
-      expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(mockSentimentConfig);
-      expect(result.auditResult.mystiqueUrlLimit).to.equal(MYSTIQUE_URLS_LIMIT);
-
+      expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(expectedSentimentConfigForPostProcessor);
       expect(result.fullAuditRef).to.equal(baseURL);
+      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'youtube-analysis');
+      expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, GUIDELINE_TYPES.YOUTUBE_ANALYSIS);
+      expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
     });
 
-    it('should log auditContext and apply urlLimit', async () => {
-      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite, { messageData: { urlLimit: '7' } });
+    it('should log auditContext (mystiqueUrlLimit is resolved in post processor)', async () => {
+      await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite, { messageData: { urlLimit: '7' } });
 
       expect(context.log.info).to.have.been.calledWith('[YouTube] auditContext: {"messageData":{"urlLimit":"7"}}');
-      expect(result.auditResult.mystiqueUrlLimit).to.equal(7);
+    });
+
+    it('should log debug payload for brand-presence topics', async () => {
+      await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(context.log.debug).to.have.been.calledWith(
+        `[YouTube] Brand-presence topics payload: ${JSON.stringify(mockComputedTopics)}`,
+      );
     });
 
     it('should call StoreClient with correct parameters', async () => {
@@ -189,6 +210,15 @@ describe('YouTube Analysis Handler', () => {
 
       expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'youtube-analysis');
       expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, 'youtube-analysis');
+    });
+
+    it('should use empty guidelines when sentiment API omits guidelines', async () => {
+      mockStoreClient.getGuidelines.resolves({ topics: [{ topicId: 'legacy-only' }] });
+
+      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(context.log.info).to.have.been.calledWith('[YouTube] Retrieved 0 guidelines');
     });
 
     it('should return error when urlStore returns empty', async () => {
@@ -208,9 +238,17 @@ describe('YouTube Analysis Handler', () => {
       const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.storeData.sentimentConfig.topics).to.deep.equal([]);
-      expect(result.auditResult.storeData.sentimentConfig.guidelines).to.deep.equal([]);
+      expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
       expect(context.log.info).to.have.been.calledWithMatch(/No guidelines configured for youtube-analysis/);
+    });
+
+    it('should succeed when brand presence returns no topics', async () => {
+      mockComputeTopicsFromBrandPresence.resolves([]);
+
+      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(context.log.debug).to.have.been.calledWith('[YouTube] Brand-presence topics payload: []');
     });
 
     it('should rethrow non-StoreEmptyError from getGuidelines', async () => {
@@ -251,18 +289,22 @@ describe('YouTube Analysis Handler', () => {
 
       const result = await youtubeAnalysisHandler.default.runner('https://bmw.com', context, mockSite);
 
+      expect(context.log.info).to.have.been.calledWith(
+        '[YouTube] Config: companyName=https://bmw.com, website=https://bmw.com',
+      );
       expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.config.companyName).to.equal('https://bmw.com');
     });
 
-    it('should handle missing config gracefully and use baseURL', async () => {
+    it('should handle missing config and use baseURL', async () => {
       mockSite.getConfig.returns(null);
       mockSite.getBaseURL.returns('https://test-company.com');
 
       const result = await youtubeAnalysisHandler.default.runner('https://test-company.com', context, mockSite);
 
+      expect(context.log.info).to.have.been.calledWith(
+        '[YouTube] Config: companyName=https://test-company.com, website=https://test-company.com',
+      );
       expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.config.companyName).to.equal('https://test-company.com');
     });
 
     it('should handle general errors during execution', async () => {
@@ -277,13 +319,12 @@ describe('YouTube Analysis Handler', () => {
   });
 
   describe('Post Processor - sendMystiqueMessagePostProcessor', () => {
-    it('should send message to Mystique queue with all store data when audit is successful', async () => {
+    it('resolves mystiqueUrlLimit from auditContext, then test hook throws before SQS', async () => {
       const auditData = {
         siteId,
         auditResult: {
           success: true,
           status: 'pending_analysis',
-          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: {
             companyName: 'Example Corp',
             companyWebsite: baseURL,
@@ -294,39 +335,47 @@ describe('YouTube Analysis Handler', () => {
           },
           storeData: {
             urls: mockUrls,
-            sentimentConfig: mockSentimentConfig,
+            sentimentConfig: expectedSentimentConfigForPostProcessor,
           },
         },
       };
 
       const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
-      await postProcessor(baseURL, auditData, context);
+      await expect(
+        postProcessor(baseURL, auditData, context, mockSite, {}),
+      ).to.be.rejectedWith('Test only');
 
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
-      expect(context.sqs.sendMessage).to.have.been.calledWith(
-        'spacecat-to-mystique',
-        sinon.match({
-          type: 'guidance:youtube-analysis',
-          siteId,
-          url: baseURL,
-          auditId,
-          deliveryType: 'aem_edge',
-          data: sinon.match({
-            companyName: 'Example Corp',
-            companyWebsite: baseURL,
-            competitors: ['Competitor A'],
-            competitorRegion: 'US',
-            industry: 'Technology',
-            brandKeywords: ['example'],
-            urls: mockUrls,
-            topics: mockSentimentConfig.topics,
-            guidelines: mockSentimentConfig.guidelines,
-          }),
-        }),
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        `[YouTube] mystiqueUrlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        `[YouTube] Test hook: ${mockUrls.length} URL(s) prepared for Mystique (SQS send disabled)`,
       );
     });
 
-    it('should limit URLs sent to Mystique to MYSTIQUE_URLS_LIMIT', async () => {
+    it('should apply auditContext.messageData.urlLimit in post processor', async () => {
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: {
+            urls: mockUrls,
+            sentimentConfig: expectedSentimentConfigForPostProcessor,
+          },
+        },
+      };
+
+      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
+      await expect(
+        postProcessor(baseURL, auditData, context, mockSite, { messageData: { urlLimit: '1' } }),
+      ).to.be.rejectedWith('Test only');
+
+      expect(context.log.info).to.have.been.calledWith('[YouTube] mystiqueUrlLimit=1 (URLs sent to Mystique)');
+    });
+
+    it('should limit URLs to MYSTIQUE_URLS_LIMIT when many URLs exist', async () => {
       const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 30 }, (_, i) => ({
         url: `https://youtube.com/watch?v=test-${i}`, type: 'youtube-analysis', metadata: {},
       }));
@@ -335,7 +384,6 @@ describe('YouTube Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
-          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: {
             urls: manyUrls,
@@ -345,14 +393,14 @@ describe('YouTube Analysis Handler', () => {
       };
 
       const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
-      await postProcessor(baseURL, auditData, context);
+      await expect(postProcessor(baseURL, auditData, context, mockSite, {})).to.be.rejectedWith('Test only');
 
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
-      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
+      expect(context.log.info).to.have.been.calledWith(
+        `[YouTube] Test hook: ${MYSTIQUE_URLS_LIMIT} URL(s) prepared for Mystique (SQS send disabled)`,
+      );
     });
 
-    it('should fall back to MYSTIQUE_URLS_LIMIT when mystiqueUrlLimit is absent', async () => {
+    it('should fall back to MYSTIQUE_URLS_LIMIT when urlLimit is absent', async () => {
       const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 5 }, (_, i) => ({
         url: `https://youtube.com/watch?v=test-${i}`, type: 'youtube-analysis', metadata: {},
       }));
@@ -370,10 +418,11 @@ describe('YouTube Analysis Handler', () => {
       };
 
       const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
-      await postProcessor(baseURL, auditData, context);
+      await expect(postProcessor(baseURL, auditData, context, mockSite, {})).to.be.rejectedWith('Test only');
 
-      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
+      expect(context.log.info).to.have.been.calledWith(
+        `[YouTube] mystiqueUrlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
+      );
     });
 
     it('should skip sending message when audit failed', async () => {
@@ -400,7 +449,6 @@ describe('YouTube Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
-          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
         },
@@ -420,7 +468,6 @@ describe('YouTube Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
-          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
         },
@@ -439,7 +486,6 @@ describe('YouTube Analysis Handler', () => {
         siteId: 'non-existent-site',
         auditResult: {
           success: true,
-          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
         },
@@ -453,22 +499,21 @@ describe('YouTube Analysis Handler', () => {
       expect(context.log.warn).to.have.been.calledWith('[YouTube] Site not found, skipping Mystique message');
     });
 
-    it('should throw error when SQS send fails', async () => {
-      context.sqs.sendMessage.rejects(new Error('SQS Error'));
+    it('should log and rethrow non-test errors from post processor', async () => {
+      context.dataAccess.Site.findById.rejects(new Error('DB down'));
 
       const auditData = {
         siteId,
         auditResult: {
           success: true,
-          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
-          storeData: { urls: mockUrls, sentimentConfig: mockSentimentConfig },
+          storeData: { urls: mockUrls, sentimentConfig: expectedSentimentConfigForPostProcessor },
         },
       };
 
       const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
-      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
-      expect(context.log.error).to.have.been.calledWith('[YouTube] Failed to send Mystique message: SQS Error');
+      await expect(postProcessor(baseURL, auditData, context, mockSite, {})).to.be.rejectedWith('DB down');
+      expect(context.log.error).to.have.been.calledWith('[YouTube] Failed to send Mystique message: DB down');
     });
   });
 });

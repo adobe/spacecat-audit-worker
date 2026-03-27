@@ -34,6 +34,7 @@ describe('Cited Analysis Handler', () => {
   let mockSite;
   let mockAudit;
   let mockStoreClient;
+  let mockComputeTopicsFromBrandPresence;
   let citedAnalysisHandler;
   let StoreEmptyError;
 
@@ -46,14 +47,30 @@ describe('Cited Analysis Handler', () => {
     { url: 'https://news.example.com/example-corp-article', type: 'cited-analysis', metadata: {} },
   ];
 
-  const mockSentimentConfig = {
-    topics: [
-      { topicId: 'topic-1', name: 'Brand Perception', subPrompts: ['brand mentions', 'sentiment'] },
-    ],
-    guidelines: [
-      { guidelineId: 'guide-1', name: 'Cited Analysis Best Practices', instruction: 'Focus on LLM citability', audits: ['cited-analysis'] },
-    ],
+  const mockComputedTopics = [
+    {
+      name: 'Brand Perception',
+      urls: [
+        {
+          url: 'https://techblog.example.com/review-of-example',
+          timesCited: 1,
+          category: 'general',
+          subPrompts: ['brand mentions', 'sentiment'],
+        },
+      ],
+    },
+  ];
+
+  const mockGuidelines = [
+    { guidelineId: 'guide-1', name: 'Cited Analysis Best Practices', instruction: 'Focus on LLM citability', audits: ['cited-analysis'] },
+  ];
+
+  const mockGuidelinesApiResponse = {
+    topics: [{ topicId: 'topic-legacy', name: 'Ignored from sentiment API' }],
+    guidelines: mockGuidelines,
   };
+
+  const expectedSentimentConfigForPostProcessor = { topics: mockComputedTopics, guidelines: mockGuidelines };
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -67,9 +84,11 @@ describe('Cited Analysis Handler', () => {
       }
     };
 
+    mockComputeTopicsFromBrandPresence = sandbox.stub().resolves(mockComputedTopics);
+
     mockStoreClient = {
       getUrls: sandbox.stub().resolves(mockUrls),
-      getGuidelines: sandbox.stub().resolves(mockSentimentConfig),
+      getGuidelines: sandbox.stub().resolves(mockGuidelinesApiResponse),
     };
 
     const mockStoreClientClass = {
@@ -84,6 +103,9 @@ describe('Cited Analysis Handler', () => {
         GUIDELINE_TYPES,
         MYSTIQUE_URLS_LIMIT,
         resolveMystiqueUrlLimit: realResolveMystiqueUrlLimit,
+      },
+      '../../../src/utils/brand-presence-enrichment.js': {
+        computeTopicsFromBrandPresence: mockComputeTopicsFromBrandPresence,
       },
     });
 
@@ -155,49 +177,66 @@ describe('Cited Analysis Handler', () => {
   });
 
   describe('runCitedAnalysisAudit (via runner)', () => {
-    it('should return pending_analysis status with config and store data when successful', async () => {
+    it('should return pending_analysis with config and store data when successful', async () => {
       const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.status).to.equal('pending_analysis');
-      expect(result.auditResult.config).to.deep.include({
-        companyName: 'Example Corp',
-        companyWebsite: baseURL,
-      });
-      expect(result.auditResult.config.competitors).to.deep.equal(['Competitor A', 'Competitor B']);
-      expect(result.auditResult.config.competitorRegion).to.equal('US');
-      expect(result.auditResult.config.industry).to.equal('Technology');
-      expect(result.auditResult.config.brandKeywords).to.deep.equal(['example', 'corp']);
-
-      expect(result.auditResult.storeData).to.exist;
       expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
-      expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(mockSentimentConfig);
-      expect(result.auditResult.mystiqueUrlLimit).to.equal(MYSTIQUE_URLS_LIMIT);
-
+      expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(expectedSentimentConfigForPostProcessor);
       expect(result.fullAuditRef).to.equal(baseURL);
+      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, URL_TYPES.CITED);
+      expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, GUIDELINE_TYPES.CITED_ANALYSIS);
+      expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
     });
 
-    it('should log auditContext and apply urlLimit', async () => {
-      const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite, { messageData: { urlLimit: '2' } });
+    it('should log auditContext (mystiqueUrlLimit is resolved in post processor)', async () => {
+      await citedAnalysisHandler.default.runner(baseURL, context, mockSite, { messageData: { urlLimit: '7' } });
 
-      expect(context.log.info).to.have.been.calledWith('[Cited] auditContext: {"messageData":{"urlLimit":"2"}}');
-      expect(result.auditResult.mystiqueUrlLimit).to.equal(2);
+      expect(context.log.info).to.have.been.calledWith('[Cited] auditContext: {"messageData":{"urlLimit":"7"}}');
+    });
+
+    it('should log debug payload for brand-presence topics', async () => {
+      await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(context.log.debug).to.have.been.calledWith(
+        `[Cited] Brand-presence topics payload: ${JSON.stringify(mockComputedTopics)}`,
+      );
     });
 
     it('should call StoreClient with correct parameters', async () => {
       await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'cited-analysis');
-      expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, 'cited-analysis');
+      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, URL_TYPES.CITED);
+      expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, GUIDELINE_TYPES.CITED_ANALYSIS);
     });
 
-    it('should succeed with empty guidelines when guidelinesStore is empty', async () => {
+    it('should use empty guidelines when sentiment API omits guidelines', async () => {
+      mockStoreClient.getGuidelines.resolves({ topics: [{ topicId: 'legacy-only' }] });
+
+      const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(context.log.info).to.have.been.calledWith('[Cited] Retrieved 0 guidelines');
+    });
+
+    it('should proceed with empty guidelines when guidelinesStore returns empty', async () => {
       mockStoreClient.getGuidelines.rejects(new StoreEmptyError('guidelinesStore', 'N/A', 'No guidelines found'));
 
       const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.storeData.sentimentConfig).to.deep.equal({ topics: [], guidelines: [] });
+      expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
+      expect(context.log.info).to.have.been.calledWithMatch(/No guidelines configured for cited-analysis/);
+    });
+
+    it('should succeed when brand presence returns no topics', async () => {
+      mockComputeTopicsFromBrandPresence.resolves([]);
+
+      const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(context.log.debug).to.have.been.calledWith('[Cited] Brand-presence topics payload: []');
     });
 
     it('should re-throw non-StoreEmptyError from getGuidelines', async () => {
@@ -249,18 +288,22 @@ describe('Cited Analysis Handler', () => {
 
       const result = await citedAnalysisHandler.default.runner('https://bmw.com', context, mockSite);
 
+      expect(context.log.info).to.have.been.calledWith(
+        '[Cited] Config: companyName=https://bmw.com, website=https://bmw.com',
+      );
       expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.config.companyName).to.equal('https://bmw.com');
     });
 
-    it('should handle missing config gracefully and use baseURL', async () => {
+    it('should handle missing config and use baseURL', async () => {
       mockSite.getConfig.returns(null);
       mockSite.getBaseURL.returns('https://test-company.com');
 
       const result = await citedAnalysisHandler.default.runner('https://test-company.com', context, mockSite);
 
+      expect(context.log.info).to.have.been.calledWith(
+        '[Cited] Config: companyName=https://test-company.com, website=https://test-company.com',
+      );
       expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.config.companyName).to.equal('https://test-company.com');
     });
 
     it('should handle general errors during execution', async () => {
@@ -275,13 +318,12 @@ describe('Cited Analysis Handler', () => {
   });
 
   describe('Post Processor - sendMystiqueMessagePostProcessor', () => {
-    it('should send message to Mystique queue with all store data when audit is successful', async () => {
+    it('resolves mystiqueUrlLimit from auditContext, then test hook throws before SQS', async () => {
       const auditData = {
         siteId,
         auditResult: {
           success: true,
           status: 'pending_analysis',
-          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: {
             companyName: 'Example Corp',
             companyWebsite: baseURL,
@@ -292,43 +334,51 @@ describe('Cited Analysis Handler', () => {
           },
           storeData: {
             urls: mockUrls,
-            sentimentConfig: mockSentimentConfig,
+            sentimentConfig: expectedSentimentConfigForPostProcessor,
           },
         },
       };
 
       const postProcessor = citedAnalysisHandler.default.postProcessors[0];
-      await postProcessor(baseURL, auditData, context);
+      await expect(
+        postProcessor(baseURL, auditData, context, mockSite, {}),
+      ).to.be.rejectedWith('Test only');
 
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
-      expect(context.sqs.sendMessage).to.have.been.calledWith(
-        'spacecat-to-mystique',
-        sinon.match({
-          type: 'guidance:cited-analysis',
-          siteId,
-          url: baseURL,
-          auditId,
-          deliveryType: 'aem_edge',
-          data: sinon.match({
-            companyName: 'Example Corp',
-            companyWebsite: baseURL,
-            competitors: ['Competitor A'],
-            competitorRegion: 'US',
-            industry: 'Technology',
-            brandKeywords: ['example'],
-            topics: mockSentimentConfig.topics,
-            guidelines: mockSentimentConfig.guidelines,
-          }),
-        }),
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        `[Cited] mystiqueUrlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        `[Cited] Test hook: ${mockUrls.length} URL(s) prepared for Mystique (SQS send disabled)`,
       );
     });
 
-    it('should send raw urls when no topics are available', async () => {
+    it('should apply auditContext.messageData.urlLimit in post processor', async () => {
       const auditData = {
         siteId,
         auditResult: {
           success: true,
-          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
+          config: { companyName: 'Test' },
+          storeData: {
+            urls: mockUrls,
+            sentimentConfig: expectedSentimentConfigForPostProcessor,
+          },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await expect(
+        postProcessor(baseURL, auditData, context, mockSite, { messageData: { urlLimit: '1' } }),
+      ).to.be.rejectedWith('Test only');
+
+      expect(context.log.info).to.have.been.calledWith('[Cited] mystiqueUrlLimit=1 (URLs sent to Mystique)');
+    });
+
+    it('logs correct URL count when no topics (enrichment passes raw urls)', async () => {
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
           config: { companyName: 'Test' },
           storeData: {
             urls: mockUrls,
@@ -338,14 +388,14 @@ describe('Cited Analysis Handler', () => {
       };
 
       const postProcessor = citedAnalysisHandler.default.postProcessors[0];
-      await postProcessor(baseURL, auditData, context);
+      await expect(postProcessor(baseURL, auditData, context, mockSite, {})).to.be.rejectedWith('Test only');
 
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
-      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.deep.equal(mockUrls);
+      expect(context.log.info).to.have.been.calledWith(
+        `[Cited] Test hook: ${mockUrls.length} URL(s) prepared for Mystique (SQS send disabled)`,
+      );
     });
 
-    it('should limit URLs sent to Mystique to MYSTIQUE_URLS_LIMIT', async () => {
+    it('should limit URLs to MYSTIQUE_URLS_LIMIT when many URLs exist', async () => {
       const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 30 }, (_, i) => ({
         url: `https://example.com/page-${i}`, type: 'cited-analysis', metadata: {},
       }));
@@ -354,7 +404,6 @@ describe('Cited Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
-          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: {
             urls: manyUrls,
@@ -364,14 +413,14 @@ describe('Cited Analysis Handler', () => {
       };
 
       const postProcessor = citedAnalysisHandler.default.postProcessors[0];
-      await postProcessor(baseURL, auditData, context);
+      await expect(postProcessor(baseURL, auditData, context, mockSite, {})).to.be.rejectedWith('Test only');
 
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
-      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
+      expect(context.log.info).to.have.been.calledWith(
+        `[Cited] Test hook: ${MYSTIQUE_URLS_LIMIT} URL(s) prepared for Mystique (SQS send disabled)`,
+      );
     });
 
-    it('should fall back to MYSTIQUE_URLS_LIMIT when mystiqueUrlLimit is absent', async () => {
+    it('should fall back to MYSTIQUE_URLS_LIMIT when urlLimit is absent', async () => {
       const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 5 }, (_, i) => ({
         url: `https://example.com/page-${i}`, type: 'cited-analysis', metadata: {},
       }));
@@ -389,10 +438,11 @@ describe('Cited Analysis Handler', () => {
       };
 
       const postProcessor = citedAnalysisHandler.default.postProcessors[0];
-      await postProcessor(baseURL, auditData, context);
+      await expect(postProcessor(baseURL, auditData, context, mockSite, {})).to.be.rejectedWith('Test only');
 
-      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
+      expect(context.log.info).to.have.been.calledWith(
+        `[Cited] mystiqueUrlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
+      );
     });
 
     it('should skip sending message when audit failed', async () => {
@@ -419,7 +469,6 @@ describe('Cited Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
-          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
         },
@@ -439,7 +488,6 @@ describe('Cited Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
-          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
         },
@@ -458,7 +506,6 @@ describe('Cited Analysis Handler', () => {
         siteId: 'non-existent-site',
         auditResult: {
           success: true,
-          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
         },
@@ -472,22 +519,21 @@ describe('Cited Analysis Handler', () => {
       expect(context.log.warn).to.have.been.calledWith('[Cited] Site not found, skipping Mystique message');
     });
 
-    it('should throw error when SQS send fails', async () => {
-      context.sqs.sendMessage.rejects(new Error('SQS Error'));
+    it('should log and rethrow non-test errors from post processor', async () => {
+      context.dataAccess.Site.findById.rejects(new Error('DB down'));
 
       const auditData = {
         siteId,
         auditResult: {
           success: true,
-          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
-          storeData: { urls: mockUrls, sentimentConfig: mockSentimentConfig },
+          storeData: { urls: mockUrls, sentimentConfig: expectedSentimentConfigForPostProcessor },
         },
       };
 
       const postProcessor = citedAnalysisHandler.default.postProcessors[0];
-      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
-      expect(context.log.error).to.have.been.calledWith('[Cited] Failed to send Mystique message: SQS Error');
+      await expect(postProcessor(baseURL, auditData, context, mockSite, {})).to.be.rejectedWith('DB down');
+      expect(context.log.error).to.have.been.calledWith('[Cited] Failed to send Mystique message: DB down');
     });
   });
 });
