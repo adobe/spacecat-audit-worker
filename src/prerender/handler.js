@@ -21,7 +21,6 @@ import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
 import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
-import * as prerenderShared from './utils/shared.js';
 import {
   CONTENT_GAIN_THRESHOLD,
   DAILY_BATCH_SIZE,
@@ -29,15 +28,12 @@ import {
   TOP_ORGANIC_URLS_LIMIT,
   PRERENDER_RECENT_PROCESSING_WINDOW_HOURS,
   MODE_AI_ONLY,
-  TEST_AGENTIC_URL_SUBROUTES,
-  TEST_ORGANIC_URL_SUBROUTES,
 } from './utils/constants.js';
 
 const LOG_PREFIX = 'Prerender -';
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_ERROR_MESSAGE = 'Audit failed';
-const TEST_URL_OVERRIDE_HOST = 'lovesac.com';
 
 // Domain-wide suggestion URL format (sync scrapedUrlsSet + prepareDomainWideAggregateSuggestion)
 const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`;
@@ -161,41 +157,8 @@ async function findPreservableDomainWideSuggestion(opportunity, log) {
   return preservable || null;
 }
 
-function resolveConfiguredTestUrls(baseUrl, subroutes, limit) {
-  if (!baseUrl) {
-    return null;
-  }
-
-  let parsedBaseUrl;
-  try {
-    parsedBaseUrl = new URL(baseUrl);
-  } catch {
-    return null;
-  }
-
-  const normalizedHost = parsedBaseUrl.hostname.replace(/^www\./, '');
-  if (normalizedHost !== TEST_URL_OVERRIDE_HOST) {
-    return null;
-  }
-
-  return subroutes
-    .slice(0, limit)
-    .map((subroute) => new URL(subroute, parsedBaseUrl).toString());
-}
-
 async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIMIT) {
   const { dataAccess, log, site } = context;
-  const baseUrl = site?.getBaseURL?.() || '';
-
-  const configuredTestUrls = resolveConfiguredTestUrls(
-    baseUrl,
-    TEST_ORGANIC_URL_SUBROUTES,
-    limit,
-  );
-  if (configuredTestUrls) {
-    return configuredTestUrls;
-  }
-
   let topPagesUrls = [];
   try {
     const { SiteTopPage } = dataAccess || {};
@@ -211,62 +174,13 @@ async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIM
 
 /**
  * Fetch top Agentic URLs from Athena.
- * @param {any} site
- * @param {any} context
+ * @param {Object} site
+ * @param {Object} context
  * @param {number} limit
  * @returns {Promise<Array<string>>}
  */
 async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
-  const overrideBaseUrl = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL;
-  const effectiveBaseUrl = overrideBaseUrl || site.getBaseURL?.() || '';
-
-  const configuredTestUrls = resolveConfiguredTestUrls(
-    effectiveBaseUrl,
-    TEST_AGENTIC_URL_SUBROUTES,
-    limit,
-  );
-  if (configuredTestUrls) {
-    return configuredTestUrls;
-  }
-
-  const athenaUrls = await getTopAgenticUrlsFromAthena(site, context, limit);
-  if (athenaUrls.length > 0) {
-    return athenaUrls;
-  }
-
-  const { log } = context;
-
-  try {
-    const sheetContext = {
-      ...context,
-      finalUrl: effectiveBaseUrl,
-    };
-    const { rows } = await prerenderShared.loadLatestAgenticSheet(site, sheetContext);
-    const hitsMap = prerenderShared.buildSheetHitsMap(rows);
-
-    const sheetUrls = [...hitsMap.entries()]
-      .filter(([path]) => typeof path === 'string' && path.length > 0)
-      // Ignore sheet bucket labels like "Other" that are not URL paths.
-      .filter(([path]) => path.startsWith('/') || /^https?:\/\//.test(path))
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, limit)
-      .map(([path]) => {
-        if (/^https?:\/\//.test(path)) {
-          return path;
-        }
-        try {
-          return new URL(path, effectiveBaseUrl).toString();
-        } catch {
-          return path;
-        }
-      });
-
-    log.info(`${LOG_PREFIX} Selected ${sheetUrls.length} top agentic URLs via sheet fallback. baseUrl=${effectiveBaseUrl || site.getBaseURL?.() || ''}`);
-    return sheetUrls;
-  } catch (e) {
-    log.warn(`${LOG_PREFIX} Sheet-based agentic URL fetch failed: ${e?.message || e}. baseUrl=${effectiveBaseUrl || site.getBaseURL?.() || ''}`);
-    return [];
-  }
+  return getTopAgenticUrlsFromAthena(site, context, limit);
 }
 
 /**
