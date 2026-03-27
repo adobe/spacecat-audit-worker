@@ -14,7 +14,7 @@ import { ok } from '@adobe/spacecat-shared-http-utils';
 import { hasText } from '@adobe/spacecat-shared-utils';
 import SplunkAPIClient from '@adobe/spacecat-shared-splunk-client';
 
-import { postMessageSafe } from '../utils/slack-utils.js';
+import { postMessageOptional } from '../utils/slack-utils.js';
 
 const DEFAULT_MINUTES = 3000; // 50 hours
 
@@ -185,17 +185,12 @@ export default async function identifyRedirects(message, context) {
   const threadTs = slackContext?.threadTs;
   const slackTarget = slackContext?.target; // optional override
 
-  if (!hasText(channelId) || !hasText(threadTs)) {
-    log.warn('[identify-redirects] Missing slackContext.channelId or slackContext.threadTs');
-    return ok({ status: 'ignored', reason: 'missing-slack-context' });
-  }
-
   if (!hasText(baseURL) || !hasText(programId) || !hasText(environmentId)) {
     const text = ':warning: identify-redirects job missing required inputs. '
       + `baseURL=${baseURL || 'n/a'}, `
       + `programId=${programId || 'n/a'}, `
       + `environmentId=${environmentId || 'n/a'}`;
-    await postMessageSafe(context, channelId, text, {
+    await postMessageOptional(context, channelId, text, {
       threadTs,
       ...(slackTarget && { target: slackTarget }),
     });
@@ -204,7 +199,7 @@ export default async function identifyRedirects(message, context) {
 
   const client = SplunkAPIClient.createFrom(context);
 
-  await postMessageSafe(
+  await postMessageOptional(
     context,
     channelId,
     `:hourglass: Started Splunk searches for *${baseURL}* (last ${minutes}m)…`,
@@ -264,7 +259,7 @@ export default async function identifyRedirects(message, context) {
       queries,
     });
 
-  await postMessageSafe(context, channelId, finalText, {
+  await postMessageOptional(context, channelId, finalText, {
     threadTs,
     ...(slackTarget && { target: slackTarget }),
   });
@@ -273,7 +268,7 @@ export default async function identifyRedirects(message, context) {
     if (!site) {
       const reason = !hasText(siteId) ? 'missing siteId' : 'site not found';
       log.warn(`[identify-redirects] Skipping config update: ${reason}`);
-      await postMessageSafe(
+      await postMessageOptional(
         context,
         channelId,
         `:warning: Could not update delivery config for *${baseURL}* (${reason}).`,
