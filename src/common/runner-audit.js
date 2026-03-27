@@ -12,7 +12,7 @@
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { BaseAudit } from './base-audit.js';
-import { isAuditEnabledForSite } from './audit-utils.js';
+import { isAuditEnabledForSite, mergeAuditDataIntoAuditContext } from './audit-utils.js';
 
 export class RunnerAudit extends BaseAudit {
   constructor(
@@ -30,7 +30,8 @@ export class RunnerAudit extends BaseAudit {
 
   async run(message, context) {
     const { log } = context;
-    const { type, siteId, auditContext = {} } = message;
+    const { type, siteId } = message;
+    const auditContext = mergeAuditDataIntoAuditContext(message);
 
     try {
       const site = await this.siteProvider(siteId, context);

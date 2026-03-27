@@ -19,7 +19,11 @@ import chaiAsPromised from 'chai-as-promised';
 
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import {
-  isAuditEnabledForSite, loadExistingAudit, sendContinuationMessage, checkProductCodeEntitlements,
+  isAuditEnabledForSite,
+  loadExistingAudit,
+  sendContinuationMessage,
+  checkProductCodeEntitlements,
+  mergeAuditDataIntoAuditContext,
 } from '../../src/common/audit-utils.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -354,6 +358,45 @@ describe('Audit Utils Tests', () => {
         `Failed to send message to queue ${message.queueUrl}`,
         sinon.match.instanceOf(Error),
       );
+    });
+  });
+
+  describe('mergeAuditDataIntoAuditContext', () => {
+    it('returns auditContext only when data is missing', () => {
+      expect(mergeAuditDataIntoAuditContext({ auditContext: { slackContext: { x: 1 } } }))
+        .to.deep.equal({ slackContext: { x: 1 } });
+    });
+
+    it('merges data object into auditContext', () => {
+      expect(mergeAuditDataIntoAuditContext({
+        auditContext: { slackContext: { channelId: 'c' } },
+        data: { urlLimit: '10' },
+      })).to.deep.equal({ slackContext: { channelId: 'c' }, urlLimit: '10' });
+    });
+
+    it('parses JSON string data and merges', () => {
+      expect(mergeAuditDataIntoAuditContext({
+        auditContext: {},
+        data: '{"urlLimit":"5"}',
+      })).to.deep.equal({ urlLimit: '5' });
+    });
+
+    it('returns base when data string is invalid JSON', () => {
+      expect(mergeAuditDataIntoAuditContext({
+        auditContext: { a: 1 },
+        data: '{not-json',
+      })).to.deep.equal({ a: 1 });
+    });
+
+    it('returns base when data string is whitespace only', () => {
+      expect(mergeAuditDataIntoAuditContext({
+        auditContext: { a: 1 },
+        data: '   \n\t  ',
+      })).to.deep.equal({ a: 1 });
+    });
+
+    it('returns base when data is not a plain object', () => {
+      expect(mergeAuditDataIntoAuditContext({ auditContext: {}, data: [1, 2] })).to.deep.equal({});
     });
   });
 });

@@ -16,7 +16,12 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
-import { MYSTIQUE_URLS_LIMIT } from '../../../src/utils/store-client.js';
+import {
+  MYSTIQUE_URLS_LIMIT,
+  URL_TYPES,
+  GUIDELINE_TYPES,
+  resolveMystiqueUrlLimit as realResolveMystiqueUrlLimit,
+} from '../../../src/utils/store-client.js';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
 
@@ -75,18 +80,10 @@ describe('Cited Analysis Handler', () => {
       '../../../src/utils/store-client.js': {
         default: mockStoreClientClass,
         StoreEmptyError,
-        URL_TYPES: {
-          WIKIPEDIA: 'wikipedia-analysis',
-          REDDIT: 'reddit-analysis',
-          YOUTUBE: 'youtube-analysis',
-          CITED: 'cited-analysis',
-        },
-        GUIDELINE_TYPES: {
-          WIKIPEDIA_ANALYSIS: 'wikipedia-analysis',
-          REDDIT_ANALYSIS: 'reddit-analysis',
-          YOUTUBE_ANALYSIS: 'youtube-analysis',
-          CITED_ANALYSIS: 'cited-analysis',
-        },
+        URL_TYPES,
+        GUIDELINE_TYPES,
+        MYSTIQUE_URLS_LIMIT,
+        resolveMystiqueUrlLimit: realResolveMystiqueUrlLimit,
       },
     });
 
@@ -175,8 +172,16 @@ describe('Cited Analysis Handler', () => {
       expect(result.auditResult.storeData).to.exist;
       expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
       expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(mockSentimentConfig);
+      expect(result.auditResult.mystiqueUrlLimit).to.equal(MYSTIQUE_URLS_LIMIT);
 
       expect(result.fullAuditRef).to.equal(baseURL);
+    });
+
+    it('should log auditContext and apply urlLimit', async () => {
+      const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite, { urlLimit: '2' });
+
+      expect(context.log.info).to.have.been.calledWith('[Cited] auditContext: {"urlLimit":"2"}');
+      expect(result.auditResult.mystiqueUrlLimit).to.equal(2);
     });
 
     it('should call StoreClient with correct parameters', async () => {
@@ -276,6 +281,7 @@ describe('Cited Analysis Handler', () => {
         auditResult: {
           success: true,
           status: 'pending_analysis',
+          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: {
             companyName: 'Example Corp',
             companyWebsite: baseURL,
@@ -322,6 +328,7 @@ describe('Cited Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
+          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: {
             urls: mockUrls,
@@ -347,6 +354,7 @@ describe('Cited Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
+          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: {
             urls: manyUrls,
@@ -359,6 +367,30 @@ describe('Cited Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
+    });
+
+    it('should fall back to MYSTIQUE_URLS_LIMIT when mystiqueUrlLimit is absent', async () => {
+      const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 5 }, (_, i) => ({
+        url: `https://example.com/page-${i}`, type: 'cited-analysis', metadata: {},
+      }));
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: {
+            urls: manyUrls,
+            sentimentConfig: { topics: [], guidelines: [] },
+          },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
     });
@@ -387,6 +419,7 @@ describe('Cited Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
+          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
         },
@@ -406,6 +439,7 @@ describe('Cited Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
+          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
         },
@@ -424,6 +458,7 @@ describe('Cited Analysis Handler', () => {
         siteId: 'non-existent-site',
         auditResult: {
           success: true,
+          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
         },
@@ -444,6 +479,7 @@ describe('Cited Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
+          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: mockUrls, sentimentConfig: mockSentimentConfig },
         },

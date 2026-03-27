@@ -14,7 +14,11 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
-import { MYSTIQUE_URLS_LIMIT } from '../../../src/utils/store-client.js';
+import {
+  MYSTIQUE_URLS_LIMIT,
+  URL_TYPES,
+  resolveMystiqueUrlLimit as realResolveMystiqueUrlLimit,
+} from '../../../src/utils/store-client.js';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
 
@@ -82,8 +86,9 @@ describe('Reddit Analysis Handler', () => {
       '../../../src/utils/store-client.js': {
         default: mockStoreClientClass,
         StoreEmptyError,
-        URL_TYPES: { WIKIPEDIA: 'wikipedia-analysis', REDDIT: 'reddit-analysis', YOUTUBE: 'youtube-analysis' },
-        MYSTIQUE_URLS_LIMIT: 50,
+        URL_TYPES,
+        MYSTIQUE_URLS_LIMIT,
+        resolveMystiqueUrlLimit: realResolveMystiqueUrlLimit,
       },
       '../../../src/utils/brand-presence-enrichment.js': {
         computeTopicsFromBrandPresence: mockComputeTopicsFromBrandPresence,
@@ -158,11 +163,13 @@ describe('Reddit Analysis Handler', () => {
   });
 
   describe('runRedditAnalysisAudit (via runner)', () => {
-    it('should short-circuit with Test only after store fetch (temporary test hook)', async () => {
+    it('should return pending_analysis with store data and mystiqueUrlLimit when successful', async () => {
       const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.equal('Test only');
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.status).to.equal('pending_analysis');
+      expect(result.auditResult.mystiqueUrlLimit).to.equal(MYSTIQUE_URLS_LIMIT);
+      expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
       expect(result.fullAuditRef).to.equal(baseURL);
     });
 
@@ -171,6 +178,13 @@ describe('Reddit Analysis Handler', () => {
 
       expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'reddit-analysis');
       expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
+    });
+
+    it('should log auditContext and mystiqueUrlLimit', async () => {
+      await redditAnalysisHandler.default.runner(baseURL, context, mockSite, { urlLimit: '3' });
+
+      expect(context.log.info).to.have.been.calledWith('[Reddit] auditContext: {"urlLimit":"3"}');
+      expect(context.log.info).to.have.been.calledWith('[Reddit] mystiqueUrlLimit=3 (URLs sent to Mystique)');
     });
 
     it('should log debug payload for brand-presence topics', async () => {
@@ -192,13 +206,13 @@ describe('Reddit Analysis Handler', () => {
       expect(context.log.error).to.have.been.called;
     });
 
-    it('should still short-circuit with Test only when brand presence returns no topics', async () => {
+    it('should succeed when brand presence returns no topics', async () => {
       mockComputeTopicsFromBrandPresence.resolves([]);
 
       const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.equal('Test only');
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.storeData.sentimentConfig.topics).to.deep.equal([]);
       expect(context.log.debug).to.have.been.calledWith('[Reddit] Brand-presence topics payload: []');
     });
 
@@ -219,7 +233,7 @@ describe('Reddit Analysis Handler', () => {
       expect(context.log.warn).to.have.been.called;
     });
 
-    it('should use baseURL as companyName then hit Test only short-circuit', async () => {
+    it('should use baseURL as companyName and complete successfully', async () => {
       mockSite.getConfig.returns({
         getCompanyName: sandbox.stub().returns(null),
         getCompetitors: sandbox.stub().returns([]),
@@ -231,18 +245,18 @@ describe('Reddit Analysis Handler', () => {
 
       const result = await redditAnalysisHandler.default.runner('https://bmw.com', context, mockSite);
 
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.equal('Test only');
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.config.companyName).to.equal('https://bmw.com');
     });
 
-    it('should handle missing config and use baseURL then Test only short-circuit', async () => {
+    it('should handle missing config and use baseURL', async () => {
       mockSite.getConfig.returns(null);
       mockSite.getBaseURL.returns('https://test-company.com');
 
       const result = await redditAnalysisHandler.default.runner('https://test-company.com', context, mockSite);
 
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.equal('Test only');
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.config.companyName).to.equal('https://test-company.com');
     });
 
     it('should handle general errors during execution', async () => {
@@ -263,6 +277,7 @@ describe('Reddit Analysis Handler', () => {
         auditResult: {
           success: true,
           status: 'pending_analysis',
+          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: {
             companyName: 'Example Corp',
             companyWebsite: baseURL,
@@ -317,6 +332,7 @@ describe('Reddit Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
+          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: {
             urls: manyUrls,
@@ -329,6 +345,55 @@ describe('Reddit Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
+    });
+
+    it('should limit URLs to mystiqueUrlLimit when set below cap', async () => {
+      const manyUrls = Array.from({ length: 20 }, (_, i) => ({
+        url: `https://reddit.com/r/test/page-${i}`, type: 'reddit-analysis', metadata: {},
+      }));
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          mystiqueUrlLimit: 4,
+          config: { companyName: 'Test' },
+          storeData: {
+            urls: manyUrls,
+            sentimentConfig: { topics: [], guidelines: [] },
+          },
+        },
+      };
+
+      const postProcessor = redditAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.urls).to.have.lengthOf(4);
+    });
+
+    it('should fall back to MYSTIQUE_URLS_LIMIT when mystiqueUrlLimit is absent', async () => {
+      const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 5 }, (_, i) => ({
+        url: `https://reddit.com/r/test/page-${i}`, type: 'reddit-analysis', metadata: {},
+      }));
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: {
+            urls: manyUrls,
+            sentimentConfig: { topics: [], guidelines: [] },
+          },
+        },
+      };
+
+      const postProcessor = redditAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
     });
@@ -357,6 +422,7 @@ describe('Reddit Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
+          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
         },
@@ -376,6 +442,7 @@ describe('Reddit Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
+          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
         },
@@ -394,6 +461,7 @@ describe('Reddit Analysis Handler', () => {
         siteId: 'non-existent-site',
         auditResult: {
           success: true,
+          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
         },
@@ -414,6 +482,7 @@ describe('Reddit Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
+          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: mockUrls, sentimentConfig: expectedSentimentConfig },
         },

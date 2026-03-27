@@ -94,3 +94,32 @@ export async function sendContinuationMessage(message, context) {
     throw e;
   }
 }
+
+/**
+ * Merges API `data` (JSON string or object) into `auditContext` so RunnerAudit runners
+ * receive Slack keyword args and other extras (e.g. urlLimit) alongside slackContext.
+ * @param {object} message - Raw SQS message body
+ * @returns {object} Normalized audit context
+ */
+export function mergeAuditDataIntoAuditContext(message) {
+  const { auditContext: base = {}, data } = message;
+  if (data === undefined || data === null) {
+    return base;
+  }
+  let parsed = data;
+  if (typeof data === 'string') {
+    const trimmed = data.trim();
+    if (!trimmed) {
+      return base;
+    }
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      return base;
+    }
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return base;
+  }
+  return { ...base, ...parsed };
+}

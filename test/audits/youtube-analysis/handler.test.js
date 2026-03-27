@@ -16,7 +16,12 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
-import { MYSTIQUE_URLS_LIMIT } from '../../../src/utils/store-client.js';
+import {
+  MYSTIQUE_URLS_LIMIT,
+  URL_TYPES,
+  GUIDELINE_TYPES,
+  resolveMystiqueUrlLimit as realResolveMystiqueUrlLimit,
+} from '../../../src/utils/store-client.js';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
 
@@ -75,6 +80,10 @@ describe('YouTube Analysis Handler', () => {
       '../../../src/utils/store-client.js': {
         default: mockStoreClientClass,
         StoreEmptyError,
+        URL_TYPES,
+        GUIDELINE_TYPES,
+        MYSTIQUE_URLS_LIMIT,
+        resolveMystiqueUrlLimit: realResolveMystiqueUrlLimit,
       },
     });
 
@@ -163,8 +172,16 @@ describe('YouTube Analysis Handler', () => {
       expect(result.auditResult.storeData).to.exist;
       expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
       expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(mockSentimentConfig);
+      expect(result.auditResult.mystiqueUrlLimit).to.equal(MYSTIQUE_URLS_LIMIT);
 
       expect(result.fullAuditRef).to.equal(baseURL);
+    });
+
+    it('should log auditContext and apply urlLimit', async () => {
+      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite, { urlLimit: '7' });
+
+      expect(context.log.info).to.have.been.calledWith('[YouTube] auditContext: {"urlLimit":"7"}');
+      expect(result.auditResult.mystiqueUrlLimit).to.equal(7);
     });
 
     it('should call StoreClient with correct parameters', async () => {
@@ -266,6 +283,7 @@ describe('YouTube Analysis Handler', () => {
         auditResult: {
           success: true,
           status: 'pending_analysis',
+          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: {
             companyName: 'Example Corp',
             companyWebsite: baseURL,
@@ -317,6 +335,7 @@ describe('YouTube Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
+          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: {
             urls: manyUrls,
@@ -329,6 +348,30 @@ describe('YouTube Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
+    });
+
+    it('should fall back to MYSTIQUE_URLS_LIMIT when mystiqueUrlLimit is absent', async () => {
+      const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 5 }, (_, i) => ({
+        url: `https://youtube.com/watch?v=test-${i}`, type: 'youtube-analysis', metadata: {},
+      }));
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: {
+            urls: manyUrls,
+            sentimentConfig: { topics: [], guidelines: [] },
+          },
+        },
+      };
+
+      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
     });
@@ -357,6 +400,7 @@ describe('YouTube Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
+          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
         },
@@ -376,6 +420,7 @@ describe('YouTube Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
+          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
         },
@@ -394,6 +439,7 @@ describe('YouTube Analysis Handler', () => {
         siteId: 'non-existent-site',
         auditResult: {
           success: true,
+          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: [], sentimentConfig: { topics: [], guidelines: [] } },
         },
@@ -414,6 +460,7 @@ describe('YouTube Analysis Handler', () => {
         siteId,
         auditResult: {
           success: true,
+          mystiqueUrlLimit: MYSTIQUE_URLS_LIMIT,
           config: { companyName: 'Test' },
           storeData: { urls: mockUrls, sentimentConfig: mockSentimentConfig },
         },

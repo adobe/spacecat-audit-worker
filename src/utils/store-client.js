@@ -57,6 +57,37 @@ export const URL_TYPES = {
 export const MYSTIQUE_URLS_LIMIT = 50;
 
 /**
+ * Effective max URLs to send to Mystique for store-backed guidance audits
+ * (reddit / youtube / cited). Optional `auditContext.urlLimit` is capped at MYSTIQUE_URLS_LIMIT.
+ *
+ * @param {object} [auditContext]
+ * @param {number|string} [auditContext.urlLimit]
+ * @param {object} [log]
+ * @param {string} [logPrefix]
+ * @returns {number}
+ */
+export function resolveMystiqueUrlLimit(auditContext, log, logPrefix) {
+  const prefix = logPrefix ?? '';
+  const ctx = auditContext ?? {};
+  const raw = ctx.urlLimit;
+  if (raw === undefined || raw === null || raw === '') {
+    return MYSTIQUE_URLS_LIMIT;
+  }
+  const n = Number(raw);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
+    log?.warn(
+      `${prefix} Invalid urlLimit in auditContext (${JSON.stringify(raw)}), using default ${MYSTIQUE_URLS_LIMIT}`,
+    );
+    return MYSTIQUE_URLS_LIMIT;
+  }
+  if (n > MYSTIQUE_URLS_LIMIT) {
+    log?.info(`${prefix} urlLimit ${n} exceeds cap ${MYSTIQUE_URLS_LIMIT}, using ${MYSTIQUE_URLS_LIMIT}`);
+    return MYSTIQUE_URLS_LIMIT;
+  }
+  return n;
+}
+
+/**
  * Audit types for guidelines queries
  * These are used as the ?audit= query parameter in /sites/{siteId}/sentiment/config
  */

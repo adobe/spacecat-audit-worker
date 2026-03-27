@@ -13,7 +13,7 @@
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import StoreClient, {
-  StoreEmptyError, URL_TYPES, MYSTIQUE_URLS_LIMIT,
+  StoreEmptyError, URL_TYPES, MYSTIQUE_URLS_LIMIT, resolveMystiqueUrlLimit,
 } from '../utils/store-client.js';
 import { computeTopicsFromBrandPresence } from '../utils/brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
@@ -84,13 +84,15 @@ async function fetchStoreData(siteId, context) {
  * @param {string} url - The resolved URL for the audit
  * @param {Object} context - The audit context
  * @param {Object} site - The site being audited
+ * @param {Object} [auditContext] - SQS audit context (e.g. urlLimit from Slack)
  * @returns {Promise<Object>} Audit result
  */
-async function runRedditAnalysisAudit(url, context, site) {
+async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
   const { log } = context;
   const siteId = site.getId();
 
   log.info(`${LOG_PREFIX} Starting Reddit analysis audit for site: ${siteId}`);
+  log.info(`${LOG_PREFIX} auditContext: ${JSON.stringify(auditContext)}`);
 
   try {
     const redditConfig = getRedditConfig(site);
@@ -108,6 +110,9 @@ async function runRedditAnalysisAudit(url, context, site) {
 
     log.info(`${LOG_PREFIX} Config: companyName=${redditConfig.companyName}, website=${redditConfig.companyWebsite}`);
 
+    const mystiqueUrlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
+    log.info(`${LOG_PREFIX} mystiqueUrlLimit=${mystiqueUrlLimit} (URLs sent to Mystique)`);
+
     await fetchStoreData(siteId, context);
 
     // TODO: remove — temporary test hook; logs topics via fetchStoreData then exits
@@ -122,12 +127,14 @@ async function runRedditAnalysisAudit(url, context, site) {
     /* When removing the test return above, restore:
     const storeData = await fetchStoreData(siteId, context);
     log.info(`${LOG_PREFIX} Successfully fetched all store data for ${redditConfig.companyName}`);
+
     return {
       auditResult: {
         success: true,
         status: 'pending_analysis',
         config: redditConfig,
         storeData,
+        mystiqueUrlLimit,
       },
       fullAuditRef: url,
     };
@@ -187,10 +194,10 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       return auditData;
     }
 
-    const { config, storeData } = auditResult;
+    const { config, storeData, mystiqueUrlLimit } = auditResult;
     const { urls, sentimentConfig } = storeData;
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
-      .slice(0, MYSTIQUE_URLS_LIMIT);
+      .slice(0, mystiqueUrlLimit ?? MYSTIQUE_URLS_LIMIT);
 
     const message = {
       type: 'guidance:reddit-analysis',
