@@ -322,7 +322,8 @@ export async function runAuditAndProcessResults(context) {
   }
 
   const memoizedManualResolver = createMemoizedManualConfigResolver(site);
-  const hasManualConfig = !!site?.getConfig?.()?.state?.commerceLlmoConfig;
+  const commerceLlmoConfig = site?.getConfig?.()?.state?.commerceLlmoConfig;
+  const hasManualConfig = !!commerceLlmoConfig && Object.keys(commerceLlmoConfig).length > 0;
 
   let remoteConfig = null;
   if (!hasManualConfig) {
@@ -462,7 +463,6 @@ export async function runAuditAndProcessResults(context) {
 
   // Send separate enrichment requests per storeViewCode group
   log.info(`${LOG_PREFIX} Step 3: Sending enrichment for ${groups.size} group(s): ${[...groups.entries()].map(([key, g]) => `${key}=${g.products.length} products`).join(', ')}`);
-  let enrichmentResponse = null;
   const enrichmentPromises = [...groups.entries()].map(([groupKey, group]) => {
     const groupCategoryScrapes = resolvedCategoryScrapes
       .filter((cs) => cs.configKey === groupKey)
@@ -486,13 +486,7 @@ export async function runAuditAndProcessResults(context) {
     log.error(`${LOG_PREFIX} Step 3: Enrichment API call failed: ${result.reason?.message}`);
     return { error: result.reason?.message };
   });
-  if (enrichmentResponses.length === 0) {
-    enrichmentResponse = null;
-  } else if (enrichmentResponses.length === 1) {
-    [enrichmentResponse] = enrichmentResponses;
-  } else {
-    enrichmentResponse = enrichmentResponses;
-  }
+  const enrichmentResponse = enrichmentResponses;
 
   // Persist non-product URLs as excluded for future runs,
   // but skip URLs that are configured as category pages

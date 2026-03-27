@@ -1057,8 +1057,8 @@ describe('Commerce Product Enrichments Handler', () => {
     const enrichmentCalls = fetchStub.getCalls().filter((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
     expect(enrichmentCalls).to.have.lengthOf(0);
 
-    // Verify enrichment response is null
-    expect(result.auditResult.enrichmentResponse).to.be.null;
+    // Verify enrichment response is empty array
+    expect(result.auditResult.enrichmentResponse).to.deep.equal([]);
   });
 
   it('runAuditAndProcessResults skips enrichment when CATALOG_ENRICHMENT_ENDPOINT not configured', async () => {
@@ -1121,8 +1121,8 @@ describe('Commerce Product Enrichments Handler', () => {
     // Verify warning was logged
     expect(log.warn).to.have.been.calledWith(sinon.match(/CATALOG_ENRICHMENT_ENDPOINT not configured/));
 
-    // Verify enrichment response is null
-    expect(result.auditResult.enrichmentResponse).to.be.null;
+    // Verify enrichment response is array with null (endpoint missing returns null per group)
+    expect(result.auditResult.enrichmentResponse).to.deep.equal([null]);
   });
 
   it('runAuditAndProcessResults skips enrichment when commerce config extraction fails', async () => {
@@ -1177,8 +1177,8 @@ describe('Commerce Product Enrichments Handler', () => {
     const enrichmentCalls = fetchStub.getCalls().filter((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
     expect(enrichmentCalls).to.have.lengthOf(0);
 
-    // Verify enrichment response is null
-    expect(result.auditResult.enrichmentResponse).to.be.null;
+    // Verify enrichment response is empty array (no config = no groups)
+    expect(result.auditResult.enrichmentResponse).to.deep.equal([]);
   });
 
   it('runAuditAndProcessResults persists non-product URLs as excluded', async () => {
@@ -1705,10 +1705,10 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
       key: 'scrapes/site-1/product-1/scrape.json',
     });
 
-    expect(result.auditResult.enrichmentResponse).to.deep.equal({
+    expect(result.auditResult.enrichmentResponse).to.deep.equal([{
       status: 'accepted',
       jobId: 'job-123',
-    });
+    }]);
   });
 
   it('attaches preFetch to product scrape when product URL matches categoryPages config', async () => {
@@ -2449,7 +2449,8 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
 
     expect(result.auditResult.status).to.equal('OPPORTUNITIES_FOUND');
     expect(log.error).to.have.been.calledWith(sinon.match(/Enrichment API failed/));
-    expect(result.auditResult.enrichmentResponse).to.have.property('error');
+    expect(result.auditResult.enrichmentResponse).to.be.an('array').with.lengthOf(1);
+    expect(result.auditResult.enrichmentResponse[0]).to.have.property('error');
   });
 
   it('handles enrichment API network error gracefully', async () => {
@@ -2504,9 +2505,9 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
 
     expect(result.auditResult.status).to.equal('OPPORTUNITIES_FOUND');
     expect(log.error).to.have.been.calledWith(sinon.match(/Enrichment API call failed/));
-    expect(result.auditResult.enrichmentResponse).to.deep.equal({
+    expect(result.auditResult.enrichmentResponse).to.deep.equal([{
       error: 'Network connection refused',
-    });
+    }]);
   });
 
   it('includes multiple product pages in enrichment payload', async () => {
@@ -2660,7 +2661,8 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
 
     expect(result.auditResult.status).to.equal('OPPORTUNITIES_FOUND');
     expect(log.error).to.have.been.calledWith(sinon.match(/IMS token request failed/));
-    expect(result.auditResult.enrichmentResponse).to.have.property('error');
+    expect(result.auditResult.enrichmentResponse).to.be.an('array').with.lengthOf(1);
+    expect(result.auditResult.enrichmentResponse[0]).to.have.property('error');
   });
 
 });
@@ -2894,7 +2896,7 @@ describe('Commerce Product Enrichments - Manual Config Grouping', () => {
       (call) => call.args[0] === 'https://test-enrichment/catalog',
     );
     expect(enrichmentCalls).to.have.lengthOf(0);
-    expect(result.auditResult.enrichmentResponse).to.be.null;
+    expect(result.auditResult.enrichmentResponse).to.deep.equal([]);
   });
 
   it('groups products from same storeViewCode together in one enrichment call', async () => {
@@ -3132,6 +3134,100 @@ describe('Commerce Product Enrichments - Manual Config Grouping', () => {
     expect(site.setConfig).to.have.been.calledOnce;
     const savedConfig = site.setConfig.firstCall.args[0];
     expect(savedConfig).to.not.have.property('commerceLlmoConfig');
+  });
+
+  it('falls back to remote config when commerceLlmoConfig is empty object', async () => {
+    const getCommerceConfigStub = sinon.stub().resolves({
+      url: 'https://commerce.fallback/graphql',
+      headers: {
+        'Magento-Environment-Id': 'env-fallback',
+        'Magento-Store-Code': 'store-fallback',
+        'Magento-Store-View-Code': 'view-fallback',
+        'Magento-Website-Code': 'web-fallback',
+        'x-api-key': 'key-fallback',
+      },
+    });
+
+    const mockedHandlerWithConfig = await esmock(
+      '../../../src/commerce-product-enrichments/handler.js',
+      {
+        '@adobe/spacecat-shared-ims-client': {
+          ImsClient: {
+            createFrom: sinon.stub().returns(mockImsClient),
+          },
+        },
+        '../../../src/utils/saas.js': {
+          getCommerceConfig: getCommerceConfigStub,
+        },
+      },
+    );
+
+    site.getConfig.returns({
+      state: { commerceLlmoConfig: {} },
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({}),
+    });
+
+    fetchStub.withArgs('https://test-enrichment/catalog', sinon.match.any).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve({ status: 'accepted' }),
+    });
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            scrapeResult: {
+              structuredData: {
+                jsonld: { Product: [{ name: 'Fallback Product', sku: 'SKU-FB' }] },
+              },
+            },
+          })),
+        },
+      }),
+    };
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-empty-config' },
+      finalUrl: 'https://www.example.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment/catalog',
+        IMS_HOST: 'ims.example.com',
+        IMS_CLIENT_ID: 'cid',
+        IMS_CLIENT_CODE: 'ccode',
+        IMS_CLIENT_SECRET: 'csecret',
+      },
+      scrapeResultPaths: new Map([
+        ['https://www.example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
+      ]),
+    };
+
+    const result = await mockedHandlerWithConfig.runAuditAndProcessResults(context);
+
+    // Verify remote config was fetched (getCommerceConfig was called)
+    expect(getCommerceConfigStub).to.have.been.calledOnce;
+
+    // Verify enrichment was sent with the remote config values
+    const enrichmentCalls = fetchStub.getCalls().filter(
+      (call) => call.args[0] === 'https://test-enrichment/catalog',
+    );
+    expect(enrichmentCalls).to.have.lengthOf(1);
+
+    const payload = JSON.parse(enrichmentCalls[0].args[1].body);
+    expect(payload.environmentId).to.equal('env-fallback');
+    expect(payload.storeViewCode).to.equal('view-fallback');
+    expect(payload.scrapes).to.have.lengthOf(1);
+    expect(payload.scrapes[0].sku).to.equal('SKU-FB');
+
+    expect(result.auditResult.status).to.equal('OPPORTUNITIES_FOUND');
   });
 });
 
