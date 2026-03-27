@@ -173,7 +173,7 @@ export async function processScraping(context) {
   // Send ALL top page URLs to SCRAPE_CLIENT.
   // The scrape client handles caching via maxScrapeAge — it reuses recent scrapes
   // and only re-scrapes stale/missing URLs. This ensures all URLs are registered
-  // in the scrape job's DynamoDB records, making them discoverable by downstream
+  // in the scrape job's storage records, making them discoverable by downstream
   // consumers (e.g., mystique) through the scrape jobs API.
   log.info(`[${AUDIT_TYPE}]: Sending ${topPages.length} URLs to scrape client (maxScrapeAge: ${SCRAPE_MAX_AGE_HOURS}h)`);
 
@@ -225,20 +225,25 @@ export async function processAltTextWithMystique(context) {
       throw new Error(`No top pages found for site ${site.getId()}`);
     }
 
-    // Verify scrapes exist for all page URLs before sending to Mystique.
+    // Filter out URLs without scrapes before sending to Mystique.
     // Uses scrapeResultPaths (Map<url, s3Path>) from the SCRAPE_CLIENT step,
     // which is the same data source mystique queries via scrape jobs API.
     const { scrapeResultPaths } = context;
     if (scrapeResultPaths) {
-      const missingScrapesUrls = pageUrls.filter((url) => !scrapeResultPaths.has(url));
-      if (missingScrapesUrls.length > 0) {
-        log.error(`[${AUDIT_TYPE}]: Missing scrapes for ${missingScrapesUrls.length}/${pageUrls.length} URLs: ${missingScrapesUrls.join(', ')}`);
+      const urlsWithScrapes = pageUrls.filter((url) => scrapeResultPaths.has(url));
+      const missingCount = pageUrls.length - urlsWithScrapes.length;
+      if (urlsWithScrapes.length === 0) {
         throw new Error(
-          `Cannot proceed: ${missingScrapesUrls.length} of ${pageUrls.length} URLs have no scrape results. `
+          `Cannot proceed: none of the ${pageUrls.length} URLs have scrape results. `
           + 'Mystique will not be able to find content for these pages.',
         );
       }
-      log.info(`[${AUDIT_TYPE}]: Verified scrapes exist for all ${pageUrls.length} page URLs`);
+      if (missingCount > 0) {
+        log.warn(`[${AUDIT_TYPE}]: Excluding ${missingCount}/${pageUrls.length} URLs without scrapes`);
+      }
+      log.info(`[${AUDIT_TYPE}]: Sending ${urlsWithScrapes.length} of ${pageUrls.length} URLs with scrapes to Mystique`);
+      pageUrls.length = 0;
+      pageUrls.push(...urlsWithScrapes);
     } else {
       log.warn(`[${AUDIT_TYPE}]: No scrapeResultPaths in context, skipping scrape verification`);
     }

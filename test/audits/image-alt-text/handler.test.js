@@ -1089,27 +1089,54 @@ describe('Image Alt Text Handler', () => {
       });
     });
 
-    it('should throw when scrapeResultPaths is missing URLs', async () => {
+    it('should throw when no URLs have scrapes', async () => {
       context.site = {
         getId: () => 'site-id',
         getBaseURL: () => 'https://example.com',
       };
 
-      // scrapeResultPaths only has page1, but page2 is also expected
-      context.scrapeResultPaths = new Map([
-        ['https://example.com/page1', 'scrapes/job-123/page1/scrape.json'],
-      ]);
+      // scrapeResultPaths has no matching URLs
+      context.scrapeResultPaths = new Map();
 
       await expect(handlerModule.processAltTextWithMystique(context))
-        .to.be.rejectedWith('Cannot proceed: 1 of 2 URLs have no scrape results');
+        .to.be.rejectedWith('Cannot proceed: none of the 2 URLs have scrape results');
 
-      expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Missing scrapes for 1\/2 URLs/),
-      );
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/Failed to process with Mystique.*Cannot proceed/),
       );
       expect(sendAltTextOpportunityToMystiqueStub).to.not.have.been.called;
+    });
+
+    it('should filter out URLs without scrapes and proceed with the rest', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      // Only page1 has a scrape, page2 does not
+      context.scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/job-123/page1/scrape.json'],
+      ]);
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(context.log.warn).to.have.been.calledWith(
+        '[alt-text]: Excluding 1/2 URLs without scrapes',
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        '[alt-text]: Sending 1 of 2 URLs with scrapes to Mystique',
+      );
+      // Should only send the URL that has a scrape
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
+        'https://example.com',
+        ['https://example.com/page1'],
+        sinon.match.any,
+        sinon.match.any,
+        sinon.match.any,
+        sinon.match.any,
+        sinon.match.any,
+        sinon.match.any,
+      );
     });
 
     it('should proceed when all URLs exist in scrapeResultPaths', async () => {
@@ -1126,7 +1153,7 @@ describe('Image Alt Text Handler', () => {
       await handlerModule.processAltTextWithMystique(context);
 
       expect(context.log.info).to.have.been.calledWith(
-        '[alt-text]: Verified scrapes exist for all 2 page URLs',
+        '[alt-text]: Sending 2 of 2 URLs with scrapes to Mystique',
       );
       expect(sendAltTextOpportunityToMystiqueStub).to.have.been.called;
     });

@@ -7,14 +7,14 @@ The alt-text audit for umgc.edu fails because audit-worker and mystique use **di
 - **Audit-worker** checks scrapes via direct S3 `HeadObjectCommand` using keys like `scrapes/{siteId}/{pathname}/scrape.json` (constructed by `getScrapeJsonPath()`). It finds 19/20 scrapes exist and only sends 1 URL to the scrape client.
 - **Mystique** queries scrape jobs via SpaceCat API (`get_scrape_jobs_by_base_url` → job results), which returns S3 paths keyed by `scrapeJobId` (not `siteId`). It can't find the 19 "existing" scrapes because they're under different paths.
 
-The fix: **send ALL URLs to the scrape client** instead of pre-filtering. The scrape client already handles caching via `maxScrapeAge` — it reuses recent scrapes and registers all URLs in DynamoDB, making them discoverable by mystique.
+The fix: **send ALL URLs to the scrape client** instead of pre-filtering. The scrape client already handles caching via `maxScrapeAge` — it reuses recent scrapes and registers all URLs in storage, making them discoverable by mystique.
 
 ## Approach: Send All URLs to SCRAPE_CLIENT
 
 This is the cleanest option because:
 1. **Removes code** rather than adding complexity
 2. The scrape client already handles caching (`maxScrapeAge` defaults to 24h in `scrape-client.js:189`)
-3. Creates a **single source of truth** — both systems go through scrape jobs API/DynamoDB
+3. Creates a **single source of truth** — both systems go through scrape jobs API/storage
 4. **No changes needed in mystique** — it already queries scrape jobs correctly
 
 ## Changes
@@ -82,7 +82,7 @@ if (scrapeResultPaths) {
 
 **Why this matches mystique's check:**
 - Both use exact URL string matching (no normalization)
-- `scrapeResultPaths` comes from `ScrapeClient.getScrapeResultPaths(jobId)` which queries `ScrapeUrl.allByScrapeJobId()` in DynamoDB — the same records mystique finds via `get_scrape_job_results(jobId)` API
+- `scrapeResultPaths` comes from `ScrapeClient.getScrapeResultPaths(jobId)` which queries `ScrapeUrl.allByScrapeJobId()` in storage — the same records mystique finds via `get_scrape_job_results(jobId)` API
 - If a URL is missing from `scrapeResultPaths`, mystique's `_get_batch_existing_content` won't find it either
 
 ### File 2: `spacecat-audit-worker/test/audits/image-alt-text/handler.test.js`
@@ -124,7 +124,7 @@ if (scrapeResultPaths) {
 ## Why maxScrapeAge: 24 (not 0)
 
 The current code uses `maxScrapeAge: 0` which means "force rescrape." But the code's own behavior contradicts this — it only sends *missing* URLs and reuses existing ones. Setting `maxScrapeAge: 24` achieves the same intent (reuse recent scrapes) through the proper mechanism. The scrape client will:
-- Reuse scrapes < 24h old (cache hit, registered in DynamoDB)
+- Reuse scrapes < 24h old (cache hit, registered in storage)
 - Re-scrape anything older or missing
 
 ## Verification
