@@ -429,6 +429,32 @@ describe('agentic-urls', () => {
       );
     });
 
+    it('should use overrideBaseURL from site config over finalUrl and getBaseURL', async () => {
+      const site = {
+        ...createMockSite(),
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getLlmoCdnlogsFilter: () => [],
+          getFetchConfig: () => ({ overrideBaseURL: 'https://override.example.com' }),
+        }),
+      };
+      const context = {
+        ...createMockContext(),
+        finalUrl: 'www.example.com',
+      };
+
+      mockAthenaClient.query.resolves([
+        { url: '/page1' },
+      ]);
+
+      const result = await getTopAgenticUrlsFromAthena(site, context);
+
+      expect(result).to.deep.equal(['https://override.example.com/page1']);
+      expect(context.log.info).to.have.been.calledWith(
+        'Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=https://override.example.com',
+      );
+    });
+
     it('should pass correct excluded URL suffixes including common file types', async () => {
       const site = createMockSite();
       const context = createMockContext();

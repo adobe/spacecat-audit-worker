@@ -57,11 +57,14 @@ export async function getTopAgenticUrlsFromAthena(
   limit = DEFAULT_TOP_AGENTIC_URLS_LIMIT,
 ) {
   const { log } = context;
-  // Use finalUrl from context if available (it's a hostname, so add https://),
-  // otherwise fall back to site.getBaseURL() which already includes the protocol
-  const baseUrl = context.finalUrl && !/^https?:\/\//.test(context.finalUrl)
-    ? `https://${context.finalUrl}`
-    : context.finalUrl || site.getBaseURL();
+  // Prefer overrideBaseURL (configured fetch override) so scraping targets the correct host,
+  // then fall back to finalUrl from context (hostname resolved by wwwUrlResolver),
+  // and finally to site.getBaseURL().
+  const overrideBaseUrl = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL;
+  const baseUrl = overrideBaseUrl
+    || (context.finalUrl && !/^https?:\/\//.test(context.finalUrl)
+      ? `https://${context.finalUrl}`
+      : context.finalUrl || site.getBaseURL());
   try {
     const awsRuntime = getCdnAwsRuntime(site, context);
     const s3Config = getS3Config(site, context);
