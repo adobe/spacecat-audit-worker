@@ -1055,6 +1055,7 @@ export async function processOpportunityAndSuggestions(
     contentGainRatio: suggestion.contentGainRatio,
     wordCountBefore: suggestion.wordCountBefore,
     wordCountAfter: suggestion.wordCountAfter,
+    citabilityScore: suggestion.citabilityScore ?? null,
     // S3 references to stored HTML content for comparison
     originalHtmlKey: getS3Path(
       suggestion.url,

@@ -2478,6 +2478,151 @@ describe('Prerender Audit', () => {
         }
       });
 
+      it('should include citabilityScore in individual suggestion data', async () => {
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sinon.stub().resolves([]),
+        };
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sinon.stub().resolves(true),
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          scrapeJobId: 'job-123',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://example.com/page1',
+                needsPrerender: true,
+                contentGainRatio: 2.5,
+                wordCountBefore: 120,
+                wordCountAfter: 300,
+                citabilityScore: 0.82,
+              },
+            ],
+          },
+        };
+
+        const context = {
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+          dataAccess: {
+            Suggestion: {
+              STATUSES: {
+                NEW: 'NEW',
+                FIXED: 'FIXED',
+                PENDING_VALIDATION: 'PENDING_VALIDATION',
+                SKIPPED: 'SKIPPED',
+              },
+            },
+          },
+          site: { getId: () => 'test-site-id' },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions(
+          'https://example.com',
+          auditData,
+          context,
+        );
+
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        const syncArgs = syncSuggestionsStub.firstCall.args[0];
+
+        // The individual suggestion (first item in newData) should carry citabilityScore
+        const individualSuggestion = syncArgs.newData.find(
+          (s) => s.url === 'https://example.com/page1',
+        );
+        expect(individualSuggestion).to.exist;
+        expect(individualSuggestion.citabilityScore).to.equal(0.82);
+
+        // mapNewSuggestion should also include citabilityScore via mapSuggestionData
+        const mappedData = syncArgs.mapNewSuggestion(individualSuggestion);
+        expect(mappedData.data.citabilityScore).to.equal(0.82);
+      });
+
+      it('should set citabilityScore to null when not present in audit result', async () => {
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sinon.stub().resolves([]),
+        };
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sinon.stub().resolves(true),
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          scrapeJobId: 'job-123',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://example.com/page2',
+                needsPrerender: true,
+                contentGainRatio: 1.8,
+                wordCountBefore: 80,
+                wordCountAfter: 160,
+                // citabilityScore deliberately omitted
+              },
+            ],
+          },
+        };
+
+        const context = {
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+          dataAccess: {
+            Suggestion: {
+              STATUSES: {
+                NEW: 'NEW',
+                FIXED: 'FIXED',
+                PENDING_VALIDATION: 'PENDING_VALIDATION',
+                SKIPPED: 'SKIPPED',
+              },
+            },
+          },
+          site: { getId: () => 'test-site-id' },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions(
+          'https://example.com',
+          auditData,
+          context,
+        );
+
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        const syncArgs = syncSuggestionsStub.firstCall.args[0];
+
+        const individualSuggestion = syncArgs.newData.find(
+          (s) => s.url === 'https://example.com/page2',
+        );
+        expect(individualSuggestion).to.exist;
+
+        const mappedData = syncArgs.mapNewSuggestion(individualSuggestion);
+        expect(mappedData.data.citabilityScore).to.be.null;
+      });
+
       it('should preserve existing domain-wide suggestion when it has edgeDeployed flag', async () => {
         const existingDomainWideSuggestion = {
           getId: () => 'existing-domain-wide-id',
