@@ -7584,14 +7584,14 @@ describe('Prerender Audit', () => {
         },
       });
 
-      // One record updated 1 hour ago (recent), one 8 hours ago (stale beyond 7h)
+      // One record updated 1 hour ago (recent), one 8 days ago (stale beyond 7 days)
       const recentCitabilityRecord = {
         getUrl: () => 'https://example.com/citability-page',
         getUpdatedAt: () => new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
       };
       const staleCitabilityRecord = {
         getUrl: () => 'https://example.com/stale-page',
-        getUpdatedAt: () => new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString(),
+        getUpdatedAt: () => new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
       };
 
       const context = {
