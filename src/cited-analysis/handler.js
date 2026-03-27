@@ -224,23 +224,16 @@ async function sendMystiqueMessagePostProcessor(
     };
 
     log.debug(`${LOG_PREFIX} Built Mystique message type ${message.type}`);
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.info(
-      `${LOG_PREFIX} Test hook: ${enrichedUrls.length} URL(s) prepared for Mystique (SQS send disabled)`,
+      `${LOG_PREFIX} Queued Cited analysis request to Mystique for ${config.companyName} `
+        + `with ${enrichedUrls.length} URLs`,
     );
-    // TODO: remove test hook — uncomment below when shipping
-    // await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    // log.info(
-    //   `${LOG_PREFIX} Queued Cited analysis request to Mystique for ${config.companyName} ` +
-    //     `with ${enrichedUrls.length} URLs`,
-    // );
-    throw new Error('Test only');
+    return auditData;
   } catch (error) {
-    if (error.message !== 'Test only') {
-      log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
-    }
+    log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
     throw error;
   }
-  // return auditData;
 }
 
 export default new AuditBuilder()
