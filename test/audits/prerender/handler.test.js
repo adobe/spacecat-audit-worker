@@ -755,6 +755,18 @@ describe('Prerender Audit', () => {
           expect(result.urls.map((u) => u.url)).to.include('https://example.com/agentic-0');
         });
 
+        it('should include agentic URLs that cannot be parsed, not treating them as recently processed', async () => {
+          // 'not-a-valid-url' in the agentic list causes new URL(url) to throw inside filteredAgenticUrls,
+          // triggering catch { return true; } — the URL is kept in the batch.
+          const mockHandler = await makeHandlerWithAgentic(['not-a-valid-url', 'https://example.com/valid']);
+          const context = makeContext([]);
+
+          const result = await mockHandler.submitForScraping(context);
+          const resultUrls = result.urls.map((u) => u.url);
+          expect(resultUrls).to.include('not-a-valid-url');
+          expect(resultUrls).to.include('https://example.com/valid');
+        });
+
       });
 
 
@@ -3881,6 +3893,41 @@ describe('Prerender Audit', () => {
   });
 
   describe('Shared utils loadLatestAgenticSheet', () => {
+    it('falls back to s3Config.customerName when getLlmoDataFolder returns falsy', async () => {
+      const shared = await esmock('../../../src/prerender/utils/shared.js', {
+        '../../../src/cdn-logs-report/utils/report-utils.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date('2025-11-17'), endDate: new Date('2025-11-23') }],
+          }),
+        },
+        '../../../src/llm-error-pages/utils.js': {
+          downloadExistingCdnSheet: async (_weekId, outputLocation) => {
+            // outputLocation should use customerName from s3Config, not getLlmoDataFolder
+            if (!outputLocation.startsWith('acme-customer/')) throw new Error(`unexpected: ${outputLocation}`);
+            return [];
+          },
+        },
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: async () => ({}),
+          readFromSharePoint: async () => ({}),
+        },
+        '../../../src/utils/cdn-utils.js': {
+          resolveConsolidatedBucketName: () => 'bucket',
+          extractCustomerDomain: () => 'acme_com',
+          getS3Config: () => ({ customerName: 'acme-customer', bucket: 'bucket', getAthenaTempLocation: () => '' }),
+        },
+      });
+
+      const site = {
+        getBaseURL: () => 'https://acme.com',
+        // getLlmoDataFolder returns null → falls back to s3Config.customerName
+        getConfig: () => ({ getLlmoDataFolder: () => null }),
+      };
+      const ctx = { log: { info: () => {} } };
+      const result = await shared.loadLatestAgenticSheet(site, ctx);
+      expect(result.rows).to.deep.equal([]);
+    });
+
     it('returns latest week and calls downloadExistingCdnSheet with correct params', async () => {
       const called = { weekId: null, outputLocation: null };
       const shared = await esmock('../../../src/prerender/utils/shared.js', {
