@@ -20,7 +20,7 @@ import { getObjectFromKey } from '../utils/s3-utils.js';
 import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
-import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
+import { isPaidLLMOCustomer, logWithAuditPrefix, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
 import * as prerenderShared from './utils/shared.js';
 import {
   CONTENT_GAIN_THRESHOLD,
@@ -33,20 +33,6 @@ import {
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_ERROR_MESSAGE = 'Audit failed';
-
-function logWithAuditPrefix(log, level, message, error) {
-  const method = log?.[level];
-  if (typeof method !== 'function') {
-    return;
-  }
-
-  const prefixedMessage = `[${AUDIT_TYPE}] ${message}`;
-  if (error) {
-    method(prefixedMessage, error);
-  } else {
-    method(prefixedMessage);
-  }
-}
 
 // Domain-wide suggestion URL format (sync scrapedUrlsSet + prepareDomainWideAggregateSuggestion)
 const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`;
