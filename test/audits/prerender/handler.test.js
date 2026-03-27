@@ -266,6 +266,7 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
@@ -303,6 +304,7 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
@@ -352,6 +354,7 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
@@ -382,7 +385,7 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: { allBySiteIdAndSourceAndGeo: topPagesStub },
-            PageCitability: { allBySiteId: sandbox.stub().resolves([]) },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
@@ -411,6 +414,7 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
@@ -443,9 +447,8 @@ describe('Prerender Audit', () => {
             },
             // PageCitability returns the organic URL as recently processed → hasRecentOrganic=true
             PageCitability: {
-              allBySiteId: sandbox.stub().resolves([{
+              allByIndexKeys: sandbox.stub().resolves([{
                 getUrl: () => recentUrl,
-                getUpdatedAt: () => new Date().toISOString(),
               }]),
             },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
@@ -479,6 +482,7 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
@@ -506,6 +510,7 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
@@ -556,6 +561,7 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
@@ -569,9 +575,8 @@ describe('Prerender Audit', () => {
       });
       describe('daily batching', () => {
         const makeAgenticUrls = (n, base = 'https://example.com/agentic-') => Array.from({ length: n }, (_, i) => `${base}${i}`);
-        const makeCitabilityRecord = (path, updatedAtDaysAgo) => ({
+        const makeCitabilityRecord = (path) => ({
           getUrl: () => `https://example.com${path}`,
-          getUpdatedAt: () => new Date(Date.now() - updatedAtDaysAgo * 24 * 60 * 60 * 1000).toISOString(),
         });
 
         const makeHandlerWithAgentic = async (agenticUrls) => esmock('../../../src/prerender/handler.js', {
@@ -588,7 +593,7 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-            PageCitability: { allBySiteId: sandbox.stub().resolves(pageCitabilityRecords) },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves(pageCitabilityRecords) },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
         });
@@ -609,8 +614,8 @@ describe('Prerender Audit', () => {
             'https://example.com/agentic-1',
             'https://example.com/agentic-2',
           ];
-          // agentic-0 updated just inside window → recent → skip
-          const recentRecord = makeCitabilityRecord('/agentic-0', PRERENDER_RECENT_PROCESSING_TIME_DAYS - 1);
+          // agentic-0 is in recently-processed set → skip (DB already filtered by date)
+          const recentRecord = makeCitabilityRecord('/agentic-0');
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
           const context = makeContext([recentRecord]);
 
@@ -624,20 +629,19 @@ describe('Prerender Audit', () => {
           expect(resultUrls).to.include('https://example.com/agentic-2');
         });
 
-        it('should include agentic URLs whose citability records are older than the recent window', async () => {
+        it('should include agentic URLs when allByIndexKeys returns no recent records', async () => {
           const agenticUrls = [
             'https://example.com/agentic-0',
             'https://example.com/agentic-1',
           ];
-          // agentic-0 updated past window → stale → re-include
-          const staleRecord = makeCitabilityRecord('/agentic-0', PRERENDER_RECENT_PROCESSING_TIME_DAYS + 1);
+          // DB returns no records — date filter excluded stale records at query time
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
-          const context = makeContext([staleRecord]);
+          const context = makeContext([]);
 
           const result = await mockHandler.submitForScraping(context);
           const resultUrls = result.urls.map((u) => u.url);
 
-          // agentic-0 is stale → should be re-included
+          // No recent records → both agentic URLs should be included
           expect(resultUrls).to.include('https://example.com/agentic-0');
           expect(resultUrls).to.include('https://example.com/agentic-1');
         });
@@ -657,7 +661,7 @@ describe('Prerender Audit', () => {
               SiteTopPage: {
                 allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => organicUrl }]),
               },
-              PageCitability: { allBySiteId: sandbox.stub().resolves([]) },
+              PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             },
             log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
           };
@@ -672,8 +676,8 @@ describe('Prerender Audit', () => {
         it('should skip organic URLs recently processed by prerender', async () => {
           const agenticUrls = makeAgenticUrls(5);
           const organicUrl = 'https://example.com/organic-page';
-          // organic-page updated just inside window → recent → skip
-          const recentRecord = makeCitabilityRecord('/organic-page', PRERENDER_RECENT_PROCESSING_TIME_DAYS - 1);
+          // organic-page is in recently-processed set → skip (DB already filtered by date)
+          const recentRecord = makeCitabilityRecord('/organic-page');
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
 
           const context = {
@@ -686,7 +690,7 @@ describe('Prerender Audit', () => {
               SiteTopPage: {
                 allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => organicUrl }]),
               },
-              PageCitability: { allBySiteId: sandbox.stub().resolves([recentRecord]) },
+              PageCitability: { allByIndexKeys: sandbox.stub().resolves([recentRecord]) },
             },
             log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
           };
@@ -703,7 +707,6 @@ describe('Prerender Audit', () => {
           // The null is filtered out so the URL is not treated as recent.
           const invalidRecord = {
             getUrl: () => '',
-            getUpdatedAt: () => new Date().toISOString(),
           };
           const mockHandler = await makeHandlerWithAgentic(['https://example.com/agentic-0']);
           const context = makeContext([invalidRecord]);
@@ -729,7 +732,7 @@ describe('Prerender Audit', () => {
                   { getUrl: () => 'not-a-valid-url' },
                 ]),
               },
-              PageCitability: { allBySiteId: sandbox.stub().resolves([]) },
+              PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             },
             log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
           };
@@ -738,21 +741,6 @@ describe('Prerender Audit', () => {
           const result = await mockHandler.submitForScraping(context);
           expect(result).to.be.an('object');
           expect(result.urls).to.be.an('array');
-        });
-
-        it('should treat a citability record without getUpdatedAt as not recently processed', async () => {
-          // Record without getUpdatedAt — r.getUpdatedAt?.() short-circuits to undefined,
-          // hitting the optional-chaining null branch. new Date(undefined || 0) is epoch → not recent.
-          const recordWithoutUpdatedAt = {
-            getUrl: () => 'https://example.com/agentic-0',
-            // no getUpdatedAt method
-          };
-          const mockHandler = await makeHandlerWithAgentic(['https://example.com/agentic-0']);
-          const context = makeContext([recordWithoutUpdatedAt]);
-
-          // Record is not treated as recent → agentic-0 should still be in the batch
-          const result = await mockHandler.submitForScraping(context);
-          expect(result.urls.map((u) => u.url)).to.include('https://example.com/agentic-0');
         });
 
         it('should include agentic URLs that cannot be parsed, not treating them as recently processed', async () => {
@@ -894,7 +882,7 @@ describe('Prerender Audit', () => {
 
         // Should warn about agentic URL fetch failure
         expect(context.log.warn).to.have.been.calledWith(
-          'Prerender - Failed to fetch agentic URLs for fallback: athena fetch failed. baseUrl=https://example.com',
+          sinon.match(/Failed to fetch agentic URLs: athena fetch failed/),
         );
       });
 
@@ -5632,6 +5620,7 @@ describe('Prerender Audit', () => {
         wordCountAfter: 250,
         contentGainRatio: 2.5,
         scrapedAt: '2025-01-01T00:00:00.000Z',
+        scrapeJobId: 'scrape-job-999',
       });
 
       expect(context.log.info).to.have.been.calledWith(
@@ -5860,6 +5849,7 @@ describe('Prerender Audit', () => {
         wordCountAfter: 0,
         contentGainRatio: 0,
         scrapedAt: '2025-01-01T00:00:00.000Z',
+        scrapeJobId: null,
       });
     });
 
@@ -5915,6 +5905,7 @@ describe('Prerender Audit', () => {
         scrapingStatus: 'failed',
         needsPrerender: false,
         scrapedAt: '2025-01-01T00:00:00.000Z',
+        scrapeJobId: 'scrape-job-123',
         scrapeError,
       });
     });
@@ -5954,6 +5945,7 @@ describe('Prerender Audit', () => {
         scrapingStatus: 'failed',
         needsPrerender: false,
         scrapedAt: '2025-01-01T00:00:00.000Z',
+        scrapeJobId: 'scrape-job-123',
       });
       expect(uploadedData.pages[0]).to.not.have.property('scrapeError');
     });

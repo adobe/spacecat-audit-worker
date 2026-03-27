@@ -180,7 +180,13 @@ async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIM
  * @returns {Promise<Array<string>>}
  */
 async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
-  return getTopAgenticUrlsFromAthena(site, context, limit);
+  const { log } = context;
+  try {
+    return await getTopAgenticUrlsFromAthena(site, context, limit);
+  } catch (e) {
+    log.warn(`${LOG_PREFIX} Failed to fetch agentic URLs: ${e.message}. baseUrl=${site.getBaseURL()}`);
+    return [];
+  }
 }
 
 /**
@@ -193,14 +199,16 @@ async function getRecentlyProcessedPathnames(context, siteId) {
   const { dataAccess, log } = context;
   try {
     const { PageCitability } = dataAccess;
-    if (!PageCitability?.allBySiteId) {
+    if (!PageCitability?.allByIndexKeys) {
       return new Set();
     }
-    const records = await PageCitability.allBySiteId(siteId);
     const recentWindowStart = subDays(new Date(), PRERENDER_RECENT_PROCESSING_TIME_DAYS);
+    const records = await PageCitability.allByIndexKeys(
+      { siteId },
+      { where: (attrs, op) => op.gte(attrs.updatedAt, recentWindowStart.toISOString()) },
+    );
     return new Set(
       records
-        .filter((r) => new Date(r.getUpdatedAt?.() || 0) > recentWindowStart)
         .map((r) => {
           try {
             return new URL(r.getUrl()).pathname;
@@ -678,6 +686,21 @@ export async function importTopPages(context) {
 }
 
 /**
+ * Returns true when the URL's pathname is NOT in the set of recently processed pathnames.
+ * URLs that cannot be parsed are treated as not recent (included by default).
+ * @param {string} url
+ * @param {Set<string>} recentPathnames
+ * @returns {boolean}
+ */
+function isNotRecentUrl(url, recentPathnames) {
+  try {
+    return !recentPathnames.has(new URL(url).pathname);
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Step 2: Submit URLs for scraping OR skip if in ai-only mode
  * @param {Object} context - Audit context with site and dataAccess
  * @returns {Promise<Object>} - URLs to scrape and metadata OR ai-only result
@@ -699,42 +722,29 @@ export async function submitForScraping(context) {
   const siteId = site.getId();
 
   const topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
-  let agenticUrls = [];
-  try {
-    agenticUrls = await getTopAgenticUrls(site, context);
-  } catch (e) {
-    log.warn(`${LOG_PREFIX} Failed to fetch agentic URLs: ${e.message}. baseUrl=${site.getBaseURL()}`);
-  }
+  // getTopAgenticUrls internally handles errors and returns [] on failure
+  const agenticUrls = await getTopAgenticUrls(site, context);
 
   const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
 
   // Daily batching: filter URLs recently processed within the rolling recent window
   const recentPathnames = await getRecentlyProcessedPathnames(context, siteId);
 
-  const filteredAgenticUrls = agenticUrls.filter((url) => {
-    try {
-      return !recentPathnames.has(new URL(url).pathname);
-    } catch {
-      return true;
-    }
-  });
+  const filteredAgenticUrls = agenticUrls.filter((url) => isNotRecentUrl(url, recentPathnames));
 
   // Include organic URLs only when none were recently processed (first batch of the cycle)
-  const hasRecentOrganic = topPagesUrls.some((url) => {
-    try {
-      return recentPathnames.has(new URL(url).pathname);
-    } catch {
-      return false;
-    }
-  });
+  const hasRecentOrganic = topPagesUrls.some((url) => !isNotRecentUrl(url, recentPathnames));
   const batchedOrganicUrls = hasRecentOrganic
     ? []
     : topPagesUrls.slice(0, TOP_ORGANIC_URLS_LIMIT);
 
   // includedURLs are only submitted on the first run of each cycle (no recently processed
   // organic URLs means we're at the start of the cycle). On follow-up runs they are skipped.
+  // Filter out any includedURLs that were recently processed.
   const isFirstRunOfCycle = !hasRecentOrganic;
-  const batchedIncludedURLs = isFirstRunOfCycle ? includedURLs : [];
+  const batchedIncludedURLs = isFirstRunOfCycle
+    ? includedURLs.filter((url) => isNotRecentUrl(url, recentPathnames))
+    : [];
 
   // Cap combined organic + agentic batch to DAILY_BATCH_SIZE (includedURLs added outside the cap)
   const remainingSlots = Math.max(DAILY_BATCH_SIZE - batchedOrganicUrls.length, 0);
@@ -751,7 +761,6 @@ export async function submitForScraping(context) {
   const currentAgentic = batchedAgenticUrls.length;
   const currentOrganic = batchedOrganicUrls.length;
   const currentIncludedUrls = batchedIncludedURLs.length;
-  const currentTotal = finalUrls.length;
 
   log.info(`${LOG_PREFIX} 
     prerender_submit_scraping_metrics:
@@ -760,7 +769,6 @@ export async function submitForScraping(context) {
     topPagesUrls=${topPagesUrls.length},
     includedURLs=${includedURLs.length},
     filteredOutUrls=${filteredCount},
-    currentTotal=${currentTotal},
     currentAgentic=${currentAgentic},
     currentOrganic=${currentOrganic},
     currentIncludedUrls=${currentIncludedUrls},
@@ -1131,6 +1139,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       wordCountAfter: result.wordCountAfter || 0,
       contentGainRatio: result.contentGainRatio || 0,
       scrapedAt,
+      scrapeJobId: scrapeJobId || null,
       ...(result.scrapeError && { scrapeError: result.scrapeError }),
     }));
 
@@ -1154,6 +1163,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
                 scrapingStatus: 'failed',
                 needsPrerender: false,
                 scrapedAt,
+                scrapeJobId,
                 ...(metadata?.error && { scrapeError: metadata.error }),
               };
             }),
