@@ -369,6 +369,24 @@ describe('cdn-detector', () => {
       expect(result.cdn).to.equal('Akamai');
       expect(dnsResolve).to.have.been.calledWith(sinon.match.string, 'CNAME');
     });
+
+    it('returns unknown when DNS fallback exceeds fallbackTimeout', async () => {
+      const mockDns = {
+        promises: {
+          resolve: sinon.stub().returns(new Promise(() => {})), // never resolves
+          resolve4: sinon.stub().returns(new Promise(() => {})),
+        },
+      };
+      const emptyHeaders = new Map([['content-type', 'text/html']]);
+      const fetchFn = sinon.stub().resolves({
+        headers: { forEach(cb) { emptyHeaders.forEach((v, k) => cb(v, k)); } },
+      });
+      const detector = await esmock('../../src/detect-cdn/cdn-detector.js', {
+        'node:dns': mockDns,
+      });
+      const result = await detector.detectCdnFromUrl('https://example.com', fetchFn, { fallbackTimeout: 50 });
+      expect(result.cdn).to.equal('unknown');
+    });
   });
 
   describe('matchCdnByCname', () => {

@@ -506,11 +506,18 @@ export async function detectCdnFromDnsFallback(url, fetchFn, options = {}) {
  *
  * @param {string} url - URL to request (redirects followed).
  * @param {Function} fetchFn - Fetch implementation.
- * @param {object} [options] - Optional timeout, userAgent, log.
+ * @param {object} [options] - Optional timeout, fallbackTimeout, userAgent, log.
+ * @param {number} [options.timeout=10000] - Per-request HTTP fetch timeout in ms.
+ * @param {number} [options.fallbackTimeout=15000] - Total budget for the DNS/ASN fallback in ms.
  * @returns {Promise<{ cdn: string, error?: string }>} Detected CDN or error.
  */
 export async function detectCdnFromUrl(url, fetchFn, options = {}) {
-  const { timeout = 10000, userAgent = SPACECAT_USER_AGENT, log } = options;
+  const {
+    timeout = 10000,
+    fallbackTimeout = 15000,
+    userAgent = SPACECAT_USER_AGENT,
+    log,
+  } = options;
 
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
@@ -544,7 +551,12 @@ export async function detectCdnFromUrl(url, fetchFn, options = {}) {
   }
 
   if (result.cdn === 'unknown') {
-    const fallback = await detectCdnFromDnsFallback(url, fetchFn, { log });
+    const fallback = await Promise.race([
+      detectCdnFromDnsFallback(url, fetchFn, { log }),
+      new Promise((resolve) => {
+        setTimeout(() => resolve({ cdn: 'unknown' }), fallbackTimeout);
+      }),
+    ]);
     if (fallback.cdn !== 'unknown') {
       return { cdn: fallback.cdn, error: result.error };
     }
