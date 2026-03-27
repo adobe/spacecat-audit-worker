@@ -7522,7 +7522,7 @@ describe('Prerender Audit', () => {
     });
   });
 
-  describe('PageCitability-based scrapedUrlsSet augmentation', () => {
+  describe('scrapedUrlsSet behavior', () => {
     it('should not pass stalenessDays to syncSuggestions in processOpportunityAndSuggestions', async () => {
       const syncSuggestionsStub = sinon.stub().resolves();
       const mockOpportunity = {
@@ -7570,7 +7570,7 @@ describe('Prerender Audit', () => {
       expect(syncCall).to.not.have.property('stalenessDays');
     });
 
-    it('should augment scrapedUrlsSet with PageCitability records updated within 7 days', async () => {
+    it('should not augment scrapedUrlsSet with PageCitability records from other writes', async () => {
       const syncSuggestionsStub = sinon.stub().resolves();
       const mockOpportunity = {
         getId: () => 'opp-id',
@@ -7584,7 +7584,7 @@ describe('Prerender Audit', () => {
         },
       });
 
-      // One record updated 1 hour ago (recent), one 8 days ago (stale beyond 7 days)
+      // PageCitability writes should no longer affect prerender suggestion syncing.
       const recentCitabilityRecord = {
         getUrl: () => 'https://example.com/citability-page',
         getUpdatedAt: () => new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
@@ -7621,17 +7621,14 @@ describe('Prerender Audit', () => {
 
       expect(syncSuggestionsStub).to.have.been.called;
       const syncCall = syncSuggestionsStub.firstCall.args[0];
-      // Recent citability URL should be in scrapedUrlsSet; stale one should not
-      expect(syncCall.scrapedUrlsSet.has('https://example.com/citability-page')).to.be.true;
+      expect(syncCall.scrapedUrlsSet.has('https://example.com/citability-page')).to.be.false;
       expect(syncCall.scrapedUrlsSet.has('https://example.com/stale-page')).to.be.false;
       expect(syncCall).to.not.have.property('stalenessDays');
     });
   });
 
-  describe('race condition gaps', () => {
-    it('RC-3: scrapedUrlsSet augmentation includes recent PageCitability records — suggestion kept active without prerender validation', async () => {
-      // The scrapedUrlsSet augmentation at processContentAndGenerateOpportunities uses
-      // ALL PageCitability records updated within 7 days.
+  describe('PageCitability isolation', () => {
+    it('does not treat recent PageCitability-only URLs as scraped by prerender', async () => {
       const syncSuggestionsStub = sinon.stub().resolves();
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '../../../src/utils/data-access.js': {
@@ -7668,19 +7665,13 @@ describe('Prerender Audit', () => {
 
       await mockHandler.processContentAndGenerateOpportunities(context);
 
-      // The recent citability URL enters scrapedUrlsSet even though prerender
-      // never validated it this cycle — its suggestion is kept ACTIVE.
       if (syncSuggestionsStub.called) {
         const syncCall = syncSuggestionsStub.firstCall.args[0];
-        expect(syncCall.scrapedUrlsSet.has('https://example.com/citability-only-page')).to.be.true;
+        expect(syncCall.scrapedUrlsSet.has('https://example.com/citability-only-page')).to.be.false;
       }
     });
 
-    it('RC-5: stale second allBySiteId read — previous-run URLs missing from scrapedUrlsSet', async () => {
-      // writeToCitabilityRecords (first allBySiteId call) and the scrapedUrlsSet augmentation
-      // (second allBySiteId call) are separate DB reads. If the second call returns stale data
-      // (e.g. read-replica lag), URLs processed in previous daily batches are absent from
-      // scrapedUrlsSet and their suggestions risk being marked OUTDATED mid-cycle.
+    it('does not depend on a second PageCitability read to build scrapedUrlsSet', async () => {
       const syncSuggestionsStub = sinon.stub().resolves();
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '../../../src/utils/data-access.js': {
@@ -7694,11 +7685,7 @@ describe('Prerender Audit', () => {
         getUpdatedAt: () => new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
       };
 
-      // First call (writeToCitabilityRecords): returns the yesterday record
-      // Second call (scrapedUrlsSet augmentation): returns empty — simulates stale replica
-      const allBySiteIdStub = sinon.stub()
-        .onFirstCall().resolves([yesterdayRecord])
-        .onSecondCall().resolves([]);
+      const allBySiteIdStub = sinon.stub().resolves([yesterdayRecord]);
 
       const context = {
         site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
@@ -7723,12 +7710,12 @@ describe('Prerender Audit', () => {
 
       await mockHandler.processContentAndGenerateOpportunities(context);
 
-      // With a stale second read, yesterday-page is absent from scrapedUrlsSet —
-      // its suggestion is not protected and may be marked OUTDATED mid-cycle.
       if (syncSuggestionsStub.called) {
         const syncCall = syncSuggestionsStub.firstCall.args[0];
         expect(syncCall.scrapedUrlsSet.has('https://example.com/yesterday-page')).to.be.false;
       }
+
+      expect(allBySiteIdStub.calledOnce).to.be.true;
     });
   });
 });

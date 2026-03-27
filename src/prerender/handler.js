@@ -1434,18 +1434,6 @@ export async function processContentAndGenerateOpportunities(context) {
         .map((r) => r.url),
     );
 
-    // Extend scrapedUrlsSet with URLs updated in PageCitability within the last 7 days.
-    const { PageCitability } = dataAccess;
-    if (PageCitability?.allBySiteId) {
-      const citabilityRecords = await PageCitability.allBySiteId(siteId);
-      const sevenDaysAgo = subDays(new Date(), 7);
-      for (const record of citabilityRecords) {
-        if (new Date(record.getUpdatedAt()) > sevenDaysAgo) {
-          scrapedUrlsSet.add(record.getUrl());
-        }
-      }
-    }
-
     const auditResult = {
       totalUrlsChecked: comparisonResults.length,
       urlsNeedingPrerender: urlsNeedingPrerender.length,
