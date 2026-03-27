@@ -769,8 +769,6 @@ export async function submitForScraping(context) {
     baseUrl=${site.getBaseURL()},
     siteId=${siteId},`);
 
-  log.info(`${LOG_PREFIX} prerender_url_details: siteId=${siteId}, organicUrls=[${batchedOrganicUrls.join(', ')}], agenticUrls=[${batchedAgenticUrls.join(', ')}], includedURLs=[${batchedIncludedURLs.join(', ')}], recentPathnames(${recentPathnames.size})=[${[...recentPathnames].join(', ')}], finalUrls=[${finalUrls.join(', ')}]`);
-
   if (finalUrls.length === 0) {
     // Fallback to base URL if no URLs found
     const baseURL = site.getBaseURL();
