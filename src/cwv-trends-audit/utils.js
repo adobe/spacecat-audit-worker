@@ -168,7 +168,7 @@ function buildUrlDetails(dailyData, filteredCache, deviceType, log) {
     const detail = {
       id: String(index + 1),
       url: url.url,
-      status: categorizeUrl(url.lcp, url.cls, url.inp),
+      status: categorizeUrl(url.lcp, url.cls, url.inp) || 'good',
     };
 
     for (const field of fields) {
@@ -177,15 +177,15 @@ function buildUrlDetails(dailyData, filteredCache, deviceType, log) {
       const previousValue = getUrlValueFromCache(url.url, previousUrls, field);
 
       if (pctFields.has(field)) {
-        detail[field] = rawValue != null ? round(rawValue * 100, 1) : null;
+        detail[field] = rawValue != null ? round(rawValue * 100, 1) : 0;
         detail[`${field}Change`] = (currentValue != null && previousValue != null)
           ? round((currentValue - previousValue) * 100, 1)
-          : null;
+          : 0;
       } else {
-        detail[field] = rawValue != null ? round(rawValue, 3) : null;
+        detail[field] = rawValue != null ? round(rawValue, 3) : 0;
         detail[`${field}Change`] = (currentValue != null && previousValue != null)
           ? round(currentValue - previousValue, 3)
-          : null;
+          : 0;
       }
     }
 

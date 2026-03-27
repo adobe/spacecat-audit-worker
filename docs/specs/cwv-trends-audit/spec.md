@@ -119,7 +119,7 @@ cwv-trends-audit runner
 - **Good:** All available metrics within good thresholds
 - **Poor:** Any metric exceeds poor threshold (OR logic)
 - **Needs Improvement:** Everything else
-- **Null metrics:** Skip in categorization (use available metrics only)
+- **Null metrics:** Skip in categorization (use available metrics only). URLs with no CWV metrics default to `good` status
 
 ### Summary Calculation
 
@@ -144,6 +144,7 @@ The data from S3 already contains P75 values for the last 7 days, so we use the 
 - Percentage fields (`bounceRate`, `engagement`, `clickRate`) multiplied by 100
 - Raw fields (`pageviews`, `lcp`, `cls`, `inp`) kept as-is
 - **Change values:** Point-to-point comparison (current day - 7 days before), NOT weekly averages
+- **Null handling:** All numeric fields default to `0` instead of `null` (prevents UI `.toFixed()` errors). Status defaults to `good` when no CWV metrics are available
 - All URLs validated for proper format (must be valid http/https URLs)
 
 ---

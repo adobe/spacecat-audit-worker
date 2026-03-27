@@ -176,7 +176,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     expect(details[2].status).to.equal('poor');
   });
 
-  it('sets status to null when all CWV metrics are null', async () => {
+  it('defaults status to good when all CWV metrics are null', async () => {
     const urls = [buildUrl('https://ex.com/p', 'mobile', {
       pageviews: 5000, lcp: null, cls: null, inp: null,
     })];
@@ -184,7 +184,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
 
-    expect(mobileResult(result).urlDetails[0].status).to.be.null;
+    expect(mobileResult(result).urlDetails[0].status).to.equal('good');
   });
 
   it('converts bounceRate, engagement, clickRate to percentages', async () => {
@@ -210,9 +210,9 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
     const d = mobileResult(result).urlDetails[0];
 
-    expect(d.bounceRate).to.be.null;
-    expect(d.engagement).to.be.null;
-    expect(d.clickRate).to.be.null;
+    expect(d.bounceRate).to.equal(0);
+    expect(d.engagement).to.equal(0);
+    expect(d.clickRate).to.equal(0);
   });
 
   it('counts CWV categories per day in trendData', async () => {
