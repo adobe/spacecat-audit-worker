@@ -357,6 +357,40 @@ describe('Prerender Audit', () => {
         expect(result.urls.map((u) => u.url)).to.include('https://example.com/special');
       });
 
+      it('should warn and fall back to base URL when top agentic fetch throws', async () => {
+        const warn = sandbox.stub();
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => {
+              throw new Error('athena unavailable');
+            },
+          },
+          '../../../src/prerender/utils/shared.js': {
+            generateReportingPeriods: () => ({ weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }] }),
+            getS3Config: async () => ({ databaseName: 'db', tableName: 'tbl', getAthenaTempLocation: () => 's3://tmp/' }),
+            weeklyBreakdownQueries: { createAgenticReportQuery: async () => 'SELECT 1' },
+            loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [] }),
+          },
+        });
+
+        const result = await mockHandler.submitForScraping({
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), warn, debug: sandbox.stub() },
+        });
+
+        expect(result.urls).to.deep.equal([{ url: 'https://example.com' }]);
+        expect(warn).to.have.been.calledWith(sinon.match(/Failed to fetch agentic URLs: athena unavailable/));
+      });
+
       it('should skip includedURLs on non-first-run (organic URLs recently processed)', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-athena-client': {
@@ -3487,6 +3521,46 @@ describe('Prerender Audit', () => {
       // Falls back to baseUrl when no URLs at all
       expect(res.urls.length === 0 || res.urls[0].url === 'https://example.com').to.be.true;
     });
+
+    it('should preserve absolute sheet URLs without remapping them', async () => {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
+        },
+        '../../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            customerName: 'adobe',
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          loadLatestAgenticSheet: async () => ({
+            weekId: 'w45-2025',
+            baseUrl: 'https://example.com',
+            rows: [{ url: 'https://example.com/from-sheet', number_of_hits: 9 }],
+          }),
+          buildSheetHitsMap: () => new Map([['https://example.com/from-sheet', 9]]),
+          weeklyBreakdownQueries: {
+            createAgenticReportQuery: async () => 'SELECT 1',
+          },
+        },
+      });
+
+      const res = await mockHandler.submitForScraping({
+        site: {
+          getId: () => 'id',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        },
+        dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
+        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+      });
+
+      expect(res.urls).to.deep.equal([{ url: 'https://example.com/from-sheet' }]);
+    });
   });
 
   describe('Additional branch coverage (mapping, catches)', () => {
@@ -4109,6 +4183,55 @@ describe('Prerender Audit', () => {
       expect(warnArgs.some((msg) => msg.includes('Sheet-based agentic URL fetch failed'))).to.be.true;
       expect(warnArgs.some((msg) => msg.includes('sheet-broken'))).to.be.true;
     });
+
+    it('should log sheet fallback error with empty baseUrl when none is available', async () => {
+      const warn = sinon.stub();
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: async () => [],
+        },
+        '../../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+            periodIdentifier: 'w45-2025',
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            aggregatedLocation: 'agg/',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
+          },
+          loadLatestAgenticSheet: async () => {
+            throw new Error('sheet-down');
+          },
+        },
+      });
+
+      const ctx = {
+        site: {
+          getId: () => 'site',
+          getBaseURL: () => '',
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        },
+        dataAccess: {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
+          },
+        },
+        log: {
+          info: sinon.stub(),
+          warn,
+          debug: sinon.stub(),
+        },
+      };
+
+      const res = await mockHandler.submitForScraping(ctx);
+      expect(res.urls).to.deep.equal([{ url: '' }]);
+      expect(warn).to.have.been.calledWith(sinon.match(/Sheet-based agentic URL fetch failed: sheet-down\. baseUrl=$/));
+    });
   });
 
   describe('Shared utils loadLatestAgenticSheet', () => {
@@ -4187,6 +4310,37 @@ describe('Prerender Audit', () => {
       const ctx = { log: { info: () => {} } };
       const result = await shared.loadLatestAgenticSheet(site, ctx);
       expect(result.baseUrl).to.equal('');
+    });
+
+    it('loadLatestAgenticSheet logs zero loaded rows when sheet result is undefined', async () => {
+      const info = sinon.stub();
+      const shared = await esmock('../../../src/prerender/utils/shared.js', {
+        '../../../src/cdn-logs-report/utils/report-utils.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date('2025-11-17'), endDate: new Date('2025-11-23') }],
+          }),
+        },
+        '../../../src/llm-error-pages/utils.js': {
+          downloadExistingCdnSheet: async () => undefined,
+        },
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: async () => ({}),
+          readFromSharePoint: async () => ({}),
+        },
+        '../../../src/utils/cdn-utils.js': {
+          resolveConsolidatedBucketName: () => 'bucket',
+          extractCustomerDomain: () => 'acme_com',
+          getS3Config: () => ({ customerName: 'acme', bucket: 'bucket', getAthenaTempLocation: () => '' }),
+        },
+      });
+      const site = {
+        getBaseURL: () => 'https://acme.com',
+        getConfig: () => ({ getLlmoDataFolder: () => 'acme' }),
+      };
+
+      const result = await shared.loadLatestAgenticSheet(site, { log: { info } });
+      expect(result.rows).to.equal(undefined);
+      expect(info.lastCall.args[0]).to.include('loaded 0 row(s)');
     });
   });
   describe('Shared utils coverage', () => {
@@ -6345,6 +6499,32 @@ describe('Prerender Audit', () => {
       expect(context.log.warn).to.have.been.calledWith(sinon.match(/Could not read existing status\.json.*starting fresh/));
       const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
       expect(uploadedData.pages).to.have.lengthOf(1);
+    });
+
+    it('should treat existing status without a pages array as empty during merge', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-02-01T00:00:00.000Z',
+        auditResult: {
+          results: [{ url: 'https://example.com/page1', error: false, needsPrerender: true }],
+        },
+      };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.resolve({
+            Body: { transformToString: () => Promise.resolve(JSON.stringify({ pages: null })) },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+      expect(uploadedData.pages).to.have.lengthOf(1);
+      expect(uploadedData.pages[0].url).to.equal('https://example.com/page1');
     });
   });
 
