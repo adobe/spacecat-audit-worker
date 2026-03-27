@@ -1,3 +1,80 @@
+## [1.371.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.10...v1.371.11) (2026-03-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-http-utils to v1.25.0 ([#2209](https://github.com/adobe/spacecat-audit-worker/issues/2209)) ([49ab352](https://github.com/adobe/spacecat-audit-worker/commit/49ab352b8f01ba491bf84ac7d793cdb1e1b9974b))
+
+## [1.371.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.9...v1.371.10) (2026-03-26)
+
+
+### Bug Fixes
+
+* Add filtering for suggested links ([#2199](https://github.com/adobe/spacecat-audit-worker/issues/2199)) ([23ccd5c](https://github.com/adobe/spacecat-audit-worker/commit/23ccd5c56aef982d582f7383f3ac9b865cabdcc5))
+
+## [1.371.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.8...v1.371.9) (2026-03-26)
+
+
+### Bug Fixes
+
+* harden prerender guidance and suggestion save ([#2201](https://github.com/adobe/spacecat-audit-worker/issues/2201)) ([0d4f704](https://github.com/adobe/spacecat-audit-worker/commit/0d4f70460c8b4b6ed13dfe377d1e59a307eb35ae))
+
+## [1.371.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.7...v1.371.8) (2026-03-26)
+
+
+### Bug Fixes
+
+* improve preflight selector granularity and lorem-ipsum check accuracy ([#2110](https://github.com/adobe/spacecat-audit-worker/issues/2110)) ([97aeee6](https://github.com/adobe/spacecat-audit-worker/commit/97aeee605164ec65b2e947c07ca8be11f3dad9f0)), closes [tag#id](https://github.com/tag/issues/id) [#id](https://github.com/adobe/spacecat-audit-worker/issues/id)
+
+## [1.371.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.6...v1.371.7) (2026-03-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.31.1 ([#2203](https://github.com/adobe/spacecat-audit-worker/issues/2203)) ([8178b20](https://github.com/adobe/spacecat-audit-worker/commit/8178b20456dd3048bac411aa15d36a243b503ea2))
+
+## [1.371.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.5...v1.371.6) (2026-03-26)
+
+
+### Bug Fixes
+
+* stagger llmo cdn analysis fanout ([#2202](https://github.com/adobe/spacecat-audit-worker/issues/2202)) ([58f17d9](https://github.com/adobe/spacecat-audit-worker/commit/58f17d9a03c410380b999ba56937e4dc8f06c1b6))
+
+## [1.371.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.4...v1.371.5) (2026-03-26)
+
+
+### Bug Fixes
+
+* fix entitlement gate ([#2200](https://github.com/adobe/spacecat-audit-worker/issues/2200)) ([181f5df](https://github.com/adobe/spacecat-audit-worker/commit/181f5df60c080add6684f2d27d64f225e0eb91a8))
+
+## [1.371.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.3...v1.371.4) (2026-03-25)
+
+
+### Bug Fixes
+
+* isAllDomainDeployedAtEdge & debug logs ([#2196](https://github.com/adobe/spacecat-audit-worker/issues/2196)) ([12fdd13](https://github.com/adobe/spacecat-audit-worker/commit/12fdd13fe4dac7c182723cfb84201fa04f029791))
+
+## [1.371.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.2...v1.371.3) (2026-03-25)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.31.0 ([#2197](https://github.com/adobe/spacecat-audit-worker/issues/2197)) ([af787f9](https://github.com/adobe/spacecat-audit-worker/commit/af787f9a7f24afc3b5b61c9b4a8cb55532fa3f79))
+
+## [1.371.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.1...v1.371.2) (2026-03-25)
+
+
+### Bug Fixes
+
+* hardening prerender audit ([#2183](https://github.com/adobe/spacecat-audit-worker/issues/2183)) ([08c5305](https://github.com/adobe/spacecat-audit-worker/commit/08c53058baedc4bfc969c37605fa7490cd0091f3)), closes [#784](https://github.com/adobe/spacecat-audit-worker/issues/784)
+
+## [1.371.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.0...v1.371.1) (2026-03-25)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.30.0 ([#2191](https://github.com/adobe/spacecat-audit-worker/issues/2191)) ([00ad4e6](https://github.com/adobe/spacecat-audit-worker/commit/00ad4e615bf71f9c9568e5a81b6a2ce88909b5f6))
+
 # [1.371.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.370.0...v1.371.0) (2026-03-25)
 
 
