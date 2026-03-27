@@ -28,7 +28,13 @@ import prerenderHandler, {
 } from '../../../src/prerender/handler.js';
 import { analyzeHtmlForPrerender } from '../../../src/prerender/utils/html-comparator.js';
 import { createOpportunityData } from '../../../src/prerender/opportunity-data-mapper.js';
-import { TOP_AGENTIC_URLS_LIMIT, TOP_ORGANIC_URLS_LIMIT, DAILY_BATCH_SIZE } from '../../../src/prerender/utils/constants.js';
+import {
+  TOP_AGENTIC_URLS_LIMIT,
+  TOP_ORGANIC_URLS_LIMIT,
+  DAILY_BATCH_SIZE,
+  TEST_AGENTIC_URL_SUBROUTES,
+  TEST_ORGANIC_URL_SUBROUTES,
+} from '../../../src/prerender/utils/constants.js';
 
 describe('Prerender Audit', () => {
   let sandbox;
@@ -355,6 +361,105 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.submitForScraping(context);
         expect(result.urls).to.have.length(1);
         expect(result.urls.map((u) => u.url)).to.include('https://example.com/special');
+      });
+
+      it('should use configured Lovesac organic and agentic test URLs', async () => {
+        const athenaStub = sandbox.stub().resolves(['https://example.com/from-athena']);
+        const topPagesStub = sandbox.stub().resolves([
+          { getUrl: () => 'https://example.com/from-top-pages' },
+        ]);
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: athenaStub,
+          },
+        });
+
+        const result = await mockHandler.submitForScraping({
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://lovesac.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: topPagesStub },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+        });
+
+        expect(topPagesStub).to.not.have.been.called;
+        expect(athenaStub).to.not.have.been.called;
+        expect(result.urls).to.have.length(10);
+        expect(result.urls[0].url).to.equal(`https://lovesac.com${TEST_ORGANIC_URL_SUBROUTES[0]}`);
+        expect(result.urls[5].url).to.equal(`https://lovesac.com${TEST_AGENTIC_URL_SUBROUTES[5]}`);
+      });
+
+      it('should use configured Lovesac agentic test URLs with www overrideBaseURL', async () => {
+        const athenaStub = sandbox.stub().resolves(['https://example.com/from-athena']);
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: athenaStub,
+          },
+        });
+
+        const result = await mockHandler.submitForScraping({
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => '',
+            getConfig: () => ({
+              getFetchConfig: () => ({ overrideBaseURL: 'https://www.lovesac.com' }),
+              getIncludedURLs: () => [],
+            }),
+          },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            PageCitability: { allBySiteId: sandbox.stub().resolves([{ getUrl: () => 'https://www.lovesac.com/past', getUpdatedAt: () => new Date().toISOString() }]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+        });
+
+        expect(athenaStub).to.not.have.been.called;
+        expect(result.urls).to.have.length(DAILY_BATCH_SIZE);
+        expect(result.urls[0].url).to.equal(`https://www.lovesac.com${TEST_AGENTIC_URL_SUBROUTES[0]}`);
+      });
+
+      it('should fall back to top pages when baseUrl is empty', async () => {
+        const topPagesStub = sandbox.stub().resolves([
+          { getUrl: () => 'https://example.com/fallback-organic' },
+        ]);
+        const athenaStub = sandbox.stub().resolves([]);
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: athenaStub,
+          },
+          '../../../src/prerender/utils/shared.js': {
+            loadLatestAgenticSheet: sandbox.stub().resolves({ rows: [] }),
+            buildSheetHitsMap: sandbox.stub().returns(new Map()),
+          },
+        });
+
+        const result = await mockHandler.submitForScraping({
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => '',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: topPagesStub },
+            PageCitability: { allBySiteId: sandbox.stub().resolves([]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+        });
+
+        expect(topPagesStub).to.have.been.calledOnce;
+        expect(result.urls[0].url).to.equal('https://example.com/fallback-organic');
       });
 
       it('should warn and fall back to base URL when top agentic fetch throws', async () => {
