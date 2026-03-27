@@ -479,7 +479,8 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
 
       // Skip OUTDATED suggestions (stale data from previous audit runs)
       const status = s.getStatus();
-      if (status === 'OUTDATED') {
+      const isDeployedOrFixed = status === Suggestion.STATUSES.FIXED || !!data?.edgeDeployed;
+      if (status === Suggestion.STATUSES.OUTDATED || isDeployedOrFixed) {
         return;
       }
 
@@ -1213,11 +1214,12 @@ export async function processContentAndGenerateOpportunities(context) {
       ? Math.round((failedCount / urlsSubmittedForScraping) * 100)
       : 0;
 
-    // Exclude URLs where needsPrerender=false and isDeployedAtEdge=true - don't mark
-    // those suggestions outdated
+    // Exclude deployed URLs — don't mark their suggestions outdated regardless of needsPrerender.
+    // isDeployedAtEdge=true means prerender is already active at CDN level (via RCV, LLMO
+    // side-effect, or domain-wide deployment); no authoritative "resolved" judgment applies.
     const scrapedUrlsSet = new Set(
       successfulComparisons
-        .filter((r) => !(r.needsPrerender === false && r.isDeployedAtEdge === true))
+        .filter((r) => !r.isDeployedAtEdge)
         .map((r) => r.url),
     );
 
