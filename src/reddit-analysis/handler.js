@@ -114,6 +114,8 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
     log.info(`${LOG_PREFIX} mystiqueUrlLimit=${mystiqueUrlLimit} (URLs sent to Mystique)`);
 
     await fetchStoreData(siteId, context);
+    // const storeData = await fetchStoreData(siteId, context);
+    log.info(`${LOG_PREFIX} Successfully fetched all store data for ${redditConfig.companyName}`);
 
     // TODO: remove — temporary test hook; logs topics via fetchStoreData then exits
     return {
@@ -125,9 +127,6 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
     };
 
     /* When removing the test return above, restore:
-    const storeData = await fetchStoreData(siteId, context);
-    log.info(`${LOG_PREFIX} Successfully fetched all store data for ${redditConfig.companyName}`);
-
     return {
       auditResult: {
         success: true,
