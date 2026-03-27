@@ -32,6 +32,7 @@ import {
   TOP_AGENTIC_URLS_LIMIT,
   TOP_ORGANIC_URLS_LIMIT,
   DAILY_BATCH_SIZE,
+  PRERENDER_RECENT_PROCESSING_WINDOW_HOURS,
   TEST_AGENTIC_URL_SUBROUTES,
   TEST_ORGANIC_URL_SUBROUTES,
 } from '../../../src/prerender/utils/constants.js';
@@ -866,14 +867,14 @@ describe('Prerender Audit', () => {
           expect(result.urls.length).to.equal(DAILY_BATCH_SIZE);
         });
 
-        it('should filter out agentic URLs recently processed by prerender (within 7 days)', async () => {
+        it('should filter out agentic URLs recently processed by prerender (within recent window)', async () => {
           const agenticUrls = [
             'https://example.com/agentic-0',
             'https://example.com/agentic-1',
             'https://example.com/agentic-2',
           ];
-          // agentic-0 updated 3 days ago → recent → skip
-          const recentRecord = makeCitabilityRecord('/agentic-0', 3);
+          // agentic-0 updated just inside window → recent → skip
+          const recentRecord = makeCitabilityRecord('/agentic-0', PRERENDER_RECENT_PROCESSING_WINDOW_HOURS - 1);
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
           const context = makeContext([recentRecord]);
 
@@ -887,20 +888,20 @@ describe('Prerender Audit', () => {
           expect(resultUrls).to.include('https://example.com/agentic-2');
         });
 
-        it('should include agentic URLs whose citability records are older than 7 days', async () => {
+        it('should include agentic URLs whose citability records are older than the recent window', async () => {
           const agenticUrls = [
             'https://example.com/agentic-0',
             'https://example.com/agentic-1',
           ];
-          // agentic-0 updated 8 days ago → stale → re-include
-          const staleRecord = makeCitabilityRecord('/agentic-0', 8 * 24);
+          // agentic-0 updated past window → stale → re-include
+          const staleRecord = makeCitabilityRecord('/agentic-0', PRERENDER_RECENT_PROCESSING_WINDOW_HOURS + 1);
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
           const context = makeContext([staleRecord]);
 
           const result = await mockHandler.submitForScraping(context);
           const resultUrls = result.urls.map((u) => u.url);
 
-          // agentic-0 is stale (8 days) → should be re-included
+          // agentic-0 is stale → should be re-included
           expect(resultUrls).to.include('https://example.com/agentic-0');
           expect(resultUrls).to.include('https://example.com/agentic-1');
         });
@@ -935,8 +936,8 @@ describe('Prerender Audit', () => {
         it('should skip organic URLs recently processed by prerender', async () => {
           const agenticUrls = makeAgenticUrls(5);
           const organicUrl = 'https://example.com/organic-page';
-          // organic-page updated 2 days ago → recent → skip
-          const recentRecord = makeCitabilityRecord('/organic-page', 2);
+          // organic-page updated just inside window → recent → skip
+          const recentRecord = makeCitabilityRecord('/organic-page', PRERENDER_RECENT_PROCESSING_WINDOW_HOURS - 1);
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
 
           const context = {
@@ -957,7 +958,7 @@ describe('Prerender Audit', () => {
           const result = await mockHandler.submitForScraping(context);
           const resultUrls = result.urls.map((u) => u.url);
 
-          // organic-page was recently processed (2 days) → should NOT be in batch
+          // organic-page was recently processed → should NOT be in batch
           expect(resultUrls).to.not.include(organicUrl);
         });
 

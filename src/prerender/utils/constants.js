@@ -14,6 +14,11 @@ export const CONTENT_GAIN_THRESHOLD = 1.1;
 export const TOP_AGENTIC_URLS_LIMIT = 20;
 export const DAILY_BATCH_SIZE = 15;
 export const TOP_ORGANIC_URLS_LIMIT = 5;
+/**
+ * URLs processed within this window are treated as recently scraped and skipped
+ * (shorter = faster manual/QA retesting).
+ */
+export const PRERENDER_RECENT_PROCESSING_WINDOW_HOURS = 3.5;
 export const MODE_AI_ONLY = 'ai-only';
 
 export const TEST_ORGANIC_URL_SUBROUTES = [

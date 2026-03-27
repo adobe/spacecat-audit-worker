@@ -12,7 +12,7 @@
 
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
-import { subDays } from 'date-fns';
+import { subHours } from 'date-fns';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -27,6 +27,7 @@ import {
   DAILY_BATCH_SIZE,
   TOP_AGENTIC_URLS_LIMIT,
   TOP_ORGANIC_URLS_LIMIT,
+  PRERENDER_RECENT_PROCESSING_WINDOW_HOURS,
   MODE_AI_ONLY,
   TEST_AGENTIC_URL_SUBROUTES,
   TEST_ORGANIC_URL_SUBROUTES,
@@ -268,7 +269,7 @@ async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) 
 }
 
 /**
- * Returns pathnames from PageCitability records updated within 7 days.
+ * Returns pathnames from PageCitability records updated within the configured recent window.
  * @param {Object} context
  * @param {string} siteId
  * @returns {Promise<Set<string>>}
@@ -281,10 +282,10 @@ async function getRecentlyProcessedPathnames(context, siteId) {
       return new Set();
     }
     const records = await PageCitability.allBySiteId(siteId);
-    const sevenDaysAgo = subDays(new Date(), 7);
+    const recentWindowStart = subHours(new Date(), PRERENDER_RECENT_PROCESSING_WINDOW_HOURS);
     return new Set(
       records
-        .filter((r) => new Date(r.getUpdatedAt?.() || 0) > sevenDaysAgo)
+        .filter((r) => new Date(r.getUpdatedAt?.() || 0) > recentWindowStart)
         .map((r) => {
           try {
             return new URL(r.getUrl()).pathname;
@@ -797,7 +798,7 @@ export async function submitForScraping(context) {
 
   const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
 
-  // Daily batching: filter URLs recently processed within the last 7 days
+  // Daily batching: filter URLs recently processed within the rolling recent window
   const recentPathnames = await getRecentlyProcessedPathnames(context, siteId);
 
   const filteredAgenticUrls = agenticUrls.filter((url) => {
@@ -808,7 +809,7 @@ export async function submitForScraping(context) {
     }
   });
 
-  // Include organic URLs only when none were recently processed (first batch of the weekly cycle)
+  // Include organic URLs only when none were recently processed (first batch of the cycle)
   const hasRecentOrganic = topPagesUrls.some((url) => {
     try {
       return recentPathnames.has(new URL(url).pathname);
@@ -820,8 +821,8 @@ export async function submitForScraping(context) {
     ? []
     : topPagesUrls.slice(0, TOP_ORGANIC_URLS_LIMIT);
 
-  // includedURLs are only submitted on the first run of each weekly cycle (no recently processed
-  // organic URLs means we're at the start of the cycle). On daily follow-up runs they are skipped.
+  // includedURLs are only submitted on the first run of each cycle (no recently processed
+  // organic URLs means we're at the start of the cycle). On follow-up runs they are skipped.
   const isFirstRunOfCycle = !hasRecentOrganic;
   const batchedIncludedURLs = isFirstRunOfCycle ? includedURLs : [];
 
