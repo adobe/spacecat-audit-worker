@@ -32,7 +32,7 @@ import {
   TOP_AGENTIC_URLS_LIMIT,
   TOP_ORGANIC_URLS_LIMIT,
   DAILY_BATCH_SIZE,
-  PRERENDER_RECENT_PROCESSING_WINDOW_HOURS,
+  PRERENDER_RECENT_PROCESSING_TIME_DAYS,
 } from '../../../src/prerender/utils/constants.js';
 
 describe('Prerender Audit', () => {
@@ -569,9 +569,9 @@ describe('Prerender Audit', () => {
       });
       describe('daily batching', () => {
         const makeAgenticUrls = (n, base = 'https://example.com/agentic-') => Array.from({ length: n }, (_, i) => `${base}${i}`);
-        const makeCitabilityRecord = (path, updatedAtHoursAgo) => ({
+        const makeCitabilityRecord = (path, updatedAtDaysAgo) => ({
           getUrl: () => `https://example.com${path}`,
-          getUpdatedAt: () => new Date(Date.now() - updatedAtHoursAgo * 60 * 60 * 1000).toISOString(),
+          getUpdatedAt: () => new Date(Date.now() - updatedAtDaysAgo * 24 * 60 * 60 * 1000).toISOString(),
         });
 
         const makeHandlerWithAgentic = async (agenticUrls) => esmock('../../../src/prerender/handler.js', {
@@ -610,7 +610,7 @@ describe('Prerender Audit', () => {
             'https://example.com/agentic-2',
           ];
           // agentic-0 updated just inside window → recent → skip
-          const recentRecord = makeCitabilityRecord('/agentic-0', PRERENDER_RECENT_PROCESSING_WINDOW_HOURS - 1);
+          const recentRecord = makeCitabilityRecord('/agentic-0', PRERENDER_RECENT_PROCESSING_TIME_DAYS - 1);
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
           const context = makeContext([recentRecord]);
 
@@ -630,7 +630,7 @@ describe('Prerender Audit', () => {
             'https://example.com/agentic-1',
           ];
           // agentic-0 updated past window → stale → re-include
-          const staleRecord = makeCitabilityRecord('/agentic-0', PRERENDER_RECENT_PROCESSING_WINDOW_HOURS + 1);
+          const staleRecord = makeCitabilityRecord('/agentic-0', PRERENDER_RECENT_PROCESSING_TIME_DAYS + 1);
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
           const context = makeContext([staleRecord]);
 
@@ -673,7 +673,7 @@ describe('Prerender Audit', () => {
           const agenticUrls = makeAgenticUrls(5);
           const organicUrl = 'https://example.com/organic-page';
           // organic-page updated just inside window → recent → skip
-          const recentRecord = makeCitabilityRecord('/organic-page', PRERENDER_RECENT_PROCESSING_WINDOW_HOURS - 1);
+          const recentRecord = makeCitabilityRecord('/organic-page', PRERENDER_RECENT_PROCESSING_TIME_DAYS - 1);
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
 
           const context = {

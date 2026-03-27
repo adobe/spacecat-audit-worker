@@ -15,8 +15,7 @@ export const TOP_AGENTIC_URLS_LIMIT = 2000;
 export const DAILY_BATCH_SIZE = 320;
 export const TOP_ORGANIC_URLS_LIMIT = 200;
 /**
- * URLs processed within this window are treated as recently scraped and skipped
- * (shorter = faster manual/QA retesting).
+ * URLs processed within this window are treated as recently scraped and skipped.
  */
-export const PRERENDER_RECENT_PROCESSING_WINDOW_HOURS = 3.5;
+export const PRERENDER_RECENT_PROCESSING_TIME_DAYS = 7;
 export const MODE_AI_ONLY = 'ai-only';
