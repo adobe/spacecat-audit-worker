@@ -35,6 +35,7 @@ import {
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_ERROR_MESSAGE = 'Audit failed';
+const TEST_URL_OVERRIDE_HOST = 'lovesac.com';
 
 // Domain-wide suggestion URL format (sync scrapedUrlsSet + prepareDomainWideAggregateSuggestion)
 const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`;
@@ -158,14 +159,39 @@ async function findPreservableDomainWideSuggestion(opportunity, log) {
   return preservable || null;
 }
 
+function resolveConfiguredTestUrls(baseUrl, subroutes, limit) {
+  if (!baseUrl) {
+    return null;
+  }
+
+  let parsedBaseUrl;
+  try {
+    parsedBaseUrl = new URL(baseUrl);
+  } catch {
+    return null;
+  }
+
+  const normalizedHost = parsedBaseUrl.hostname.replace(/^www\./, '');
+  if (normalizedHost !== TEST_URL_OVERRIDE_HOST) {
+    return null;
+  }
+
+  return subroutes
+    .slice(0, limit)
+    .map((subroute) => new URL(subroute, parsedBaseUrl).toString());
+}
+
 async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIMIT) {
   const { dataAccess, log, site } = context;
   const baseUrl = site?.getBaseURL?.() || '';
 
-  if (TEST_ORGANIC_URL_SUBROUTES.length > 0 && baseUrl) {
-    return TEST_ORGANIC_URL_SUBROUTES
-      .slice(0, limit)
-      .map((subroute) => new URL(subroute, baseUrl).toString());
+  const configuredTestUrls = resolveConfiguredTestUrls(
+    baseUrl,
+    TEST_ORGANIC_URL_SUBROUTES,
+    limit,
+  );
+  if (configuredTestUrls) {
+    return configuredTestUrls;
   }
 
   let topPagesUrls = [];
@@ -189,12 +215,16 @@ async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIM
  * @returns {Promise<Array<string>>}
  */
 async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
-  const baseUrl = site?.getBaseURL?.() || '';
+  const overrideBaseUrl = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL;
+  const effectiveBaseUrl = overrideBaseUrl || site.getBaseURL?.() || '';
 
-  if (TEST_AGENTIC_URL_SUBROUTES.length > 0 && baseUrl) {
-    return TEST_AGENTIC_URL_SUBROUTES
-      .slice(0, limit)
-      .map((subroute) => new URL(subroute, baseUrl).toString());
+  const configuredTestUrls = resolveConfiguredTestUrls(
+    effectiveBaseUrl,
+    TEST_AGENTIC_URL_SUBROUTES,
+    limit,
+  );
+  if (configuredTestUrls) {
+    return configuredTestUrls;
   }
 
   const athenaUrls = await getTopAgenticUrlsFromAthena(site, context, limit);
@@ -203,8 +233,6 @@ async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) 
   }
 
   const { log } = context;
-  const overrideBaseUrl = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL;
-  const effectiveBaseUrl = overrideBaseUrl || site.getBaseURL?.() || '';
 
   try {
     const sheetContext = {

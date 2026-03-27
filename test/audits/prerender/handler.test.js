@@ -671,7 +671,7 @@ describe('Prerender Audit', () => {
         await mockHandler.submitForScraping(context);
         expect(getTopAgenticUrlsFromAthena).to.have.been.calledOnce;
         expect(getTopAgenticUrlsFromAthena.firstCall.args[2]).to.equal(TOP_AGENTIC_URLS_LIMIT);
-        expect(TOP_AGENTIC_URLS_LIMIT).to.equal(2000);
+        expect(TOP_AGENTIC_URLS_LIMIT).to.equal(20);
       });
 
       it('should handle undefined topPages list from SiteTopPage gracefully', async () => {
