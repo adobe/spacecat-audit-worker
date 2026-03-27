@@ -31,7 +31,7 @@ export class RunnerAudit extends BaseAudit {
   async run(message, context) {
     const { log } = context;
     const { type, siteId } = message;
-    const auditContext = mergeAuditDataIntoAuditContext(message);
+    const auditContext = mergeAuditDataIntoAuditContext(message, log);
 
     try {
       const site = await this.siteProvider(siteId, context);
