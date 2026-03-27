@@ -462,6 +462,63 @@ describe('CDN Logs Report Utils', () => {
       expect(queryIndexNock.isDone()).to.be.true;
     });
 
+    it('returns false when query-index returns 404', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoDataFolder: () => 'bulk',
+        }),
+      };
+
+      const queryIndexNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/bulk/query-index.json')
+        .query({ limit: '5000' })
+        .reply(404, 'Not Found');
+
+      const result = await reportUtils.queryIndexHasPatternsFile(mockSite);
+
+      expect(result).to.be.false;
+      expect(queryIndexNock.isDone()).to.be.true;
+    });
+
+    it('returns false when query-index fetch throws a 404-shaped error', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoDataFolder: () => 'bulk',
+        }),
+      };
+
+      const queryIndexNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/bulk/query-index.json')
+        .query({ limit: '5000' })
+        .replyWithError({ message: 'Not Found', statusCode: 404 });
+
+      const result = await reportUtils.queryIndexHasPatternsFile(mockSite);
+
+      expect(result).to.be.false;
+      expect(queryIndexNock.isDone()).to.be.true;
+    });
+
+    it('returns an error state when query-index fetch throws a non-404 error', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoDataFolder: () => 'bulk',
+        }),
+      };
+
+      const queryIndexNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/bulk/query-index.json')
+        .query({ limit: '5000' })
+        .replyWithError('Network error');
+
+      const result = await reportUtils.queryIndexHasPatternsFile(mockSite);
+
+      expect(result).to.deep.equal({
+        error: true,
+        source: 'query-index',
+      });
+      expect(queryIndexNock.isDone()).to.be.true;
+    });
+
     it('returns an error state when query-index fails with a non-404 response', async () => {
       const mockSite = {
         getConfig: () => ({
