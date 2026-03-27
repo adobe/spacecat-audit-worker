@@ -1518,6 +1518,84 @@ describe('Prerender Audit', () => {
         const infoLogs = context.log.info.args.map((call) => call[0]);
         expect(infoLogs.some((msg) => msg.includes('prerender_status_upload:'))).to.be.true;
       });
+
+      it('should exclude URL with needsPrerender=true and isDeployedAtEdge=true from scrapedUrlsSet', async () => {
+        const syncSuggestionsStub = sandbox.stub().resolves();
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sandbox.stub().resolves([]),
+        };
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
+          },
+          '../../../src/prerender/utils/html-comparator.js': {
+            analyzeHtmlForPrerender: sandbox.stub().resolves({
+              needsPrerender: true,
+              contentGainRatio: 2.0,
+              wordCountBefore: 100,
+              wordCountAfter: 200,
+            }),
+          },
+        });
+
+        const deployedUrl = 'https://example.com/deployed-page';
+
+        const context = {
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+          audit: {
+            getId: () => 'audit-id',
+            getFullAuditRef: () => 'https://example.com',
+            getAuditedAt: () => '2024-01-01T00:00:00Z',
+            getInvocationId: () => 'invocation-123',
+          },
+          dataAccess: {
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+            ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves([{ getUrl: () => deployedUrl }]) },
+            Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED' } },
+          },
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+          s3Client: {
+            send: sandbox.stub().callsFake((command) => {
+              if (command.constructor.name === 'GetObjectCommand') {
+                const { Key } = command.input;
+                if (Key.endsWith('scrape.json')) {
+                  return Promise.resolve({
+                    ContentType: 'application/json',
+                    Body: {
+                      transformToString: () => Promise.resolve(JSON.stringify({ isDeployedAtEdge: true })),
+                    },
+                  });
+                }
+                return Promise.resolve({
+                  Body: { transformToString: () => Promise.resolve('<html><body>content</body></html>') },
+                });
+              }
+              return Promise.resolve({});
+            }),
+          },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+          scrapeResultPaths: new Map([[deployedUrl, '/tmp/test']]),
+        };
+
+        await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        const syncArgs = syncSuggestionsStub.firstCall.args[0];
+        expect(syncArgs.scrapedUrlsSet).to.be.an.instanceOf(Set);
+        expect(syncArgs.scrapedUrlsSet.has(deployedUrl)).to.be.false;
+      });
     });
 
     describe('processOpportunityAndSuggestions', () => {
