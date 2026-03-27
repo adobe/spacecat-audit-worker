@@ -178,9 +178,9 @@ describe('YouTube Analysis Handler', () => {
     });
 
     it('should log auditContext and apply urlLimit', async () => {
-      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite, { urlLimit: '7' });
+      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite, { messageData: { urlLimit: '7' } });
 
-      expect(context.log.info).to.have.been.calledWith('[YouTube] auditContext: {"urlLimit":"7"}');
+      expect(context.log.info).to.have.been.calledWith('[YouTube] auditContext: {"messageData":{"urlLimit":"7"}}');
       expect(result.auditResult.mystiqueUrlLimit).to.equal(7);
     });
 

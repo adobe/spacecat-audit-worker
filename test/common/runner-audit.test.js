@@ -18,10 +18,25 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import { ok } from '@adobe/spacecat-shared-http-utils';
-import { mergeAuditDataIntoAuditContext } from '../../src/common/audit-utils.js';
+import { parseMessageDataForRunnerAudit } from '../../src/common/audit-utils.js';
+import { buildRunnerAuditContext } from '../../src/common/runner-audit.js';
 
 use(sinonChai);
 use(chaiAsPromised);
+
+describe('buildRunnerAuditContext', () => {
+  it('treats null message as empty audit context', () => {
+    expect(buildRunnerAuditContext(null)).to.deep.equal({});
+  });
+
+  it('returns base auditContext when data is absent', () => {
+    expect(buildRunnerAuditContext({ auditContext: {} })).to.deep.equal({});
+  });
+
+  it('handles explicit data: null', () => {
+    expect(buildRunnerAuditContext({ auditContext: { a: 1 }, data: null })).to.deep.equal({ a: 1 });
+  });
+});
 
 describe('RunnerAudit', () => {
   let sandbox;
@@ -34,7 +49,7 @@ describe('RunnerAudit', () => {
     const mod = await esmock('../../src/common/runner-audit.js', {
       '../../src/common/audit-utils.js': {
         isAuditEnabledForSite,
-        mergeAuditDataIntoAuditContext,
+        parseMessageDataForRunnerAudit,
       },
     });
     RunnerAudit = mod.RunnerAudit;
@@ -68,7 +83,7 @@ describe('RunnerAudit', () => {
     };
   }
 
-  it('merges message.data into auditContext before invoking the runner', async () => {
+  it('attaches parsed message.data as auditContext.messageData before invoking the runner', async () => {
     const runner = sandbox.stub().resolves({
       auditResult: { success: true },
       fullAuditRef: 'https://example.com',
@@ -103,8 +118,45 @@ describe('RunnerAudit', () => {
       site,
       sinon.match({
         slackContext: { channelId: 'C' },
-        urlLimit: '3',
+        messageData: { urlLimit: '3' },
       }),
+    );
+  });
+
+  it('attaches object message.data as messageData', async () => {
+    const runner = sandbox.stub().resolves({
+      auditResult: { success: true },
+      fullAuditRef: 'https://example.com',
+    });
+    const persister = sandbox.stub().resolves({ getId: () => 'audit-1' });
+    const { instance, site } = buildInstance(runner, persister);
+
+    const context = {
+      log: {
+        warn: sandbox.stub(),
+        error: sandbox.stub(),
+        info: sandbox.stub(),
+        debug: sandbox.stub(),
+      },
+      dataAccess: {},
+      invocation: {},
+    };
+
+    await instance.run(
+      {
+        type: 'reddit-analysis',
+        siteId: 'site-1',
+        auditContext: {},
+        data: { urlLimit: 9 },
+      },
+      context,
+    );
+
+    expect(runner).to.have.been.calledWith(
+      'https://example.com',
+      context,
+      site,
+      sinon.match({ messageData: { urlLimit: 9 } }),
     );
   });
 

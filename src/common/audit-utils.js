@@ -96,52 +96,30 @@ export async function sendContinuationMessage(message, context) {
 }
 
 /**
- * Merges API `data` (JSON string or object) into `auditContext` so RunnerAudit runners
- * receive Slack keyword args and other extras (e.g. urlLimit) alongside slackContext.
- * @param {object} message - Raw SQS message body
- * @param {object} [log] - Lambda logger (optional; used for diagnostics)
- * @returns {object} Normalized audit context
+ * Normalizes SQS `message.data` (JSON string or object) for RunnerAudit.
+ * Returns a plain object, or `undefined` if missing, empty, invalid JSON, or not a plain object
+ * (arrays excluded).
+ * @param {unknown} data - `message.data` from the audit job payload
+ * @returns {object|undefined}
  */
-export function mergeAuditDataIntoAuditContext(message, log) {
-  const { auditContext: base = {}, data } = message ?? {};
-
-  let dataForLog;
+export function parseMessageDataForRunnerAudit(data) {
   if (data === undefined || data === null) {
-    dataForLog = String(data);
-  } else if (typeof data === 'string') {
-    dataForLog = data;
-  } else {
-    dataForLog = JSON.stringify(data);
-  }
-
-  log?.info?.(
-    `[RunnerAudit] mergeAuditDataIntoAuditContext incoming: type=${message?.type ?? ''} `
-    + `siteId=${message?.siteId ?? ''} auditContext=${JSON.stringify(base)} data=${dataForLog}`,
-  );
-
-  if (data === undefined || data === null) {
-    log?.info?.(`[RunnerAudit] mergeAuditDataIntoAuditContext merged: ${JSON.stringify(base)}`);
-    return base;
+    return undefined;
   }
   let parsed = data;
   if (typeof data === 'string') {
     const trimmed = data.trim();
     if (!trimmed) {
-      log?.info?.(`[RunnerAudit] mergeAuditDataIntoAuditContext merged: ${JSON.stringify(base)}`);
-      return base;
+      return undefined;
     }
     try {
       parsed = JSON.parse(trimmed);
     } catch {
-      log?.info?.(`[RunnerAudit] mergeAuditDataIntoAuditContext merged: ${JSON.stringify(base)}`);
-      return base;
+      return undefined;
     }
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    log?.info?.(`[RunnerAudit] mergeAuditDataIntoAuditContext merged: ${JSON.stringify(base)}`);
-    return base;
+    return undefined;
   }
-  const merged = { ...base, ...parsed };
-  log?.info?.(`[RunnerAudit] mergeAuditDataIntoAuditContext merged: ${JSON.stringify(merged)}`);
-  return merged;
+  return parsed;
 }

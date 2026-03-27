@@ -58,10 +58,12 @@ export const MYSTIQUE_URLS_LIMIT = 50;
 
 /**
  * Effective max URLs to send to Mystique for store-backed guidance audits
- * (reddit / youtube / cited). Optional `auditContext.urlLimit` is capped at MYSTIQUE_URLS_LIMIT.
+ * (reddit / youtube / cited). Optional limit from `auditContext.messageData.urlLimit`
+ * (RunnerAudit).
+ * Capped at MYSTIQUE_URLS_LIMIT.
  *
  * @param {object} [auditContext]
- * @param {number|string} [auditContext.urlLimit]
+ * @param {number|string} [auditContext.messageData.urlLimit]
  * @param {object} [log]
  * @param {string} [logPrefix]
  * @returns {number}
@@ -69,7 +71,7 @@ export const MYSTIQUE_URLS_LIMIT = 50;
 export function resolveMystiqueUrlLimit(auditContext, log, logPrefix) {
   const prefix = logPrefix ?? '';
   const ctx = auditContext ?? {};
-  const raw = ctx.urlLimit;
+  const raw = ctx.messageData?.urlLimit;
   if (raw === undefined || raw === null || raw === '') {
     return MYSTIQUE_URLS_LIMIT;
   }

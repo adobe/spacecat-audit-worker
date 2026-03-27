@@ -178,9 +178,9 @@ describe('Cited Analysis Handler', () => {
     });
 
     it('should log auditContext and apply urlLimit', async () => {
-      const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite, { urlLimit: '2' });
+      const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite, { messageData: { urlLimit: '2' } });
 
-      expect(context.log.info).to.have.been.calledWith('[Cited] auditContext: {"urlLimit":"2"}');
+      expect(context.log.info).to.have.been.calledWith('[Cited] auditContext: {"messageData":{"urlLimit":"2"}}');
       expect(result.auditResult.mystiqueUrlLimit).to.equal(2);
     });
 

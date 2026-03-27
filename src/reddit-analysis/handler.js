@@ -84,7 +84,8 @@ async function fetchStoreData(siteId, context) {
  * @param {string} url - The resolved URL for the audit
  * @param {Object} context - The audit context
  * @param {Object} site - The site being audited
- * @param {Object} [auditContext] - SQS audit context (e.g. urlLimit from Slack)
+ * @param {Object} [auditContext] - SQS audit context; optional `messageData` from `message.data`
+ *   (e.g. urlLimit from Slack)
  * @returns {Promise<Object>} Audit result
  */
 async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {

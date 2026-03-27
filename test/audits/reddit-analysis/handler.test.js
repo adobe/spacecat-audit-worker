@@ -181,9 +181,9 @@ describe('Reddit Analysis Handler', () => {
     });
 
     it('should log auditContext and mystiqueUrlLimit', async () => {
-      await redditAnalysisHandler.default.runner(baseURL, context, mockSite, { urlLimit: '3' });
+      await redditAnalysisHandler.default.runner(baseURL, context, mockSite, { messageData: { urlLimit: '3' } });
 
-      expect(context.log.info).to.have.been.calledWith('[Reddit] auditContext: {"urlLimit":"3"}');
+      expect(context.log.info).to.have.been.calledWith('[Reddit] auditContext: {"messageData":{"urlLimit":"3"}}');
       expect(context.log.info).to.have.been.calledWith('[Reddit] mystiqueUrlLimit=3 (URLs sent to Mystique)');
     });
 

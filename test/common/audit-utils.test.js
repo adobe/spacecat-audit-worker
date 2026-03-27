@@ -23,7 +23,7 @@ import {
   loadExistingAudit,
   sendContinuationMessage,
   checkProductCodeEntitlements,
-  mergeAuditDataIntoAuditContext,
+  parseMessageDataForRunnerAudit,
 } from '../../src/common/audit-utils.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -361,77 +361,30 @@ describe('Audit Utils Tests', () => {
     });
   });
 
-  describe('mergeAuditDataIntoAuditContext', () => {
-    it('returns auditContext only when data is missing', () => {
-      expect(mergeAuditDataIntoAuditContext({ auditContext: { slackContext: { x: 1 } } }))
-        .to.deep.equal({ slackContext: { x: 1 } });
+  describe('parseMessageDataForRunnerAudit', () => {
+    it('returns undefined when data is missing or null', () => {
+      expect(parseMessageDataForRunnerAudit(undefined)).to.equal(undefined);
+      expect(parseMessageDataForRunnerAudit(null)).to.equal(undefined);
     });
 
-    it('merges data object into auditContext', () => {
-      expect(mergeAuditDataIntoAuditContext({
-        auditContext: { slackContext: { channelId: 'c' } },
-        data: { urlLimit: '10' },
-      })).to.deep.equal({ slackContext: { channelId: 'c' }, urlLimit: '10' });
+    it('returns object when data is a plain object', () => {
+      expect(parseMessageDataForRunnerAudit({ urlLimit: '10' })).to.deep.equal({ urlLimit: '10' });
     });
 
-    it('parses JSON string data and merges', () => {
-      expect(mergeAuditDataIntoAuditContext({
-        auditContext: {},
-        data: '{"urlLimit":"5"}',
-      })).to.deep.equal({ urlLimit: '5' });
+    it('parses JSON string data', () => {
+      expect(parseMessageDataForRunnerAudit('{"urlLimit":"5"}')).to.deep.equal({ urlLimit: '5' });
     });
 
-    it('returns base when data string is invalid JSON', () => {
-      expect(mergeAuditDataIntoAuditContext({
-        auditContext: { a: 1 },
-        data: '{not-json',
-      })).to.deep.equal({ a: 1 });
+    it('returns undefined when data string is invalid JSON', () => {
+      expect(parseMessageDataForRunnerAudit('{not-json')).to.equal(undefined);
     });
 
-    it('returns base when data string is whitespace only', () => {
-      expect(mergeAuditDataIntoAuditContext({
-        auditContext: { a: 1 },
-        data: '   \n\t  ',
-      })).to.deep.equal({ a: 1 });
+    it('returns undefined when data string is whitespace only', () => {
+      expect(parseMessageDataForRunnerAudit('   \n\t  ')).to.equal(undefined);
     });
 
-    it('returns base when data is not a plain object', () => {
-      expect(mergeAuditDataIntoAuditContext({ auditContext: {}, data: [1, 2] })).to.deep.equal({});
-    });
-
-    it('logs incoming message and merged auditContext when log is provided', () => {
-      const log = { info: sinon.stub() };
-      mergeAuditDataIntoAuditContext({
-        type: 'reddit-analysis',
-        siteId: 'site-1',
-        auditContext: { slackContext: { channelId: 'C1' } },
-        data: '{"urlLimit":"10"}',
-      }, log);
-
-      expect(log.info).to.have.been.calledTwice;
-      expect(log.info.firstCall.args[0]).to.include('mergeAuditDataIntoAuditContext incoming');
-      expect(log.info.firstCall.args[0]).to.include('reddit-analysis');
-      expect(log.info.firstCall.args[0]).to.include('site-1');
-      expect(log.info.secondCall.args[0]).to.include('mergeAuditDataIntoAuditContext merged');
-      expect(log.info.secondCall.args[0]).to.include('urlLimit');
-    });
-
-    it('logs merged result for each early-return branch when log is provided', () => {
-      const log = { info: sinon.stub() };
-      mergeAuditDataIntoAuditContext(null, log);
-      expect(log.info).to.have.been.calledTwice;
-
-      log.info.resetHistory();
-      mergeAuditDataIntoAuditContext({ auditContext: { a: 1 }, data: '{bad' }, log);
-      expect(log.info).to.have.been.calledTwice;
-
-      log.info.resetHistory();
-      mergeAuditDataIntoAuditContext({ auditContext: { a: 1 }, data: '   ' }, log);
-      expect(log.info).to.have.been.calledTwice;
-
-      log.info.resetHistory();
-      mergeAuditDataIntoAuditContext({ auditContext: {}, data: [1, 2] }, log);
-      expect(log.info).to.have.been.calledTwice;
+    it('returns undefined when data is not a plain object', () => {
+      expect(parseMessageDataForRunnerAudit([1, 2])).to.equal(undefined);
     });
   });
 });
