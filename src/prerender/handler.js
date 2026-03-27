@@ -28,6 +28,8 @@ import {
   TOP_AGENTIC_URLS_LIMIT,
   TOP_ORGANIC_URLS_LIMIT,
   MODE_AI_ONLY,
+  TEST_AGENTIC_URL_SUBROUTES,
+  TEST_ORGANIC_URL_SUBROUTES,
 } from './utils/constants.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
@@ -158,6 +160,14 @@ async function findPreservableDomainWideSuggestion(opportunity, log) {
 
 async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIMIT) {
   const { dataAccess, log, site } = context;
+  const baseUrl = site?.getBaseURL?.() || '';
+
+  if (TEST_ORGANIC_URL_SUBROUTES.length > 0 && baseUrl) {
+    return TEST_ORGANIC_URL_SUBROUTES
+      .slice(0, limit)
+      .map((subroute) => new URL(subroute, baseUrl).toString());
+  }
+
   let topPagesUrls = [];
   try {
     const { SiteTopPage } = dataAccess || {};
@@ -179,6 +189,14 @@ async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIM
  * @returns {Promise<Array<string>>}
  */
 async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
+  const baseUrl = site?.getBaseURL?.() || '';
+
+  if (TEST_AGENTIC_URL_SUBROUTES.length > 0 && baseUrl) {
+    return TEST_AGENTIC_URL_SUBROUTES
+      .slice(0, limit)
+      .map((subroute) => new URL(subroute, baseUrl).toString());
+  }
+
   const athenaUrls = await getTopAgenticUrlsFromAthena(site, context, limit);
   if (athenaUrls.length > 0) {
     return athenaUrls;
