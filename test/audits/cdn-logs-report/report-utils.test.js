@@ -462,6 +462,28 @@ describe('CDN Logs Report Utils', () => {
       expect(queryIndexNock.isDone()).to.be.true;
     });
 
+    it('returns false when query-index response has no data array', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoDataFolder: () => 'bulk',
+        }),
+      };
+
+      const queryIndexNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/bulk/query-index.json')
+        .query({ limit: '5000' })
+        .reply(200, {
+          total: 0,
+          offset: 0,
+          limit: 5000,
+        });
+
+      const result = await reportUtils.queryIndexHasPatternsFile(mockSite);
+
+      expect(result).to.be.false;
+      expect(queryIndexNock.isDone()).to.be.true;
+    });
+
     it('returns false when query-index returns 404', async () => {
       const mockSite = {
         getConfig: () => ({
