@@ -163,14 +163,14 @@ describe('Reddit Analysis Handler', () => {
   });
 
   describe('runRedditAnalysisAudit (via runner)', () => {
-    it('should return pending_analysis with store data and mystiqueUrlLimit when successful', async () => {
+    it('temporary test hook: returns Test only after store fetch (pending_analysis path disabled in handler)', async () => {
       const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.status).to.equal('pending_analysis');
-      expect(result.auditResult.mystiqueUrlLimit).to.equal(MYSTIQUE_URLS_LIMIT);
-      expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.equal('Test only');
       expect(result.fullAuditRef).to.equal(baseURL);
+      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'reddit-analysis');
+      expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
     });
 
     it('should call StoreClient and compute topics from brand presence', async () => {
@@ -206,13 +206,13 @@ describe('Reddit Analysis Handler', () => {
       expect(context.log.error).to.have.been.called;
     });
 
-    it('should succeed when brand presence returns no topics', async () => {
+    it('temporary test hook: returns Test only when brand presence returns no topics', async () => {
       mockComputeTopicsFromBrandPresence.resolves([]);
 
       const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.storeData.sentimentConfig.topics).to.deep.equal([]);
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.equal('Test only');
       expect(context.log.debug).to.have.been.calledWith('[Reddit] Brand-presence topics payload: []');
     });
 
@@ -233,7 +233,7 @@ describe('Reddit Analysis Handler', () => {
       expect(context.log.warn).to.have.been.called;
     });
 
-    it('should use baseURL as companyName and complete successfully', async () => {
+    it('should use baseURL as companyName before temporary test hook exit', async () => {
       mockSite.getConfig.returns({
         getCompanyName: sandbox.stub().returns(null),
         getCompetitors: sandbox.stub().returns([]),
@@ -245,18 +245,24 @@ describe('Reddit Analysis Handler', () => {
 
       const result = await redditAnalysisHandler.default.runner('https://bmw.com', context, mockSite);
 
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.config.companyName).to.equal('https://bmw.com');
+      expect(context.log.info).to.have.been.calledWith(
+        '[Reddit] Config: companyName=https://bmw.com, website=https://bmw.com',
+      );
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.equal('Test only');
     });
 
-    it('should handle missing config and use baseURL', async () => {
+    it('should handle missing config and use baseURL before temporary test hook exit', async () => {
       mockSite.getConfig.returns(null);
       mockSite.getBaseURL.returns('https://test-company.com');
 
       const result = await redditAnalysisHandler.default.runner('https://test-company.com', context, mockSite);
 
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.config.companyName).to.equal('https://test-company.com');
+      expect(context.log.info).to.have.been.calledWith(
+        '[Reddit] Config: companyName=https://test-company.com, website=https://test-company.com',
+      );
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.equal('Test only');
     });
 
     it('should handle general errors during execution', async () => {
