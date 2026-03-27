@@ -20,8 +20,6 @@ import StoreClient, {
   StoreEmptyError,
   URL_TYPES,
   GUIDELINE_TYPES,
-  MYSTIQUE_URLS_LIMIT,
-  resolveMystiqueUrlLimit,
 } from '../../src/utils/store-client.js';
 
 use(sinonChai);
@@ -66,11 +64,6 @@ describe('StoreClient', () => {
       });
     });
 
-    it('should export MYSTIQUE_URLS_LIMIT', () => {
-      expect(MYSTIQUE_URLS_LIMIT).to.be.a('number');
-      expect(MYSTIQUE_URLS_LIMIT).to.be.greaterThan(0);
-    });
-
     it('should export GUIDELINE_TYPES', () => {
       expect(GUIDELINE_TYPES).to.deep.equal({
         WIKIPEDIA_ANALYSIS: 'wikipedia-analysis',
@@ -78,37 +71,6 @@ describe('StoreClient', () => {
         YOUTUBE_ANALYSIS: 'youtube-analysis',
         CITED_ANALYSIS: 'cited-analysis',
       });
-    });
-  });
-
-  describe('resolveMystiqueUrlLimit', () => {
-    it('returns MYSTIQUE_URLS_LIMIT when urlLimit is absent', () => {
-      expect(resolveMystiqueUrlLimit({})).to.equal(MYSTIQUE_URLS_LIMIT);
-      expect(resolveMystiqueUrlLimit(undefined)).to.equal(MYSTIQUE_URLS_LIMIT);
-      expect(resolveMystiqueUrlLimit(null)).to.equal(MYSTIQUE_URLS_LIMIT);
-    });
-
-    it('returns integer urlLimit when valid and below cap', () => {
-      expect(resolveMystiqueUrlLimit({ messageData: { urlLimit: 5 } })).to.equal(5);
-      expect(resolveMystiqueUrlLimit({ messageData: { urlLimit: '12' } })).to.equal(12);
-      expect(resolveMystiqueUrlLimit({ messageData: { urlLimit: 8 } })).to.equal(8);
-    });
-
-    it('returns cap when urlLimit exceeds MYSTIQUE_URLS_LIMIT', () => {
-      const log = { info: sandbox.stub() };
-      expect(resolveMystiqueUrlLimit(
-        { messageData: { urlLimit: MYSTIQUE_URLS_LIMIT + 10 } },
-        log,
-        '[T]',
-      )).to.equal(MYSTIQUE_URLS_LIMIT);
-      expect(log.info).to.have.been.calledOnce;
-    });
-
-    it('returns default and warns when urlLimit is invalid', () => {
-      const log = { warn: sandbox.stub() };
-      expect(resolveMystiqueUrlLimit({ messageData: { urlLimit: 'x' } }, log, '[T]')).to.equal(MYSTIQUE_URLS_LIMIT);
-      expect(resolveMystiqueUrlLimit({ messageData: { urlLimit: 1.5 } }, log, '[T]')).to.equal(MYSTIQUE_URLS_LIMIT);
-      expect(log.warn).to.have.been.calledTwice;
     });
   });
 

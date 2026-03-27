@@ -13,8 +13,9 @@
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import StoreClient, {
-  StoreEmptyError, URL_TYPES, GUIDELINE_TYPES, resolveMystiqueUrlLimit,
+  StoreEmptyError, URL_TYPES, GUIDELINE_TYPES,
 } from '../utils/store-client.js';
+import { resolveMystiqueUrlLimit } from '../utils/offsite-audit-utils.js';
 import { computeTopicsFromBrandPresence } from '../utils/brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 

@@ -15,11 +15,13 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import {
-  MYSTIQUE_URLS_LIMIT,
   URL_TYPES,
   GUIDELINE_TYPES,
-  resolveMystiqueUrlLimit as realResolveMystiqueUrlLimit,
 } from '../../../src/utils/store-client.js';
+import {
+  MYSTIQUE_URLS_LIMIT,
+  resolveMystiqueUrlLimit as realResolveMystiqueUrlLimit,
+} from '../../../src/utils/offsite-audit-utils.js';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
 
@@ -99,6 +101,8 @@ describe('Reddit Analysis Handler', () => {
         StoreEmptyError,
         URL_TYPES,
         GUIDELINE_TYPES,
+      },
+      '../../../src/utils/offsite-audit-utils.js': {
         MYSTIQUE_URLS_LIMIT,
         resolveMystiqueUrlLimit: realResolveMystiqueUrlLimit,
       },
