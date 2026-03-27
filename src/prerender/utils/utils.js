@@ -17,8 +17,6 @@
 import { Entitlement } from '@adobe/spacecat-shared-data-access';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 
-const PRERENDER_AUDIT_PREFIX = '[prerender]';
-
 /**
  * Common non-HTML file extensions that should be filtered out
  */
@@ -96,28 +94,6 @@ export function mergeAndGetUniqueHtmlUrls(...urlArrays) {
 }
 
 /**
- * Logs a prerender-prefixed message when the requested logger method exists.
- * @param {Object} log - Logger instance
- * @param {string} level - Logger method name
- * @param {string} message - Log message
- * @param {Error} [error] - Optional error to append
- * @returns {void}
- */
-export function logWithAuditPrefix(log, level, message, error) {
-  const method = log?.[level];
-  if (typeof method !== 'function') {
-    return;
-  }
-
-  const prefixedMessage = `${PRERENDER_AUDIT_PREFIX} ${message}`;
-  if (error) {
-    method(prefixedMessage, error);
-  } else {
-    method(prefixedMessage);
-  }
-}
-
-/**
  * Checks if the site belongs to a paid LLMO customer
  * @param {Object} context - Context with site, dataAccess and log
  * @returns {Promise<boolean>} - True if paid LLMO customer, false otherwise
@@ -135,10 +111,10 @@ export async function isPaidLLMOCustomer(context) {
     const tier = entitlement.getTier() ?? null;
     const isPaid = tier === Entitlement.TIERS.PAID;
 
-    logWithAuditPrefix(log, 'debug', `isPaidLLMOCustomer check: siteId=${site.getId()}, tier=${tier}, isPaid=${isPaid}`);
+    log.debug(`Prerender - isPaidLLMOCustomer check: siteId=${site.getId()}, tier=${tier}, isPaid=${isPaid}`);
     return isPaid;
   } catch (e) {
-    logWithAuditPrefix(log, 'warn', `Failed to check paid LLMO customer status for siteId=${site.getId()}: ${e.message}`);
+    log.warn(`Prerender - Failed to check paid LLMO customer status for siteId=${site.getId()}: ${e.message}`);
     return false;
   }
 }
