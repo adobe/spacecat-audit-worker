@@ -323,6 +323,7 @@ export async function syncSuggestions({
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
   existingSuggestions: prefetchedSuggestions = null,
+  bypassValidationForPlg = false,
 }) {
   if (!context) {
     return;
@@ -383,7 +384,7 @@ export async function syncSuggestions({
 
   // PLG/Freemium sites bypass manual validation — suggestions go directly to NEW status
   let isSummitPlg = false;
-  if (requiresValidation && site) {
+  if (bypassValidationForPlg && requiresValidation && site) {
     const { Configuration } = dataAccess;
     const configuration = await Configuration.findLatest();
     isSummitPlg = configuration.isHandlerEnabledForSite('summit-plg', site);

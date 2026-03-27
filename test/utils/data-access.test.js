@@ -192,11 +192,6 @@ describe('data-access', () => {
           log: mockLogger,
         })
         .build();
-
-      // Default: non-PLG configuration (summit-plg disabled)
-      context.dataAccess.Configuration.findLatest.resolves({
-        isHandlerEnabledForSite: sandbox.stub().returns(false),
-      });
     });
 
     afterEach(() => {
@@ -272,7 +267,7 @@ describe('data-access', () => {
       expect(mockLogger.error).to.not.have.been.called;
     });
 
-    it('should use NEW status for PLG sites even when requiresValidation is true', async () => {
+    it('should use NEW status for PLG sites when bypassValidationForPlg is true', async () => {
       const newData = [{ key: '1' }, { key: '2' }];
 
       mockOpportunity.getSuggestions.resolves([]);
@@ -295,6 +290,7 @@ describe('data-access', () => {
         context,
         buildKey,
         mapNewSuggestion,
+        bypassValidationForPlg: true,
       });
 
       expect(context.dataAccess.Configuration.findLatest).to.have.been.calledOnce;
@@ -308,7 +304,7 @@ describe('data-access', () => {
       expect(actualArgs[1].status).to.equal('NEW');
     });
 
-    it('should use PENDING_VALIDATION for non-PLG sites when requiresValidation is true', async () => {
+    it('should use PENDING_VALIDATION for non-PLG sites even when bypassValidationForPlg is true', async () => {
       const newData = [{ key: '1' }];
 
       mockOpportunity.getSuggestions.resolves([]);
@@ -331,6 +327,7 @@ describe('data-access', () => {
         context,
         buildKey,
         mapNewSuggestion,
+        bypassValidationForPlg: true,
       });
 
       expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith('summit-plg', mockSite);
@@ -342,12 +339,12 @@ describe('data-access', () => {
       expect(actualArgs[0].status).to.equal('PENDING_VALIDATION');
     });
 
-    it('should not check PLG config when requiresValidation is false', async () => {
+    it('should not check PLG config when bypassValidationForPlg is false', async () => {
       const newData = [{ key: '1' }];
 
       mockOpportunity.getSuggestions.resolves([]);
       mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
-      context.site = { requiresValidation: false };
+      context.site = { requiresValidation: true };
 
       await syncSuggestions({
         opportunity: mockOpportunity,
@@ -355,12 +352,13 @@ describe('data-access', () => {
         context,
         buildKey,
         mapNewSuggestion,
+        bypassValidationForPlg: false,
       });
 
       expect(context.dataAccess.Configuration.findLatest).to.not.have.been.called;
 
       const actualArgs = mockOpportunity.addSuggestions.getCall(0).args[0];
-      expect(actualArgs[0].status).to.equal('NEW');
+      expect(actualArgs[0].status).to.equal('PENDING_VALIDATION');
     });
 
     it('should use "unknown" as siteId when getSiteId is undefined', async () => {
