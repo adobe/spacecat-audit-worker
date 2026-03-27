@@ -71,6 +71,7 @@ async function fetchStoreData(siteId, context) {
 
   const topics = await computeTopicsFromBrandPresence(siteId, context);
   log.info(`${LOG_PREFIX} Computed ${topics.length} topics from brand presence data`);
+  log.debug(`${LOG_PREFIX} Brand-presence topics payload: ${JSON.stringify(topics)}`);
 
   return {
     urls,
@@ -107,10 +108,20 @@ async function runRedditAnalysisAudit(url, context, site) {
 
     log.info(`${LOG_PREFIX} Config: companyName=${redditConfig.companyName}, website=${redditConfig.companyWebsite}`);
 
+    await fetchStoreData(siteId, context);
+
+    // TODO: remove — temporary test hook; logs topics via fetchStoreData then exits
+    return {
+      auditResult: {
+        success: false,
+        error: 'Test only',
+      },
+      fullAuditRef: url,
+    };
+
+    /* When removing the test return above, restore:
     const storeData = await fetchStoreData(siteId, context);
-
     log.info(`${LOG_PREFIX} Successfully fetched all store data for ${redditConfig.companyName}`);
-
     return {
       auditResult: {
         success: true,
@@ -120,6 +131,7 @@ async function runRedditAnalysisAudit(url, context, site) {
       },
       fullAuditRef: url,
     };
+    */
   } catch (error) {
     if (error instanceof StoreEmptyError) {
       log.error(`${LOG_PREFIX} Store data missing: ${error.message}`);

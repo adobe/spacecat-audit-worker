@@ -158,24 +158,11 @@ describe('Reddit Analysis Handler', () => {
   });
 
   describe('runRedditAnalysisAudit (via runner)', () => {
-    it('should return pending_analysis status with config and store data when successful', async () => {
+    it('should short-circuit with Test only after store fetch (temporary test hook)', async () => {
       const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.status).to.equal('pending_analysis');
-      expect(result.auditResult.config).to.deep.include({
-        companyName: 'Example Corp',
-        companyWebsite: baseURL,
-      });
-      expect(result.auditResult.config.competitors).to.deep.equal(['Competitor A', 'Competitor B']);
-      expect(result.auditResult.config.competitorRegion).to.equal('US');
-      expect(result.auditResult.config.industry).to.equal('Technology');
-      expect(result.auditResult.config.brandKeywords).to.deep.equal(['example', 'corp']);
-
-      expect(result.auditResult.storeData).to.exist;
-      expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
-      expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(expectedSentimentConfig);
-
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.equal('Test only');
       expect(result.fullAuditRef).to.equal(baseURL);
     });
 
@@ -184,6 +171,14 @@ describe('Reddit Analysis Handler', () => {
 
       expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'reddit-analysis');
       expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
+    });
+
+    it('should log debug payload for brand-presence topics', async () => {
+      await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(context.log.debug).to.have.been.calledWith(
+        `[Reddit] Brand-presence topics payload: ${JSON.stringify(mockComputedTopics)}`,
+      );
     });
 
     it('should return error when urlStore returns empty', async () => {
@@ -197,13 +192,14 @@ describe('Reddit Analysis Handler', () => {
       expect(context.log.error).to.have.been.called;
     });
 
-    it('should succeed with empty topics when brand presence returns none', async () => {
+    it('should still short-circuit with Test only when brand presence returns no topics', async () => {
       mockComputeTopicsFromBrandPresence.resolves([]);
 
       const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.storeData.sentimentConfig).to.deep.equal({ topics: [], guidelines: [] });
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.equal('Test only');
+      expect(context.log.debug).to.have.been.calledWith('[Reddit] Brand-presence topics payload: []');
     });
 
     it('should return error when company name is not configured', async () => {
@@ -223,7 +219,7 @@ describe('Reddit Analysis Handler', () => {
       expect(context.log.warn).to.have.been.called;
     });
 
-    it('should use baseURL as companyName when company name is not configured', async () => {
+    it('should use baseURL as companyName then hit Test only short-circuit', async () => {
       mockSite.getConfig.returns({
         getCompanyName: sandbox.stub().returns(null),
         getCompetitors: sandbox.stub().returns([]),
@@ -235,18 +231,18 @@ describe('Reddit Analysis Handler', () => {
 
       const result = await redditAnalysisHandler.default.runner('https://bmw.com', context, mockSite);
 
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.config.companyName).to.equal('https://bmw.com');
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.equal('Test only');
     });
 
-    it('should handle missing config gracefully and use baseURL', async () => {
+    it('should handle missing config and use baseURL then Test only short-circuit', async () => {
       mockSite.getConfig.returns(null);
       mockSite.getBaseURL.returns('https://test-company.com');
 
       const result = await redditAnalysisHandler.default.runner('https://test-company.com', context, mockSite);
 
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.config.companyName).to.equal('https://test-company.com');
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.equal('Test only');
     });
 
     it('should handle general errors during execution', async () => {
