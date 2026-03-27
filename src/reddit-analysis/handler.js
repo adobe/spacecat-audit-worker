@@ -13,8 +13,9 @@
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import StoreClient, {
-  StoreEmptyError, URL_TYPES, GUIDELINE_TYPES, MYSTIQUE_URLS_LIMIT,
+  StoreEmptyError, URL_TYPES, MYSTIQUE_URLS_LIMIT,
 } from '../utils/store-client.js';
+import { computeTopicsFromBrandPresence } from '../utils/brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 
 const LOG_PREFIX = '[Reddit]';
@@ -24,7 +25,7 @@ const LOG_PREFIX = '[Reddit]';
  *
  * This audit performs Reddit analysis by:
  * 1. Fetching Reddit URLs from the URL Store (discovered during brand presence analysis)
- * 2. Fetching analysis topics and guidelines from the Sentiment Config
+ * 2. Computing topics (per-URL timesCited, categories, prompts) from LLMO brand-presence data
  * 3. Sending all data to Mystique for analysis
  *
  * Mystique will fetch the actual page content from the Content Store directly
@@ -57,7 +58,7 @@ function getRedditConfig(site) {
  * @param {string} siteId - The site ID
  * @param {Object} context - The audit context
  * @returns {Promise<Object>} Object containing urls and sentimentConfig
- * @throws {StoreEmptyError} If any store returns empty results
+ * @throws {StoreEmptyError} If the URL store returns empty results
  */
 async function fetchStoreData(siteId, context) {
   const { log } = context;
@@ -68,24 +69,12 @@ async function fetchStoreData(siteId, context) {
   const urls = await storeClient.getUrls(siteId, URL_TYPES.REDDIT);
   log.info(`${LOG_PREFIX} Retrieved ${urls.length} Reddit URLs from URL Store`);
 
-  let sentimentConfig = { topics: [], guidelines: [] };
-  try {
-    sentimentConfig = await storeClient.getGuidelines(siteId, GUIDELINE_TYPES.REDDIT_ANALYSIS);
-  } catch (error) {
-    if (error instanceof StoreEmptyError) {
-      log.info(`${LOG_PREFIX} No guidelines configured for reddit-analysis, proceeding without`);
-    } else {
-      throw error;
-    }
-  }
-
-  const topicCount = sentimentConfig.topics.length;
-  const guidelineCount = sentimentConfig.guidelines.length;
-  log.info(`${LOG_PREFIX} Retrieved ${topicCount} topics and ${guidelineCount} guidelines`);
+  const topics = await computeTopicsFromBrandPresence(siteId, context);
+  log.info(`${LOG_PREFIX} Computed ${topics.length} topics from brand presence data`);
 
   return {
     urls,
-    sentimentConfig,
+    sentimentConfig: { topics, guidelines: [] },
   };
 }
 

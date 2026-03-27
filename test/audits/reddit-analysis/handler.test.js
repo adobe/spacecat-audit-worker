@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -29,6 +27,7 @@ describe('Reddit Analysis Handler', () => {
   let mockSite;
   let mockAudit;
   let mockStoreClient;
+  let mockComputeTopicsFromBrandPresence;
   let redditAnalysisHandler;
   let StoreEmptyError;
 
@@ -41,14 +40,21 @@ describe('Reddit Analysis Handler', () => {
     { url: 'https://reddit.com/r/example/comments/def', type: 'reddit', metadata: {} },
   ];
 
-  const mockSentimentConfig = {
-    topics: [
-      { topicId: 'topic-1', name: 'Community Sentiment', subPrompts: ['brand mentions', 'feedback'] },
-    ],
-    guidelines: [
-      { guidelineId: 'guide-1', name: 'Reddit Best Practices', instruction: 'Focus on community engagement', audits: ['reddit-analysis'] },
-    ],
-  };
+  const mockComputedTopics = [
+    {
+      name: 'Community Sentiment',
+      urls: [
+        {
+          url: 'https://reddit.com/r/example/comments/abc',
+          timesCited: 1,
+          category: 'general',
+          subPrompts: ['brand mentions'],
+        },
+      ],
+    },
+  ];
+
+  const expectedSentimentConfig = { topics: mockComputedTopics, guidelines: [] };
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -62,9 +68,10 @@ describe('Reddit Analysis Handler', () => {
       }
     };
 
+    mockComputeTopicsFromBrandPresence = sandbox.stub().resolves(mockComputedTopics);
+
     mockStoreClient = {
       getUrls: sandbox.stub().resolves(mockUrls),
-      getGuidelines: sandbox.stub().resolves(mockSentimentConfig),
     };
 
     const mockStoreClientClass = {
@@ -76,7 +83,10 @@ describe('Reddit Analysis Handler', () => {
         default: mockStoreClientClass,
         StoreEmptyError,
         URL_TYPES: { WIKIPEDIA: 'wikipedia-analysis', REDDIT: 'reddit-analysis', YOUTUBE: 'youtube-analysis' },
-        GUIDELINE_TYPES: { WIKIPEDIA_ANALYSIS: 'wikipedia-analysis', REDDIT_ANALYSIS: 'reddit-analysis', YOUTUBE_ANALYSIS: 'youtube-analysis' },
+        MYSTIQUE_URLS_LIMIT: 50,
+      },
+      '../../../src/utils/brand-presence-enrichment.js': {
+        computeTopicsFromBrandPresence: mockComputeTopicsFromBrandPresence,
       },
     });
 
@@ -164,16 +174,16 @@ describe('Reddit Analysis Handler', () => {
 
       expect(result.auditResult.storeData).to.exist;
       expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
-      expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(mockSentimentConfig);
+      expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(expectedSentimentConfig);
 
       expect(result.fullAuditRef).to.equal(baseURL);
     });
 
-    it('should call StoreClient with correct parameters', async () => {
+    it('should call StoreClient and compute topics from brand presence', async () => {
       await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'reddit-analysis');
-      expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, 'reddit-analysis');
+      expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
     });
 
     it('should return error when urlStore returns empty', async () => {
@@ -187,24 +197,13 @@ describe('Reddit Analysis Handler', () => {
       expect(context.log.error).to.have.been.called;
     });
 
-    it('should proceed with empty guidelines when guidelinesStore returns empty', async () => {
-      mockStoreClient.getGuidelines.rejects(new StoreEmptyError('guidelinesStore', 'N/A', 'No guidelines found'));
+    it('should succeed with empty topics when brand presence returns none', async () => {
+      mockComputeTopicsFromBrandPresence.resolves([]);
 
       const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.storeData.sentimentConfig.topics).to.deep.equal([]);
-      expect(result.auditResult.storeData.sentimentConfig.guidelines).to.deep.equal([]);
-      expect(context.log.info).to.have.been.calledWithMatch(/No guidelines configured for reddit-analysis/);
-    });
-
-    it('should rethrow non-StoreEmptyError from getGuidelines', async () => {
-      mockStoreClient.getGuidelines.rejects(new Error('Network timeout'));
-
-      const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
-
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.include('Network timeout');
+      expect(result.auditResult.storeData.sentimentConfig).to.deep.equal({ topics: [], guidelines: [] });
     });
 
     it('should return error when company name is not configured', async () => {
@@ -278,7 +277,7 @@ describe('Reddit Analysis Handler', () => {
           },
           storeData: {
             urls: mockUrls,
-            sentimentConfig: mockSentimentConfig,
+            sentimentConfig: expectedSentimentConfig,
           },
         },
       };
@@ -302,12 +301,15 @@ describe('Reddit Analysis Handler', () => {
             competitorRegion: 'US',
             industry: 'Technology',
             brandKeywords: ['example'],
-            urls: mockUrls,
-            topics: mockSentimentConfig.topics,
-            guidelines: mockSentimentConfig.guidelines,
+            topics: mockComputedTopics,
+            guidelines: [],
           }),
         }),
       );
+      const sent = context.sqs.sendMessage.firstCall.args[1];
+      expect(sent.data.urls).to.have.lengthOf(mockUrls.length);
+      expect(sent.data.urls[0]).to.include({ url: mockUrls[0].url, type: mockUrls[0].type });
+      expect(sent.data.urls[0].timesCited).to.equal(1);
     });
 
     it('should limit URLs sent to Mystique to MYSTIQUE_URLS_LIMIT', async () => {
@@ -417,7 +419,7 @@ describe('Reddit Analysis Handler', () => {
         auditResult: {
           success: true,
           config: { companyName: 'Test' },
-          storeData: { urls: mockUrls, sentimentConfig: mockSentimentConfig },
+          storeData: { urls: mockUrls, sentimentConfig: expectedSentimentConfig },
         },
       };
 
