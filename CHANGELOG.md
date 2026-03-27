@@ -1,3 +1,10 @@
+## [1.371.14](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.13...v1.371.14) (2026-03-27)
+
+
+### Bug Fixes
+
+* skip fresh agentic pattern generation when patterns already exist ([#2214](https://github.com/adobe/spacecat-audit-worker/issues/2214)) ([04ff29c](https://github.com/adobe/spacecat-audit-worker/commit/04ff29cd46947e04598c7deb69295f289fdb0a77))
+
 ## [1.371.13](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.12...v1.371.13) (2026-03-27)
 
 
