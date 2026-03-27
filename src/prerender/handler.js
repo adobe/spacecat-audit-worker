@@ -551,10 +551,14 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
         return;
       }
 
-      // Skip OUTDATED suggestions (stale data from previous audit runs)
+      // Skip OUTDATED and SKIPPED suggestions (stale or user-dismissed)
       const status = s.getStatus();
       const isDeployedOrFixed = status === Suggestion.STATUSES.FIXED || !!data?.edgeDeployed;
-      if (status === Suggestion.STATUSES.OUTDATED || isDeployedOrFixed) {
+      if (
+        status === Suggestion.STATUSES.OUTDATED
+        || status === Suggestion.STATUSES.SKIPPED
+        || isDeployedOrFixed
+      ) {
         return;
       }
 
