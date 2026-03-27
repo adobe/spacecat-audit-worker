@@ -13,6 +13,8 @@
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { isPaidLLMOCustomer } from './utils/utils.js';
 
+const LOG_PREFIX = 'Prerender -';
+
 /**
  * Downloads JSON data from a presigned URL
  * @param {string} presignedUrl - The presigned S3 URL
@@ -25,7 +27,7 @@ async function downloadFromPresignedUrl(presignedUrl, log) {
 
   if (!response.ok) {
     const errorMsg = `Failed to download from presigned URL: ${response.status} ${response.statusText}`;
-    log.error(`Prerender - ${errorMsg}`);
+    log.error(`${LOG_PREFIX} ${errorMsg}`);
     throw new Error(errorMsg);
   }
 
@@ -33,7 +35,7 @@ async function downloadFromPresignedUrl(presignedUrl, log) {
 
   if (!data || !data.suggestions) {
     const errorMsg = 'Downloaded data is missing required suggestions array';
-    log.error(`Prerender - ${errorMsg}`);
+    log.error(`${LOG_PREFIX} ${errorMsg}`);
     throw new Error(errorMsg);
   }
 
@@ -47,7 +49,7 @@ export default async function handler(message, context) {
   } = dataAccess;
   const { siteId, data } = message;
 
-  log.info(`Prerender - Received Mystique guidance for prerender (presigned URL): ${JSON.stringify(
+  log.info(`${LOG_PREFIX} Received Mystique guidance for prerender (presigned URL): ${JSON.stringify(
     message,
     null,
     2,
@@ -55,8 +57,8 @@ export default async function handler(message, context) {
 
   // Validate message structure early - fail fast
   if (!data) {
-    const msg = `Missing data in Mystique response for siteId=${siteId}`;
-    log.error(`Prerender - ${msg}`);
+    const msg = `${LOG_PREFIX} Missing data in Mystique response for siteId=${siteId}`;
+    log.error(msg);
     return badRequest(msg);
   }
 
@@ -65,45 +67,45 @@ export default async function handler(message, context) {
 
   // Validate required fields
   if (!presignedUrl) {
-    const msg = `Missing presignedUrl in Mystique response for siteId=${siteId}`;
-    log.error(`Prerender - ${msg}`);
+    const msg = `${LOG_PREFIX} Missing presignedUrl in Mystique response for siteId=${siteId}`;
+    log.error(msg);
     return badRequest(msg);
   }
 
   if (!opportunityId) {
-    const msg = `Missing opportunityId in Mystique response for siteId=${siteId}`;
-    log.error(`Prerender - ${msg}`);
+    const msg = `${LOG_PREFIX} Missing opportunityId in Mystique response for siteId=${siteId}`;
+    log.error(msg);
     return badRequest(msg);
   }
 
-  log.info(`Prerender - Downloading AI summaries from presigned URL for siteId=${siteId}, opportunityId=${opportunityId}`);
+  log.info(`${LOG_PREFIX} Downloading AI summaries from presigned URL for siteId=${siteId}, opportunityId=${opportunityId}`);
 
   try {
     // Download AI summaries from presigned URL (throws on error)
     const aiSummariesData = await downloadFromPresignedUrl(presignedUrl, log);
 
     const { suggestions } = aiSummariesData;
-    log.info(`Prerender - Successfully loaded ${suggestions.length} suggestions from presigned URL for opportunityId=${opportunityId}`);
+    log.info(`${LOG_PREFIX} Successfully loaded ${suggestions.length} suggestions from presigned URL for opportunityId=${opportunityId}`);
 
     // Validate site exists
     const site = await Site.findById(siteId);
     if (!site) {
-      log.error(`Prerender - Site not found for siteId: ${siteId}`);
+      log.error(`${LOG_PREFIX} Site not found for siteId: ${siteId}`);
       return notFound('Site not found');
     }
 
     // Look up the existing prerender opportunity by ID
     const opportunity = await Opportunity.findById(opportunityId);
     if (!opportunity) {
-      const msg = `Opportunity not found for opportunityId=${opportunityId}, siteId=${siteId}`;
-      log.error(`Prerender - ${msg}`);
+      const msg = `${LOG_PREFIX} Opportunity not found for opportunityId=${opportunityId}, siteId=${siteId}`;
+      log.error(msg);
       return notFound('Opportunity not found');
     }
 
     // Load existing suggestions for this opportunity
     const existingSuggestions = await opportunity.getSuggestions();
     if (!existingSuggestions || existingSuggestions.length === 0) {
-      log.warn(`Prerender - No existing suggestions found for opportunityId=${opportunityId}, siteId=${siteId}`);
+      log.warn(`${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, siteId=${siteId}`);
       return ok();
     }
 
@@ -114,11 +116,11 @@ export default async function handler(message, context) {
     });
 
     if (updateableSuggestions.length === 0) {
-      log.info(`Prerender - No updateable suggestions found (all are OUTDATED) for opportunityId=${opportunityId}, siteId=${siteId}`);
+      log.info(`${LOG_PREFIX} No updateable suggestions found (all are OUTDATED) for opportunityId=${opportunityId}, siteId=${siteId}`);
       return ok();
     }
 
-    log.info(`Prerender - Found ${updateableSuggestions.length}/${existingSuggestions.length} updateable suggestions (excluding OUTDATED) for opportunityId=${opportunityId}`);
+    log.info(`${LOG_PREFIX} Found ${updateableSuggestions.length}/${existingSuggestions.length} updateable suggestions (excluding OUTDATED) for opportunityId=${opportunityId}`);
 
     // Index updateable suggestions by URL for quick lookup
     const suggestionsByUrl = new Map();
@@ -143,7 +145,7 @@ export default async function handler(message, context) {
       } = incoming || {};
 
       if (!url) {
-        log.warn(`Prerender - Skipping Mystique suggestion without URL: ${JSON.stringify(
+        log.warn(`${LOG_PREFIX} Skipping Mystique suggestion without URL: ${JSON.stringify(
           incoming,
         )}`);
         return;
@@ -151,7 +153,7 @@ export default async function handler(message, context) {
 
       const existing = suggestionsByUrl.get(url);
       if (!existing) {
-        log.warn(`Prerender - No existing suggestion found for URL=${url} on opportunityId=${opportunityId}`);
+        log.warn(`${LOG_PREFIX} No existing suggestion found for URL=${url} on opportunityId=${opportunityId}`);
         return;
       }
 
@@ -189,7 +191,7 @@ export default async function handler(message, context) {
         const isPaid = await isPaidLLMOCustomer(context);
 
         // Log comprehensive quality metrics with paid customer flag
-        log.info(`Prerender - prerender_ai_summary_metrics:
+        log.info(`${LOG_PREFIX} prerender_ai_summary_metrics:
           siteId=${siteId},
           baseUrl=${site.getBaseURL()},
           opportunityId=${opportunityId},
@@ -198,16 +200,16 @@ export default async function handler(message, context) {
           valuableSuggestions=${valuableCount},
           validAiSummaryCount=${validAiSummaryCount},`);
       } catch (error) {
-        log.error(`Prerender - Error batch saving suggestions: ${error.message}`);
+        log.error(`${LOG_PREFIX} Error batch saving suggestions: ${error.message}`);
         throw error;
       }
     } else {
-      log.warn(`Prerender - No valid suggestions to update for opportunityId=${opportunityId}, siteId=${siteId}`);
+      log.warn(`${LOG_PREFIX} No valid suggestions to update for opportunityId=${opportunityId}, siteId=${siteId}`);
     }
 
     return ok();
   } catch (error) {
-    log.error(`Prerender - Error processing guidance for opportunityId=${opportunityId}, siteId=${siteId}: ${error.message}`, error);
+    log.error(`${LOG_PREFIX} Error processing guidance for opportunityId=${opportunityId}, siteId=${siteId}: ${error.message}`, error);
     return badRequest(`Failed to process guidance: ${error.message}`);
   }
 }
