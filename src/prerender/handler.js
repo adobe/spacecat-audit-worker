@@ -21,6 +21,7 @@ import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
 import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
+import * as prerenderShared from './utils/shared.js';
 import {
   CONTENT_GAIN_THRESHOLD,
   DAILY_BATCH_SIZE,
@@ -192,7 +193,46 @@ async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIM
  * @returns {Promise<Array<string>>}
  */
 async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
-  return getTopAgenticUrlsFromAthena(site, context, limit);
+  const athenaUrls = await getTopAgenticUrlsFromAthena(site, context, limit);
+  if (athenaUrls.length > 0) {
+    return athenaUrls;
+  }
+
+  const { log } = context;
+  const overrideBaseUrl = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL;
+  const effectiveBaseUrl = overrideBaseUrl || site.getBaseURL?.() || '';
+
+  try {
+    const sheetContext = {
+      ...context,
+      finalUrl: effectiveBaseUrl,
+    };
+    const { rows } = await prerenderShared.loadLatestAgenticSheet(site, sheetContext);
+    const hitsMap = prerenderShared.buildSheetHitsMap(rows);
+
+    const sheetUrls = [...hitsMap.entries()]
+      .filter(([path]) => typeof path === 'string' && path.length > 0)
+      // Ignore sheet bucket labels like "Other" that are not URL paths.
+      .filter(([path]) => path.startsWith('/') || /^https?:\/\//.test(path))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([path]) => {
+        if (/^https?:\/\//.test(path)) {
+          return path;
+        }
+        try {
+          return new URL(path, effectiveBaseUrl).toString();
+        } catch {
+          return path;
+        }
+      });
+
+    logWithAuditPrefix(log, 'info', `Selected ${sheetUrls.length} top agentic URLs via sheet fallback. baseUrl=${effectiveBaseUrl || site.getBaseURL?.() || ''}`);
+    return sheetUrls;
+  } catch (e) {
+    logWithAuditPrefix(log, 'warn', `Sheet-based agentic URL fetch failed: ${e?.message || e}. baseUrl=${effectiveBaseUrl || site.getBaseURL?.() || ''}`);
+    return [];
+  }
 }
 
 /**
