@@ -188,6 +188,16 @@ describe('CWV Trends Opportunity Handler', () => {
     expect(buildKey()).to.equal('mobile-report');
   });
 
+  it('passes newSuggestionStatus NEW to syncSuggestions', async () => {
+    allBySiteIdAndStatusStub.resolves([]);
+    createStub.resolves(makeMockOpportunity());
+
+    await opportunityHandler('https://ex.com', makeAuditData(['mobile']), makeContext());
+
+    const { newSuggestionStatus } = syncSuggestionsStub.firstCall.args[0];
+    expect(newSuggestionStatus).to.equal('NEW');
+  });
+
   it('mergeDataFunction replaces suggestionValue with new result', async () => {
     allBySiteIdAndStatusStub.resolves([]);
     createStub.resolves(makeMockOpportunity());

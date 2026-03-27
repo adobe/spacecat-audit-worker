@@ -115,6 +115,7 @@ export default async function opportunityHandler(finalUrl, auditData, context) {
         ...existingData,
         suggestionValue: JSON.stringify(newResult),
       }),
+      newSuggestionStatus: 'NEW',
     });
   }));
 
