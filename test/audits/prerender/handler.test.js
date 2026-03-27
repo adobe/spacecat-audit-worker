@@ -5713,7 +5713,7 @@ describe('Prerender Audit', () => {
 
       const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
-      expect(uploadedData.totalUrlsChecked).to.equal(3);
+      expect(uploadedData).to.not.have.property('totalUrlsChecked');
       expect(uploadedData.urlsNeedingPrerender).to.equal(1);
       expect(uploadedData.urlsSubmittedForScraping).to.equal(3);
       expect(uploadedData.urlsScrapedSuccessfully).to.equal(2);
@@ -5771,7 +5771,7 @@ describe('Prerender Audit', () => {
       expect(uploadedData.auditType).to.equal('prerender');
       expect(uploadedData.scrapeJobId).to.equal('scrape-job-999');
       expect(uploadedData.lastUpdated).to.equal('2025-01-01T00:00:00.000Z');
-      expect(uploadedData.totalUrlsChecked).to.equal(2); // derived from mergedPages.length
+      expect(uploadedData).to.not.have.property('totalUrlsChecked');
       expect(uploadedData.urlsNeedingPrerender).to.equal(1); // derived: page1 needsPrerender=true
       expect(uploadedData.scrapeForbidden).to.equal(false);
       expect(uploadedData.pages).to.have.lengthOf(2);
@@ -5900,7 +5900,7 @@ describe('Prerender Audit', () => {
       const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
       expect(uploadedData.pages).to.deep.equal([]);
-      expect(uploadedData.totalUrlsChecked).to.equal(0);
+      expect(uploadedData).to.not.have.property('totalUrlsChecked');
       expect(uploadedData.urlsNeedingPrerender).to.equal(0);
       expect(uploadedData.scrapingErrorRate).to.equal(null);
     });
@@ -6275,6 +6275,7 @@ describe('Prerender Audit', () => {
       };
 
       const existingStatus = {
+        urlsSubmittedForScraping: 2,
         pages: [
           { url: 'https://example.com/old-page', scrapingStatus: 'success', needsPrerender: true, scrapedAt: '2025-01-01T00:00:00.000Z' },
           { url: 'https://example.com/forbidden', scrapingStatus: 'error', needsPrerender: false, scrapeError: { statusCode: 403, message: 'Forbidden' }, scrapedAt: '2025-01-01T00:00:00.000Z' },
@@ -6295,13 +6296,13 @@ describe('Prerender Audit', () => {
       const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
       // 3 unique pages across both runs
-      expect(uploadedData.totalUrlsChecked).to.equal(3);
+      expect(uploadedData).to.not.have.property('totalUrlsChecked');
       // new-page + old-page both needsPrerender=true
       expect(uploadedData.urlsNeedingPrerender).to.equal(2);
       // new-page (success) + old-page (success) = 2 scraped successfully; forbidden = error
       expect(uploadedData.urlsScrapedSuccessfully).to.equal(2);
       expect(uploadedData.urlsSubmittedForScraping).to.equal(3);
-      expect(uploadedData.scrapeForbidden).to.be.true;
+      expect(uploadedData.scrapeForbidden).to.be.false;
       expect(uploadedData.scrapeForbiddenCount).to.equal(1);
     });
 

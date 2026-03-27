@@ -1224,14 +1224,15 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
 
     // Read existing status.json and merge pages so previous runs are not lost.
     // Pages from the current run overwrite any prior entry for the same URL.
+    let existingStatus = {};
     let existingPages = [];
     try {
       const existing = await s3Client.send(new GetObjectCommand({
         Bucket: bucketName,
         Key: statusKey,
       }));
-      const existingData = JSON.parse(await existing.Body.transformToString());
-      existingPages = Array.isArray(existingData.pages) ? existingData.pages : [];
+      existingStatus = JSON.parse(await existing.Body.transformToString());
+      existingPages = Array.isArray(existingStatus.pages) ? existingStatus.pages : [];
     } catch (e) {
       if (e.name !== 'NoSuchKey') {
         logWithAuditPrefix(log, 'warn', `Could not read existing status.json for merge, starting fresh: ${e.message}`);
@@ -1244,32 +1245,34 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       ...existingPages.filter((p) => !currentUrlSet.has(p.url)),
     ];
 
-    // Derive aggregate metrics from the full merged page set
-    const totalUrlsChecked = mergedPages.length;
+    // Derive aggregate metrics from the full merged page set and latest audit metadata.
     const urlsNeedingPrerender = mergedPages.filter((p) => p.needsPrerender).length;
     const urlsScrapedSuccessfully = mergedPages.filter((p) => p.scrapingStatus === 'success').length;
-    const urlsSubmittedForScraping = mergedPages
-      .filter((p) => p.scrapingStatus !== undefined).length;
+    const currentUrlsSubmittedForScraping = auditResult.urlsSubmittedForScraping
+      ?? currentPages.filter((p) => p.scrapingStatus !== undefined).length;
+    const urlsSubmittedForScraping = (existingStatus.urlsSubmittedForScraping || 0)
+      + currentUrlsSubmittedForScraping;
     const scrapingErrorRate = urlsSubmittedForScraping > 0
       ? ((urlsSubmittedForScraping - urlsScrapedSuccessfully) / urlsSubmittedForScraping) * 100
       : null;
     const scrapeForbiddenCount = mergedPages.filter(
       (p) => p.scrapeError?.statusCode === 403,
     ).length;
+    const latestScrapeForbidden = auditResult.scrapeForbidden
+      ?? currentPages.some((p) => p.scrapeError?.statusCode === 403);
 
     // Extract status information for all pages
     const statusSummary = {
       baseUrl: auditUrl,
       siteId,
       auditType: AUDIT_TYPE,
-      scrapeJobId: scrapeJobId || null,
+      scrapeJobId: scrapeJobId || existingStatus.scrapeJobId || null,
       lastUpdated: scrapedAt,
-      totalUrlsChecked,
       urlsNeedingPrerender,
       urlsSubmittedForScraping,
       urlsScrapedSuccessfully,
       scrapingErrorRate,
-      scrapeForbidden: scrapeForbiddenCount > 0,
+      scrapeForbidden: latestScrapeForbidden,
       scrapeForbiddenCount,
       lastAuditSuccess: auditResult.lastAuditSuccess !== false,
       pages: mergedPages,
