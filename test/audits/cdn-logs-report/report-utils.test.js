@@ -325,7 +325,29 @@ describe('CDN Logs Report Utils', () => {
       expect(patternNock.isDone()).to.be.true;
     });
 
-    it('returns null when fetch throws an error', async () => {
+    it('returns an error state when fetch fails with a non-404 response', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoDataFolder: () => 'bulk',
+          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
+        }),
+      };
+
+      const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/bulk/agentic-traffic/patterns/patterns.json')
+        .reply(500, 'Server error');
+
+      const result = await reportUtils.fetchRemotePatterns(mockSite);
+
+      expect(result).to.deep.equal({
+        error: true,
+        status: 500,
+        source: 'patterns',
+      });
+      expect(patternNock.isDone()).to.be.true;
+    });
+
+    it('returns an error state when fetch throws an error', async () => {
       const mockSite = {
         getConfig: () => ({
           getLlmoDataFolder: () => 'bulk',
@@ -339,11 +361,14 @@ describe('CDN Logs Report Utils', () => {
 
       const result = await reportUtils.fetchRemotePatterns(mockSite);
 
-      expect(result).to.be.null;
+      expect(result).to.deep.equal({
+        error: true,
+        source: 'patterns',
+      });
       expect(patternNock.isDone()).to.be.true;
     });
 
-    it('returns null when JSON parsing fails', async () => {
+    it('returns an error state when JSON parsing fails', async () => {
       const mockSite = {
         getConfig: () => ({
           getLlmoDataFolder: () => 'bulk',
@@ -357,7 +382,10 @@ describe('CDN Logs Report Utils', () => {
 
       const result = await reportUtils.fetchRemotePatterns(mockSite);
 
-      expect(result).to.be.null;
+      expect(result).to.deep.equal({
+        error: true,
+        source: 'patterns',
+      });
       expect(patternNock.isDone()).to.be.true;
     });
 
@@ -385,6 +413,75 @@ describe('CDN Logs Report Utils', () => {
         topicPatterns: [],
       });
       expect(patternNock.isDone()).to.be.true;
+    });
+  });
+
+  describe('queryIndexHasPatternsFile', () => {
+    it('returns true when query-index contains patterns.json', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoDataFolder: () => 'bulk',
+        }),
+      };
+
+      const queryIndexNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/bulk/query-index.json')
+        .query({ limit: '5000' })
+        .reply(200, {
+          data: [
+            { path: '/bulk/agentic-traffic/patterns/patterns.json' },
+            { path: '/bulk/agentic-traffic/agentictraffic-w10-2026.json' },
+          ],
+        });
+
+      const result = await reportUtils.queryIndexHasPatternsFile(mockSite);
+
+      expect(result).to.be.true;
+      expect(queryIndexNock.isDone()).to.be.true;
+    });
+
+    it('returns false when query-index does not contain patterns.json', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoDataFolder: () => 'bulk',
+        }),
+      };
+
+      const queryIndexNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/bulk/query-index.json')
+        .query({ limit: '5000' })
+        .reply(200, {
+          data: [
+            { path: '/bulk/agentic-traffic/agentictraffic-w10-2026.json' },
+          ],
+        });
+
+      const result = await reportUtils.queryIndexHasPatternsFile(mockSite);
+
+      expect(result).to.be.false;
+      expect(queryIndexNock.isDone()).to.be.true;
+    });
+
+    it('returns an error state when query-index fails with a non-404 response', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoDataFolder: () => 'bulk',
+        }),
+      };
+
+      const queryIndexNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/bulk/query-index.json')
+        .query({ limit: '5000' })
+        .reply(500, 'Server error');
+
+      const result = await reportUtils.queryIndexHasPatternsFile(mockSite);
+
+      expect(result).to.deep.equal({
+        error: true,
+        status: 500,
+        source: 'query-index',
+      });
+      expect(queryIndexNock.isDone()).to.be.true;
     });
   });
 
