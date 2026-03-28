@@ -384,10 +384,12 @@ export async function syncSuggestions({
     .filter((data) => !existingSuggestionKeys.has(buildKey(data)))
     .map((data) => {
       const suggestion = mapNewSuggestion(data);
+      const status = requiresValidation
+        ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+        : SuggestionDataAccess.STATUSES.NEW;
       return {
         ...suggestion,
-        status: requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
-          : SuggestionDataAccess.STATUSES.NEW,
+        status,
       };
     });
 
