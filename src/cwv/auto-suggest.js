@@ -46,13 +46,15 @@ const CWV_AUTO_FIX_FEATURE_TOGGLE = 'cwv-auto-fix';
  * - Already have guidance (data.issues with non-empty values)
  *
  * @param {Object} suggestion - Suggestion object
+ * @param {Object} [log] - Optional logger (e.g. context.log); if missing, no logging
  * @returns {boolean} True if suggestion should receive auto-suggest
  */
-export function shouldSendAutoSuggestForSuggestion(suggestion) {
+export function shouldSendAutoSuggestForSuggestion(suggestion, log) {
   const status = suggestion.getStatus();
 
   // Only send for NEW suggestions
   if (status !== 'NEW') {
+    if (log?.info) log.info(`[audit-worker-cwv] suggestion ${suggestion.getId()} is not NEW, skipping`);
     return false;
   }
 
@@ -65,7 +67,9 @@ export function shouldSendAutoSuggestForSuggestion(suggestion) {
   }
 
   // If any issue has empty value, send for auto-suggest
-  return issues.some((issue) => !issue.value || !issue.value.trim());
+  const shouldSend = issues.some((issue) => !issue.value || !issue.value.trim());
+  if (shouldSend && log?.info) log.info(`[audit-worker-cwv] suggestion ${suggestion.getId()} has empty value, sending for auto-suggest`);
+  return shouldSend;
 }
 
 /**
@@ -115,26 +119,32 @@ export async function processAutoSuggest(context, opportunity, site) {
     const codeInfo = (isAutoFixEnabled && site) ? await getCodeInfo(site, 'cwv', context) : null;
     const hasCodeInfo = codeInfo && codeInfo.codeBucket && codeInfo.codePath && String(codeInfo.codePath).trim() !== '';
 
+    if (suggestions.length === 0) {
+      log.info(`[audit-worker-cwv] siteId: ${siteId} | No suggestions found for CWV auto-suggest, opportunityId: ${opportunityId}`);
+    }
+
     // Send one SQS message per suggestion that needs auto-suggest
     for (const suggestion of suggestions) {
-      // Skip suggestions that don't need auto-suggest
-      if (!shouldSendAutoSuggestForSuggestion(suggestion)) {
-        // eslint-disable-next-line no-continue
-        continue;
-      }
-
       const suggestionId = suggestion.getId();
       const suggestionData = suggestion.getData();
-
-      // Skip groups - only process URL-type suggestions
-      if (suggestionData.type === 'group') {
-        // eslint-disable-next-line no-continue
-        continue;
-      }
 
       // Extract URL and metrics from suggestion data
       const { url } = suggestionData;
       const metrics = suggestionData.metrics?.[0] || {};
+
+      // Skip suggestions that don't need auto-suggest
+      if (!shouldSendAutoSuggestForSuggestion(suggestion, log)) {
+        log.info(`[audit-worker-cwv] siteId: ${siteId} | Skipping suggestion ${suggestion.getId()} for CWV auto-suggest, suggestionId: ${suggestionId}, url: ${url}`);
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      // Skip groups - only process URL-type suggestions
+      if (suggestionData.type === 'group') {
+        log.info(`[audit-worker-cwv] siteId: ${siteId} | Skipping group suggestion ${suggestionId} for CWV auto-suggest`);
+        // eslint-disable-next-line no-continue
+        continue;
+      }
 
       log.debug(`[audit-worker-cwv] siteId: ${siteId} | Sending CWV suggestion for auto-suggest, suggestionId: ${suggestionId}, url: ${url}`);
 
