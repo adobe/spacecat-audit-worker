@@ -18,9 +18,22 @@ const ASO_PRODUCT_CODE = Entitlement.PRODUCT_CODES.ASO;
 /**
  * Audit types (SQS message `type`) for LLMO flows that skip PAID-tier suggestion validation
  * gating — suggestions sync as if requiresValidation were false for these audits.
+ *
+ * Covers tech-geo / edge (prerender, llm-blocked), earned & social offsite analyses,
+ * and on-page LLMO content opportunities (toc, summarization, readability, faqs).
+ * TODO: Replace this via global config in the future.
  */
 export const IS_LLMO_OPPTY = [
+  'cited-analysis',
+  'faqs',
+  'llm-blocked',
   'prerender',
+  'readability',
+  'reddit-analysis',
+  'summarization',
+  'toc',
+  'wikipedia-analysis',
+  'youtube-analysis',
 ];
 
 /**
