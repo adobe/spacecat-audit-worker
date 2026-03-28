@@ -1,0 +1,147 @@
+{
+  "id": "spacecat-audit-worker-2026-02-27",
+  "scorecardType": "software-dev",
+  "teamName": "SpaceCat Audit Worker",
+  "timestamp": "2026-02-27T00:00:00Z",
+  "repoUrl": "https://github.com/adobe/spacecat-audit-worker",
+  "overallMaturity": "intermediate",
+  "overallScore": 1.75,
+  "phases": [
+    {
+      "phase": "Architecture & Design",
+      "aiScore": 2,
+      "score": null,
+      "reasoning": "The repository has a comprehensive CLAUDE.md in the repo root that documents the full tech stack, middleware chain (helixStatus → secrets → s3Client → sqs → logWrapper → sqsEventAdapter → dataAccess), audit framework patterns (RunnerAudit, StepAudit, AuditBuilder), opportunity/suggestion patterns, and support clients. This context enables AI tools to understand the full codebase. Spec-first development is mandated by CLAUDE.md (docs/specs/ directory exists with template references), and ADR usage is required (docs/decisions/ directory exists). However, both directories are currently empty — the frameworks are in place but not yet populated. There is no living context system (no active_context.md, product_evolution.md, or tech_debt.md), and no CI/CD automation for updating context files.",
+      "evidence": [
+        "CLAUDE.md present at repo root with comprehensive architecture documentation",
+        "Architecture diagrams and middleware chain documented in detail",
+        "AuditBuilder pattern documented with all 3 variants (RunnerAudit, StepAudit, custom)",
+        "docs/specs/ directory exists with spec-first mandate in CLAUDE.md",
+        "docs/decisions/ directory exists with ADR mandate in CLAUDE.md",
+        "References to external spec template (ai-first-guidelines repo)",
+        "Documentation requirements formally stated: spec-first for new functionality, ADRs for long-term decisions"
+      ],
+      "gaps": [
+        "docs/specs/ directory is empty — spec-first development mandated but not yet practiced",
+        "docs/decisions/ directory is empty — ADR requirement exists but no ADRs written",
+        "No living context system (active_context.md, product_evolution.md, tech_debt.md)",
+        "No CI/CD automation to auto-update context files with recent changes",
+        "No AI agents reviewing proposed architecture changes against historical decisions"
+      ],
+      "recommendations": [
+        "Write the first ADRs for the most significant architectural decisions already made (AuditBuilder pattern, SQS-based audit routing, opportunity/suggestion data model)",
+        "Write specs for any upcoming significant new audits or framework changes to demonstrate spec-first practice",
+        "Create active_context.md or context_summary.md at repo root to track current priorities and cross-cutting concerns",
+        "Consider adding a CI step that validates docs/specs/ contains a spec for PRs that add new audit modules"
+      ]
+    },
+    {
+      "phase": "Development & Coding",
+      "aiScore": 2,
+      "score": null,
+      "reasoning": "The codebase demonstrates significant AI integration within the product itself — 31+ source files reference LLM/AI clients, 5 production prompt template files exist in static/prompts/ (broken-backlinks.prompt, toc-detection.prompt, generate-brand-guidelines.prompt, heading-empty-suggestion.prompt, broken-backlinks-followup.prompt), and multiple audits use AzureOpenAIClient from spacecat-shared-gpt-client. This shows the team designs and ships AI-powered features at scale. CLAUDE.md enables AI tools to understand the full codebase for @workspace queries. However, there is no .claude/commands/ directory with shared 'power prompts' for developer workflow tasks, no spec-driven development artifacts are present (specs directory empty), and no evidence of a proposal.md → design.md → implementation workflow.",
+      "evidence": [
+        "5 production prompt template files in static/prompts/ with structured prompt engineering",
+        "31+ source files reference AI/LLM clients (gpt, openai, llm, claude, anthropic, gemini)",
+        "AzureOpenAIClient from @adobe/spacecat-shared-gpt-client used in toc, headings, internal-links, metatags, cdn-logs-report, and other audit modules",
+        "Dedicated audit modules for LLM interactions: llm-blocked, llm-error-pages, drs-prompt-generation",
+        "CLAUDE.md provides comprehensive codebase context enabling @workspace AI queries",
+        "Prompt templates use parameterized placeholders ({{alternative_urls}}, {{broken_url}})",
+        "spacecat-shared-gpt-client and spacecat-shared-html-analyzer dependencies indicate AI-first architecture"
+      ],
+      "gaps": [
+        "No .claude/commands/ directory with reusable developer-workflow power prompts",
+        "No shared prompt library for common development tasks (refactoring, code review, test generation)",
+        "specs/ directory is empty — no spec-driven development workflow artifacts present",
+        "No proposal.md or design.md artifacts for any features",
+        "AI usage is primarily in product features, not in the development process itself"
+      ],
+      "recommendations": [
+        "Create .claude/commands/ with power prompts for common tasks: adding a new audit handler, writing test fixtures, mapping opportunity data",
+        "Add a /new-audit slash command that guides AI through the full audit scaffolding process (handler.js, test, fixture, opportunity-data-mapper)",
+        "Write a proposal.md for the next major audit being developed, establishing the spec-first practice",
+        "Add a AGENTS.md alongside CLAUDE.md documenting AI collaboration norms and expected output format"
+      ]
+    },
+    {
+      "phase": "Testing & Quality",
+      "aiScore": 2,
+      "score": null,
+      "reasoning": "The testing infrastructure is exceptionally rigorous: 100% lines/branches/statements coverage enforced via .nycrc.json, with a dedicated GitHub Action (protect-nyc-config) that BLOCKS any PR attempting to relax coverage thresholds. 184 test files totaling 159,868 lines of test code. CLAUDE.md documents comprehensive testing patterns including MockContextBuilder (fluent builder for Lambda context), fixture conventions, ESM mocking with esmock, and typical test file shape. husky pre-commit hooks run lint-staged. Test infrastructure uses Mocha + Chai + Sinon + nock + esmock. The testing patterns in CLAUDE.md provide the framework guidance that intermediate level expects in TESTING.md. However, there is no dedicated TESTING.md, no AI-assisted test generation workflow, and tests appear to be written manually.",
+      "evidence": [
+        "100% lines, branches, statements coverage enforced in .nycrc.json",
+        "GitHub Action protect-nyc-config blocks any modification to coverage configuration",
+        "184 test files, 159,868 total lines of test code",
+        "Comprehensive MockContextBuilder pattern documented in CLAUDE.md",
+        "Fixture conventions mirror src/ structure (test/fixtures/[audit-name]/)",
+        "ESM mocking with esmock documented with examples",
+        "husky pre-commit hooks enforcing lint-staged",
+        "Codecov integration for coverage upload in CI",
+        "Post-deploy integration tests in CI pipeline"
+      ],
+      "gaps": [
+        "No dedicated TESTING.md file with AI-specific test generation guidance",
+        "No AI-assisted test generation workflow",
+        "No AI edge case discovery (boundary conditions, null inputs, property-based tests)",
+        "Tests appear to be written manually — no evidence of AI-generated test cases",
+        "No mutation testing or fuzzing for test robustness verification"
+      ],
+      "recommendations": [
+        "Create TESTING.md documenting AI-specific test generation patterns: how to prompt for test cases from requirements, how to use MockContextBuilder with AI context",
+        "Add a .claude/commands/write-tests command that generates test stubs from handler.js signatures, using the MockContextBuilder pattern",
+        "Experiment with AI-assisted edge case discovery by prompting AI to identify boundary conditions for audit handler inputs",
+        "Document in TESTING.md how to use AI to debug failing tests by pasting error output and handler context"
+      ]
+    },
+    {
+      "phase": "Code Review",
+      "aiScore": 1,
+      "score": null,
+      "reasoning": "Code review is currently at the basic level. The PR template (.github/pull_request_template.md) is minimal — 3 checkboxes (link issues, ensure issue refs in commits, update wiki for opportunity data sources). PR descriptions are written manually with no AI assistance. Policy enforcement relies solely on static analysis (eslint via lint-staged pre-commit hooks). CI runs lint, test, and coverage, but there is no AI bot posting PR summaries, walkthroughs, or review comments. No CodeRabbit, GitHub Copilot PR Review, or equivalent AI review automation is configured.",
+      "evidence": [
+        "PR template exists at .github/pull_request_template.md with 3 manual checkboxes",
+        "eslint enforcement via lint-staged (pre-commit) and CI lint step",
+        "GitHub Actions CI runs lint, test, coverage on every PR",
+        "husky pre-commit hooks for lint-staged",
+        "No CodeRabbit, Copilot PR Review, or AI review bot configured"
+      ],
+      "gaps": [
+        "No AI bot posting PR change summaries or code walkthroughs",
+        "No AI reviewing PRs against architectural constraints from CLAUDE.md",
+        "PR descriptions are manual and minimal — no AI-generated context or impact analysis",
+        "No AI checklist enforcement (e.g., does PR include tests? are handler patterns followed?)",
+        "No impact analysis predicting which audits are affected by shared changes"
+      ],
+      "recommendations": [
+        "Add CodeRabbit (coderabbit.ai) — free for public repos — to post AI-generated PR summaries and reviews",
+        "Configure CodeRabbit or equivalent to check PRs against CLAUDE.md conventions (100% test coverage requirement, AuditBuilder pattern, fixture conventions)",
+        "Add a PR description template that prompts authors to use AI for generating the description and linking the related audit type",
+        "Create a .claude/commands/pr-description command that generates a structured PR description from git diff output"
+      ]
+    }
+  ],
+  "overallSummary": "spacecat-audit-worker is an AI-forward codebase at an intermediate maturity level. The project is exceptional in two areas: it ships AI-powered SEO audits as its core product (LLM integration in 31+ files, Azure OpenAI client, production prompt templates), and it enforces uncompromising test quality (100% coverage, 184 test files, protected coverage config). CLAUDE.md provides solid codebase context for AI-assisted development. The gaps are concentrated in process formalization: spec-first development is mandated but docs/specs/ is empty, ADRs are required but docs/decisions/ is empty, and code review has no AI automation. The highest-ROI improvements are: (1) adding an AI PR review bot (CodeRabbit), (2) creating .claude/commands/ with developer workflow prompts, and (3) writing the first ADRs and specs to activate the frameworks already in place.",
+  "evaluationMetadata": {
+    "evaluatedBy": "Claude Sonnet 4.6 (claude-sonnet-4-6)",
+    "evaluationDate": "2026-02-27",
+    "scorecardVersion": "software-dev-v1",
+    "repoCommit": "1b61e521",
+    "repoVersion": "1.333.1",
+    "evaluationMethod": "automated-analysis",
+    "filesAnalyzed": [
+      "CLAUDE.md",
+      "package.json",
+      ".nycrc.json",
+      ".github/workflows/ci.yaml",
+      ".github/actions/lint-test-coverage/action.yaml",
+      ".github/actions/protect-nyc-config/action.yaml",
+      ".github/pull_request_template.md",
+      ".husky/pre-commit",
+      "static/prompts/ (5 files)",
+      "src/ (structure, 31+ AI-referencing files sampled)",
+      "docs/specs/ (empty)",
+      "docs/decisions/ (empty)",
+      ".claude/ (empty)"
+    ]
+  }
+}
