@@ -386,8 +386,7 @@ export async function syncSuggestions({
       const suggestion = mapNewSuggestion(data);
       return {
         ...suggestion,
-        status: requiresValidation
-          ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+        status: requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
           : SuggestionDataAccess.STATUSES.NEW,
       };
     });
