@@ -412,12 +412,12 @@ describe('Reddit Analysis Guidance Handler', () => {
       const mapped0 = mapNewSuggestion(newData[0]);
       expect(mapped0.rank).to.equal(1);
       expect(mapped0.type).to.equal('CONTENT_UPDATE');
-      expect(mapped0.data).to.deep.equal({ suggestionValue: 'Analysis A' });
+      expect(mapped0.data).to.deep.equal({ suggestionValue: 'Analysis A', redditSuggestionId: 'sug_a' });
 
       const mapped1 = mapNewSuggestion(newData[1]);
       expect(mapped1.rank).to.equal(2);
       expect(mapped1.type).to.equal('METADATA_UPDATE');
-      expect(mapped1.data).to.deep.equal({ suggestionValue: 'Analysis B' });
+      expect(mapped1.data).to.deep.equal({ suggestionValue: 'Analysis B', redditSuggestionId: 'sug_b' });
     });
 
     it('should default type to CONTENT_UPDATE when not provided', async () => {
@@ -447,7 +447,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(mapped.type).to.equal('CONTENT_UPDATE');
     });
 
-    it('should use correct buildKey function', async () => {
+    it('should use correct buildKey function with id', async () => {
       const message = {
         siteId,
         auditId,
@@ -468,6 +468,29 @@ describe('Reddit Analysis Guidance Handler', () => {
       const key = buildKey({ id: 'my_suggestion_id' });
 
       expect(key).to.equal('reddit::my_suggestion_id');
+    });
+
+    it('should use redditSuggestionId in buildKey when available (existing suggestion data)', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            suggestions: [
+              { id: 'my_suggestion_id', priority: 'HIGH', title: 'My Title', description: 'Desc' },
+            ],
+          },
+        },
+      };
+
+      await handler.default(message, context);
+
+      const syncCall = syncSuggestionsStub.firstCall;
+      const { buildKey } = syncCall.args[0];
+      const key = buildKey({ redditSuggestionId: 'stored_id', suggestionValue: 'some value' });
+
+      expect(key).to.equal('reddit::stored_id');
     });
   });
 
