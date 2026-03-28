@@ -110,56 +110,7 @@ describe('delivery-config-writer handler', () => {
     });
   });
 
-  describe('slackEnabled = false paths (no redirect identification)', () => {
-    it('skips redirect identification when channelId is missing', async () => {
-      const { handler, detectCdnStub, identifyRedirectsStub } = await loadHandler();
-
-      await handler({
-        siteId: 'site-1',
-        baseURL: 'https://example.com',
-        programId: 'p123',
-        environmentId: 'e456',
-        slackContext: { threadTs: '1234.5678' }, // no channelId
-      }, context);
-
-      expect(detectCdnStub).to.have.been.calledOnce;
-      expect(identifyRedirectsStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWithMatch('no Slack context');
-    });
-
-    it('skips redirect identification when threadTs is missing', async () => {
-      const { handler, detectCdnStub, identifyRedirectsStub } = await loadHandler();
-
-      await handler({
-        siteId: 'site-1',
-        baseURL: 'https://example.com',
-        programId: 'p123',
-        environmentId: 'e456',
-        slackContext: { channelId: 'C123' }, // no threadTs
-      }, context);
-
-      expect(detectCdnStub).to.have.been.calledOnce;
-      expect(identifyRedirectsStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWithMatch('no Slack context');
-    });
-
-    it('skips redirect identification when slackContext is completely absent', async () => {
-      const { handler, identifyRedirectsStub } = await loadHandler();
-
-      await handler({
-        siteId: 'site-1',
-        baseURL: 'https://example.com',
-        programId: 'p123',
-        environmentId: 'e456',
-        // no slackContext at all
-      }, context);
-
-      expect(identifyRedirectsStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWithMatch('no Slack context');
-    });
-  });
-
-  describe('slackEnabled = true but missing AEM params', () => {
+  describe('missing AEM params (no redirect identification)', () => {
     it('skips redirect identification when programId is missing', async () => {
       const { handler, detectCdnStub, identifyRedirectsStub } = await loadHandler();
 
@@ -191,10 +142,23 @@ describe('delivery-config-writer handler', () => {
       expect(identifyRedirectsStub).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWithMatch('missing programId or environmentId');
     });
+
+    it('skips redirect identification when both AEM params are missing and no slackContext', async () => {
+      const { handler, identifyRedirectsStub } = await loadHandler();
+
+      await handler({
+        siteId: 'site-1',
+        baseURL: 'https://example.com',
+        // no programId, no environmentId, no slackContext
+      }, context);
+
+      expect(identifyRedirectsStub).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWithMatch('missing programId or environmentId');
+    });
   });
 
   describe('full execution (CDN + redirects)', () => {
-    it('runs both detectCdn and identifyRedirects when all params are present', async () => {
+    it('runs both detectCdn and identifyRedirects when AEM params are present with Slack', async () => {
       const { handler, detectCdnStub, identifyRedirectsStub } = await loadHandler();
 
       const slackContext = { channelId: 'C999', threadTs: '9876.5432' };
@@ -228,6 +192,33 @@ describe('delivery-config-writer handler', () => {
       });
 
       expect(context.log.info).to.have.been.calledWithMatch('CDN detection complete');
+      expect(context.log.info).to.have.been.calledWithMatch('Redirect identification complete');
+    });
+
+    it('runs both detectCdn and identifyRedirects when AEM params are present without Slack', async () => {
+      const { handler, detectCdnStub, identifyRedirectsStub } = await loadHandler();
+
+      await handler({
+        siteId: 'site-1',
+        baseURL: 'https://example.com',
+        programId: 'p123',
+        environmentId: 'e456',
+        minutes: 1000,
+        updateRedirects: true,
+        // no slackContext — self-onboarding via API
+      }, context);
+
+      expect(detectCdnStub).to.have.been.calledOnce;
+      expect(identifyRedirectsStub).to.have.been.calledOnce;
+      expect(identifyRedirectsStub.firstCall.args[0]).to.deep.equal({
+        siteId: 'site-1',
+        baseURL: 'https://example.com',
+        programId: 'p123',
+        environmentId: 'e456',
+        minutes: 1000,
+        updateRedirects: true,
+        slackContext: {},
+      });
       expect(context.log.info).to.have.been.calledWithMatch('Redirect identification complete');
     });
 
