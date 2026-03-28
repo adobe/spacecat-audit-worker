@@ -13,7 +13,7 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import { Suggestion } from '@adobe/spacecat-shared-data-access';
-import { syncSuggestions } from '../../src/utils/data-access.js';
+import { syncSuggestions, SKIP_PENDING_VALIDATION_OPPORTUNITY_TYPES } from '../../src/utils/data-access.js';
 
 describe('Suggestion Validation Tests', () => {
   let sandbox;
@@ -29,7 +29,7 @@ describe('Suggestion Validation Tests', () => {
     opportunity = {
       getId: sandbox.stub().returns('opportunity-id'),
       getSiteId: sandbox.stub().returns('site-id'),
-      getTags: sandbox.stub().returns([]),
+      getType: sandbox.stub().returns('some-other-type'),
       getSuggestions: sandbox.stub().resolves([]),
       addSuggestions: sandbox.stub().resolves({
         createdItems: [{ id: 'suggestion-id' }],
@@ -94,8 +94,9 @@ describe('Suggestion Validation Tests', () => {
     expect(suggestions[1].status).to.equal(Suggestion.STATUSES.NEW);
   });
 
-  it('should set status to PENDING_VALIDATION for non-isElmo sites with requiresValidation flag', async () => {
+  it('should set status to PENDING_VALIDATION for non-exempt opportunity types with requiresValidation flag', async () => {
     context.site.requiresValidation = true;
+    opportunity.getType.returns('broken-backlinks');
 
     await syncSuggestions({
       context,
@@ -114,9 +115,9 @@ describe('Suggestion Validation Tests', () => {
     expect(suggestions[1].status).to.equal(Suggestion.STATUSES.PENDING_VALIDATION);
   });
 
-  it('should set status to NEW for isElmo opportunities even when requiresValidation is true', async () => {
+  it('should set status to NEW for prerender opportunity type even when requiresValidation is true', async () => {
     context.site.requiresValidation = true;
-    opportunity.getTags.returns(['isElmo', 'content']);
+    opportunity.getType.returns('prerender');
 
     await syncSuggestions({
       context,
@@ -138,9 +139,9 @@ describe('Suggestion Validation Tests', () => {
     );
   });
 
-  it('should warn and keep PENDING_VALIDATION when getTags is missing', async () => {
+  it('should set status to PENDING_VALIDATION when opportunity type is not in SKIP_PENDING_VALIDATION_OPPORTUNITY_TYPES', async () => {
     context.site.requiresValidation = true;
-    delete opportunity.getTags;
+    opportunity.getType.returns('sitemap');
 
     await syncSuggestions({
       context,
@@ -153,15 +154,28 @@ describe('Suggestion Validation Tests', () => {
     const suggestions = opportunity.addSuggestions.getCall(0).args[0];
     expect(suggestions[0].status).to.equal(Suggestion.STATUSES.PENDING_VALIDATION);
     expect(suggestions[1].status).to.equal(Suggestion.STATUSES.PENDING_VALIDATION);
-    sinon.assert.calledWith(
-      context.log.warn,
-      '[syncSuggestions] opportunity.getTags is not a function. Treating as non-isElmo.',
-    );
   });
 
-  it('should warn and keep PENDING_VALIDATION when getTags returns null', async () => {
+  it('should set status to NEW when opportunity.getType returns undefined (no exempt type)', async () => {
+    context.site.requiresValidation = false;
+    opportunity.getType.returns(undefined);
+
+    await syncSuggestions({
+      context,
+      opportunity,
+      newData,
+      buildKey,
+      mapNewSuggestion,
+    });
+
+    const suggestions = opportunity.addSuggestions.getCall(0).args[0];
+    expect(suggestions[0].status).to.equal(Suggestion.STATUSES.NEW);
+    expect(suggestions[1].status).to.equal(Suggestion.STATUSES.NEW);
+  });
+
+  it('should set PENDING_VALIDATION when opportunity.getType returns undefined and requiresValidation is true', async () => {
     context.site.requiresValidation = true;
-    opportunity.getTags.returns(null);
+    opportunity.getType.returns(undefined);
 
     await syncSuggestions({
       context,
@@ -174,15 +188,11 @@ describe('Suggestion Validation Tests', () => {
     const suggestions = opportunity.addSuggestions.getCall(0).args[0];
     expect(suggestions[0].status).to.equal(Suggestion.STATUSES.PENDING_VALIDATION);
     expect(suggestions[1].status).to.equal(Suggestion.STATUSES.PENDING_VALIDATION);
-    sinon.assert.calledWith(
-      context.log.warn,
-      '[syncSuggestions] opportunity.getTags() returned non-array: null. Treating as non-isElmo.',
-    );
   });
 
-  it('should override PENDING_VALIDATION to NEW for existing isElmo suggestions and log it', async () => {
+  it('should override PENDING_VALIDATION to NEW for existing prerender suggestions and log it', async () => {
     context.site.requiresValidation = true;
-    opportunity.getTags.returns(['isElmo']);
+    opportunity.getType.returns('prerender');
 
     const existingSuggestion = {
       getId: sandbox.stub().returns('existing-suggestion-id'),
@@ -210,7 +220,12 @@ describe('Suggestion Validation Tests', () => {
     sinon.assert.calledOnce(context.dataAccess.Suggestion.saveMany);
     sinon.assert.calledWith(
       context.log.info,
-      '[syncSuggestions] isElmo opportunity: overriding PENDING_VALIDATION -> NEW for suggestion existing-suggestion-id',
+      "[syncSuggestions] opportunity type 'prerender' skips PENDING_VALIDATION: overriding -> NEW for suggestion existing-suggestion-id",
     );
+  });
+
+  it('should export SKIP_PENDING_VALIDATION_OPPORTUNITY_TYPES containing prerender', () => {
+    expect(SKIP_PENDING_VALIDATION_OPPORTUNITY_TYPES).to.be.an('array');
+    expect(SKIP_PENDING_VALIDATION_OPPORTUNITY_TYPES).to.include('prerender');
   });
 });

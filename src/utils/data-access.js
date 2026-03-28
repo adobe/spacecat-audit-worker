@@ -18,7 +18,6 @@ import { limitConcurrencyAllSettled } from '../support/utils.js';
 
 // Max concurrent HTTP calls to prevent Lambda timeout (15 min)
 const MAX_CONCURRENT_CHECKS = 5;
-const ELMO_TAG = 'isElmo';
 
 /**
  * Opportunity types that only make changes in the author environment (no publish state).
@@ -30,6 +29,14 @@ const ELMO_TAG = 'isElmo';
 export const AUTHOR_ONLY_OPPORTUNITY_TYPES = [
   'security-permissions-redundant',
   'security-permissions',
+];
+
+/**
+ * Opportunity types that skip PENDING_VALIDATION status entirely.
+ * Suggestions for these types go directly to NEW, regardless of site.requiresValidation.
+ */
+export const SKIP_PENDING_VALIDATION_OPPORTUNITY_TYPES = [
+  'prerender',
 ];
 
 /**
@@ -257,22 +264,6 @@ const defaultMergeDataFunction = (existingData, newData) => ({
   ...newData,
 });
 
-function isElmoOpportunity(opportunity, log) {
-  if (typeof opportunity.getTags !== 'function') {
-    log.warn('[syncSuggestions] opportunity.getTags is not a function. Treating as non-isElmo.');
-    return false;
-  }
-
-  const tags = opportunity.getTags();
-  if (!Array.isArray(tags)) {
-    const tagType = tags === null ? 'null' : typeof tags;
-    log.warn(`[syncSuggestions] opportunity.getTags() returned non-array: ${tagType}. Treating as non-isElmo.`);
-    return false;
-  }
-
-  return tags.includes(ELMO_TAG);
-}
-
 /**
  * Default merge function for determining the status of an existing suggestion.
  * This function encapsulates the default behavior for status transitions:
@@ -350,8 +341,10 @@ export async function syncSuggestions({
   // Use pre-fetched suggestions if provided, otherwise fetch from DB
   const existingSuggestions = prefetchedSuggestions ?? await opportunity.getSuggestions();
 
-  // isElmo opportunities skip PENDING_VALIDATION — suggestions go straight to NEW
-  const isElmoTaggedOpportunity = isElmoOpportunity(opportunity, log);
+  // Opportunity types in SKIP_PENDING_VALIDATION_OPPORTUNITY_TYPES go straight to NEW
+  const opportunityType = opportunity.getType?.();
+  const skipsPendingValidation = SKIP_PENDING_VALIDATION_OPPORTUNITY_TYPES
+    .includes(opportunityType);
 
   // Pre-compute Maps for O(1) lookups instead of O(N*M)
   const newDataByKey = new Map(newData.map((data) => [buildKey(data), data]));
@@ -388,14 +381,12 @@ export async function syncSuggestions({
     const newStatus = mergeStatusFunction(existing, newDataItem, context);
     // null indicates to keep existing status
     if (newStatus !== null) {
-      // isElmo opportunities never enter PENDING_VALIDATION — fall back to NEW
-      const finalStatus = (isElmoTaggedOpportunity
-        && newStatus === SuggestionDataAccess.STATUSES.PENDING_VALIDATION)
-        ? SuggestionDataAccess.STATUSES.NEW
-        : newStatus;
-      if (isElmoTaggedOpportunity
-        && newStatus === SuggestionDataAccess.STATUSES.PENDING_VALIDATION) {
-        log.info(`[syncSuggestions] isElmo opportunity: overriding PENDING_VALIDATION -> NEW for suggestion ${existing.getId?.() ?? 'unknown'}`);
+      let finalStatus = newStatus;
+      const isPendingValidation = newStatus === SuggestionDataAccess.STATUSES.PENDING_VALIDATION;
+      if (isPendingValidation && skipsPendingValidation) {
+        finalStatus = SuggestionDataAccess.STATUSES.NEW;
+        log.info(`[syncSuggestions] opportunity type '${opportunityType}' skips PENDING_VALIDATION:`
+          + ` overriding -> NEW for suggestion ${existing.getId?.() ?? 'unknown'}`);
       }
       existing.setStatus(finalStatus);
     }
@@ -416,7 +407,7 @@ export async function syncSuggestions({
       const suggestion = mapNewSuggestion(data);
       return {
         ...suggestion,
-        status: (!isElmoTaggedOpportunity && requiresValidation)
+        status: (!skipsPendingValidation && requiresValidation)
           ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
           : SuggestionDataAccess.STATUSES.NEW,
       };
