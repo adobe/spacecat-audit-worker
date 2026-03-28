@@ -1,3 +1,38 @@
+## [1.371.16](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.15...v1.371.16) (2026-03-28)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-http-utils to v1.25.1 ([#2217](https://github.com/adobe/spacecat-audit-worker/issues/2217)) ([ee9c50f](https://github.com/adobe/spacecat-audit-worker/commit/ee9c50ffe45862b00686b15d069a446929da6605))
+
+## [1.371.15](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.14...v1.371.15) (2026-03-27)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.32.0 ([#2213](https://github.com/adobe/spacecat-audit-worker/issues/2213)) ([b59e3af](https://github.com/adobe/spacecat-audit-worker/commit/b59e3afb9a594eb1ff66636fa53e96846f71a1da))
+
+## [1.371.14](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.13...v1.371.14) (2026-03-27)
+
+
+### Bug Fixes
+
+* skip fresh agentic pattern generation when patterns already exist ([#2214](https://github.com/adobe/spacecat-audit-worker/issues/2214)) ([04ff29c](https://github.com/adobe/spacecat-audit-worker/commit/04ff29cd46947e04598c7deb69295f289fdb0a77))
+
+## [1.371.13](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.12...v1.371.13) (2026-03-27)
+
+
+### Bug Fixes
+
+* suggestions in status PENDING_VALIDATION are not marked as outdated ([#2192](https://github.com/adobe/spacecat-audit-worker/issues/2192)) ([a4efdb9](https://github.com/adobe/spacecat-audit-worker/commit/a4efdb995fb1377cd1840f4f50e6824f74bc2fc7))
+
+## [1.371.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.11...v1.371.12) (2026-03-27)
+
+
+### Bug Fixes
+
+* alt-text-scrape-path ([#2205](https://github.com/adobe/spacecat-audit-worker/issues/2205)) ([387d6fc](https://github.com/adobe/spacecat-audit-worker/commit/387d6fc6be6a39a56cdb684cbc4f6e9951a95660))
+
 ## [1.371.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.10...v1.371.11) (2026-03-26)
 
 
