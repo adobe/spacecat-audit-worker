@@ -13,6 +13,24 @@
 import { stripTrailingSlash, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { load as cheerioLoad } from 'cheerio';
 import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
+import { DEFAULT_USER_AGENT } from '../internal-links/helpers.js';
+
+/**
+ * Status codes where HEAD is unreliable: bot protection, auth gates, or method restrictions.
+ * These trigger a GET retry before deciding the link is broken.
+ */
+const HEAD_FALLBACK_STATUSES = new Set([400, 401, 403, 405, 429, 451]);
+
+/**
+ * Returns true only for status codes that definitively indicate a broken link.
+ * 405 (Method Not Allowed) and bot/auth codes (400, 401, 403, 429, 451) are excluded
+ * because they indicate access restrictions, not missing content.
+ * @param {number} status
+ * @returns {boolean}
+ */
+function isBrokenStatus(status) {
+  return status === 404 || status === 410 || status >= 500;
+}
 
 /**
  * Helper function to check if a link is broken
@@ -31,24 +49,44 @@ async function checkLinkStatus(href, pageUrl, context, options = {
   const {
     pageAuthToken, isInternal, selectors = [],
   } = options;
+  const linkType = isInternal ? 'internal' : 'external';
 
-  const fetchOptions = {
-    method: 'HEAD',
-    decode: false,
-  };
+  const headers = { 'User-Agent': DEFAULT_USER_AGENT };
 
   // Add Authorization header only for internal links
   if (isInternal && pageAuthToken) {
-    fetchOptions.headers = {
-      Authorization: pageAuthToken,
-    };
+    headers.Authorization = pageAuthToken;
   }
+
+  const fetchOptions = { method: 'HEAD', decode: false, headers };
 
   try {
     const res = await fetch(href, fetchOptions);
 
-    if (res.status >= 400) {
-      const linkType = isInternal ? 'internal' : 'external';
+    if (HEAD_FALLBACK_STATUSES.has(res.status)) {
+      // Server may be blocking HEAD (405) or applying bot/auth restrictions to our crawler.
+      // Retry with GET before deciding the link is broken.
+    } else if (isBrokenStatus(res.status)) {
+      log.debug(`[preflight-audit] ${linkType} url ${href} returned with status code: %s`, res.status, res.statusText);
+      return {
+        urlTo: href,
+        href: pageUrl,
+        status: res.status,
+        ...toElementTargets(selectors),
+      };
+    } else {
+      return null;
+    }
+  } catch (err) {
+    log.warn(`[preflight-audit] HEAD request failed (${err.message}), retrying with GET: ${href}`);
+  }
+
+  // GET fallback — reached when HEAD was inconclusive (fallback status or network error)
+  fetchOptions.method = 'GET';
+  try {
+    const res = await fetch(href, fetchOptions);
+
+    if (isBrokenStatus(res.status)) {
       log.debug(`[preflight-audit] ${linkType} url ${href} returned with status code: %s`, res.status, res.statusText);
       return {
         urlTo: href,
@@ -59,32 +97,9 @@ async function checkLinkStatus(href, pageUrl, context, options = {
     }
 
     return null;
-  } catch (err) {
-    // Fallback to GET on any error
-    log.warn(`[preflight-audit] HEAD request failed (${err.message}), retrying with GET: ${href}`);
-
-    fetchOptions.method = 'GET';
-    let res;
-    try {
-      res = await fetch(href, fetchOptions);
-
-      if (res.status >= 400) {
-        const linkType = isInternal ? 'internal' : 'external';
-        log.debug(`[preflight-audit] ${linkType} url ${href} returned with status code: %s`, res.status, res.statusText);
-        return {
-          urlTo: href,
-          href: pageUrl,
-          status: res.status,
-          ...toElementTargets(selectors),
-        };
-      }
-
-      return null;
-    } catch (finalErr) {
-      const linkType = isInternal ? 'internal' : 'external';
-      log.error(`[preflight-audit] Error checking ${linkType} link ${href} from ${pageUrl} with GET fallback:`, finalErr.message);
-      return null;
-    }
+  } catch (finalErr) {
+    log.error(`[preflight-audit] Error checking ${linkType} link ${href} from ${pageUrl} with GET fallback:`, finalErr.message);
+    return null;
   }
 }
 
