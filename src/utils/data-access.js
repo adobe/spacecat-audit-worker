@@ -323,6 +323,7 @@ export async function syncSuggestions({
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
   existingSuggestions: prefetchedSuggestions = null,
+  newSuggestionStatus = null,
 }) {
   if (!context) {
     return;
@@ -386,8 +387,9 @@ export async function syncSuggestions({
       const suggestion = mapNewSuggestion(data);
       return {
         ...suggestion,
-        status: requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
-          : SuggestionDataAccess.STATUSES.NEW,
+        status: newSuggestionStatus
+          || (requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+            : SuggestionDataAccess.STATUSES.NEW),
       };
     });
 

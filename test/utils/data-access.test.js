@@ -267,6 +267,26 @@ describe('data-access', () => {
       expect(mockLogger.error).to.not.have.been.called;
     });
 
+    it('should use newSuggestionStatus override when provided', async () => {
+      const newData = [{ key: '3' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+      context.site = { requiresValidation: true };
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+        newSuggestionStatus: 'NEW',
+      });
+
+      const actualArgs = mockOpportunity.addSuggestions.getCall(0).args[0];
+      expect(actualArgs[0].status).to.equal('NEW');
+    });
+
     it('should use "unknown" as siteId when getSiteId is undefined', async () => {
       const newData = [{ key: '1' }];
       const suggestionsResult = {

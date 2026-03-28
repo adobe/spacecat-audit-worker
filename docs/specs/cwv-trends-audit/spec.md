@@ -1,0 +1,319 @@
+# CWV Trends Audit — Specification
+
+## Overview
+
+A weekly audit (`cwv-trends-audit`) that reads pre-imported CWV and engagement data from S3, classifies URLs as Good / Needs Improvement / Poor over a 28-day rolling window, and creates device-specific **Web Performance Trends Report** opportunities in SpaceCat.
+
+The audit runs once per site and processes **both mobile and desktop** device types from the same S3 data, creating separate opportunities for each.
+
+**Date Handling:**
+- **Scheduling:** Audit is registered to run `every-sunday` (scheduling handled by Jobs Dispatcher)
+- **Date Range:** Uses rolling 28-day window ending on the audit run date (no lastSunday calculation)
+- `endDate` — Defaults to current date when audit executes, or can be specified via `auditContext.endDate` parameter
+- `startDate = endDate - 27 days` — Creates 28-day window
+- The audit reads whatever data is available in S3 for those dates
+- **Optional Parameter:** Pass `endDate` (YYYY-MM-DD format) via bot command: `@spacecat run audit www.example.com cwv-trends-audit 2026-03-23`
+
+### Acceptance Criteria
+
+- [x] Scheduled as `every-sunday`
+- [x] Reads 28 days of pre-imported CWV data from S3
+- [x] Requires minimum 28 days of data (fails with error if less)
+- [x] CWV metrics categorized using standard thresholds (LCP ≤ 2500/4000, CLS ≤ 0.1/0.25, INP ≤ 200/500)
+- [x] Processes both mobile and desktop device types in a single run
+- [x] Creates/updates both "Mobile Web Performance Trends Report" and "Desktop Web Performance Trends Report" generic opportunities
+- [x] Audit result payload is an array of per-device results, each with: `metadata`, `trendData`, `summary`, `urlDetails`
+- [x] URLs filtered by minimum 1000 pageviews, sorted descending
+- [x] URL validation added (rejects invalid/malformed URLs)
+- [x] JSON size validation (max 15 MB per file)
+- [x] Performance optimized with filtered URL caching
+- [x] 100% unit test coverage
+
+---
+
+## Architecture
+
+### Impacted Repositories
+
+| Repository | Changes |
+|---|---|
+| `spacecat-shared` | Add `CWV_TRENDS_AUDIT` to `Audit.AUDIT_TYPES` |
+| `spacecat-audit-worker` | New `src/cwv-trends-audit/` module with runner, opportunity handler, tests |
+| `spacecat-api-service` | Register audit type (dependency bump) |
+
+### Data Flow
+
+```
+S3 Bucket (pre-imported by cwv-trends-daily import)
+  │
+  ▼
+cwv-trends-audit runner
+  ├─ Read 28 days from: metrics/{siteId}/rum/cwv-trends/cwv-trends-daily-{date}.json
+  ├─ For each device type (mobile, desktop):
+  │   ├─ Filter URLs by device type + MIN_PAGEVIEWS (1000)
+  │   ├─ Categorize URLs (Good/NI/Poor) per day → trendData
+  │   ├─ Build summary (point-to-point: current day vs 7 days before)
+  │   └─ Build urlDetails (sorted by pageviews, sequential id, change values)
+  │
+  └─ Post-processor: opportunityHandler
+     ├─ Fetch existing generic-opportunity records for the site
+     ├─ For each device result:
+     │   ├─ Find/create generic-opportunity by type + title match
+     │   └─ syncSuggestions (one suggestion per device type)
+```
+
+---
+
+## S3 Data Source
+
+- **Bucket:** `S3_IMPORTER_BUCKET_NAME` (from environment)
+- **Key pattern:** `metrics/{siteId}/rum/cwv-trends/cwv-trends-daily-{YYYY-MM-DD}.json`
+- **Content:** JSON array of URL entries, each with a `metrics` array containing device-specific CWV data
+- **Size limit:** Max 15 MB per JSON file (typical files are 9-10 MB)
+- **Minimum data:** Requires 28 days of data; audit fails with error if less than 28 days available
+- The audit reads from S3 only — no direct RUM API calls
+
+### S3 Payload Structure (per date file)
+
+```json
+[
+  {
+    "url": "https://www.example.com/page",
+    "metrics": [
+      {
+        "deviceType": "mobile",
+        "pageviews": 5000,
+        "lcp": 2000,
+        "cls": 0.08,
+        "inp": 180,
+        "bounceRate": 0.25,
+        "engagement": 0.75,
+        "clickRate": 0.60
+      }
+    ]
+  }
+]
+```
+
+---
+
+## Data Processing
+
+### URL Filtering & Validation
+
+- **URL validation:** Reject invalid/malformed URLs (must be valid http/https URLs)
+- Filter by configured device type (match `metrics[].deviceType`)
+- Minimum `MIN_PAGEVIEWS = 1000` pageviews
+- Skip URLs with `deviceType === 'undefined'` (log warning)
+- Sort by pageviews descending
+- **Performance:** Filtered URLs are cached to avoid redundant filtering operations
+
+### CWV Categorization Thresholds
+
+| Metric | Good | Poor |
+|--------|------|------|
+| LCP | ≤ 2500ms | > 4000ms |
+| CLS | ≤ 0.1 | > 0.25 |
+| INP | ≤ 200ms | > 500ms |
+
+- **Good:** All available metrics within good thresholds
+- **Poor:** Any metric exceeds poor threshold (OR logic)
+- **Needs Improvement:** Everything else
+- **Null metrics:** Skip in categorization (use available metrics only). URLs with no CWV metrics default to `good` status
+
+### Summary Calculation
+
+**Point-to-Point Comparison (NOT Averaging):**
+
+- **Current:** Value on the most recent day (day 28)
+- **Previous:** Value 7 days before the most recent day (day 21)
+- Each stat: `{ current, previous, change, percentageChange, status }`
+- Change = current - previous
+- Percentage change = ((current - previous) / previous) × 100
+
+The data from S3 already contains P75 values for the last 7 days, so we use the specific day's values directly, not averages.
+
+**Example:** If the audit runs on 2026-03-15:
+- `current` = counts on 2026-03-15
+- `previous` = counts on 2026-03-08
+- `change` = current - previous
+
+### URL Details
+
+- Sequential `id` (string "1", "2", ...) sorted by pageviews descending
+- Percentage fields (`bounceRate`, `engagement`, `clickRate`) multiplied by 100
+- Raw fields (`pageviews`, `lcp`, `cls`, `inp`) kept as-is
+- **Change values:** Point-to-point comparison (current day - 7 days before), NOT weekly averages
+- **Null handling:** All numeric fields default to `0` instead of `null` (prevents UI `.toFixed()` errors). Status defaults to `good` when no CWV metrics are available
+- All URLs validated for proper format (must be valid http/https URLs)
+
+---
+
+## Site Configuration
+
+No device-type configuration is needed — the audit always processes both mobile and desktop from the same S3 data.
+
+---
+
+## Audit Parameters
+
+The audit accepts optional parameters via `auditContext`:
+
+### `endDate` (optional)
+
+Specifies the end date for the 28-day analysis window.
+
+- **Format:** `YYYY-MM-DD` (e.g., `2026-03-23`)
+- **Default:** Current date when audit executes
+- **Validation:** Invalid formats or dates default to current date with a warning
+- **Bot Command Examples:**
+  - With custom date: `@spacecat run audit www.krisshop.com cwv-trends-audit 2026-03-23`
+  - With default date: `@spacecat run audit www.krisshop.com cwv-trends-audit`
+
+When `endDate` is specified, the audit analyzes data from `endDate - 27 days` to `endDate`, allowing historical analysis of CWV trends.
+
+---
+
+## Opportunities & Suggestions
+
+### Opportunity Matching
+
+The opportunity handler directly finds or creates a `generic-opportunity` by matching **type + title**:
+
+- Searches existing opportunities with status `NEW` and type `generic-opportunity`
+- Matches by title: "Mobile Web Performance Trends Report" / "Desktop Web Performance Trends Report"
+- If a matching opportunity is found, it is updated; otherwise a new one is created with status `NEW`
+- No Google Search Console check is performed (data source is RUM only)
+
+### Opportunity Data
+
+```javascript
+{
+  runbook: '',
+  origin: 'AUTOMATION',
+  title: OPPORTUNITY_TITLES[deviceType],
+  description: 'Web Performance Trends Report tracking CWV metrics over time.',
+  guidance: { steps: [...] },
+  tags: ['Web Performance', 'CWV'],
+  data: { deviceType, dataSources: ['rum'] }
+}
+```
+
+### Suggestions
+
+**One suggestion per opportunity** containing the full audit result, synced via `syncSuggestions`:
+
+```javascript
+{
+  opportunityId: opportunity.getId(),
+  type: 'CONTENT_UPDATE',
+  rank: auditResult.summary.totalUrls,
+  data: {
+    suggestionValue: JSON.stringify({
+      metadata: { domain, deviceType, startDate, endDate },
+      trendData: [...], // Daily good/NI/poor counts
+      summary: { good, needsImprovement, poor, totalUrls },
+      urlDetails: [...] // All URL entries with metrics and changes
+    })
+  }
+}
+```
+
+**Key:** `${deviceType}-report` (e.g., `mobile-report`, `desktop-report`)
+
+**Merge behavior:** A custom `mergeDataFunction` ensures that on subsequent audit runs, the `suggestionValue` field is fully replaced with the latest audit result (JSON-stringified). The default shallow merge would not update `suggestionValue` since the raw device result doesn't contain that key.
+
+This ensures one suggestion per device type per site, containing the complete Web Performance Trends Report data for UI consumption.
+
+> **Note:** The audit result is JSON-stringified and wrapped in `suggestionValue` to match the UI's expected data structure. The `WebPerformanceTrendsReportPage` component accesses `suggestions[0].data.suggestionValue` and expects it to be a JSON string that it parses with `parsePayload()`.
+
+> **Note:** Suggestion type `CONTENT_UPDATE` matches the ESO API pattern in `experience-system-outages/src/services/spaceCatForwarder.cjs`. ESO doesn't set tags; we add `['Web Performance', 'CWV']` for UI filtering.
+
+---
+
+## Audit Result Schema
+
+```json
+{
+  "auditResult": [
+    {
+      "metadata": {
+        "domain": "www.example.com",
+        "deviceType": "mobile",
+        "startDate": "2025-11-01",
+        "endDate": "2025-11-28"
+      },
+      "trendData": [
+        { "date": "2025-11-01", "good": 2, "needsImprovement": 1, "poor": 3 }
+      ],
+      "summary": {
+        "good": { "current": 4, "previous": 2, "change": 2, "percentageChange": 100, "status": "good" },
+        "needsImprovement": { "current": 2, "previous": 1, "change": 1, "percentageChange": 100, "status": "needsImprovement" },
+        "poor": { "current": 1, "previous": 3, "change": -2, "percentageChange": -66.67, "status": "poor" },
+        "totalUrls": 7
+      },
+      "urlDetails": [
+        {
+          "id": "1",
+          "url": "https://www.example.com/products",
+          "status": "needsImprovement",
+          "pageviews": 4400,
+          "pageviewsChange": 1200,
+          "lcp": 2756,
+          "lcpChange": 856,
+          "cls": 0.011,
+          "clsChange": -0.005,
+          "inp": 56,
+          "inpChange": -24,
+          "bounceRate": 45.5,
+          "bounceRateChange": -5.2,
+          "engagement": 65.3,
+          "engagementChange": 8.1,
+          "clickRate": 28.7,
+          "clickRateChange": 3.4
+        }
+      ]
+    },
+    {
+      "metadata": { "domain": "www.example.com", "deviceType": "desktop", "...": "..." },
+      "trendData": ["..."],
+      "summary": {"...": "..."},
+      "urlDetails": ["..."]
+    }
+  ],
+  "fullAuditRef": "metrics/{siteId}/rum/cwv-trends/"
+}
+```
+
+---
+
+## File Structure
+
+```
+src/cwv-trends-audit/
+├── constants.js              # AUDIT_TYPE, thresholds, titles, config defaults
+├── cwv-categorizer.js        # categorizeUrl(lcp, cls, inp) → good|NI|poor|null
+├── data-reader.js            # readTrendData(), formatDate(), subtractDays()
+├── handler.js                # AuditBuilder entry point (runner + post-processor)
+├── opportunity-data-mapper.js # createOpportunityData({ deviceType })
+├── opportunity-handler.js    # Post-processor: generic-opportunity find/create + syncSuggestions
+└── utils.js                  # Main runner logic (cwvTrendsRunner)
+
+test/audits/cwv-trends-audit/
+├── constants.test.js
+├── cwv-categorizer.test.js
+├── data-reader.test.js
+├── handler.test.js
+├── opportunity-data-mapper.test.js
+├── opportunity-handler.test.js
+└── utils.test.js
+```
+
+---
+
+## Deployment Checklist
+
+1. Merge and publish `spacecat-shared` (adds `CWV_TRENDS_AUDIT` type)
+2. Bump `@adobe/spacecat-shared-data-access` in `spacecat-audit-worker` and `spacecat-api-service`
+3. Register audit: `registerAudit('cwv-trends-audit', false, 'every-sunday', [productCodes])`
+4. Enable per-site via configuration
