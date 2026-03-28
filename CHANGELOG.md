@@ -1,3 +1,10 @@
+## [1.371.18](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.17...v1.371.18) (2026-03-28)
+
+
+### Bug Fixes
+
+* **suggestions:** skip PENDING_VALIDATION for isElmo-tagged opportunities ([#2208](https://github.com/adobe/spacecat-audit-worker/issues/2208)) ([2159cea](https://github.com/adobe/spacecat-audit-worker/commit/2159ceab779da95794b8803613672f340616155e))
+
 ## [1.371.17](https://github.com/adobe/spacecat-audit-worker/compare/v1.371.16...v1.371.17) (2026-03-28)
 
 
