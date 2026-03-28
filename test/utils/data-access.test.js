@@ -432,57 +432,6 @@ describe('data-access', () => {
         .calledOnceWith([existingSuggestions[0]]);
     });
 
-    it('should use NEW status for new suggestions when opportunity type is in SKIP_PENDING_VALIDATION_OPPORTUNITY_TYPES, even if site requires validation', async () => {
-      const newData = [{ key: '3' }, { key: '4' }];
-
-      mockOpportunity.getSuggestions.resolves([]);
-      mockOpportunity.getType = sinon.stub().returns('prerender');
-      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
-      context.site = { requiresValidation: true };
-
-      await syncSuggestions({
-        context,
-        opportunity: mockOpportunity,
-        newData,
-        buildKey,
-        mapNewSuggestion,
-      });
-
-      const addSuggestionsCall = mockOpportunity.addSuggestions.getCall(0);
-      const actualArgs = addSuggestionsCall.args[0];
-      expect(actualArgs[0].status).to.equal(SuggestionDataAccess.STATUSES.NEW);
-      expect(actualArgs[1].status).to.equal(SuggestionDataAccess.STATUSES.NEW);
-    });
-
-    it('should use NEW status for re-appeared OUTDATED suggestions when opportunity type is in SKIP_PENDING_VALIDATION_OPPORTUNITY_TYPES, even if site requires validation', async () => {
-      const existingSuggestions = [{
-        id: '1',
-        data: { key: '1' },
-        getData: sinon.stub().returns({ key: '1' }),
-        setData: sinon.stub(),
-        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.OUTDATED),
-        setStatus: sinon.stub(),
-        setUpdatedBy: sinon.stub().returnsThis(),
-      }];
-
-      const newData = [{ key: '1', title: 'updated' }];
-
-      mockOpportunity.getSuggestions.resolves(existingSuggestions);
-      mockOpportunity.getType = sinon.stub().returns('prerender');
-      context.site = { requiresValidation: true };
-
-      await syncSuggestions({
-        context,
-        opportunity: mockOpportunity,
-        newData,
-        buildKey,
-        mapNewSuggestion,
-      });
-
-      expect(existingSuggestions[0].setStatus).to.have.been
-        .calledWith(SuggestionDataAccess.STATUSES.NEW);
-    });
-
     it('should preserve REJECTED status when same suggestion appears again with no data changes', async () => {
       const suggestionsData = [
         { key: '1', title: 'same title', url: 'https://example.com/page1' },

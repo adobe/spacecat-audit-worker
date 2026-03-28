@@ -32,14 +32,6 @@ export const AUTHOR_ONLY_OPPORTUNITY_TYPES = [
 ];
 
 /**
- * Opportunity types that skip PENDING_VALIDATION status entirely.
- * Suggestions for these types go directly to NEW, regardless of site.requiresValidation.
- */
-export const SKIP_PENDING_VALIDATION_OPPORTUNITY_TYPES = [
-  'prerender',
-];
-
-/**
  * Safely stringify an object for logging, truncating large arrays to prevent
  * exceeding JavaScript's maximum string length.
  *
@@ -341,11 +333,6 @@ export async function syncSuggestions({
   // Use pre-fetched suggestions if provided, otherwise fetch from DB
   const existingSuggestions = prefetchedSuggestions ?? await opportunity.getSuggestions();
 
-  // Opportunity types in SKIP_PENDING_VALIDATION_OPPORTUNITY_TYPES go straight to NEW
-  const opportunityType = opportunity.getType?.();
-  const skipsPendingValidation = SKIP_PENDING_VALIDATION_OPPORTUNITY_TYPES
-    .includes(opportunityType);
-
   // Pre-compute Maps for O(1) lookups instead of O(N*M)
   const newDataByKey = new Map(newData.map((data) => [buildKey(data), data]));
   const existingSuggestionKeys = new Set(
@@ -381,14 +368,7 @@ export async function syncSuggestions({
     const newStatus = mergeStatusFunction(existing, newDataItem, context);
     // null indicates to keep existing status
     if (newStatus !== null) {
-      let finalStatus = newStatus;
-      const isPendingValidation = newStatus === SuggestionDataAccess.STATUSES.PENDING_VALIDATION;
-      if (isPendingValidation && skipsPendingValidation) {
-        finalStatus = SuggestionDataAccess.STATUSES.NEW;
-        log.info(`[syncSuggestions] opportunity type '${opportunityType}' skips PENDING_VALIDATION:`
-          + ` overriding -> NEW for suggestion ${existing.getId?.() ?? 'unknown'}`);
-      }
-      existing.setStatus(finalStatus);
+      existing.setStatus(newStatus);
     }
     existing.setUpdatedBy('system');
   });
@@ -407,7 +387,7 @@ export async function syncSuggestions({
       const suggestion = mapNewSuggestion(data);
       return {
         ...suggestion,
-        status: (!skipsPendingValidation && requiresValidation)
+        status: requiresValidation
           ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
           : SuggestionDataAccess.STATUSES.NEW,
       };

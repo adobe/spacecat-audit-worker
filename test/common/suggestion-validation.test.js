@@ -13,7 +13,7 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import { Suggestion } from '@adobe/spacecat-shared-data-access';
-import { syncSuggestions, SKIP_PENDING_VALIDATION_OPPORTUNITY_TYPES } from '../../src/utils/data-access.js';
+import { syncSuggestions } from '../../src/utils/data-access.js';
 
 describe('Suggestion Validation Tests', () => {
   let sandbox;
@@ -29,7 +29,6 @@ describe('Suggestion Validation Tests', () => {
     opportunity = {
       getId: sandbox.stub().returns('opportunity-id'),
       getSiteId: sandbox.stub().returns('site-id'),
-      getType: sandbox.stub().returns('some-other-type'),
       getSuggestions: sandbox.stub().resolves([]),
       addSuggestions: sandbox.stub().resolves({
         createdItems: [{ id: 'suggestion-id' }],
@@ -94,9 +93,8 @@ describe('Suggestion Validation Tests', () => {
     expect(suggestions[1].status).to.equal(Suggestion.STATUSES.NEW);
   });
 
-  it('should set status to PENDING_VALIDATION for non-exempt opportunity types with requiresValidation flag', async () => {
+  it('should set status to PENDING_VALIDATION for sites with requiresValidation flag', async () => {
     context.site.requiresValidation = true;
-    opportunity.getType.returns('broken-backlinks');
 
     await syncSuggestions({
       context,
@@ -115,84 +113,36 @@ describe('Suggestion Validation Tests', () => {
     expect(suggestions[1].status).to.equal(Suggestion.STATUSES.PENDING_VALIDATION);
   });
 
-  it('should set status to NEW for prerender opportunity type even when requiresValidation is true', async () => {
+  it('should set OUTDATED suggestion to PENDING_VALIDATION when requiresValidation is true', async () => {
     context.site.requiresValidation = true;
-    opportunity.getType.returns('prerender');
+
+    const existingSuggestion = {
+      getId: sandbox.stub().returns('existing-suggestion-id'),
+      getData: sandbox.stub().returns({ id: 'item1', value: 'existing' }),
+      setData: sandbox.stub(),
+      getStatus: sandbox.stub().returns(Suggestion.STATUSES.OUTDATED),
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+    };
+    opportunity.getSuggestions.resolves([existingSuggestion]);
 
     await syncSuggestions({
       context,
       opportunity,
-      newData,
+      newData: [{ id: 'item1', value: 'updated', rank: 1 }],
       buildKey,
       mapNewSuggestion,
     });
 
-    const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
-    expect(addSuggestionsCall).to.exist;
-
-    const suggestions = addSuggestionsCall.args[0];
-    expect(suggestions).to.be.an('array').with.lengthOf(2);
-    expect(suggestions[0].status).to.equal(Suggestion.STATUSES.NEW);
-    expect(suggestions[1].status).to.equal(Suggestion.STATUSES.NEW);
-    expect(suggestions.map((suggestion) => suggestion.status)).to.not.include(
+    sinon.assert.calledOnceWithExactly(
+      existingSuggestion.setStatus,
       Suggestion.STATUSES.PENDING_VALIDATION,
     );
+    sinon.assert.calledOnce(context.dataAccess.Suggestion.saveMany);
   });
 
-  it('should set status to PENDING_VALIDATION when opportunity type is not in SKIP_PENDING_VALIDATION_OPPORTUNITY_TYPES', async () => {
-    context.site.requiresValidation = true;
-    opportunity.getType.returns('sitemap');
-
-    await syncSuggestions({
-      context,
-      opportunity,
-      newData,
-      buildKey,
-      mapNewSuggestion,
-    });
-
-    const suggestions = opportunity.addSuggestions.getCall(0).args[0];
-    expect(suggestions[0].status).to.equal(Suggestion.STATUSES.PENDING_VALIDATION);
-    expect(suggestions[1].status).to.equal(Suggestion.STATUSES.PENDING_VALIDATION);
-  });
-
-  it('should set status to NEW when opportunity.getType returns undefined (no exempt type)', async () => {
+  it('should set OUTDATED suggestion to NEW when requiresValidation is false', async () => {
     context.site.requiresValidation = false;
-    opportunity.getType.returns(undefined);
-
-    await syncSuggestions({
-      context,
-      opportunity,
-      newData,
-      buildKey,
-      mapNewSuggestion,
-    });
-
-    const suggestions = opportunity.addSuggestions.getCall(0).args[0];
-    expect(suggestions[0].status).to.equal(Suggestion.STATUSES.NEW);
-    expect(suggestions[1].status).to.equal(Suggestion.STATUSES.NEW);
-  });
-
-  it('should set PENDING_VALIDATION when opportunity.getType returns undefined and requiresValidation is true', async () => {
-    context.site.requiresValidation = true;
-    opportunity.getType.returns(undefined);
-
-    await syncSuggestions({
-      context,
-      opportunity,
-      newData,
-      buildKey,
-      mapNewSuggestion,
-    });
-
-    const suggestions = opportunity.addSuggestions.getCall(0).args[0];
-    expect(suggestions[0].status).to.equal(Suggestion.STATUSES.PENDING_VALIDATION);
-    expect(suggestions[1].status).to.equal(Suggestion.STATUSES.PENDING_VALIDATION);
-  });
-
-  it('should override PENDING_VALIDATION to NEW for existing prerender suggestions and log it', async () => {
-    context.site.requiresValidation = true;
-    opportunity.getType.returns('prerender');
 
     const existingSuggestion = {
       getId: sandbox.stub().returns('existing-suggestion-id'),
@@ -213,19 +163,5 @@ describe('Suggestion Validation Tests', () => {
     });
 
     sinon.assert.calledOnceWithExactly(existingSuggestion.setStatus, Suggestion.STATUSES.NEW);
-    sinon.assert.neverCalledWithMatch(
-      existingSuggestion.setStatus,
-      Suggestion.STATUSES.PENDING_VALIDATION,
-    );
-    sinon.assert.calledOnce(context.dataAccess.Suggestion.saveMany);
-    sinon.assert.calledWith(
-      context.log.info,
-      "[syncSuggestions] opportunity type 'prerender' skips PENDING_VALIDATION: overriding -> NEW for suggestion existing-suggestion-id",
-    );
-  });
-
-  it('should export SKIP_PENDING_VALIDATION_OPPORTUNITY_TYPES containing prerender', () => {
-    expect(SKIP_PENDING_VALIDATION_OPPORTUNITY_TYPES).to.be.an('array');
-    expect(SKIP_PENDING_VALIDATION_OPPORTUNITY_TYPES).to.include('prerender');
   });
 });
