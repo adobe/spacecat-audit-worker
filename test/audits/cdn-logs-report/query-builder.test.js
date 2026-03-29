@@ -84,6 +84,31 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.include('avg_ttfb_ms');
   });
 
+  it('creates agentic daily report query without low-hit url bucketing', async () => {
+    const dailyQuery = await weeklyBreakdownQueries.createAgenticDailyReportQuery({
+      ...mockOptions,
+      trafficDate: new Date('2025-01-15T00:00:00Z'),
+    });
+
+    expect(dailyQuery).to.be.a('string');
+    expect(dailyQuery).to.include("year = '2025'");
+    expect(dailyQuery).to.include("month = '01'");
+    expect(dailyQuery).to.include("day = '15'");
+    expect(dailyQuery).to.include('host');
+    expect(dailyQuery).to.include('cdn_provider');
+    expect(dailyQuery).to.not.include("WHEN number_of_hits < 10 THEN 'Other'");
+  });
+
+  it('creates agentic daily report query with site filters and user-agent filtering', async () => {
+    const dailyQuery = await weeklyBreakdownQueries.createAgenticDailyReportQuery({
+      ...mockOptions,
+      trafficDate: new Date('2025-01-16T00:00:00Z'),
+    });
+
+    expect(dailyQuery).to.include("(REGEXP_LIKE(host, '(?i)(www.another.com)'))");
+    expect(dailyQuery).to.include('ChatGPT|GPTBot|OAI-SearchBot');
+  });
+
   it('handles site filters correctly', async () => {
     const customOptions = createMockOptions({
       site: createMockSite({
