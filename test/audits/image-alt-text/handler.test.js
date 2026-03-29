@@ -786,7 +786,7 @@ describe('Image Alt Text Handler', () => {
       expect(result.maxScrapeAge).to.equal(24);
       expect(result.options).to.deep.equal({ pageLoadTimeout: 45000 });
       expect(context.log.debug).to.have.been.calledWith(
-        '[alt-text]: Page limit set to 20 (summit-plg enabled: true)',
+        '[alt-text]: Page limit set to 20 (summit-plg: true, onDemand: false)',
       );
     });
 
@@ -800,7 +800,22 @@ describe('Image Alt Text Handler', () => {
       expect(result.maxScrapeAge).to.equal(24);
       expect(result.options).to.deep.equal({ pageLoadTimeout: 45000 });
       expect(context.log.debug).to.have.been.calledWith(
-        '[alt-text]: Page limit set to 100 (summit-plg enabled: false)',
+        '[alt-text]: Page limit set to 100 (summit-plg: false, onDemand: false)',
+      );
+    });
+
+    it('should bypass summit-plg windowing when onDemand is true', async () => {
+      configurationMock.isHandlerEnabledForSite.returns(true);
+      const pageUrls = Array.from({ length: 150 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
+
+      context.auditContext = { onDemand: true };
+
+      const result = await handlerModule.processScraping(context);
+
+      expect(result.urls).to.have.lengthOf(100);
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Page limit set to 100 (summit-plg: false, onDemand: true)',
       );
     });
   });
@@ -875,7 +890,7 @@ describe('Image Alt Text Handler', () => {
       expect(callArgs[7]).to.equal(true);
 
       expect(context.log.debug).to.have.been.calledWith(
-        '[alt-text]: Page limit set to 20 (summit-plg enabled: true)',
+        '[alt-text]: Page limit set to 20 (summit-plg: true, onDemand: false)',
       );
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Using pages 0-19 of 50 (limit: 20)',
@@ -899,7 +914,7 @@ describe('Image Alt Text Handler', () => {
       expect(callArgs[7]).to.equal(true);
 
       expect(context.log.debug).to.have.been.calledWith(
-        '[alt-text]: Page limit set to 100 (summit-plg enabled: false)',
+        '[alt-text]: Page limit set to 100 (summit-plg: false, onDemand: false)',
       );
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Using pages 0-99 of 150 (limit: 100)',

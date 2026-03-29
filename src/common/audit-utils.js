@@ -81,6 +81,22 @@ export async function loadExistingAudit(auditId, context) {
   return audit;
 }
 
+/**
+ * Extracts passthrough keys from an incoming auditContext so they survive
+ * multi-step chains (e.g. audit → import-worker → audit continuation).
+ * @param {Object} auditContext - The incoming auditContext (may be undefined)
+ * @param {string[]} keys - Keys to preserve
+ * @returns {Object} Object containing only the defined passthrough entries
+ */
+export function preservePassthroughKeys(auditContext, keys) {
+  const ctx = auditContext || {};
+  return Object.fromEntries(
+    keys
+      .filter((k) => ctx[k] !== undefined)
+      .map((k) => [k, ctx[k]]),
+  );
+}
+
 export async function sendContinuationMessage(message, context) {
   const { log } = context;
   const { queueUrl, payload } = message;
