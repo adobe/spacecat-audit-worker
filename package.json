@@ -84,7 +84,7 @@
     "@adobe/spacecat-helix-content-sdk": "1.4.33",
     "@adobe/spacecat-shared-ahrefs-client": "1.10.8",
     "@adobe/spacecat-shared-athena-client": "1.9.9",
-    "@adobe/spacecat-shared-data-access": "https://gist.github.com/tkotthakota-adobe/ea7a17f0303480de4f9728fe11310236/raw/fd9f4085abf670e7c468df634103669e6c04ae8f/adobe-spacecat-shared-data-access-3.32.1.tgz",
+    "@adobe/spacecat-shared-data-access": "https://gist.github.com/tkotthakota-adobe/c18a23bd0566c296ad75701b84ffbef5/raw/dd0062c172263f60f98c8dee6f7a608c7dffabf0/adobe-spacecat-shared-data-access-3.32.1.tgz",
     "@adobe/spacecat-shared-data-access-v2": "npm:@adobe/spacecat-shared-data-access@2.109.0",
     "@adobe/spacecat-shared-drs-client": "1.3.1",
     "@adobe/spacecat-shared-google-client": "1.5.8",
