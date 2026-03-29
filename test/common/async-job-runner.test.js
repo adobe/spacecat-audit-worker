@@ -292,7 +292,7 @@ describe('Job-based Step-Audit Tests', () => {
     await expect(runner.run(message, context)).to.be.rejectedWith('content-audit audit failed for job job-123 at step initial. Reason: Job job-123 metadata is not an object');
   });
 
-  it('adds promiseToken to step context for AEM_CS sites when message.promiseToken exists', async () => {
+  it('adds promiseToken to step context and forwards via auditContext', async () => {
     site.getDeliveryType = () => SiteModel.DELIVERY_TYPES.AEM_CS;
     const runner = new AuditBuilder()
       .withAsyncJob()
@@ -318,6 +318,40 @@ describe('Job-based Step-Audit Tests', () => {
     };
 
     await runner.run(message, context);
+
+    // Verify promiseToken is forwarded in the continuation message's auditContext
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    const [, payload] = context.sqs.sendMessage.firstCall.args;
+    expect(payload.auditContext).to.have.property('promiseToken', 'test-token');
+  });
+
+  it('preserves passthrough keys from incoming auditContext', async () => {
+    const runner = new AuditBuilder()
+      .withAsyncJob()
+      .addStep('first', async () => ({ ok: true }), AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+      .addStep('second', async () => ({ ok: true }))
+      .build();
+
+    runner.jobProvider = async () => createMockJob({
+      jobId: 'job-123',
+      payload: { siteId: site.getId() },
+    });
+
+    const message = {
+      type: 'content-audit',
+      jobId: 'job-123',
+      auditContext: {
+        onDemand: true,
+        slackContext: { channel: 'C123' },
+      },
+    };
+
+    await runner.run(message, context);
+
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    const [, payload] = context.sqs.sendMessage.firstCall.args;
+    expect(payload.auditContext).to.include({ onDemand: true });
+    expect(payload.auditContext.slackContext).to.deep.equal({ channel: 'C123' });
   });
 
   it('does not add promiseToken to step context for AEM_CS sites if message.promiseToken is missing', async () => {

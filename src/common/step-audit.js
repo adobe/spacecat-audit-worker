@@ -77,10 +77,7 @@ export class StepAudit extends BaseAudit {
       fullAuditRef: audit.getFullAuditRef(),
     };
 
-    const preserved = preservePassthroughKeys(
-      context.auditContext,
-      ['onDemand', 'slackContext', 'promiseToken'],
-    );
+    const preserved = preservePassthroughKeys(context.auditContext);
 
     const auditContext = {
       ...preserved,

@@ -36,16 +36,13 @@ export class AsyncJobRunner extends StepAudit {
 
   async chainStep(step, stepResult, context) {
     const {
-      type, job, urls, log, promiseToken,
+      type, job, urls, log,
     } = context;
 
     const destination = AUDIT_STEP_DESTINATION_CONFIGS[step.destination];
     const nextStepName = this.getNextStepName(step.name);
 
-    const preserved = preservePassthroughKeys(
-      context.auditContext,
-      ['onDemand', 'slackContext'],
-    );
+    const preserved = preservePassthroughKeys(context.auditContext);
 
     const auditContext = {
       ...preserved,
@@ -53,7 +50,6 @@ export class AsyncJobRunner extends StepAudit {
       jobId: job.getId(),
       auditType: type,
       urls,
-      ...(promiseToken ? { promiseToken } : {}),
     };
 
     const queueUrl = destination.getQueueUrl(context);
@@ -105,12 +101,19 @@ export class AsyncJobRunner extends StepAudit {
       const stepName = auditContext.next || stepNames[0];
       const isLastStep = stepName === stepNames[stepNames.length - 1];
       const step = this.getStep(stepName);
+
+      // Merge promiseToken into auditContext so preservePassthroughKeys
+      // can forward it through multi-step chains consistently.
+      const promiseToken = message.promiseToken || auditContext.promiseToken;
+      const mergedAuditContext = promiseToken
+        ? { ...auditContext, promiseToken }
+        : auditContext;
+
       const updatedStepContext = {
-        ...context, site, job, type,
+        ...context, site, job, type, auditContext: mergedAuditContext,
       };
 
       updatedStepContext.finalUrl = await this.urlResolver(site, context);
-      const promiseToken = message.promiseToken || message.auditContext?.promiseToken;
       if (promiseToken) {
         updatedStepContext.promiseToken = promiseToken;
         log.debug(`site: ${siteId}. Promise token added to step context`);

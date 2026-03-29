@@ -20,6 +20,7 @@ import chaiAsPromised from 'chai-as-promised';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import {
   isAuditEnabledForSite, loadExistingAudit, sendContinuationMessage, checkProductCodeEntitlements,
+  preservePassthroughKeys, PASSTHROUGH_KEYS,
 } from '../../src/common/audit-utils.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -324,6 +325,49 @@ describe('Audit Utils Tests', () => {
 
       await expect(loadExistingAudit(validAuditId, context))
         .to.be.rejectedWith('DB error');
+    });
+  });
+
+  describe('PASSTHROUGH_KEYS', () => {
+    it('is a frozen array containing expected keys', () => {
+      expect(PASSTHROUGH_KEYS).to.deep.equal(['onDemand', 'slackContext', 'promiseToken']);
+      expect(Object.isFrozen(PASSTHROUGH_KEYS)).to.be.true;
+    });
+  });
+
+  describe('preservePassthroughKeys', () => {
+    it('extracts only defined passthrough keys from auditContext', () => {
+      const auditContext = { onDemand: true, slackContext: { channel: 'C1' }, extra: 'ignored' };
+      const result = preservePassthroughKeys(auditContext);
+      expect(result).to.deep.equal({ onDemand: true, slackContext: { channel: 'C1' } });
+    });
+
+    it('returns empty object when auditContext is undefined', () => {
+      expect(preservePassthroughKeys(undefined)).to.deep.equal({});
+    });
+
+    it('returns empty object when auditContext is null', () => {
+      expect(preservePassthroughKeys(null)).to.deep.equal({});
+    });
+
+    it('skips keys that are undefined in auditContext', () => {
+      const auditContext = { promiseToken: 'tok-1' };
+      const result = preservePassthroughKeys(auditContext);
+      expect(result).to.deep.equal({ promiseToken: 'tok-1' });
+      expect(result).to.not.have.property('onDemand');
+    });
+
+    it('accepts a custom key list', () => {
+      const auditContext = { onDemand: true, customKey: 'val' };
+      const result = preservePassthroughKeys(auditContext, ['customKey']);
+      expect(result).to.deep.equal({ customKey: 'val' });
+      expect(result).to.not.have.property('onDemand');
+    });
+
+    it('preserves falsy values that are not undefined', () => {
+      const auditContext = { onDemand: false, slackContext: null, promiseToken: '' };
+      const result = preservePassthroughKeys(auditContext);
+      expect(result).to.deep.equal({ onDemand: false, slackContext: null, promiseToken: '' });
     });
   });
 

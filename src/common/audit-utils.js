@@ -82,13 +82,19 @@ export async function loadExistingAudit(auditId, context) {
 }
 
 /**
+ * Keys that must survive multi-step audit chains (e.g. audit → import-worker → continuation).
+ * Defined once so StepAudit and AsyncJobRunner stay in sync.
+ */
+export const PASSTHROUGH_KEYS = Object.freeze(['onDemand', 'slackContext', 'promiseToken']);
+
+/**
  * Extracts passthrough keys from an incoming auditContext so they survive
  * multi-step chains (e.g. audit → import-worker → audit continuation).
  * @param {Object} auditContext - The incoming auditContext (may be undefined)
- * @param {string[]} keys - Keys to preserve
+ * @param {string[]} [keys=PASSTHROUGH_KEYS] - Keys to preserve
  * @returns {Object} Object containing only the defined passthrough entries
  */
-export function preservePassthroughKeys(auditContext, keys) {
+export function preservePassthroughKeys(auditContext, keys = PASSTHROUGH_KEYS) {
   const ctx = auditContext || {};
   return Object.fromEntries(
     keys
