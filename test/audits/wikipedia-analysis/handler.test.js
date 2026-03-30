@@ -298,7 +298,7 @@ describe('Wikipedia Analysis Handler', () => {
       expect(context.log.warn).to.have.been.calledWith('[Wikipedia] Site not found, skipping Mystique message');
     });
 
-    it('should handle SQS send errors gracefully', async () => {
+    it('should throw error when SQS send fails', async () => {
       context.sqs.sendMessage.rejects(new Error('SQS Error'));
 
       const auditData = {
@@ -310,9 +310,7 @@ describe('Wikipedia Analysis Handler', () => {
       };
 
       const postProcessor = wikipediaAnalysisHandler.postProcessors[0];
-      const result = await postProcessor(baseURL, auditData, context);
-
-      expect(result).to.deep.equal(auditData);
+      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
       expect(context.log.error).to.have.been.calledWith('[Wikipedia] Failed to send Mystique message: SQS Error');
     });
   });

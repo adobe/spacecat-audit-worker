@@ -151,6 +151,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     log.info(`${LOG_PREFIX} Queued Wikipedia analysis request to Mystique for ${config.companyName}`);
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
+    // Re-throw to fail the audit if we can't send to Mystique
+    throw error;
   }
 
   return auditData;
