@@ -329,7 +329,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
     expect(result.auditResult.cwv.slice(7).every((entry) => !isFailingCwvEntry(entry) && entry.pageviews < PRIORITY_PADDING_MIN_PAGEVIEWS)).to.equal(true);
   });
 
-  it('does not treat homepage specially', async () => {
+  it('does not force the homepage into a special slot', async () => {
     const homepageData = {
       type: 'url',
       url: baseURL,
@@ -357,8 +357,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
     const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
 
-    const homepageInResult = result.auditResult.cwv.find((entry) => entry.url === baseURL);
-    expect(homepageInResult).to.not.exist;
+    expect(result.auditResult.cwv).to.deep.equal(getExpectedSelectedEntries(dataWithHomepage));
   });
 
   it('can include grouped URLs when they rank into the selected set', async () => {
@@ -497,10 +496,10 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(GoogleClient.createFrom).to.have.been.calledWith(stepContext, auditUrl);
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
 
-      // make sure that newly oppty has all 4 new suggestions
+      // make sure that newly oppty has a suggestion for every selected CWV entry
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
-      expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(auditData.auditResult.cwv.length);
       // CWV suggestions include jiraLink (empty until user saves URL in UI)
       suggestionsArg.forEach((s) => expect(s.data).to.have.property('jiraLink', ''));
     });
@@ -591,10 +590,10 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(existingSuggestions[1].setData.firstCall.args[0]).to.deep.equal(suggestions[1].data);
       expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
 
-      // make sure that 3 new suggestions are created
+      // make sure that new suggestions are created for the remaining selected CWV entries
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
-      expect(suggestionsArg).to.be.an('array').with.lengthOf(3);
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(auditData.auditResult.cwv.length - 1);
     });
 
     it('creates a new opportunity object when GSC connection returns null', async () => {
@@ -613,7 +612,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
-      expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(auditData.auditResult.cwv.length);
     });
 
     it('creates a new opportunity object without GSC if not connected', async () => {
@@ -631,7 +630,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
-      expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(auditData.auditResult.cwv.length);
     });
 
     it('calls processAutoSuggest when suggestions have no guidance', async () => {

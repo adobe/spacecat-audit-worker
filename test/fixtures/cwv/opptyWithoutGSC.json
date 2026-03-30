@@ -19,8 +19,8 @@
     "Engagement"
   ],
   "data": {
-    "projectedTrafficLost": 5.1,
-    "projectedTrafficValue": 5.1,
+    "projectedTrafficLost": 10.1,
+    "projectedTrafficValue": 10.1,
     "dataSources": [
       "Ahrefs",
       "RUM",
