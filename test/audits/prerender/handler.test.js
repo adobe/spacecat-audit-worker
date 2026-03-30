@@ -425,7 +425,7 @@ describe('Prerender Audit', () => {
         expect(warn).to.have.been.calledWith(sinon.match(/Failed to fetch agentic URLs: athena unavailable/));
       });
 
-      it('should skip includedURLs on non-first-run (organic URLs recently processed)', async () => {
+      it('should include non-recent includedURLs even when some organic URLs were recently processed', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticUrlsFromAthena: async () => [],
@@ -459,10 +459,10 @@ describe('Prerender Audit', () => {
 
         const result = await mockHandler.submitForScraping(context);
         const urls = result.urls.map((u) => u.url);
-        expect(urls).to.not.include('https://example.com/special');
+        expect(urls).to.include('https://example.com/special');
       });
 
-      it('should cap top organic pages to TOP_ORGANIC_URLS_LIMIT', async () => {
+      it('should cap submitted organic URLs to DAILY_BATCH_SIZE when top organic pages exceed the fetch limit', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticUrlsFromAthena: async () => [],
@@ -489,8 +489,10 @@ describe('Prerender Audit', () => {
           log: { info: sandbox.stub(), debug: sandbox.stub() },
         };
         const out = await mockHandler.submitForScraping(context);
-        // Expect TOP_ORGANIC_URLS_LIMIT URLs from Ahrefs top pages
-        expect(out.urls).to.have.length(TOP_ORGANIC_URLS_LIMIT);
+        expect(out.urls).to.have.length(DAILY_BATCH_SIZE);
+        expect(out.urls.map((entry) => entry.url)).to.deep.equal(
+          Array.from({ length: DAILY_BATCH_SIZE }).map((_, i) => `https://example.com/p${i}`),
+        );
       });
 
       it('should request agentic URLs using TOP_AGENTIC_URLS_LIMIT', async () => {
@@ -700,6 +702,47 @@ describe('Prerender Audit', () => {
 
           // organic-page was recently processed → should NOT be in batch
           expect(resultUrls).to.not.include(organicUrl);
+        });
+
+        it('should pick the next 15 URLs on the next run after filtering recent page citability records', async () => {
+          const agenticUrls = makeAgenticUrls(200);
+          const organicUrls = Array.from(
+            { length: 30 },
+            (_, i) => `https://example.com/organic-${i}`,
+          );
+          const includedUrls = Array.from(
+            { length: 10 },
+            (_, i) => `https://example.com/included-${i}`,
+          );
+          const recentRecords = Array.from(
+            { length: DAILY_BATCH_SIZE },
+            (_, i) => makeCitabilityRecord(`/organic-${i}`),
+          );
+          const mockHandler = await makeHandlerWithAgentic(agenticUrls);
+
+          const context = {
+            site: {
+              getId: () => 'test-site-id',
+              getBaseURL: () => 'https://example.com',
+              getConfig: () => ({ getIncludedURLs: () => includedUrls }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(
+                  organicUrls.map((url) => ({ getUrl: () => url })),
+                ),
+              },
+              PageCitability: { allByIndexKeys: sandbox.stub().resolves(recentRecords) },
+            },
+            log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const resultUrls = result.urls.map((u) => u.url);
+
+          expect(resultUrls).to.deep.equal(
+            organicUrls.slice(DAILY_BATCH_SIZE, DAILY_BATCH_SIZE * 2),
+          );
         });
 
         it('should silently ignore citability records with invalid URLs when building recent pathnames', async () => {

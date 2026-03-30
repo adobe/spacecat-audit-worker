@@ -779,33 +779,33 @@ export async function submitForScraping(context) {
   // Daily batching: filter URLs recently processed within the rolling recent window
   const recentPathnames = await getRecentlyProcessedPathnames(context, siteId);
 
+  const filteredOrganicUrls = topPagesUrls.filter((url) => isNotRecentUrl(url, recentPathnames));
+  const filteredIncludedURLs = includedURLs.filter((url) => isNotRecentUrl(url, recentPathnames));
   const filteredAgenticUrls = agenticUrls.filter((url) => isNotRecentUrl(url, recentPathnames));
 
-  // Include organic URLs only when none were recently processed (first batch of the cycle)
-  const hasRecentOrganic = topPagesUrls.some((url) => !isNotRecentUrl(url, recentPathnames));
-  const batchedOrganicUrls = hasRecentOrganic
-    ? []
-    : topPagesUrls.slice(0, TOP_ORGANIC_URLS_LIMIT);
-
-  // includedURLs are only submitted on the first run of each cycle (no recently processed
-  // organic URLs means we're at the start of the cycle). On follow-up runs they are skipped.
-  // Filter out any includedURLs that were recently processed.
+  const hasRecentOrganic = filteredOrganicUrls.length !== topPagesUrls.length;
   const isFirstRunOfCycle = !hasRecentOrganic;
-  const batchedIncludedURLs = isFirstRunOfCycle
-    ? includedURLs.filter((url) => isNotRecentUrl(url, recentPathnames))
-    : [];
 
-  // Cap combined organic + agentic batch to DAILY_BATCH_SIZE (includedURLs added outside the cap)
-  const remainingSlots = Math.max(DAILY_BATCH_SIZE - batchedOrganicUrls.length, 0);
-  const batchedAgenticUrls = filteredAgenticUrls.slice(0, remainingSlots);
-  const batchedUrls = [...batchedOrganicUrls, ...batchedAgenticUrls];
+  // Build a single ordered queue across all URL sources and slice the next daily batch
+  // after removing anything processed within the recent window.
+  const orderedCandidateUrls = [
+    ...filteredOrganicUrls,
+    ...filteredIncludedURLs,
+    ...filteredAgenticUrls,
+  ];
+  const batchedUrls = orderedCandidateUrls.slice(0, DAILY_BATCH_SIZE);
+
+  const organicUrlSet = new Set(filteredOrganicUrls);
+  const includedUrlSet = new Set(filteredIncludedURLs);
+  const batchedOrganicUrls = batchedUrls.filter((url) => organicUrlSet.has(url));
+  const batchedIncludedURLs = batchedUrls.filter((url) => includedUrlSet.has(url));
+  const batchedAgenticUrls = batchedUrls.filter(
+    (url) => !organicUrlSet.has(url) && !includedUrlSet.has(url),
+  );
 
   // Merge URLs ensuring uniqueness while handling www vs non-www differences
   // Also filters out non-HTML URLs (PDFs, images, etc.) in a single pass
-  const { urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
-    batchedUrls,
-    batchedIncludedURLs,
-  );
+  const { urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(batchedUrls);
 
   const currentAgentic = batchedAgenticUrls.length;
   const currentOrganic = batchedOrganicUrls.length;
