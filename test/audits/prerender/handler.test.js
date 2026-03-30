@@ -32,7 +32,6 @@ import {
   TOP_AGENTIC_URLS_LIMIT,
   TOP_ORGANIC_URLS_LIMIT,
   DAILY_BATCH_SIZE,
-  PRERENDER_RECENT_PROCESSING_TIME_HOURS,
 } from '../../../src/prerender/utils/constants.js';
 
 describe('Prerender Audit', () => {
@@ -462,7 +461,7 @@ describe('Prerender Audit', () => {
         expect(urls).to.include('https://example.com/special');
       });
 
-      it('should cap submitted organic URLs to DAILY_BATCH_SIZE when top organic pages exceed the fetch limit', async () => {
+      it('should submit all fetched organic URLs when they are below the daily batch size', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticUrlsFromAthena: async () => [],
@@ -489,9 +488,9 @@ describe('Prerender Audit', () => {
           log: { info: sandbox.stub(), debug: sandbox.stub() },
         };
         const out = await mockHandler.submitForScraping(context);
-        expect(out.urls).to.have.length(DAILY_BATCH_SIZE);
+        expect(out.urls).to.have.length(TOP_ORGANIC_URLS_LIMIT);
         expect(out.urls.map((entry) => entry.url)).to.deep.equal(
-          Array.from({ length: DAILY_BATCH_SIZE }).map((_, i) => `https://example.com/p${i}`),
+          Array.from({ length: TOP_ORGANIC_URLS_LIMIT }).map((_, i) => `https://example.com/p${i}`),
         );
       });
 
@@ -520,7 +519,7 @@ describe('Prerender Audit', () => {
         await mockHandler.submitForScraping(context);
         expect(getTopAgenticUrlsFromAthena).to.have.been.calledOnce;
         expect(getTopAgenticUrlsFromAthena.firstCall.args[2]).to.equal(TOP_AGENTIC_URLS_LIMIT);
-        expect(TOP_AGENTIC_URLS_LIMIT).to.equal(20);
+        expect(TOP_AGENTIC_URLS_LIMIT).to.equal(2000);
       });
 
       it('should handle undefined topPages list from SiteTopPage gracefully', async () => {
@@ -704,19 +703,23 @@ describe('Prerender Audit', () => {
           expect(resultUrls).to.not.include(organicUrl);
         });
 
-        it('should pick the next 15 URLs on the next run after filtering recent page citability records', async () => {
-          const agenticUrls = makeAgenticUrls(200);
+        it('should pick the next 320 URLs on the next run after filtering recent page citability records', async () => {
+          const agenticUrls = makeAgenticUrls(1000);
           const organicUrls = Array.from(
-            { length: 30 },
+            { length: TOP_ORGANIC_URLS_LIMIT },
             (_, i) => `https://example.com/organic-${i}`,
           );
           const includedUrls = Array.from(
             { length: 10 },
             (_, i) => `https://example.com/included-${i}`,
           );
-          const recentRecords = Array.from(
-            { length: DAILY_BATCH_SIZE },
-            (_, i) => makeCitabilityRecord(`/organic-${i}`),
+          const firstBatchUrls = [
+            ...organicUrls,
+            ...includedUrls,
+            ...agenticUrls.slice(0, DAILY_BATCH_SIZE - organicUrls.length - includedUrls.length),
+          ];
+          const recentRecords = firstBatchUrls.map(
+            (url) => makeCitabilityRecord(new URL(url).pathname),
           );
           const mockHandler = await makeHandlerWithAgentic(agenticUrls);
 
@@ -741,7 +744,10 @@ describe('Prerender Audit', () => {
           const resultUrls = result.urls.map((u) => u.url);
 
           expect(resultUrls).to.deep.equal(
-            organicUrls.slice(DAILY_BATCH_SIZE, DAILY_BATCH_SIZE * 2),
+            agenticUrls.slice(
+              DAILY_BATCH_SIZE - organicUrls.length - includedUrls.length,
+              (DAILY_BATCH_SIZE - organicUrls.length - includedUrls.length) + DAILY_BATCH_SIZE,
+            ),
           );
         });
 
@@ -3444,23 +3450,15 @@ describe('Prerender Audit', () => {
   });
 
   describe('Additional branch coverage (mapping, catches)', () => {
-    it('should return the raw sheet path when URL construction from sheet row throws', async () => {
+    it('should return the raw Athena URL when it is already absolute but invalid', async () => {
       const mergeAndGetUniqueHtmlUrlsStub = sinon.stub().callsFake((...urlGroups) => ({
         urls: urlGroups.flat(),
         filteredCount: 0,
       }));
 
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/prerender/utils/shared.js': {
-          loadLatestAgenticSheet: async () => ({
-            weekId: 'w45-2025',
-            baseUrl: 'https://example.com',
-            rows: [{ url: 'http://[invalid', number_of_hits: 9 }],
-          }),
-          buildSheetHitsMap: (rows) => new Map(rows.map((r) => [r.url, r.number_of_hits])),
-        },
         '../../../src/utils/agentic-urls.js': {
-          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves(['http://[invalid']),
         },
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
@@ -3860,83 +3858,6 @@ describe('Prerender Audit', () => {
       const res = await mockHandler.submitForScraping(ctx);
       expect(res).to.be.an('object');
       expect(res.urls).to.be.an('array');
-    });
-
-    it('should warn when sheet-based agentic URL loading throws and continue with Athena fallback', async () => {
-      const warn = sinon.stub();
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/prerender/utils/shared.js': {
-          loadLatestAgenticSheet: async () => {
-            throw new Error('Sheet load failed loudly');
-          },
-          buildSheetHitsMap: sinon.stub(),
-        },
-        '../../../src/utils/agentic-urls.js': {
-          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
-        },
-      });
-
-      const ctx = {
-        site: {
-          getId: () => 'site',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ getIncludedURLs: () => [] }),
-        },
-        dataAccess: {
-          SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
-          PageCitability: { allByIndexKeys: sinon.stub().resolves([]) },
-        },
-        log: {
-          info: sinon.stub(),
-          debug: sinon.stub(),
-          warn,
-        },
-      };
-
-      const res = await mockHandler.submitForScraping(ctx);
-
-      expect(res.urls).to.deep.equal([{ url: 'https://example.com' }]);
-      expect(warn).to.have.been.calledWith(
-        sinon.match(/Sheet-based agentic URL fetch failed: Sheet load failed loudly/),
-      );
-    });
-
-    it('should log non-Error sheet failures using the fallback error value', async () => {
-      const warn = sinon.stub();
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/prerender/utils/shared.js': {
-          loadLatestAgenticSheet: async () => {
-            throw 'sheet-failure-without-message';
-          },
-          buildSheetHitsMap: sinon.stub(),
-        },
-        '../../../src/utils/agentic-urls.js': {
-          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
-        },
-      });
-
-      const ctx = {
-        site: {
-          getId: () => 'site',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ getIncludedURLs: () => [] }),
-        },
-        dataAccess: {
-          SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
-          PageCitability: { allByIndexKeys: sinon.stub().resolves([]) },
-        },
-        log: {
-          info: sinon.stub(),
-          debug: sinon.stub(),
-          warn,
-        },
-      };
-
-      await mockHandler.submitForScraping(ctx);
-
-      expect(warn).to.have.been.calledWith(
-        sinon.match(/Sheet-based agentic URL fetch failed: sheet-failure-without-message/),
-      );
     });
 
     it('should log detailed fallback message when building URL list from fallbacks', async () => {
@@ -6268,6 +6189,50 @@ describe('Prerender Audit', () => {
       expect(page2.scrapedAt).to.equal('2025-01-01T00:00:00.000Z'); // preserved
     });
 
+    it('should merge status pages by pathname so www and non-www variants do not duplicate', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-02-01T00:00:00.000Z',
+        auditResult: {
+          results: [
+            {
+              url: 'https://example.com/page1',
+              error: false,
+              needsPrerender: true,
+            },
+          ],
+        },
+      };
+
+      const existingStatus = {
+        pages: [
+          {
+            url: 'https://www.example.com/page1',
+            scrapingStatus: 'success',
+            needsPrerender: false,
+            scrapedAt: '2025-01-01T00:00:00.000Z',
+          },
+        ],
+      };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.resolve({
+            Body: { transformToString: () => Promise.resolve(JSON.stringify(existingStatus)) },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+      expect(uploadedData.pages).to.have.lengthOf(1);
+      expect(uploadedData.pages[0].url).to.equal('https://example.com/page1');
+      expect(uploadedData.pages[0].needsPrerender).to.equal(true);
+    });
+
     it('should aggregate metrics across runs from merged pages', async () => {
       const auditUrl = 'https://example.com';
       const auditData = {
@@ -7422,6 +7387,47 @@ describe('Prerender Audit', () => {
       expect(context.dataAccess.PageCitability.create).to.not.have.been.called;
       expect(existingRecord.setCitabilityScore).to.have.been.calledWith(0.9);
       expect(existingRecord.setIsDeployedAtEdge).to.have.been.calledWith(true);
+      expect(saveStub).to.have.been.calledOnce;
+    });
+
+    it('should update an existing PageCitability record when only the hostname differs', async () => {
+      const saveStub = sandbox.stub().resolves();
+      const existingRecord = {
+        getUrl: () => 'https://www.example.com/page1',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStub,
+      };
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([existingRecord]),
+            create: sandbox.stub(),
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        {
+          url: 'https://example.com/page1',
+          citabilityScore: 0.75,
+          contentGainRatio: 1.1,
+          wordDifference: 12,
+          wordCountBefore: 90,
+          wordCountAfter: 102,
+          isDeployedAtEdge: false,
+        },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(context.dataAccess.PageCitability.create).to.not.have.been.called;
+      expect(existingRecord.setCitabilityScore).to.have.been.calledWith(0.75);
+      expect(existingRecord.setIsDeployedAtEdge).to.have.been.calledWith(false);
       expect(saveStub).to.have.been.calledOnce;
     });
 

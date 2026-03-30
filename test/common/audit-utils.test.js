@@ -134,51 +134,6 @@ describe('Audit Utils Tests', () => {
       expect(result).to.be.false;
     });
 
-    it('bypasses site enrollment for prerender in dev environment', async () => {
-      context.env.AWS_ENV = 'dev';
-      configuration.getHandlers = () => ({
-        prerender: {
-          enabledByDefault: true,
-          productCodes: ['LLMO'],
-        },
-      });
-      configuration.isHandlerEnabledForSite.returns(true);
-
-      const mockTierClient = {
-        checkValidEntitlement: sandbox.stub().resolves({}),
-      };
-      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
-
-      const result = await isAuditEnabledForSite('prerender', site, context);
-      expect(result).to.be.true;
-      expect(context.log.warn).to.have.been.calledWith(
-        'Bypassing site enrollment check for handler prerender in dev environment for site site-123',
-      );
-      expect(configuration.isHandlerEnabledForSite).to.have.been.calledWith('prerender', site);
-    });
-
-    it('does not bypass site enrollment for prerender outside dev environment', async () => {
-      context.env.AWS_ENV = 'prod';
-      configuration.getHandlers = () => ({
-        prerender: {
-          enabledByDefault: true,
-          productCodes: ['LLMO'],
-        },
-      });
-      configuration.isHandlerEnabledForSite.returns(true);
-
-      const mockTierClient = {
-        checkValidEntitlement: sandbox.stub().resolves({}),
-      };
-      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
-
-      const result = await isAuditEnabledForSite('prerender', site, context);
-      expect(result).to.be.false;
-      expect(context.log.warn).not.to.have.been.calledWith(
-        'Bypassing site enrollment check for handler prerender in dev environment for site site-123',
-      );
-    });
-
     it('returns true when handler has productCodes and site enrollment', async () => {
       configuration.getHandlers = () => ({
         'test-handler': {

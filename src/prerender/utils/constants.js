@@ -11,11 +11,11 @@
  */
 
 export const CONTENT_GAIN_THRESHOLD = 1.1;
-export const TOP_AGENTIC_URLS_LIMIT = 20;
-export const DAILY_BATCH_SIZE = 15;
-export const TOP_ORGANIC_URLS_LIMIT = 30;
+export const TOP_AGENTIC_URLS_LIMIT = 2000;
+export const DAILY_BATCH_SIZE = 320;
+export const TOP_ORGANIC_URLS_LIMIT = 200;
 /**
  * URLs processed within this window are treated as recently scraped and skipped.
  */
-export const PRERENDER_RECENT_PROCESSING_TIME_HOURS = 1;
+export const PRERENDER_RECENT_PROCESSING_TIME_DAYS = 7;
 export const MODE_AI_ONLY = 'ai-only';

@@ -12,14 +12,13 @@
 
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
-import { subHours } from 'date-fns';
+import { subDays } from 'date-fns';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { buildSheetHitsMap, loadLatestAgenticSheet } from './utils/shared.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
 import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
 import {
@@ -27,7 +26,7 @@ import {
   DAILY_BATCH_SIZE,
   TOP_AGENTIC_URLS_LIMIT,
   TOP_ORGANIC_URLS_LIMIT,
-  PRERENDER_RECENT_PROCESSING_TIME_HOURS,
+  PRERENDER_RECENT_PROCESSING_TIME_DAYS,
   MODE_AI_ONLY,
 } from './utils/constants.js';
 
@@ -186,54 +185,11 @@ async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIM
   return topPagesUrls;
 }
 
-async function getTopAgenticUrlsFromSheet(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
-  const { log } = context;
-  try {
-    const { weekId, baseUrl, rows } = await loadLatestAgenticSheet(site, context);
-
-    if (!rows || rows.length === 0) {
-      log.warn(`Prerender - No agentic traffic rows found in sheet for ${weekId}. baseUrl=${baseUrl}`);
-      return [];
-    }
-
-    const byUrl = buildSheetHitsMap(rows);
-    const top = Array.from(byUrl.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, limit)
-      .map(([path]) => {
-        try {
-          return new URL(path, baseUrl).toString();
-        } catch {
-          return path;
-        }
-      });
-
-    log.info(`Prerender - Selected ${top.length} top agentic URLs via Sheet (${weekId}). baseUrl=${baseUrl}`);
-    return top;
-  } catch (e) {
-    log?.warn?.(`Prerender - Sheet-based agentic URL fetch failed: ${e?.message || e}. baseUrl=${site.getBaseURL()}`);
-    return [];
-  }
-}
-
-/**
- * Fetch top Agentic URLs from Athena.
- * @param {Object} site
- * @param {Object} context
- * @param {number} limit
- * @returns {Promise<Array<string>>}
- */
 async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
-  const { log } = context;
-  const sheetUrls = await getTopAgenticUrlsFromSheet(site, context, limit);
-  if (sheetUrls.length > 0) {
-    return sheetUrls;
-  }
-
   try {
     return await getTopAgenticUrlsFromAthena(site, context, limit);
   } catch (e) {
-    log.warn(`${LOG_PREFIX} Failed to fetch agentic URLs: ${e.message}. baseUrl=${site.getBaseURL()}`);
+    context.log.warn(`${LOG_PREFIX} Failed to fetch agentic URLs: ${e.message}. baseUrl=${site.getBaseURL()}`);
     return [];
   }
 }
@@ -251,7 +207,7 @@ async function getRecentlyProcessedPathnames(context, siteId) {
     if (!PageCitability?.allByIndexKeys) {
       return new Set();
     }
-    const recentWindowStart = subHours(new Date(), PRERENDER_RECENT_PROCESSING_TIME_HOURS);
+    const recentWindowStart = subDays(new Date(), PRERENDER_RECENT_PROCESSING_TIME_DAYS);
     const records = await PageCitability.allByIndexKeys(
       { siteId },
       { where: (attrs, op) => op.gte(attrs.updatedAt, recentWindowStart.toISOString()) },
@@ -270,6 +226,15 @@ async function getRecentlyProcessedPathnames(context, siteId) {
   } catch (e) {
     log.warn(`${LOG_PREFIX} Failed to load recently-processed pathnames: ${e.message}`);
     return new Set();
+  }
+}
+
+function normalizePathname(url) {
+  try {
+    const { pathname } = new URL(url);
+    return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  } catch {
+    return url;
   }
 }
 
@@ -1096,7 +1061,9 @@ export async function writeToCitabilityRecords(comparisonResults, siteId, contex
   }
 
   const existingRecords = await PageCitability.allBySiteId(siteId);
-  const existingRecordsMap = new Map(existingRecords.map((r) => [r.getUrl(), r]));
+  const existingRecordsMap = new Map(
+    existingRecords.map((r) => [normalizePathname(r.getUrl()), r]),
+  );
 
   const successful = comparisonResults.filter((r) => !r.error);
   const WRITE_BATCH_SIZE = 10;
@@ -1112,7 +1079,7 @@ export async function writeToCitabilityRecords(comparisonResults, siteId, contex
       isDeployedAtEdge,
     } = result;
     try {
-      const existing = existingRecordsMap.get(url);
+      const existing = existingRecordsMap.get(normalizePathname(url));
       if (existing) {
         existing.setCitabilityScore(citabilityScore ?? null);
         existing.setContentRatio(contentGainRatio ?? null);
@@ -1197,11 +1164,11 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     if (scrapeJobId && dataAccess?.ScrapeUrl) {
       try {
         const allScrapeUrls = await dataAccess.ScrapeUrl.allByScrapeJobId(scrapeJobId);
-        const auditResultUrlSet = new Set(currentPages.map((p) => p.url));
+        const auditResultUrlSet = new Set(currentPages.map((p) => normalizePathname(p.url)));
 
         const missingPages = await Promise.all(
           allScrapeUrls
-            .filter((su) => !auditResultUrlSet.has(su.getUrl()))
+            .filter((su) => !auditResultUrlSet.has(normalizePathname(su.getUrl())))
             .map(async (su) => {
               const url = su.getUrl();
               const scrapeJsonKey = getS3Path(url, scrapeJobId, 'scrape.json');
@@ -1240,10 +1207,10 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       }
     }
 
-    const currentUrlSet = new Set(currentPages.map((p) => p.url));
+    const currentUrlSet = new Set(currentPages.map((p) => normalizePathname(p.url)));
     const mergedPages = [
       ...currentPages,
-      ...existingPages.filter((p) => !currentUrlSet.has(p.url)),
+      ...existingPages.filter((p) => !currentUrlSet.has(normalizePathname(p.url))),
     ];
 
     // Derive aggregate metrics from the full merged page set and latest audit metadata.

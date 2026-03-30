@@ -59,10 +59,6 @@ export async function isAuditEnabledForSite(type, site, context) {
       context,
     );
     if (!hasValidEnrollment) {
-      if (type === 'prerender' && context.env?.AWS_ENV === 'dev') {
-        context.log.warn(`Bypassing site enrollment check for handler ${type} in dev environment for site ${site.getId()}`);
-        return configuration.isHandlerEnabledForSite(type, site);
-      }
       context.log.error(`No valid site enrollment for handler ${type} with product codes ${handler.productCodes} for site ${site.getId()}`);
       return false;
     }
