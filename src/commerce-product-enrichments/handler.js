@@ -225,6 +225,7 @@ async function sendEnrichment(productPages, commerceConfig, site, env, log, {
 
   const enrichmentPayload = {
     siteId: site.getId(),
+    storeViewUrl: commerceConfig.storeViewUrl,
     environmentId: commerceConfig.headers['Magento-Environment-Id'],
     websiteCode: commerceConfig.headers['Magento-Website-Code'],
     storeCode: commerceConfig.headers['Magento-Store-Code'],

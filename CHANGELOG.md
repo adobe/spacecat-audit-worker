@@ -1,3 +1,24 @@
+# [1.375.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.374.0...v1.375.0) (2026-03-30)
+
+
+### Features
+
+* ad-intent-mismatch v3 — WSIS scoring, URL exclusion, eviction capping ([#2133](https://github.com/adobe/spacecat-audit-worker/issues/2133)) ([3e1cba1](https://github.com/adobe/spacecat-audit-worker/commit/3e1cba1e14df25c07a598e5d7c26504ab24d7190))
+
+# [1.374.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.373.5...v1.374.0) (2026-03-30)
+
+
+### Features
+
+* **AGENTCOM-476:** add storeViewUrl to enrichment payload ([#2226](https://github.com/adobe/spacecat-audit-worker/issues/2226)) ([96c35ae](https://github.com/adobe/spacecat-audit-worker/commit/96c35ae079cc1f6f0a87dc4aeb83ce4bc03837db))
+
+## [1.373.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.373.4...v1.373.5) (2026-03-30)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.108.0 ([#2229](https://github.com/adobe/spacecat-audit-worker/issues/2229)) ([1879568](https://github.com/adobe/spacecat-audit-worker/commit/187956853872f328b2b721380fb80b686d7c57df))
+
 ## [1.373.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.373.3...v1.373.4) (2026-03-30)
 
 
