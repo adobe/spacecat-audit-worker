@@ -392,6 +392,43 @@ describe('collectCWVDataAndImportCode Tests', () => {
     expect(groupedEntry).to.exist;
   });
 
+  it('treats entries without metrics as passing fallback candidates', async () => {
+    const metriclessEntry = {
+      type: 'url',
+      url: 'https://example.com/no-metrics',
+      pageviews: 800,
+      organic: 10,
+    };
+
+    const customData = [
+      {
+        type: 'url',
+        url: 'https://example.com/failing',
+        pageviews: 9000,
+        organic: 100,
+        metrics: [{ deviceType: 'desktop', pageviews: 9000, lcp: 3000, cls: 0.05, inp: 180 }],
+      },
+      {
+        type: 'url',
+        url: 'https://example.com/passing-priority',
+        pageviews: 2500,
+        organic: 100,
+        metrics: [{ deviceType: 'desktop', pageviews: 2500, lcp: 2400, cls: 0.05, inp: 180 }],
+      },
+      metriclessEntry,
+    ];
+
+    context.rumApiClient.query.resolves(customData);
+
+    const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
+
+    expect(result.auditResult.cwv).to.deep.equal([
+      customData[0],
+      customData[1],
+      metriclessEntry,
+    ]);
+  });
+
   describe('CWV audit to oppty conversion', () => {
     let addSuggestionsResponse;
     let oppty;
