@@ -91,7 +91,7 @@ export function resolveManualCommerceConfig(commerceLlmoConfig, productUrl) {
   const matchedUrl = findBestMatchingStoreViewUrl(commerceLlmoConfig, productUrl);
   if (!matchedUrl) return null;
 
-  return transformToCommerceConfig(commerceLlmoConfig[matchedUrl]);
+  return { ...transformToCommerceConfig(commerceLlmoConfig[matchedUrl]), storeViewUrl: matchedUrl };
 }
 
 /**
