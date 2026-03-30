@@ -1,3 +1,10 @@
+## [1.373.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.373.3...v1.373.4) (2026-03-30)
+
+
+### Bug Fixes
+
+* feat expand IS_LLMO_OPPTY for LLMO and tech-geo audits ([#2225](https://github.com/adobe/spacecat-audit-worker/issues/2225)) ([75c3162](https://github.com/adobe/spacecat-audit-worker/commit/75c3162bc0841e75f0719d775e74a02ccd205470)), closes [#2219](https://github.com/adobe/spacecat-audit-worker/issues/2219)
+
 ## [1.373.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.373.2...v1.373.3) (2026-03-30)
 
 
