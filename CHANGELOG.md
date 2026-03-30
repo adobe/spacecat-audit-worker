@@ -1,3 +1,10 @@
+## [1.378.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.378.0...v1.378.1) (2026-03-30)
+
+
+### Bug Fixes
+
+* extend handleAdobeFastly for Adobe Fastly providers ([#2241](https://github.com/adobe/spacecat-audit-worker/issues/2241)) ([80b45b2](https://github.com/adobe/spacecat-audit-worker/commit/80b45b2d314b50c6a63f754723830c0cea968b20))
+
 # [1.378.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.377.1...v1.378.0) (2026-03-30)
 
 
