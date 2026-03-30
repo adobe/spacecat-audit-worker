@@ -237,6 +237,13 @@ export default async function handler(message, context) {
     altTextOppty.setData(updatedOpportunityData);
     altTextOppty.setUpdatedBy('system');
     await altTextOppty.save();
+
+    if (updatedOpportunityData.mystiqueResponsesReceived
+      >= (existingData.mystiqueResponsesExpected || 0)) {
+      audit.setCompletedAt(new Date().toISOString());
+      await audit.save();
+      log.info(`[${AUDIT_TYPE}]: All Mystique responses received. Set completedAt for auditId: ${auditId}`);
+    }
   } else {
     log.info(`[${AUDIT_TYPE}]: No suggestions to process for siteId: ${siteId}`);
   }

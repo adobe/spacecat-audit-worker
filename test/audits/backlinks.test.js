@@ -63,6 +63,8 @@ describe('Backlinks Tests', function () {
     getAuditType: () => 'broken-backlinks',
     getFullAuditRef: () => auditUrl,
     getAuditResult: sinon.stub(),
+    setCompletedAt: sinon.stub(),
+    save: sinon.stub().resolves(),
   };
   const contextSite = {
     getId: () => 'site-id',
@@ -1312,6 +1314,8 @@ describe('Backlinks Tests', function () {
       const mockAudit = {
         getId: () => 'audit-id',
         getAuditResult: () => mockAuditResult,
+        setCompletedAt: sinon.stub(),
+        save: sinon.stub().resolves(),
       };
 
       const mockSite = {
@@ -1405,6 +1409,8 @@ describe('Backlinks Tests', function () {
       const mockAudit = {
         getId: () => 'audit-id',
         getAuditResult: () => mockAuditResult,
+        setCompletedAt: sinon.stub(),
+        save: sinon.stub().resolves(),
       };
 
       const mockSite = {
@@ -1493,6 +1499,8 @@ describe('Backlinks Tests', function () {
       const mockAudit = {
         getId: () => 'audit-id',
         getAuditResult: () => mockAuditResult,
+        setCompletedAt: sinon.stub(),
+        save: sinon.stub().resolves(),
       };
 
       const mockSite = {
@@ -1576,7 +1584,7 @@ describe('Backlinks Tests', function () {
 
       const mockContext = {
         site: { getId: () => 'site-id', getBaseURL: () => 'https://example.com' },
-        audit: { getId: () => 'audit-id', getAuditResult: () => mockAuditResult },
+        audit: { getId: () => 'audit-id', getAuditResult: () => mockAuditResult, setCompletedAt: sinon.stub(), save: sinon.stub().resolves() },
         finalUrl: 'https://example.com',
         log: context.log,
         dataAccess: {
@@ -1635,7 +1643,7 @@ describe('Backlinks Tests', function () {
 
       const mockContext = {
         site: { getId: () => 'site-id', getBaseURL: () => 'https://example.com' },
-        audit: { getId: () => 'audit-id', getAuditResult: () => mockAuditResult },
+        audit: { getId: () => 'audit-id', getAuditResult: () => mockAuditResult, setCompletedAt: sinon.stub(), save: sinon.stub().resolves() },
         finalUrl: 'https://example.com',
         log: context.log,
         dataAccess: {
@@ -1701,7 +1709,7 @@ describe('Backlinks Tests', function () {
 
       const mockContext = {
         site: mockSite,
-        audit: { getId: () => 'audit-id', getAuditResult: () => mockAuditResult },
+        audit: { getId: () => 'audit-id', getAuditResult: () => mockAuditResult, setCompletedAt: sinon.stub(), save: sinon.stub().resolves() },
         finalUrl: 'https://example.com',
         log: context.log,
         dataAccess: {

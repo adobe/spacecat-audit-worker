@@ -399,6 +399,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
         getAuditResult: () => auditData.auditResult,
         getFullAuditRef: () => auditUrl,
         getAuditedAt: () => '2023-11-27T12:34:56.789Z',
+        setCompletedAt: sinon.stub(),
+        save: sinon.stub().resolves(),
       };
     });
 
@@ -452,6 +454,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
         getAuditResult: () => auditResultWithGroupsOnly,
         getFullAuditRef: () => auditUrl,
         getAuditedAt: () => '2023-11-27T12:34:56.789Z',
+        setCompletedAt: sinon.stub(),
+        save: sinon.stub().resolves(),
       };
 
       const stepContext = { ...context, site, audit: mockAuditGroupsOnly, finalUrl: auditUrl };

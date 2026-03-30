@@ -11,10 +11,15 @@
  */
 
 /* eslint-env mocha */
-import { expect } from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import esmock from 'esmock';
+
+use(sinonChai);
+use(chaiAsPromised);
 
 describe('Missing Alt Text Guidance Handler', () => {
   let sandbox;
@@ -63,7 +68,7 @@ describe('Missing Alt Text Guidance Handler', () => {
           findById: sandbox.stub().resolves(mockSite),
         },
         Audit: {
-          findById: sandbox.stub().resolves({ getId: () => 'test-audit-id' }),
+          findById: sandbox.stub().resolves({ getId: () => 'test-audit-id', setCompletedAt: sandbox.stub(), save: sandbox.stub().resolves() }),
         },
         Suggestion: {
           bulkUpdateStatus: sandbox.stub().resolves(),
@@ -336,7 +341,7 @@ describe('Missing Alt Text Guidance Handler', () => {
   });
 
   it('should proceed when audit exists', async () => {
-    const mockAudit = { getId: () => 'test-audit-id' };
+    const mockAudit = { getId: () => 'test-audit-id', setCompletedAt: sandbox.stub(), save: sandbox.stub().resolves() };
     context.dataAccess.Audit.findById.resolves(mockAudit);
 
     const result = await guidanceHandler(mockMessage, context);
@@ -478,6 +483,30 @@ describe('Missing Alt Text Guidance Handler', () => {
 
     expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
     expect(getProjectedMetricsStub).to.have.been.called;
+  });
+
+  it('should set completedAt when all Mystique responses received', async () => {
+    mockOpportunity.getData.returns({
+      mystiqueResponsesReceived: 0,
+      mystiqueResponsesExpected: 1,
+    });
+
+    await guidanceHandler(mockMessage, context);
+
+    const mockAudit = await context.dataAccess.Audit.findById('test-audit-id');
+    expect(mockAudit.setCompletedAt).to.have.been.calledOnce;
+  });
+
+  it('should not set completedAt when Mystique responses still pending', async () => {
+    mockOpportunity.getData.returns({
+      mystiqueResponsesReceived: 0,
+      mystiqueResponsesExpected: 3,
+    });
+
+    await guidanceHandler(mockMessage, context);
+
+    const mockAudit = await context.dataAccess.Audit.findById('test-audit-id');
+    expect(mockAudit.setCompletedAt).to.not.have.been.called;
   });
 
   it('should not delete manually edited suggestions even when in pageUrlSet', async () => {
