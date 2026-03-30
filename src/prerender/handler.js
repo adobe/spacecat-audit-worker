@@ -87,12 +87,14 @@ async function isAllDomainDeployedAtEdge(opportunity) {
 }
 
 /**
- * When all domain is deployed at edge, move suggestions with status=NEW to SKIPPED.
+ * Moves NEW suggestions to SKIPPED, restricted to URLs confirmed deployed at edge
+ * in the current audit run.
  * @param {Object} opportunity - The opportunity object
  * @param {Object} context - Audit context with dataAccess and log
+ * @param {Set<string>} deployedAtEdgeUrls - URLs confirmed deployed at edge in this audit
  * @returns {Promise<void>}
  */
-async function moveNewSuggestionsToSkipped(opportunity, context) {
+async function moveDeployedUrlSuggestionsToSkipped(opportunity, context, deployedAtEdgeUrls) {
   const { dataAccess, log, site } = context;
   const SuggestionDA = dataAccess?.Suggestion;
 
@@ -109,26 +111,37 @@ async function moveNewSuggestionsToSkipped(opportunity, context) {
   );
 
   if (newSuggestions.length === 0) {
-    log.info(`${LOG_PREFIX} moveNewSuggestionsToSkipped: no NEW suggestions found. baseUrl=${baseUrl}, siteId=${siteId}`);
+    log.info(`${LOG_PREFIX} moveDeployedUrlSuggestionsToSkipped: no NEW suggestions found. baseUrl=${baseUrl}, siteId=${siteId}`);
     return;
   }
-  log.info(`${LOG_PREFIX} All domain deployed: moving ${newSuggestions.length} NEW suggestions to SKIPPED. baseUrl=${baseUrl}, siteId=${siteId}`);
-  await SuggestionDA.bulkUpdateStatus(newSuggestions, Suggestion.STATUSES.SKIPPED);
+
+  const suggestionsToSkip = deployedAtEdgeUrls?.size > 0
+    ? newSuggestions.filter((s) => deployedAtEdgeUrls.has(s.getData()?.url))
+    : [];
+
+  if (suggestionsToSkip.length === 0) {
+    log.info(`${LOG_PREFIX} moveDeployedUrlSuggestionsToSkipped: no NEW suggestions matched deployed URLs. baseUrl=${baseUrl}, siteId=${siteId}`);
+    return;
+  }
+  log.info(`${LOG_PREFIX} All domain deployed: moving ${suggestionsToSkip.length} NEW suggestions to SKIPPED. baseUrl=${baseUrl}, siteId=${siteId}`);
+  await SuggestionDA.bulkUpdateStatus(suggestionsToSkip, Suggestion.STATUSES.SKIPPED);
 }
 
 /**
- * Moves suggestions with status=NEW to SKIPPED when domain-wide suggestion has edgeDeployed.
+ * Moves suggestions with status=NEW to SKIPPED when domain-wide suggestion has edgeDeployed,
+ * restricting to URLs confirmed deployed at edge in the current audit run.
  * @param {Object|null} opportunity - The opportunity object (no-op if null)
  * @param {Object} context - Audit context with dataAccess and log
+ * @param {Set<string>} deployedAtEdgeUrls - URLs confirmed deployed at edge in this audit
  * @returns {Promise<void>}
  */
-async function skipNewSuggestionsWhenDeployed(opportunity, context) {
+async function skipNewSuggestionsWhenAllDomainDeployed(opportunity, context, deployedAtEdgeUrls) {
   const { log, site } = context;
   const baseUrl = site?.getBaseURL?.() || '';
   const isDeployed = await isAllDomainDeployedAtEdge(opportunity);
-  log.info(`${LOG_PREFIX} skipNewSuggestionsWhenDeployed: isAllDomainDeployedAtEdge=${isDeployed}, baseUrl=${baseUrl}`);
+  log.info(`${LOG_PREFIX} skipNewSuggestionsWhenAllDomainDeployed: isAllDomainDeployedAtEdge=${isDeployed}, baseUrl=${baseUrl}`);
   if (!isDeployed) return;
-  await moveNewSuggestionsToSkipped(opportunity, context);
+  await moveDeployedUrlSuggestionsToSkipped(opportunity, context, deployedAtEdgeUrls);
 }
 
 /**
@@ -1297,7 +1310,13 @@ export async function processContentAndGenerateOpportunities(context) {
     }
 
     // When domain-wide suggestion has edgeDeployed, move NEW suggestions to SKIPPED
-    await skipNewSuggestionsWhenDeployed(opportunityWithSuggestions, context);
+    // Only move suggestions for URLs confirmed deployed at edge in this audit run
+    const deployedAtEdgeUrls = new Set(
+      successfulComparisons
+        .filter((r) => r.isDeployedAtEdge)
+        .map((r) => r.url),
+    );
+    await skipNewSuggestionsWhenAllDomainDeployed(opportunityWithSuggestions, context, deployedAtEdgeUrls); // eslint-disable-line max-len
 
     const endTime = process.hrtime(startTime);
     const elapsedSeconds = (endTime[0] + endTime[1] / 1e9).toFixed(2);
