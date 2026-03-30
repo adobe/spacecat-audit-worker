@@ -582,6 +582,9 @@ export async function runPaidKeywordAnalysisStep(context) {
   log.debug(`[ad-intent-mismatch] [Site: ${finalUrl}] Audit updated with analysis results`);
 
   const { auditResult } = result;
+  // Defensive fallback — runner always returns an array, but guards against
+  // audit results loaded from DB with a missing field (reviewer request).
+  /* c8 ignore next */
   const searchPages = auditResult.predominantlyPaidPages || [];
 
   // Fetch Ahrefs data (mandatory — terminate if unavailable or empty)
