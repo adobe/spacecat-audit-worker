@@ -13,8 +13,10 @@
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import StoreClient, {
-  StoreEmptyError, URL_TYPES, GUIDELINE_TYPES, MYSTIQUE_URLS_LIMIT,
+  StoreEmptyError, URL_TYPES, GUIDELINE_TYPES,
 } from '../utils/store-client.js';
+import { resolveMystiqueUrlLimit } from '../utils/offsite-audit-utils.js';
+import { computeTopicsFromBrandPresence } from '../utils/brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 
 const LOG_PREFIX = '[YouTube]';
@@ -24,7 +26,7 @@ const LOG_PREFIX = '[YouTube]';
  *
  * This audit performs YouTube analysis by:
  * 1. Fetching YouTube URLs from the URL Store (discovered during brand presence analysis)
- * 2. Fetching analysis topics and guidelines from the Sentiment Config
+ * 2. Computing topics from LLMO brand-presence data; optional guidelines from Sentiment Config
  * 3. Sending all data to Mystique for analysis
  *
  * Mystique will fetch the actual page content from the Content Store directly
@@ -68,9 +70,17 @@ async function fetchStoreData(siteId, context) {
   const urls = await storeClient.getUrls(siteId, URL_TYPES.YOUTUBE);
   log.info(`${LOG_PREFIX} Retrieved ${urls.length} YouTube URLs from URL Store`);
 
-  let sentimentConfig = { topics: [], guidelines: [] };
+  const topics = await computeTopicsFromBrandPresence(siteId, context);
+  log.info(`${LOG_PREFIX} Computed ${topics.length} topics from brand presence data`);
+  log.debug(`${LOG_PREFIX} Brand-presence topics payload: ${JSON.stringify(topics)}`);
+
+  let guidelines = [];
   try {
-    sentimentConfig = await storeClient.getGuidelines(siteId, GUIDELINE_TYPES.YOUTUBE_ANALYSIS);
+    const sentimentConfig = await storeClient.getGuidelines(
+      siteId,
+      GUIDELINE_TYPES.YOUTUBE_ANALYSIS,
+    );
+    guidelines = sentimentConfig.guidelines ?? [];
   } catch (error) {
     if (error instanceof StoreEmptyError) {
       log.info(`${LOG_PREFIX} No guidelines configured for youtube-analysis, proceeding without`);
@@ -79,13 +89,11 @@ async function fetchStoreData(siteId, context) {
     }
   }
 
-  const topicCount = sentimentConfig.topics.length;
-  const guidelineCount = sentimentConfig.guidelines.length;
-  log.info(`${LOG_PREFIX} Retrieved ${topicCount} topics and ${guidelineCount} guidelines`);
+  log.info(`${LOG_PREFIX} Retrieved ${guidelines.length} guidelines`);
 
   return {
     urls,
-    sentimentConfig,
+    sentimentConfig: { topics, guidelines },
   };
 }
 
@@ -94,13 +102,16 @@ async function fetchStoreData(siteId, context) {
  * @param {string} url - The resolved URL for the audit
  * @param {Object} context - The audit context
  * @param {Object} site - The site being audited
+ * @param {Object} [auditContext] - SQS audit context; optional `messageData` from `message.data`
+ *   (e.g. urlLimit from Slack)
  * @returns {Promise<Object>} Audit result
  */
-async function runYouTubeAnalysisAudit(url, context, site) {
+async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
   const { log } = context;
   const siteId = site.getId();
 
   log.info(`${LOG_PREFIX} Starting YouTube analysis audit for site: ${siteId}`);
+  log.info(`${LOG_PREFIX} auditContext: ${JSON.stringify(auditContext)}`);
 
   try {
     const youtubeConfig = getYouTubeConfig(site);
@@ -119,7 +130,6 @@ async function runYouTubeAnalysisAudit(url, context, site) {
     log.info(`${LOG_PREFIX} Config: companyName=${youtubeConfig.companyName}, website=${youtubeConfig.companyWebsite}`);
 
     const storeData = await fetchStoreData(siteId, context);
-
     log.info(`${LOG_PREFIX} Successfully fetched all store data for ${youtubeConfig.companyName}`);
 
     return {
@@ -160,9 +170,17 @@ async function runYouTubeAnalysisAudit(url, context, site) {
  * @param {string} auditUrl - The audit URL
  * @param {Object} auditData - The audit data
  * @param {Object} context - The context object
+ * @param {Object} [_site] - Site model from BaseAudit (unused)
+ * @param {Object} [auditContext] - SQS audit context (e.g. `messageData.urlLimit`)
  * @returns {Promise<Object>} Updated audit data
  */
-async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
+async function sendMystiqueMessagePostProcessor(
+  auditUrl,
+  auditData,
+  context,
+  _site,
+  auditContext = {},
+) {
   const {
     log, sqs, env, dataAccess, audit,
   } = context;
@@ -186,10 +204,13 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       return auditData;
     }
 
+    const mystiqueUrlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
+    log.info(`${LOG_PREFIX} mystiqueUrlLimit=${mystiqueUrlLimit} (URLs sent to Mystique)`);
+
     const { config, storeData } = auditResult;
     const { urls, sentimentConfig } = storeData;
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
-      .slice(0, MYSTIQUE_URLS_LIMIT);
+      .slice(0, mystiqueUrlLimit);
 
     const message = {
       type: 'guidance:youtube-analysis',
@@ -211,14 +232,17 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       },
     };
 
+    log.debug(`${LOG_PREFIX} Built Mystique message type ${message.type}`);
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`${LOG_PREFIX} Queued YouTube analysis request to Mystique for ${config.companyName} with ${enrichedUrls.length} URLs`);
+    log.info(
+      `${LOG_PREFIX} Queued YouTube analysis request to Mystique for ${config.companyName} `
+        + `with ${enrichedUrls.length} URLs`,
+    );
+    return auditData;
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
     throw error;
   }
-
-  return auditData;
 }
 
 export default new AuditBuilder()
