@@ -12,10 +12,13 @@
 
 /* eslint-env mocha */
 
-import { expect } from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { checkSiteRequiresValidation, IS_LLMO_OPPTY } from '../../src/utils/site-validation.js';
+
+use(sinonChai);
 
 describe('utils/site-validation', () => {
   let sandbox;
