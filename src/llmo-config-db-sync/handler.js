@@ -29,7 +29,49 @@ export function isSyncEnabledForSite(siteId) {
   return ALLOWED_SITE_IDS.includes(siteId);
 }
 
-function collectPrompts(config, categoryMap, topicMap, brandId, organizationId, log) {
+function promptLookupKey(text, topicId) {
+  return `${text}\0${topicId || ''}`;
+}
+
+async function fetchExistingPromptMap(postgrestClient, brandId, log) {
+  const { data, error } = await postgrestClient
+    .from('prompts')
+    .select('prompt_id,text,topic_id')
+    .eq('brand_id', brandId);
+  if (error) {
+    log.error(`Failed to fetch existing prompts: ${error.message}`);
+    return new Map();
+  }
+  const map = new Map();
+  (data || []).forEach((row) => {
+    map.set(promptLookupKey(row.text, row.topic_id), row.prompt_id);
+  });
+  log.info(`Loaded ${map.size} existing prompts for brand ${brandId}`);
+  return map;
+}
+
+function resolvePromptId(p, topicId, topicUuid, existingPromptMap, log, index) {
+  if (p.id) return p.id;
+  const existing = existingPromptMap.get(promptLookupKey(p.prompt, topicUuid));
+  if (existing) {
+    log.info(`Matched existing prompt_id "${existing}" for topic "${topicId}" at index ${index}`);
+    return existing;
+  }
+  if (!p.prompt) return null;
+  const generated = uuidv5(`${topicId}:${p.prompt}`, PROMPT_ID_NAMESPACE);
+  log.info(`Generated prompt id ${generated} for topic "${topicId}" at index ${index}`);
+  return generated;
+}
+
+function collectPrompts(
+  config,
+  categoryMap,
+  topicMap,
+  brandId,
+  organizationId,
+  existingPromptMap,
+  log,
+) {
   const rows = [];
 
   const addFromTopics = (topicsRecord, status) => {
@@ -39,14 +81,10 @@ function collectPrompts(config, categoryMap, topicMap, brandId, organizationId, 
       const categoryUuid = topic.category ? (categoryMap.get(topic.category) || null) : null;
 
       (topic.prompts || []).forEach((p, index) => {
-        let promptId = p.id;
+        const promptId = resolvePromptId(p, topicId, topicUuid, existingPromptMap, log, index);
         if (!promptId) {
-          if (!p.prompt) {
-            log.error(`Skipping prompt without id or text in topic "${topicId}" at index ${index}`);
-            return;
-          }
-          promptId = uuidv5(`${topicId}:${p.prompt}`, PROMPT_ID_NAMESPACE);
-          log.info(`[llmo-config-db-sync] Generated prompt id ${promptId} for topic "${topicId}" at index ${index}`);
+          log.error(`Skipping prompt without id or text in topic "${topicId}" at index ${index}`);
+          return;
         }
         rows.push({
           organization_id: organizationId,
@@ -60,7 +98,8 @@ function collectPrompts(config, categoryMap, topicMap, brandId, organizationId, 
           status,
           origin: p.origin || 'human',
           source: p.source || 'config',
-          updated_by: 'config-sync',
+          created_by: p.createdBy || null,
+          updated_by: p.updatedBy || null,
         });
       });
     });
@@ -70,10 +109,16 @@ function collectPrompts(config, categoryMap, topicMap, brandId, organizationId, 
   addFromTopics(config.aiTopics, 'active');
 
   if (config.deleted?.prompts) {
-    Object.entries(config.deleted.prompts).forEach(([promptId, p]) => {
-      const categoryUuid = p.categoryId
-        ? (categoryMap.get(p.categoryId) || null)
-        : null;
+    Object.entries(config.deleted.prompts).forEach(([configPromptId, p]) => {
+      const topicUuid = p.topic ? (topicMap.get(p.topic) || null) : null;
+      if (!topicUuid) {
+        log.info(`Skipping deleted prompt "${configPromptId}": topic not resolved`);
+        return;
+      }
+      const categoryUuid = p.categoryId ? (categoryMap.get(p.categoryId) || null) : null;
+      const promptId = p.id
+        || existingPromptMap.get(promptLookupKey(p.prompt, topicUuid))
+        || configPromptId;
       rows.push({
         organization_id: organizationId,
         brand_id: brandId,
@@ -82,30 +127,12 @@ function collectPrompts(config, categoryMap, topicMap, brandId, organizationId, 
         text: p.prompt,
         regions: p.regions || [],
         category_id: categoryUuid,
-        topic_id: null,
+        topic_id: topicUuid,
         status: 'deleted',
         origin: p.origin || 'human',
         source: p.source || 'config',
-        updated_by: 'config-sync',
-      });
-    });
-  }
-
-  if (config.ignored?.prompts) {
-    Object.entries(config.ignored.prompts).forEach(([promptId, p]) => {
-      rows.push({
-        organization_id: organizationId,
-        brand_id: brandId,
-        prompt_id: promptId,
-        name: (p.prompt || '').slice(0, 255) || promptId,
-        text: p.prompt,
-        regions: p.region ? [p.region] : [],
-        category_id: null,
-        topic_id: null,
-        status: 'ignored',
-        origin: 'human',
-        source: p.source || 'gsc',
-        updated_by: 'config-sync',
+        created_by: p.createdBy || null,
+        updated_by: p.updatedBy || null,
       });
     });
   }
@@ -197,7 +224,8 @@ export default async function llmoConfigDbSync(message, context) {
       name: brandName || 'default',
       status: 'active',
       origin: 'human',
-      updated_by: 'config-sync',
+      created_by: null,
+      updated_by: null,
     };
     let brandId;
     if (dryRun) {
@@ -228,7 +256,8 @@ export default async function llmoConfigDbSync(message, context) {
       name: cat.name,
       origin: cat.origin || 'human',
       status: 'active',
-      updated_by: 'config-sync',
+      created_by: cat.createdBy || null,
+      updated_by: cat.updatedBy || null,
     }));
     let categoriesCount = 0;
     if (categoryRows.length > 0) {
@@ -253,8 +282,10 @@ export default async function llmoConfigDbSync(message, context) {
           organization_id: organizationId,
           topic_id: topicId,
           name: topic.name,
+          description: topic.description || null,
           status: 'active',
-          updated_by: 'config-sync',
+          created_by: topic.createdBy || null,
+          updated_by: topic.updatedBy || null,
         });
       });
     };
@@ -278,13 +309,17 @@ export default async function llmoConfigDbSync(message, context) {
     // Step 4: Build lookup maps (read-only, safe in dry-run)
     const { categoryMap, topicMap } = await buildLookupMaps(organizationId, postgrestClient);
 
-    // Step 5: Upsert prompts in batches
+    // Step 5: Fetch existing prompts to resolve prompt_id by (text, topic_id)
+    const existingPromptMap = await fetchExistingPromptMap(postgrestClient, brandId, log);
+
+    // Step 6: Upsert prompts in batches
     const promptRows = collectPrompts(
       s3Config,
       categoryMap,
       topicMap,
       brandId,
       organizationId,
+      existingPromptMap,
       log,
     );
     let promptsCount = 0;

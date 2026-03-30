@@ -302,6 +302,9 @@ describe('LLMO Config DB Sync Handler', () => {
         }
         if (table === 'prompts') {
           chain.upsert.returns(promptUpsertResult);
+          chain.select.returns({
+            eq: sandbox.stub().resolves({ data: [], error: null }),
+          });
           return chain;
         }
         return chain;
@@ -347,22 +350,77 @@ describe('LLMO Config DB Sync Handler', () => {
       expect(body.prompts).to.equal(0);
     });
 
-    it('syncs deleted and ignored prompts', async () => {
+    it('syncs deleted prompts when topic resolves', async () => {
       const s3Config = buildS3Config({
         categories: {
           'cat-1': { name: 'Category 1', region: 'us' },
         },
+        topics: {
+          'topic-1': { name: 'Topic 1', prompts: [] },
+        },
         deleted: {
           prompts: {
             'del-prompt-1': {
-              prompt: 'Deleted prompt', regions: ['us'], origin: 'human', source: 'config', topic: 'topic-1', category: 'Category 1', categoryId: 'cat-1',
+              prompt: 'Deleted prompt', regions: ['us'], origin: 'human', source: 'config', topic: 'topic-1', categoryId: 'cat-1',
             },
           },
         },
-        ignored: {
+      });
+      readConfigStub.resolves({ config: s3Config });
+
+      const brandChain = {
+        upsert: sandbox.stub().returnsThis(),
+        select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub().returnsThis(),
+        single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
+      };
+
+      let capturedPromptRows;
+      postgrestClient.from.callsFake((table) => {
+        if (table === 'brands') return brandChain;
+        if (table === 'prompts') {
+          return {
+            upsert: sandbox.stub().callsFake((rows) => {
+              capturedPromptRows = rows;
+              return { error: null };
+            }),
+            select: sandbox.stub().returns({
+              eq: sandbox.stub().resolves({ data: [], error: null }),
+            }),
+          };
+        }
+        return {
+          upsert: sandbox.stub().returns({ error: null }),
+          select: sandbox.stub().returns({
+            eq: sandbox.stub().resolves({
+              data: table === 'categories'
+                ? [{ id: CAT_UUID, category_id: 'cat-1' }]
+                : table === 'topics'
+                  ? [{ id: TOPIC_UUID, topic_id: 'topic-1' }]
+                  : [],
+              error: null,
+            }),
+          }),
+          eq: sandbox.stub().returnsThis(),
+        };
+      });
+
+      const response = await handler({ siteId: SITE_ID }, context);
+      const body = await response.json();
+
+      expect(response.status).to.equal(200);
+      expect(body.prompts).to.equal(1);
+      expect(capturedPromptRows[0].status).to.equal('deleted');
+      expect(capturedPromptRows[0].topic_id).to.equal(TOPIC_UUID);
+      expect(capturedPromptRows[0].category_id).to.equal(CAT_UUID);
+    });
+
+    it('skips deleted prompts when topic does not resolve', async () => {
+      const s3Config = buildS3Config({
+        deleted: {
           prompts: {
-            'ign-prompt-1': {
-              prompt: 'Ignored prompt', region: 'us', source: 'gsc',
+            'del-prompt-1': {
+              prompt: 'Deleted prompt', regions: ['us'], topic: 'unknown-topic',
             },
           },
         },
@@ -378,26 +436,31 @@ describe('LLMO Config DB Sync Handler', () => {
 
       postgrestClient.from.callsFake((table) => {
         if (table === 'brands') return brandChain;
-        const chain = {
+        if (table === 'prompts') {
+          return {
+            upsert: sandbox.stub().returns({ error: null }),
+            select: sandbox.stub().returns({
+              eq: sandbox.stub().resolves({ data: [], error: null }),
+            }),
+          };
+        }
+        return {
           upsert: sandbox.stub().returns({ error: null }),
           select: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({
-              data: table === 'categories'
-                ? [{ id: CAT_UUID, category_id: 'cat-1' }]
-                : [],
-              error: null,
-            }),
+            eq: sandbox.stub().resolves({ data: [], error: null }),
           }),
           eq: sandbox.stub().returnsThis(),
         };
-        return chain;
       });
 
       const response = await handler({ siteId: SITE_ID }, context);
       const body = await response.json();
 
       expect(response.status).to.equal(200);
-      expect(body.prompts).to.equal(2);
+      expect(body.prompts).to.equal(0);
+      expect(context.log.info).to.have.been.calledWith(
+        'Skipping deleted prompt "del-prompt-1": topic not resolved',
+      );
     });
 
     it('syncs aiTopics alongside regular topics', async () => {
@@ -786,7 +849,12 @@ describe('LLMO Config DB Sync Handler', () => {
       postgrestClient.from.callsFake((table) => {
         if (table === 'brands') return brandChain;
         if (table === 'prompts') {
-          return { upsert: sandbox.stub().returns({ error: null }) };
+          return {
+            upsert: sandbox.stub().returns({ error: null }),
+            select: sandbox.stub().returns({
+              eq: sandbox.stub().resolves({ data: [], error: null }),
+            }),
+          };
         }
         return {
           upsert: sandbox.stub().returns({ error: null }),
@@ -817,7 +885,11 @@ describe('LLMO Config DB Sync Handler', () => {
   });
 
   describe('prompt collection edge cases', () => {
-    function setupBasicMocks() {
+    function setupBasicMocks({
+      existingPrompts = [],
+      categoryLookup = [],
+      topicLookup = [],
+    } = {}) {
       context.dataAccess.Site.findById.resolves({
         getOrganizationId: () => ORG_ID,
         getConfig: () => ({ getLlmoBrand: () => 'Adobe' }),
@@ -840,6 +912,27 @@ describe('LLMO Config DB Sync Handler', () => {
               capturedPromptRows = rows;
               return { error: null };
             }),
+            select: sandbox.stub().returns({
+              eq: sandbox.stub().resolves({ data: existingPrompts, error: null }),
+            }),
+          };
+        }
+        if (table === 'categories') {
+          return {
+            upsert: sandbox.stub().returns({ error: null }),
+            select: sandbox.stub().returns({
+              eq: sandbox.stub().resolves({ data: categoryLookup, error: null }),
+            }),
+            eq: sandbox.stub().returnsThis(),
+          };
+        }
+        if (table === 'topics') {
+          return {
+            upsert: sandbox.stub().returns({ error: null }),
+            select: sandbox.stub().returns({
+              eq: sandbox.stub().resolves({ data: topicLookup, error: null }),
+            }),
+            eq: sandbox.stub().returnsThis(),
           };
         }
         return {
@@ -912,91 +1005,6 @@ describe('LLMO Config DB Sync Handler', () => {
       expect(rows[0].source).to.equal('config');
     });
 
-    it('handles deleted prompt without categoryId', async () => {
-      const s3Config = buildS3Config({
-        deleted: {
-          prompts: {
-            'del-1': {
-              prompt: 'Deleted', topic: 'T1', category: 'Cat1',
-            },
-          },
-        },
-      });
-      readConfigStub.resolves({ config: s3Config });
-      const getRows = setupBasicMocks();
-
-      await handler({ siteId: SITE_ID }, context);
-
-      const rows = getRows();
-      expect(rows).to.have.length(1);
-      expect(rows[0].category_id).to.be.null;
-      expect(rows[0].status).to.equal('deleted');
-      expect(rows[0].regions).to.deep.equal([]);
-      expect(rows[0].origin).to.equal('human');
-      expect(rows[0].source).to.equal('config');
-    });
-
-    it('handles deleted prompt with explicit origin and source', async () => {
-      const s3Config = buildS3Config({
-        deleted: {
-          prompts: {
-            'del-2': {
-              prompt: 'Deleted AI',
-              regions: ['de'],
-              origin: 'ai',
-              source: 'api',
-              topic: 'T1',
-              category: 'Cat1',
-              categoryId: 'cat-1',
-            },
-          },
-        },
-      });
-      readConfigStub.resolves({ config: s3Config });
-      const getRows = setupBasicMocks();
-
-      await handler({ siteId: SITE_ID }, context);
-
-      const rows = getRows();
-      expect(rows[0].origin).to.equal('ai');
-      expect(rows[0].source).to.equal('api');
-      expect(rows[0].regions).to.deep.equal(['de']);
-    });
-
-    it('handles ignored prompt without region', async () => {
-      const s3Config = buildS3Config({
-        ignored: {
-          prompts: {
-            'ign-no-region': { prompt: 'No region', source: 'gsc' },
-          },
-        },
-      });
-      readConfigStub.resolves({ config: s3Config });
-      const getRows = setupBasicMocks();
-
-      await handler({ siteId: SITE_ID }, context);
-
-      const rows = getRows();
-      expect(rows[0].regions).to.deep.equal([]);
-    });
-
-    it('handles ignored prompt without source', async () => {
-      const s3Config = buildS3Config({
-        ignored: {
-          prompts: {
-            'ign-no-src': { prompt: 'No source', region: 'us' },
-          },
-        },
-      });
-      readConfigStub.resolves({ config: s3Config });
-      const getRows = setupBasicMocks();
-
-      await handler({ siteId: SITE_ID }, context);
-
-      const rows = getRows();
-      expect(rows[0].source).to.equal('gsc');
-    });
-
     it('handles topic with no prompts array', async () => {
       const s3Config = buildS3Config({
         topics: {
@@ -1010,42 +1018,6 @@ describe('LLMO Config DB Sync Handler', () => {
       const body = await response.json();
 
       expect(body.prompts).to.equal(0);
-    });
-
-    it('handles deleted prompt with empty prompt text', async () => {
-      const s3Config = buildS3Config({
-        deleted: {
-          prompts: {
-            'del-empty': {
-              prompt: '', topic: 'T', category: 'C',
-            },
-          },
-        },
-      });
-      readConfigStub.resolves({ config: s3Config });
-      const getRows = setupBasicMocks();
-
-      await handler({ siteId: SITE_ID }, context);
-
-      const rows = getRows();
-      expect(rows[0].name).to.equal('del-empty');
-    });
-
-    it('handles ignored prompt with empty prompt text', async () => {
-      const s3Config = buildS3Config({
-        ignored: {
-          prompts: {
-            'ign-empty': { prompt: '', region: 'us', source: 'gsc' },
-          },
-        },
-      });
-      readConfigStub.resolves({ config: s3Config });
-      const getRows = setupBasicMocks();
-
-      await handler({ siteId: SITE_ID }, context);
-
-      const rows = getRows();
-      expect(rows[0].name).to.equal('ign-empty');
     });
 
     it('generates a deterministic UUID v5 for prompts without an id', async () => {
@@ -1127,53 +1099,50 @@ describe('LLMO Config DB Sync Handler', () => {
       );
     });
 
-    it('handles ignored prompts with single region string', async () => {
+    it('uses existing prompt_id when matching by text and topic', async () => {
       const s3Config = buildS3Config({
-        ignored: {
-          prompts: {
-            'ign-1': { prompt: 'Ignored', region: 'de', source: 'gsc' },
+        topics: {
+          'topic-1': {
+            name: 'Topic 1',
+            prompts: [{ prompt: 'Existing prompt', regions: ['us'] }],
           },
         },
       });
       readConfigStub.resolves({ config: s3Config });
-
-      context.dataAccess.Site.findById.resolves({
-        getOrganizationId: () => ORG_ID,
-        getConfig: () => ({ getLlmoBrand: () => 'Adobe' }),
-      });
-
-      let capturedPromptRows;
-      const brandChain = {
-        upsert: sandbox.stub().returnsThis(),
-        select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub().returnsThis(),
-        single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
-      };
-
-      postgrestClient.from.callsFake((table) => {
-        if (table === 'brands') return brandChain;
-        if (table === 'prompts') {
-          return {
-            upsert: sandbox.stub().callsFake((rows) => {
-              capturedPromptRows = rows;
-              return { error: null };
-            }),
-          };
-        }
-        return {
-          upsert: sandbox.stub().returns({ error: null }),
-          select: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({ data: [], error: null }),
-          }),
-          eq: sandbox.stub().returnsThis(),
-        };
+      const getRows = setupBasicMocks({
+        existingPrompts: [
+          { prompt_id: 'migration-abc123', text: 'Existing prompt', topic_id: TOPIC_UUID },
+        ],
+        topicLookup: [{ id: TOPIC_UUID, topic_id: 'topic-1' }],
       });
 
       await handler({ siteId: SITE_ID }, context);
 
-      expect(capturedPromptRows).to.have.length(1);
-      expect(capturedPromptRows[0].regions).to.deep.equal(['de']);
-      expect(capturedPromptRows[0].status).to.equal('ignored');
+      const rows = getRows();
+      expect(rows).to.have.length(1);
+      expect(rows[0].prompt_id).to.equal('migration-abc123');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match('Matched existing prompt_id "migration-abc123"'),
+      );
+    });
+
+    it('falls back to UUID v5 when no existing prompt matches', async () => {
+      const s3Config = buildS3Config({
+        topics: {
+          'topic-1': {
+            name: 'Topic 1',
+            prompts: [{ prompt: 'Brand new prompt', regions: ['us'] }],
+          },
+        },
+      });
+      readConfigStub.resolves({ config: s3Config });
+      const getRows = setupBasicMocks({ existingPrompts: [] });
+
+      await handler({ siteId: SITE_ID }, context);
+
+      const rows = getRows();
+      expect(rows).to.have.length(1);
+      expect(rows[0].prompt_id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     });
   });
 
@@ -1248,9 +1217,6 @@ describe('LLMO Config DB Sync Handler', () => {
             category: 'cat-1',
             prompts: [{ id: 'p1', prompt: 'Q?', regions: ['us'] }],
           },
-        },
-        deleted: {
-          prompts: { 'del-1': { prompt: 'Deleted', topic: 'T' } },
         },
       });
       readConfigStub.resolves({ config: s3Config });
