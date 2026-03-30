@@ -139,7 +139,6 @@ async function buildLookupMaps(organizationId, postgrestClient) {
 }
 
 function logSample(log, label, rows) {
-  if (rows.length === 0) return;
   log.info(`[DRY RUN] ${label} sample (first of ${rows.length}):`, JSON.stringify(rows[0]));
 }
 
@@ -200,7 +199,7 @@ export default async function llmoConfigDbSync(message, context) {
         .from('brands')
         .select('id')
         .eq('organization_id', organizationId)
-        .eq('name', brandName || 'default')
+        .eq('name', brandRow.name)
         .single();
       brandId = existing?.id || 'dry-run-brand-id';
       log.info(`${tag}Resolved brand ID: ${brandId}`);
