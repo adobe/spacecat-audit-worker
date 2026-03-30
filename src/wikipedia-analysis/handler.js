@@ -10,10 +10,41 @@
  * governing permissions and limitations under the License.
  */
 
+import { isValidUrl } from '@adobe/spacecat-shared-utils';
+
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 
 const LOG_PREFIX = '[Wikipedia]';
+
+/**
+ * Optional Wikipedia article URL from `message.data` (merged into RunnerAudit
+ * `auditContext.messageData`).
+ * `wikiUrl` wins over `wikipediaUrl` when both are set. Invalid / non-string
+ * values are ignored (see runner).
+ *
+ * @param {object} [auditContext]
+ * @returns {{ url: string }|{ invalid: true, value: string }|undefined}
+ */
+function resolveWikipediaUrlOverride(auditContext) {
+  const rawOverride = auditContext?.messageData?.wikiUrl
+    || auditContext?.messageData?.wikipediaUrl;
+
+  if (typeof rawOverride !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = rawOverride.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  if (!isValidUrl(trimmed)) {
+    return { invalid: true, value: trimmed };
+  }
+
+  return { url: trimmed };
+}
 
 /**
  * Wikipedia Analysis Audit Handler
@@ -52,15 +83,25 @@ function getWikipediaConfig(site) {
  * @param {string} url - The resolved URL for the audit
  * @param {Object} context - The audit context
  * @param {Object} site - The site being audited
+ * @param {Object} [auditContext] - RunnerAudit context; optional
+ *     `messageData.wikiUrl` / `messageData.wikipediaUrl` from `message.data`
  * @returns {Promise<Object>} Audit result
  */
-async function runWikipediaAnalysisAudit(url, context, site) {
+async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) {
   const { log } = context;
 
   log.info(`${LOG_PREFIX} Starting Wikipedia analysis audit for site: ${site.getId()}`);
 
   try {
     const wikipediaConfig = getWikipediaConfig(site);
+
+    const wikipediaUrlOverride = resolveWikipediaUrlOverride(auditContext);
+    if (wikipediaUrlOverride?.invalid) {
+      log.warn(`${LOG_PREFIX} Ignoring invalid wikipedia URL override: ${wikipediaUrlOverride.value}`);
+    } else if (wikipediaUrlOverride?.url) {
+      wikipediaConfig.wikipediaUrl = wikipediaUrlOverride.url;
+      log.info(`${LOG_PREFIX} Using Wikipedia URL override from audit message: ${wikipediaUrlOverride.url}`);
+    }
 
     // Validate that we have a company name
     if (!wikipediaConfig.companyName) {

@@ -188,6 +188,114 @@ describe('Wikipedia Analysis Handler', () => {
       expect(result.auditResult.error).to.equal('Config error');
       expect(context.log.error).to.have.been.called;
     });
+
+    it('should override wikipediaUrl from auditContext.messageData.wikiUrl', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Override_Article';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: override } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+      expect(context.log.info).to.have.been.calledWith(
+        `[Wikipedia] Using Wikipedia URL override from audit message: ${override}`,
+      );
+    });
+
+    it('should use wikipediaUrl from messageData when wikiUrl is absent', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Other';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikipediaUrl: override } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+    });
+
+    it('should prefer wikiUrl over wikipediaUrl in messageData', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        {
+          messageData: {
+            wikiUrl: 'https://en.wikipedia.org/wiki/First',
+            wikipediaUrl: 'https://en.wikipedia.org/wiki/Second',
+          },
+        },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/First');
+    });
+
+    it('should not use top-level wikiUrl without messageData (Slack/API use message.data only)', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { urlLimit: 10 }, wikiUrl: 'https://en.wikipedia.org/wiki/Top' },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
+    });
+
+    it('should ignore invalid override and keep site config', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: 'not-a-valid-url' } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
+      expect(context.log.warn).to.have.been.calledWith(
+        '[Wikipedia] Ignoring invalid wikipedia URL override: not-a-valid-url',
+      );
+    });
+
+    it('should trim wikiUrl override', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: '  https://en.wikipedia.org/wiki/Trimmed  ' } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Trimmed');
+    });
+
+    it('should treat null auditContext like no override', async () => {
+      const result = await wikipediaAnalysisHandler.runner(baseURL, context, mockSite, null);
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
+    });
+
+    it('should ignore whitespace-only override', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: '   ' } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
+    });
+
+    it('should ignore non-string wikiUrl in messageData', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: 12345 } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
+    });
   });
 
   describe('Post Processor - sendMystiqueMessagePostProcessor', () => {
