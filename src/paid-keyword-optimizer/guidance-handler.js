@@ -37,8 +37,8 @@ function inferRecommendationType(suggestions) {
 /**
  * Reconciles audit_required opportunities to stay within the per-site cap.
  * modify_heading opportunities (those with variationChanges) are never removed.
- * When audit_required count exceeds MAX_OPPORTUNITIES_PER_TYPE, the newest
- * excess opportunities and their suggestions are removed.
+ * When audit_required count exceeds MAX_OPPORTUNITIES_PER_TYPE, the oldest
+ * excess opportunities and their suggestions are removed (newest are kept).
  * @param {Array} activeOpportunities - Active (NEW, system) ad-intent-mismatch opportunities
  * @param {Object} dataAccess - Data access object with Opportunity and Suggestion
  * @param {Object} log - Logger
@@ -64,9 +64,9 @@ async function reconcileOpportunities(activeOpportunities, dataAccess, log, site
     return;
   }
 
-  // Sort oldest first (keep), newest last (remove)
+  // Sort newest first (keep), oldest last (evict)
   auditRequired.sort(
-    (a, b) => new Date(a.oppty.getUpdatedAt()) - new Date(b.oppty.getUpdatedAt()),
+    (a, b) => new Date(b.oppty.getUpdatedAt()) - new Date(a.oppty.getUpdatedAt()),
   );
 
   const excess = auditRequired.slice(MAX_OPPORTUNITIES_PER_TYPE);

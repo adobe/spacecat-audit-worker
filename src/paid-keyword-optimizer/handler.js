@@ -26,6 +26,7 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 const CUT_OFF_BOUNCE_RATE = 0.5;
 const PREDOMINANT_TRAFFIC_PCT = 80;
 const PAGE_VIEW_THRESHOLD = 5000;
+const AD_INTENT_MAX_PAGES = 10;
 
 // Import type constant
 const IMPORT_AHREF_PAID_PAGES = 'ahref-paid-pages';
@@ -581,13 +582,18 @@ export async function runPaidKeywordAnalysisStep(context) {
   log.debug(`[ad-intent-mismatch] [Site: ${finalUrl}] Audit updated with analysis results`);
 
   const { auditResult } = result;
-  const searchPages = auditResult.predominantlyPaidPages;
+  // Defensive fallback — runner always returns an array, but guards against
+  // audit results loaded from DB with a missing field (reviewer request).
+  /* c8 ignore next */
+  const searchPages = auditResult.predominantlyPaidPages || [];
 
   // Fetch Ahrefs data (mandatory — terminate if unavailable or empty)
   let ahrefsMap;
   try {
     ahrefsMap = await fetchPaidPagesFromS3(context, siteId);
   } catch (error) {
+    // Intentionally treating all S3 errors the same (NoSuchKey, AccessDenied, etc.)
+    // — in both cases the audit cannot proceed without Ahrefs data.
     log.error(`[ad-intent-mismatch] [Site: ${finalUrl}] Ahrefs S3 fetch failed for site ${siteId}: ${error.message}`);
     return {};
   }
@@ -612,8 +618,6 @@ export async function runPaidKeywordAnalysisStep(context) {
   );
 
   // Enrich with Ahrefs data and compute priority score
-  const MAX_PAGES = parseInt(env.AD_INTENT_MAX_PAGES || '10', 10);
-
   const rankedPages = bounceFilteredPages
     .map((page) => {
       const ahrefs = ahrefsMap.get(normalizeUrl(page.url)) || {};
@@ -628,7 +632,7 @@ export async function runPaidKeywordAnalysisStep(context) {
     })
     .filter((page) => page.priorityScore > 0.01)
     .sort((a, b) => b.priorityScore - a.priorityScore)
-    .slice(0, MAX_PAGES > 0 ? MAX_PAGES : undefined);
+    .slice(0, AD_INTENT_MAX_PAGES);
 
   // Pipeline summary log
   log.info(
@@ -652,39 +656,6 @@ export async function runPaidKeywordAnalysisStep(context) {
   log.info(`[ad-intent-mismatch] [Site: ${finalUrl}] Step complete - sent ${rankedPages.length} messages`);
 
   return {};
-}
-
-// Legacy function for backward compatibility with tests
-export async function sendToMystique(auditUrl, auditData, context, site) {
-  const { log, sqs, env } = context;
-  const { auditResult, id } = auditData;
-
-  // Filter pages with bounce rate >= threshold
-  const qualifyingPages = (auditResult.predominantlyPaidPages || [])
-    .filter((page) => page.bounceRate >= CUT_OFF_BOUNCE_RATE);
-
-  if (qualifyingPages.length === 0) {
-    log.info(
-      `[ad-intent-mismatch] [Site: ${auditUrl}] No pages with bounce rate >= ${CUT_OFF_BOUNCE_RATE} found; skipping mystique`,
-    );
-    return;
-  }
-
-  log.info(
-    `[ad-intent-mismatch] [Site: ${auditUrl}] Found ${qualifyingPages.length} pages with high bounce rate`,
-  );
-
-  // Send one message per qualifying page
-  await Promise.all(qualifyingPages.map((page) => {
-    const mystiqueMessage = buildMystiqueMessage(site, id, page);
-    log.info(
-      `[ad-intent-mismatch] [Site: ${auditUrl}] Sending message for ${page.url} to mystique: `
-      + `${JSON.stringify(mystiqueMessage, null, 2)}`,
-    );
-    return sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-  }));
-
-  log.info(`[ad-intent-mismatch] [Site: ${auditUrl}] Completed mystique evaluation step - sent ${qualifyingPages.length} messages`);
 }
 
 export {
