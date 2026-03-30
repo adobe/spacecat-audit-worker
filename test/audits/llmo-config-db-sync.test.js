@@ -1059,54 +1059,32 @@ describe('LLMO Config DB Sync Handler', () => {
       expect(rows[0].name).to.equal('ign-empty');
     });
 
-    it('handles prompts without an id by generating one', async () => {
+    it('skips prompts without an id and logs an error', async () => {
       const s3Config = buildS3Config({
         topics: {
           'topic-1': {
             name: 'Topic 1',
             category: 'cat-1',
-            prompts: [{ prompt: 'No ID prompt', regions: ['us'] }],
+            prompts: [
+              { prompt: 'No ID prompt', regions: ['us'] },
+              { id: 'p-valid', prompt: 'Has ID', regions: ['us'] },
+            ],
           },
         },
       });
       readConfigStub.resolves({ config: s3Config });
+      const getRows = setupBasicMocks();
 
-      context.dataAccess.Site.findById.resolves({
-        getOrganizationId: () => ORG_ID,
-        getConfig: () => ({ getLlmoBrand: () => 'Adobe' }),
-      });
+      const response = await handler({ siteId: SITE_ID }, context);
+      const body = await response.json();
 
-      let capturedPromptRows;
-      const brandChain = {
-        upsert: sandbox.stub().returnsThis(),
-        select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub().returnsThis(),
-        single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
-      };
-
-      postgrestClient.from.callsFake((table) => {
-        if (table === 'brands') return brandChain;
-        if (table === 'prompts') {
-          return {
-            upsert: sandbox.stub().callsFake((rows) => {
-              capturedPromptRows = rows;
-              return { error: null };
-            }),
-          };
-        }
-        return {
-          upsert: sandbox.stub().returns({ error: null }),
-          select: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({ data: [], error: null }),
-          }),
-          eq: sandbox.stub().returnsThis(),
-        };
-      });
-
-      await handler({ siteId: SITE_ID }, context);
-
-      expect(capturedPromptRows).to.have.length(1);
-      expect(capturedPromptRows[0].prompt_id).to.equal('topic-1-0');
+      const rows = getRows();
+      expect(rows).to.have.length(1);
+      expect(rows[0].prompt_id).to.equal('p-valid');
+      expect(body.prompts).to.equal(1);
+      expect(context.log.error).to.have.been.calledWith(
+        'Skipping prompt without id in topic "topic-1" at index 0',
+      );
     });
 
     it('handles ignored prompts with single region string', async () => {

@@ -26,7 +26,7 @@ export function isSyncEnabledForSite(siteId) {
   return ALLOWED_SITE_IDS.includes(siteId);
 }
 
-function collectPrompts(config, categoryMap, topicMap, brandId, organizationId) {
+function collectPrompts(config, categoryMap, topicMap, brandId, organizationId, log) {
   const rows = [];
 
   const addFromTopics = (topicsRecord, status) => {
@@ -35,13 +35,16 @@ function collectPrompts(config, categoryMap, topicMap, brandId, organizationId) 
       const topicUuid = topicMap.get(topicId) || null;
       const categoryUuid = topic.category ? (categoryMap.get(topic.category) || null) : null;
 
-      (topic.prompts || []).forEach((p) => {
-        const promptId = p.id || `${topicId}-${rows.length}`;
+      (topic.prompts || []).forEach((p, index) => {
+        if (!p.id) {
+          log.error(`[llmo-config-db-sync] Skipping prompt without id in topic "${topicId}" at index ${index}`);
+          return;
+        }
         rows.push({
           organization_id: organizationId,
           brand_id: brandId,
-          prompt_id: promptId,
-          name: (p.prompt || '').slice(0, 255) || promptId,
+          prompt_id: p.id,
+          name: (p.prompt || '').slice(0, 255) || p.id,
           text: p.prompt,
           regions: p.regions || [],
           category_id: categoryUuid,
@@ -242,7 +245,14 @@ export default async function llmoConfigDbSync(message, context) {
     const { categoryMap, topicMap } = await buildLookupMaps(organizationId, postgrestClient);
 
     // Step 5: Upsert prompts in batches
-    const promptRows = collectPrompts(s3Config, categoryMap, topicMap, brandId, organizationId);
+    const promptRows = collectPrompts(
+      s3Config,
+      categoryMap,
+      topicMap,
+      brandId,
+      organizationId,
+      log,
+    );
     let promptsCount = 0;
     if (promptRows.length > 0) {
       promptsCount = await upsertInBatches(
