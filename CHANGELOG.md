@@ -1,3 +1,10 @@
+## [1.377.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.377.0...v1.377.1) (2026-03-30)
+
+
+### Bug Fixes
+
+* extract brand name from URL for Wikipedia search ([#2238](https://github.com/adobe/spacecat-audit-worker/issues/2238)) ([b39ea7e](https://github.com/adobe/spacecat-audit-worker/commit/b39ea7e2a6a610eed5117c070622aea7a1d59210))
+
 # [1.377.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.376.1...v1.377.0) (2026-03-30)
 
 
