@@ -1083,7 +1083,7 @@ describe('LLMO Config DB Sync Handler', () => {
       expect(rows[0].prompt_id).to.equal('p-valid');
       expect(body.prompts).to.equal(1);
       expect(context.log.error).to.have.been.calledWith(
-        'Skipping prompt without id in topic "topic-1" at index 0',
+        '[llmo-config-db-sync] Skipping prompt without id in topic "topic-1" at index 0',
       );
     });
 
@@ -1134,6 +1134,153 @@ describe('LLMO Config DB Sync Handler', () => {
       expect(capturedPromptRows).to.have.length(1);
       expect(capturedPromptRows[0].regions).to.deep.equal(['de']);
       expect(capturedPromptRows[0].status).to.equal('ignored');
+    });
+  });
+
+  describe('dry-run mode', () => {
+    let upsertCalls;
+
+    beforeEach(() => {
+      upsertCalls = [];
+
+      context.dataAccess.Site.findById.resolves({
+        getOrganizationId: () => ORG_ID,
+        getConfig: () => ({ getLlmoBrand: () => 'Adobe' }),
+      });
+
+      postgrestClient.from.resetBehavior();
+      postgrestClient.from.callsFake((table) => {
+        const chain = {
+          upsert: sandbox.stub().callsFake((rows, opts) => {
+            upsertCalls.push({ table, rows, opts });
+            return chain;
+          }),
+          select: sandbox.stub().callsFake(() => {
+            if (table === 'brands') return chain;
+            return {
+              eq: sandbox.stub().resolves({
+                data: table === 'categories'
+                  ? [{ id: CAT_UUID, category_id: 'cat-1' }]
+                  : table === 'topics'
+                    ? [{ id: TOPIC_UUID, topic_id: 'topic-1' }]
+                    : [],
+                error: null,
+              }),
+            };
+          }),
+          eq: sandbox.stub().callsFake(() => chain),
+          single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
+        };
+        return chain;
+      });
+    });
+
+    it('does not upsert any data when dryRun is true', async () => {
+      const s3Config = buildS3Config({
+        categories: { 'cat-1': { name: 'Category 1', origin: 'human' } },
+        topics: {
+          'topic-1': {
+            name: 'Topic 1',
+            category: 'cat-1',
+            prompts: [{ id: 'p1', prompt: 'What is AI?', regions: ['us'] }],
+          },
+        },
+      });
+      readConfigStub.resolves({ config: s3Config });
+
+      const response = await handler({ siteId: SITE_ID, dryRun: true }, context);
+      const body = await response.json();
+
+      expect(response.status).to.equal(200);
+      expect(body.dryRun).to.be.true;
+      expect(body.categories).to.equal(1);
+      expect(body.topics).to.equal(1);
+      expect(body.prompts).to.equal(1);
+      expect(upsertCalls).to.have.length(0);
+    });
+
+    it('logs sample rows for each entity type in dry-run', async () => {
+      const s3Config = buildS3Config({
+        categories: { 'cat-1': { name: 'Cat 1' } },
+        topics: {
+          'topic-1': {
+            name: 'Topic 1',
+            category: 'cat-1',
+            prompts: [{ id: 'p1', prompt: 'Q?', regions: ['us'] }],
+          },
+        },
+        deleted: {
+          prompts: { 'del-1': { prompt: 'Deleted', topic: 'T' } },
+        },
+      });
+      readConfigStub.resolves({ config: s3Config });
+
+      await handler({ siteId: SITE_ID, dryRun: true }, context);
+
+      const infoMessages = context.log.info.args.map((args) => args[0]);
+      expect(infoMessages.some((m) => m.includes('[DRY RUN] Would upsert brand'))).to.be.true;
+      expect(infoMessages.some((m) => m.includes('[DRY RUN] categories sample'))).to.be.true;
+      expect(infoMessages.some((m) => m.includes('[DRY RUN] topics sample'))).to.be.true;
+      expect(infoMessages.some((m) => m.includes('[DRY RUN] prompts sample'))).to.be.true;
+    });
+
+    it('uses existing brand ID when available in dry-run', async () => {
+      readConfigStub.resolves({ config: buildS3Config() });
+
+      const response = await handler({ siteId: SITE_ID, dryRun: true }, context);
+      const body = await response.json();
+
+      expect(response.status).to.equal(200);
+      expect(body.dryRun).to.be.true;
+      const infoMessages = context.log.info.args.map((args) => args[0]);
+      expect(infoMessages.some((m) => m.includes(`Resolved brand ID: ${BRAND_UUID}`))).to.be.true;
+    });
+
+    it('falls back to placeholder brand ID when brand does not exist in dry-run', async () => {
+      readConfigStub.resolves({ config: buildS3Config() });
+
+      postgrestClient.from.resetBehavior();
+      postgrestClient.from.callsFake((table) => {
+        const chain = {
+          upsert: sandbox.stub().callsFake(() => chain),
+          select: sandbox.stub().callsFake(() => {
+            if (table === 'brands') return chain;
+            return {
+              eq: sandbox.stub().resolves({ data: [], error: null }),
+            };
+          }),
+          eq: sandbox.stub().callsFake(() => chain),
+          single: sandbox.stub().resolves({ data: null, error: null }),
+        };
+        return chain;
+      });
+
+      const response = await handler({ siteId: SITE_ID, dryRun: true }, context);
+      const body = await response.json();
+
+      expect(response.status).to.equal(200);
+      expect(body.dryRun).to.be.true;
+      const infoMessages = context.log.info.args.map((args) => args[0]);
+      expect(infoMessages.some((m) => m.includes('Resolved brand ID: dry-run-brand-id'))).to.be.true;
+    });
+
+    it('returns stats without dryRun flag when dryRun is false', async () => {
+      const s3Config = buildS3Config({
+        categories: { 'cat-1': { name: 'Cat 1' } },
+        topics: {
+          'topic-1': {
+            name: 'Topic 1',
+            prompts: [{ id: 'p1', prompt: 'Q?', regions: ['us'] }],
+          },
+        },
+      });
+      readConfigStub.resolves({ config: s3Config });
+
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
+      const body = await response.json();
+
+      expect(response.status).to.equal(200);
+      expect(body.dryRun).to.be.undefined;
     });
   });
 });

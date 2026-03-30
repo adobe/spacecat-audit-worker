@@ -137,9 +137,15 @@ async function buildLookupMaps(organizationId, postgrestClient) {
   return { categoryMap, topicMap };
 }
 
+function logSample(log, label, rows) {
+  if (rows.length === 0) return;
+  log.info(`[DRY RUN] ${label} sample (first of ${rows.length}):`, JSON.stringify(rows[0]));
+}
+
 export default async function llmoConfigDbSync(message, context) {
   const { log, env } = context;
-  const { siteId } = message;
+  const { siteId, dryRun = false } = message;
+  const tag = dryRun ? '[llmo-config-db-sync] [DRY RUN] ' : '[llmo-config-db-sync]';
 
   if (!isSyncEnabledForSite(siteId)) {
     log.info(`Config DB sync skipped: site ${siteId} is not in ALLOWED_SITE_IDS`);
@@ -186,14 +192,27 @@ export default async function llmoConfigDbSync(message, context) {
       origin: 'human',
       updated_by: 'config-sync',
     };
-    const { data: brandData, error: brandError } = await postgrestClient
-      .from('brands')
-      .upsert(brandRow, { onConflict: 'organization_id,name' })
-      .select('id')
-      .single();
-    if (brandError) throw new Error(`Failed to upsert brand: ${brandError.message}`);
-    const brandId = brandData.id;
-    log.info(`Brand upserted: ${brandName || 'default'} (${brandId})`);
+    let brandId;
+    if (dryRun) {
+      log.info(`${tag}Would upsert brand:`, JSON.stringify(brandRow));
+      const { data: existing } = await postgrestClient
+        .from('brands')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .eq('name', brandName || 'default')
+        .single();
+      brandId = existing?.id || 'dry-run-brand-id';
+      log.info(`${tag}Resolved brand ID: ${brandId}`);
+    } else {
+      const { data: brandData, error: brandError } = await postgrestClient
+        .from('brands')
+        .upsert(brandRow, { onConflict: 'organization_id,name' })
+        .select('id')
+        .single();
+      if (brandError) throw new Error(`Failed to upsert brand: ${brandError.message}`);
+      brandId = brandData.id;
+      log.info(`Brand upserted: ${brandName || 'default'} (${brandId})`);
+    }
 
     // Step 2: Upsert categories
     const categoryRows = Object.entries(s3Config.categories || {}).map(([catId, cat]) => ({
@@ -206,13 +225,17 @@ export default async function llmoConfigDbSync(message, context) {
     }));
     let categoriesCount = 0;
     if (categoryRows.length > 0) {
-      const { error: catError } = await postgrestClient
-        .from('categories')
-        .upsert(categoryRows, { onConflict: 'organization_id,category_id' });
-      if (catError) throw new Error(`Failed to upsert categories: ${catError.message}`);
+      if (dryRun) {
+        logSample(log, 'categories', categoryRows);
+      } else {
+        const { error: catError } = await postgrestClient
+          .from('categories')
+          .upsert(categoryRows, { onConflict: 'organization_id,category_id' });
+        if (catError) throw new Error(`Failed to upsert categories: ${catError.message}`);
+      }
       categoriesCount = categoryRows.length;
     }
-    log.info(`Categories upserted: ${categoriesCount}`);
+    log.info(`${tag}Categories ${dryRun ? 'to upsert' : 'upserted'}: ${categoriesCount}`);
 
     // Step 3: Upsert topics
     const topicRows = [];
@@ -233,15 +256,19 @@ export default async function llmoConfigDbSync(message, context) {
 
     let topicsCount = 0;
     if (topicRows.length > 0) {
-      const { error: topicError } = await postgrestClient
-        .from('topics')
-        .upsert(topicRows, { onConflict: 'organization_id,topic_id' });
-      if (topicError) throw new Error(`Failed to upsert topics: ${topicError.message}`);
+      if (dryRun) {
+        logSample(log, 'topics', topicRows);
+      } else {
+        const { error: topicError } = await postgrestClient
+          .from('topics')
+          .upsert(topicRows, { onConflict: 'organization_id,topic_id' });
+        if (topicError) throw new Error(`Failed to upsert topics: ${topicError.message}`);
+      }
       topicsCount = topicRows.length;
     }
-    log.info(`Topics upserted: ${topicsCount}`);
+    log.info(`${tag}Topics ${dryRun ? 'to upsert' : 'upserted'}: ${topicsCount}`);
 
-    // Step 4: Build lookup maps
+    // Step 4: Build lookup maps (read-only, safe in dry-run)
     const { categoryMap, topicMap } = await buildLookupMaps(organizationId, postgrestClient);
 
     // Step 5: Upsert prompts in batches
@@ -255,22 +282,28 @@ export default async function llmoConfigDbSync(message, context) {
     );
     let promptsCount = 0;
     if (promptRows.length > 0) {
-      promptsCount = await upsertInBatches(
-        postgrestClient,
-        'prompts',
-        promptRows,
-        'brand_id,prompt_id',
-        log,
-      );
+      if (dryRun) {
+        logSample(log, 'prompts', promptRows);
+        promptsCount = promptRows.length;
+      } else {
+        promptsCount = await upsertInBatches(
+          postgrestClient,
+          'prompts',
+          promptRows,
+          'brand_id,prompt_id',
+          log,
+        );
+      }
     }
-    log.info(`Prompts upserted: ${promptsCount}`);
+    log.info(`${tag}Prompts ${dryRun ? 'to upsert' : 'upserted'}: ${promptsCount}`);
 
     const stats = {
       categories: categoriesCount,
       topics: topicsCount,
       prompts: promptsCount,
+      ...(dryRun && { dryRun: true }),
     };
-    log.info(`Config DB sync completed for site ${siteId}`, stats);
+    log.info(`${tag}Config DB sync ${dryRun ? 'dry run' : ''} completed for site ${siteId}`, stats);
     return ok(stats);
   } catch (error) {
     log.error(`Config DB sync failed for site ${siteId}: ${error.message}`, error);
