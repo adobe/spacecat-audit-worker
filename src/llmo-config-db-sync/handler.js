@@ -21,7 +21,7 @@ const PROMPT_ID_NAMESPACE = '1b671a64-40d5-491e-99b0-da01ff1f3341';
 // TODO: replace with actual site UUIDs per environment.
 const ALLOWED_SITE_IDS = [
   '00000000-0000-0000-0000-000000000001', // dev
-  '00000000-0000-0000-0000-000000000002', // dev - to be removed
+  '00000000-0000-0000-0000-000000000002', // prod - to be removed
   'c2473d89-e997-458d-a86d-b4096649c12b', // dev URL
 ];
 
