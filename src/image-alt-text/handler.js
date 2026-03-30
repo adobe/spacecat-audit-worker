@@ -92,7 +92,7 @@ export function startStatus(audit, status, metadata = {}) {
   }
 
   history.push(entry);
-  audit.setAuditResult({ status, statusHistory: history });
+  audit.setAuditResult({ ...existing, status, statusHistory: history });
 }
 
 /**
@@ -124,11 +124,11 @@ export function failCurrentStatus(audit, failedStatus, metadata = {}) {
     last.completedAt = new Date().toISOString();
     last.stepDurationMs = new Date(last.completedAt) - new Date(last.startedAt);
     Object.assign(last, metadata);
+    audit.setAuditResult({ ...existing, status: failedStatus, statusHistory: history });
   } else {
     startStatus(audit, failedStatus, metadata);
     completeStatus(audit);
   }
-  audit.setAuditResult({ status: failedStatus, statusHistory: history });
 }
 
 export async function processImportStep(context) {
@@ -184,7 +184,7 @@ export async function processScraping(context) {
 
     if (allTopPageUrls.length === 0) {
       const errorMsg = `No top pages found for site ${siteId}`;
-      log.info(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
+      log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
       failCurrentStatus(audit, 'no_top_pages', { error: errorMsg });
       await audit.save();
       return { auditResult: audit.getAuditResult(), fullAuditRef: audit.getFullAuditRef() };
@@ -316,7 +316,7 @@ export async function processAltTextWithMystique(context) {
     const pageUrls = [...topPages];
     if (pageUrls.length === 0) {
       const errorMsg = `No top pages found for site ${site.getId()}`;
-      log.info(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
+      log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
       failCurrentStatus(audit, 'no_top_pages', { error: errorMsg });
       await audit.save();
       return { auditResult: audit.getAuditResult() };
