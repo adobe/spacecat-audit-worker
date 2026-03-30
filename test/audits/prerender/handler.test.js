@@ -6341,6 +6341,43 @@ describe('Prerender Audit', () => {
       expect(context.log.info).to.have.been.calledWith(sinon.match(/moveDeployedUrlSuggestionsToSkipped: no NEW suggestions matched deployed URLs/));
     });
 
+    it('should skip all NEW suggestions when deployedAtEdgeUrls set is empty', async () => {
+      // Domain-wide suggestion has edgeDeployed but no scraped URL returns isDeployedAtEdge=true,
+      // so deployedAtEdgeUrls is an empty Set — covers the false branch of the size>0 ternary
+      const domainWideSuggestion = { getStatus: () => 'NEW', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
+      const newSuggestion = { getId: () => 's1', getData: () => ({ url: 'https://example.com/page1' }) };
+
+      const bulkUpdateStatusStub = sandbox.stub().resolves();
+      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion]);
+
+      const s3ClientNoEdge = {
+        send: sandbox.stub().callsFake((command) => {
+          if (command.constructor.name === 'PutObjectCommand') return Promise.resolve({});
+          const key = command.input?.Key || '';
+          if (key.endsWith('server-side.html')) return Promise.resolve({ ContentType: 'text/html', Body: { transformToString: () => Promise.resolve('<html><body><p>Short</p></body></html>') } });
+          if (key.endsWith('client-side.html')) return Promise.resolve({ ContentType: 'text/html', Body: { transformToString: () => Promise.resolve('<html><body><p>Short</p><p>Much more dynamic content loaded by JavaScript making the page significantly longer than the server-side render and pushing the content gain ratio well above the threshold</p></body></html>') } });
+          if (key.endsWith('scrape.json')) return Promise.resolve({ ContentType: 'application/json', Body: { transformToString: () => Promise.resolve(JSON.stringify({ isDeployedAtEdge: false })) } });
+          return Promise.reject(new Error('Not found'));
+        }),
+      };
+
+      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
+      const context = buildContext(sandbox, {
+        s3Client: s3ClientNoEdge,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, bulkUpdateStatus: bulkUpdateStatusStub },
+        },
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      // deployedAtEdgeUrls is empty → ternary false branch → suggestionsToSkip = []
+      expect(bulkUpdateStatusStub).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/moveDeployedUrlSuggestionsToSkipped: no NEW suggestions matched deployed URLs/));
+    });
+
     it('should log isAllDomainDeployedAtEdge=false and skip when domain is not deployed', async () => {
       const nonDeployedSuggestion = { getStatus: () => 'NEW', getData: () => ({ isDomainWide: true }) };
 
