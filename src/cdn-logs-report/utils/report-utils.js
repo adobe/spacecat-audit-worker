@@ -13,6 +13,14 @@
 import { getStaticContent, isoCalendarWeek, llmoConfig } from '@adobe/spacecat-shared-utils';
 import { uploadToSharePoint } from '../../utils/report-uploader.js';
 
+function fetchErrorResult(source, status) {
+  return status ? { error: true, status, source } : { error: true, source };
+}
+
+function isNotFoundError(error) {
+  return error?.status === 404 || error?.statusCode === 404;
+}
+
 export async function loadSql(filename, variables) {
   return getStaticContent(variables, `./src/cdn-logs-report/sql/${filename}.sql`);
 }
@@ -84,16 +92,17 @@ export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1)
 /**
  * Fetches remote patterns for a site
  */
-export async function fetchRemotePatterns(site) {
+export async function fetchRemotePatterns(site, log = console) {
   const dataFolder = site.getConfig()?.getLlmoDataFolder();
 
   if (!dataFolder) {
+    log.warn('fetchRemotePatterns: no dataFolder configured for site, skipping patterns fetch');
     return null;
   }
 
-  try {
-    const url = `https://main--project-elmo-ui-data--adobe.aem.live/${dataFolder}/agentic-traffic/patterns/patterns.json`;
+  const url = `https://main--project-elmo-ui-data--adobe.aem.live/${dataFolder}/agentic-traffic/patterns/patterns.json`;
 
+  try {
     const res = await fetch(url, {
       headers: {
         'User-Agent': 'spacecat-audit-worker',
@@ -102,17 +111,69 @@ export async function fetchRemotePatterns(site) {
     });
 
     if (!res.ok) {
+      if (res.status !== 404) {
+        log.error(`fetchRemotePatterns: failed to fetch patterns from ${url} — status ${res.status} ${res.statusText}`);
+        return fetchErrorResult('patterns', res.status);
+      }
       return null;
     }
 
     const data = await res.json();
 
+    log.info(`fetchRemotePatterns: successfully loaded patterns — ${data.pagetype?.data?.length || 0} page patterns, ${data.products?.data?.length || 0} topic patterns`);
+
     return {
       pagePatterns: data.pagetype?.data || [],
       topicPatterns: data.products?.data || [],
     };
-  } catch {
-    return null;
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return null;
+    }
+    log.error(`fetchRemotePatterns: error fetching patterns from ${url} — ${error.message}`);
+    return fetchErrorResult('patterns');
+  }
+}
+
+/**
+ * Checks query-index.json to confirm whether patterns.json already exists for a site.
+ */
+export async function queryIndexHasPatternsFile(site, log = console) {
+  const dataFolder = site.getConfig()?.getLlmoDataFolder();
+
+  if (!dataFolder) {
+    log.warn('queryIndexHasPatternsFile: no dataFolder configured for site, skipping query-index fetch');
+    return false;
+  }
+
+  const url = `https://main--project-elmo-ui-data--adobe.aem.live/${dataFolder}/query-index.json?limit=5000`;
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'spacecat-audit-worker',
+        Authorization: `token ${process.env.LLMO_HLX_API_KEY}`,
+      },
+    });
+
+    if (!res.ok) {
+      if (res.status !== 404) {
+        log.error(`queryIndexHasPatternsFile: failed to fetch query-index from ${url} — status ${res.status} ${res.statusText}`);
+        return fetchErrorResult('query-index', res.status);
+      }
+      return false;
+    }
+
+    const data = await res.json();
+    const paths = Array.isArray(data?.data) ? data.data : [];
+
+    return paths.some((entry) => entry?.path === `/${dataFolder}/agentic-traffic/patterns/patterns.json`);
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return false;
+    }
+    log.error(`queryIndexHasPatternsFile: error fetching query-index from ${url} — ${error.message}`);
+    return fetchErrorResult('query-index');
   }
 }
 

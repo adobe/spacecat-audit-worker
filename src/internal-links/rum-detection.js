@@ -101,18 +101,31 @@ export function createInternalLinksRumSteps({
         log.info(`Filtered out ${internal404Links.length - scopedInternal404Links.length} RUM links outside the audit scope before validation`);
       }
 
-      log.info(`Validating ${scopedInternal404Links.length} scoped links to confirm they are still broken...`);
+      log.info(`Validating ${scopedInternal404Links.length} scoped links (target + referring page)...`);
 
       const accessibilitySettled = await mapSettledInBatches(
         scopedInternal404Links,
         RUM_VALIDATION_CONCURRENCY,
         async (link) => {
-          const validation = await isLinkInaccessible(link.url_to, log, site.getId(), auditId);
+          const [targetSettled, referringSettled] = await Promise.allSettled([
+            isLinkInaccessible(link.url_to, log, site.getId(), auditId),
+            isLinkInaccessible(link.url_from, log, site.getId(), auditId),
+          ]);
+
+          if (targetSettled.status === 'rejected') {
+            throw targetSettled.reason;
+          }
+
+          const validation = targetSettled.value;
+          const referringPageInaccessible = referringSettled.status === 'fulfilled'
+            && referringSettled.value.isBroken === true;
+
           return {
             link,
             validation,
             inaccessible: validation.isBroken,
             inconclusive: validation.inconclusive === true,
+            referringPageInaccessible,
           };
         },
       );
@@ -132,14 +145,17 @@ export function createInternalLinksRumSteps({
       const nowFixed = accessibilityResults
         .filter((r) => !r.inaccessible && !r.inconclusive)
         .length;
+      const excludedReferring404 = accessibilityResults
+        .filter((r) => r.inaccessible && r.referringPageInaccessible)
+        .length;
       const failed = accessibilitySettled.filter((r) => r.status === 'rejected').length;
       const summary = `Validation results: ${stillBroken} still broken, ${nowFixed} now fixed`;
       log.info(
-        `${summary}${inconclusive > 0 ? `, ${inconclusive} inconclusive` : ''}${failed > 0 ? `, ${failed} failed` : ''}`,
+        `${summary}${inconclusive > 0 ? `, ${inconclusive} inconclusive` : ''}${excludedReferring404 > 0 ? `, ${excludedReferring404} excluded (referring page broken)` : ''}${failed > 0 ? `, ${failed} failed` : ''}`,
       );
 
       const inaccessibleLinks = accessibilityResults
-        .filter((result) => result.inaccessible)
+        .filter((result) => result.inaccessible && !result.referringPageInaccessible)
         .map((result) => ({
           urlFrom: stripAbsoluteUrlHash(result.link.url_from),
           urlTo: stripAbsoluteUrlHash(result.link.url_to),

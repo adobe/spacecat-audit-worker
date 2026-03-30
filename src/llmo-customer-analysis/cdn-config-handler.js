@@ -16,6 +16,8 @@ import {
 import { getImsOrgId } from '../utils/data-access.js';
 import { SERVICE_PROVIDER_TYPES } from '../utils/cdn-utils.js';
 
+const CDN_LOGS_ANALYSIS_DELAY_SECONDS = 5;
+
 /**
  * Fetches commerce-fastly service for given domain
  */
@@ -82,6 +84,7 @@ async function handleAdobeFastly(
     const today = new Date();
 
     const analysisPromises = [];
+    let delaySeconds = 0;
     for (let date = new Date(lastMonday); !isAfter(date, today); date = addDays(date, 1)) {
       analysisPromises.push(sqs.sendMessage(auditQueue, {
         type: 'cdn-logs-analysis',
@@ -93,7 +96,8 @@ async function handleAdobeFastly(
           hour: 8,
           processFullDay: true,
         },
-      }));
+      }, null, delaySeconds));
+      delaySeconds += CDN_LOGS_ANALYSIS_DELAY_SECONDS;
     }
 
     await Promise.all(analysisPromises);
@@ -150,7 +154,15 @@ export async function handleCdnBucketConfigChanges(context, data) {
   const site = await context.dataAccess.Site.findById(siteId);
   if (!site) throw new Error(`Site with ID ${siteId} not found`);
 
+  const baseURL = site.getBaseURL();
+  const previousConfig = site.getConfig()?.getLlmoCdnBucketConfig() ?? {};
+
   if (!cdnProvider) {
+    log.warn('CDN_CONFIG_DELETED: CDN provider removed — this will break CDN log reporting', {
+      siteId,
+      baseURL,
+      before: previousConfig,
+    });
     // if no cdn provider is provided, remove the bucket configuration
     await handleBucketConfiguration(siteId, null, null, null, context);
     // disable cdn-logs-analysis and page-citability audits
@@ -188,6 +200,18 @@ export async function handleCdnBucketConfigChanges(context, data) {
   if (bucketName || pathId || region) {
     await handleBucketConfiguration(siteId, bucketName, pathId, region, context);
   }
+
+  log.info('CDN_CONFIG_CHANGED: CDN bucket configuration updated', {
+    siteId,
+    baseURL,
+    cdnProvider,
+    before: previousConfig,
+    after: {
+      ...(bucketName && { bucketName }),
+      ...(pathId && { orgId: pathId }),
+      ...(region && { region }),
+    },
+  });
 
   // enable cdn-logs-analysis audit
   const configuration = await Configuration.findLatest();

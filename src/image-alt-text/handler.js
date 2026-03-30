@@ -10,12 +10,14 @@
  * governing permissions and limitations under the License.
  */
 import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
-import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendAltTextOpportunityToMystique, chunkArray } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
-import { MYSTIQUE_BATCH_SIZE, SUMMIT_PLG_PAGE_LIMIT, DEFAULT_PAGE_LIMIT } from './constants.js';
-import { getScrapeJsonPath } from '../headings/utils.js';
+import {
+  MYSTIQUE_BATCH_SIZE, SUMMIT_PLG_PAGE_LIMIT, DEFAULT_PAGE_LIMIT,
+  SCRAPE_MAX_AGE_HOURS, SCRAPE_PAGE_LOAD_TIMEOUT,
+} from './constants.js';
+import { getTopPageUrls } from './url-utils.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
@@ -85,15 +87,16 @@ export async function processImportStep(context) {
 }
 
 /**
- * Checks for existing scrapes and submits missing URLs to scrape client
+ * Sends all top page URLs to the scrape client for scraping.
+ * The scrape client handles caching via maxScrapeAge.
  * @param {Object} context - Lambda context
- * @returns {Promise<Object>} - Scraping payload with missing URLs
+ * @returns {Promise<Object>} - Scraping payload with all top page URLs
  */
 export async function processScraping(context) {
   const {
-    log, site, dataAccess, s3Client, env,
+    log, site, dataAccess,
   } = context;
-  const { SiteTopPage, Opportunity } = dataAccess;
+  const { Opportunity } = dataAccess;
   const siteId = site.getId();
 
   log.debug(`[${AUDIT_TYPE}]: Processing scraping step for site ${siteId}`);
@@ -101,10 +104,12 @@ export async function processScraping(context) {
   // Get page limit based on summit-plg configuration
   const { pageLimit, isSummitPlg } = await getTopPagesLimit(site, context);
 
-  // Get top pages from ahrefs
-  const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+  // Get top page URLs via fallback chain (Ahrefs -> RUM -> includedURLs)
+  const allTopPageUrls = await getTopPageUrls({
+    siteId, site, dataAccess, context, log,
+  });
 
-  if (allTopPages.length === 0) {
+  if (allTopPageUrls.length === 0) {
     throw new Error(`No top pages found for site ${siteId}`);
   }
 
@@ -122,9 +127,8 @@ export async function processScraping(context) {
       if (isSummitPlg) {
         // Check for NEW suggestions in the current window
         const suggestions = await altTextOppty.getSuggestions();
-        const windowPages = allTopPages
-          .slice(storedOffset, storedOffset + pageLimit)
-          .map((p) => p.getUrl());
+        const windowPages = allTopPageUrls
+          .slice(storedOffset, storedOffset + pageLimit);
         const windowSet = new Set(windowPages);
 
         const newSuggestionsInWindow = suggestions.filter((s) => {
@@ -150,7 +154,7 @@ export async function processScraping(context) {
   }
 
   // Compute page window using offset (handles wrap-around)
-  const window = getTopPagesWindow(allTopPages, pageLimit, topPagesOffset, isSummitPlg, log);
+  const window = getTopPagesWindow(allTopPageUrls, pageLimit, topPagesOffset, isSummitPlg, log);
   const { topPages, effectiveOffset } = window;
 
   // Save the effective offset back to the opportunity
@@ -166,63 +170,21 @@ export async function processScraping(context) {
       log.warn(`[${AUDIT_TYPE}]: Failed to save opportunity offset: ${error.message}`);
     }
   }
-  log.debug(`[${AUDIT_TYPE}]: Checking scrapes for ${topPages.length} top pages (limit: ${pageLimit})`);
+  // Send ALL top page URLs to SCRAPE_CLIENT.
+  // The scrape client handles caching via maxScrapeAge — it reuses recent scrapes
+  // and only re-scrapes stale/missing URLs. This ensures all URLs are registered
+  // in the scrape job's storage records, making them discoverable by downstream
+  // consumers (e.g., mystique) through the scrape jobs API.
+  log.info(`[${AUDIT_TYPE}]: Sending ${topPages.length} URLs to scrape client (maxScrapeAge: ${SCRAPE_MAX_AGE_HOURS}h)`);
 
-  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
-
-  // Check S3 for existing scrapes in parallel
-  const scrapeCheckResults = await Promise.allSettled(
-    topPages.map(async (page) => {
-      const url = page.getUrl();
-      try {
-        const s3Key = getScrapeJsonPath(url, siteId);
-
-        await s3Client.send(new HeadObjectCommand({
-          Bucket: bucketName,
-          Key: s3Key,
-        }));
-
-        // If HeadObjectCommand succeeds, scrape exists
-        return { url, exists: true };
-      } catch (error) {
-        // If NotFound or NoSuchKey, scrape doesn't exist
-        // For any other error, assume scrape is missing (fail-safe)
-        if (error.name === 'NotFound' || error.name === 'NoSuchKey') {
-          log.debug(`[${AUDIT_TYPE}]: Scrape not found for ${url}`);
-        } else {
-          log.warn(`[${AUDIT_TYPE}]: Error checking scrape for ${url}: ${error.message}, assuming missing`);
-        }
-        return { url, exists: false };
-      }
-    }),
-  );
-
-  // Collect URLs that need scraping
-  const urlsToScrape = scrapeCheckResults
-    .filter((result) => result.status === 'fulfilled' && !result.value.exists)
-    .map((result) => ({ url: result.value.url }));
-
-  log.info(`[${AUDIT_TYPE}]: Found ${urlsToScrape.length} URLs needing scraping out of ${topPages.length} top pages`);
-
-  // If no URLs need scraping, send the first URL anyway to ensure next step can proceed
-  if (urlsToScrape.length === 0) {
-    log.debug(`[${AUDIT_TYPE}]: All scrapes exist, sending first URL to ensure scrape client step completes`);
-    return {
-      urls: [{ url: topPages[0].getUrl() }],
-      siteId,
-      type: 'default',
-      allowCache: true,
-      maxScrapeAge: 0,
-    };
-  }
-
-  // Return payload for SCRAPE_CLIENT
   return {
-    urls: urlsToScrape,
+    urls: topPages.map((url) => ({ url })),
     siteId,
     type: 'default',
-    allowCache: false,
-    maxScrapeAge: 0,
+    maxScrapeAge: SCRAPE_MAX_AGE_HOURS,
+    options: {
+      pageLoadTimeout: SCRAPE_PAGE_LOAD_TIMEOUT,
+    },
   };
 }
 
@@ -240,9 +202,10 @@ export async function processAltTextWithMystique(context) {
     // Get page limit based on summit-plg configuration
     const { pageLimit, isSummitPlg } = await getTopPagesLimit(site, context);
 
-    // Get top pages and included URLs
-    const { SiteTopPage } = dataAccess;
-    const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    // Get top page URLs via fallback chain (Ahrefs -> RUM -> includedURLs)
+    const allTopPageUrls = await getTopPageUrls({
+      siteId, site, dataAccess, context, log,
+    });
 
     // Look up existing opportunity to read stored offset
     const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
@@ -254,14 +217,35 @@ export async function processAltTextWithMystique(context) {
     const topPagesOffset = altTextOppty?.getData()?.topPagesOffset || 0;
     const {
       topPages, effectiveOffset,
-    } = getTopPagesWindow(allTopPages, pageLimit, topPagesOffset, isSummitPlg, log);
-
-    const includedURLs = await site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
+    } = getTopPagesWindow(allTopPageUrls, pageLimit, topPagesOffset, isSummitPlg, log);
 
     // Get ALL page URLs to send to Mystique
-    const pageUrls = [...new Set([...topPages.map((page) => page.getUrl()), ...includedURLs])];
+    const pageUrls = [...topPages];
     if (pageUrls.length === 0) {
       throw new Error(`No top pages found for site ${site.getId()}`);
+    }
+
+    // Filter out URLs without scrapes before sending to Mystique.
+    // Uses scrapeResultPaths (Map<url, s3Path>) from the SCRAPE_CLIENT step,
+    // which is the same data source mystique queries via scrape jobs API.
+    const { scrapeResultPaths } = context;
+    if (scrapeResultPaths) {
+      const urlsWithScrapes = pageUrls.filter((url) => scrapeResultPaths.has(url));
+      const missingCount = pageUrls.length - urlsWithScrapes.length;
+      if (urlsWithScrapes.length === 0) {
+        throw new Error(
+          `Cannot proceed: none of the ${pageUrls.length} URLs have scrape results. `
+          + 'Mystique will not be able to find content for these pages.',
+        );
+      }
+      if (missingCount > 0) {
+        log.warn(`[${AUDIT_TYPE}]: Excluding ${missingCount}/${pageUrls.length} URLs without scrapes`);
+      }
+      log.info(`[${AUDIT_TYPE}]: Sending ${urlsWithScrapes.length} of ${pageUrls.length} URLs with scrapes to Mystique`);
+      pageUrls.length = 0;
+      pageUrls.push(...urlsWithScrapes);
+    } else {
+      log.warn(`[${AUDIT_TYPE}]: No scrapeResultPaths in context, skipping scrape verification`);
     }
 
     const urlBatches = chunkArray(pageUrls, MYSTIQUE_BATCH_SIZE);

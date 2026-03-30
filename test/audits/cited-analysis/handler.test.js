@@ -16,6 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
+import { MYSTIQUE_URLS_LIMIT } from '../../../src/utils/store-client.js';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
 
@@ -36,8 +37,8 @@ describe('Cited Analysis Handler', () => {
   const auditId = 'test-audit-id';
 
   const mockUrls = [
-    { url: 'https://techblog.example.com/review-of-example', type: 'top-cited-analysis', metadata: {} },
-    { url: 'https://news.example.com/example-corp-article', type: 'top-cited-analysis', metadata: {} },
+    { url: 'https://techblog.example.com/review-of-example', type: 'cited-analysis', metadata: {} },
+    { url: 'https://news.example.com/example-corp-article', type: 'cited-analysis', metadata: {} },
   ];
 
   const mockSentimentConfig = {
@@ -78,7 +79,7 @@ describe('Cited Analysis Handler', () => {
           WIKIPEDIA: 'wikipedia-analysis',
           REDDIT: 'reddit-analysis',
           YOUTUBE: 'youtube-analysis',
-          CITED: 'top-cited-analysis',
+          CITED: 'cited-analysis',
         },
         GUIDELINE_TYPES: {
           WIKIPEDIA_ANALYSIS: 'wikipedia-analysis',
@@ -181,7 +182,7 @@ describe('Cited Analysis Handler', () => {
     it('should call StoreClient with correct parameters', async () => {
       await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'top-cited-analysis');
+      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'cited-analysis');
       expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, 'cited-analysis');
     });
 
@@ -335,6 +336,31 @@ describe('Cited Analysis Handler', () => {
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.deep.equal(mockUrls);
+    });
+
+    it('should limit URLs sent to Mystique to MYSTIQUE_URLS_LIMIT', async () => {
+      const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 30 }, (_, i) => ({
+        url: `https://example.com/page-${i}`, type: 'cited-analysis', metadata: {},
+      }));
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: {
+            urls: manyUrls,
+            sentimentConfig: { topics: [], guidelines: [] },
+          },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
     });
 
     it('should skip sending message when audit failed', async () => {
