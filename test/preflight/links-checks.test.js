@@ -339,6 +339,25 @@ describe('preflight/links-checks - runLinksChecks', () => {
     expect(fetchStub.callCount).to.equal(1);
   });
 
+  // ── SITES-42383 regression: Vonage false positives ────────────────────────
+
+  it('SITES-42383: does not flag Vonage sign-up URL as broken when HEAD returns 405 and GET returns 200', async () => {
+    // https://ui.idp.vonage.com/sign-up/dashboard returns 405 to HEAD (Method Not Allowed)
+    // but 200 to GET — it is a valid link, not a broken one.
+    const vonageUrl = 'https://ui.idp.vonage.com/sign-up/dashboard?icid=tryitfree_comm-apis_apidevsignup_other&utm_campaign=bizdirect&attribution_campaign=bizdirect';
+    fetchStub.onFirstCall().resolves(makeResponse(405)); // HEAD
+    fetchStub.onSecondCall().resolves(makeResponse(200)); // GET
+
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects(`<a href="${vonageUrl}">Sign up</a>`),
+      context,
+    );
+
+    expect(fetchStub.callCount).to.equal(2);
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+  });
+
   // ── Header/footer links are skipped ───────────────────────────────────────
 
   it('skips links inside header and footer elements', async () => {
