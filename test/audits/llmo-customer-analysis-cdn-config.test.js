@@ -368,6 +368,33 @@ describe('CDN Config Handler', () => {
       expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ orgId: 'commerce-org' });
     });
 
+    it('should run Fastly analysis and reporting for commerce-fastly provider', async () => {
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({}), getFullAuditRef: () => '' });
+
+      nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=5000')
+        .reply(200, {
+          data: [{
+            ServiceName: 'commerce-org',
+            ServiceID: 'service-123',
+            domains: 'example.com,www.example.com',
+          }],
+        });
+
+      const data = { cdnProvider: 'commerce-fastly' };
+
+      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+      expect(context.sqs.sendMessage).to.have.been.called;
+      const cdnLogsAnalysisCalls = context.sqs.sendMessage.getCalls()
+        .filter((call) => call.args[1].type === 'cdn-logs-analysis');
+      expect(cdnLogsAnalysisCalls.length).to.be.greaterThan(0);
+      expect(context.sqs.sendMessage).to.have.been.calledWith(
+        sinon.match.any,
+        sinon.match({ type: 'cdn-logs-report' }),
+      );
+    });
+
     it('should handle bucket configuration when bucketName provided', async () => {
       const data = { bucketName: 'test-bucket', cdnProvider: 'commerce-fastly' };
 
@@ -475,6 +502,37 @@ describe('CDN Config Handler', () => {
       expect(context.dataAccess.LatestAudit.findBySiteIdAndAuditType).to.have.been.calledWith(
         'site-123',
         'cdn-logs-analysis'
+      );
+    });
+
+    it('should skip commerce-fastly processing when site already has cdn-logs-analysis with fullAuditRef', async () => {
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({
+        getAuditResult: () => ({ providers: ['fastly'] }),
+        getFullAuditRef: () => 'some-audit-ref',
+      });
+
+      nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=5000')
+        .reply(200, {
+          data: [{
+            ServiceName: 'commerce-org',
+            ServiceID: 'service-123',
+            domains: 'example.com,www.example.com',
+          }],
+        });
+
+      const data = { cdnProvider: 'commerce-fastly' };
+
+      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).to.have.been.calledWith(
+        sinon.match.any,
+        sinon.match({ type: 'cdn-logs-report' }),
+      );
+      expect(context.dataAccess.LatestAudit.findBySiteIdAndAuditType).to.have.been.calledWith(
+        'site-123',
+        'cdn-logs-analysis',
       );
     });
 
