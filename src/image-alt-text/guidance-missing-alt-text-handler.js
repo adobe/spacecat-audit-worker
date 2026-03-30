@@ -236,13 +236,6 @@ export default async function handler(message, context) {
     altTextOppty.setAuditId(auditId);
     altTextOppty.setData(updatedOpportunityData);
     altTextOppty.setUpdatedBy('system');
-
-    if (updatedOpportunityData.mystiqueResponsesReceived
-      >= (existingData.mystiqueResponsesExpected || 0)) {
-      altTextOppty.setLastAuditedAt(new Date().toISOString());
-      log.info(`[${AUDIT_TYPE}]: All Mystique responses received. Setting lastAuditedAt.`);
-    }
-
     await altTextOppty.save();
   } else {
     log.info(`[${AUDIT_TYPE}]: No suggestions to process for siteId: ${siteId}`);

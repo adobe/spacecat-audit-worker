@@ -371,7 +371,6 @@ describe('collectCWVDataAndImportCode Tests', () => {
         setData: sandbox.stub(),
         save: sandbox.stub().resolves(),
         setUpdatedBy: sandbox.stub().returnsThis(),
-        setLastAuditedAt: sandbox.stub(),
         siteId: 'site-id',
         auditId: 'audit-id',
         opportunityId: 'oppty-id',
@@ -503,8 +502,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
       expect(oppty.setAuditId).to.have.been.calledOnceWith('audit-id');
       expect(oppty.setData).to.have.been.calledOnceWith({ ...opptyData, ...expectedOppty.data });
-      expect(oppty.save).to.have.been.calledTwice;
-      expect(oppty.setLastAuditedAt).to.have.been.calledOnce;
+      expect(oppty.save).to.have.been.calledOnce;
 
       // make sure that 1 old suggestion is removed
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been
