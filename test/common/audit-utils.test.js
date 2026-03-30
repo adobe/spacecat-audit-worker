@@ -20,6 +20,7 @@ import chaiAsPromised from 'chai-as-promised';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import {
   isAuditEnabledForSite, loadExistingAudit, sendContinuationMessage, checkProductCodeEntitlements,
+  preservePassthroughKeys,
 } from '../../src/common/audit-utils.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -324,6 +325,29 @@ describe('Audit Utils Tests', () => {
 
       await expect(loadExistingAudit(validAuditId, context))
         .to.be.rejectedWith('DB error');
+    });
+  });
+
+  describe('preservePassthroughKeys', () => {
+    it('extracts onDemand from auditContext', () => {
+      const result = preservePassthroughKeys({ onDemand: true, extra: 'ignored' });
+      expect(result).to.deep.equal({ onDemand: true });
+    });
+
+    it('returns empty object when auditContext is undefined', () => {
+      expect(preservePassthroughKeys(undefined)).to.deep.equal({});
+    });
+
+    it('returns empty object when auditContext is null', () => {
+      expect(preservePassthroughKeys(null)).to.deep.equal({});
+    });
+
+    it('returns empty object when onDemand is not set', () => {
+      expect(preservePassthroughKeys({ extra: 'ignored' })).to.deep.equal({});
+    });
+
+    it('preserves onDemand: false', () => {
+      expect(preservePassthroughKeys({ onDemand: false })).to.deep.equal({ onDemand: false });
     });
   });
 

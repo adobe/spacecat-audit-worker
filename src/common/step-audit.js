@@ -18,6 +18,7 @@ import { BaseAudit } from './base-audit.js';
 import {
   isAuditEnabledForSite,
   loadExistingAudit,
+  preservePassthroughKeys,
   sendContinuationMessage,
 } from './audit-utils.js';
 import { handleAbort } from './bot-detection.js';
@@ -76,9 +77,16 @@ export class StepAudit extends BaseAudit {
       fullAuditRef: audit.getFullAuditRef(),
     };
 
-    const auditContext = isNonEmptyObject(stepResult.auditContext)
-      ? { ...stepResult.auditContext, ...baseAuditContext }
-      : baseAuditContext;
+    const preserved = preservePassthroughKeys(context.auditContext);
+    if (preserved.onDemand !== undefined) {
+      log.info(`Forwarding onDemand=${preserved.onDemand} from step ${step.name} to ${nextStepName || 'final'}`);
+    }
+
+    const auditContext = {
+      ...preserved,
+      ...(isNonEmptyObject(stepResult.auditContext) ? stepResult.auditContext : {}),
+      ...baseAuditContext,
+    };
 
     if (step.destination === AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT) {
       const scrapeClient = ScrapeClient.createFrom(context);

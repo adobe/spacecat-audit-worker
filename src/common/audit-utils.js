@@ -81,6 +81,17 @@ export async function loadExistingAudit(auditId, context) {
   return audit;
 }
 
+/**
+ * Extracts onDemand from an incoming auditContext so it survives
+ * multi-step chains (e.g. audit → import-worker → audit continuation).
+ * @param {Object} auditContext - The incoming auditContext (may be undefined)
+ * @returns {Object} Object containing onDemand if it was set, empty otherwise
+ */
+export function preservePassthroughKeys(auditContext) {
+  const { onDemand } = auditContext || {};
+  return onDemand !== undefined ? { onDemand } : {};
+}
+
 export async function sendContinuationMessage(message, context) {
   const { log } = context;
   const { queueUrl, payload } = message;
