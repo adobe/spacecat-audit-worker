@@ -6289,6 +6289,34 @@ describe('Prerender Audit', () => {
       expect(context.log.info).to.have.been.calledWith(sinon.match(/moveDeployedUrlSuggestionsToSkipped: no NEW suggestions found/));
     });
 
+    it('should only move the deployed-URL suggestion to SKIPPED, preserving the non-deployed one', async () => {
+      // Mixed case: one suggestion URL matches the deployed-at-edge URL from this audit run,
+      // one does not. Only the matching suggestion should be moved to SKIPPED.
+      const domainWideSuggestion = { getStatus: () => 'NEW', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
+      const deployedSuggestion = { getId: () => 's-deployed', getData: () => ({ url: 'https://example.com/page1' }) };
+      const nonDeployedSuggestion = { getId: () => 's-not-deployed', getData: () => ({ url: 'https://example.com/other-page' }) };
+
+      const bulkUpdateStatusStub = sandbox.stub().resolves();
+      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([deployedSuggestion, nonDeployedSuggestion]);
+
+      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
+      const context = buildContext(sandbox, {
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, bulkUpdateStatus: bulkUpdateStatusStub },
+        },
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      // Only the suggestion whose URL matches the deployed-at-edge URL should be skipped
+      expect(bulkUpdateStatusStub).to.have.been.calledOnceWith([deployedSuggestion], 'SKIPPED');
+      // The non-deployed suggestion must NOT appear in the SKIPPED call
+      const [skippedArg] = bulkUpdateStatusStub.firstCall.args;
+      expect(skippedArg).to.not.include(nonDeployedSuggestion);
+    });
+
     it('should skip bulk update when NEW suggestions exist but none match deployed URLs', async () => {
       const domainWideSuggestion = { getStatus: () => 'NEW', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
       // Suggestion URL does not match the scraped URL ('https://example.com/page1')
