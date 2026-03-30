@@ -525,6 +525,62 @@ describe('LLMO Config DB Sync Handler', () => {
     });
   });
 
+  describe('fetchPromptsBatched', () => {
+    it('logs error and returns partial results when a batch fetch fails', async () => {
+      readConfigStub.resolves({ config: buildS3Config() });
+      setupSite();
+
+      context.dataAccess.services.postgrestClient = buildPostgrestMock(sandbox, {
+        prompts: () => ({
+          upsert: sandbox.stub().returns({ error: null }),
+          select: sandbox.stub().returns({
+            eq: sandbox.stub().returns({
+              range: sandbox.stub().resolves({ data: null, error: { message: 'DB timeout' } }),
+            }),
+          }),
+        }),
+      });
+
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
+
+      expect(response.status).to.equal(200);
+      expect(context.log.error).to.have.been.calledWith(
+        'Failed to fetch prompts at offset 0: DB timeout',
+      );
+    });
+
+    it('paginates when first batch returns exactly FETCH_BATCH_SIZE rows', async () => {
+      readConfigStub.resolves({ config: buildS3Config() });
+      setupSite();
+
+      const FETCH_BATCH_SIZE = 5000;
+      const fullBatch = Array.from({ length: FETCH_BATCH_SIZE }, (_, i) => ({
+        prompt_id: `pid-${i}`, brand_id: BRAND_UUID, text: `prompt ${i}`, topic_id: null,
+        name: `prompt ${i}`, regions: [], category_id: null,
+        status: 'active', origin: 'human', source: 'config',
+        created_by: null, updated_by: null,
+      }));
+      const rangeStub = sandbox.stub();
+      rangeStub.onFirstCall().resolves({ data: fullBatch, error: null });
+      rangeStub.onSecondCall().resolves({ data: [], error: null });
+
+      context.dataAccess.services.postgrestClient = buildPostgrestMock(sandbox, {
+        prompts: () => ({
+          upsert: sandbox.stub().returns({ error: null }),
+          select: sandbox.stub().returns({
+            eq: sandbox.stub().returns({ range: rangeStub }),
+          }),
+        }),
+      });
+
+      await handler({ siteId: SITE_ID, dryRun: false }, context);
+
+      expect(rangeStub.callCount).to.equal(2);
+      expect(rangeStub.firstCall.args).to.deep.equal([0, FETCH_BATCH_SIZE - 1]);
+      expect(rangeStub.secondCall.args).to.deep.equal([FETCH_BATCH_SIZE, FETCH_BATCH_SIZE * 2 - 1]);
+    });
+  });
+
   describe('prompt collection edge cases', () => {
     it('handles topic without a category field', async () => {
       const s3Config = buildS3Config({
