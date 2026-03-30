@@ -20,15 +20,16 @@ const UPSERT_BATCH_SIZE = 3000;
 const FETCH_BATCH_SIZE = 5000;
 const PROMPT_ID_NAMESPACE = '1b671a64-40d5-491e-99b0-da01ff1f3341';
 
-const CATEGORY_COMPARE_FIELDS = ['name', 'origin', 'status', 'created_by', 'updated_by'];
-const TOPIC_COMPARE_FIELDS = ['name', 'description', 'status', 'created_by', 'updated_by'];
-const PROMPT_COMPARE_FIELDS = ['name', 'regions', 'category_id', 'status', 'origin', 'source', 'created_by', 'updated_by'];
+const CATEGORY_COMPARE_FIELDS = ['name', 'origin', 'status'];
+const TOPIC_COMPARE_FIELDS = ['name', 'description', 'status'];
+const PROMPT_COMPARE_FIELDS = ['name', 'regions', 'category_id', 'status', 'origin', 'source'];
 
 // Temporary: hardcoded site IDs for which the S3-to-DB config sync is enabled.
 const ALLOWED_SITE_IDS = [
   '00000000-0000-0000-0000-000000000001', // dev
   '00000000-0000-0000-0000-000000000002', // prod - to be removed
   'c2473d89-e997-458d-a86d-b4096649c12b', // dev URL
+  '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3', // prod URL
 ];
 
 export function isSyncEnabledForSite(siteId) {
@@ -254,7 +255,9 @@ async function upsertInBatches(postgrestClient, table, rows, onConflict, log) {
 
 export default async function llmoConfigDbSync(message, context) {
   const { log, env } = context;
-  const { siteId, dryRun = true } = message;
+  const PROD_SITE_IDS = ['9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3'];
+  const { siteId, dryRun: dryRunParam = true } = message;
+  const dryRun = PROD_SITE_IDS.includes(siteId) ? true : dryRunParam;
   const tag = dryRun ? '[llmo-config-db-sync] [DRY RUN] ' : '[llmo-config-db-sync]';
 
   if (!isSyncEnabledForSite(siteId)) {
