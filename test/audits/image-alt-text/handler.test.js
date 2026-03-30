@@ -35,10 +35,13 @@ function createAuditMock(sandbox, initialResult = null) {
       queueDurationMs: null,
     }],
   };
+  let isError = false;
   return {
     getId: () => 'audit-id',
     getAuditResult: sandbox.stub().callsFake(() => auditResult),
     setAuditResult: sandbox.stub().callsFake((val) => { auditResult = val; }),
+    getIsError: sandbox.stub().callsFake(() => isError),
+    setIsError: sandbox.stub().callsFake((val) => { isError = val; }),
     save: sandbox.stub().resolves(),
     getFullAuditRef: () => 'scrapes/site-id/',
   };
@@ -807,6 +810,7 @@ describe('Image Alt Text Handler', () => {
       const lastEntry = result.auditResult.statusHistory[result.auditResult.statusHistory.length - 1];
       expect(lastEntry.status).to.equal('no_top_pages');
       expect(lastEntry.error).to.include('No top pages found');
+      expect(context.audit.getIsError()).to.be.true;
     });
 
     it('should limit pages to 20 when summit-plg is enabled', async () => {
@@ -1137,6 +1141,7 @@ describe('Image Alt Text Handler', () => {
       const lastEntry = result.auditResult.statusHistory[result.auditResult.statusHistory.length - 1];
       expect(lastEntry.status).to.equal('no_scrape_results');
       expect(lastEntry.error).to.include('Cannot proceed');
+      expect(context.audit.getIsError()).to.be.true;
       expect(sendAltTextOpportunityToMystiqueStub).to.not.have.been.called;
     });
 
@@ -1552,6 +1557,7 @@ describe('Image Alt Text Handler', () => {
       expect(entry.error).to.equal('test error');
       expect(entry.completedAt).to.be.a('string');
       expect(entry.stepDurationMs).to.be.a('number');
+      expect(auditMock.getIsError()).to.be.true;
     });
 
     it('failCurrentStatus should append new entry when no in-progress step', async () => {
@@ -1567,6 +1573,7 @@ describe('Image Alt Text Handler', () => {
 
       expect(result.status).to.equal('scraping_failed');
       expect(result.statusHistory).to.have.lengthOf(2);
+      expect(auditMock.getIsError()).to.be.true;
     });
 
     it('startStatus should handle empty auditResult gracefully', async () => {
@@ -1597,6 +1604,7 @@ describe('Image Alt Text Handler', () => {
         getId: () => 'audit-id',
         getAuditResult: sandbox.stub().callsFake(() => currentResult),
         setAuditResult: sandbox.stub().callsFake((val) => { currentResult = val; }),
+        setIsError: sandbox.stub(),
         save: sandbox.stub().resolves(),
         getFullAuditRef: () => 'scrapes/site-id/',
       };
@@ -1619,6 +1627,7 @@ describe('Image Alt Text Handler', () => {
         getId: () => 'audit-id',
         getAuditResult: sandbox.stub().callsFake(() => currentResult),
         setAuditResult: sandbox.stub().callsFake((val) => { currentResult = val; }),
+        setIsError: sandbox.stub(),
         save: sandbox.stub().resolves(),
         getFullAuditRef: () => 'scrapes/site-id/',
       };
@@ -1641,6 +1650,7 @@ describe('Image Alt Text Handler', () => {
         getId: () => 'audit-id',
         getAuditResult: sandbox.stub().callsFake(() => currentResult),
         setAuditResult: sandbox.stub().callsFake((val) => { currentResult = val; }),
+        setIsError: sandbox.stub(),
         save: sandbox.stub().resolves(),
         getFullAuditRef: () => 'scrapes/site-id/',
       };
@@ -1714,6 +1724,7 @@ describe('Image Alt Text Handler', () => {
 
       const auditResult = context.audit.getAuditResult();
       expect(auditResult.status).to.equal('scraping_failed');
+      expect(context.audit.getIsError()).to.be.true;
     });
 
     it('should not mask original error if status save fails', async () => {
@@ -1799,6 +1810,7 @@ describe('Image Alt Text Handler', () => {
       expect(auditResult.status).to.equal('processing_failed');
       const lastEntry = auditResult.statusHistory[auditResult.statusHistory.length - 1];
       expect(lastEntry.error).to.include('Mystique down');
+      expect(context.audit.getIsError()).to.be.true;
     });
 
     it('should not mask original error if status save fails during processing_failed', async () => {

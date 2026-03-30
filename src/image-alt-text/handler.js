@@ -129,6 +129,7 @@ export function failCurrentStatus(audit, failedStatus, metadata = {}) {
     startStatus(audit, failedStatus, metadata);
     completeStatus(audit);
   }
+  audit.setIsError(true);
 }
 
 /**

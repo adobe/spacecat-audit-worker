@@ -71,10 +71,13 @@ describe('Missing Alt Text Guidance Handler', () => {
               { status: 'processing', startedAt: '2026-03-30T10:01:00Z', completedAt: '2026-03-30T10:01:03Z', stepDurationMs: 3000, queueDurationMs: 54000 },
             ],
           };
+          let isError = false;
           const mockAuditRecord = {
             getId: () => 'test-audit-id',
             getAuditResult: sandbox.stub().callsFake(() => auditResult),
             setAuditResult: sandbox.stub().callsFake((val) => { auditResult = val; }),
+            getIsError: sandbox.stub().callsFake(() => isError),
+            setIsError: sandbox.stub().callsFake((val) => { isError = val; }),
             save: sandbox.stub().resolves(),
           };
           return {
@@ -601,6 +604,7 @@ describe('Missing Alt Text Guidance Handler', () => {
     expect(lastEntry.stepDurationMs).to.be.a('number');
     expect(lastEntry.queueDurationMs).to.be.a('number');
     expect(lastEntry.error).to.include('Failed to fetch opportunities');
+    expect(context.dataAccess.Audit._mockRecord.getIsError()).to.be.true;
   });
 
   it('should set guidance_failed status when no opportunity found', async () => {
@@ -618,6 +622,7 @@ describe('Missing Alt Text Guidance Handler', () => {
     expect(lastEntry.stepDurationMs).to.be.a('number');
     expect(lastEntry.queueDurationMs).to.be.a('number');
     expect(lastEntry.error).to.include('No existing opportunity found');
+    expect(context.dataAccess.Audit._mockRecord.getIsError()).to.be.true;
   });
 
   it('should not fail when audit status save throws during guidance_failed (opportunity fetch)', async () => {

@@ -23,7 +23,7 @@ Step 1: processImport          Step 2: processScraping          Step 3: processA
 [status: preparing]     --->   [status: scraping]        --->   [status: processing]
   |                              |                                 |
   | sends to                     | sends URLs to                   | sends batches to
-  | IMPORT_WORKER queue          | SCRAPE_CLIENT queue              | QUEUE_SPACECAT_TO_MYSTIQUE
+  | spacecat-import-jobs         | spacecat-scraping-jobs           | spacecat-to-mystique
   |                              |                                 |
   v                              v                                 v
 Import worker fetches          Scrape client scrapes            Mystique generates alt-text
@@ -47,7 +47,7 @@ Each step persists its status to the audit record via `audit.setAuditResult()` +
 | `preparing` | Step 1 | Audit initialized, import request sent | Normal -- wait for Step 2 |
 | `scraping` | Step 2 | Top pages resolved, scrape request sent | Normal -- wait for Step 3 |
 | `processing` | Step 3 | Mystique requests sent, waiting for responses | Normal -- check if Mystique responds |
-| `success` | Guidance | Mystique response processed | Audit completed successfully. Check `empty: true` if no suggestions were generated |
+| `success` | Guidance | Mystique response processed | Audit completed successfully. Check `auditResult.statusHistory` (via the API query in Step 1) -- if a success entry has `empty: true`, Mystique responded but returned no suggestions for that batch. See "success with empty: true" diagnosis below |
 | `no_top_pages` | Step 2/3 | No URLs found from Ahrefs, RUM, or site config | Check data sources (see below) |
 | `no_scrape_results` | Step 3 | Scrape client returned no results for any URL | Check scrape client health |
 | `scraping_failed` | Step 2 | Unexpected error during scraping step | Check logs for root cause |
@@ -243,7 +243,7 @@ source logs
 ```
 
 **Actions:**
-1. Check `QUEUE_SPACECAT_TO_MYSTIQUE` queue health (message count, DLQ)
+1. Check `spacecat-to-mystique` queue health (message count, DLQ)
 2. Check if Mystique service is running
 3. Re-trigger: `run audit audit:alt-text <base-url>`
 
@@ -287,7 +287,7 @@ source logs
    ```
 
 **Actions:**
-1. Check `QUEUE_SPACECAT_TO_MYSTIQUE` for stuck/dead-letter messages
+1. Check `spacecat-to-mystique` for stuck/dead-letter messages
 2. Check Mystique service health
 3. If partial responses arrived, the audit may still have useful suggestions -- check the opportunity
 4. Re-trigger: `run audit audit:alt-text <base-url>`
