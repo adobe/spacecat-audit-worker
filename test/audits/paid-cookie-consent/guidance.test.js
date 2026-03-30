@@ -637,6 +637,17 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     expect(result.status).to.equal(ok().status);
   });
 
+  it('should skip opportunity creation when body has no issueSeverity field', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    const body = { data: { mobile: 'mobile markdown', desktop: 'desktop markdown' } };
+    const guidance = [{ body, metadata: { scrape_job_id: 'test-job-id' } }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance, suggestions: [{}] } };
+    const result = await handler(message, context);
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(logStub.info).to.have.been.calledWithMatch(/severity not high enough/);
+    expect(result.status).to.equal(ok().status);
+  });
+
   it('should skip opportunity creation for none severity', async () => {
     Opportunity.allBySiteId.resolves([]);
     const body = { issueSeverity: 'none', markdown: 'test' };
