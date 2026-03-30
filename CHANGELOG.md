@@ -1,3 +1,10 @@
+# [1.373.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.372.1...v1.373.0) (2026-03-30)
+
+
+### Features
+
+* add manual commerce config precedence with storeViewCode grouping ([#2195](https://github.com/adobe/spacecat-audit-worker/issues/2195)) ([19523cf](https://github.com/adobe/spacecat-audit-worker/commit/19523cf200dc90f51d38d8dbc8fc0d41c7f5ec05))
+
 ## [1.372.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.372.0...v1.372.1) (2026-03-28)
 
 
