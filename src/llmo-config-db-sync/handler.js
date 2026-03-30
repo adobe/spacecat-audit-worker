@@ -153,6 +153,7 @@ export default async function llmoConfigDbSync(message, context) {
   }
 
   try {
+    log.info(`[llmo-config-db-sync] Starting config DB sync for siteId: ${siteId}, dryRun: ${dryRun}`);
     const { s3Client, s3Bucket } = context.s3 || {};
     const bucket = s3Bucket || env.S3_IMPORTER_BUCKET_NAME;
     const config = await llmoConfig
@@ -162,7 +163,7 @@ export default async function llmoConfigDbSync(message, context) {
       log.info(`No S3 config found for site ${siteId}`);
       return ok({ skipped: true, reason: 'no config found' });
     }
-
+    log.info(`[llmo-config-db-sync] S3 config found for site ${siteId}`);
     const s3Config = config.config;
 
     const { Site } = context.dataAccess;
@@ -177,7 +178,6 @@ export default async function llmoConfigDbSync(message, context) {
     const brandName = typeof siteConfig?.getLlmoBrand === 'function'
       ? siteConfig.getLlmoBrand()
       : null;
-
     const postgrestClient = context.dataAccess.services?.postgrestClient;
     if (!postgrestClient?.from) {
       log.error('PostgREST client not available');
