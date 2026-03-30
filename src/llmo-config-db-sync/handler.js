@@ -216,36 +216,20 @@ export default async function llmoConfigDbSync(message, context) {
       return internalServerError('PostgREST client not available');
     }
 
-    // Step 1: Upsert brand
-    const brandRow = {
-      organization_id: organizationId,
-      name: brandName || 'default',
-      status: 'active',
-      origin: 'human',
-      created_by: null,
-      updated_by: null,
-    };
-    let brandId;
-    if (dryRun) {
-      log.info(`${tag}Would upsert brand:`, JSON.stringify(brandRow));
-      const { data: existing } = await postgrestClient
-        .from('brands')
-        .select('id')
-        .eq('organization_id', organizationId)
-        .eq('name', brandRow.name)
-        .single();
-      brandId = existing?.id || 'dry-run-brand-id';
-      log.info(`${tag}Resolved brand ID: ${brandId}`);
-    } else {
-      const { data: brandData, error: brandError } = await postgrestClient
-        .from('brands')
-        .upsert(brandRow, { onConflict: 'organization_id,name' })
-        .select('id')
-        .single();
-      if (brandError) throw new Error(`Failed to upsert brand: ${brandError.message}`);
-      brandId = brandData.id;
-      log.info(`Brand upserted: ${brandName || 'default'} (${brandId})`);
+    // Step 1: Look up existing brand (read-only, never upserted)
+    const { data: brandData, error: brandError } = await postgrestClient
+      .from('brands')
+      .select('id')
+      .eq('organization_id', organizationId)
+      .eq('name', brandName || 'default')
+      .single();
+    if (brandError || !brandData) {
+      const msg = `Brand "${brandName || 'default'}" not found for org ${organizationId}`;
+      log.error(msg, brandError);
+      return internalServerError(msg);
     }
+    const brandId = brandData.id;
+    log.info(`${tag}Resolved brand ID: ${brandId}`);
 
     // Step 2: Upsert categories
     const categoryRows = Object.entries(s3Config.categories || {}).map(([catId, cat]) => ({

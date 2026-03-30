@@ -201,26 +201,11 @@ describe('LLMO Config DB Sync Handler', () => {
       };
       context.dataAccess.Site.findById.resolves(site);
 
-      // Brand upsert chain
+      // Brand lookup chain
       postgrestClient.from.withArgs('brands').returns(postgrestClient);
-      postgrestClient.single.resolves({ data: { id: BRAND_UUID }, error: null });
-
-      // Categories/topics upsert resolve successfully
-      postgrestClient.upsert.returns(postgrestClient);
       postgrestClient.select.returns(postgrestClient);
       postgrestClient.eq.returns(postgrestClient);
-
-      // Default: resolve upserts with no error
-      postgrestClient.upsert.returns({
-        select: sandbox.stub().returns({
-          single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
-          eq: sandbox.stub().returns({
-            data: [],
-            error: null,
-          }),
-        }),
-        error: null,
-      });
+      postgrestClient.single.resolves({ data: { id: BRAND_UUID }, error: null });
     });
 
     it('syncs categories, topics, and prompts successfully', async () => {
@@ -242,10 +227,9 @@ describe('LLMO Config DB Sync Handler', () => {
       });
       readConfigStub.resolves({ config: s3Config });
 
-      // Brand upsert
       const brandChain = {
-        upsert: sandbox.stub().returnsThis(),
         select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub().returnsThis(),
         single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
       };
 
@@ -323,7 +307,6 @@ describe('LLMO Config DB Sync Handler', () => {
       readConfigStub.resolves({ config: buildS3Config() });
 
       const brandChain = {
-        upsert: sandbox.stub().returnsThis(),
         select: sandbox.stub().returnsThis(),
         eq: sandbox.stub().returnsThis(),
         single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
@@ -369,7 +352,6 @@ describe('LLMO Config DB Sync Handler', () => {
       readConfigStub.resolves({ config: s3Config });
 
       const brandChain = {
-        upsert: sandbox.stub().returnsThis(),
         select: sandbox.stub().returnsThis(),
         eq: sandbox.stub().returnsThis(),
         single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
@@ -428,7 +410,6 @@ describe('LLMO Config DB Sync Handler', () => {
       readConfigStub.resolves({ config: s3Config });
 
       const brandChain = {
-        upsert: sandbox.stub().returnsThis(),
         select: sandbox.stub().returnsThis(),
         eq: sandbox.stub().returnsThis(),
         single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
@@ -483,7 +464,6 @@ describe('LLMO Config DB Sync Handler', () => {
       readConfigStub.resolves({ config: s3Config });
 
       const brandChain = {
-        upsert: sandbox.stub().returnsThis(),
         select: sandbox.stub().returnsThis(),
         eq: sandbox.stub().returnsThis(),
         single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
@@ -515,9 +495,7 @@ describe('LLMO Config DB Sync Handler', () => {
       });
       readConfigStub.resolves({ config: buildS3Config() });
 
-      let capturedBrandRow;
       const brandChain = {
-        upsert: sandbox.stub().callsFake((row) => { capturedBrandRow = row; return brandChain; }),
         select: sandbox.stub().returnsThis(),
         eq: sandbox.stub().returnsThis(),
         single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
@@ -538,8 +516,6 @@ describe('LLMO Config DB Sync Handler', () => {
       const response = await handler({ siteId: SITE_ID }, context);
 
       expect(response.status).to.equal(200);
-      expect(capturedBrandRow).to.not.be.undefined;
-      expect(capturedBrandRow.name).to.equal('default');
     });
 
     it('handles site config without getLlmoBrand method', async () => {
@@ -549,9 +525,7 @@ describe('LLMO Config DB Sync Handler', () => {
       });
       readConfigStub.resolves({ config: buildS3Config() });
 
-      let capturedBrandRow;
       const brandChain = {
-        upsert: sandbox.stub().callsFake((row) => { capturedBrandRow = row; return brandChain; }),
         select: sandbox.stub().returnsThis(),
         eq: sandbox.stub().returnsThis(),
         single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
@@ -572,8 +546,6 @@ describe('LLMO Config DB Sync Handler', () => {
       const response = await handler({ siteId: SITE_ID }, context);
 
       expect(response.status).to.equal(200);
-      expect(capturedBrandRow).to.not.be.undefined;
-      expect(capturedBrandRow.name).to.equal('default');
     });
   });
 
@@ -585,13 +557,13 @@ describe('LLMO Config DB Sync Handler', () => {
       });
     });
 
-    it('returns 500 when brand upsert fails', async () => {
+    it('returns 500 when brand is not found', async () => {
       readConfigStub.resolves({ config: buildS3Config() });
 
       const brandChain = {
-        upsert: sandbox.stub().returnsThis(),
         select: sandbox.stub().returnsThis(),
-        single: sandbox.stub().resolves({ data: null, error: { message: 'DB error' } }),
+        eq: sandbox.stub().returnsThis(),
+        single: sandbox.stub().resolves({ data: null, error: null }),
       };
 
       postgrestClient.from.callsFake((table) => {
@@ -615,8 +587,8 @@ describe('LLMO Config DB Sync Handler', () => {
       readConfigStub.resolves({ config: s3Config });
 
       const brandChain = {
-        upsert: sandbox.stub().returnsThis(),
         select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub().returnsThis(),
         single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
       };
 
@@ -650,8 +622,8 @@ describe('LLMO Config DB Sync Handler', () => {
       readConfigStub.resolves({ config: s3Config });
 
       const brandChain = {
-        upsert: sandbox.stub().returnsThis(),
         select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub().returnsThis(),
         single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
       };
 
@@ -685,8 +657,8 @@ describe('LLMO Config DB Sync Handler', () => {
       readConfigStub.resolves({ config: s3Config });
 
       const brandChain = {
-        upsert: sandbox.stub().returnsThis(),
         select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub().returnsThis(),
         single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
       };
 
@@ -746,7 +718,6 @@ describe('LLMO Config DB Sync Handler', () => {
       });
 
       const brandChain = {
-        upsert: sandbox.stub().returnsThis(),
         select: sandbox.stub().returnsThis(),
         eq: sandbox.stub().returnsThis(),
         single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
@@ -796,7 +767,6 @@ describe('LLMO Config DB Sync Handler', () => {
       });
 
       const brandChain = {
-        upsert: sandbox.stub().returnsThis(),
         select: sandbox.stub().returnsThis(),
         eq: sandbox.stub().returnsThis(),
         single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
@@ -839,7 +809,6 @@ describe('LLMO Config DB Sync Handler', () => {
       });
 
       const brandChain = {
-        upsert: sandbox.stub().returnsThis(),
         select: sandbox.stub().returnsThis(),
         eq: sandbox.stub().returnsThis(),
         single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
@@ -896,7 +865,6 @@ describe('LLMO Config DB Sync Handler', () => {
       });
 
       const brandChain = {
-        upsert: sandbox.stub().returnsThis(),
         select: sandbox.stub().returnsThis(),
         eq: sandbox.stub().returnsThis(),
         single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
@@ -1161,26 +1129,29 @@ describe('LLMO Config DB Sync Handler', () => {
 
       postgrestClient.from.resetBehavior();
       postgrestClient.from.callsFake((table) => {
+        if (table === 'brands') {
+          return {
+            select: sandbox.stub().returnsThis(),
+            eq: sandbox.stub().returnsThis(),
+            single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
+          };
+        }
         const chain = {
           upsert: sandbox.stub().callsFake((rows, opts) => {
             upsertCalls.push({ table, rows, opts });
             return chain;
           }),
-          select: sandbox.stub().callsFake(() => {
-            if (table === 'brands') return chain;
-            return {
-              eq: sandbox.stub().resolves({
-                data: table === 'categories'
-                  ? [{ id: CAT_UUID, category_id: 'cat-1' }]
-                  : table === 'topics'
-                    ? [{ id: TOPIC_UUID, topic_id: 'topic-1' }]
-                    : [],
-                error: null,
-              }),
-            };
-          }),
+          select: sandbox.stub().callsFake(() => ({
+            eq: sandbox.stub().resolves({
+              data: table === 'categories'
+                ? [{ id: CAT_UUID, category_id: 'cat-1' }]
+                : table === 'topics'
+                  ? [{ id: TOPIC_UUID, topic_id: 'topic-1' }]
+                  : [],
+              error: null,
+            }),
+          })),
           eq: sandbox.stub().callsFake(() => chain),
-          single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
         };
         return chain;
       });
@@ -1193,7 +1164,7 @@ describe('LLMO Config DB Sync Handler', () => {
           'topic-1': {
             name: 'Topic 1',
             category: 'cat-1',
-            prompts: [{ id: 'p1', prompt: 'What is AI?', regions: ['us'] }],
+            prompts: [{ prompt: 'What is AI?', regions: ['us'] }],
           },
         },
       });
@@ -1217,7 +1188,7 @@ describe('LLMO Config DB Sync Handler', () => {
           'topic-1': {
             name: 'Topic 1',
             category: 'cat-1',
-            prompts: [{ id: 'p1', prompt: 'Q?', regions: ['us'] }],
+            prompts: [{ prompt: 'Q?', regions: ['us'] }],
           },
         },
       });
@@ -1226,13 +1197,12 @@ describe('LLMO Config DB Sync Handler', () => {
       await handler({ siteId: SITE_ID, dryRun: true }, context);
 
       const infoMessages = context.log.info.args.map((args) => args[0]);
-      expect(infoMessages.some((m) => m.includes('[DRY RUN] Would upsert brand'))).to.be.true;
       expect(infoMessages.some((m) => m.includes('[DRY RUN] categories sample'))).to.be.true;
       expect(infoMessages.some((m) => m.includes('[DRY RUN] topics sample'))).to.be.true;
       expect(infoMessages.some((m) => m.includes('[DRY RUN] prompts sample'))).to.be.true;
     });
 
-    it('uses existing brand ID when available in dry-run', async () => {
+    it('resolves brand ID in dry-run', async () => {
       readConfigStub.resolves({ config: buildS3Config() });
 
       const response = await handler({ siteId: SITE_ID, dryRun: true }, context);
@@ -1244,32 +1214,29 @@ describe('LLMO Config DB Sync Handler', () => {
       expect(infoMessages.some((m) => m.includes(`Resolved brand ID: ${BRAND_UUID}`))).to.be.true;
     });
 
-    it('falls back to placeholder brand ID when brand does not exist in dry-run', async () => {
+    it('returns 500 in dry-run when brand does not exist', async () => {
       readConfigStub.resolves({ config: buildS3Config() });
 
       postgrestClient.from.resetBehavior();
       postgrestClient.from.callsFake((table) => {
-        const chain = {
-          upsert: sandbox.stub().callsFake(() => chain),
-          select: sandbox.stub().callsFake(() => {
-            if (table === 'brands') return chain;
-            return {
-              eq: sandbox.stub().resolves({ data: [], error: null }),
-            };
+        if (table === 'brands') {
+          return {
+            select: sandbox.stub().returnsThis(),
+            eq: sandbox.stub().returnsThis(),
+            single: sandbox.stub().resolves({ data: null, error: null }),
+          };
+        }
+        return {
+          upsert: sandbox.stub().returns({ error: null }),
+          select: sandbox.stub().returns({
+            eq: sandbox.stub().resolves({ data: [], error: null }),
           }),
-          eq: sandbox.stub().callsFake(() => chain),
-          single: sandbox.stub().resolves({ data: null, error: null }),
+          eq: sandbox.stub().returnsThis(),
         };
-        return chain;
       });
 
       const response = await handler({ siteId: SITE_ID, dryRun: true }, context);
-      const body = await response.json();
-
-      expect(response.status).to.equal(200);
-      expect(body.dryRun).to.be.true;
-      const infoMessages = context.log.info.args.map((args) => args[0]);
-      expect(infoMessages.some((m) => m.includes('Resolved brand ID: dry-run-brand-id'))).to.be.true;
+      expect(response.status).to.equal(500);
     });
 
     it('returns stats without dryRun flag when dryRun is false', async () => {
@@ -1278,7 +1245,7 @@ describe('LLMO Config DB Sync Handler', () => {
         topics: {
           'topic-1': {
             name: 'Topic 1',
-            prompts: [{ id: 'p1', prompt: 'Q?', regions: ['us'] }],
+            prompts: [{ prompt: 'Q?', regions: ['us'] }],
           },
         },
       });
