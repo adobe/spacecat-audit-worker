@@ -98,10 +98,7 @@ describe('LLMO Config DB Sync Handler', () => {
       env: {
         S3_IMPORTER_BUCKET_NAME: 'test-bucket',
       },
-      s3: {
-        s3Client: {},
-        s3Bucket: 'test-bucket',
-      },
+      s3Client: {},
       dataAccess: {
         Site: {
           findById: sandbox.stub(),
@@ -805,25 +802,17 @@ describe('LLMO Config DB Sync Handler', () => {
     });
   });
 
-  describe('s3 context fallback', () => {
-    it('uses S3_IMPORTER_BUCKET_NAME when s3Bucket is not available', async () => {
-      context.s3 = { s3Client: {}, s3Bucket: undefined };
+  describe('s3 client usage', () => {
+    it('passes s3Client from context and bucket from env to readConfig', async () => {
       readConfigStub.resolves({ config: null });
 
       await handler({ siteId: SITE_ID }, context);
 
       expect(readConfigStub).to.have.been.calledOnce;
       const callArgs = readConfigStub.firstCall.args;
+      expect(callArgs[0]).to.equal(SITE_ID);
+      expect(callArgs[1]).to.equal(context.s3Client);
       expect(callArgs[2].s3Bucket).to.equal('test-bucket');
-    });
-
-    it('handles missing s3 context gracefully', async () => {
-      context.s3 = undefined;
-      readConfigStub.resolves({ config: null });
-
-      await handler({ siteId: SITE_ID }, context);
-
-      expect(readConfigStub).to.have.been.calledOnce;
     });
   });
 

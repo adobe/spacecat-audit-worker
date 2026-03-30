@@ -154,8 +154,8 @@ export default async function llmoConfigDbSync(message, context) {
 
   try {
     log.info(`[llmo-config-db-sync] Starting config DB sync for siteId: ${siteId}, dryRun: ${dryRun}`);
-    const { s3Client, s3Bucket } = context.s3 || {};
-    const bucket = s3Bucket || env.S3_IMPORTER_BUCKET_NAME;
+    const { s3Client } = context;
+    const bucket = env.S3_IMPORTER_BUCKET_NAME;
     const config = await llmoConfig
       .readConfig(siteId, s3Client, { s3Bucket: bucket });
 
