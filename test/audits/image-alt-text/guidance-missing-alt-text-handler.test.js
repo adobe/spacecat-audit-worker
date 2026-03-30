@@ -11,10 +11,15 @@
  */
 
 /* eslint-env mocha */
-import { expect } from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import esmock from 'esmock';
+
+use(sinonChai);
+use(chaiAsPromised);
 
 describe('Missing Alt Text Guidance Handler', () => {
   let sandbox;
@@ -63,7 +68,11 @@ describe('Missing Alt Text Guidance Handler', () => {
           findById: sandbox.stub().resolves(mockSite),
         },
         Audit: {
-          findById: sandbox.stub().resolves({ getId: () => 'test-audit-id' }),
+          findById: sandbox.stub().resolves({
+            getId: () => 'test-audit-id',
+            setAuditedAt: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          }),
         },
         Suggestion: {
           bulkUpdateStatus: sandbox.stub().resolves(),
@@ -336,7 +345,11 @@ describe('Missing Alt Text Guidance Handler', () => {
   });
 
   it('should proceed when audit exists', async () => {
-    const mockAudit = { getId: () => 'test-audit-id' };
+    const mockAudit = {
+      getId: () => 'test-audit-id',
+      setAuditedAt: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
     context.dataAccess.Audit.findById.resolves(mockAudit);
 
     const result = await guidanceHandler(mockMessage, context);
@@ -517,5 +530,30 @@ describe('Missing Alt Text Guidance Handler', () => {
       [existingSuggestions[1]],
       'OUTDATED',
     );
+  });
+
+  it('should update auditedAt when all Mystique responses have been received', async () => {
+    mockOpportunity.getData.returns({
+      mystiqueResponsesReceived: 0,
+      mystiqueResponsesExpected: 1,
+    });
+
+    await guidanceHandler(mockMessage, context);
+
+    const mockAudit = await context.dataAccess.Audit.findById('test-audit-id');
+    expect(mockAudit.setAuditedAt).to.have.been.calledOnce;
+    expect(mockAudit.save).to.have.been.called;
+  });
+
+  it('should not update auditedAt when Mystique responses are still pending', async () => {
+    mockOpportunity.getData.returns({
+      mystiqueResponsesReceived: 0,
+      mystiqueResponsesExpected: 3,
+    });
+
+    await guidanceHandler(mockMessage, context);
+
+    const mockAudit = await context.dataAccess.Audit.findById('test-audit-id');
+    expect(mockAudit.setAuditedAt).to.not.have.been.called;
   });
 });

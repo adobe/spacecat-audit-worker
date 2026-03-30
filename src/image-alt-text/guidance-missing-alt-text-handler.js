@@ -124,6 +124,17 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
   };
 }
 
+async function updateAuditedAtIfComplete(updatedData, existingData, auditId, dataAccess, log) {
+  if (updatedData.mystiqueResponsesReceived >= (existingData.mystiqueResponsesExpected || 0)) {
+    const audit = await dataAccess.Audit.findById(auditId);
+    if (audit) {
+      audit.setAuditedAt(new Date().toISOString());
+      await audit.save();
+      log.info(`[${AUDIT_TYPE}]: All Mystique responses received. Updated auditedAt for auditId: ${auditId}`);
+    }
+  }
+}
+
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const {
@@ -237,6 +248,8 @@ export default async function handler(message, context) {
     altTextOppty.setData(updatedOpportunityData);
     altTextOppty.setUpdatedBy('system');
     await altTextOppty.save();
+
+    await updateAuditedAtIfComplete(updatedOpportunityData, existingData, auditId, dataAccess, log);
   } else {
     log.info(`[${AUDIT_TYPE}]: No suggestions to process for siteId: ${siteId}`);
   }
