@@ -222,7 +222,7 @@ export async function handleCdnBucketConfigChanges(context, data) {
   // Run analysis and reporting for Adobe-managed Fastly customers
   if (
     cdnProvider === SERVICE_PROVIDER_TYPES.AEM_CS_FASTLY
-    || cdnProvider === SERVICE_PROVIDER_TYPES.COMMERCE_FASTLY
+    || (cdnProvider === SERVICE_PROVIDER_TYPES.COMMERCE_FASTLY && pathId)
   ) {
     await handleAdobeFastly(siteId, context);
   }

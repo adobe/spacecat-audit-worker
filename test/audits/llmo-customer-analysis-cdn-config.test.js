@@ -395,6 +395,14 @@ describe('CDN Config Handler', () => {
       );
     });
 
+    it('should not run Fastly analysis for commerce-fastly provider when pathId is not resolved', async () => {
+      const data = { bucketName: 'test-bucket', cdnProvider: 'commerce-fastly' };
+
+      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
     it('should handle bucket configuration when bucketName provided', async () => {
       const data = { bucketName: 'test-bucket', cdnProvider: 'commerce-fastly' };
 
