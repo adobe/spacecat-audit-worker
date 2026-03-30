@@ -19,6 +19,7 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
+import { buildSheetHitsMap, loadLatestAgenticSheet } from './utils/shared.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
 import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
 import {
@@ -185,6 +186,36 @@ async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIM
   return topPagesUrls;
 }
 
+async function getTopAgenticUrlsFromSheet(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
+  const { log } = context;
+  try {
+    const { weekId, baseUrl, rows } = await loadLatestAgenticSheet(site, context);
+
+    if (!rows || rows.length === 0) {
+      log.warn(`Prerender - No agentic traffic rows found in sheet for ${weekId}. baseUrl=${baseUrl}`);
+      return [];
+    }
+
+    const byUrl = buildSheetHitsMap(rows);
+    const top = Array.from(byUrl.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([path]) => {
+        try {
+          return new URL(path, baseUrl).toString();
+        } catch {
+          return path;
+        }
+      });
+
+    log.info(`Prerender - Selected ${top.length} top agentic URLs via Sheet (${weekId}). baseUrl=${baseUrl}`);
+    return top;
+  } catch (e) {
+    log?.warn?.(`Prerender - Sheet-based agentic URL fetch failed: ${e?.message || e}. baseUrl=${site.getBaseURL()}`);
+    return [];
+  }
+}
+
 /**
  * Fetch top Agentic URLs from Athena.
  * @param {Object} site
@@ -194,6 +225,11 @@ async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIM
  */
 async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
   const { log } = context;
+  const sheetUrls = await getTopAgenticUrlsFromSheet(site, context, limit);
+  if (sheetUrls.length > 0) {
+    return sheetUrls;
+  }
+
   try {
     return await getTopAgenticUrlsFromAthena(site, context, limit);
   } catch (e) {
