@@ -14,11 +14,15 @@ import { v5 as uuidv5 } from 'uuid';
 import { llmoConfig } from '@adobe/spacecat-shared-utils';
 import { ok, internalServerError } from '@adobe/spacecat-shared-http-utils';
 
-const PROMPT_BATCH_SIZE = 3000;
+const UPSERT_BATCH_SIZE = 3000;
+const FETCH_BATCH_SIZE = 5000;
 const PROMPT_ID_NAMESPACE = '1b671a64-40d5-491e-99b0-da01ff1f3341';
 
+const CATEGORY_COMPARE_FIELDS = ['name', 'origin', 'status', 'created_by', 'updated_by'];
+const TOPIC_COMPARE_FIELDS = ['name', 'description', 'status', 'created_by', 'updated_by'];
+const PROMPT_COMPARE_FIELDS = ['name', 'regions', 'category_id', 'status', 'origin', 'source', 'created_by', 'updated_by'];
+
 // Temporary: hardcoded site IDs for which the S3-to-DB config sync is enabled.
-// TODO: replace with actual site UUIDs per environment.
 const ALLOWED_SITE_IDS = [
   '00000000-0000-0000-0000-000000000001', // dev
   '00000000-0000-0000-0000-000000000002', // prod - to be removed
@@ -33,28 +37,119 @@ function promptLookupKey(text, topicId) {
   return `${text}\0${topicId || ''}`;
 }
 
-async function fetchExistingPromptMap(postgrestClient, brandId, log) {
-  const { data, error } = await postgrestClient
-    .from('prompts')
-    .select('prompt_id,text,topic_id')
-    .eq('brand_id', brandId);
-  if (error) {
-    log.error(`Failed to fetch existing prompts: ${error.message}`);
-    return new Map();
-  }
-  const map = new Map();
-  (data || []).forEach((row) => {
-    map.set(promptLookupKey(row.text, row.topic_id), row.prompt_id);
-  });
-  log.info(`Loaded ${map.size} existing prompts for brand ${brandId}`);
-  return map;
+function changedFields(newRow, existingRow, fields) {
+  return fields.filter((f) => JSON.stringify(newRow[f]) !== JSON.stringify(existingRow[f]));
 }
 
-function resolvePromptId(p, topicId, topicUuid, existingPromptMap, log, index) {
-  const existing = existingPromptMap.get(promptLookupKey(p.prompt, topicUuid));
+function diffRows(desiredRows, existingByKey, keyFn, compareFields) {
+  const toUpsert = [];
+  const dryRunInserts = [];
+  const dryRunUpdates = [];
+  let inserted = 0;
+  let updated = 0;
+  let unchanged = 0;
+
+  for (const row of desiredRows) {
+    const existing = existingByKey.get(keyFn(row));
+    if (!existing) {
+      toUpsert.push(row);
+      dryRunInserts.push(row);
+      inserted += 1;
+    } else {
+      const changed = changedFields(row, existing, compareFields);
+      if (changed.length > 0) {
+        toUpsert.push(row);
+        dryRunUpdates.push({ ...row, _changedFields: changed });
+        updated += 1;
+      } else {
+        unchanged += 1;
+      }
+    }
+  }
+
+  return {
+    toUpsert, dryRunInserts, dryRunUpdates, stats: { inserted, updated, unchanged },
+  };
+}
+
+function logDryRunSummary(log, label, toInsert, toUpdate) {
+  log.info(`[DRY RUN] ${label}: ${toInsert.length} to insert, ${toUpdate.length} to update`);
+  toUpdate.slice(0, 10).forEach((row) => {
+    const { _changedFields, ...data } = row;
+    log.info(`[DRY RUN] ${label} update (changed: ${_changedFields.join(', ')}): ${JSON.stringify(data)}`);
+  });
+  if (toInsert.length > 0) {
+    log.info(`[DRY RUN] ${label} insert sample: ${JSON.stringify(toInsert[0])}`);
+  }
+}
+
+async function fetchPromptsBatched(postgrestClient, organizationId, log) {
+  const allRows = [];
+  let offset = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    // eslint-disable-next-line no-await-in-loop
+    const { data, error } = await postgrestClient
+      .from('prompts')
+      .select('prompt_id,brand_id,text,topic_id,name,regions,category_id,status,origin,source,created_by,updated_by')
+      .eq('organization_id', organizationId)
+      .range(offset, offset + FETCH_BATCH_SIZE - 1);
+
+    if (error) {
+      log.error(`Failed to fetch prompts at offset ${offset}: ${error.message}`);
+      break;
+    }
+    const rows = data || [];
+    allRows.push(...rows);
+    log.info(`Fetched prompts batch: ${rows.length} rows (total: ${allRows.length})`);
+    if (rows.length < FETCH_BATCH_SIZE) break;
+    offset += FETCH_BATCH_SIZE;
+  }
+  return allRows;
+}
+
+async function fetchExistingState(postgrestClient, organizationId, log) {
+  const [catResult, topicResult, promptRows] = await Promise.all([
+    postgrestClient.from('categories')
+      .select('id,category_id,name,origin,status,created_by,updated_by')
+      .eq('organization_id', organizationId),
+    postgrestClient.from('topics')
+      .select('id,topic_id,name,description,status,created_by,updated_by')
+      .eq('organization_id', organizationId),
+    fetchPromptsBatched(postgrestClient, organizationId, log),
+  ]);
+
+  const categoryLookup = new Map();
+  const existingCats = new Map();
+  (catResult.data || []).forEach((c) => {
+    categoryLookup.set(c.category_id, c.id);
+    existingCats.set(c.category_id, c);
+  });
+
+  const topicLookup = new Map();
+  const existingTopics = new Map();
+  (topicResult.data || []).forEach((t) => {
+    topicLookup.set(t.topic_id, t.id);
+    existingTopics.set(t.topic_id, t);
+  });
+
+  const existingPrompts = new Map();
+  promptRows.forEach((p) => {
+    existingPrompts.set(promptLookupKey(p.text, p.topic_id), p);
+  });
+
+  log.info(`Loaded existing state: ${existingCats.size} categories, ${existingTopics.size} topics, ${existingPrompts.size} prompts`);
+
+  return {
+    categoryLookup, topicLookup, existingCats, existingTopics, existingPrompts,
+  };
+}
+
+function resolvePromptId(p, topicId, topicUuid, existingPrompts, log, index) {
+  const existing = existingPrompts.get(promptLookupKey(p.prompt, topicUuid));
   if (existing) {
-    log.info(`Matched existing prompt_id "${existing}" for topic "${topicId}" at index ${index}`);
-    return existing;
+    log.info(`Matched existing prompt_id "${existing.prompt_id}" for topic "${topicId}" at index ${index}`);
+    return existing.prompt_id;
   }
   if (!p.prompt) return null;
   const generated = uuidv5(`${topicId}:${p.prompt}`, PROMPT_ID_NAMESPACE);
@@ -64,11 +159,11 @@ function resolvePromptId(p, topicId, topicUuid, existingPromptMap, log, index) {
 
 function collectPrompts(
   config,
-  categoryMap,
-  topicMap,
+  categoryLookup,
+  topicLookup,
   brandId,
   organizationId,
-  existingPromptMap,
+  existingPrompts,
   log,
 ) {
   const rows = [];
@@ -76,11 +171,11 @@ function collectPrompts(
   const addFromTopics = (topicsRecord, status) => {
     if (!topicsRecord) return;
     Object.entries(topicsRecord).forEach(([topicId, topic]) => {
-      const topicUuid = topicMap.get(topicId) || null;
-      const categoryUuid = topic.category ? (categoryMap.get(topic.category) || null) : null;
+      const topicUuid = topicLookup.get(topicId) || null;
+      const categoryUuid = topic.category ? (categoryLookup.get(topic.category) || null) : null;
 
       (topic.prompts || []).forEach((p, index) => {
-        const promptId = resolvePromptId(p, topicId, topicUuid, existingPromptMap, log, index);
+        const promptId = resolvePromptId(p, topicId, topicUuid, existingPrompts, log, index);
         if (!promptId) {
           log.error(`Skipping prompt without text in topic "${topicId}" at index ${index}`);
           return;
@@ -91,7 +186,7 @@ function collectPrompts(
           prompt_id: promptId,
           name: (p.prompt || '').slice(0, 255) || promptId,
           text: p.prompt,
-          regions: p.regions || [],
+          regions: (p.regions || []).map((r) => r.toUpperCase()),
           category_id: categoryUuid,
           topic_id: topicUuid,
           status,
@@ -109,21 +204,21 @@ function collectPrompts(
 
   if (config.deleted?.prompts) {
     Object.entries(config.deleted.prompts).forEach(([configPromptId, p]) => {
-      const topicUuid = p.topic ? (topicMap.get(p.topic) || null) : null;
+      const topicUuid = p.topic ? (topicLookup.get(p.topic) || null) : null;
       if (!topicUuid) {
         log.info(`Skipping deleted prompt "${configPromptId}": topic not resolved`);
         return;
       }
-      const categoryUuid = p.categoryId ? (categoryMap.get(p.categoryId) || null) : null;
-      const promptId = existingPromptMap.get(promptLookupKey(p.prompt, topicUuid))
-        || configPromptId;
+      const categoryUuid = p.categoryId ? (categoryLookup.get(p.categoryId) || null) : null;
+      const existingRow = existingPrompts.get(promptLookupKey(p.prompt, topicUuid));
+      const promptId = (existingRow && existingRow.prompt_id) || configPromptId;
       rows.push({
         organization_id: organizationId,
         brand_id: brandId,
         prompt_id: promptId,
         name: (p.prompt || '').slice(0, 255) || promptId,
         text: p.prompt,
-        regions: p.regions || [],
+        regions: (p.regions || []).map((r) => r.toUpperCase()),
         category_id: categoryUuid,
         topic_id: topicUuid,
         status: 'deleted',
@@ -140,38 +235,19 @@ function collectPrompts(
 
 async function upsertInBatches(postgrestClient, table, rows, onConflict, log) {
   let total = 0;
-  for (let i = 0; i < rows.length; i += PROMPT_BATCH_SIZE) {
-    const batch = rows.slice(i, i + PROMPT_BATCH_SIZE);
+  for (let i = 0; i < rows.length; i += UPSERT_BATCH_SIZE) {
+    const batch = rows.slice(i, i + UPSERT_BATCH_SIZE);
     // eslint-disable-next-line no-await-in-loop
     const { error } = await postgrestClient
       .from(table)
       .upsert(batch, { onConflict });
     if (error) {
-      throw new Error(`Failed to upsert ${table} batch ${Math.floor(i / PROMPT_BATCH_SIZE) + 1}: ${error.message}`);
+      throw new Error(`Failed to upsert ${table} batch ${Math.floor(i / UPSERT_BATCH_SIZE) + 1}: ${error.message}`);
     }
     total += batch.length;
     log.info(`Upserted ${table} batch: ${batch.length} rows (total: ${total}/${rows.length})`);
   }
   return total;
-}
-
-async function buildLookupMaps(organizationId, postgrestClient) {
-  const [catResult, topicResult] = await Promise.all([
-    postgrestClient.from('categories').select('id,category_id').eq('organization_id', organizationId),
-    postgrestClient.from('topics').select('id,topic_id').eq('organization_id', organizationId),
-  ]);
-
-  const categoryMap = new Map();
-  (catResult.data || []).forEach((c) => categoryMap.set(c.category_id, c.id));
-
-  const topicMap = new Map();
-  (topicResult.data || []).forEach((t) => topicMap.set(t.topic_id, t.id));
-
-  return { categoryMap, topicMap };
-}
-
-function logSample(log, label, rows) {
-  log.info(`[DRY RUN] ${label} sample (first of ${rows.length}):`, JSON.stringify(rows[0]));
 }
 
 export default async function llmoConfigDbSync(message, context) {
@@ -206,32 +282,23 @@ export default async function llmoConfigDbSync(message, context) {
     }
 
     const organizationId = site.getOrganizationId();
-    const siteConfig = site.getConfig();
-    const brandName = typeof siteConfig?.getLlmoBrand === 'function'
-      ? siteConfig.getLlmoBrand()
-      : null;
     const postgrestClient = context.dataAccess.services?.postgrestClient;
     if (!postgrestClient?.from) {
       log.error('PostgREST client not available');
       return internalServerError('PostgREST client not available');
     }
 
-    // Step 1: Look up existing brand (read-only, never upserted)
-    const { data: brandData, error: brandError } = await postgrestClient
-      .from('brands')
-      .select('id')
-      .eq('organization_id', organizationId)
-      .eq('name', brandName || 'default')
-      .single();
-    if (brandError || !brandData) {
-      const msg = `Brand "${brandName || 'default'}" not found for org ${organizationId}`;
-      log.error(msg, brandError);
-      return internalServerError(msg);
-    }
-    const brandId = brandData.id;
-    log.info(`${tag}Resolved brand ID: ${brandId}`);
+    // TODO: replace with dynamic brand resolution once brands exist in the S3 config
+    const brandId = '3e3556f0-6494-4e8f-858f-01f2c358861a';
+    log.info(`${tag}Using fixed brand ID: ${brandId}`);
 
-    // Step 2: Upsert categories
+    // Step 2: Fetch all existing state in parallel
+    const {
+      categoryLookup, topicLookup,
+      existingCats, existingTopics, existingPrompts,
+    } = await fetchExistingState(postgrestClient, organizationId, log);
+
+    // Step 3: Build & diff categories
     const categoryRows = Object.entries(s3Config.categories || {}).map(([catId, cat]) => ({
       organization_id: organizationId,
       category_id: catId,
@@ -241,21 +308,27 @@ export default async function llmoConfigDbSync(message, context) {
       created_by: cat.createdBy || null,
       updated_by: cat.updatedBy || null,
     }));
-    let categoriesCount = 0;
-    if (categoryRows.length > 0) {
+    const catDiff = diffRows(
+      categoryRows,
+      existingCats,
+      (r) => r.category_id,
+      CATEGORY_COMPARE_FIELDS,
+    );
+    if (catDiff.toUpsert.length > 0) {
       if (dryRun) {
-        logSample(log, 'categories', categoryRows);
+        logDryRunSummary(log, 'categories', catDiff.dryRunInserts, catDiff.dryRunUpdates);
       } else {
-        const { error: catError } = await postgrestClient
+        const { data: catData, error: catError } = await postgrestClient
           .from('categories')
-          .upsert(categoryRows, { onConflict: 'organization_id,category_id' });
+          .upsert(catDiff.toUpsert, { onConflict: 'organization_id,category_id' })
+          .select('id,category_id');
         if (catError) throw new Error(`Failed to upsert categories: ${catError.message}`);
+        (catData || []).forEach((c) => categoryLookup.set(c.category_id, c.id));
       }
-      categoriesCount = categoryRows.length;
     }
-    log.info(`${tag}Categories ${dryRun ? 'to upsert' : 'upserted'}: ${categoriesCount}`);
+    log.info(`${tag}Categories: ${catDiff.stats.inserted} inserted, ${catDiff.stats.updated} updated, ${catDiff.stats.unchanged} unchanged`);
 
-    // Step 3: Upsert topics
+    // Step 4: Build & diff topics
     const topicRows = [];
     const addTopics = (topicsRecord) => {
       if (!topicsRecord) return;
@@ -274,57 +347,48 @@ export default async function llmoConfigDbSync(message, context) {
     addTopics(s3Config.topics);
     addTopics(s3Config.aiTopics);
 
-    let topicsCount = 0;
-    if (topicRows.length > 0) {
-      if (dryRun) {
-        logSample(log, 'topics', topicRows);
-      } else {
-        const { error: topicError } = await postgrestClient
-          .from('topics')
-          .upsert(topicRows, { onConflict: 'organization_id,topic_id' });
-        if (topicError) throw new Error(`Failed to upsert topics: ${topicError.message}`);
-      }
-      topicsCount = topicRows.length;
-    }
-    log.info(`${tag}Topics ${dryRun ? 'to upsert' : 'upserted'}: ${topicsCount}`);
-
-    // Step 4: Build lookup maps (read-only, safe in dry-run)
-    const { categoryMap, topicMap } = await buildLookupMaps(organizationId, postgrestClient);
-
-    // Step 5: Fetch existing prompts to resolve prompt_id by (text, topic_id)
-    const existingPromptMap = await fetchExistingPromptMap(postgrestClient, brandId, log);
-
-    // Step 6: Upsert prompts in batches
-    const promptRows = collectPrompts(
-      s3Config,
-      categoryMap,
-      topicMap,
-      brandId,
-      organizationId,
-      existingPromptMap,
-      log,
+    const topicDiff = diffRows(
+      topicRows,
+      existingTopics,
+      (r) => r.topic_id,
+      TOPIC_COMPARE_FIELDS,
     );
-    let promptsCount = 0;
-    if (promptRows.length > 0) {
+    if (topicDiff.toUpsert.length > 0) {
       if (dryRun) {
-        logSample(log, 'prompts', promptRows);
-        promptsCount = promptRows.length;
+        logDryRunSummary(log, 'topics', topicDiff.dryRunInserts, topicDiff.dryRunUpdates);
       } else {
-        promptsCount = await upsertInBatches(
-          postgrestClient,
-          'prompts',
-          promptRows,
-          'brand_id,prompt_id',
-          log,
-        );
+        const { data: topicData, error: topicError } = await postgrestClient
+          .from('topics')
+          .upsert(topicDiff.toUpsert, { onConflict: 'organization_id,topic_id' })
+          .select('id,topic_id');
+        if (topicError) throw new Error(`Failed to upsert topics: ${topicError.message}`);
+        (topicData || []).forEach((t) => topicLookup.set(t.topic_id, t.id));
       }
     }
-    log.info(`${tag}Prompts ${dryRun ? 'to upsert' : 'upserted'}: ${promptsCount}`);
+    log.info(`${tag}Topics: ${topicDiff.stats.inserted} inserted, ${topicDiff.stats.updated} updated, ${topicDiff.stats.unchanged} unchanged`);
+
+    // Step 5: Build & diff prompts
+    // eslint-disable-next-line max-len
+    const promptRows = collectPrompts(s3Config, categoryLookup, topicLookup, brandId, organizationId, existingPrompts, log);
+    const promptDiff = diffRows(
+      promptRows,
+      existingPrompts,
+      (r) => promptLookupKey(r.text, r.topic_id),
+      PROMPT_COMPARE_FIELDS,
+    );
+    if (promptDiff.toUpsert.length > 0) {
+      if (dryRun) {
+        logDryRunSummary(log, 'prompts', promptDiff.dryRunInserts, promptDiff.dryRunUpdates);
+      } else {
+        await upsertInBatches(postgrestClient, 'prompts', promptDiff.toUpsert, 'brand_id,prompt_id', log);
+      }
+    }
+    log.info(`${tag}Prompts: ${promptDiff.stats.inserted} inserted, ${promptDiff.stats.updated} updated, ${promptDiff.stats.unchanged} unchanged`);
 
     const stats = {
-      categories: categoriesCount,
-      topics: topicsCount,
-      prompts: promptsCount,
+      categories: catDiff.stats,
+      topics: topicDiff.stats,
+      prompts: promptDiff.stats,
       ...(dryRun && { dryRun: true }),
     };
     log.info(`${tag}Config DB sync ${dryRun ? 'dry run' : ''} completed for site ${siteId}`, stats);

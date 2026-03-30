@@ -21,29 +21,9 @@ use(sinonChai);
 
 const SITE_ID = '00000000-0000-0000-0000-000000000001';
 const ORG_ID = 'org-uuid-001';
-const BRAND_UUID = 'brand-uuid-001';
+const BRAND_UUID = '3e3556f0-6494-4e8f-858f-01f2c358861a';
 const CAT_UUID = 'cat-uuid-001';
 const TOPIC_UUID = 'topic-uuid-001';
-
-function createPostgrestClient(sandbox) {
-  const chainable = {
-    select: sandbox.stub(),
-    eq: sandbox.stub(),
-    single: sandbox.stub(),
-    upsert: sandbox.stub(),
-    from: sandbox.stub(),
-  };
-  // Make every method return the chainable object for chaining
-  Object.values(chainable).forEach((stub) => stub.returns(chainable));
-
-  // Default upsert/select/single resolution
-  chainable.single.resolves({ data: { id: BRAND_UUID }, error: null });
-  chainable.upsert.returns(chainable);
-  chainable.select.returns(chainable);
-  chainable.eq.returns(chainable);
-
-  return chainable;
-}
 
 function buildS3Config({
   categories = {},
@@ -64,20 +44,43 @@ function buildS3Config({
   };
 }
 
+/**
+ * Creates a postgrestClient mock where .from(table) returns a chain
+ * configured per table via the tableHandlers map.
+ *
+ * Each tableHandler should return an object with the needed chain methods.
+ * Defaults handle brands (select chain) and all other tables (empty data).
+ */
+function buildPostgrestMock(sandbox, tableHandlers = {}) {
+  const emptyResult = () => Object.assign(
+    Promise.resolve({ data: [], error: null }),
+    { range: sandbox.stub().resolves({ data: [], error: null }) },
+  );
+  const defaultChain = () => ({
+    upsert: sandbox.stub().returnsThis(),
+    select: sandbox.stub().returns({ eq: sandbox.stub().callsFake(emptyResult) }),
+    eq: sandbox.stub().returnsThis(),
+  });
+
+  const from = sandbox.stub();
+  from.callsFake((table) => {
+    if (tableHandlers[table]) return tableHandlers[table](table);
+    return defaultChain();
+  });
+
+  return { from };
+}
+
 describe('LLMO Config DB Sync Handler', () => {
   let sandbox;
   let handler;
   let isSyncEnabledForSite;
   let context;
   let readConfigStub;
-  let postgrestClient;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
-
     readConfigStub = sandbox.stub();
-
-    postgrestClient = createPostgrestClient(sandbox);
 
     const module = await esmock('../../src/llmo-config-db-sync/handler.js', {
       '@adobe/spacecat-shared-utils': {
@@ -104,7 +107,7 @@ describe('LLMO Config DB Sync Handler', () => {
           findById: sandbox.stub(),
         },
         services: {
-          postgrestClient,
+          postgrestClient: buildPostgrestMock(sandbox),
         },
       },
     };
@@ -113,6 +116,82 @@ describe('LLMO Config DB Sync Handler', () => {
   afterEach(() => {
     sandbox.restore();
   });
+
+  function setupSite() {
+    context.dataAccess.Site.findById.resolves({
+      getOrganizationId: () => ORG_ID,
+      getConfig: () => ({}),
+    });
+  }
+
+  /**
+   * Helper that sets up postgrestClient.from to handle all tables
+   * with configurable existing data and captured upsert rows.
+   */
+  function setupFullMocks({
+    existingCats = [],
+    existingTopics = [],
+    existingPrompts = [],
+    catUpsertError = null,
+    topicUpsertError = null,
+    promptUpsertError = null,
+  } = {}) {
+    setupSite();
+
+    const captured = { categories: null, topics: null, prompts: null };
+
+    context.dataAccess.services.postgrestClient = buildPostgrestMock(sandbox, {
+      categories: () => ({
+        upsert: sandbox.stub().callsFake((rows) => {
+          captured.categories = rows;
+          return {
+            select: sandbox.stub().resolves({
+              data: catUpsertError
+                ? null
+                : rows.map((r) => ({ id: `cat-new-${r.category_id}`, category_id: r.category_id })),
+              error: catUpsertError,
+            }),
+          };
+        }),
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().resolves({ data: existingCats, error: null }),
+        }),
+        eq: sandbox.stub().returnsThis(),
+      }),
+
+      topics: () => ({
+        upsert: sandbox.stub().callsFake((rows) => {
+          captured.topics = rows;
+          return {
+            select: sandbox.stub().resolves({
+              data: topicUpsertError
+                ? null
+                : rows.map((r) => ({ id: `topic-new-${r.topic_id}`, topic_id: r.topic_id })),
+              error: topicUpsertError,
+            }),
+          };
+        }),
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().resolves({ data: existingTopics, error: null }),
+        }),
+        eq: sandbox.stub().returnsThis(),
+      }),
+
+      prompts: () => ({
+        upsert: sandbox.stub().callsFake((rows) => {
+          captured.prompts = rows;
+          return { error: promptUpsertError };
+        }),
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            range: sandbox.stub().resolves({ data: existingPrompts, error: null }),
+          }),
+        }),
+      }),
+    });
+
+    return captured;
+  }
 
   describe('isSyncEnabledForSite', () => {
     it('returns true when siteId is in the hardcoded allowed list', () => {
@@ -126,10 +205,7 @@ describe('LLMO Config DB Sync Handler', () => {
 
   describe('site ID gating', () => {
     it('skips sync when site is not in allowed list', async () => {
-      const response = await handler(
-        { siteId: 'unknown-site' },
-        context,
-      );
+      const response = await handler({ siteId: 'unknown-site' }, context);
       const body = await response.json();
 
       expect(response.status).to.equal(200);
@@ -180,10 +256,7 @@ describe('LLMO Config DB Sync Handler', () => {
   describe('postgrest client not available', () => {
     it('returns 500 when postgrestClient is missing', async () => {
       readConfigStub.resolves({ config: buildS3Config() });
-      context.dataAccess.Site.findById.resolves({
-        getOrganizationId: () => ORG_ID,
-        getConfig: () => ({ getLlmoBrand: () => 'TestBrand' }),
-      });
+      setupSite();
       context.dataAccess.services.postgrestClient = null;
 
       const response = await handler({ siteId: SITE_ID }, context);
@@ -192,155 +265,107 @@ describe('LLMO Config DB Sync Handler', () => {
   });
 
   describe('happy path - full sync', () => {
-    let site;
-
-    beforeEach(() => {
-      site = {
-        getOrganizationId: () => ORG_ID,
-        getConfig: () => ({ getLlmoBrand: () => 'Adobe' }),
-      };
-      context.dataAccess.Site.findById.resolves(site);
-
-      // Brand lookup chain
-      postgrestClient.from.withArgs('brands').returns(postgrestClient);
-      postgrestClient.select.returns(postgrestClient);
-      postgrestClient.eq.returns(postgrestClient);
-      postgrestClient.single.resolves({ data: { id: BRAND_UUID }, error: null });
-    });
-
-    it('syncs categories, topics, and prompts successfully', async () => {
+    it('inserts new categories, topics, and prompts', async () => {
       const s3Config = buildS3Config({
-        categories: {
-          'cat-1': { name: 'Category 1', origin: 'human', region: 'us' },
-        },
+        categories: { 'cat-1': { name: 'Category 1', origin: 'human' } },
         topics: {
           'topic-1': {
             name: 'Topic 1',
             category: 'cat-1',
-            prompts: [
-              {
-                id: 'prompt-1', prompt: 'What is AI?', regions: ['us'], origin: 'human', source: 'config',
-              },
-            ],
+            prompts: [{ prompt: 'What is AI?', regions: ['us'], origin: 'human', source: 'config' }],
           },
         },
       });
       readConfigStub.resolves({ config: s3Config });
+      const captured = setupFullMocks();
 
-      const brandChain = {
-        select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub().returnsThis(),
-        single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
-      };
-
-      // Category upsert
-      const catUpsertResult = { error: null };
-
-      // Topic upsert
-      const topicUpsertResult = { error: null };
-
-      // Lookup maps
-      const catLookupResult = {
-        data: [{ id: CAT_UUID, category_id: 'cat-1' }],
-        error: null,
-      };
-      const topicLookupResult = {
-        data: [{ id: TOPIC_UUID, topic_id: 'topic-1' }],
-        error: null,
-      };
-
-      // Prompt upsert
-      const promptUpsertResult = { error: null };
-
-      postgrestClient.from.callsFake((table) => {
-        const chain = {
-          upsert: sandbox.stub(),
-          select: sandbox.stub(),
-          eq: sandbox.stub(),
-          single: sandbox.stub(),
-        };
-
-        chain.upsert.returns(chain);
-        chain.select.returns(chain);
-        chain.eq.returns(chain);
-
-        if (table === 'brands') {
-          chain.single.resolves({ data: { id: BRAND_UUID }, error: null });
-          return chain;
-        }
-        if (table === 'categories') {
-          // For upsert call
-          chain.upsert.returns(catUpsertResult);
-          // For lookup query
-          chain.select.returns({
-            eq: sandbox.stub().resolves(catLookupResult),
-          });
-          return chain;
-        }
-        if (table === 'topics') {
-          chain.upsert.returns(topicUpsertResult);
-          chain.select.returns({
-            eq: sandbox.stub().resolves(topicLookupResult),
-          });
-          return chain;
-        }
-        if (table === 'prompts') {
-          chain.upsert.returns(promptUpsertResult);
-          chain.select.returns({
-            eq: sandbox.stub().resolves({ data: [], error: null }),
-          });
-          return chain;
-        }
-        return chain;
-      });
-
-      const response = await handler({ siteId: SITE_ID }, context);
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
       const body = await response.json();
 
       expect(response.status).to.equal(200);
-      expect(body.categories).to.equal(1);
-      expect(body.topics).to.equal(1);
-      expect(body.prompts).to.equal(1);
+      expect(body.categories).to.deep.equal({ inserted: 1, updated: 0, unchanged: 0 });
+      expect(body.topics).to.deep.equal({ inserted: 1, updated: 0, unchanged: 0 });
+      expect(body.prompts).to.deep.equal({ inserted: 1, updated: 0, unchanged: 0 });
+      expect(captured.categories).to.have.length(1);
+      expect(captured.topics).to.have.length(1);
+      expect(captured.prompts).to.have.length(1);
+    });
+
+    it('skips unchanged rows', async () => {
+      const s3Config = buildS3Config({
+        categories: { 'cat-1': { name: 'Category 1', origin: 'human' } },
+        topics: {
+          'topic-1': {
+            name: 'Topic 1',
+            prompts: [{ prompt: 'Existing prompt', regions: ['us'], origin: 'human', source: 'config' }],
+          },
+        },
+      });
+      readConfigStub.resolves({ config: s3Config });
+      const captured = setupFullMocks({
+        existingCats: [{
+          id: CAT_UUID, category_id: 'cat-1', name: 'Category 1', origin: 'human', status: 'active', created_by: null, updated_by: null,
+        }],
+        existingTopics: [{
+          id: TOPIC_UUID, topic_id: 'topic-1', name: 'Topic 1', description: null, status: 'active', created_by: null, updated_by: null,
+        }],
+        existingPrompts: [{
+          prompt_id: 'existing-pid', brand_id: BRAND_UUID, text: 'Existing prompt', topic_id: TOPIC_UUID,
+          name: 'Existing prompt', regions: ['US'], category_id: null,
+          status: 'active', origin: 'human', source: 'config',
+          created_by: null, updated_by: null,
+        }],
+      });
+
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
+      const body = await response.json();
+
+      expect(response.status).to.equal(200);
+      expect(body.categories).to.deep.equal({ inserted: 0, updated: 0, unchanged: 1 });
+      expect(body.topics).to.deep.equal({ inserted: 0, updated: 0, unchanged: 1 });
+      expect(body.prompts).to.deep.equal({ inserted: 0, updated: 0, unchanged: 1 });
+      expect(captured.categories).to.be.null;
+      expect(captured.topics).to.be.null;
+      expect(captured.prompts).to.be.null;
+    });
+
+    it('detects updated rows', async () => {
+      const s3Config = buildS3Config({
+        categories: { 'cat-1': { name: 'Renamed Category', origin: 'human' } },
+      });
+      readConfigStub.resolves({ config: s3Config });
+      const captured = setupFullMocks({
+        existingCats: [{
+          id: CAT_UUID, category_id: 'cat-1', name: 'Old Name', origin: 'human', status: 'active', created_by: null, updated_by: null,
+        }],
+      });
+
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
+      const body = await response.json();
+
+      expect(response.status).to.equal(200);
+      expect(body.categories).to.deep.equal({ inserted: 0, updated: 1, unchanged: 0 });
+      expect(captured.categories).to.have.length(1);
+      expect(captured.categories[0].name).to.equal('Renamed Category');
     });
 
     it('syncs with empty categories and topics', async () => {
       readConfigStub.resolves({ config: buildS3Config() });
+      setupFullMocks();
 
-      const brandChain = {
-        select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub().returnsThis(),
-        single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
-      };
-
-      postgrestClient.from.callsFake((table) => {
-        if (table === 'brands') return brandChain;
-        const chain = {
-          upsert: sandbox.stub().returns({ error: null }),
-          select: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({ data: [], error: null }),
-          }),
-          eq: sandbox.stub().returnsThis(),
-        };
-        return chain;
-      });
-
-      const response = await handler({ siteId: SITE_ID }, context);
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
       const body = await response.json();
 
       expect(response.status).to.equal(200);
-      expect(body.categories).to.equal(0);
-      expect(body.topics).to.equal(0);
-      expect(body.prompts).to.equal(0);
+      expect(body.categories).to.deep.equal({ inserted: 0, updated: 0, unchanged: 0 });
+      expect(body.topics).to.deep.equal({ inserted: 0, updated: 0, unchanged: 0 });
+      expect(body.prompts).to.deep.equal({ inserted: 0, updated: 0, unchanged: 0 });
     });
 
     it('syncs deleted prompts when topic resolves', async () => {
       const s3Config = buildS3Config({
-        categories: {
-          'cat-1': { name: 'Category 1', region: 'us' },
-        },
-        topics: {
-          'topic-1': { name: 'Topic 1', prompts: [] },
-        },
+        categories: { 'cat-1': { name: 'Category 1' } },
+        topics: { 'topic-1': { name: 'Topic 1', prompts: [] } },
         deleted: {
           prompts: {
             'del-prompt-1': {
@@ -350,95 +375,37 @@ describe('LLMO Config DB Sync Handler', () => {
         },
       });
       readConfigStub.resolves({ config: s3Config });
-
-      const brandChain = {
-        select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub().returnsThis(),
-        single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
-      };
-
-      let capturedPromptRows;
-      postgrestClient.from.callsFake((table) => {
-        if (table === 'brands') return brandChain;
-        if (table === 'prompts') {
-          return {
-            upsert: sandbox.stub().callsFake((rows) => {
-              capturedPromptRows = rows;
-              return { error: null };
-            }),
-            select: sandbox.stub().returns({
-              eq: sandbox.stub().resolves({ data: [], error: null }),
-            }),
-          };
-        }
-        return {
-          upsert: sandbox.stub().returns({ error: null }),
-          select: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({
-              data: table === 'categories'
-                ? [{ id: CAT_UUID, category_id: 'cat-1' }]
-                : table === 'topics'
-                  ? [{ id: TOPIC_UUID, topic_id: 'topic-1' }]
-                  : [],
-              error: null,
-            }),
-          }),
-          eq: sandbox.stub().returnsThis(),
-        };
+      const captured = setupFullMocks({
+        existingCats: [{ id: CAT_UUID, category_id: 'cat-1', name: 'Category 1', origin: 'human', status: 'active', created_by: null, updated_by: null }],
+        existingTopics: [{ id: TOPIC_UUID, topic_id: 'topic-1', name: 'Topic 1', description: null, status: 'active', created_by: null, updated_by: null }],
       });
 
-      const response = await handler({ siteId: SITE_ID }, context);
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
       const body = await response.json();
 
       expect(response.status).to.equal(200);
-      expect(body.prompts).to.equal(1);
-      expect(capturedPromptRows[0].status).to.equal('deleted');
-      expect(capturedPromptRows[0].topic_id).to.equal(TOPIC_UUID);
-      expect(capturedPromptRows[0].category_id).to.equal(CAT_UUID);
+      expect(body.prompts.inserted).to.equal(1);
+      expect(captured.prompts[0].status).to.equal('deleted');
+      expect(captured.prompts[0].topic_id).to.equal(TOPIC_UUID);
+      expect(captured.prompts[0].category_id).to.equal(CAT_UUID);
     });
 
     it('skips deleted prompts when topic does not resolve', async () => {
       const s3Config = buildS3Config({
         deleted: {
           prompts: {
-            'del-prompt-1': {
-              prompt: 'Deleted prompt', regions: ['us'], topic: 'unknown-topic',
-            },
+            'del-prompt-1': { prompt: 'Deleted prompt', regions: ['us'], topic: 'unknown-topic' },
           },
         },
       });
       readConfigStub.resolves({ config: s3Config });
+      setupFullMocks();
 
-      const brandChain = {
-        select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub().returnsThis(),
-        single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
-      };
-
-      postgrestClient.from.callsFake((table) => {
-        if (table === 'brands') return brandChain;
-        if (table === 'prompts') {
-          return {
-            upsert: sandbox.stub().returns({ error: null }),
-            select: sandbox.stub().returns({
-              eq: sandbox.stub().resolves({ data: [], error: null }),
-            }),
-          };
-        }
-        return {
-          upsert: sandbox.stub().returns({ error: null }),
-          select: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({ data: [], error: null }),
-          }),
-          eq: sandbox.stub().returnsThis(),
-        };
-      });
-
-      const response = await handler({ siteId: SITE_ID }, context);
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
       const body = await response.json();
 
       expect(response.status).to.equal(200);
-      expect(body.prompts).to.equal(0);
+      expect(body.prompts.inserted).to.equal(0);
       expect(context.log.info).to.have.been.calledWith(
         'Skipping deleted prompt "del-prompt-1": topic not resolved',
       );
@@ -447,253 +414,64 @@ describe('LLMO Config DB Sync Handler', () => {
     it('syncs aiTopics alongside regular topics', async () => {
       const s3Config = buildS3Config({
         topics: {
-          'topic-1': {
-            name: 'Topic 1',
-            category: 'cat-1',
-            prompts: [{ id: 'p1', prompt: 'Prompt 1', regions: ['us'] }],
-          },
+          'topic-1': { name: 'Topic 1', prompts: [{ prompt: 'P1', regions: ['us'] }] },
         },
         aiTopics: {
-          'ai-topic-1': {
-            name: 'AI Topic 1',
-            category: 'cat-1',
-            prompts: [{ id: 'p2', prompt: 'AI Prompt', regions: ['de'] }],
-          },
+          'ai-topic-1': { name: 'AI Topic 1', prompts: [{ prompt: 'AI P', regions: ['de'] }] },
         },
       });
       readConfigStub.resolves({ config: s3Config });
+      setupFullMocks();
 
-      const brandChain = {
-        select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub().returnsThis(),
-        single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
-      };
-
-      postgrestClient.from.callsFake((table) => {
-        if (table === 'brands') return brandChain;
-        return {
-          upsert: sandbox.stub().returns({ error: null }),
-          select: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({ data: [], error: null }),
-          }),
-          eq: sandbox.stub().returnsThis(),
-        };
-      });
-
-      const response = await handler({ siteId: SITE_ID }, context);
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
       const body = await response.json();
 
       expect(response.status).to.equal(200);
-      expect(body.topics).to.equal(2);
-      expect(body.prompts).to.equal(2);
+      expect(body.topics.inserted).to.equal(2);
+      expect(body.prompts.inserted).to.equal(2);
     });
 
-    it('uses default brand name when site config has no brand', async () => {
-      context.dataAccess.Site.findById.resolves({
-        getOrganizationId: () => ORG_ID,
-        getConfig: () => ({ getLlmoBrand: () => undefined }),
-      });
-      readConfigStub.resolves({ config: buildS3Config() });
-
-      const brandChain = {
-        select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub().returnsThis(),
-        single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
-      };
-
-      postgrestClient.from.resetBehavior();
-      postgrestClient.from.callsFake((table) => {
-        if (table === 'brands') return brandChain;
-        return {
-          upsert: sandbox.stub().returns({ error: null }),
-          select: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({ data: [], error: null }),
-          }),
-          eq: sandbox.stub().returnsThis(),
-        };
-      });
-
-      const response = await handler({ siteId: SITE_ID }, context);
-
-      expect(response.status).to.equal(200);
-    });
-
-    it('handles site config without getLlmoBrand method', async () => {
-      context.dataAccess.Site.findById.resolves({
-        getOrganizationId: () => ORG_ID,
-        getConfig: () => ({}),
-      });
-      readConfigStub.resolves({ config: buildS3Config() });
-
-      const brandChain = {
-        select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub().returnsThis(),
-        single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
-      };
-
-      postgrestClient.from.resetBehavior();
-      postgrestClient.from.callsFake((table) => {
-        if (table === 'brands') return brandChain;
-        return {
-          upsert: sandbox.stub().returns({ error: null }),
-          select: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({ data: [], error: null }),
-          }),
-          eq: sandbox.stub().returnsThis(),
-        };
-      });
-
-      const response = await handler({ siteId: SITE_ID }, context);
-
-      expect(response.status).to.equal(200);
-    });
   });
 
   describe('error handling', () => {
-    beforeEach(() => {
-      context.dataAccess.Site.findById.resolves({
-        getOrganizationId: () => ORG_ID,
-        getConfig: () => ({ getLlmoBrand: () => 'Adobe' }),
-      });
-    });
-
-    it('returns 500 when brand is not found', async () => {
-      readConfigStub.resolves({ config: buildS3Config() });
-
-      const brandChain = {
-        select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub().returnsThis(),
-        single: sandbox.stub().resolves({ data: null, error: null }),
-      };
-
-      postgrestClient.from.callsFake((table) => {
-        if (table === 'brands') return brandChain;
-        return {
-          upsert: sandbox.stub().returns({ error: null }),
-          select: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({ data: [], error: null }),
-          }),
-        };
-      });
-
-      const response = await handler({ siteId: SITE_ID }, context);
-      expect(response.status).to.equal(500);
-    });
-
     it('returns 500 when category upsert fails', async () => {
       const s3Config = buildS3Config({
-        categories: { 'cat-1': { name: 'Cat', region: 'us' } },
+        categories: { 'cat-1': { name: 'Cat' } },
       });
       readConfigStub.resolves({ config: s3Config });
+      setupFullMocks({ catUpsertError: { message: 'Category error' } });
 
-      const brandChain = {
-        select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub().returnsThis(),
-        single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
-      };
-
-      postgrestClient.from.callsFake((table) => {
-        if (table === 'brands') return brandChain;
-        if (table === 'categories') {
-          return {
-            upsert: sandbox.stub().returns({ error: { message: 'Category error' } }),
-          };
-        }
-        return {
-          upsert: sandbox.stub().returns({ error: null }),
-          select: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({ data: [], error: null }),
-          }),
-        };
-      });
-
-      const response = await handler({ siteId: SITE_ID }, context);
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
       expect(response.status).to.equal(500);
     });
 
     it('returns 500 when topic upsert fails', async () => {
       const s3Config = buildS3Config({
-        topics: {
-          't1': {
-            name: 'T1', category: 'c1', prompts: [{ id: 'p1', prompt: 'P1', regions: ['us'] }],
-          },
-        },
+        topics: { 't1': { name: 'T1', prompts: [{ prompt: 'P', regions: ['us'] }] } },
       });
       readConfigStub.resolves({ config: s3Config });
+      setupFullMocks({ topicUpsertError: { message: 'Topic error' } });
 
-      const brandChain = {
-        select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub().returnsThis(),
-        single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
-      };
-
-      postgrestClient.from.callsFake((table) => {
-        if (table === 'brands') return brandChain;
-        if (table === 'topics') {
-          return {
-            upsert: sandbox.stub().returns({ error: { message: 'Topic error' } }),
-          };
-        }
-        return {
-          upsert: sandbox.stub().returns({ error: null }),
-          select: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({ data: [], error: null }),
-          }),
-        };
-      });
-
-      const response = await handler({ siteId: SITE_ID }, context);
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
       expect(response.status).to.equal(500);
     });
 
     it('returns 500 when prompt upsert fails', async () => {
       const s3Config = buildS3Config({
-        topics: {
-          't1': {
-            name: 'T1', category: 'c1', prompts: [{ id: 'p1', prompt: 'P1', regions: ['us'] }],
-          },
-        },
+        topics: { 't1': { name: 'T1', prompts: [{ prompt: 'P', regions: ['us'] }] } },
       });
       readConfigStub.resolves({ config: s3Config });
+      setupFullMocks({ promptUpsertError: { message: 'Prompt error' } });
 
-      const brandChain = {
-        select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub().returnsThis(),
-        single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
-      };
-
-      let promptCallCount = 0;
-      postgrestClient.from.callsFake((table) => {
-        if (table === 'brands') return brandChain;
-        if (table === 'prompts') {
-          return {
-            upsert: sandbox.stub().returns({ error: { message: 'Prompt error' } }),
-          };
-        }
-        if (table === 'categories' || table === 'topics') {
-          return {
-            upsert: sandbox.stub().returns({ error: null }),
-            select: sandbox.stub().returns({
-              eq: sandbox.stub().resolves({ data: [], error: null }),
-            }),
-          };
-        }
-        return {
-          upsert: sandbox.stub().returns({ error: null }),
-          select: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({ data: [], error: null }),
-          }),
-        };
-      });
-
-      const response = await handler({ siteId: SITE_ID }, context);
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
       expect(response.status).to.equal(500);
     });
 
     it('returns 500 when readConfig throws', async () => {
       readConfigStub.rejects(new Error('S3 failure'));
+      setupSite();
 
-      const response = await handler({ siteId: SITE_ID }, context);
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
       expect(response.status).to.equal(500);
     });
   });
@@ -701,50 +479,18 @@ describe('LLMO Config DB Sync Handler', () => {
   describe('idempotency', () => {
     it('produces same result when run twice with same config', async () => {
       const s3Config = buildS3Config({
-        categories: { 'cat-1': { name: 'Category 1', region: 'us' } },
+        categories: { 'cat-1': { name: 'Category 1' } },
         topics: {
-          'topic-1': {
-            name: 'Topic 1',
-            category: 'cat-1',
-            prompts: [{ id: 'p1', prompt: 'Q?', regions: ['us'] }],
-          },
+          'topic-1': { name: 'Topic 1', category: 'cat-1', prompts: [{ prompt: 'Q?', regions: ['us'] }] },
         },
       });
       readConfigStub.resolves({ config: s3Config });
+      setupFullMocks();
 
-      context.dataAccess.Site.findById.resolves({
-        getOrganizationId: () => ORG_ID,
-        getConfig: () => ({ getLlmoBrand: () => 'Adobe' }),
-      });
-
-      const brandChain = {
-        select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub().returnsThis(),
-        single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
-      };
-
-      postgrestClient.from.callsFake((table) => {
-        if (table === 'brands') return brandChain;
-        return {
-          upsert: sandbox.stub().returns({ error: null }),
-          select: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({
-              data: table === 'categories'
-                ? [{ id: CAT_UUID, category_id: 'cat-1' }]
-                : table === 'topics'
-                  ? [{ id: TOPIC_UUID, topic_id: 'topic-1' }]
-                  : [],
-              error: null,
-            }),
-          }),
-          eq: sandbox.stub().returnsThis(),
-        };
-      });
-
-      const response1 = await handler({ siteId: SITE_ID }, context);
+      const response1 = await handler({ siteId: SITE_ID, dryRun: false }, context);
       const body1 = await response1.json();
 
-      const response2 = await handler({ siteId: SITE_ID }, context);
+      const response2 = await handler({ siteId: SITE_ID, dryRun: false }, context);
       const body2 = await response2.json();
 
       expect(body1).to.deep.equal(body2);
@@ -753,89 +499,15 @@ describe('LLMO Config DB Sync Handler', () => {
 
   describe('config with missing categories field', () => {
     it('handles S3 config that has no categories key', async () => {
-      const s3Config = {
-        entities: {},
-        topics: {},
-        brands: { aliases: [] },
-        competitors: { competitors: [] },
-      };
+      const s3Config = { entities: {}, topics: {}, brands: { aliases: [] }, competitors: { competitors: [] } };
       readConfigStub.resolves({ config: s3Config });
+      setupFullMocks();
 
-      context.dataAccess.Site.findById.resolves({
-        getOrganizationId: () => ORG_ID,
-        getConfig: () => ({ getLlmoBrand: () => 'Adobe' }),
-      });
-
-      const brandChain = {
-        select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub().returnsThis(),
-        single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
-      };
-
-      postgrestClient.from.resetBehavior();
-      postgrestClient.from.callsFake((table) => {
-        if (table === 'brands') return brandChain;
-        return {
-          upsert: sandbox.stub().returns({ error: null }),
-          select: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({ data: [], error: null }),
-          }),
-          eq: sandbox.stub().returnsThis(),
-        };
-      });
-
-      const response = await handler({ siteId: SITE_ID }, context);
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
       const body = await response.json();
 
       expect(response.status).to.equal(200);
-      expect(body.categories).to.equal(0);
-    });
-  });
-
-  describe('lookup maps with null data', () => {
-    it('handles null data from category and topic queries', async () => {
-      const s3Config = buildS3Config({
-        topics: {
-          't1': {
-            name: 'T1', prompts: [{ id: 'p1', prompt: 'Q', regions: ['us'] }],
-          },
-        },
-      });
-      readConfigStub.resolves({ config: s3Config });
-
-      context.dataAccess.Site.findById.resolves({
-        getOrganizationId: () => ORG_ID,
-        getConfig: () => ({ getLlmoBrand: () => 'Adobe' }),
-      });
-
-      const brandChain = {
-        select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub().returnsThis(),
-        single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
-      };
-
-      postgrestClient.from.resetBehavior();
-      postgrestClient.from.callsFake((table) => {
-        if (table === 'brands') return brandChain;
-        if (table === 'prompts') {
-          return {
-            upsert: sandbox.stub().returns({ error: null }),
-            select: sandbox.stub().returns({
-              eq: sandbox.stub().resolves({ data: [], error: null }),
-            }),
-          };
-        }
-        return {
-          upsert: sandbox.stub().returns({ error: null }),
-          select: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({ data: null, error: null }),
-          }),
-          eq: sandbox.stub().returnsThis(),
-        };
-      });
-
-      const response = await handler({ siteId: SITE_ID }, context);
-      expect(response.status).to.equal(200);
+      expect(body.categories.inserted).to.equal(0);
     });
   });
 
@@ -854,102 +526,30 @@ describe('LLMO Config DB Sync Handler', () => {
   });
 
   describe('prompt collection edge cases', () => {
-    function setupBasicMocks({
-      existingPrompts = [],
-      categoryLookup = [],
-      topicLookup = [],
-    } = {}) {
-      context.dataAccess.Site.findById.resolves({
-        getOrganizationId: () => ORG_ID,
-        getConfig: () => ({ getLlmoBrand: () => 'Adobe' }),
-      });
-
-      const brandChain = {
-        select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub().returnsThis(),
-        single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
-      };
-
-      let capturedPromptRows;
-      postgrestClient.from.resetBehavior();
-      postgrestClient.from.callsFake((table) => {
-        if (table === 'brands') return brandChain;
-        if (table === 'prompts') {
-          return {
-            upsert: sandbox.stub().callsFake((rows) => {
-              capturedPromptRows = rows;
-              return { error: null };
-            }),
-            select: sandbox.stub().returns({
-              eq: sandbox.stub().resolves({ data: existingPrompts, error: null }),
-            }),
-          };
-        }
-        if (table === 'categories') {
-          return {
-            upsert: sandbox.stub().returns({ error: null }),
-            select: sandbox.stub().returns({
-              eq: sandbox.stub().resolves({ data: categoryLookup, error: null }),
-            }),
-            eq: sandbox.stub().returnsThis(),
-          };
-        }
-        if (table === 'topics') {
-          return {
-            upsert: sandbox.stub().returns({ error: null }),
-            select: sandbox.stub().returns({
-              eq: sandbox.stub().resolves({ data: topicLookup, error: null }),
-            }),
-            eq: sandbox.stub().returnsThis(),
-          };
-        }
-        return {
-          upsert: sandbox.stub().returns({ error: null }),
-          select: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({ data: [], error: null }),
-          }),
-          eq: sandbox.stub().returnsThis(),
-        };
-      });
-
-      return () => capturedPromptRows;
-    }
-
     it('handles topic without a category field', async () => {
       const s3Config = buildS3Config({
-        topics: {
-          'topic-no-cat': {
-            name: 'No Category Topic',
-            prompts: [{ id: 'p1', prompt: 'Q?', regions: ['us'] }],
-          },
-        },
+        topics: { 'topic-no-cat': { name: 'No Cat', prompts: [{ prompt: 'Q?', regions: ['us'] }] } },
       });
       readConfigStub.resolves({ config: s3Config });
-      const getRows = setupBasicMocks();
+      const captured = setupFullMocks();
 
-      await handler({ siteId: SITE_ID }, context);
+      await handler({ siteId: SITE_ID, dryRun: false }, context);
 
-      const rows = getRows();
-      expect(rows).to.have.length(1);
-      expect(rows[0].category_id).to.be.null;
+      expect(captured.prompts).to.have.length(1);
+      expect(captured.prompts[0].category_id).to.be.null;
     });
 
     it('skips prompt with empty prompt text', async () => {
       const s3Config = buildS3Config({
-        topics: {
-          't1': {
-            name: 'T1',
-            prompts: [{ id: 'p-custom', prompt: '', regions: ['us'] }],
-          },
-        },
+        topics: { 't1': { name: 'T1', prompts: [{ prompt: '', regions: ['us'] }] } },
       });
       readConfigStub.resolves({ config: s3Config });
-      setupBasicMocks();
+      setupFullMocks();
 
-      const response = await handler({ siteId: SITE_ID }, context);
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
       const body = await response.json();
 
-      expect(body.prompts).to.equal(0);
+      expect(body.prompts.inserted).to.equal(0);
       expect(context.log.error).to.have.been.calledWith(
         'Skipping prompt without text in topic "t1" at index 0',
       );
@@ -957,87 +557,69 @@ describe('LLMO Config DB Sync Handler', () => {
 
     it('handles prompt with no regions, no origin, no source', async () => {
       const s3Config = buildS3Config({
-        topics: {
-          't1': {
-            name: 'T1',
-            prompts: [{ id: 'p1', prompt: 'Hello' }],
-          },
-        },
+        topics: { 't1': { name: 'T1', prompts: [{ prompt: 'Hello' }] } },
       });
       readConfigStub.resolves({ config: s3Config });
-      const getRows = setupBasicMocks();
+      const captured = setupFullMocks();
 
-      await handler({ siteId: SITE_ID }, context);
+      await handler({ siteId: SITE_ID, dryRun: false }, context);
 
-      const rows = getRows();
-      expect(rows[0].regions).to.deep.equal([]);
-      expect(rows[0].origin).to.equal('human');
-      expect(rows[0].source).to.equal('config');
+      expect(captured.prompts[0].regions).to.deep.equal([]);
+      expect(captured.prompts[0].origin).to.equal('human');
+      expect(captured.prompts[0].source).to.equal('config');
     });
 
     it('handles topic with no prompts array', async () => {
       const s3Config = buildS3Config({
-        topics: {
-          't-empty': { name: 'Empty Topic' },
-        },
+        topics: { 't-empty': { name: 'Empty Topic' } },
       });
       readConfigStub.resolves({ config: s3Config });
-      const getRows = setupBasicMocks();
+      setupFullMocks();
 
-      const response = await handler({ siteId: SITE_ID }, context);
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
       const body = await response.json();
 
-      expect(body.prompts).to.equal(0);
+      expect(body.prompts.inserted).to.equal(0);
     });
 
-    it('generates a deterministic UUID v5 for all prompts', async () => {
+    it('generates a deterministic UUID v5 for new prompts', async () => {
       const s3Config = buildS3Config({
         topics: {
           'topic-1': {
             name: 'Topic 1',
-            category: 'cat-1',
             prompts: [
               { prompt: 'First prompt', regions: ['us'] },
-              { id: 'ignored-s3-id', prompt: 'Second prompt', regions: ['us'] },
+              { prompt: 'Second prompt', regions: ['us'] },
             ],
           },
         },
       });
       readConfigStub.resolves({ config: s3Config });
-      const getRows = setupBasicMocks();
+      const captured = setupFullMocks();
 
-      const response = await handler({ siteId: SITE_ID }, context);
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
       const body = await response.json();
 
-      const rows = getRows();
-      expect(rows).to.have.length(2);
-      expect(body.prompts).to.equal(2);
+      expect(captured.prompts).to.have.length(2);
+      expect(body.prompts.inserted).to.equal(2);
 
       const uuidV5Regex = /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-      rows.forEach((r) => expect(r.prompt_id).to.match(uuidV5Regex));
-      expect(rows[0].prompt_id).to.not.equal(rows[1].prompt_id);
-      expect(context.log.info).to.have.been.calledWith(
-        sinon.match('Generated prompt id'),
-      );
+      captured.prompts.forEach((r) => expect(r.prompt_id).to.match(uuidV5Regex));
+      expect(captured.prompts[0].prompt_id).to.not.equal(captured.prompts[1].prompt_id);
     });
 
     it('produces the same UUID v5 for the same topic+prompt across runs', async () => {
       const s3Config = buildS3Config({
-        topics: {
-          'topic-1': {
-            name: 'Topic 1',
-            prompts: [{ prompt: 'Stable prompt', regions: ['us'] }],
-          },
-        },
+        topics: { 'topic-1': { name: 'Topic 1', prompts: [{ prompt: 'Stable prompt', regions: ['us'] }] } },
       });
       readConfigStub.resolves({ config: s3Config });
-      const getRows = setupBasicMocks();
+      const captured = setupFullMocks();
 
-      await handler({ siteId: SITE_ID }, context);
-      const firstRunId = getRows()[0].prompt_id;
+      await handler({ siteId: SITE_ID, dryRun: false }, context);
+      const firstRunId = captured.prompts[0].prompt_id;
 
-      await handler({ siteId: SITE_ID }, context);
-      const secondRunId = getRows()[0].prompt_id;
+      await handler({ siteId: SITE_ID, dryRun: false }, context);
+      const secondRunId = captured.prompts[0].prompt_id;
 
       expect(firstRunId).to.equal(secondRunId);
     });
@@ -1047,23 +629,19 @@ describe('LLMO Config DB Sync Handler', () => {
         topics: {
           'topic-1': {
             name: 'Topic 1',
-            prompts: [
-              { regions: ['us'] },
-              { prompt: 'Has text', regions: ['us'] },
-            ],
+            prompts: [{ regions: ['us'] }, { prompt: 'Has text', regions: ['us'] }],
           },
         },
       });
       readConfigStub.resolves({ config: s3Config });
-      const getRows = setupBasicMocks();
+      const captured = setupFullMocks();
 
-      const response = await handler({ siteId: SITE_ID }, context);
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
       const body = await response.json();
 
-      const rows = getRows();
-      expect(rows).to.have.length(1);
-      expect(rows[0].text).to.equal('Has text');
-      expect(body.prompts).to.equal(1);
+      expect(captured.prompts).to.have.length(1);
+      expect(captured.prompts[0].text).to.equal('Has text');
+      expect(body.prompts.inserted).to.equal(1);
       expect(context.log.error).to.have.been.calledWith(
         'Skipping prompt without text in topic "topic-1" at index 0',
       );
@@ -1071,26 +649,24 @@ describe('LLMO Config DB Sync Handler', () => {
 
     it('uses existing prompt_id when matching by text and topic', async () => {
       const s3Config = buildS3Config({
-        topics: {
-          'topic-1': {
-            name: 'Topic 1',
-            prompts: [{ prompt: 'Existing prompt', regions: ['us'] }],
-          },
-        },
+        topics: { 'topic-1': { name: 'Topic 1', prompts: [{ prompt: 'Existing prompt', regions: ['us'] }] } },
       });
       readConfigStub.resolves({ config: s3Config });
-      const getRows = setupBasicMocks({
-        existingPrompts: [
-          { prompt_id: 'migration-abc123', text: 'Existing prompt', topic_id: TOPIC_UUID },
-        ],
-        topicLookup: [{ id: TOPIC_UUID, topic_id: 'topic-1' }],
+      const captured = setupFullMocks({
+        existingTopics: [{ id: TOPIC_UUID, topic_id: 'topic-1', name: 'Topic 1', description: null, status: 'active', created_by: null, updated_by: null }],
+        existingPrompts: [{
+          prompt_id: 'migration-abc123', brand_id: BRAND_UUID, text: 'Existing prompt', topic_id: TOPIC_UUID,
+          name: 'Existing prompt', regions: ['US'], category_id: null,
+          status: 'active', origin: 'human', source: 'config',
+          created_by: null, updated_by: null,
+        }],
       });
 
-      await handler({ siteId: SITE_ID }, context);
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
+      const body = await response.json();
 
-      const rows = getRows();
-      expect(rows).to.have.length(1);
-      expect(rows[0].prompt_id).to.equal('migration-abc123');
+      expect(response.status).to.equal(200);
+      expect(body.prompts.unchanged).to.equal(1);
       expect(context.log.info).to.have.been.calledWith(
         sinon.match('Matched existing prompt_id "migration-abc123"'),
       );
@@ -1098,112 +674,123 @@ describe('LLMO Config DB Sync Handler', () => {
 
     it('falls back to UUID v5 when no existing prompt matches', async () => {
       const s3Config = buildS3Config({
+        topics: { 'topic-1': { name: 'Topic 1', prompts: [{ prompt: 'Brand new', regions: ['us'] }] } },
+      });
+      readConfigStub.resolves({ config: s3Config });
+      const captured = setupFullMocks();
+
+      await handler({ siteId: SITE_ID, dryRun: false }, context);
+
+      expect(captured.prompts).to.have.length(1);
+      expect(captured.prompts[0].prompt_id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    });
+
+    it('only upserts prompts with changed fields', async () => {
+      const s3Config = buildS3Config({
         topics: {
           'topic-1': {
             name: 'Topic 1',
-            prompts: [{ prompt: 'Brand new prompt', regions: ['us'] }],
+            prompts: [
+              { prompt: 'Unchanged', regions: ['us'], origin: 'human', source: 'config' },
+              { prompt: 'Changed regions', regions: ['us', 'de'], origin: 'human', source: 'config' },
+            ],
           },
         },
       });
       readConfigStub.resolves({ config: s3Config });
-      const getRows = setupBasicMocks({ existingPrompts: [] });
+      const captured = setupFullMocks({
+        existingTopics: [{ id: TOPIC_UUID, topic_id: 'topic-1', name: 'Topic 1', description: null, status: 'active', created_by: null, updated_by: null }],
+        existingPrompts: [
+          {
+            prompt_id: 'pid-1', brand_id: BRAND_UUID, text: 'Unchanged', topic_id: TOPIC_UUID,
+            name: 'Unchanged', regions: ['US'], category_id: null,
+            status: 'active', origin: 'human', source: 'config',
+            created_by: null, updated_by: null,
+          },
+          {
+            prompt_id: 'pid-2', brand_id: BRAND_UUID, text: 'Changed regions', topic_id: TOPIC_UUID,
+            name: 'Changed regions', regions: ['US'], category_id: null,
+            status: 'active', origin: 'human', source: 'config',
+            created_by: null, updated_by: null,
+          },
+        ],
+      });
 
-      await handler({ siteId: SITE_ID }, context);
+      const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
+      const body = await response.json();
 
-      const rows = getRows();
-      expect(rows).to.have.length(1);
-      expect(rows[0].prompt_id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+      expect(response.status).to.equal(200);
+      expect(body.prompts).to.deep.equal({ inserted: 0, updated: 1, unchanged: 1 });
+      expect(captured.prompts).to.have.length(1);
+      expect(captured.prompts[0].prompt_id).to.equal('pid-2');
+      expect(captured.prompts[0].regions).to.deep.equal(['US', 'DE']);
     });
   });
 
   describe('dry-run mode', () => {
-    let upsertCalls;
-
-    beforeEach(() => {
-      upsertCalls = [];
-
-      context.dataAccess.Site.findById.resolves({
-        getOrganizationId: () => ORG_ID,
-        getConfig: () => ({ getLlmoBrand: () => 'Adobe' }),
-      });
-
-      postgrestClient.from.resetBehavior();
-      postgrestClient.from.callsFake((table) => {
-        if (table === 'brands') {
-          return {
-            select: sandbox.stub().returnsThis(),
-            eq: sandbox.stub().returnsThis(),
-            single: sandbox.stub().resolves({ data: { id: BRAND_UUID }, error: null }),
-          };
-        }
-        const chain = {
-          upsert: sandbox.stub().callsFake((rows, opts) => {
-            upsertCalls.push({ table, rows, opts });
-            return chain;
-          }),
-          select: sandbox.stub().callsFake(() => ({
-            eq: sandbox.stub().resolves({
-              data: table === 'categories'
-                ? [{ id: CAT_UUID, category_id: 'cat-1' }]
-                : table === 'topics'
-                  ? [{ id: TOPIC_UUID, topic_id: 'topic-1' }]
-                  : [],
-              error: null,
-            }),
-          })),
-          eq: sandbox.stub().callsFake(() => chain),
-        };
-        return chain;
-      });
-    });
-
     it('does not upsert any data when dryRun is true', async () => {
       const s3Config = buildS3Config({
         categories: { 'cat-1': { name: 'Category 1', origin: 'human' } },
         topics: {
-          'topic-1': {
-            name: 'Topic 1',
-            category: 'cat-1',
-            prompts: [{ prompt: 'What is AI?', regions: ['us'] }],
-          },
+          'topic-1': { name: 'Topic 1', category: 'cat-1', prompts: [{ prompt: 'Q?', regions: ['us'] }] },
         },
       });
       readConfigStub.resolves({ config: s3Config });
+      const captured = setupFullMocks();
 
       const response = await handler({ siteId: SITE_ID, dryRun: true }, context);
       const body = await response.json();
 
       expect(response.status).to.equal(200);
       expect(body.dryRun).to.be.true;
-      expect(body.categories).to.equal(1);
-      expect(body.topics).to.equal(1);
-      expect(body.prompts).to.equal(1);
-      expect(upsertCalls).to.have.length(0);
+      expect(body.categories.inserted).to.equal(1);
+      expect(body.topics.inserted).to.equal(1);
+      expect(body.prompts.inserted).to.equal(1);
+      expect(captured.categories).to.be.null;
+      expect(captured.topics).to.be.null;
+      expect(captured.prompts).to.be.null;
     });
 
-    it('logs sample rows for each entity type in dry-run', async () => {
+    it('logs insert/update counts and insert sample for each entity type in dry-run', async () => {
       const s3Config = buildS3Config({
         categories: { 'cat-1': { name: 'Cat 1' } },
         topics: {
-          'topic-1': {
-            name: 'Topic 1',
-            category: 'cat-1',
-            prompts: [{ prompt: 'Q?', regions: ['us'] }],
-          },
+          'topic-1': { name: 'Topic 1', category: 'cat-1', prompts: [{ prompt: 'Q?', regions: ['us'] }] },
         },
       });
       readConfigStub.resolves({ config: s3Config });
+      setupFullMocks();
 
       await handler({ siteId: SITE_ID, dryRun: true }, context);
 
       const infoMessages = context.log.info.args.map((args) => args[0]);
-      expect(infoMessages.some((m) => m.includes('[DRY RUN] categories sample'))).to.be.true;
-      expect(infoMessages.some((m) => m.includes('[DRY RUN] topics sample'))).to.be.true;
-      expect(infoMessages.some((m) => m.includes('[DRY RUN] prompts sample'))).to.be.true;
+      expect(infoMessages.some((m) => m.includes('[DRY RUN] categories: 1 to insert, 0 to update'))).to.be.true;
+      expect(infoMessages.some((m) => m.includes('[DRY RUN] topics: 1 to insert, 0 to update'))).to.be.true;
+      expect(infoMessages.some((m) => m.includes('[DRY RUN] prompts: 1 to insert, 0 to update'))).to.be.true;
+      expect(infoMessages.some((m) => m.includes('[DRY RUN] categories insert sample:'))).to.be.true;
+    });
+
+    it('logs changed field names for updated rows in dry-run', async () => {
+      const s3Config = buildS3Config({
+        categories: { 'cat-1': { name: 'Renamed Cat' } },
+      });
+      readConfigStub.resolves({ config: s3Config });
+      setupFullMocks({
+        existingCats: [{
+          id: CAT_UUID, category_id: 'cat-1', name: 'Old Name', origin: 'human', status: 'active', created_by: null, updated_by: null,
+        }],
+      });
+
+      await handler({ siteId: SITE_ID, dryRun: true }, context);
+
+      const infoMessages = context.log.info.args.map((args) => args[0]);
+      expect(infoMessages.some((m) => m.includes('[DRY RUN] categories: 0 to insert, 1 to update'))).to.be.true;
+      expect(infoMessages.some((m) => m.includes('[DRY RUN] categories update (changed: name)'))).to.be.true;
     });
 
     it('resolves brand ID in dry-run', async () => {
       readConfigStub.resolves({ config: buildS3Config() });
+      setupFullMocks();
 
       const response = await handler({ siteId: SITE_ID, dryRun: true }, context);
       const body = await response.json();
@@ -1211,45 +798,15 @@ describe('LLMO Config DB Sync Handler', () => {
       expect(response.status).to.equal(200);
       expect(body.dryRun).to.be.true;
       const infoMessages = context.log.info.args.map((args) => args[0]);
-      expect(infoMessages.some((m) => m.includes(`Resolved brand ID: ${BRAND_UUID}`))).to.be.true;
-    });
-
-    it('returns 500 in dry-run when brand does not exist', async () => {
-      readConfigStub.resolves({ config: buildS3Config() });
-
-      postgrestClient.from.resetBehavior();
-      postgrestClient.from.callsFake((table) => {
-        if (table === 'brands') {
-          return {
-            select: sandbox.stub().returnsThis(),
-            eq: sandbox.stub().returnsThis(),
-            single: sandbox.stub().resolves({ data: null, error: null }),
-          };
-        }
-        return {
-          upsert: sandbox.stub().returns({ error: null }),
-          select: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({ data: [], error: null }),
-          }),
-          eq: sandbox.stub().returnsThis(),
-        };
-      });
-
-      const response = await handler({ siteId: SITE_ID, dryRun: true }, context);
-      expect(response.status).to.equal(500);
+      expect(infoMessages.some((m) => m.includes(`Using fixed brand ID: ${BRAND_UUID}`))).to.be.true;
     });
 
     it('returns stats without dryRun flag when dryRun is false', async () => {
       const s3Config = buildS3Config({
-        categories: { 'cat-1': { name: 'Cat 1' } },
-        topics: {
-          'topic-1': {
-            name: 'Topic 1',
-            prompts: [{ prompt: 'Q?', regions: ['us'] }],
-          },
-        },
+        topics: { 'topic-1': { name: 'Topic 1', prompts: [{ prompt: 'Q?', regions: ['us'] }] } },
       });
       readConfigStub.resolves({ config: s3Config });
+      setupFullMocks();
 
       const response = await handler({ siteId: SITE_ID, dryRun: false }, context);
       const body = await response.json();
