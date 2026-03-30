@@ -1,3 +1,10 @@
+# [1.374.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.373.5...v1.374.0) (2026-03-30)
+
+
+### Features
+
+* **AGENTCOM-476:** add storeViewUrl to enrichment payload ([#2226](https://github.com/adobe/spacecat-audit-worker/issues/2226)) ([96c35ae](https://github.com/adobe/spacecat-audit-worker/commit/96c35ae079cc1f6f0a87dc4aeb83ce4bc03837db))
+
 ## [1.373.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.373.4...v1.373.5) (2026-03-30)
 
 
