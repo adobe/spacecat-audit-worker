@@ -370,11 +370,6 @@ export async function processAltTextWithMystique(context) {
     );
 
     log.debug(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);
-
-    // Clear auditedAt so it remains null until all Mystique responses are received.
-    // This allows the UI to detect "audit in progress" (auditedAt is null) vs "completed".
-    audit.setAuditedAt(null);
-    await audit.save();
   } catch (error) {
     log.error(`[${AUDIT_TYPE}]: Failed to process with Mystique: ${error.message}`);
     throw error;

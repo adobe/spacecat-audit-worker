@@ -64,8 +64,6 @@ describe('Image Alt Text Handler', () => {
         },
         audit: {
           getId: () => 'audit-id',
-          setAuditedAt: sandbox.stub(),
-          save: sandbox.stub().resolves(),
         },
         env: {
           S3_SCRAPER_BUCKET_NAME: bucketName,
@@ -727,14 +725,6 @@ describe('Image Alt Text Handler', () => {
             getId: () => 'site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: {
-            getId: () => 'audit-id',
-            setAuditedAt: sandbox.stub(),
-            save: sandbox.stub().resolves(),
-          },
-          env: {
-            S3_SCRAPER_BUCKET_NAME: bucketName,
-          },
           dataAccess: {
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
@@ -835,8 +825,6 @@ describe('Image Alt Text Handler', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditedAt: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: {
             Opportunity: {
@@ -974,8 +962,6 @@ describe('Image Alt Text Handler', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditedAt: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: {
             Opportunity: {
@@ -1204,14 +1190,6 @@ describe('Image Alt Text Handler', () => {
           site: {
             getId: () => 'site-id',
             getBaseURL: () => 'https://example.com',
-          },
-          audit: {
-            getId: () => 'audit-id',
-            setAuditedAt: sandbox.stub(),
-            save: sandbox.stub().resolves(),
-          },
-          env: {
-            S3_SCRAPER_BUCKET_NAME: bucketName,
           },
           dataAccess: {
             Opportunity: {
