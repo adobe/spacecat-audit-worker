@@ -203,6 +203,35 @@ describe('DRS Prompt Generation Handler', () => {
     expect(sentMessage.auditContext).to.not.have.property('drsParquetKey');
   });
 
+  it('skips v1 config write for v2 onboarding but still triggers llmo-customer-analysis', async () => {
+    const message = {
+      siteId: 'site-456',
+      auditContext: {
+        drsEventType: 'JOB_COMPLETED',
+        drsJobId: 'job-4',
+        resultLocation: PRESIGNED_URL,
+        source: 'onboarding',
+        onboarding_mode: 'v2',
+      },
+    };
+
+    const result = await drsPromptGenerationHandler(message, context);
+
+    expect(result.status).to.equal(200);
+    expect(fetchStub).to.not.have.been.called;
+    expect(mockWriteDrsPromptsToLlmoConfig).to.not.have.been.called;
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+
+    const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+    expect(sentMessage.type).to.equal('llmo-customer-analysis');
+    expect(sentMessage.auditContext).to.include({
+      drsJobId: 'job-4',
+      resultLocation: PRESIGNED_URL,
+      onboardingMode: 'v2',
+    });
+    expect(sentMessage.auditContext).to.not.have.property('configVersion');
+  });
+
   it('skips Slack alert when channel env var is not set', async () => {
     delete context.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID;
 

@@ -28,7 +28,8 @@ import {
   isUnscrapeable,
   urlsMatch,
 } from '../utils/url-utils.js';
-import BrightDataClient, { buildLocaleSearchUrl, extractLocaleFromUrl, localesMatch } from '../support/bright-data-client.js';
+import BrightDataClient, { buildLocaleSearchUrl } from '../support/bright-data-client.js';
+import { pickUrlsFromSerpResults } from '../support/bright-data-serp-urls.js';
 import { sleep } from '../support/utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -404,19 +405,10 @@ export const generateSuggestionData = async (context) => {
         return;
       }
 
-      // Post-filter: pick the first result whose locale matches the broken link
-      const brokenLinkLocale = extractLocaleFromUrl(brokenLink.urlTo);
-      const best = results.find((r) => {
-        if (!r?.link) return false;
-        const suggestedLocale = extractLocaleFromUrl(r.link);
-        return localesMatch(brokenLinkLocale, suggestedLocale);
-      }) || results[0]; // fall back to first result if no locale match
-
-      if (!best?.link) {
+      let urlsSuggested = pickUrlsFromSerpResults(results, brokenLink.urlTo);
+      if (urlsSuggested.length === 0) {
         return;
       }
-
-      let urlsSuggested = [best.link];
       if (validateBrightDataUrls) {
         const validated = await filterBrokenSuggestedUrls(urlsSuggested, site.getBaseURL());
         if (validated.length === 0) {
@@ -434,7 +426,7 @@ export const generateSuggestionData = async (context) => {
       suggestion.setData({
         ...suggestion.getData(),
         urlsSuggested,
-        aiRationale: `The suggested URL is chosen based on top search results for closely matching keywords from the broken URL. Keywords used: "${keywords}".`,
+        aiRationale: `Suggested URLs are chosen from top search results for closely matching keywords from the broken URL. Keywords used: "${keywords}".`,
       });
 
       await suggestion.save();
