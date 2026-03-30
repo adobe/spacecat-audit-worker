@@ -173,7 +173,7 @@ export async function sendToMystique(context) {
     log.warn('[SUMMARIZATION] No submitted URLs found in audit context, skipping Mystique message');
     throw new Error('No submitted URLs found');
   }
-  const urlsToCheck = submittedUrls.slice(0, MAX_PAGES_TO_MYSTIQUE);
+  const urlsToCheck = submittedUrls;
 
   // Verify scrape availability before sending to Mystique
   if (!scrapeResultPaths || scrapeResultPaths.size === 0) {
@@ -202,7 +202,7 @@ export async function sendToMystique(context) {
   const staticScrapedUrls = filterOutDynamicUrls(scrapedUrls);
 
   // Pre-check: exclude pages that already have both summary and key points (LLMO-3493)
-  let urlsToSend = staticScrapedUrls.slice(0, MAX_PAGES_TO_MYSTIQUE);
+  let urlsToSend = staticScrapedUrls;
   if (s3Client && env?.S3_SCRAPER_BUCKET_NAME) {
     const existingContent = await detectExistingContent(
       s3Client,
@@ -216,6 +216,7 @@ export async function sendToMystique(context) {
       return !hasBoth;
     });
   }
+  urlsToSend = urlsToSend.slice(0, MAX_PAGES_TO_MYSTIQUE);
 
   const topPagesPayload = urlsToSend.map((url) => ({
     page_url: url,
