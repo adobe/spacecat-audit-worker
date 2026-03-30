@@ -3401,6 +3401,53 @@ describe('Prerender Audit', () => {
   });
 
   describe('Additional branch coverage (mapping, catches)', () => {
+    it('should return the raw sheet path when URL construction from sheet row throws', async () => {
+      const mergeAndGetUniqueHtmlUrlsStub = sinon.stub().callsFake((...urlGroups) => ({
+        urls: urlGroups.flat(),
+        filteredCount: 0,
+      }));
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/prerender/utils/shared.js': {
+          loadLatestAgenticSheet: async () => ({
+            weekId: 'w45-2025',
+            baseUrl: 'https://example.com',
+            rows: [{ url: 'http://[invalid', number_of_hits: 9 }],
+          }),
+          buildSheetHitsMap: (rows) => new Map(rows.map((r) => [r.url, r.number_of_hits])),
+        },
+        '../../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sinon.stub().resolves(false),
+          mergeAndGetUniqueHtmlUrls: mergeAndGetUniqueHtmlUrlsStub,
+        },
+      });
+
+      const ctx = {
+        site: {
+          getId: () => 'site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        },
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
+          PageCitability: { allByIndexKeys: sinon.stub().resolves([]) },
+        },
+        log: {
+          info: sinon.stub(),
+          warn: sinon.stub(),
+          debug: sinon.stub(),
+        },
+      };
+
+      const res = await mockHandler.submitForScraping(ctx);
+
+      expect(res.urls).to.deep.equal([{ url: 'http://[invalid' }]);
+      expect(mergeAndGetUniqueHtmlUrlsStub).to.have.been.calledOnce;
+    });
+
     it('should use catch-path sheet fallback and hit toPath catch in fallback', async () => {
       const html = '<html><body><p>x</p></body></html>';
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
@@ -3770,6 +3817,83 @@ describe('Prerender Audit', () => {
       const res = await mockHandler.submitForScraping(ctx);
       expect(res).to.be.an('object');
       expect(res.urls).to.be.an('array');
+    });
+
+    it('should warn when sheet-based agentic URL loading throws and continue with Athena fallback', async () => {
+      const warn = sinon.stub();
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/prerender/utils/shared.js': {
+          loadLatestAgenticSheet: async () => {
+            throw new Error('Sheet load failed loudly');
+          },
+          buildSheetHitsMap: sinon.stub(),
+        },
+        '../../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+        },
+      });
+
+      const ctx = {
+        site: {
+          getId: () => 'site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        },
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
+          PageCitability: { allByIndexKeys: sinon.stub().resolves([]) },
+        },
+        log: {
+          info: sinon.stub(),
+          debug: sinon.stub(),
+          warn,
+        },
+      };
+
+      const res = await mockHandler.submitForScraping(ctx);
+
+      expect(res.urls).to.deep.equal([{ url: 'https://example.com' }]);
+      expect(warn).to.have.been.calledWith(
+        sinon.match(/Sheet-based agentic URL fetch failed: Sheet load failed loudly/),
+      );
+    });
+
+    it('should log non-Error sheet failures using the fallback error value', async () => {
+      const warn = sinon.stub();
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/prerender/utils/shared.js': {
+          loadLatestAgenticSheet: async () => {
+            throw 'sheet-failure-without-message';
+          },
+          buildSheetHitsMap: sinon.stub(),
+        },
+        '../../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+        },
+      });
+
+      const ctx = {
+        site: {
+          getId: () => 'site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        },
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
+          PageCitability: { allByIndexKeys: sinon.stub().resolves([]) },
+        },
+        log: {
+          info: sinon.stub(),
+          debug: sinon.stub(),
+          warn,
+        },
+      };
+
+      await mockHandler.submitForScraping(ctx);
+
+      expect(warn).to.have.been.calledWith(
+        sinon.match(/Sheet-based agentic URL fetch failed: sheet-failure-without-message/),
+      );
     });
 
     it('should log detailed fallback message when building URL list from fallbacks', async () => {
