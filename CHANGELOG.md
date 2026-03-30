@@ -1,3 +1,10 @@
+## [1.373.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.373.1...v1.373.2) (2026-03-30)
+
+
+### Bug Fixes
+
+* revert audit handler logic for Wikipedia analysis to what was before reddit implementation ([#2224](https://github.com/adobe/spacecat-audit-worker/issues/2224)) ([11aecae](https://github.com/adobe/spacecat-audit-worker/commit/11aecaee4d73d4e6ebdcfc6b5309ff41ebf47608))
+
 ## [1.373.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.373.0...v1.373.1) (2026-03-30)
 
 
