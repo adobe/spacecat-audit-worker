@@ -19,7 +19,6 @@ import { describe } from 'mocha';
 
 import {
   paidKeywordOptimizerRunner,
-  sendToMystique,
   triggerPaidPagesImportStep,
   runPaidKeywordAnalysisStep,
   importTrafficAnalysisWeekStep0,
@@ -1087,11 +1086,11 @@ describe('Paid Keyword Optimizer Audit', () => {
       expect(sentMsg.url).to.equal('https://example.com/page-high-bounce');
     });
 
-    it('should cap pages to AD_INTENT_MAX_PAGES when set', async () => {
-      // Create 10 paid pages
+    it('should cap pages to AD_INTENT_MAX_PAGES constant (10)', async () => {
+      // Create 15 paid pages — should be capped to 10
       const athenaRows = [];
       const ahrefsPages = [];
-      for (let i = 0; i < 10; i += 1) {
+      for (let i = 0; i < 15; i += 1) {
         athenaRows.push({
           path: `/page${i}`,
           trf_type: 'paid',
@@ -1111,38 +1110,6 @@ describe('Paid Keyword Optimizer Audit', () => {
       }
       context.athenaClient.query.resolves(athenaRows);
       stepContext.s3Client = createMockS3Client(sandbox, ahrefsPages);
-      context.env.AD_INTENT_MAX_PAGES = '5';
-
-      await runPaidKeywordAnalysisStep(stepContext);
-
-      expect(context.sqs.sendMessage.callCount).to.equal(5);
-    });
-
-    it('should send all pages when AD_INTENT_MAX_PAGES is 0 (unlimited)', async () => {
-      // Create 10 paid pages
-      const athenaRows = [];
-      const ahrefsPages = [];
-      for (let i = 0; i < 10; i += 1) {
-        athenaRows.push({
-          path: `/page${i}`,
-          trf_type: 'paid',
-          trf_channel: 'search',
-          pageviews: '1000',
-          bounce_rate: '0.7',
-          traffic_loss: '700',
-          engaged_scroll_rate: '0.1',
-        });
-        ahrefsPages.push({
-          url: `https://example.com/page${i}`,
-          topKeyword: `kw${i}`,
-          cpc: 2.0,
-          sum_traffic: 1000,
-          topKeywordBestPositionTitle: `Title ${i}`,
-        });
-      }
-      context.athenaClient.query.resolves(athenaRows);
-      stepContext.s3Client = createMockS3Client(sandbox, ahrefsPages);
-      context.env.AD_INTENT_MAX_PAGES = '0';
 
       await runPaidKeywordAnalysisStep(stepContext);
 
@@ -1588,225 +1555,4 @@ describe('Paid Keyword Optimizer Audit', () => {
     });
   });
 
-  describe('sendToMystique (legacy)', () => {
-    it('should send one message per qualifying page above bounce rate threshold', async () => {
-      const auditData = {
-        id: 'test-audit-id',
-        auditResult: {
-          predominantlyPaidPages: [
-            {
-              path: '/page1',
-              url: 'https://example.com/page1',
-              bounceRate: 0.6, // Above 0.5 threshold
-              pageViews: 1000,
-              trafficLoss: 500,
-            },
-            {
-              path: '/page2',
-              url: 'https://example.com/page2',
-              bounceRate: 0.5, // At 0.5 threshold
-              pageViews: 800,
-              trafficLoss: 320,
-            },
-          ],
-        },
-      };
-
-      await sendToMystique(auditUrl, auditData, context, site);
-
-      // Should send 2 separate messages (one per page)
-      expect(context.sqs.sendMessage.callCount).to.equal(2);
-
-      const message1 = context.sqs.sendMessage.getCall(0).args[1];
-      const message2 = context.sqs.sendMessage.getCall(1).args[1];
-
-      expect(message1.type).to.equal('guidance:paid-ad-intent-gap');
-      expect(message1.url).to.equal('https://example.com/page1');
-      expect(message1.data.bounceRate).to.equal(0.6);
-      expect(message1.data.pageViews).to.equal(1000);
-
-      expect(message2.type).to.equal('guidance:paid-ad-intent-gap');
-      expect(message2.url).to.equal('https://example.com/page2');
-      expect(message2.data.bounceRate).to.equal(0.5);
-      expect(message2.data.pageViews).to.equal(800);
-    });
-
-    it('should filter pages by bounce rate threshold (0.5)', async () => {
-      const auditData = {
-        id: 'test-audit-id',
-        auditResult: {
-          predominantlyPaidPages: [
-            {
-              path: '/high-bounce',
-              url: 'https://example.com/high-bounce',
-              bounceRate: 0.6, // Above 0.5 threshold
-              pageViews: 1000,
-              trafficLoss: 500,
-            },
-            {
-              path: '/low-bounce',
-              url: 'https://example.com/low-bounce',
-              bounceRate: 0.3, // Below 0.5 threshold
-              pageViews: 800,
-              trafficLoss: 160,
-            },
-          ],
-        },
-      };
-
-      await sendToMystique(auditUrl, auditData, context, site);
-
-      // Only 1 message should be sent (for high-bounce page)
-      expect(context.sqs.sendMessage.callCount).to.equal(1);
-
-      const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
-      expect(sentMessage.url).to.equal('https://example.com/high-bounce');
-      expect(sentMessage.data.bounceRate).to.equal(0.6);
-    });
-
-    it('should not send message when no pages exceed bounce rate threshold', async () => {
-      const auditData = {
-        id: 'test-audit-id',
-        auditResult: {
-          predominantlyPaidPages: [
-            {
-              path: '/low-bounce',
-              url: 'https://example.com/low-bounce',
-              bounceRate: 0.3, // Below 0.5 threshold
-              pageViews: 800,
-              trafficLoss: 160,
-            },
-          ],
-        },
-      };
-
-      await sendToMystique(auditUrl, auditData, context, site);
-
-      expect(context.sqs.sendMessage.called).to.be.false;
-      expect(logStub.info).to.have.been.calledWithMatch(/No pages with bounce rate/);
-    });
-
-    it('should not send message when predominantlyPaidPages is empty', async () => {
-      const auditData = {
-        id: 'test-audit-id',
-        auditResult: {
-          predominantlyPaidPages: [],
-        },
-      };
-
-      await sendToMystique(auditUrl, auditData, context, site);
-
-      expect(context.sqs.sendMessage.called).to.be.false;
-    });
-
-    it('should not send message when predominantlyPaidPages is undefined', async () => {
-      const auditData = {
-        id: 'test-audit-id',
-        auditResult: {},
-      };
-
-      await sendToMystique(auditUrl, auditData, context, site);
-
-      expect(context.sqs.sendMessage.called).to.be.false;
-    });
-
-    it('should include time field in mystique message', async () => {
-      const auditData = {
-        id: 'test-audit-id',
-        auditResult: {
-          predominantlyPaidPages: [
-            {
-              path: '/page1',
-              url: 'https://example.com/page1',
-              bounceRate: 0.6,
-              pageViews: 1000,
-              trafficLoss: 500,
-            },
-          ],
-        },
-      };
-
-      await sendToMystique(auditUrl, auditData, context, site);
-
-      const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
-      expect(sentMessage).to.have.property('time');
-      expect(sentMessage.time).to.be.a('string');
-    });
-
-    it('should include correct message structure', async () => {
-      const auditData = {
-        id: 'test-audit-id',
-        auditResult: {
-          predominantlyPaidPages: [
-            {
-              path: '/page1',
-              url: 'https://example.com/page1',
-              bounceRate: 0.6,
-              pageViews: 1000,
-              trafficLoss: 500,
-            },
-          ],
-        },
-      };
-
-      await sendToMystique(auditUrl, auditData, context, site);
-
-      const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
-      expect(sentMessage.type).to.equal('guidance:paid-ad-intent-gap');
-      expect(sentMessage.observation).to.equal('Low-performing paid search pages detected with high bounce rates');
-      expect(sentMessage.siteId).to.equal('test-site-id');
-      expect(sentMessage.url).to.equal('https://example.com/page1');
-      expect(sentMessage.auditId).to.equal('test-audit-id');
-      expect(sentMessage.deliveryType).to.equal('aem-edge');
-      expect(sentMessage.data).to.have.property('bounceRate', 0.6);
-      expect(sentMessage.data).to.have.property('pageViews', 1000);
-      expect(sentMessage.data).to.have.property('trafficLoss', 500);
-    });
-
-    it('should log info message when sending to mystique', async () => {
-      const auditData = {
-        id: 'test-audit-id',
-        auditResult: {
-          predominantlyPaidPages: [
-            {
-              path: '/page1',
-              url: 'https://example.com/page1',
-              bounceRate: 0.6,
-              pageViews: 1000,
-              trafficLoss: 500,
-            },
-          ],
-        },
-      };
-
-      await sendToMystique(auditUrl, auditData, context, site);
-
-      expect(logStub.info).to.have.been.calledWithMatch(/Sending message for/);
-      expect(logStub.info).to.have.been.calledWithMatch(/Completed mystique evaluation step/);
-    });
-
-    it('should handle pages with bounce rate exactly at threshold (0.5)', async () => {
-      const auditData = {
-        id: 'test-audit-id',
-        auditResult: {
-          predominantlyPaidPages: [
-            {
-              path: '/page1',
-              url: 'https://example.com/page1',
-              bounceRate: 0.5, // Exactly at threshold
-              pageViews: 1000,
-              trafficLoss: 300,
-            },
-          ],
-        },
-      };
-
-      await sendToMystique(auditUrl, auditData, context, site);
-
-      expect(context.sqs.sendMessage.callCount).to.equal(1);
-      const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
-      expect(sentMessage.url).to.equal('https://example.com/page1');
-      expect(sentMessage.data.bounceRate).to.equal(0.5);
-    });
-  });
 });

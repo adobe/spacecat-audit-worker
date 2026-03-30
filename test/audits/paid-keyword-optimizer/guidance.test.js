@@ -226,7 +226,7 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
       expect(Suggestion.removeByIds).to.not.have.been.called;
     });
 
-    it('should remove newest excess audit_required opportunities and their suggestions', async () => {
+    it('should remove oldest excess audit_required opportunities and their suggestions', async () => {
       const opptys = [];
       for (let i = 0; i < 6; i += 1) {
         opptys.push(makeOppty({
@@ -239,12 +239,12 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
 
       await reconcileOpportunities(opptys, context.dataAccess, logStub, 'site');
 
-      // Should remove o4 and o5 (newest 2 excess beyond MAX of 4)
+      // Should remove o0 and o1 (oldest 2 excess beyond MAX of 4)
       expect(Opportunity.removeByIds).to.have.been.calledOnce;
       const removedIds = Opportunity.removeByIds.getCall(0).args[0];
       expect(removedIds).to.have.lengthOf(2);
-      expect(removedIds).to.include('o4');
-      expect(removedIds).to.include('o5');
+      expect(removedIds).to.include('o0');
+      expect(removedIds).to.include('o1');
 
       // Should also remove their suggestions
       expect(Suggestion.removeByIds).to.have.been.calledOnce;
@@ -295,11 +295,11 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
 
       await reconcileOpportunities(opptys, context.dataAccess, logStub, 'site');
 
-      // Only ar4 (newest excess) should be removed
+      // Only ar0 (oldest excess) should be removed
       expect(Opportunity.removeByIds).to.have.been.calledOnce;
       const removedIds = Opportunity.removeByIds.getCall(0).args[0];
       expect(removedIds).to.have.lengthOf(1);
-      expect(removedIds).to.include('ar4');
+      expect(removedIds).to.include('ar0');
 
       // None of the modify_heading should be touched
       expect(removedIds).to.not.include('mh0');
@@ -348,10 +348,10 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
 
       await reconcileOpportunities(opptys, context.dataAccess, logStub, 'site');
 
-      // Should remove o4 (newest excess)
+      // Should remove o0 (oldest excess)
       expect(Opportunity.removeByIds).to.have.been.calledOnce;
       expect(Suggestion.removeByIds).to.have.been.calledOnce;
-      expect(Suggestion.removeByIds.getCall(0).args[0]).to.deep.equal(['s4']);
+      expect(Suggestion.removeByIds.getCall(0).args[0]).to.deep.equal(['s0']);
     });
   });
 
