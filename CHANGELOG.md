@@ -1,3 +1,16 @@
+# [1.379.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.378.1...v1.379.0) (2026-03-30)
+
+
+### Bug Fixes
+
+* added factid for urls processed by bright data ([#2243](https://github.com/adobe/spacecat-audit-worker/issues/2243)) ([b449e5a](https://github.com/adobe/spacecat-audit-worker/commit/b449e5a220e193970b379ff879ffbab03bb3deb9))
+
+
+### Features
+
+* Add filtering by the score of suggested links ([#2239](https://github.com/adobe/spacecat-audit-worker/issues/2239)) ([ef48766](https://github.com/adobe/spacecat-audit-worker/commit/ef487669dc42d3e00c05fc50c34ca26fea519026))
+* optional slack message for identify/update-redirects ([#2242](https://github.com/adobe/spacecat-audit-worker/issues/2242)) ([cadc725](https://github.com/adobe/spacecat-audit-worker/commit/cadc7257f340ca2cbe47a52fff821d6b28631fc1))
+
 ## [1.378.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.378.0...v1.378.1) (2026-03-30)
 
 
