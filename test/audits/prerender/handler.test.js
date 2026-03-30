@@ -5907,6 +5907,106 @@ describe('Prerender Audit', () => {
 
       expect(mockS3Client.send).to.have.been.calledOnce; // only the PutObjectCommand
     });
+
+    it('should count missing 403 pages in scrapeForbiddenCount even though they were absent from comparisonResults', async () => {
+      // This is the core bug scenario: 403-forbidden URLs never produce HTML files so they
+      // are absent from scrapeResultPaths → absent from comparisonResults → auditResult has
+      // scrapeForbiddenCount=0. The fix re-derives the count from the full pages list.
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        scrapeJobId: 'scrape-job-123',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          totalUrlsChecked: 1,
+          urlsNeedingPrerender: 0,
+          scrapeForbiddenCount: 0, // incorrectly 0 from comparisonResults
+          scrapeForbidden: false,   // incorrectly false from comparisonResults
+          results: [
+            { url: 'https://example.com/page1', error: false, needsPrerender: false },
+          ],
+        },
+      };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.resolve({
+            ContentType: 'application/json',
+            Body: {
+              transformToString: () => Promise.resolve(
+                JSON.stringify({ error: { statusCode: 403, message: 'Forbidden' } }),
+              ),
+            },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      context.dataAccess = {
+        ScrapeUrl: {
+          allByScrapeJobId: sandbox.stub().resolves([
+            { getUrl: () => 'https://example.com/page1' }, // already in auditResult
+            { getUrl: () => 'https://example.com/forbidden-page' }, // missing — 403
+          ]),
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const putCall = mockS3Client.send.getCalls().find((c) => c.args[0].constructor.name === 'PutObjectCommand');
+      const uploadedData = JSON.parse(putCall.args[0].input.Body);
+
+      expect(uploadedData.scrapeForbiddenCount).to.equal(1);
+      expect(uploadedData.scrapeForbidden).to.equal(false); // 1 out of 2 pages, not all
+      expect(uploadedData.pages).to.have.lengthOf(2);
+    });
+
+    it('should set scrapeForbidden=true when all pages in the full list are 403', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        scrapeJobId: 'scrape-job-123',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          totalUrlsChecked: 0,
+          urlsNeedingPrerender: 0,
+          scrapeForbiddenCount: 0,
+          scrapeForbidden: false,
+          results: [],
+        },
+      };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.resolve({
+            ContentType: 'application/json',
+            Body: {
+              transformToString: () => Promise.resolve(
+                JSON.stringify({ error: { statusCode: 403, message: 'Forbidden' } }),
+              ),
+            },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      context.dataAccess = {
+        ScrapeUrl: {
+          allByScrapeJobId: sandbox.stub().resolves([
+            { getUrl: () => 'https://example.com/page1' },
+            { getUrl: () => 'https://example.com/page2' },
+          ]),
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const putCall = mockS3Client.send.getCalls().find((c) => c.args[0].constructor.name === 'PutObjectCommand');
+      const uploadedData = JSON.parse(putCall.args[0].input.Body);
+
+      expect(uploadedData.scrapeForbiddenCount).to.equal(2);
+      expect(uploadedData.scrapeForbidden).to.equal(true); // all pages are 403
+    });
   });
 
   describe('domain-wide suggestion preservation', () => {

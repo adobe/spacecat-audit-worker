@@ -1061,6 +1061,13 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       }
     }
 
+    // Re-derive scrapeForbidden metrics from the full pages list (including missing pages).
+    // scrapeResultPaths only contains URLs with complete scrape files, so 403-forbidden URLs
+    // that never produced HTML are absent from comparisonResults and would be undercounted if
+    // we relied on auditResult.scrapeForbiddenCount alone.
+    const scrapeForbiddenCount = pages.filter((p) => p.scrapeError?.statusCode === 403).length;
+    const scrapeForbidden = pages.length > 0 && scrapeForbiddenCount === pages.length;
+
     // Extract status information for all pages
     const statusSummary = {
       baseUrl: auditUrl,
@@ -1073,8 +1080,8 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       urlsSubmittedForScraping: auditResult.urlsSubmittedForScraping ?? null,
       urlsScrapedSuccessfully: auditResult.urlsScrapedSuccessfully ?? null,
       scrapingErrorRate: auditResult.scrapingErrorRate ?? null,
-      scrapeForbidden: auditResult.scrapeForbidden || false,
-      scrapeForbiddenCount: auditResult.scrapeForbiddenCount ?? 0,
+      scrapeForbidden,
+      scrapeForbiddenCount,
       lastAuditSuccess: auditResult.lastAuditSuccess !== false,
       pages,
     };
