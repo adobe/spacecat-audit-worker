@@ -10,10 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
+import { v5 as uuidv5 } from 'uuid';
 import { llmoConfig } from '@adobe/spacecat-shared-utils';
 import { ok, internalServerError } from '@adobe/spacecat-shared-http-utils';
 
 const PROMPT_BATCH_SIZE = 3000;
+const PROMPT_ID_NAMESPACE = '1b671a64-40d5-491e-99b0-da01ff1f3341';
 
 // Temporary: hardcoded site IDs for which the S3-to-DB config sync is enabled.
 // TODO: replace with actual site UUIDs per environment.
@@ -37,15 +39,20 @@ function collectPrompts(config, categoryMap, topicMap, brandId, organizationId, 
       const categoryUuid = topic.category ? (categoryMap.get(topic.category) || null) : null;
 
       (topic.prompts || []).forEach((p, index) => {
-        if (!p.id) {
-          log.error(`[llmo-config-db-sync] Skipping prompt without id in topic "${topicId}" at index ${index}`);
-          return;
+        let promptId = p.id;
+        if (!promptId) {
+          if (!p.prompt) {
+            log.error(`Skipping prompt without id or text in topic "${topicId}" at index ${index}`);
+            return;
+          }
+          promptId = uuidv5(`${topicId}:${p.prompt}`, PROMPT_ID_NAMESPACE);
+          log.info(`[llmo-config-db-sync] Generated prompt id ${promptId} for topic "${topicId}" at index ${index}`);
         }
         rows.push({
           organization_id: organizationId,
           brand_id: brandId,
-          prompt_id: p.id,
-          name: (p.prompt || '').slice(0, 255) || p.id,
+          prompt_id: promptId,
+          name: (p.prompt || '').slice(0, 255) || promptId,
           text: p.prompt,
           regions: p.regions || [],
           category_id: categoryUuid,

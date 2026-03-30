@@ -1048,7 +1048,7 @@ describe('LLMO Config DB Sync Handler', () => {
       expect(rows[0].name).to.equal('ign-empty');
     });
 
-    it('skips prompts without an id and logs an error', async () => {
+    it('generates a deterministic UUID v5 for prompts without an id', async () => {
       const s3Config = buildS3Config({
         topics: {
           'topic-1': {
@@ -1068,11 +1068,62 @@ describe('LLMO Config DB Sync Handler', () => {
       const body = await response.json();
 
       const rows = getRows();
+      expect(rows).to.have.length(2);
+      expect(body.prompts).to.equal(2);
+
+      const generated = rows.find((r) => r.prompt_id !== 'p-valid');
+      expect(generated.prompt_id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+      expect(generated.text).to.equal('No ID prompt');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match('Generated prompt id'),
+      );
+    });
+
+    it('produces the same UUID v5 for the same topic+prompt across runs', async () => {
+      const s3Config = buildS3Config({
+        topics: {
+          'topic-1': {
+            name: 'Topic 1',
+            prompts: [{ prompt: 'Stable prompt', regions: ['us'] }],
+          },
+        },
+      });
+      readConfigStub.resolves({ config: s3Config });
+      const getRows = setupBasicMocks();
+
+      await handler({ siteId: SITE_ID }, context);
+      const firstRunId = getRows()[0].prompt_id;
+
+      await handler({ siteId: SITE_ID }, context);
+      const secondRunId = getRows()[0].prompt_id;
+
+      expect(firstRunId).to.equal(secondRunId);
+    });
+
+    it('skips prompts that have neither id nor text', async () => {
+      const s3Config = buildS3Config({
+        topics: {
+          'topic-1': {
+            name: 'Topic 1',
+            prompts: [
+              { regions: ['us'] },
+              { id: 'p-valid', prompt: 'Has ID', regions: ['us'] },
+            ],
+          },
+        },
+      });
+      readConfigStub.resolves({ config: s3Config });
+      const getRows = setupBasicMocks();
+
+      const response = await handler({ siteId: SITE_ID }, context);
+      const body = await response.json();
+
+      const rows = getRows();
       expect(rows).to.have.length(1);
       expect(rows[0].prompt_id).to.equal('p-valid');
       expect(body.prompts).to.equal(1);
       expect(context.log.error).to.have.been.calledWith(
-        '[llmo-config-db-sync] Skipping prompt without id in topic "topic-1" at index 0',
+        'Skipping prompt without id or text in topic "topic-1" at index 0',
       );
     });
 
