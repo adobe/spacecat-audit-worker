@@ -1,3 +1,10 @@
+# [1.377.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.376.1...v1.377.0) (2026-03-30)
+
+
+### Features
+
+* **AGENTCOM-476:** commerce-product-enrichments - improve enrichment payload logging ([#2237](https://github.com/adobe/spacecat-audit-worker/issues/2237)) ([c4d1dc1](https://github.com/adobe/spacecat-audit-worker/commit/c4d1dc1a179d81d245555d842313bdda04d1fd78))
+
 ## [1.376.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.376.0...v1.376.1) (2026-03-30)
 
 
