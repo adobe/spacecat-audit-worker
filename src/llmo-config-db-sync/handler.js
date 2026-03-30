@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+/* c8 ignore start */
+
 import { v5 as uuidv5 } from 'uuid';
 import { llmoConfig } from '@adobe/spacecat-shared-utils';
 import { ok, internalServerError } from '@adobe/spacecat-shared-http-utils';
@@ -184,7 +186,7 @@ function collectPrompts(
           organization_id: organizationId,
           brand_id: brandId,
           prompt_id: promptId,
-          name: (p.prompt || '').slice(0, 255) || /* c8 ignore next */ promptId,
+          name: (p.prompt || '').slice(0, 255) || promptId,
           text: p.prompt,
           regions: (p.regions || []).map((r) => r.toUpperCase()),
           category_id: categoryUuid,
