@@ -2081,11 +2081,10 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
       context.env.BRIGHT_DATA_ZONE = 'test-zone';
 
-      // Mock Bright Data returning a result
       mockBrightDataClient.googleSearchWithFallback.resolves({
-        results: [{ link: 'https://example.com/suggested-page', title: 'Suggested Page' }],
-        query: 'site:example.com broken page',
-        keywords: 'broken page',
+        results: [{ link: 'https://example.com/blog/broken-page-updated', title: 'Updated Page' }],
+        query: 'site:example.com blog broken page',
+        keywords: 'blog broken page',
       });
 
       context.audit.getAuditResult.returns({
@@ -2097,7 +2096,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         getId: () => 'test-suggestion-1',
         getData: () => ({
           urlFrom: 'https://example.com/from',
-          urlTo: 'https://example.com/broken',
+          urlTo: 'https://example.com/blog/broken-page',
         }),
         setData: sinon.stub(),
         save: sinon.stub().resolves(),
@@ -2114,8 +2113,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       expect(mockSuggestion.save).to.have.been.calledOnce;
 
       const setDataCall = mockSuggestion.setData.getCall(0).args[0];
-      expect(setDataCall.urlsSuggested).to.deep.equal(['https://example.com/suggested-page']);
-      expect(setDataCall.aiRationale).to.include('broken page');
+      expect(setDataCall.urlsSuggested).to.deep.equal(['https://example.com/blog/broken-page-updated']);
+      expect(setDataCall.aiRationale).to.include('blog broken page');
     });
 
     it('should add locale to search URL when broken link has locale prefix', async () => {
@@ -2253,19 +2252,14 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       context.env.BRIGHT_DATA_ZONE = 'test-zone';
       context.env.BRIGHT_DATA_VALIDATE_URLS = 'true';
 
-      // Mock Bright Data returning a result
       mockBrightDataClient.googleSearchWithFallback.resolves({
-        results: [{ link: 'https://example.com/valid-page', title: 'Valid Page' }],
-        query: 'site:example.com broken page',
-        keywords: 'broken page',
+        results: [{ link: 'https://example.com/blog/broken-page-updated', title: 'Updated Page' }],
+        query: 'site:example.com blog broken page',
+        keywords: 'blog broken page',
       });
 
-      // Mock the URL validation - nock returns 200 for valid URLs
       nock('https://example.com')
-        .head('/valid-page')
-        .reply(200);
-      nock('https://example.com')
-        .get('/valid-page')
+        .get('/blog/broken-page-updated')
         .reply(200);
 
       context.audit.getAuditResult.returns({
@@ -2277,7 +2271,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         getId: () => 'test-suggestion-1',
         getData: () => ({
           urlFrom: 'https://example.com/from',
-          urlTo: 'https://example.com/broken',
+          urlTo: 'https://example.com/blog/broken-page',
         }),
         setData: sinon.stub(),
         save: sinon.stub().resolves(),
@@ -2290,8 +2284,9 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       await mockedHandler.opportunityAndSuggestionsStep(context);
 
-      // Suggestion should be updated since URL is valid
       expect(mockSuggestion.setData).to.have.been.calledOnce;
+      const savedData = mockSuggestion.setData.getCall(0).args[0];
+      expect(savedData.urlsSuggested).to.deep.equal(['https://example.com/blog/broken-page-updated']);
     });
 
     it('should skip suggestion when validated URL returns 404', async () => {
@@ -2341,11 +2336,10 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
       context.env.BRIGHT_DATA_ZONE = 'test-zone';
 
-      // Mock Bright Data returning a result
       mockBrightDataClient.googleSearchWithFallback.resolves({
-        results: [{ link: 'https://example.com/suggested-page', title: 'Suggested' }],
-        query: 'site:example.com broken page',
-        keywords: 'broken page',
+        results: [{ link: 'https://example.com/blog/broken-page-updated', title: 'Updated' }],
+        query: 'site:example.com blog broken page',
+        keywords: 'blog broken page',
       });
 
       context.audit.getAuditResult.returns({
@@ -2358,12 +2352,11 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
           getId: () => 'test-suggestion-1',
           getData: () => ({
             urlFrom: 'https://example.com/from',
-            urlTo: 'https://example.com/broken',
+            urlTo: 'https://example.com/blog/broken-page',
           }),
         },
       ];
       context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(testSuggestions);
-      // Return null for findById to simulate missing suggestion
       context.dataAccess.Suggestion.findById = sinon.stub().resolves(null);
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
@@ -2476,11 +2469,10 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
       context.env.BRIGHT_DATA_ZONE = 'test-zone';
 
-      // Mock Bright Data returning results for all links
       mockBrightDataClient.googleSearchWithFallback.resolves({
-        results: [{ link: 'https://example.com/suggested', title: 'Suggested' }],
-        query: 'site:example.com keywords',
-        keywords: 'keywords',
+        results: [{ link: 'https://example.com/blog/broken-page-updated', title: 'Updated' }],
+        query: 'site:example.com blog broken page',
+        keywords: 'blog broken page',
       });
 
       context.audit.getAuditResult.returns({
@@ -2492,7 +2484,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         getId: () => 'test-suggestion-1',
         getData: () => ({
           urlFrom: 'https://example.com/from',
-          urlTo: 'https://example.com/broken',
+          urlTo: 'https://example.com/blog/broken-page',
         }),
         setData: sinon.stub(),
         save: sinon.stub().resolves(),
