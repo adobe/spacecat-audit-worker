@@ -43,9 +43,6 @@ export class AsyncJobRunner extends StepAudit {
     const nextStepName = this.getNextStepName(step.name);
 
     const preserved = preservePassthroughKeys(context.auditContext);
-    if (preserved.onDemand !== undefined) {
-      log.info(`Forwarding onDemand=${preserved.onDemand} from step ${step.name} to ${nextStepName || 'final'}`);
-    }
 
     const auditContext = {
       ...preserved,
@@ -55,6 +52,8 @@ export class AsyncJobRunner extends StepAudit {
       urls,
       ...(promiseToken ? { promiseToken } : {}),
     };
+
+    log.info(`Chaining step ${step.name} to ${nextStepName}${preserved.onDemand !== undefined ? ` (onDemand=${preserved.onDemand})` : ''}`);
 
     const queueUrl = destination.getQueueUrl(context);
     const payload = destination.formatPayload(stepResult, auditContext, context);

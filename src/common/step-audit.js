@@ -78,15 +78,14 @@ export class StepAudit extends BaseAudit {
     };
 
     const preserved = preservePassthroughKeys(context.auditContext);
-    if (preserved.onDemand !== undefined) {
-      log.info(`Forwarding onDemand=${preserved.onDemand} from step ${step.name} to ${nextStepName || 'final'}`);
-    }
 
     const auditContext = {
       ...preserved,
       ...(isNonEmptyObject(stepResult.auditContext) ? stepResult.auditContext : {}),
       ...baseAuditContext,
     };
+
+    log.info(`Chaining step ${step.name} to ${nextStepName || 'final'}${preserved.onDemand !== undefined ? ` (onDemand=${preserved.onDemand})` : ''}`);
 
     if (step.destination === AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT) {
       const scrapeClient = ScrapeClient.createFrom(context);

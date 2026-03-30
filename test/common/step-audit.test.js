@@ -280,7 +280,7 @@ describe('Step-based Audit Tests', () => {
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const [, payload] = context.sqs.sendMessage.firstCall.args;
       expect(payload.auditContext).to.include({ onDemand: true });
-      expect(context.log.info).to.have.been.calledWith('Forwarding onDemand=true from step prepare to process');
+      expect(context.log.info).to.have.been.calledWith('Chaining step prepare to process (onDemand=true)');
     });
 
     it('continues execution from specified step', async () => {
@@ -437,6 +437,7 @@ describe('Step-based Audit Tests', () => {
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const [, payload] = context.sqs.sendMessage.firstCall.args;
       expect(payload.auditContext).to.not.have.property('onDemand');
+      expect(context.log.info).to.have.been.calledWith('Chaining step prepare to process');
     });
 
     it('handles SCRAPE_CLIENT destination by creating scrape job', async () => {
