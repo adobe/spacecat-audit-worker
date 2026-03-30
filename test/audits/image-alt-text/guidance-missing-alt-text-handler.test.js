@@ -11,10 +11,15 @@
  */
 
 /* eslint-env mocha */
-import { expect } from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import esmock from 'esmock';
+
+use(sinonChai);
+use(chaiAsPromised);
 
 describe('Missing Alt Text Guidance Handler', () => {
   let sandbox;
@@ -40,6 +45,7 @@ describe('Missing Alt Text Guidance Handler', () => {
       getType: () => AuditModel.AUDIT_TYPES.ALT_TEXT,
       getSiteId: () => 'site-id',
       setUpdatedBy: sandbox.stub(),
+      setLastAuditedAt: sandbox.stub(),
     };
 
     mockSite = {
@@ -478,6 +484,24 @@ describe('Missing Alt Text Guidance Handler', () => {
 
     expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
     expect(getProjectedMetricsStub).to.have.been.called;
+  });
+
+  it('should set lastAuditedAt when all Mystique responses received', async () => {
+    mockOpportunity.getData.returns({ mystiqueResponsesReceived: 0, mystiqueResponsesExpected: 1 });
+
+    await guidanceHandler(mockMessage, context);
+
+    expect(mockOpportunity.setLastAuditedAt).to.have.been.calledOnce;
+    const callArg = mockOpportunity.setLastAuditedAt.firstCall.args[0];
+    expect(new Date(callArg).toISOString()).to.equal(callArg);
+  });
+
+  it('should not set lastAuditedAt when Mystique responses still pending', async () => {
+    mockOpportunity.getData.returns({ mystiqueResponsesReceived: 0, mystiqueResponsesExpected: 3 });
+
+    await guidanceHandler(mockMessage, context);
+
+    expect(mockOpportunity.setLastAuditedAt).to.not.have.been.called;
   });
 
   it('should not delete manually edited suggestions even when in pageUrlSet', async () => {
