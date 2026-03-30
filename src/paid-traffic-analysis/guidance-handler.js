@@ -128,12 +128,13 @@ export default async function handler(message, context) {
   if (suggestions.length) {
     // If this is a paid traffic report, always set status to NEW, else use requiresValidation logic
     const requiresValidation = Boolean(context.site?.requiresValidation);
-    const status = opportunity.getType() !== 'paid-traffic' && requiresValidation
+    const opportunityType = opportunity.getType();
+    const status = opportunityType !== 'paid-traffic' && requiresValidation
       ? SuggestionModel.STATUSES.PENDING_VALIDATION
       : SuggestionModel.STATUSES.NEW;
 
     await Promise.all(suggestions.map((s) => {
-      warnOnInvalidSuggestionData(s.data, opportunity.getType(), log);
+      warnOnInvalidSuggestionData(s.data, opportunityType, log);
       return Suggestion.create({
         ...s,
         status,

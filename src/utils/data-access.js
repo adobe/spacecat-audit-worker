@@ -43,7 +43,9 @@ export function warnOnInvalidSuggestionData(data, opportunityType, log) {
   try {
     SuggestionDataAccess.validateData(data, opportunityType);
   } catch (error) {
-    log.warn(`Suggestion data validation warning [${opportunityType}]: ${error.message}`);
+    const msg = error.message.length > 500 ? `${error.message.slice(0, 500)}...[truncated]` : error.message;
+    const identifier = data?.aggregationKey || data?.url || data?.path || 'unknown';
+    log.warn(`Suggestion data validation warning [${opportunityType}] [${identifier}]: ${msg}`);
   }
 }
 
@@ -410,7 +412,9 @@ export async function syncSuggestions({
         status: requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
           : SuggestionDataAccess.STATUSES.NEW,
       };
-      warnOnInvalidSuggestionData(result.data, opportunityType, log);
+      if (result.data != null) {
+        warnOnInvalidSuggestionData(result.data, opportunityType, log);
+      }
       return result;
     });
 
@@ -706,7 +710,7 @@ export async function syncSuggestionsWithPublishDetection({
   }
   const { log } = context;
 
-  // Determine if this is an author-only opportunity type
+  // opportunity is always a valid DB entity passed by callers; getType() is guaranteed to exist.
   const opportunityType = opportunity.getType();
   const isAuthorOnly = AUTHOR_ONLY_OPPORTUNITY_TYPES.includes(opportunityType);
 
