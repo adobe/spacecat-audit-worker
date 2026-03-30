@@ -193,12 +193,18 @@ describe('commerce-config-resolver', () => {
       },
     };
 
-    it('returns transformed config for matching URL', () => {
+    it('returns transformed config for matching URL with storeViewUrl', () => {
       const result = resolveManualCommerceConfig(commerceLlmoConfig, 'https://www.bulk.com/ro/products/item.html');
       expect(result).to.not.be.null;
       expect(result.headers['Magento-Environment-Id']).to.equal('env-ro');
       expect(result.headers['Magento-Store-View-Code']).to.equal('view-ro');
       expect(result.url).to.equal('https://commerce.ro/graphql');
+      expect(result.storeViewUrl).to.equal('https://www.bulk.com/ro');
+    });
+
+    it('returns storeViewUrl matching the root config key', () => {
+      const result = resolveManualCommerceConfig(commerceLlmoConfig, 'https://www.bulk.com/products/item.html');
+      expect(result.storeViewUrl).to.equal('https://www.bulk.com');
     });
 
     it('returns null when no match found', () => {
