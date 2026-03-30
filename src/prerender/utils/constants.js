@@ -13,7 +13,7 @@
 export const CONTENT_GAIN_THRESHOLD = 1.1;
 export const TOP_AGENTIC_URLS_LIMIT = 20;
 export const DAILY_BATCH_SIZE = 15;
-export const TOP_ORGANIC_URLS_LIMIT = 10;
+export const TOP_ORGANIC_URLS_LIMIT = 30;
 /**
  * URLs processed within this window are treated as recently scraped and skipped.
  */
