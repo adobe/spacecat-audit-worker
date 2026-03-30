@@ -223,6 +223,10 @@ export async function sendToMystique(context) {
     questions: [],
   }));
 
+  log.info(
+    `[SUMMARIZATION] Final URLs sent to Mystique (${urlsToSend.length}): ${JSON.stringify(urlsToSend)}`,
+  );
+
   const message = {
     type: 'guidance:summarization',
     siteId: site.getId(),
