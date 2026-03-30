@@ -21,6 +21,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { collectCWVDataAndImportCode, syncOpportunityAndSuggestionsStep } from '../../src/cwv/handler.js';
+import { CWV_GOOD_THRESHOLDS } from '../../src/cwv/constants.js';
 import expectedOppty from '../fixtures/cwv/oppty.json' with { type: 'json' };
 import expectedOpptyWithoutGSC from '../fixtures/cwv/opptyWithoutGSC.json' with { type: 'json' };
 import suggestions from '../fixtures/cwv/suggestions.json' with { type: 'json' };
@@ -38,25 +39,20 @@ const DOMAIN_REQUEST_DEFAULT_PARAMS = {
   interval: 7,
   granularity: 'hourly',
 };
-const CWV_THRESHOLDS = {
-  lcp: 2500,
-  cls: 0.1,
-  inp: 200,
-};
 const PRIORITY_PADDING_MIN_PAGEVIEWS = 1000;
 const TARGET_CWV_ENTRY_COUNT = 15;
 
 const isFailingCwvEntry = (entry) => (entry.metrics || []).some((metric) => (
-  (typeof metric.lcp === 'number' && metric.lcp > CWV_THRESHOLDS.lcp)
-  || (typeof metric.cls === 'number' && metric.cls > CWV_THRESHOLDS.cls)
-  || (typeof metric.inp === 'number' && metric.inp > CWV_THRESHOLDS.inp)
+  (typeof metric.lcp === 'number' && metric.lcp > CWV_GOOD_THRESHOLDS.lcp)
+  || (typeof metric.cls === 'number' && metric.cls > CWV_GOOD_THRESHOLDS.cls)
+  || (typeof metric.inp === 'number' && metric.inp > CWV_GOOD_THRESHOLDS.inp)
 ));
 
 const getEntryThresholdPressureScore = (entry) => Math.max(
   ...((entry.metrics || []).flatMap((metric) => [
-    typeof metric.lcp === 'number' && metric.lcp >= 0 ? metric.lcp / CWV_THRESHOLDS.lcp : 0,
-    typeof metric.cls === 'number' && metric.cls >= 0 ? metric.cls / CWV_THRESHOLDS.cls : 0,
-    typeof metric.inp === 'number' && metric.inp >= 0 ? metric.inp / CWV_THRESHOLDS.inp : 0,
+    typeof metric.lcp === 'number' && metric.lcp >= 0 ? metric.lcp / CWV_GOOD_THRESHOLDS.lcp : 0,
+    typeof metric.cls === 'number' && metric.cls >= 0 ? metric.cls / CWV_GOOD_THRESHOLDS.cls : 0,
+    typeof metric.inp === 'number' && metric.inp >= 0 ? metric.inp / CWV_GOOD_THRESHOLDS.inp : 0,
   ])),
   0,
 );

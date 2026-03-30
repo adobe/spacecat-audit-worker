@@ -11,17 +11,9 @@
  */
 
 import resolveCpcValue from './cpc-value-resolver.js';
+import { CWV_GOOD_THRESHOLDS } from './constants.js';
 
 const METRICS = ['lcp', 'cls', 'inp'];
-
-/**
- * Thresholds for "green" metrics
- */
-const THRESHOLDS = {
-  lcp: 2500,
-  cls: 0.1,
-  inp: 200,
-};
 
 /**
  * CWV statuses based on the number of "green" metrics:
@@ -61,7 +53,7 @@ const calculateProjectedTrafficLost = (metrics) => {
       return;
     }
 
-    if (metrics[metric] <= THRESHOLDS[metric]) {
+    if (metrics[metric] <= CWV_GOOD_THRESHOLDS[metric]) {
       greenMetricsCount += 1;
     }
   });

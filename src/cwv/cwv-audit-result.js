@@ -13,15 +13,11 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { removeTrailingSlash } from '../utils/url-utils.js';
+import { CWV_GOOD_THRESHOLDS } from './constants.js';
 
 const INTERVAL = 7; // days
 const TARGET_CWV_ENTRY_COUNT = 15;
 const PRIORITY_PADDING_MIN_PAGEVIEWS = 1000;
-const CWV_THRESHOLDS = {
-  lcp: 2500,
-  cls: 0.1,
-  inp: 200,
-};
 
 /**
  * Returns true when a single CWV metric is outside the "good" range.
@@ -31,7 +27,7 @@ const CWV_THRESHOLDS = {
  * @returns {boolean} Whether the metric exceeds the good threshold
  */
 function isMetricAboveGoodThreshold(metric, value) {
-  return Number.isFinite(value) && value > CWV_THRESHOLDS[metric];
+  return Number.isFinite(value) && value > CWV_GOOD_THRESHOLDS[metric];
 }
 
 /**
@@ -64,7 +60,7 @@ function getMetricThresholdPressureScore(metric, value) {
     return 0;
   }
 
-  return value / CWV_THRESHOLDS[metric];
+  return value / CWV_GOOD_THRESHOLDS[metric];
 }
 
 /**
