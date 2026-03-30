@@ -15,6 +15,8 @@ import { wwwUrlResolver } from '../common/index.js';
 
 const LOG_PREFIX = '[Wikipedia]';
 
+const REGION_SUFFIXES_RE = /(?:usa|us|uk|eu|de|fr|es|it|nl|be|at|ch|au|ca|jp|kr|cn|br|mx|in|za|global|international|worldwide)$/i;
+
 /**
  * Wikipedia Analysis Audit Handler
  *
@@ -28,6 +30,29 @@ const LOG_PREFIX = '[Wikipedia]';
  */
 
 /**
+ * Extracts a human-readable brand name from a site URL.
+ * Strips protocol, www prefix, TLD, and common regional/market suffixes
+ * so the result is suitable for Wikipedia search.
+ *
+ * @param {string} baseURL - The site's base URL or domain
+ * @returns {string} Cleaned brand name
+ */
+function extractBrandFromUrl(baseURL) {
+  try {
+    const urlStr = baseURL.startsWith('http') ? baseURL : `https://${baseURL}`;
+    const { hostname } = new URL(urlStr);
+
+    const name = hostname
+      .replace(/^www\./, '')
+      .split('.')[0];
+
+    return name.replace(REGION_SUFFIXES_RE, '') || name;
+  } catch {
+    return baseURL;
+  }
+}
+
+/**
  * Retrieves Wikipedia-related configuration from the site
  * @param {Object} site - The site object
  * @returns {Object} Wikipedia configuration
@@ -36,10 +61,8 @@ function getWikipediaConfig(site) {
   const config = site.getConfig();
   const baseURL = site.getBaseURL();
 
-  // Try to get Wikipedia configuration from site config
-  // If not configured, use baseURL directly
   return {
-    companyName: config?.getCompanyName?.() || baseURL,
+    companyName: config?.getCompanyName?.() || extractBrandFromUrl(baseURL),
     companyWebsite: baseURL,
     wikipediaUrl: config?.getWikipediaUrl?.() || '', // Empty = auto-detect
     competitors: config?.getCompetitors?.() || [], // Empty = auto-detect
@@ -157,6 +180,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
   return auditData;
 }
+
+export { extractBrandFromUrl };
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)

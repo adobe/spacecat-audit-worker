@@ -2825,11 +2825,13 @@ describe('Commerce Product Enrichments - Manual Config Grouping', () => {
 
     expect(roPayload).to.exist;
     expect(roPayload.environmentId).to.equal('env-ro');
+    expect(roPayload.storeViewUrl).to.equal('https://www.example.com/ro');
     expect(roPayload.scrapes).to.have.lengthOf(1);
     expect(roPayload.scrapes[0].sku).to.equal('SKU-RO');
 
     expect(defaultPayload).to.exist;
     expect(defaultPayload.environmentId).to.equal('env-default');
+    expect(defaultPayload.storeViewUrl).to.equal('https://www.example.com');
     expect(defaultPayload.scrapes).to.have.lengthOf(1);
     expect(defaultPayload.scrapes[0].sku).to.equal('SKU-DEFAULT');
 
