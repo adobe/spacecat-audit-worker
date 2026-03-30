@@ -51,7 +51,6 @@ async function fetchExistingPromptMap(postgrestClient, brandId, log) {
 }
 
 function resolvePromptId(p, topicId, topicUuid, existingPromptMap, log, index) {
-  if (p.id) return p.id;
   const existing = existingPromptMap.get(promptLookupKey(p.prompt, topicUuid));
   if (existing) {
     log.info(`Matched existing prompt_id "${existing}" for topic "${topicId}" at index ${index}`);
@@ -83,7 +82,7 @@ function collectPrompts(
       (topic.prompts || []).forEach((p, index) => {
         const promptId = resolvePromptId(p, topicId, topicUuid, existingPromptMap, log, index);
         if (!promptId) {
-          log.error(`Skipping prompt without id or text in topic "${topicId}" at index ${index}`);
+          log.error(`Skipping prompt without text in topic "${topicId}" at index ${index}`);
           return;
         }
         rows.push({
@@ -116,8 +115,7 @@ function collectPrompts(
         return;
       }
       const categoryUuid = p.categoryId ? (categoryMap.get(p.categoryId) || null) : null;
-      const promptId = p.id
-        || existingPromptMap.get(promptLookupKey(p.prompt, topicUuid))
+      const promptId = existingPromptMap.get(promptLookupKey(p.prompt, topicUuid))
         || configPromptId;
       rows.push({
         organization_id: organizationId,

@@ -966,7 +966,7 @@ describe('LLMO Config DB Sync Handler', () => {
       expect(rows[0].category_id).to.be.null;
     });
 
-    it('handles prompt with empty prompt text (name fallback to id)', async () => {
+    it('skips prompt with empty prompt text', async () => {
       const s3Config = buildS3Config({
         topics: {
           't1': {
@@ -976,13 +976,15 @@ describe('LLMO Config DB Sync Handler', () => {
         },
       });
       readConfigStub.resolves({ config: s3Config });
-      const getRows = setupBasicMocks();
+      setupBasicMocks();
 
-      await handler({ siteId: SITE_ID }, context);
+      const response = await handler({ siteId: SITE_ID }, context);
+      const body = await response.json();
 
-      const rows = getRows();
-      expect(rows).to.have.length(1);
-      expect(rows[0].name).to.equal('p-custom');
+      expect(body.prompts).to.equal(0);
+      expect(context.log.error).to.have.been.calledWith(
+        'Skipping prompt without text in topic "t1" at index 0',
+      );
     });
 
     it('handles prompt with no regions, no origin, no source', async () => {
@@ -1020,15 +1022,15 @@ describe('LLMO Config DB Sync Handler', () => {
       expect(body.prompts).to.equal(0);
     });
 
-    it('generates a deterministic UUID v5 for prompts without an id', async () => {
+    it('generates a deterministic UUID v5 for all prompts', async () => {
       const s3Config = buildS3Config({
         topics: {
           'topic-1': {
             name: 'Topic 1',
             category: 'cat-1',
             prompts: [
-              { prompt: 'No ID prompt', regions: ['us'] },
-              { id: 'p-valid', prompt: 'Has ID', regions: ['us'] },
+              { prompt: 'First prompt', regions: ['us'] },
+              { id: 'ignored-s3-id', prompt: 'Second prompt', regions: ['us'] },
             ],
           },
         },
@@ -1043,9 +1045,9 @@ describe('LLMO Config DB Sync Handler', () => {
       expect(rows).to.have.length(2);
       expect(body.prompts).to.equal(2);
 
-      const generated = rows.find((r) => r.prompt_id !== 'p-valid');
-      expect(generated.prompt_id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-      expect(generated.text).to.equal('No ID prompt');
+      const uuidV5Regex = /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+      rows.forEach((r) => expect(r.prompt_id).to.match(uuidV5Regex));
+      expect(rows[0].prompt_id).to.not.equal(rows[1].prompt_id);
       expect(context.log.info).to.have.been.calledWith(
         sinon.match('Generated prompt id'),
       );
@@ -1072,14 +1074,14 @@ describe('LLMO Config DB Sync Handler', () => {
       expect(firstRunId).to.equal(secondRunId);
     });
 
-    it('skips prompts that have neither id nor text', async () => {
+    it('skips prompts that have no text', async () => {
       const s3Config = buildS3Config({
         topics: {
           'topic-1': {
             name: 'Topic 1',
             prompts: [
               { regions: ['us'] },
-              { id: 'p-valid', prompt: 'Has ID', regions: ['us'] },
+              { prompt: 'Has text', regions: ['us'] },
             ],
           },
         },
@@ -1092,10 +1094,10 @@ describe('LLMO Config DB Sync Handler', () => {
 
       const rows = getRows();
       expect(rows).to.have.length(1);
-      expect(rows[0].prompt_id).to.equal('p-valid');
+      expect(rows[0].text).to.equal('Has text');
       expect(body.prompts).to.equal(1);
       expect(context.log.error).to.have.been.calledWith(
-        'Skipping prompt without id or text in topic "topic-1" at index 0',
+        'Skipping prompt without text in topic "topic-1" at index 0',
       );
     });
 
