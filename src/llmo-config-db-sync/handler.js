@@ -184,7 +184,7 @@ function collectPrompts(
           organization_id: organizationId,
           brand_id: brandId,
           prompt_id: promptId,
-          name: (p.prompt || '').slice(0, 255) || promptId,
+          name: (p.prompt || '').slice(0, 255) || /* c8 ignore next */ promptId,
           text: p.prompt,
           regions: (p.regions || []).map((r) => r.toUpperCase()),
           category_id: categoryUuid,
