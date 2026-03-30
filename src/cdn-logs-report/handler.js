@@ -16,6 +16,7 @@ import {
   loadSql,
   generateReportingPeriods,
   fetchRemotePatterns,
+  queryIndexHasPatternsFile,
   getConfigCategories,
 } from './utils/report-utils.js';
 import {
@@ -79,9 +80,19 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     }
 
     if (reportConfig.name === 'agentic') {
-      const existingPatterns = await fetchRemotePatterns(site);
+      const dataFolder = site.getConfig()?.getLlmoDataFolder();
+      const existingPatterns = await fetchRemotePatterns(site, log);
+      const queryIndexPatternsExists = !existingPatterns
+        ? await queryIndexHasPatternsFile(site, log)
+        : false;
 
-      if (!existingPatterns || auditContext?.categoriesUpdated) {
+      const shouldSkipGeneration = existingPatterns?.error
+        || queryIndexPatternsExists?.error
+        || (!existingPatterns && queryIndexPatternsExists);
+
+      if (shouldSkipGeneration) {
+        log.info(`Skipping fresh patterns generation for ${dataFolder}`);
+      } else if (!existingPatterns || auditContext?.categoriesUpdated) {
         log.info('Patterns not found, generating patterns workbook...');
         const periods = generateReportingPeriods(new Date(), weekOffsets[0]);
         const configCategories = await getConfigCategories(site, context);

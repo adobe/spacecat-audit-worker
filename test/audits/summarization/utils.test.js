@@ -345,6 +345,148 @@ describe('summarization utils', () => {
       expect(result[0].summarizationText).to.equal('Test summary');
       expect(result[0].keyPoints).to.be.false;
     });
+
+    describe('already-present flags (page_summary_present, key_points_present)', () => {
+      it('should exclude page summary when page_summary_present is true', () => {
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            page_summary_present: true,
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: {
+              formatted_items: ['Key point 1', 'Key point 2'],
+            },
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(1);
+        expect(result[0].keyPoints).to.be.true;
+        expect(result[0].summarizationText).to.equal('  * Key point 1\n  * Key point 2');
+      });
+
+      it('should exclude key points when key_points_present is true', () => {
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            key_points_present: true,
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: {
+              formatted_items: ['Key point 1', 'Key point 2'],
+            },
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(1);
+        expect(result[0].keyPoints).to.be.false;
+        expect(result[0].summarizationText).to.equal('Test summary');
+      });
+
+      it('should exclude both when both flags are true', () => {
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            page_summary_present: true,
+            key_points_present: true,
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: {
+              formatted_items: ['Key point 1', 'Key point 2'],
+            },
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(0);
+      });
+
+      it('should include all when flags are absent (backward compatibility)', () => {
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: {
+              formatted_items: ['Key point 1'],
+            },
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(2);
+        expect(result[0].keyPoints).to.be.false;
+        expect(result[1].keyPoints).to.be.true;
+      });
+
+      it('should include all when flags are false', () => {
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            page_summary_present: false,
+            key_points_present: false,
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: {
+              formatted_items: ['Key point 1'],
+            },
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(2);
+      });
+
+      it('should exclude when hasExistingSummary/hasExistingKeyPoints (camelCase, legacy Mystique)', () => {
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            hasExistingSummary: true,
+            hasExistingKeyPoints: true,
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: {
+              formatted_items: ['Key point 1'],
+            },
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(0);
+      });
+    });
   });
 });
 

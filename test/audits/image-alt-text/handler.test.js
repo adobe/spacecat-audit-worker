@@ -16,7 +16,6 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
-import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
 
@@ -32,6 +31,7 @@ describe('Image Alt Text Handler', () => {
   let context;
   let tracingFetchStub;
   let handlerModule;
+  let getTopPageUrlsStub;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -41,6 +41,10 @@ describe('Image Alt Text Handler', () => {
       arrayBuffer: () => Promise.resolve(Buffer.from('test-blob')),
       headers: new Map([['Content-Length', '100']]),
     });
+    getTopPageUrlsStub = sandbox.stub().resolves([
+      'https://example.com/page1',
+      'https://example.com/page2',
+    ]);
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
@@ -56,9 +60,7 @@ describe('Image Alt Text Handler', () => {
         site: {
           getId: () => 'site-id',
           resolveFinalURL: () => 'https://example.com',
-          getConfig: () => ({
-            getIncludedURLs: sandbox.stub().returns([]),
-          }),
+          getBaseURL: () => 'https://example.com',
         },
         audit: {
           getId: () => 'audit-id',
@@ -71,12 +73,6 @@ describe('Image Alt Text Handler', () => {
           IMS_CLIENT_SECRET: 'test-client-secret',
         },
         dataAccess: {
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-              { getUrl: () => 'https://example.com/page1' },
-              { getUrl: () => 'https://example.com/page2' },
-            ]),
-          },
           Opportunity: {
             allBySiteIdAndStatus: sandbox.stub().resolves([]),
             create: sandbox.stub().resolves({
@@ -104,6 +100,9 @@ describe('Image Alt Text Handler', () => {
     // Mock the module using esmock
     handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
       '@adobe/spacecat-shared-utils': { tracingFetch: tracingFetchStub },
+      '../../../src/image-alt-text/url-utils.js': {
+        getTopPageUrls: getTopPageUrlsStub,
+      },
     });
   });
 
@@ -157,6 +156,9 @@ describe('Image Alt Text Handler', () => {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
         },
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
       });
     });
 
@@ -187,7 +189,7 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should handle case when no top pages found', async () => {
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+      getTopPageUrlsStub.resolves([]);
       context.site = {
         getId: () => 'site-id',
         getBaseURL: () => 'https://example.com',
@@ -298,20 +300,22 @@ describe('Image Alt Text Handler', () => {
       );
     });
 
-    it('should handle includedURLs when site.getConfig is available', async () => {
+    it('should pass URLs from getTopPageUrls directly to Mystique', async () => {
+      getTopPageUrlsStub.resolves([
+        'https://example.com/rum-page1',
+        'https://example.com/rum-page2',
+        'https://example.com/rum-page3',
+      ]);
       context.site = {
         getId: () => 'site-id',
         getBaseURL: () => 'https://example.com',
-        getConfig: () => ({
-          getIncludedURLs: sandbox.stub().withArgs('alt-text').returns(['https://example.com/included']),
-        }),
       };
 
       await handlerModule.processAltTextWithMystique(context);
 
       expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
         'https://example.com',
-        ['https://example.com/page1', 'https://example.com/page2', 'https://example.com/included'],
+        ['https://example.com/rum-page1', 'https://example.com/rum-page2', 'https://example.com/rum-page3'],
         'site-id',
         'audit-id',
         context,
@@ -321,79 +325,11 @@ describe('Image Alt Text Handler', () => {
       );
     });
 
-    it('should handle when site.getConfig is null', async () => {
+    it('should handle case when all URL sources return empty', async () => {
+      getTopPageUrlsStub.resolves([]);
       context.site = {
         getId: () => 'site-id',
         getBaseURL: () => 'https://example.com',
-        getConfig: () => null,
-      };
-
-      await handlerModule.processAltTextWithMystique(context);
-
-      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
-        'https://example.com',
-        ['https://example.com/page1', 'https://example.com/page2'],
-        'site-id',
-        'audit-id',
-        context,
-        [],
-        false,
-        true,
-      );
-    });
-
-    it('should handle when site.getConfig is undefined', async () => {
-      context.site = {
-        getId: () => 'site-id',
-        getBaseURL: () => 'https://example.com',
-        getConfig: undefined,
-      };
-
-      await handlerModule.processAltTextWithMystique(context);
-
-      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
-        'https://example.com',
-        ['https://example.com/page1', 'https://example.com/page2'],
-        'site-id',
-        'audit-id',
-        context,
-        [],
-        false,
-        true,
-      );
-    });
-
-    it('should handle when getIncludedURLs returns null', async () => {
-      context.site = {
-        getId: () => 'site-id',
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({
-          getIncludedURLs: sandbox.stub().withArgs('alt-text').returns(null),
-        }),
-      };
-
-      await handlerModule.processAltTextWithMystique(context);
-
-      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
-        'https://example.com',
-        ['https://example.com/page1', 'https://example.com/page2'],
-        'site-id',
-        'audit-id',
-        context,
-        [],
-        false,
-        true,
-      );
-    });
-
-    it('should handle case when no top pages and no included URLs found', async () => {
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
-      context.site = {
-        getId: () => 'site-id',
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({
-          getIncludedURLs: sandbox.stub().withArgs('alt-text').returns([]),
-        }),
       };
 
       await expect(handlerModule.processAltTextWithMystique(context))
@@ -769,37 +705,27 @@ describe('Image Alt Text Handler', () => {
   });
 
   describe('processScraping', () => {
-    let s3ClientMock;
     let configurationMock;
 
     beforeEach(async () => {
-      s3ClientMock = {
-        send: sandbox.stub(),
-      };
-
       configurationMock = {
         isHandlerEnabledForSite: sandbox.stub().returns(false),
       };
 
+      getTopPageUrlsStub.resolves([
+        'https://example.com/page1',
+        'https://example.com/page2',
+        'https://example.com/page3',
+      ]);
+
       context = new MockContextBuilder()
         .withSandbox(sandbox)
         .withOverrides({
-          s3Client: s3ClientMock,
           site: {
             getId: () => 'site-id',
             getBaseURL: () => 'https://example.com',
           },
-          env: {
-            S3_SCRAPER_BUCKET_NAME: bucketName,
-          },
           dataAccess: {
-            SiteTopPage: {
-              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-                { getUrl: () => 'https://example.com/page1' },
-                { getUrl: () => 'https://example.com/page2' },
-                { getUrl: () => 'https://example.com/page3' },
-              ]),
-            },
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
             },
@@ -810,64 +736,37 @@ describe('Image Alt Text Handler', () => {
         })
         .build();
 
-      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {});
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
+      });
     });
 
-    it('should check S3 for existing scrapes and return missing URLs', async () => {
-      // Mock S3 responses: page1 exists, page2 and page3 don't
-      s3ClientMock.send.callsFake((command) => {
-        if (command instanceof HeadObjectCommand) {
-          const key = command.input.Key;
-          if (key.includes('page1')) {
-            return Promise.resolve(); // Scrape exists
-          }
-          const error = new Error('NotFound');
-          error.name = 'NotFound';
-          throw error;
-        }
-        return Promise.resolve();
-      });
-
+    it('should send all URLs to scrape client with maxScrapeAge and pageLoadTimeout', async () => {
       const result = await handlerModule.processScraping(context);
 
       expect(result).to.deep.equal({
         urls: [
+          { url: 'https://example.com/page1' },
           { url: 'https://example.com/page2' },
           { url: 'https://example.com/page3' },
         ],
         siteId: 'site-id',
         type: 'default',
-        allowCache: false,
-        maxScrapeAge: 0,
+        maxScrapeAge: 24,
+        options: {
+          pageLoadTimeout: 45000,
+        },
       });
 
-      // Verify HeadObjectCommand was called for each page
-      expect(s3ClientMock.send).to.have.been.calledThrice;
-      expect(s3ClientMock.send).to.have.been.calledWith(
-        sinon.match.instanceOf(HeadObjectCommand),
-      );
-    });
-
-    it('should send first URL when all scrapes exist', async () => {
-      // Mock S3 to return success for all pages
-      s3ClientMock.send.resolves();
-
-      const result = await handlerModule.processScraping(context);
-
-      expect(result).to.deep.equal({
-        urls: [{ url: 'https://example.com/page1' }],
-        siteId: 'site-id',
-        type: 'default',
-        allowCache: true,
-        maxScrapeAge: 0,
-      });
-      expect(context.log.debug).to.have.been.calledWith(
-        '[alt-text]: All scrapes exist, sending first URL to ensure scrape client step completes',
+      expect(context.log.info).to.have.been.calledWith(
+        '[alt-text]: Sending 3 URLs to scrape client (maxScrapeAge: 24h)',
       );
     });
 
     it('should throw error when no top pages found', async () => {
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+      getTopPageUrlsStub.resolves([]);
 
       await expect(handlerModule.processScraping(context))
         .to.be.rejectedWith('No top pages found for site site-id');
@@ -876,117 +775,32 @@ describe('Image Alt Text Handler', () => {
     it('should limit pages to 20 when summit-plg is enabled', async () => {
       configurationMock.isHandlerEnabledForSite.returns(true);
 
-      // Create 25 pages to ensure slicing works
-      const pages = Array.from({ length: 25 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
-
-      // All scrapes missing
-      const error = new Error('NotFound');
-      error.name = 'NotFound';
-      s3ClientMock.send.rejects(error);
+      const pageUrls = Array.from({ length: 25 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const result = await handlerModule.processScraping(context);
 
-      // Should only check first 20 pages
-      expect(s3ClientMock.send).to.have.callCount(20);
       expect(result.urls).to.have.lengthOf(20);
       expect(result.urls[0].url).to.equal('https://example.com/page1');
       expect(result.urls[19].url).to.equal('https://example.com/page20');
+      expect(result.maxScrapeAge).to.equal(24);
+      expect(result.options).to.deep.equal({ pageLoadTimeout: 45000 });
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Page limit set to 20 (summit-plg enabled: true)',
       );
     });
 
     it('should limit pages to 100 when summit-plg is disabled', async () => {
-      // Create 150 pages to ensure slicing works
-      const pages = Array.from({ length: 150 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
-
-      // All scrapes missing
-      const error = new Error('NotFound');
-      error.name = 'NotFound';
-      s3ClientMock.send.rejects(error);
+      const pageUrls = Array.from({ length: 150 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const result = await handlerModule.processScraping(context);
 
-      // Should check first 100 pages
-      expect(s3ClientMock.send).to.have.callCount(100);
       expect(result.urls).to.have.lengthOf(100);
+      expect(result.maxScrapeAge).to.equal(24);
+      expect(result.options).to.deep.equal({ pageLoadTimeout: 45000 });
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Page limit set to 100 (summit-plg enabled: false)',
-      );
-    });
-
-    it('should handle NoSuchKey error as missing scrape', async () => {
-      const error = new Error('NoSuchKey');
-      error.name = 'NoSuchKey';
-      s3ClientMock.send.rejects(error);
-
-      const result = await handlerModule.processScraping(context);
-
-      expect(result.urls).to.have.lengthOf(3);
-      expect(result.urls).to.deep.equal([
-        { url: 'https://example.com/page1' },
-        { url: 'https://example.com/page2' },
-        { url: 'https://example.com/page3' },
-      ]);
-    });
-
-    it('should handle other S3 errors with fail-safe approach', async () => {
-      const error = new Error('S3 Connection timeout');
-      error.name = 'NetworkError';
-      s3ClientMock.send.rejects(error);
-
-      const result = await handlerModule.processScraping(context);
-
-      // Should assume all scrapes are missing (fail-safe)
-      expect(result.urls).to.have.lengthOf(3);
-      expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/Error checking scrape for.*assuming missing/),
-      );
-    });
-
-    it('should use correct S3 key format with pathname', async () => {
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
-        { getUrl: () => 'https://example.com/products/item1' },
-      ]);
-
-      s3ClientMock.send.resolves();
-
-      await handlerModule.processScraping(context);
-
-      expect(s3ClientMock.send).to.have.been.calledWith(
-        sinon.match((cmd) => cmd instanceof HeadObjectCommand
-          && cmd.input.Bucket === bucketName
-          && cmd.input.Key === 'scrapes/site-id/products/item1/scrape.json'),
-      );
-    });
-
-    it('should handle mix of existing and missing scrapes', async () => {
-      // page1 exists, page2 doesn't, page3 exists
-      s3ClientMock.send.callsFake((command) => {
-        if (command instanceof HeadObjectCommand) {
-          const key = command.input.Key;
-          if (key.includes('page2')) {
-            const error = new Error('NotFound');
-            error.name = 'NotFound';
-            throw error;
-          }
-          return Promise.resolve();
-        }
-        return Promise.resolve();
-      });
-
-      const result = await handlerModule.processScraping(context);
-
-      expect(result.urls).to.have.lengthOf(1);
-      expect(result.urls[0].url).to.equal('https://example.com/page2');
-      expect(context.log.info).to.have.been.calledWith(
-        '[alt-text]: Found 1 URLs needing scraping out of 3 top pages',
       );
     });
   });
@@ -1008,17 +822,11 @@ describe('Image Alt Text Handler', () => {
           site: {
             getId: () => 'site-id',
             getBaseURL: () => 'https://example.com',
-            getConfig: () => ({
-              getIncludedURLs: sandbox.stub().returns([]),
-            }),
           },
           audit: {
             getId: () => 'audit-id',
           },
           dataAccess: {
-            SiteTopPage: {
-              allBySiteIdAndSourceAndGeo: sandbox.stub(),
-            },
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
               create: sandbox.stub().resolves({
@@ -1042,17 +850,18 @@ describe('Image Alt Text Handler', () => {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
         },
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
       });
     });
 
     it('should limit to 20 pages when summit-plg is enabled', async () => {
       configurationMock.isHandlerEnabledForSite.returns(true);
 
-      // Create 50 pages
-      const pages = Array.from({ length: 50 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      // Create 50 page URLs
+      const pageUrls = Array.from({ length: 50 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       await handlerModule.processAltTextWithMystique(context);
 
@@ -1074,11 +883,9 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should limit to 100 pages when summit-plg is disabled', async () => {
-      // Create 150 pages
-      const pages = Array.from({ length: 150 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      // Create 150 page URLs
+      const pageUrls = Array.from({ length: 150 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       await handlerModule.processAltTextWithMystique(context);
 
@@ -1099,34 +906,20 @@ describe('Image Alt Text Handler', () => {
       );
     });
 
-    it('should include includedURLs in addition to limited top pages', async () => {
+    it('should pass all URLs from getTopPageUrls through page window', async () => {
       configurationMock.isHandlerEnabledForSite.returns(true);
 
-      const pages = Array.from({ length: 25 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
-
-      context.site = {
-        getId: () => 'site-id',
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({
-          getIncludedURLs: sandbox.stub().withArgs('alt-text').returns([
-            'https://example.com/included1',
-            'https://example.com/included2',
-          ]),
-        }),
-      };
+      // getTopPageUrls now handles the fallback chain including includedURLs
+      const pageUrls = Array.from({ length: 25 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       await handlerModule.processAltTextWithMystique(context);
 
       const callArgs = sendAltTextOpportunityToMystiqueStub.getCall(0).args;
       const sentUrls = callArgs[1];
 
-      // Should have 20 top pages + 2 included URLs = 22 total
-      expect(sentUrls).to.have.lengthOf(22);
-      expect(sentUrls).to.include('https://example.com/included1');
-      expect(sentUrls).to.include('https://example.com/included2');
+      // Should have 20 pages (summit-plg limit)
+      expect(sentUrls).to.have.lengthOf(20);
       expect(sentUrls).to.include('https://example.com/page1');
       expect(sentUrls).to.include('https://example.com/page20');
       expect(sentUrls).to.not.include('https://example.com/page21');
@@ -1157,6 +950,7 @@ describe('Image Alt Text Handler', () => {
       configurationMock = {
         getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
         isHandlerEnabledForSite: sandbox.stub().returns(true),
+
       };
 
       context = new MockContextBuilder()
@@ -1165,17 +959,11 @@ describe('Image Alt Text Handler', () => {
           site: {
             getId: () => 'site-id',
             getBaseURL: () => 'https://example.com',
-            getConfig: () => ({
-              getIncludedURLs: sandbox.stub().returns([]),
-            }),
           },
           audit: {
             getId: () => 'audit-id',
           },
           dataAccess: {
-            SiteTopPage: {
-              allBySiteIdAndSourceAndGeo: sandbox.stub(),
-            },
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
               create: sandbox.stub().resolves({
@@ -1202,14 +990,15 @@ describe('Image Alt Text Handler', () => {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
         },
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
       });
     });
 
     it('should use stored offset from opportunity to determine page window', async () => {
-      const pages = Array.from({ length: 50 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 50 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
@@ -1232,10 +1021,8 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should default to offset 0 when no opportunity exists', async () => {
-      const pages = Array.from({ length: 50 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 50 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
 
       await handlerModule.processAltTextWithMystique(context);
@@ -1249,10 +1036,8 @@ describe('Image Alt Text Handler', () => {
     it('should ignore offset for non-summit-plg sites (always starts at 0)', async () => {
       configurationMock.isHandlerEnabledForSite.returns(false);
 
-      const pages = Array.from({ length: 150 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 150 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
@@ -1273,10 +1058,8 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should store topPagesOffset: 0 when creating new opportunity', async () => {
-      const pages = Array.from({ length: 5 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 5 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
 
       await handlerModule.processAltTextWithMystique(context);
@@ -1289,15 +1072,114 @@ describe('Image Alt Text Handler', () => {
     });
   });
 
+  describe('processAltTextWithMystique scrape pre-check', () => {
+    let sendAltTextOpportunityToMystiqueStub;
+
+    beforeEach(async () => {
+      sendAltTextOpportunityToMystiqueStub = sandbox.stub().resolves();
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '@adobe/spacecat-shared-utils': { tracingFetch: sandbox.stub().resolves() },
+        '../../../src/image-alt-text/opportunityHandler.js': {
+          default: sandbox.stub(),
+          sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
+        },
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
+      });
+    });
+
+    it('should throw when no URLs have scrapes', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      // scrapeResultPaths has no matching URLs
+      context.scrapeResultPaths = new Map();
+
+      await expect(handlerModule.processAltTextWithMystique(context))
+        .to.be.rejectedWith('Cannot proceed: none of the 2 URLs have scrape results');
+
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Failed to process with Mystique.*Cannot proceed/),
+      );
+      expect(sendAltTextOpportunityToMystiqueStub).to.not.have.been.called;
+    });
+
+    it('should filter out URLs without scrapes and proceed with the rest', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      // Only page1 has a scrape, page2 does not
+      context.scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/job-123/page1/scrape.json'],
+      ]);
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(context.log.warn).to.have.been.calledWith(
+        '[alt-text]: Excluding 1/2 URLs without scrapes',
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        '[alt-text]: Sending 1 of 2 URLs with scrapes to Mystique',
+      );
+      // Should only send the URL that has a scrape
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
+        'https://example.com',
+        ['https://example.com/page1'],
+        sinon.match.any,
+        sinon.match.any,
+        sinon.match.any,
+        sinon.match.any,
+        sinon.match.any,
+        sinon.match.any,
+      );
+    });
+
+    it('should proceed when all URLs exist in scrapeResultPaths', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      context.scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/job-123/page1/scrape.json'],
+        ['https://example.com/page2', 'scrapes/job-123/page2/scrape.json'],
+      ]);
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(context.log.info).to.have.been.calledWith(
+        '[alt-text]: Sending 2 of 2 URLs with scrapes to Mystique',
+      );
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.called;
+    });
+
+    it('should warn and continue when scrapeResultPaths is not in context', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      // No scrapeResultPaths in context
+      delete context.scrapeResultPaths;
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(context.log.warn).to.have.been.calledWith(
+        '[alt-text]: No scrapeResultPaths in context, skipping scrape verification',
+      );
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.called;
+    });
+  });
+
   describe('processScraping with page offset', () => {
-    let s3ClientMock;
     let configurationMock;
 
     beforeEach(async () => {
-      s3ClientMock = {
-        send: sandbox.stub(),
-      };
-
       configurationMock = {
         isHandlerEnabledForSite: sandbox.stub().returns(true),
       };
@@ -1305,18 +1187,11 @@ describe('Image Alt Text Handler', () => {
       context = new MockContextBuilder()
         .withSandbox(sandbox)
         .withOverrides({
-          s3Client: s3ClientMock,
           site: {
             getId: () => 'site-id',
             getBaseURL: () => 'https://example.com',
           },
-          env: {
-            S3_SCRAPER_BUCKET_NAME: bucketName,
-          },
           dataAccess: {
-            SiteTopPage: {
-              allBySiteIdAndSourceAndGeo: sandbox.stub(),
-            },
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
             },
@@ -1327,14 +1202,16 @@ describe('Image Alt Text Handler', () => {
         })
         .build();
 
-      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {});
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
+      });
     });
 
     it('should advance offset when no NEW suggestions in current window', async () => {
-      const pages = Array.from({ length: 50 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 50 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
@@ -1342,22 +1219,18 @@ describe('Image Alt Text Handler', () => {
         getData: () => ({ topPagesOffset: 0 }),
         setData: sandbox.stub(),
         save: sandbox.stub().resolves(),
-        getSuggestions: sandbox.stub().resolves([]), // No suggestions = advance
+        getSuggestions: sandbox.stub().resolves([]),
       };
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
 
-      const error = new Error('NotFound');
-      error.name = 'NotFound';
-      s3ClientMock.send.rejects(error);
-
       const result = await handlerModule.processScraping(context);
 
-      // Should process pages 20-39 (advanced from 0 to 20)
       expect(result.urls).to.have.lengthOf(20);
       expect(result.urls[0].url).to.equal('https://example.com/page21');
       expect(result.urls[19].url).to.equal('https://example.com/page40');
+      expect(result.maxScrapeAge).to.equal(24);
+      expect(result.options).to.deep.equal({ pageLoadTimeout: 45000 });
 
-      // Should save the new offset
       expect(mockOpportunity.setData).to.have.been.calledWith(
         sinon.match({ topPagesOffset: 20 }),
       );
@@ -1365,10 +1238,8 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should keep offset when NEW suggestions exist in current window', async () => {
-      const pages = Array.from({ length: 50 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 50 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
@@ -1390,13 +1261,8 @@ describe('Image Alt Text Handler', () => {
       };
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
 
-      const error = new Error('NotFound');
-      error.name = 'NotFound';
-      s3ClientMock.send.rejects(error);
-
       const result = await handlerModule.processScraping(context);
 
-      // Should stay at pages 0-19
       expect(result.urls).to.have.lengthOf(20);
       expect(result.urls[0].url).to.equal('https://example.com/page1');
 
@@ -1406,10 +1272,8 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should advance when only OUTDATED/SKIPPED suggestions in window', async () => {
-      const pages = Array.from({ length: 50 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 50 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
@@ -1440,13 +1304,8 @@ describe('Image Alt Text Handler', () => {
       };
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
 
-      const error = new Error('NotFound');
-      error.name = 'NotFound';
-      s3ClientMock.send.rejects(error);
-
       const result = await handlerModule.processScraping(context);
 
-      // OUTDATED/SKIPPED are not NEW → should advance
       expect(result.urls[0].url).to.equal('https://example.com/page21');
       expect(mockOpportunity.setData).to.have.been.calledWith(
         sinon.match({ topPagesOffset: 20 }),
@@ -1454,10 +1313,8 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should wrap offset to 0 when it exceeds total pages', async () => {
-      const pages = Array.from({ length: 25 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 25 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
@@ -1469,13 +1326,8 @@ describe('Image Alt Text Handler', () => {
       };
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
 
-      const error = new Error('NotFound');
-      error.name = 'NotFound';
-      s3ClientMock.send.rejects(error);
-
       const result = await handlerModule.processScraping(context);
 
-      // 20 + 20 = 40, exceeds 25, wraps to 0
       expect(result.urls[0].url).to.equal('https://example.com/page1');
       expect(mockOpportunity.setData).to.have.been.calledWith(
         sinon.match({ topPagesOffset: 0 }),
@@ -1486,10 +1338,8 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should advance from offset 20 to 40 when no NEW suggestions at 20', async () => {
-      const pages = Array.from({ length: 60 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 60 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
@@ -1500,10 +1350,6 @@ describe('Image Alt Text Handler', () => {
         getSuggestions: sandbox.stub().resolves([]),
       };
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
-
-      const error = new Error('NotFound');
-      error.name = 'NotFound';
-      s3ClientMock.send.rejects(error);
 
       const result = await handlerModule.processScraping(context);
 
@@ -1516,16 +1362,10 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should default to offset 0 when opportunity lookup fails', async () => {
-      const pages = Array.from({ length: 25 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 25 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('DB error'));
-
-      const error = new Error('NotFound');
-      error.name = 'NotFound';
-      s3ClientMock.send.rejects(error);
 
       const result = await handlerModule.processScraping(context);
 
@@ -1537,19 +1377,12 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should not save offset when no opportunity exists', async () => {
-      const pages = Array.from({ length: 25 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 25 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-
-      const error = new Error('NotFound');
-      error.name = 'NotFound';
-      s3ClientMock.send.rejects(error);
 
       const result = await handlerModule.processScraping(context);
 
-      // Should use offset 0 and process pages 0-19
       expect(result.urls).to.have.lengthOf(20);
       expect(result.urls[0].url).to.equal('https://example.com/page1');
     });
@@ -1557,10 +1390,8 @@ describe('Image Alt Text Handler', () => {
     it('should read stored offset without suggestion check for non-summit-plg', async () => {
       configurationMock.isHandlerEnabledForSite.returns(false);
 
-      const pages = Array.from({ length: 150 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 150 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
@@ -1571,22 +1402,15 @@ describe('Image Alt Text Handler', () => {
       };
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
 
-      const error = new Error('NotFound');
-      error.name = 'NotFound';
-      s3ClientMock.send.rejects(error);
-
       const result = await handlerModule.processScraping(context);
 
-      // Non-summit-plg ignores offset, always starts at 0 with limit 100
       expect(result.urls).to.have.lengthOf(100);
       expect(result.urls[0].url).to.equal('https://example.com/page1');
     });
 
     it('should handle opportunity getData returning null when saving offset', async () => {
-      const pages = Array.from({ length: 50 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 50 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
@@ -1600,10 +1424,6 @@ describe('Image Alt Text Handler', () => {
       };
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
 
-      const error = new Error('NotFound');
-      error.name = 'NotFound';
-      s3ClientMock.send.rejects(error);
-
       const result = await handlerModule.processScraping(context);
 
       expect(result.urls).to.have.lengthOf(20);
@@ -1613,10 +1433,8 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should handle save offset failure gracefully', async () => {
-      const pages = Array.from({ length: 50 }, (_, i) => ({
-        getUrl: () => `https://example.com/page${i + 1}`,
-      }));
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(pages);
+      const pageUrls = Array.from({ length: 50 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
@@ -1627,10 +1445,6 @@ describe('Image Alt Text Handler', () => {
         getSuggestions: sandbox.stub().resolves([]),
       };
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
-
-      const error = new Error('NotFound');
-      error.name = 'NotFound';
-      s3ClientMock.send.rejects(error);
 
       // Should not throw — save failure is handled gracefully
       const result = await handlerModule.processScraping(context);

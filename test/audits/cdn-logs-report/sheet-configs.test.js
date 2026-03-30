@@ -38,7 +38,10 @@ describe('CDN Logs Sheet Configs', () => {
       mockSite = {
         getId: () => 'test-site-id',
         getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getFetchConfig: () => null }),
+        getConfig: () => ({
+          getFetchConfig: () => null,
+          getLlmoCountryCodeIgnoreList: () => undefined,
+        }),
       };
 
       mockDataAccess = {
@@ -267,6 +270,40 @@ describe('CDN Logs Sheet Configs', () => {
         .equal(true); // Should use the newer deployment status
     });
 
+    it('applies per-site country code ignore list', async () => {
+      const siteWithIgnoreList = {
+        getId: () => 'test-site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getFetchConfig: () => null,
+          getLlmoCountryCodeIgnoreList: () => ['PS', 'AD'],
+        }),
+      };
+
+      const testData = [
+        {
+          agent_type: 'Chatbots',
+          user_agent_display: 'ChatGPT-User',
+          status: 200,
+          number_of_hits: 100,
+          avg_ttfb_ms: 250.5,
+          country_code: 'PS',
+          url: '/test',
+          product: 'firefly',
+          category: 'Products',
+        },
+      ];
+
+      const result = await SHEET_CONFIGS.agentic.processData(
+        testData,
+        siteWithIgnoreList,
+        mockDataAccess,
+      );
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0][5]).to.equal('GLOBAL');
+    });
+
     it('has required properties', () => {
       const config = SHEET_CONFIGS.agentic;
       expect(config)
@@ -306,6 +343,9 @@ describe('CDN Logs Sheet Configs', () => {
     beforeEach('setup', () => {
       site = {
         getBaseURL: sandbox.stub().returns('https://space.cat'),
+        getConfig: () => ({
+          getLlmoCountryCodeIgnoreList: () => undefined,
+        }),
       };
     });
 
@@ -424,6 +464,35 @@ describe('CDN Logs Sheet Configs', () => {
         'US',
         '',
       ]]);
+    });
+
+    it('applies per-site country code ignore list for referral data', () => {
+      const siteWithIgnoreList = {
+        getBaseURL: sandbox.stub().returns('https://space.cat'),
+        getConfig: () => ({
+          getLlmoCountryCodeIgnoreList: () => ['UK'],
+        }),
+      };
+
+      const testData = [{
+        path: 'some/path/first',
+        referrer: 'gemini.google.com',
+        utm_source: 'google',
+        utm_medium: '',
+        tracking_param: '',
+        device: 'mobile',
+        date: '2025-07-18',
+        pageviews: '250',
+        region: 'UK',
+      }];
+
+      const result = SHEET_CONFIGS.referral.processData(testData, siteWithIgnoreList);
+
+      // UK is in ignore list, so region should be GLOBAL
+      const matchingRow = result.find((row) => row[0] === 'some/path/first');
+      if (matchingRow) {
+        expect(matchingRow[9]).to.equal('GLOBAL');
+      }
     });
 
     it('has required properties', () => {

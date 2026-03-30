@@ -22,6 +22,40 @@ use(chaiAsPromised);
 use(sinonChai);
 
 describe('internal-links rum-detection', () => {
+  /** Target URLs with /missing are broken; all other URLs (referring pages) are OK */
+  function createRumValidationStub() {
+    return sinon.stub().callsFake(async (url) => {
+      if (url === 'https://example.com/rejected') {
+        throw new Error('network exploded');
+      }
+      if (url === 'https://example.com/maybe-broken') {
+        return {
+          isBroken: false,
+          inconclusive: true,
+          httpStatus: null,
+          statusBucket: null,
+          contentType: null,
+        };
+      }
+      if (url.includes('/missing')) {
+        return {
+          isBroken: true,
+          inconclusive: false,
+          httpStatus: 404,
+          statusBucket: 'not_found_404',
+          contentType: 'text/html',
+        };
+      }
+      return {
+        isBroken: false,
+        inconclusive: false,
+        httpStatus: 200,
+        statusBucket: null,
+        contentType: 'text/html',
+      };
+    });
+  }
+
   function createLog() {
     return {
       info: sinon.stub(),
@@ -116,13 +150,7 @@ describe('internal-links rum-detection', () => {
         },
       ]),
     };
-    const isLinkInaccessible = sinon.stub().resolves({
-      isBroken: true,
-      inconclusive: false,
-      httpStatus: 404,
-      statusBucket: 'not_found_404',
-      contentType: 'text/html',
-    });
+    const isLinkInaccessible = createRumValidationStub();
     const log = createLog();
     const { runAuditAndImportTopPagesStep } = createSteps({ isLinkInaccessible });
 
@@ -172,13 +200,7 @@ describe('internal-links rum-detection', () => {
         },
       ]),
     };
-    const isLinkInaccessible = sinon.stub().resolves({
-      isBroken: true,
-      inconclusive: false,
-      httpStatus: 404,
-      statusBucket: 'not_found_404',
-      contentType: 'text/html',
-    });
+    const isLinkInaccessible = createRumValidationStub();
     const log = createLog();
     const { runAuditAndImportTopPagesStep } = createSteps({ isLinkInaccessible });
 
@@ -204,6 +226,59 @@ describe('internal-links rum-detection', () => {
     }]);
   });
 
+  it('excludes RUM links when referring page is broken', async () => {
+    const rumApiClient = {
+      query: sinon.stub().resolves([
+        {
+          url_from: 'https://example.com/dead-source',
+          url_to: 'https://example.com/missing-target',
+          traffic_domain: 100,
+        },
+      ]),
+    };
+    const isLinkInaccessible = sinon.stub().callsFake(async (url) => {
+      if (url.includes('missing-target')) {
+        return {
+          isBroken: true,
+          inconclusive: false,
+          httpStatus: 404,
+          statusBucket: 'not_found_404',
+          contentType: 'text/html',
+        };
+      }
+      if (url.includes('dead-source')) {
+        return {
+          isBroken: true,
+          inconclusive: false,
+          httpStatus: 404,
+          statusBucket: 'not_found_404',
+          contentType: 'text/html',
+        };
+      }
+      return {
+        isBroken: false,
+        inconclusive: false,
+        httpStatus: 200,
+        statusBucket: null,
+        contentType: 'text/html',
+      };
+    });
+    const log = createLog();
+    const { internalLinksAuditRunner } = createSteps({ isLinkInaccessible });
+
+    const result = await internalLinksAuditRunner('https://example.com', {
+      log,
+      site: createSite(),
+      rumApiClient,
+      finalUrl: 'https://example.com',
+    });
+
+    expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
+    expect(log.info).to.have.been.calledWith(
+      sinon.match(/1 excluded \(referring page broken\)/),
+    );
+  });
+
   it('preserves invalid absolute rum source URLs when hash stripping fallback is used', async () => {
     const rumApiClient = {
       query: sinon.stub().resolves([
@@ -214,13 +289,7 @@ describe('internal-links rum-detection', () => {
         },
       ]),
     };
-    const isLinkInaccessible = sinon.stub().resolves({
-      isBroken: true,
-      inconclusive: false,
-      httpStatus: 404,
-      statusBucket: 'not_found_404',
-      contentType: 'text/html',
-    });
+    const isLinkInaccessible = createRumValidationStub();
     const log = createLog();
     const { runAuditAndImportTopPagesStep } = createSteps({ isLinkInaccessible });
 
@@ -261,15 +330,7 @@ describe('internal-links rum-detection', () => {
         },
       ]),
     };
-    const isLinkInaccessible = sinon.stub();
-    isLinkInaccessible.withArgs('https://example.com/maybe-broken').resolves({
-      isBroken: false,
-      inconclusive: true,
-      httpStatus: null,
-      statusBucket: null,
-      contentType: null,
-    });
-    isLinkInaccessible.withArgs('https://example.com/rejected').rejects(new Error('network exploded'));
+    const isLinkInaccessible = createRumValidationStub();
 
     const log = createLog();
     const { internalLinksAuditRunner } = createSteps({ isLinkInaccessible });
@@ -308,13 +369,7 @@ describe('internal-links rum-detection', () => {
     isWithinAuditScope.withArgs('https://example.com/out-of-scope', 'https://example.com').returns(true);
     isWithinAuditScope.withArgs('https://external.example/missing', 'https://example.com').returns(false);
 
-    const isLinkInaccessible = sinon.stub().resolves({
-      isBroken: true,
-      inconclusive: false,
-      httpStatus: 404,
-      statusBucket: 'not_found_404',
-      contentType: 'text/html',
-    });
+    const isLinkInaccessible = createRumValidationStub();
     const log = createLog();
     const { internalLinksAuditRunner } = createSteps({ isWithinAuditScope, isLinkInaccessible });
 
@@ -356,13 +411,7 @@ describe('internal-links rum-detection', () => {
         },
       ]),
     };
-    const isLinkInaccessible = sinon.stub().resolves({
-      isBroken: true,
-      inconclusive: false,
-      httpStatus: 404,
-      statusBucket: 'not_found_404',
-      contentType: 'text/html',
-    });
+    const isLinkInaccessible = createRumValidationStub();
     const log = createLog();
     const { runAuditAndImportTopPagesStep } = createInternalLinksRumSteps({
       auditType: 'broken-internal-links',
