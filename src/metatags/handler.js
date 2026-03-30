@@ -411,10 +411,19 @@ export async function runAuditAndGenerateSuggestions(context) {
     };
   }
 
-  const syncedSuggestions = await Suggestion.allByOpportunityIdAndStatus(
-    opportunity.getId(),
-    SuggestionModel.STATUSES.NEW,
-  );
+  const suggestionStatusesToProcess = [SuggestionModel.STATUSES.NEW];
+  if (site?.requiresValidation && SuggestionModel.STATUSES.PENDING_VALIDATION) {
+    suggestionStatusesToProcess.push(SuggestionModel.STATUSES.PENDING_VALIDATION);
+  }
+
+  const syncedSuggestions = (
+    await Promise.all(
+      suggestionStatusesToProcess.map((status) => Suggestion.allByOpportunityIdAndStatus(
+        opportunity.getId(),
+        status,
+      )),
+    )
+  ).flat();
 
   // Build suggestion map with actual DB IDs
   const suggestionMap = syncedSuggestions.map((s) => {

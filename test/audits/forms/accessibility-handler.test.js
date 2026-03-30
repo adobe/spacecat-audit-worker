@@ -2522,9 +2522,27 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           log: {
             info: sinon.stub(),
             error: sinon.stub(),
+            warn: sinon.stub(),
           },
         })
         .build();
+    });
+
+    it('should log warn and skip when a11yData is not an array', async () => {
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
+          createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createFormAccessibilitySuggestionsFromMystique(
+        { not: 'an array' },
+        mockOpportunity,
+        context,
+      );
+
+      expect(context.log.warn).to.have.been.calledWith('[FormMystiqueSuggestions] a11yData is not an array, skipping');
+      expect(createIndividualOpportunitySuggestionsStub).to.not.have.been.called;
     });
 
     it('should create individual suggestions from Mystique data with multiple htmlWithIssues', async () => {
@@ -2606,9 +2624,10 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         failureSummary: 'Ensure that all form inputs have associated <label> elements.',
       });
       expect(firstSuggestion.issues[0].htmlWithIssues).to.have.lengthOf(1);
+      // Normalized to canonical shape (snake_case) for pipeline compatibility
       expect(firstSuggestion.issues[0].htmlWithIssues[0]).to.deep.equal({
-        updateFrom: '<input type="text" id="username">',
-        targetSelector: '#username',
+        update_from: '<input type="text" id="username">',
+        target_selector: '#username',
       });
 
       // Check second suggestion
@@ -2622,8 +2641,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(secondSuggestion.issues).to.have.lengthOf(1);
       expect(secondSuggestion.issues[0].htmlWithIssues).to.have.lengthOf(1);
       expect(secondSuggestion.issues[0].htmlWithIssues[0]).to.deep.equal({
-        updateFrom: '<input type="email" id="email">',
-        targetSelector: '#email',
+        update_from: '<input type="email" id="email">',
+        target_selector: '#email',
       });
 
       // Verify logging
@@ -2824,7 +2843,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
               wcagRule: '1.3.1 Info and Relationships',
               wcagLevel: 'A',
               failureSummary: 'Add label',
-              htmlWithIssues: [], // Empty htmlWithIssues
+              htmlWithIssues: [], // Empty htmlWithIssues -> normalizeFormA11yIssue returns null
               aiGenerated: false,
               type: 'missing-label',
               severity: 'serious',
@@ -2834,7 +2853,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
               wcagRule: '1.4.3 Contrast (Minimum)',
               wcagLevel: 'AA',
               failureSummary: 'Improve contrast',
-              htmlWithIssues: null, // Null htmlWithIssues
+              htmlWithIssues: null, // Null -> treated as [] -> normalizeFormA11yIssue returns null
               aiGenerated: true,
               type: 'color-contrast',
               severity: 'critical',
@@ -2858,6 +2877,90 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       // Should not call createIndividualOpportunitySuggestions since no valid htmlWithIssues
       expect(createIndividualOpportunitySuggestionsStub).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith('[FormMystiqueSuggestions] No individual form accessibility suggestions to create from Mystique data');
+    });
+
+    it('should skip null or non-object issues in a11yIssues array', async () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            null,
+            'not an object',
+            {
+              description: 'Valid issue',
+              wcagRule: '1.3.1 Info and Relationships',
+              wcagLevel: 'A',
+              failureSummary: 'Add label',
+              htmlWithIssues: [{ updateFrom: '<input id="x">', targetSelector: '#x' }],
+              type: 'missing-label',
+              severity: 'serious',
+            },
+          ],
+        },
+      ];
+
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
+          createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createFormAccessibilitySuggestionsFromMystique(
+        a11yData,
+        mockOpportunity,
+        context,
+      );
+
+      expect(createIndividualOpportunitySuggestionsStub).to.have.been.calledOnce;
+      const typeSpecificData = createIndividualOpportunitySuggestionsStub.getCall(0).args[1];
+      expect(typeSpecificData.data).to.have.lengthOf(1);
+    });
+
+    it('should skip single issue with empty htmlWithIssues and still process valid issue', async () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              description: 'Empty htmlWithIssues',
+              wcagRule: '1.3.1 Info and Relationships',
+              wcagLevel: 'A',
+              failureSummary: 'Add label',
+              htmlWithIssues: [],
+              type: 'missing-label',
+              severity: 'serious',
+            },
+            {
+              description: 'Valid issue',
+              wcagRule: '1.3.1 Info and Relationships',
+              wcagLevel: 'A',
+              failureSummary: 'Add label',
+              htmlWithIssues: [{ updateFrom: '<input id="x">', targetSelector: '#x' }],
+              type: 'missing-label',
+              severity: 'serious',
+            },
+          ],
+        },
+      ];
+
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
+          createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createFormAccessibilitySuggestionsFromMystique(
+        a11yData,
+        mockOpportunity,
+        context,
+      );
+
+      expect(createIndividualOpportunitySuggestionsStub).to.have.been.calledOnce;
+      const typeSpecificData = createIndividualOpportunitySuggestionsStub.getCall(0).args[1];
+      expect(typeSpecificData.data).to.have.lengthOf(1);
+      expect(typeSpecificData.data[0].issues[0].htmlWithIssues[0]).to.deep.equal({ update_from: '<input id="x">', target_selector: '#x' });
     });
 
     it('should handle empty a11yData array', async () => {
@@ -2970,6 +3073,390 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       // understandingUrl should be populated from getSuccessCriteriaDetails
       expect(issue.understandingUrl).to.be.a('string');
     });
+
+    it('should normalize htmlWithIssues with null and string items to canonical shape', async () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              description: 'Missing label',
+              wcagRule: '1.3.1 Info and Relationships',
+              wcagLevel: 'A',
+              failureSummary: 'Add label',
+              htmlWithIssues: [
+                null,
+                'plain string html',
+                { update_from: 'snake_html', target_selector: '.snake' },
+              ],
+              aiGenerated: false,
+              type: 'missing-label',
+              severity: 'serious',
+            },
+          ],
+        },
+      ];
+
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
+          createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createFormAccessibilitySuggestionsFromMystique(
+        a11yData,
+        mockOpportunity,
+        context,
+      );
+
+      expect(createIndividualOpportunitySuggestionsStub).to.have.been.calledOnce;
+      const typeSpecificData = createIndividualOpportunitySuggestionsStub.getCall(0).args[1];
+      expect(typeSpecificData.data).to.have.lengthOf(3);
+
+      expect(typeSpecificData.data[0].issues[0].htmlWithIssues[0]).to.deep.equal({ update_from: '', target_selector: '' });
+      expect(typeSpecificData.data[1].issues[0].htmlWithIssues[0]).to.deep.equal({ update_from: 'plain string html', target_selector: '' });
+      expect(typeSpecificData.data[2].issues[0].htmlWithIssues[0]).to.deep.equal({ update_from: 'snake_html', target_selector: '.snake' });
+    });
+
+    it('should normalize non-string updateFrom and targetSelector via String()', async () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              description: 'Missing label',
+              wcagRule: '1.3.1 Info and Relationships',
+              wcagLevel: 'A',
+              failureSummary: 'Add label',
+              htmlWithIssues: [
+                { updateFrom: 12345, targetSelector: null },
+                { updateFrom: 'html', targetSelector: 999 },
+                { updateFrom: null, targetSelector: '.selector' },
+              ],
+              aiGenerated: false,
+              type: 'missing-label',
+              severity: 'serious',
+            },
+          ],
+        },
+      ];
+
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
+          createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createFormAccessibilitySuggestionsFromMystique(
+        a11yData,
+        mockOpportunity,
+        context,
+      );
+
+      expect(createIndividualOpportunitySuggestionsStub).to.have.been.calledOnce;
+      const typeSpecificData = createIndividualOpportunitySuggestionsStub.getCall(0).args[1];
+      expect(typeSpecificData.data).to.have.lengthOf(3);
+      expect(typeSpecificData.data[0].issues[0].htmlWithIssues[0]).to.deep.equal({
+        update_from: '12345',
+        target_selector: '',
+      });
+      expect(typeSpecificData.data[1].issues[0].htmlWithIssues[0]).to.deep.equal({
+        update_from: 'html',
+        target_selector: '999',
+      });
+      expect(typeSpecificData.data[2].issues[0].htmlWithIssues[0]).to.deep.equal({
+        update_from: '',
+        target_selector: '.selector',
+      });
+    });
+
+    it('should skip issue when getSuccessCriteriaDetails throws and continue with others', async () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              description: 'Invalid rule',
+              wcagRule: 'invalid-wcag-rule-throws',
+              wcagLevel: 'A',
+              failureSummary: 'Add label',
+              htmlWithIssues: [{ updateFrom: '<input>', targetSelector: '#x' }],
+              type: 'missing-label',
+              severity: 'serious',
+            },
+            {
+              description: 'Valid issue',
+              wcagRule: '1.3.1 Info and Relationships',
+              wcagLevel: 'A',
+              failureSummary: 'Add label',
+              htmlWithIssues: [{ updateFrom: '<input id="y">', targetSelector: '#y' }],
+              type: 'missing-label',
+              severity: 'serious',
+            },
+          ],
+        },
+      ];
+
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
+          createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createFormAccessibilitySuggestionsFromMystique(
+        a11yData,
+        mockOpportunity,
+        context,
+      );
+
+      expect(context.log.error).to.have.been.calledWithMatch(/Error getting success criteria details/);
+      expect(createIndividualOpportunitySuggestionsStub).to.have.been.calledOnce;
+      const typeSpecificData = createIndividualOpportunitySuggestionsStub.getCall(0).args[1];
+      expect(typeSpecificData.data).to.have.lengthOf(1);
+      expect(typeSpecificData.data[0].issues[0].htmlWithIssues[0].target_selector).to.equal('#y');
+    });
+
+    it('should normalize issue with PascalCase and snake_case fields from Mystique', async () => {
+      const a11yData = [
+        {
+          Form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              Type: 'missing-label',
+              Description: 'Missing label',
+              wcag_rule: '1.3.1 Info and Relationships',
+              wcag_level: 'A',
+              Severity: 'critical',
+              failure_summary: 'Add label',
+              htmlWithIssues: [{ updateFrom: '<input>', targetSelector: '#x' }],
+              ai_generated: false,
+            },
+          ],
+        },
+      ];
+
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
+          createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createFormAccessibilitySuggestionsFromMystique(
+        a11yData,
+        mockOpportunity,
+        context,
+      );
+
+      expect(createIndividualOpportunitySuggestionsStub).to.have.been.calledOnce;
+      const typeSpecificData = createIndividualOpportunitySuggestionsStub.getCall(0).args[1];
+      const suggestion = typeSpecificData.data[0];
+      expect(suggestion.url).to.equal('https://example.com/form1');
+      expect(suggestion.issues[0].type).to.equal('missing-label');
+      expect(suggestion.issues[0].severity).to.equal('critical');
+      expect(suggestion.issues[0].htmlWithIssues[0]).to.deep.equal({ update_from: '<input>', target_selector: '#x' });
+      expect(suggestion.aiGenerated).to.equal(false);
+    });
+
+    it('should normalize issue with only snake_case fields and default aiGenerated to true', async () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'missing-label',
+              description: 'Label missing',
+              wcag_rule: '1.3.1 Info and Relationships',
+              wcag_level: 'A',
+              severity: 'serious',
+              failure_summary: 'Add label',
+              htmlWithIssues: [
+                { update_from: '<input id="a">', target_selector: '#a' },
+              ],
+              // no aiGenerated or ai_generated -> default true
+            },
+          ],
+        },
+      ];
+
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
+          createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createFormAccessibilitySuggestionsFromMystique(
+        a11yData,
+        mockOpportunity,
+        context,
+      );
+
+      expect(createIndividualOpportunitySuggestionsStub).to.have.been.calledOnce;
+      const typeSpecificData = createIndividualOpportunitySuggestionsStub.getCall(0).args[1];
+      const suggestion = typeSpecificData.data[0];
+      expect(suggestion.issues[0].severity).to.equal('serious');
+      expect(suggestion.issues[0].failureSummary).to.equal('Add label');
+      expect(suggestion.aiGenerated).to.equal(true);
+      expect(suggestion.issues[0].htmlWithIssues[0]).to.deep.equal({
+        update_from: '<input id="a">',
+        target_selector: '#a',
+      });
+    });
+
+    it('should use form when form is present and Form is not', async () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/with-lowercase-form',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'missing-label',
+              description: 'Label missing',
+              wcagRule: '1.3.1 Info and Relationships',
+              wcagLevel: 'A',
+              severity: 'serious',
+              failureSummary: 'Add label',
+              htmlWithIssues: [{ updateFrom: '<input>', targetSelector: '#x' }],
+            },
+          ],
+        },
+      ];
+
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
+          createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createFormAccessibilitySuggestionsFromMystique(
+        a11yData,
+        mockOpportunity,
+        context,
+      );
+
+      expect(createIndividualOpportunitySuggestionsStub).to.have.been.calledOnce;
+      const typeSpecificData = createIndividualOpportunitySuggestionsStub.getCall(0).args[1];
+      expect(typeSpecificData.data[0].url).to.equal('https://example.com/with-lowercase-form');
+    });
+
+    it('should use empty string fallback when issue has no description, wcagLevel, or failureSummary', async () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'missing-label',
+              wcagRule: '1.3.1 Info and Relationships',
+              htmlWithIssues: [{ updateFrom: '<input>', targetSelector: '#x' }],
+              // no description/Description, wcagLevel/wcag_level, failureSummary/failure_summary
+            },
+          ],
+        },
+      ];
+
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
+          createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createFormAccessibilitySuggestionsFromMystique(
+        a11yData,
+        mockOpportunity,
+        context,
+      );
+
+      expect(createIndividualOpportunitySuggestionsStub).to.have.been.calledOnce;
+      const typeSpecificData = createIndividualOpportunitySuggestionsStub.getCall(0).args[1];
+      const issue = typeSpecificData.data[0].issues[0];
+      expect(issue.description).to.equal('');
+      expect(issue.wcagLevel).to.equal('');
+      expect(issue.failureSummary).to.equal('');
+      expect(issue.severity).to.equal('serious');
+    });
+
+    it('should handle issue with no type/Type and no wcagRule/wcag_rule when getSuccessCriteriaDetails is mocked', async () => {
+      const getSuccessCriteriaDetailsStub = sandbox.stub().returns({
+        understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html',
+      });
+
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              description: 'Label',
+              wcagLevel: 'A',
+              failureSummary: 'Fix',
+              htmlWithIssues: [{ updateFrom: '<input>', targetSelector: '#x' }],
+              // no type/Type, no wcagRule/wcag_rule
+            },
+          ],
+        },
+      ];
+
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
+          createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
+        },
+        '../../../src/forms-opportunities/utils.js': {
+          getSuccessCriteriaDetails: getSuccessCriteriaDetailsStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createFormAccessibilitySuggestionsFromMystique(
+        a11yData,
+        mockOpportunity,
+        context,
+      );
+
+      expect(createIndividualOpportunitySuggestionsStub).to.have.been.calledOnce;
+      const typeSpecificData = createIndividualOpportunitySuggestionsStub.getCall(0).args[1];
+      const issue = typeSpecificData.data[0].issues[0];
+      expect(issue.type).to.equal('');
+      expect(issue.wcagRule).to.equal('');
+    });
+
+    it('should use empty string for pageUrl when neither form nor Form is present', async () => {
+      const a11yData = [
+        {
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'missing-label',
+              description: 'Label missing',
+              wcagRule: '1.3.1 Info and Relationships',
+              wcagLevel: 'A',
+              severity: 'serious',
+              failureSummary: 'Add label',
+              htmlWithIssues: [{ updateFrom: '<input>', targetSelector: '#x' }],
+            },
+          ],
+        },
+      ];
+
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
+          createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createFormAccessibilitySuggestionsFromMystique(
+        a11yData,
+        mockOpportunity,
+        context,
+      );
+
+      expect(createIndividualOpportunitySuggestionsStub).to.have.been.calledOnce;
+      const typeSpecificData = createIndividualOpportunitySuggestionsStub.getCall(0).args[1];
+      expect(typeSpecificData.data[0].url).to.equal('');
+    });
   });
 
   describe('extractFormAccessibilityData', () => {
@@ -3026,6 +3513,39 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         occurrences: 1,
         failureSummary: 'Fix any of the following...',
       });
+    });
+
+    it('should normalize htmlWithIssues to snake_case when Mystique sends camelCase', () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { updateFrom: '<input type="text">', targetSelector: 'input[type="text"]' },
+              ],
+              failureSummary: 'Fix any of the following...',
+            },
+          ],
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].issues[0].htmlWithIssues).to.have.lengthOf(1);
+      const htmlItem = result[0].issues[0].htmlWithIssues[0];
+      expect(htmlItem).to.have.keys('update_from', 'target_selector');
+      expect(htmlItem.update_from).to.equal('<input type="text">');
+      expect(htmlItem.target_selector).to.equal('input[type="text"]');
+      expect(htmlItem).to.not.have.property('updateFrom');
+      expect(htmlItem).to.not.have.property('targetSelector');
     });
 
     it('should handle null a11yData', () => {

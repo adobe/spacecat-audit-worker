@@ -346,6 +346,38 @@ describe('summarization guidance handler', () => {
     expect(syncSuggestionsStub).to.have.been.calledOnce;
   });
 
+  it('should filter out suggestions when page_summary_present or key_points_present is true', async () => {
+    fetchStub.resolves({
+      ok: true,
+      status: 200,
+      json: sinon.stub().resolves({
+        guidance: mockSummarizationData.guidance,
+        suggestions: [
+          {
+            ...mockSummarizationData.suggestions[0],
+            page_summary_present: true,
+            key_points_present: true,
+          },
+        ],
+      }),
+    });
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(dummyOpportunity);
+
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        presignedUrl: 'https://s3.aws.com/summaries.json',
+      },
+    };
+    await handler(message, context);
+
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
+    const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+    expect(syncArgs.newData).to.have.length(0);
+  });
+
   it('should create suggestion with correct data structure', async () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(dummyOpportunity);

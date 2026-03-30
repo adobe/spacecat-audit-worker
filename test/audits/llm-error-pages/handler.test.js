@@ -96,7 +96,7 @@ describe('LLM Error Pages Handler', function () {
     // Setup mocks for esmock
     mockAthenaClient = { query: sandbox.stub().resolves([]) };
 
-    mockGetS3Config = sandbox.stub().resolves({
+    mockGetS3Config = sandbox.stub().returns({
       bucket: 'test-bucket',
       customerName: 'test-customer',
       databaseName: 'test_db',
@@ -110,6 +110,7 @@ describe('LLM Error Pages Handler', function () {
         year: 2025,
         startDate: new Date('2025-08-18T00:00:00Z'),
         endDate: new Date('2025-08-24T23:59:59Z'),
+        periodIdentifier: 'w34-2025',
       }],
     });
 
@@ -207,7 +208,6 @@ describe('LLM Error Pages Handler', function () {
         default: {},
       },
       '../../../src/llm-error-pages/utils.js': {
-        getS3Config: mockGetS3Config,
         generateReportingPeriods: mockGenerateReportingPeriods,
         processErrorPagesResults: mockProcessResults,
         buildLlmErrorPagesQuery: mockBuildQuery,
@@ -227,6 +227,10 @@ describe('LLM Error Pages Handler', function () {
       },
       '../../../src/utils/cdn-utils.js': {
         buildSiteFilters: mockBuildSiteFilters,
+        getS3Config: mockGetS3Config,
+        getCdnAwsRuntime: () => ({
+          createAthenaClient: () => mockAthenaClient,
+        }),
       },
       '../../../src/utils/agentic-urls.js': {
         getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
@@ -348,10 +352,10 @@ describe('LLM Error Pages Handler', function () {
 
       expect(result.type).to.equal('audit-result');
       expect(result.siteId).to.equal('site-id-123');
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
-      expect(result.auditResult.totalErrors).to.equal(3);
-      expect(result.auditResult.categorizedResults).to.exist;
+      expect(result.auditResult[0].success).to.be.true;
+      expect(result.auditResult[0].periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
+      expect(result.auditResult[0].totalErrors).to.equal(3);
+      expect(result.auditResult[0].categorizedResults).to.exist;
       expect(result.fullAuditRef).to.equal('https://example.com');
 
       expect(context.log.info).to.have.been.calledWith('[LLM-ERROR-PAGES] Starting audit for https://example.com');
@@ -362,18 +366,61 @@ describe('LLM Error Pages Handler', function () {
       );
     });
 
-    it('should handle audit failure gracefully', async () => {
+    it('should produce two weeks when run on a Monday without weekOffset', async () => {
+      const monday = new Date('2025-08-18T12:00:00Z'); // Monday
+      const clock = sinon.useFakeTimers(monday.getTime());
+      try {
+        mockGenerateReportingPeriods.returns({
+          weeks: [
+            { weekNumber: 33, year: 2025, startDate: new Date('2025-08-11'), endDate: new Date('2025-08-17'), periodIdentifier: 'w33-2025' },
+            { weekNumber: 34, year: 2025, startDate: new Date('2025-08-18'), endDate: new Date('2025-08-24'), periodIdentifier: 'w34-2025' },
+          ],
+        });
+        const result = await runAuditAndSendToMystique(context);
+        expect(result.auditResult).to.have.length(2);
+        expect(mockGenerateReportingPeriods).to.have.been.calledWith(sinon.match.date, [-1, 0]);
+      } finally {
+        clock.restore();
+      }
+    });
+
+    it('should use current week only when not Monday and no weekOffset', async () => {
+      const wednesday = new Date('2025-08-20T12:00:00Z'); // Wednesday
+      const clock = sinon.useFakeTimers(wednesday.getTime());
+      try {
+        const result = await runAuditAndSendToMystique(context);
+        expect(result.auditResult).to.have.length(1);
+        expect(mockGenerateReportingPeriods).to.have.been.calledWith(sinon.match.date, [0]);
+      } finally {
+        clock.restore();
+      }
+    });
+
+    it('should handle per-week query failure gracefully', async () => {
       mockAthenaClient.query.rejects(new Error('Database error'));
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.equal('Database error');
+      expect(result.auditResult[0].success).to.be.false;
+      expect(result.auditResult[0].error).to.equal('Database error');
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/\[LLM-ERROR-PAGES\] Audit failed: Database error/),
+        sinon.match(/\[LLM-ERROR-PAGES\] Failed for/),
         sinon.match.instanceOf(Error),
       );
       expect(context.sqs.sendMessage).not.to.have.been.called;
+    });
+
+    it('should handle audit failure gracefully when setup fails before week loop', async () => {
+      mockCreateLLMOSharepointClient.rejects(new Error('SharePoint connection failed'));
+
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(result.auditResult[0].success).to.be.false;
+      expect(result.auditResult[0].error).to.equal('SharePoint connection failed');
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/\[LLM-ERROR-PAGES\] Audit failed: SharePoint connection failed/),
+        sinon.match.instanceOf(Error),
+      );
     });
 
     it('should skip Mystique when SQS not configured', async () => {
@@ -381,7 +428,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] SQS or Mystique queue not configured, skipping message',
       );
@@ -392,7 +439,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] SQS or Mystique queue not configured, skipping message',
       );
@@ -407,7 +454,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message',
       );
@@ -431,7 +478,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const [, message] = context.sqs.sendMessage.firstCall.args;
       expect(message.data.brokenLinks.length).to.be.at.most(50);
@@ -485,7 +532,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(mockSaveExcelReport).to.have.been.calledThrice;
     });
 
@@ -497,7 +544,6 @@ describe('LLM Error Pages Handler', function () {
           AWSAthenaClient: { fromContext: sandbox.stub().returns(mockAthenaClient) },
         },
         '../../../src/llm-error-pages/utils.js': {
-          getS3Config: mockGetS3Config,
           generateReportingPeriods: mockGenerateReportingPeriods,
           processErrorPagesResults: () => ({
             totalErrors: 2,
@@ -521,6 +567,10 @@ describe('LLM Error Pages Handler', function () {
         },
         '../../../src/utils/cdn-utils.js': {
           buildSiteFilters: mockBuildSiteFilters,
+          getS3Config: mockGetS3Config,
+          getCdnAwsRuntime: () => ({
+            createAthenaClient: () => mockAthenaClient,
+          }),
         },
         exceljs: {
           default: {
@@ -566,7 +616,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(mockBuildSiteFilters).to.have.been.calledWith([], site);
     });
 
@@ -575,7 +625,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
     });
 
     it('should use fallback delivery type when not available', async () => {
@@ -643,7 +693,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message',
       );
@@ -867,7 +917,7 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
           bucket: 'test', customerName: 'test', databaseName: 'test_db', tableName: 'test_table',
           getAthenaTempLocation: () => 's3://test/temp/',
         }),
-        generateReportingPeriods: sandbox.stub().returns({ weeks: [{ weekNumber: 1, year: 2025, startDate: new Date(), endDate: new Date() }] }),
+        generateReportingPeriods: sandbox.stub().returns({ weeks: [{ weekNumber: 1, year: 2025, startDate: new Date(), endDate: new Date(), periodIdentifier: 'w01-2025' }] }),
         processErrorPagesResults: mockProcessResults,
         buildLlmErrorPagesQuery: sandbox.stub().resolves('SELECT'),
         getAllLlmProviders: sandbox.stub().returns([]),
@@ -883,6 +933,13 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
       },
       '../../../src/utils/cdn-utils.js': {
         buildSiteFilters: sandbox.stub().returns(''),
+        getS3Config: sandbox.stub().returns({
+          bucket: 'test', customerName: 'test', databaseName: 'test_db', tableName: 'test_table',
+          getAthenaTempLocation: () => 's3://test/temp/',
+        }),
+        getCdnAwsRuntime: () => ({
+          createAthenaClient: () => mockAthenaClient,
+        }),
       },
       exceljs: {
         default: { Workbook: function Workbook() { return { addWorksheet: () => ({ addRow: sandbox.stub() }) }; } },
@@ -907,14 +964,12 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
 
     const result = await handler.runAuditAndSendToMystique(context);
 
-    expect(result.auditResult.success).to.be.true;
-    // Verify Athena URLs were used
+    expect(result.auditResult[0].success).to.be.true;
     const sentMessage = context.sqs.sendMessage.firstCall.args[1];
     expect(sentMessage.data.alternativeUrls).to.deep.equal([
       'https://example.com/athena-alt1',
       'https://example.com/athena-alt2',
     ]);
-    // Ahrefs was NOT called
     expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
   });
 
@@ -942,11 +997,7 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
         getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
       },
       '../../../src/llm-error-pages/utils.js': {
-        getS3Config: sandbox.stub().resolves({
-          bucket: 'test', customerName: 'test', databaseName: 'test_db', tableName: 'test_table',
-          getAthenaTempLocation: () => 's3://test/temp/',
-        }),
-        generateReportingPeriods: sandbox.stub().returns({ weeks: [{ weekNumber: 1, year: 2025, startDate: new Date(), endDate: new Date() }] }),
+        generateReportingPeriods: sandbox.stub().returns({ weeks: [{ weekNumber: 1, year: 2025, startDate: new Date(), endDate: new Date(), periodIdentifier: 'w01-2025' }] }),
         processErrorPagesResults: mockProcessResults,
         buildLlmErrorPagesQuery: sandbox.stub().resolves('SELECT'),
         getAllLlmProviders: sandbox.stub().returns([]),
@@ -962,6 +1013,13 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
       },
       '../../../src/utils/cdn-utils.js': {
         buildSiteFilters: sandbox.stub().returns(''),
+        getS3Config: sandbox.stub().returns({
+          bucket: 'test', customerName: 'test', databaseName: 'test_db', tableName: 'test_table',
+          getAthenaTempLocation: () => 's3://test/temp/',
+        }),
+        getCdnAwsRuntime: () => ({
+          createAthenaClient: () => mockAthenaClient,
+        }),
       },
       exceljs: {
         default: { Workbook: function Workbook() { return { addWorksheet: () => ({ addRow: sandbox.stub() }) }; } },
@@ -988,8 +1046,7 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
 
     const result = await handler.runAuditAndSendToMystique(context);
 
-    expect(result.auditResult.success).to.be.true;
-    // Verify Ahrefs URLs were used as fallback
+    expect(result.auditResult[0].success).to.be.true;
     const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.alternativeUrls).to.deep.equal(['https://example.com/ahrefs-alt1']);
       expect(context.log.info).to.have.been.calledWith(
@@ -1031,7 +1088,7 @@ describe('LLM Error Pages Handler (isolated)', function () {
       },
     };
     const mockAthenaClient = { query: sandbox.stub().resolves([]) };
-    const mockGetS3Config = sandbox.stub().resolves({
+    const mockGetS3Config = sandbox.stub().returns({
       bucket: 'test-bucket',
       customerName: 'test-customer',
       databaseName: 'test_db',
@@ -1044,6 +1101,7 @@ describe('LLM Error Pages Handler (isolated)', function () {
         year: 2025,
         startDate: new Date('2025-08-18T00:00:00Z'),
         endDate: new Date('2025-08-24T23:59:59Z'),
+        periodIdentifier: 'w34-2025',
       }],
     });
     const mockBuildSiteFilters = sandbox.stub().returns('');
@@ -1073,7 +1131,6 @@ describe('LLM Error Pages Handler (isolated)', function () {
         default: {},
       },
       '../../../src/llm-error-pages/utils.js': {
-        getS3Config: mockGetS3Config,
         generateReportingPeriods: mockGenerateReportingPeriods,
         processErrorPagesResults: () => ({
           totalErrors: 2,
@@ -1094,6 +1151,13 @@ describe('LLM Error Pages Handler (isolated)', function () {
       '../../../src/utils/report-uploader.js': {
         createLLMOSharepointClient: sandbox.stub().resolves({}),
         saveExcelReport: mockSaveExcelReport,
+      },
+      '../../../src/utils/cdn-utils.js': {
+        buildSiteFilters: mockBuildSiteFilters,
+        getS3Config: mockGetS3Config,
+        getCdnAwsRuntime: () => ({
+          createAthenaClient: () => mockAthenaClient,
+        }),
       },
       exceljs: {
         default: {
@@ -1120,5 +1184,117 @@ describe('LLM Error Pages Handler (isolated)', function () {
     sinon.assert.match(dataRows[0][6], '');
     sinon.assert.match(dataRows[0][7], '');
     sinon.assert.match(dataRows[1][2], 0);
+  });
+});
+
+describe('LLM Error Pages Handler – default export routing', function () {
+  this.timeout(10000);
+
+  it('routes to backfillAudit when weekOffset is present', async () => {
+    const sandbox = sinon.createSandbox();
+    const mockBackfillRun = sandbox.stub().resolves({ status: 200 });
+    const mockStepRun = sandbox.stub().resolves({ status: 200 });
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class AuditBuilder {
+          withUrlResolver() { return this; }
+          addStep() { return this; }
+          withRunner() { this._runner = true; return this; }
+          build() { return { run: this._runner ? mockBackfillRun : mockStepRun }; }
+        },
+      },
+    });
+
+    await handler.default.run({ auditContext: { weekOffset: -1 } }, {});
+    expect(mockBackfillRun).to.have.been.calledOnce;
+    expect(mockStepRun).not.to.have.been.called;
+
+    sandbox.restore();
+  });
+
+  it('routes to stepAudit when weekOffset is absent', async () => {
+    const sandbox = sinon.createSandbox();
+    const mockBackfillRun = sandbox.stub().resolves({ status: 200 });
+    const mockStepRun = sandbox.stub().resolves({ status: 200 });
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class AuditBuilder {
+          withUrlResolver() { return this; }
+          addStep() { return this; }
+          withRunner() { this._runner = true; return this; }
+          build() { return { run: this._runner ? mockBackfillRun : mockStepRun }; }
+        },
+      },
+    });
+
+    await handler.default.run({}, {});
+    expect(mockStepRun).to.have.been.calledOnce;
+    expect(mockBackfillRun).not.to.have.been.called;
+
+    sandbox.restore();
+  });
+
+  it('backfillAudit runner calls runAuditAndSendToMystique with enriched context', async () => {
+    const sandbox = sinon.createSandbox();
+    let capturedRunner;
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class AuditBuilder {
+          withUrlResolver() { return this; }
+          addStep() { return this; }
+          withRunner(runner) { capturedRunner = runner; return this; }
+          build() { return { run: sandbox.stub() }; }
+        },
+      },
+      '@adobe/spacecat-shared-athena-client': {
+        AWSAthenaClient: { fromContext: sandbox.stub().returns({ query: sandbox.stub().resolves([]) }) },
+      },
+      '../../../src/llm-error-pages/utils.js': {
+        getS3Config: sandbox.stub().resolves({
+          databaseName: 'db', tableName: 'tbl', customerName: 'test',
+          getAthenaTempLocation: () => 's3://tmp/',
+        }),
+        generateReportingPeriods: sandbox.stub().returns({
+          weeks: [{ startDate: new Date(), endDate: new Date(), periodIdentifier: 'w01-2025' }],
+        }),
+        processErrorPagesResults: sandbox.stub().returns({ totalErrors: 0, errorPages: [], summary: { uniqueUrls: 0 } }),
+        buildLlmErrorPagesQuery: sandbox.stub().resolves('SELECT'),
+        getAllLlmProviders: sandbox.stub().returns([]),
+        categorizeErrorsByStatusCode: sandbox.stub().returns({}),
+        consolidateErrorsByUrl: (e) => e,
+        sortErrorsByTrafficVolume: (e) => e,
+        toPathOnly: (u) => u,
+        SPREADSHEET_COLUMNS: [],
+      },
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: sandbox.stub().resolves({}),
+        saveExcelReport: sandbox.stub().resolves(),
+      },
+      '../../../src/utils/cdn-utils.js': {
+        buildSiteFilters: sandbox.stub().returns(''),
+      },
+      exceljs: {
+        default: { Workbook: function Workbook() { return { addWorksheet: () => ({ addRow: sandbox.stub() }) }; } },
+      },
+    });
+
+    expect(capturedRunner).to.be.a('function');
+
+    const mockSite = {
+      getBaseURL: () => 'https://example.com',
+      getId: () => 'site-1',
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [], getLlmoDataFolder: () => 'test' }),
+    };
+    const mockContext = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+    };
+
+    const result = await capturedRunner('https://example.com', mockContext, mockSite, { weekOffset: -1 });
+    expect(result).to.have.property('auditResult');
+
+    sandbox.restore();
   });
 });

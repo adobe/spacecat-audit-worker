@@ -10,8 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { getStaticContent } from '@adobe/spacecat-shared-utils';
-import { resolveConsolidatedBucketName, extractCustomerDomain } from '../utils/cdn-utils.js';
+import { getStaticContent, isoCalendarWeek } from '@adobe/spacecat-shared-utils';
 import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL } from '../common/user-agent-classification.js';
 import { ELMO_LIVE_HOST } from '../common/constants.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
@@ -237,44 +236,11 @@ export async function buildLlmErrorPagesQuery(options) {
 }
 
 // ============================================================================
-// SITE AND CONFIGURATION UTILITIES
-// ============================================================================
-export async function getS3Config(site, context) {
-  const customerDomain = extractCustomerDomain(site);
-
-  const domainParts = customerDomain.split(/[._]/);
-  /* c8 ignore next */
-  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const bucket = resolveConsolidatedBucketName(context);
-  const siteId = site.getId();
-  const aggregatedLocation = `s3://${bucket}/aggregated/${siteId}/`;
-
-  return {
-    bucket,
-    customerName,
-    customerDomain,
-    aggregatedLocation,
-    databaseName: `cdn_logs_${customerDomain}`,
-    tableName: `aggregated_logs_${customerDomain}_consolidated`,
-    getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
-  };
-}
-
-// ============================================================================
 // DATE AND TIME UTILITIES
 // ============================================================================
 
 export function formatDateString(date) {
   return date.toISOString().split('T')[0];
-}
-
-function getWeekNumber(date) {
-  const d = new Date(date);
-  d.setUTCHours(0, 0, 0, 0);
-  /* c8 ignore next */
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
 }
 
 export function getWeekRange(offsetWeeks = 0, referenceDate = new Date()) {
@@ -318,36 +284,38 @@ export function generatePeriodIdentifier(startDate, endDate) {
 
   const diffDays = Math.ceil((endDate - startDate) / (24 * 60 * 60 * 1000));
   if (diffDays === 7) {
-    const year = startDate.getUTCFullYear();
-    const weekNum = getWeekNumber(startDate);
+    const { week: weekNum, year } = isoCalendarWeek(startDate);
     return `w${String(weekNum).padStart(2, '0')}-${year}`;
   }
 
   return `${start}_to_${end}`;
 }
 
-export function generateReportingPeriods(referenceDate = new Date()) {
-  const { weekStart, weekEnd } = getWeekRange(-1, referenceDate);
+export function generateReportingPeriods(referenceDate = new Date(), weekOffsets = [-1]) {
+  const offsets = Array.isArray(weekOffsets) ? weekOffsets : [weekOffsets];
 
-  const weekNumber = getWeekNumber(weekStart);
-  const year = weekStart.getUTCFullYear();
+  const weeks = offsets.map((offset) => {
+    const { weekStart, weekEnd } = getWeekRange(offset, referenceDate);
+    const { week: weekNumber, year } = isoCalendarWeek(weekStart);
 
-  const weeks = [{
-    weekNumber,
-    year,
-    weekLabel: `Week ${weekNumber}`,
-    startDate: weekStart,
-    endDate: weekEnd,
-    dateRange: {
-      start: formatDateString(weekStart),
-      end: formatDateString(weekEnd),
-    },
-  }];
+    return {
+      weekNumber,
+      year,
+      weekLabel: `Week ${weekNumber}`,
+      startDate: weekStart,
+      endDate: weekEnd,
+      dateRange: {
+        start: formatDateString(weekStart),
+        end: formatDateString(weekEnd),
+      },
+      periodIdentifier: `w${String(weekNumber).padStart(2, '0')}-${year}`,
+    };
+  });
 
   return {
     weeks,
     referenceDate: referenceDate.toISOString(),
-    columns: [`Week ${weekNumber}`],
+    columns: weeks.map((w) => w.weekLabel),
   };
 }
 

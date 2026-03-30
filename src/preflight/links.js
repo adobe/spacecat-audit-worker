@@ -14,7 +14,7 @@ import { load as cheerioLoad } from 'cheerio';
 import { saveIntermediateResults } from './utils.js';
 import { runLinksChecks } from './links-checks.js';
 import { generateSuggestionData } from '../internal-links/suggestions-generator.js';
-import { getDomElementSelector, toElementTargets } from '../utils/dom-selector.js';
+import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
 
 export const PREFLIGHT_LINKS = 'links';
 

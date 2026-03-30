@@ -17,11 +17,21 @@ import {
 } from '../utils/report-uploader.js';
 import {
   generateReportingPeriods,
-  generatePeriodIdentifier,
-  getS3Config,
   toPathOnly,
   SPREADSHEET_COLUMNS,
 } from './utils.js';
+import { getS3Config } from '../utils/cdn-utils.js';
+
+function derivePeriodFromBrokenLinks(brokenLinks = []) {
+  const periodRegex = /llm-404-suggestion-(w\d{2}-\d{4})-/;
+  for (const link of brokenLinks) {
+    const match = periodRegex.exec(link.suggestionId || '');
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  return null;
+}
 
 /**
  * Handles Mystique responses for LLM error pages and updates suggestions with AI data
@@ -42,7 +52,7 @@ export default async function handler(message, context) {
     log.error(`Site not found for siteId: ${siteId}`);
     return notFound('Site not found');
   }
-  const s3Config = await getS3Config(site, context);
+  const s3Config = getS3Config(site, context);
 
   const audit = await Audit.findById(auditId);
   if (!audit) {
@@ -53,8 +63,8 @@ export default async function handler(message, context) {
   // Read-modify-write the weekly 404 Excel file in SharePoint
   try {
     const sharepointClient = await createLLMOSharepointClient(context);
-    const week = generateReportingPeriods().weeks[0];
-    const derivedPeriod = generatePeriodIdentifier(week.startDate, week.endDate);
+    const derivedPeriod = derivePeriodFromBrokenLinks(brokenLinks)
+      || generateReportingPeriods(new Date(), [-1]).weeks[0].periodIdentifier;
     const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.customerName;
     const outputDir = `${llmoFolder}/agentic-traffic`;
     const filename = `agentictraffic-errors-404-${derivedPeriod}.xlsx`;

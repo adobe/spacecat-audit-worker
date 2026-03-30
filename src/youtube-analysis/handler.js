@@ -12,7 +12,9 @@
 
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import StoreClient, { StoreEmptyError, URL_TYPES, GUIDELINE_TYPES } from '../utils/store-client.js';
+import StoreClient, {
+  StoreEmptyError, URL_TYPES, GUIDELINE_TYPES, MYSTIQUE_URLS_LIMIT,
+} from '../utils/store-client.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 
 const LOG_PREFIX = '[YouTube]';
@@ -66,8 +68,17 @@ async function fetchStoreData(siteId, context) {
   const urls = await storeClient.getUrls(siteId, URL_TYPES.YOUTUBE);
   log.info(`${LOG_PREFIX} Retrieved ${urls.length} YouTube URLs from URL Store`);
 
-  const auditType = GUIDELINE_TYPES.YOUTUBE_ANALYSIS;
-  const sentimentConfig = await storeClient.getGuidelines(siteId, auditType);
+  let sentimentConfig = { topics: [], guidelines: [] };
+  try {
+    sentimentConfig = await storeClient.getGuidelines(siteId, GUIDELINE_TYPES.YOUTUBE_ANALYSIS);
+  } catch (error) {
+    if (error instanceof StoreEmptyError) {
+      log.info(`${LOG_PREFIX} No guidelines configured for youtube-analysis, proceeding without`);
+    } else {
+      throw error;
+    }
+  }
+
   const topicCount = sentimentConfig.topics.length;
   const guidelineCount = sentimentConfig.guidelines.length;
   log.info(`${LOG_PREFIX} Retrieved ${topicCount} topics and ${guidelineCount} guidelines`);
@@ -146,6 +157,10 @@ async function runYouTubeAnalysisAudit(url, context, site) {
 
 /**
  * Post processor to send YouTube analysis request to Mystique
+ * @param {string} auditUrl - The audit URL
+ * @param {Object} auditData - The audit data
+ * @param {Object} context - The context object
+ * @returns {Promise<Object>} Updated audit data
  */
 async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
   const {
@@ -173,7 +188,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
     const { config, storeData } = auditResult;
     const { urls, sentimentConfig } = storeData;
-    const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics);
+    const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
+      .slice(0, MYSTIQUE_URLS_LIMIT);
 
     const message = {
       type: 'guidance:youtube-analysis',
@@ -196,7 +212,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     };
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`${LOG_PREFIX} Queued YouTube analysis request to Mystique for ${config.companyName} with ${urls.length} URLs`);
+    log.info(`${LOG_PREFIX} Queued YouTube analysis request to Mystique for ${config.companyName} with ${enrichedUrls.length} URLs`);
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
     throw error;

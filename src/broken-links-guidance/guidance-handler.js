@@ -101,6 +101,16 @@ export default async function handler(message, context) {
       validSuggestedUrls,
       effectiveBaseURL,
     );
+    const existingData = suggestion.getData() || {};
+    const existingSuggestedUrls = Array.isArray(existingData.urlsSuggested)
+      ? existingData.urlsSuggested.filter(Boolean)
+      : [];
+    let nextSuggestedUrls = filteredSuggestedUrls;
+    if (nextSuggestedUrls.length === 0) {
+      nextSuggestedUrls = existingSuggestedUrls.length > 0
+        ? existingSuggestedUrls
+        : [effectiveBaseURL];
+    }
 
     // Handle AI rationale - clear it if all URLs were filtered out
     // This prevents showing rationale for URLs that don't exist
@@ -108,16 +118,16 @@ export default async function handler(message, context) {
     if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length > 0) {
       // All URLs were filtered out (likely invalid/broken), clear rationale
       log.info('All the suggested URLs were filtered out');
-      aiRationale = '';
+      aiRationale = existingSuggestedUrls.length > 0 ? existingData.aiRationale || '' : '';
     } else if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length === 0) {
       // No URLs were provided by Mystique, clear rationale
       log.info('No suggested URLs provided by Mystique');
-      aiRationale = '';
+      aiRationale = existingSuggestedUrls.length > 0 ? existingData.aiRationale || '' : '';
     }
 
     suggestion.setData({
-      ...suggestion.getData(),
-      urlsSuggested: filteredSuggestedUrls,
+      ...existingData,
+      urlsSuggested: nextSuggestedUrls,
       aiRationale,
     });
     toSave.push(suggestion);

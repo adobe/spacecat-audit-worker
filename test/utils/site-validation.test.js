@@ -12,10 +12,13 @@
 
 /* eslint-env mocha */
 
-import { expect } from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
-import { checkSiteRequiresValidation } from '../../src/utils/site-validation.js';
+import { checkSiteRequiresValidation, IS_LLMO_OPPTY } from '../../src/utils/site-validation.js';
+
+use(sinonChai);
 
 describe('utils/site-validation', () => {
   let sandbox;
@@ -34,6 +37,52 @@ describe('utils/site-validation', () => {
   afterEach(() => {
     sandbox.restore();
     process.env = { ...originalEnv };
+  });
+
+  it('exports IS_LLMO_OPPTY with all LLMO / tech-geo content audit types', () => {
+    expect(IS_LLMO_OPPTY).to.deep.equal([
+      'cited-analysis',
+      'faqs',
+      'llm-blocked',
+      'prerender',
+      'readability',
+      'reddit-analysis',
+      'summarization',
+      'toc',
+      'wikipedia-analysis',
+      'youtube-analysis',
+    ]);
+  });
+
+  it('returns false for prerender audit without calling TierClient', async () => {
+    const site = { getId: sandbox.stub().returns('site-prerender') };
+    const createStub = sandbox.stub(TierClient, 'createForSite');
+
+    const result = await checkSiteRequiresValidation(site, context, 'prerender');
+
+    expect(result).to.equal(false);
+    expect(createStub).to.not.have.been.called;
+  });
+
+  it('returns false for prerender even when site is in LA_VALIDATION_SITE_IDS', async () => {
+    process.env.LA_VALIDATION_SITE_IDS = 'site-la';
+    const site = { getId: sandbox.stub().returns('site-la') };
+    const createStub = sandbox.stub(TierClient, 'createForSite');
+
+    const result = await checkSiteRequiresValidation(site, context, 'prerender');
+
+    expect(result).to.equal(false);
+    expect(createStub).to.not.have.been.called;
+  });
+
+  it('returns false for faqs LLMO audit without calling TierClient', async () => {
+    const site = { getId: sandbox.stub().returns('site-faqs') };
+    const createStub = sandbox.stub(TierClient, 'createForSite');
+
+    const result = await checkSiteRequiresValidation(site, context, 'faqs');
+
+    expect(result).to.equal(false);
+    expect(createStub).to.not.have.been.called;
   });
 
   it('returns false when site is null/undefined', async () => {
