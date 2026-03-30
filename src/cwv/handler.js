@@ -13,7 +13,7 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { buildCWVAuditResult } from './cwv-audit-result.js';
+import { buildPrioritizedCWVAuditResult } from './cwv-audit-result.js';
 import { syncOpportunitiesAndSuggestions } from './opportunity-sync.js';
 import { processAutoSuggest } from './auto-suggest.js';
 
@@ -21,7 +21,12 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 /**
  * Step 1: CWV Data Collection and Code Import
- * Builds CWV audit result and triggers code import
+ * Builds the pre-ranked CWV audit result and triggers code import.
+ *
+ * The persisted `auditResult.cwv` array already reflects the product selection
+ * rule: failing pages first, then passing padding entries as needed.
+ * Downstream steps should preserve that order.
+ *
  * @param {Object} context - Context object containing site, finalUrl, log, env
  *                           (with env.RUM_ADMIN_KEY)
  * @returns {Promise<Object>} Object containing auditResult, fullAuditRef (for persister),
@@ -33,7 +38,7 @@ export async function collectCWVDataAndImportCode(context) {
 
   log.info(`[audit-worker-cwv] siteId: ${siteId} | Step 1: Collecting CWV data and triggering code import`);
 
-  const { auditResult, fullAuditRef } = await buildCWVAuditResult(context);
+  const { auditResult, fullAuditRef } = await buildPrioritizedCWVAuditResult(context);
 
   return {
     // These fields are required for the first step to persist audit result

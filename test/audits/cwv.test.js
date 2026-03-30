@@ -38,6 +38,53 @@ const DOMAIN_REQUEST_DEFAULT_PARAMS = {
   interval: 7,
   granularity: 'hourly',
 };
+const CWV_THRESHOLDS = {
+  lcp: 2500,
+  cls: 0.1,
+  inp: 200,
+};
+const PRIORITY_PADDING_MIN_PAGEVIEWS = 1000;
+const TARGET_CWV_ENTRY_COUNT = 15;
+
+const isFailingCwvEntry = (entry) => (entry.metrics || []).some((metric) => (
+  (typeof metric.lcp === 'number' && metric.lcp > CWV_THRESHOLDS.lcp)
+  || (typeof metric.cls === 'number' && metric.cls > CWV_THRESHOLDS.cls)
+  || (typeof metric.inp === 'number' && metric.inp > CWV_THRESHOLDS.inp)
+));
+
+const getEntryThresholdPressureScore = (entry) => Math.max(
+  ...((entry.metrics || []).flatMap((metric) => [
+    typeof metric.lcp === 'number' && metric.lcp >= 0 ? metric.lcp / CWV_THRESHOLDS.lcp : 0,
+    typeof metric.cls === 'number' && metric.cls >= 0 ? metric.cls / CWV_THRESHOLDS.cls : 0,
+    typeof metric.inp === 'number' && metric.inp >= 0 ? metric.inp / CWV_THRESHOLDS.inp : 0,
+  ])),
+  0,
+);
+
+const comparePassingEntriesByPressureScoreThenTraffic = (a, b) => {
+  const thresholdPressureDiff = getEntryThresholdPressureScore(b) - getEntryThresholdPressureScore(a);
+  if (thresholdPressureDiff !== 0) {
+    return thresholdPressureDiff;
+  }
+  return b.pageviews - a.pageviews;
+};
+
+const getExpectedSelectedEntries = (entries) => {
+  const failingEntries = entries.filter(isFailingCwvEntry).sort((a, b) => b.pageviews - a.pageviews);
+  const passingEntries = entries
+    .filter((entry) => !isFailingCwvEntry(entry))
+    .sort(comparePassingEntriesByPressureScoreThenTraffic);
+  const trafficQualifiedPassingEntries = passingEntries
+    .filter((entry) => entry.pageviews >= PRIORITY_PADDING_MIN_PAGEVIEWS);
+  const fallbackPassingEntries = passingEntries
+    .filter((entry) => entry.pageviews < PRIORITY_PADDING_MIN_PAGEVIEWS);
+
+  return [
+    ...failingEntries,
+    ...trafficQualifiedPassingEntries,
+    ...fallbackPassingEntries,
+  ].slice(0, TARGET_CWV_ENTRY_COUNT);
+};
 
 describe('collectCWVDataAndImportCode Tests', () => {
   const groupedURLs = [{ name: 'test', pattern: 'test/*' }];
@@ -105,12 +152,9 @@ describe('collectCWVDataAndImportCode Tests', () => {
       ),
     ).to.be.true;
 
-    // With new logic: top 15 pages by pageviews are always included
-    // rumData has 31 entries, top 15 will be selected (first 15 when sorted by pageviews desc)
-    const sortedData = [...rumData].sort((a, b) => b.pageviews - a.pageviews);
-    const expectedData = sortedData.slice(0, 15);
+    const expectedData = getExpectedSelectedEntries(rumData);
 
-    expect(result.auditResult.cwv).to.have.lengthOf(15);
+    expect(result.auditResult.cwv).to.have.lengthOf(expectedData.length);
     expect(result.auditResult.cwv).to.deep.equal(expectedData);
     expect(result.auditResult.auditContext.interval).to.equal(7);
     expect(result.fullAuditRef).to.equal(auditUrl);
@@ -130,41 +174,23 @@ describe('collectCWVDataAndImportCode Tests', () => {
       },
     );
 
-    // With default threshold (1000 * 7 = 7000), 4 entries meet threshold
-    // But top 15 are always included, so result should have 15 entries
-    const sortedData = [...rumData].sort((a, b) => b.pageviews - a.pageviews);
-    const expectedData = sortedData.slice(0, 15);
+    const expectedData = getExpectedSelectedEntries(rumData);
     
-    expect(result.auditResult.cwv).to.have.lengthOf(15);
+    expect(result.auditResult.cwv).to.have.lengthOf(expectedData.length);
     expect(result.auditResult.cwv).to.deep.equal(expectedData);
     expect(result.auditResult.auditContext.interval).to.equal(7);
   });
 
-  it('includes pages beyond top 15 if they meet threshold', async () => {
-    // With default threshold (1000 * 7 = 7000), check pages that meet threshold
+  it('prioritizes failing pages and pads with passing pages up to 15', async () => {
     const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
 
-    // At least top 15 should be included
-    expect(result.auditResult.cwv.length).to.be.at.least(15);
-    
-    // Verify sorted by pageviews descending
-    for (let i = 1; i < result.auditResult.cwv.length; i++) {
-      expect(result.auditResult.cwv[i - 1].pageviews).to.be.at.least(result.auditResult.cwv[i].pageviews);
-    }
-    
-    // Verify that pages beyond top 15 meet the threshold
-    if (result.auditResult.cwv.length > 15) {
-      for (let i = 15; i < result.auditResult.cwv.length; i++) {
-        expect(result.auditResult.cwv[i].pageviews).to.be.at.least(7000);
-      }
-    }
+    expect(result.auditResult.cwv).to.deep.equal(getExpectedSelectedEntries(rumData));
+    expect(result.auditResult.cwv).to.have.lengthOf(TARGET_CWV_ENTRY_COUNT);
   });
 
-  it('adds pages to threshold group beyond top 15', async () => {
-    // Create custom data: 15 pages with high pageviews + 3 pages with threshold pageviews
+  it('keeps only the top 15 failing pages when enough failing pages exist', async () => {
     const customData = [
-      // Top 15 pages (pageviews 20000-10000)
-      ...Array.from({ length: 15 }, (_, i) => ({
+      ...Array.from({ length: 20 }, (_, i) => ({
         type: 'url',
         url: `https://example.com/page${i}`,
         pageviews: 20000 - (i * 500),
@@ -172,60 +198,27 @@ describe('collectCWVDataAndImportCode Tests', () => {
         metrics: [{
           deviceType: 'desktop',
           pageviews: 20000 - (i * 500),
-          lcp: 2000,
+          lcp: 3000,
           lcpCount: 1,
-          cls: 0.1,
+          cls: 0.2,
           clsCount: 1,
-          inp: 200,
+          inp: 300,
           inpCount: 1,
         }],
       })),
-      // 3 more pages that meet threshold (7000+)
       {
         type: 'url',
-        url: 'https://example.com/threshold1',
+        url: 'https://example.com/passing-close',
         pageviews: 8000,
         organic: 800,
         metrics: [{
           deviceType: 'mobile',
           pageviews: 8000,
-          lcp: 2500,
+          lcp: 2400,
           lcpCount: 1,
-          cls: 0.15,
+          cls: 0.09,
           clsCount: 1,
-          inp: 250,
-          inpCount: 1,
-        }],
-      },
-      {
-        type: 'url',
-        url: 'https://example.com/threshold2',
-        pageviews: 7500,
-        organic: 750,
-        metrics: [{
-          deviceType: 'desktop',
-          pageviews: 7500,
-          lcp: 2200,
-          lcpCount: 1,
-          cls: 0.12,
-          clsCount: 1,
-          inp: 220,
-          inpCount: 1,
-        }],
-      },
-      {
-        type: 'url',
-        url: 'https://example.com/threshold3',
-        pageviews: 7100,
-        organic: 710,
-        metrics: [{
-          deviceType: 'mobile',
-          pageviews: 7100,
-          lcp: 2300,
-          lcpCount: 1,
-          cls: 0.13,
-          clsCount: 1,
-          inp: 230,
+          inp: 190,
           inpCount: 1,
         }],
       },
@@ -235,34 +228,123 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
     const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
 
-    // Should have 15 (top) + 3 (threshold) = 18 pages
-    expect(result.auditResult.cwv).to.have.lengthOf(18);
-
-    // Verify the last 3 are the threshold pages
-    const thresholdPages = result.auditResult.cwv.slice(15);
-    expect(thresholdPages).to.have.lengthOf(3);
-    expect(thresholdPages[0].url).to.equal('https://example.com/threshold1');
-    expect(thresholdPages[1].url).to.equal('https://example.com/threshold2');
-    expect(thresholdPages[2].url).to.equal('https://example.com/threshold3');
+    expect(result.auditResult.cwv).to.have.lengthOf(TARGET_CWV_ENTRY_COUNT);
+    result.auditResult.cwv.forEach((entry) => expect(isFailingCwvEntry(entry)).to.equal(true));
+    expect(result.auditResult.cwv[0].url).to.equal('https://example.com/page0');
+    expect(result.auditResult.cwv[14].url).to.equal('https://example.com/page14');
   });
 
-  it('always includes homepage even if not in top 15 or meeting threshold', async () => {
-    // Add homepage to rumData with low pageviews (below default threshold 7000 and not in top 15)
+  it('pads with passing pages above the 1k pageview threshold ordered by closeness', async () => {
+    const customData = [
+      {
+        type: 'url',
+        url: 'https://example.com/failing-a',
+        pageviews: 9000,
+        organic: 100,
+        metrics: [{ deviceType: 'desktop', pageviews: 9000, lcp: 3200, cls: 0.05, inp: 180 }],
+      },
+      {
+        type: 'url',
+        url: 'https://example.com/failing-b',
+        pageviews: 8000,
+        organic: 100,
+        metrics: [{ deviceType: 'desktop', pageviews: 8000, lcp: 2400, cls: 0.2, inp: 180 }],
+      },
+      {
+        type: 'url',
+        url: 'https://example.com/pass-closest',
+        pageviews: 3000,
+        organic: 100,
+        metrics: [{ deviceType: 'desktop', pageviews: 3000, lcp: 2490, cls: 0.05, inp: 180 }],
+      },
+      {
+        type: 'url',
+        url: 'https://example.com/pass-second',
+        pageviews: 7000,
+        organic: 100,
+        metrics: [{ deviceType: 'desktop', pageviews: 7000, lcp: 2200, cls: 0.099, inp: 180 }],
+      },
+      {
+        type: 'url',
+        url: 'https://example.com/pass-third',
+        pageviews: 5000,
+        organic: 100,
+        metrics: [{ deviceType: 'desktop', pageviews: 5000, lcp: 2100, cls: 0.08, inp: 190 }],
+      },
+      {
+        type: 'url',
+        url: 'https://example.com/pass-below-threshold',
+        pageviews: 900,
+        organic: 100,
+        metrics: [{ deviceType: 'desktop', pageviews: 900, lcp: 2499, cls: 0.099, inp: 199 }],
+      },
+    ];
+
+    context.rumApiClient.query.resolves(customData);
+
+    const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
+
+    expect(result.auditResult.cwv.map((entry) => entry.url)).to.deep.equal([
+      'https://example.com/failing-a',
+      'https://example.com/failing-b',
+      'https://example.com/pass-closest',
+      'https://example.com/pass-second',
+      'https://example.com/pass-third',
+      'https://example.com/pass-below-threshold',
+    ]);
+  });
+
+  it('uses sub-1k passing pages only as final fallback to reach 15', async () => {
+    const customData = [
+      ...Array.from({ length: 3 }, (_, i) => ({
+        type: 'url',
+        url: `https://example.com/failing-${i}`,
+        pageviews: 9000 - (i * 100),
+        organic: 100,
+        metrics: [{ deviceType: 'desktop', pageviews: 9000 - (i * 100), lcp: 3000, cls: 0.05, inp: 180 }],
+      })),
+      ...Array.from({ length: 4 }, (_, i) => ({
+        type: 'url',
+        url: `https://example.com/pass-high-${i}`,
+        pageviews: 4000 - (i * 100),
+        organic: 100,
+        metrics: [{ deviceType: 'desktop', pageviews: 4000 - (i * 100), lcp: 2450 - (i * 10), cls: 0.05, inp: 180 }],
+      })),
+      ...Array.from({ length: 10 }, (_, i) => ({
+        type: 'url',
+        url: `https://example.com/pass-low-${i}`,
+        pageviews: 900 - (i * 10),
+        organic: 100,
+        metrics: [{ deviceType: 'desktop', pageviews: 900 - (i * 10), lcp: 2490 - i, cls: 0.05, inp: 180 }],
+      })),
+    ];
+
+    context.rumApiClient.query.resolves(customData);
+
+    const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
+
+    expect(result.auditResult.cwv).to.have.lengthOf(TARGET_CWV_ENTRY_COUNT);
+    expect(result.auditResult.cwv.slice(0, 3).every((entry) => isFailingCwvEntry(entry))).to.equal(true);
+    expect(result.auditResult.cwv.slice(3, 7).every((entry) => !isFailingCwvEntry(entry) && entry.pageviews >= PRIORITY_PADDING_MIN_PAGEVIEWS)).to.equal(true);
+    expect(result.auditResult.cwv.slice(7).every((entry) => !isFailingCwvEntry(entry) && entry.pageviews < PRIORITY_PADDING_MIN_PAGEVIEWS)).to.equal(true);
+  });
+
+  it('does not treat homepage specially', async () => {
     const homepageData = {
       type: 'url',
       url: baseURL,
-      pageviews: 50, // Very low pageviews (below threshold and below top 15)
+      pageviews: 50,
       organic: 10,
       metrics: [
         {
           deviceType: 'desktop',
           pageviews: 50,
           organic: 10,
-          lcp: 2000,
+          lcp: 3000,
           lcpCount: 1,
-          cls: 0.01,
+          cls: 0.2,
           clsCount: 1,
-          inp: 100,
+          inp: 250,
           inpCount: 1,
           ttfb: 500,
           ttfbCount: 1,
@@ -275,27 +357,23 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
     const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
 
-    // Should have top 15 + homepage (16 total)
-    expect(result.auditResult.cwv).to.have.lengthOf(16);
-    
-    // Verify homepage is included
     const homepageInResult = result.auditResult.cwv.find((entry) => entry.url === baseURL);
-    expect(homepageInResult).to.exist;
-    expect(homepageInResult.pageviews).to.equal(50);
+    expect(homepageInResult).to.not.exist;
   });
 
-  it('does not treat grouped URLs as homepage', async () => {
+  it('can include grouped URLs when they rank into the selected set', async () => {
     const groupedData = {
-      type: 'group', // Not 'url' - should not match homepage logic
-      // url field is absent for grouped entries (they have pattern instead)
-      pageviews: 50, // Low pageviews - not in top 15, below threshold
+      type: 'group',
+      name: 'Problem pages',
+      pattern: 'https://example.com/problem/*',
+      pageviews: 5000,
       organic: 10,
       metrics: [
         {
           deviceType: 'desktop',
-          pageviews: 50,
+          pageviews: 5000,
           organic: 10,
-          lcp: 2000,
+          lcp: 3100,
           lcpCount: 1,
           cls: 0.01,
           clsCount: 1,
@@ -311,8 +389,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
     context.rumApiClient.query.resolves(dataWithGrouped);
 
     const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
-    // Should only have top 15 (grouped entry excluded: type !== 'url')
-    expect(result.auditResult.cwv).to.have.lengthOf(15);
+    const groupedEntry = result.auditResult.cwv.find((entry) => entry.type === 'group' && entry.pattern === 'https://example.com/problem/*');
+    expect(groupedEntry).to.exist;
   });
 
   describe('CWV audit to oppty conversion', () => {
@@ -383,7 +461,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
         auditedAt: new Date().toISOString(),
         auditType: Audit.AUDIT_TYPES.CWV,
         auditResult: {
-          cwv: rumData.filter((data) => data.pageviews >= 7000),
+          cwv: rumData.filter(isFailingCwvEntry),
           auditContext: {
             interval: 7,
           },
@@ -427,7 +505,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
       suggestionsArg.forEach((s) => expect(s.data).to.have.property('jiraLink', ''));
     });
 
-    it('handles audit result with only group entries for maxOrganicForUrls coverage', async () => {
+    it('handles audit result with only group entries when computing the group rank offset', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
       sinon.stub(GoogleClient, 'createFrom').resolves({});

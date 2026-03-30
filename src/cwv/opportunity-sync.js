@@ -17,8 +17,12 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import calculateKpiDeltasForAudit from './kpi-metrics.js';
 
 /**
- * Synchronizes opportunities and suggestions for a CWV audit
- * Creates or updates opportunity and syncs suggestions
+ * Synchronizes opportunities and suggestions for a CWV audit.
+ *
+ * This step preserves the order selected by the audit-result builder, including
+ * passing padding entries that were intentionally chosen to keep the CWV
+ * opportunity populated.
+ *
  * @param {Object} context - Context object containing site, audit, finalUrl, log, dataAccess
  * @returns {Promise<Object>} The created or updated opportunity object
  */
@@ -49,7 +53,8 @@ export async function syncOpportunitiesAndSuggestions(context) {
 
   // Sync suggestions
   const buildKey = (data) => (data.type === 'url' ? data.url : data.pattern);
-  const maxOrganicForUrls = Math.max(
+  const groupRankOffset = Math.max(
+    0,
     ...auditResult.cwv.filter((entry) => entry.type === 'url').map((entry) => entry.pageviews),
   );
 
@@ -61,12 +66,10 @@ export async function syncOpportunitiesAndSuggestions(context) {
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
       type: 'CODE_CHANGE',
-      // the rank logic for CWV is as follows:
-      // 1. if the entry is a group, then the rank is the max organic for URLs
-      //   plus the organic for the group
-      // 2. if the entry is a URL, then the rank is the max organic for URLs
-      // Reason is because UI first shows groups and then URLs
-      rank: entry.type === 'group' ? maxOrganicForUrls + entry.organic : entry.organic,
+      // Groups should appear ahead of URLs in the UI, while still preserving
+      // their internal organic ranking. We achieve that by offsetting every
+      // group rank above the URL band using the highest observed URL pageviews.
+      rank: entry.type === 'group' ? groupRankOffset + entry.organic : entry.organic,
       data: {
         ...entry,
         jiraLink: '',
