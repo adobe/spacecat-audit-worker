@@ -122,6 +122,12 @@ export default async function handler(message, context) {
     return notFound();
   }
 
+  const auditResult = audit.getAuditResult();
+  if (!auditResult) {
+    paidLog.failed('audit has no result data', siteId, url, auditId);
+    return ok();
+  }
+
   // Check for empty guidance or low severity and skip if so
   if (!guidance || guidance.length === 0 || isLowSeverityGuidanceBody(guidanceBody)) {
     paidLog.skipping('low issue severity or empty guidance', siteId, url, auditId);
