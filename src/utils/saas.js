@@ -582,9 +582,14 @@ export async function getCommerceConfig(site, auditType, finalUrl, log, locale =
     const customConfig = site.getConfig()?.getHandlers()?.[auditType];
     const instanceType = customConfig?.instanceType || 'PAAS'; // Default to PAAS
 
+    const effectiveLocale = locale === 'default' ? '' : locale;
+    const storeViewUrl = hasText(effectiveLocale)
+      ? `${finalUrl}/${effectiveLocale}`
+      : finalUrl;
+
     const params = {
       storeUrl: finalUrl,
-      locale: locale === 'default' ? '' : locale,
+      locale: effectiveLocale,
       configName: customConfig?.configName,
       configSection: customConfig?.configSection,
       configSheet: customConfig?.configSheet,
@@ -648,7 +653,7 @@ export async function getCommerceConfig(site, auditType, finalUrl, log, locale =
         config = await extractCommerceConfigFromPAAS(attemptFirstParams, log);
       }
       log.info('Successfully retrieved commerce config');
-      return config;
+      return { ...config, storeViewUrl };
     } catch (error) {
       primaryError = error;
       if (hasExplicitConfigName) {
@@ -693,7 +698,7 @@ export async function getCommerceConfig(site, auditType, finalUrl, log, locale =
 
     if (bestFallbackConfig) {
       log.info('Successfully retrieved commerce config');
-      return bestFallbackConfig;
+      return { ...bestFallbackConfig, storeViewUrl };
     }
 
     throw primaryError;
