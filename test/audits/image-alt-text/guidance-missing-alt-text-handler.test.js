@@ -129,6 +129,38 @@ describe('Missing Alt Text Guidance Handler', () => {
     expect(addAltTextSuggestionsStub).to.have.been.called;
   });
 
+  it('should preserve factId from Mystique enrichment', async () => {
+    const messageWithFactId = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        suggestions: [
+          {
+            pageUrl: 'https://example.com/page1',
+            imageId: 'image1.jpg',
+            altText: 'Test alt text',
+            imageUrl: 'https://example.com/image1.jpg',
+            isAppropriate: true,
+            isDecorative: false,
+            language: 'en',
+            hasAltAttribute: false,
+            factId: 'legacy:opp-123:sugg-456',
+          },
+        ],
+      },
+    };
+
+    const result = await guidanceHandler(messageWithFactId, context);
+
+    expect(result.status).to.equal(200);
+    expect(addAltTextSuggestionsStub).to.have.been.called;
+
+    // Verify factId was included in the DTO
+    const callArgs = addAltTextSuggestionsStub.getCall(0).args[0];
+    const newSuggestions = callArgs.newSuggestionDTOs;
+    expect(newSuggestions[0].data.recommendations[0].factId).to.equal('legacy:opp-123:sugg-456');
+  });
+
   it('should handle case when opportunity does not exist', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
 
