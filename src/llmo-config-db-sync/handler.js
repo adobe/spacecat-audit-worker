@@ -176,7 +176,7 @@ function logSample(log, label, rows) {
 
 export default async function llmoConfigDbSync(message, context) {
   const { log, env } = context;
-  const { siteId, dryRun = false } = message;
+  const { siteId, dryRun = true } = message;
   const tag = dryRun ? '[llmo-config-db-sync] [DRY RUN] ' : '[llmo-config-db-sync]';
 
   if (!isSyncEnabledForSite(siteId)) {
