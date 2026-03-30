@@ -114,6 +114,7 @@ describe('Backlinks Tests', function () {
       setData: () => { },
       getData: () => { },
       setUpdatedBy: sinon.stub().returnsThis(),
+      setLastAuditedAt: sinon.stub(),
     };
 
     nock('https://foo.com')
@@ -811,6 +812,7 @@ describe('Backlinks Tests', function () {
         setData: () => {},
         getData: () => {},
         setUpdatedBy: sinon.stub().returnsThis(),
+        setLastAuditedAt: sinon.stub(),
       };
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
 
@@ -886,6 +888,7 @@ describe('Backlinks Tests', function () {
         setData: () => {},
         getData: () => {},
         setUpdatedBy: sinon.stub().returnsThis(),
+        setLastAuditedAt: sinon.stub(),
       };
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
 
@@ -977,6 +980,7 @@ describe('Backlinks Tests', function () {
         setData: () => {},
         getData: () => {},
         setUpdatedBy: sinon.stub().returnsThis(),
+        setLastAuditedAt: sinon.stub(),
       };
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
 
@@ -1284,6 +1288,8 @@ describe('Backlinks Tests', function () {
       const mockSyncSuggestions = sinon.stub().resolves();
       const mockConvertToOpportunity = sinon.stub().resolves({
         getId: () => 'opportunity-id',
+        setLastAuditedAt: sinon.stub(),
+        save: sinon.stub(),
       });
 
       // Use dynamic import to get esmock
@@ -1378,6 +1384,8 @@ describe('Backlinks Tests', function () {
       const mockSyncSuggestions = sinon.stub().resolves();
       const mockConvertToOpportunity = sinon.stub().resolves({
         getId: () => 'opportunity-id',
+        setLastAuditedAt: sinon.stub(),
+        save: sinon.stub(),
       });
 
       const esmock = (await import('esmock')).default;
@@ -1466,6 +1474,8 @@ describe('Backlinks Tests', function () {
       const mockSyncSuggestions = sinon.stub().resolves();
       const mockConvertToOpportunity = sinon.stub().resolves({
         getId: () => 'opportunity-id',
+        setLastAuditedAt: sinon.stub(),
+        save: sinon.stub(),
       });
 
       const esmock = (await import('esmock')).default;
@@ -1552,6 +1562,8 @@ describe('Backlinks Tests', function () {
       const mockSyncSuggestions = sinon.stub().resolves();
       const mockConvertToOpportunity = sinon.stub().resolves({
         getId: () => 'opportunity-id',
+        setLastAuditedAt: sinon.stub(),
+        save: sinon.stub(),
       });
 
       const esmock = (await import('esmock')).default;
@@ -1611,6 +1623,8 @@ describe('Backlinks Tests', function () {
       const mockSyncSuggestions = sinon.stub().resolves();
       const mockConvertToOpportunity = sinon.stub().resolves({
         getId: () => 'opportunity-id',
+        setLastAuditedAt: sinon.stub(),
+        save: sinon.stub(),
       });
 
       const esmock = (await import('esmock')).default;
@@ -1671,6 +1685,8 @@ describe('Backlinks Tests', function () {
       const mockSyncSuggestions = sinon.stub().resolves();
       const mockConvertToOpportunity = sinon.stub().resolves({
         getId: () => 'opportunity-id',
+        setLastAuditedAt: sinon.stub(),
+        save: sinon.stub(),
       });
 
       const esmock = (await import('esmock')).default;
