@@ -32,7 +32,7 @@ import {
   TOP_AGENTIC_URLS_LIMIT,
   TOP_ORGANIC_URLS_LIMIT,
   DAILY_BATCH_SIZE,
-  PRERENDER_RECENT_PROCESSING_TIME_DAYS,
+  PRERENDER_RECENT_PROCESSING_TIME_HOURS,
 } from '../../../src/prerender/utils/constants.js';
 
 describe('Prerender Audit', () => {

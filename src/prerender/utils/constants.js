@@ -17,5 +17,5 @@ export const TOP_ORGANIC_URLS_LIMIT = 10;
 /**
  * URLs processed within this window are treated as recently scraped and skipped.
  */
-export const PRERENDER_RECENT_PROCESSING_TIME_DAYS = 7;
+export const PRERENDER_RECENT_PROCESSING_TIME_HOURS = 1;
 export const MODE_AI_ONLY = 'ai-only';

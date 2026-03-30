@@ -12,7 +12,7 @@
 
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
-import { subDays } from 'date-fns';
+import { subHours } from 'date-fns';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -26,7 +26,7 @@ import {
   DAILY_BATCH_SIZE,
   TOP_AGENTIC_URLS_LIMIT,
   TOP_ORGANIC_URLS_LIMIT,
-  PRERENDER_RECENT_PROCESSING_TIME_DAYS,
+  PRERENDER_RECENT_PROCESSING_TIME_HOURS,
   MODE_AI_ONLY,
 } from './utils/constants.js';
 
@@ -215,7 +215,7 @@ async function getRecentlyProcessedPathnames(context, siteId) {
     if (!PageCitability?.allByIndexKeys) {
       return new Set();
     }
-    const recentWindowStart = subDays(new Date(), PRERENDER_RECENT_PROCESSING_TIME_DAYS);
+    const recentWindowStart = subHours(new Date(), PRERENDER_RECENT_PROCESSING_TIME_HOURS);
     const records = await PageCitability.allByIndexKeys(
       { siteId },
       { where: (attrs, op) => op.gte(attrs.updatedAt, recentWindowStart.toISOString()) },
