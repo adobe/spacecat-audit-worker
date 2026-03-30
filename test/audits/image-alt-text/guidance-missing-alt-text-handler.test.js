@@ -165,7 +165,7 @@ describe('Missing Alt Text Guidance Handler', () => {
     expect(result.status).to.equal(200);
   });
 
-  it('should handle invalid message format', async () => {
+  it('should handle invalid message format and track empty success status', async () => {
     const invalidMessage = {
       type: 'guidance:missing-alt-text',
       siteId: 'test-site-id',
@@ -178,6 +178,31 @@ describe('Missing Alt Text Guidance Handler', () => {
 
     expect(result.status).to.equal(200);
     expect(context.log.info).to.have.been.called;
+
+    // Verify success status with empty: true was tracked
+    const auditResult = context.dataAccess.Audit._mockRecord.getAuditResult();
+    expect(auditResult.status).to.equal('success');
+    const lastEntry = auditResult.statusHistory[auditResult.statusHistory.length - 1];
+    expect(lastEntry.status).to.equal('success');
+    expect(lastEntry.empty).to.equal(true);
+  });
+
+  it('should not fail when audit status save throws on empty response path', async () => {
+    context.dataAccess.Audit._mockRecord.save = sandbox.stub().rejects(new Error('Save failed'));
+
+    const invalidMessage = {
+      type: 'guidance:missing-alt-text',
+      siteId: 'test-site-id',
+      auditId: 'test-audit-id',
+      url: 'https://example.com',
+    };
+
+    const result = await guidanceHandler(invalidMessage, context);
+
+    expect(result.status).to.equal(200);
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Failed to update audit status: Save failed/),
+    );
   });
 
   it('should handle errors when fetching opportunities fails', async () => {
@@ -569,6 +594,13 @@ describe('Missing Alt Text Guidance Handler', () => {
 
     const auditResult = context.dataAccess.Audit._mockRecord.getAuditResult();
     expect(auditResult.status).to.equal('guidance_failed');
+    const lastEntry = auditResult.statusHistory[auditResult.statusHistory.length - 1];
+    expect(lastEntry.status).to.equal('guidance_failed');
+    expect(lastEntry.startedAt).to.be.a('string');
+    expect(lastEntry.completedAt).to.be.a('string');
+    expect(lastEntry.stepDurationMs).to.be.a('number');
+    expect(lastEntry.queueDurationMs).to.be.a('number');
+    expect(lastEntry.error).to.include('Failed to fetch opportunities');
   });
 
   it('should set guidance_failed status when no opportunity found', async () => {
@@ -579,6 +611,13 @@ describe('Missing Alt Text Guidance Handler', () => {
 
     const auditResult = context.dataAccess.Audit._mockRecord.getAuditResult();
     expect(auditResult.status).to.equal('guidance_failed');
+    const lastEntry = auditResult.statusHistory[auditResult.statusHistory.length - 1];
+    expect(lastEntry.status).to.equal('guidance_failed');
+    expect(lastEntry.startedAt).to.be.a('string');
+    expect(lastEntry.completedAt).to.be.a('string');
+    expect(lastEntry.stepDurationMs).to.be.a('number');
+    expect(lastEntry.queueDurationMs).to.be.a('number');
+    expect(lastEntry.error).to.include('No existing opportunity found');
   });
 
   it('should not fail when audit status save throws during guidance_failed (opportunity fetch)', async () => {

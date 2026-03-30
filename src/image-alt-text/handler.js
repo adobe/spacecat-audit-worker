@@ -131,6 +131,18 @@ export function failCurrentStatus(audit, failedStatus, metadata = {}) {
   }
 }
 
+/**
+ * Safely persists the current audit status. Status tracking should never
+ * crash the audit — if the save fails, we log a warning and continue.
+ */
+async function saveStatus(audit, log) {
+  try {
+    await audit.save();
+  } catch (saveError) {
+    log.warn(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Failed to save audit status: ${saveError.message}`);
+  }
+}
+
 export async function processImportStep(context) {
   const { site, finalUrl } = context;
 
@@ -169,7 +181,7 @@ export async function processScraping(context) {
   const siteId = site.getId();
 
   startStatus(audit, 'scraping');
-  await audit.save();
+  await saveStatus(audit, log);
 
   try {
     log.debug(`[${AUDIT_TYPE}]: Processing scraping step for site ${siteId}`);
@@ -186,7 +198,7 @@ export async function processScraping(context) {
       const errorMsg = `No top pages found for site ${siteId}`;
       log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
       failCurrentStatus(audit, 'no_top_pages', { error: errorMsg });
-      await audit.save();
+      await saveStatus(audit, log);
       return { auditResult: audit.getAuditResult(), fullAuditRef: audit.getFullAuditRef() };
     }
 
@@ -255,7 +267,7 @@ export async function processScraping(context) {
     log.info(`[${AUDIT_TYPE}]: Sending ${topPages.length} URLs to scrape client (maxScrapeAge: ${SCRAPE_MAX_AGE_HOURS}h)`);
 
     completeStatus(audit, { urlCount: topPages.length });
-    await audit.save();
+    await saveStatus(audit, log);
 
     return {
       urls: topPages.map((url) => ({ url })),
@@ -268,12 +280,8 @@ export async function processScraping(context) {
     };
   } catch (error) {
     log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] processScraping failed: ${error.message}`);
-    try {
-      failCurrentStatus(audit, 'scraping_failed', { error: error.message });
-      await audit.save();
-    } catch (saveError) {
-      log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Failed to save error status: ${saveError.message}`);
-    }
+    failCurrentStatus(audit, 'scraping_failed', { error: error.message });
+    await saveStatus(audit, log);
     throw error;
   }
 }
@@ -286,7 +294,7 @@ export async function processAltTextWithMystique(context) {
   log.debug(`[${AUDIT_TYPE}]: Processing alt-text with Mystique for site ${site.getId()}`);
 
   startStatus(audit, 'processing');
-  await audit.save();
+  await saveStatus(audit, log);
 
   try {
     const { Opportunity, Suggestion } = dataAccess;
@@ -318,7 +326,7 @@ export async function processAltTextWithMystique(context) {
       const errorMsg = `No top pages found for site ${site.getId()}`;
       log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
       failCurrentStatus(audit, 'no_top_pages', { error: errorMsg });
-      await audit.save();
+      await saveStatus(audit, log);
       return { auditResult: audit.getAuditResult() };
     }
 
@@ -334,7 +342,7 @@ export async function processAltTextWithMystique(context) {
           + 'Mystique will not be able to find content for these pages.';
         log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
         failCurrentStatus(audit, 'no_scrape_results', { error: errorMsg });
-        await audit.save();
+        await saveStatus(audit, log);
         return { auditResult: audit.getAuditResult() };
       }
       if (missingCount > 0) {
@@ -471,17 +479,13 @@ export async function processAltTextWithMystique(context) {
     log.debug(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);
 
     completeStatus(audit, { urlCount: pageUrls.length, batchCount: urlBatches.length });
-    await audit.save();
+    await saveStatus(audit, log);
 
     return { auditResult: audit.getAuditResult() };
   } catch (error) {
     log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Failed to process with Mystique: ${error.message}`);
-    try {
-      failCurrentStatus(audit, 'processing_failed', { error: error.message });
-      await audit.save();
-    } catch (saveError) {
-      log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Failed to save error status: ${saveError.message}`);
-    }
+    failCurrentStatus(audit, 'processing_failed', { error: error.message });
+    await saveStatus(audit, log);
     throw error;
   }
 }

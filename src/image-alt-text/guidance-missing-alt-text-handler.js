@@ -262,6 +262,15 @@ export default async function handler(message, context) {
     }
   } else {
     log.info(`[${AUDIT_TYPE}]: No suggestions to process for siteId: ${siteId}`);
+
+    // Track empty Mystique response in status history for observability
+    try {
+      startStatus(audit, 'success');
+      completeStatus(audit, { empty: true });
+      await audit.save();
+    } catch (statusError) {
+      log.warn(`[${AUDIT_TYPE}]: Failed to update audit status: ${statusError.message}`);
+    }
   }
   return ok();
 }

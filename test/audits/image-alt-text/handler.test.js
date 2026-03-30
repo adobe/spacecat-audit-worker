@@ -1814,8 +1814,8 @@ describe('Image Alt Text Handler', () => {
       await expect(handlerModule.processAltTextWithMystique(context))
         .to.be.rejectedWith('Original error');
 
-      expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Failed to save error status: Save failed/),
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to save audit status: Save failed/),
       );
     });
   });

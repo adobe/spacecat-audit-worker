@@ -114,7 +114,7 @@ All "cannot proceed" conditions (no top pages, no scrape results) use `log.error
 | `preparing` | `finalUrl` |
 | `scraping` | `urlCount` |
 | `processing` | `urlCount`, `batchCount` |
-| `success` | _(none)_ |
+| `success` | `empty: true` if Mystique response had no suggestions |
 | `no_top_pages` | `error` |
 | `no_scrape_results` | `error` |
 | `scraping_failed` | `error` |

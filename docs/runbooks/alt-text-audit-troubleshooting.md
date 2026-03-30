@@ -47,7 +47,7 @@ Each step persists its status to the audit record via `audit.setAuditResult()` +
 | `preparing` | Step 1 | Audit initialized, import request sent | Normal -- wait for Step 2 |
 | `scraping` | Step 2 | Top pages resolved, scrape request sent | Normal -- wait for Step 3 |
 | `processing` | Step 3 | Mystique requests sent, waiting for responses | Normal -- check if Mystique responds |
-| `success` | Guidance | At least one Mystique response processed | Audit completed successfully |
+| `success` | Guidance | Mystique response processed | Audit completed successfully. Check `empty: true` if no suggestions were generated |
 | `no_top_pages` | Step 2/3 | No URLs found from Ahrefs, RUM, or site config | Check data sources (see below) |
 | `no_scrape_results` | Step 3 | Scrape client returned no results for any URL | Check scrape client health |
 | `scraping_failed` | Step 2 | Unexpected error during scraping step | Check logs for root cause |
@@ -146,10 +146,28 @@ source logs
 4. `[alt-text]: Sending N of M URLs with scrapes to Mystique`
 5. `[alt-text]: Sent N pages to Mystique for generating alt-text suggestions`
 6. (Per batch) `[alt-text]: Added N new suggestions for M processed pages`
+   - OR `[alt-text]: No suggestions to process for siteId: <siteId>` (empty response — still tracked as `success` with `empty: true`)
 
 ---
 
 ## Step 3: Diagnose by Status
+
+### `success` with `empty: true`
+
+**Meaning:** Mystique responded but sent no suggestions for this batch. The audit is technically successful but produced no actionable results.
+
+**Root causes:**
+- All images on the page already have appropriate alt text
+- Mystique couldn't extract images from the scraped content
+- Mystique response had no `pageUrls` or empty `suggestions` array
+
+**Diagnosis:**
+Check the `statusHistory` entries — if ALL success entries have `empty: true`, Mystique found nothing across all batches. If only some are empty, partial results were produced.
+
+**Actions:**
+1. Verify the site actually has images without alt text (manual check)
+2. Check the scrape content quality — Mystique may not be finding images in the scraped HTML
+3. If the site genuinely has no missing alt text, this is expected behavior
 
 ### `no_top_pages`
 
