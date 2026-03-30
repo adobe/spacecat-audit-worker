@@ -30,3 +30,7 @@ export const MYSTIQUE_BATCH_SIZE = 10;
 // Page limits for alt-text audit
 export const SUMMIT_PLG_PAGE_LIMIT = 20;
 export const DEFAULT_PAGE_LIMIT = 100;
+
+// Scraping configuration
+export const SCRAPE_MAX_AGE_HOURS = 24;
+export const SCRAPE_PAGE_LOAD_TIMEOUT = 45000;

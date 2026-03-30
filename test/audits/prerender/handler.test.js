@@ -6203,7 +6203,7 @@ describe('Prerender Audit', () => {
     });
   });
 
-  describe('skipNewSuggestionsWhenDeployed / moveNewSuggestionsToSkipped', () => {
+  describe('skipNewSuggestionsWhenDomainDeployed / moveDeployedUrlSuggestionsToSkipped', () => {
     // HTML pair that produces contentGainRatio > CONTENT_GAIN_THRESHOLD (1.1) so prerender is detected
     const serverHtml = '<html><body><p>Short</p></body></html>';
     const clientHtml = '<html><body><p>Short</p><p>Much more dynamic content loaded by JavaScript making the page significantly longer than the server-side render and pushing the content gain ratio well above the threshold</p></body></html>';
@@ -6221,6 +6221,7 @@ describe('Prerender Audit', () => {
           const key = command.input?.Key || '';
           if (key.endsWith('server-side.html')) return Promise.resolve({ ContentType: 'text/html', Body: { transformToString: () => Promise.resolve(serverHtml) } });
           if (key.endsWith('client-side.html')) return Promise.resolve({ ContentType: 'text/html', Body: { transformToString: () => Promise.resolve(clientHtml) } });
+          if (key.endsWith('scrape.json')) return Promise.resolve({ ContentType: 'application/json', Body: { transformToString: () => Promise.resolve(JSON.stringify({ isDeployedAtEdge: true })) } });
           return Promise.reject(new Error('Not found'));
         }),
       },
@@ -6243,8 +6244,8 @@ describe('Prerender Audit', () => {
 
     it('should move NEW suggestions to SKIPPED when domain is fully deployed at edge', async () => {
       const domainWideSuggestion = { getStatus: () => 'NEW', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
-      const newSuggestion1 = { getId: () => 's1' };
-      const newSuggestion2 = { getId: () => 's2' };
+      const newSuggestion1 = { getId: () => 's1', getData: () => ({ url: 'https://example.com/page1' }) };
+      const newSuggestion2 = { getId: () => 's2', getData: () => ({ url: 'https://example.com/page1' }) };
 
       const bulkUpdateStatusStub = sandbox.stub().resolves();
       const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion1, newSuggestion2]);
@@ -6285,7 +6286,96 @@ describe('Prerender Audit', () => {
 
       expect(allByOpportunityIdAndStatusStub).to.have.been.calledOnce;
       expect(bulkUpdateStatusStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/moveNewSuggestionsToSkipped: no NEW suggestions found/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/moveDeployedUrlSuggestionsToSkipped: no NEW suggestions found/));
+    });
+
+    it('should only move the deployed-URL suggestion to SKIPPED, preserving the non-deployed one', async () => {
+      // Mixed case: one suggestion URL matches the deployed-at-edge URL from this audit run,
+      // one does not. Only the matching suggestion should be moved to SKIPPED.
+      const domainWideSuggestion = { getStatus: () => 'NEW', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
+      const deployedSuggestion = { getId: () => 's-deployed', getData: () => ({ url: 'https://example.com/page1' }) };
+      const nonDeployedSuggestion = { getId: () => 's-not-deployed', getData: () => ({ url: 'https://example.com/other-page' }) };
+
+      const bulkUpdateStatusStub = sandbox.stub().resolves();
+      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([deployedSuggestion, nonDeployedSuggestion]);
+
+      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
+      const context = buildContext(sandbox, {
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, bulkUpdateStatus: bulkUpdateStatusStub },
+        },
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      // Only the suggestion whose URL matches the deployed-at-edge URL should be skipped
+      expect(bulkUpdateStatusStub).to.have.been.calledOnceWith([deployedSuggestion], 'SKIPPED');
+      // The non-deployed suggestion must NOT appear in the SKIPPED call
+      const [skippedArg] = bulkUpdateStatusStub.firstCall.args;
+      expect(skippedArg).to.not.include(nonDeployedSuggestion);
+    });
+
+    it('should skip bulk update when NEW suggestions exist but none match deployed URLs', async () => {
+      const domainWideSuggestion = { getStatus: () => 'NEW', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
+      // Suggestion URL does not match the scraped URL ('https://example.com/page1')
+      const newSuggestion = { getId: () => 's1', getData: () => ({ url: 'https://other.com/page' }) };
+
+      const bulkUpdateStatusStub = sandbox.stub().resolves();
+      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion]);
+
+      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
+      const context = buildContext(sandbox, {
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, bulkUpdateStatus: bulkUpdateStatusStub },
+        },
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(allByOpportunityIdAndStatusStub).to.have.been.calledOnce;
+      expect(bulkUpdateStatusStub).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/moveDeployedUrlSuggestionsToSkipped: no NEW suggestions matched deployed URLs/));
+    });
+
+    it('should skip all NEW suggestions when deployedAtEdgeUrls set is empty', async () => {
+      // Domain-wide suggestion has edgeDeployed but no scraped URL returns isDeployedAtEdge=true,
+      // so deployedAtEdgeUrls is an empty Set — covers the false branch of the size>0 ternary
+      const domainWideSuggestion = { getStatus: () => 'NEW', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
+      const newSuggestion = { getId: () => 's1', getData: () => ({ url: 'https://example.com/page1' }) };
+
+      const bulkUpdateStatusStub = sandbox.stub().resolves();
+      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion]);
+
+      const s3ClientNoEdge = {
+        send: sandbox.stub().callsFake((command) => {
+          if (command.constructor.name === 'PutObjectCommand') return Promise.resolve({});
+          const key = command.input?.Key || '';
+          if (key.endsWith('server-side.html')) return Promise.resolve({ ContentType: 'text/html', Body: { transformToString: () => Promise.resolve('<html><body><p>Short</p></body></html>') } });
+          if (key.endsWith('client-side.html')) return Promise.resolve({ ContentType: 'text/html', Body: { transformToString: () => Promise.resolve('<html><body><p>Short</p><p>Much more dynamic content loaded by JavaScript making the page significantly longer than the server-side render and pushing the content gain ratio well above the threshold</p></body></html>') } });
+          if (key.endsWith('scrape.json')) return Promise.resolve({ ContentType: 'application/json', Body: { transformToString: () => Promise.resolve(JSON.stringify({ isDeployedAtEdge: false })) } });
+          return Promise.reject(new Error('Not found'));
+        }),
+      };
+
+      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
+      const context = buildContext(sandbox, {
+        s3Client: s3ClientNoEdge,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, bulkUpdateStatus: bulkUpdateStatusStub },
+        },
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      // deployedAtEdgeUrls is empty → ternary false branch → suggestionsToSkip = []
+      expect(bulkUpdateStatusStub).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/moveDeployedUrlSuggestionsToSkipped: no NEW suggestions matched deployed URLs/));
     });
 
     it('should log isAllDomainDeployedAtEdge=false and skip when domain is not deployed', async () => {
@@ -6314,7 +6404,7 @@ describe('Prerender Audit', () => {
       const outdatedDomainWide1 = { getStatus: () => 'OUTDATED', getData: () => ({ isDomainWide: true }) };
       const outdatedDomainWide2 = { getStatus: () => 'OUTDATED', getData: () => ({ isDomainWide: true }) };
       const deployedDomainWide = { getStatus: () => 'NEW', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
-      const newSuggestion = { getId: () => 's1' };
+      const newSuggestion = { getId: () => 's1', getData: () => ({ url: 'https://example.com/page1' }) };
 
       const bulkUpdateStatusStub = sandbox.stub().resolves();
       const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion]);
@@ -6404,7 +6494,8 @@ describe('Prerender Audit', () => {
     it('should use empty string fallback for baseUrl/siteId when site getBaseURL/getId return empty', async () => {
       // Covers the || '' branches on lines 98-99 and 126
       const domainWideSuggestion = { getStatus: () => 'NEW', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
-      const newSuggestion = { getId: () => 's1' };
+      // scrapeResultPaths has 'https://example.com/page1' — suggestion URL must match
+      const newSuggestion = { getId: () => 's1', getData: () => ({ url: 'https://example.com/page1' }) };
 
       const bulkUpdateStatusStub = sandbox.stub().resolves();
       const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion]);
