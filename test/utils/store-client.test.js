@@ -20,7 +20,6 @@ import StoreClient, {
   StoreEmptyError,
   URL_TYPES,
   GUIDELINE_TYPES,
-  MYSTIQUE_URLS_LIMIT,
 } from '../../src/utils/store-client.js';
 
 use(sinonChai);
@@ -63,11 +62,6 @@ describe('StoreClient', () => {
         YOUTUBE: 'youtube-analysis',
         CITED: 'cited-analysis',
       });
-    });
-
-    it('should export MYSTIQUE_URLS_LIMIT', () => {
-      expect(MYSTIQUE_URLS_LIMIT).to.be.a('number');
-      expect(MYSTIQUE_URLS_LIMIT).to.be.greaterThan(0);
     });
 
     it('should export GUIDELINE_TYPES', () => {
