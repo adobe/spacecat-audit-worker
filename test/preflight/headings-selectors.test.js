@@ -341,11 +341,10 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['body > h1']);
     });
 
-    it('should use transformRules.selector for unknown check types as fallback', async () => {
-      // Setup check with an unknown check type that has transformRules
+    it('should produce no selectors for unknown check types', async () => {
       const checkWithTransformRules = {
         success: false,
-        check: 'heading-custom-check', // Unknown check type
+        check: 'heading-custom-check',
         checkTitle: 'Custom Heading Issue',
         description: 'Custom heading validation failed',
         explanation: 'Fix the custom issue',
@@ -360,10 +359,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
         checks: [checkWithTransformRules],
       });
 
-      // Return mock elements
-      mockDomSelector.toElementTargets.returns({
-        elements: [{ selector: 'h2.custom-heading' }],
-      });
+      mockDomSelector.toElementTargets.returns({});
 
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
@@ -403,8 +399,8 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
 
       await headingsModule.default(context, auditContext);
 
-      // Verify toElementTargets was called with [transformRules.selector] for unknown check types
-      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['h2.custom-heading']);
+      // Unknown check types produce empty selectors — no legacy passthrough
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith([]);
     });
 
     it('should generate selectors for heading-h1-length check', async () => {
@@ -469,8 +465,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['body > h1']);
     });
 
-    it('should use transformRules.selector for heading-order-invalid check', async () => {
-      // Setup heading-order-invalid check with transformRules
+    it('should use getDomElementSelector for heading-order-invalid check', async () => {
       const checkOrderInvalid = {
         success: false,
         check: 'heading-order-invalid',
@@ -479,6 +474,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
         explanation: 'Fix heading order',
         transformRules: {
           selector: 'h3.skipped-level',
+          currValue: 'Skipped H2',
           action: 'replaceWith',
         },
       };
@@ -488,8 +484,9 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
         checks: [checkOrderInvalid],
       });
 
+      mockDomSelector.getDomElementSelector.returns('body > h3.skipped-level');
       mockDomSelector.toElementTargets.returns({
-        elements: [{ selector: 'h3.skipped-level' }],
+        elements: [{ selector: 'body > h3.skipped-level' }],
       });
 
       const headingsModule = await esmock('../../src/preflight/headings.js', {
@@ -530,11 +527,11 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
 
       await headingsModule.default(context, auditContext);
 
-      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['h3.skipped-level']);
+      expect(mockDomSelector.getDomElementSelector).to.have.been.called;
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['body > h3.skipped-level']);
     });
 
-    it('should use check.selectors for unknown check types with selectors array', async () => {
-      // Setup unknown check type with selectors array
+    it('should produce no selectors for unknown check types with selectors array', async () => {
       const checkWithSelectorsArray = {
         success: false,
         check: 'heading-unknown-check',
@@ -549,12 +546,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
         checks: [checkWithSelectorsArray],
       });
 
-      mockDomSelector.toElementTargets.returns({
-        elements: [
-          { selector: 'h2:nth-of-type(1)' },
-          { selector: 'h2:nth-of-type(2)' },
-        ],
-      });
+      mockDomSelector.toElementTargets.returns({});
 
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/preflight/utils/dom-selector.js': mockDomSelector,
@@ -594,7 +586,8 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
 
       await headingsModule.default(context, auditContext);
 
-      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['h2:nth-of-type(1)', 'h2:nth-of-type(2)']);
+      // Unknown check types produce empty selectors — no legacy passthrough
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith([]);
     });
   });
 });

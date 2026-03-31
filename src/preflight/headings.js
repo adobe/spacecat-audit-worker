@@ -98,28 +98,22 @@ function getElementsFromCheck(scrapeJsonObject, check) {
     }
 
     case 'heading-order-invalid': {
-      // Use the selector from transformRules if available, otherwise find headings
-      if (check.transformRules?.selector) {
-        selectors.push(check.transformRules.selector);
-      } else {
-        // Find all headings and identify order violations
-        const allHeadings = $('h1, h2, h3, h4, h5, h6').toArray();
-        // For now, return all headings involved in order issues
-        // A more precise implementation could identify the specific violating heading
-        selectors = allHeadings
-          .map((h) => getDomElementSelector(h))
-          .filter(Boolean);
+      const headingText = check.transformRules?.currValue?.trim();
+      const oldSelector = check.transformRules?.selector || '';
+      const tagFromSelector = oldSelector.match(/^(h[1-6])/)?.[1];
+      if (headingText && tagFromSelector) {
+        const candidates = $(tagFromSelector).toArray();
+        const match = candidates.find((h) => $(h).text().trim() === headingText);
+        if (match) {
+          const selector = getDomElementSelector(match);
+          if (selector) selectors.push(selector);
+        }
       }
       break;
     }
 
     default:
-      // For other check types, try to extract from transformRules or selectors
-      if (check.selectors && Array.isArray(check.selectors)) {
-        selectors = check.selectors;
-      } else if (check.transformRules?.selector) {
-        selectors.push(check.transformRules.selector);
-      }
+      break;
   }
 
   return toElementTargets(selectors);
