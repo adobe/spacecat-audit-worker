@@ -36,7 +36,7 @@ top pages from Ahrefs/RUM      page content                    suggestions per b
                                                               (guidance:missing-alt-text)
 ```
 
-Each step persists its status to the audit record via `audit.setAuditResult()` + `audit.save()`. The full history is in `auditResult.statusHistory`.
+Each step persists its status to the audit record via `Audit.updateByKeys()`. The full history is in `auditResult.statusHistory`.
 
 ---
 

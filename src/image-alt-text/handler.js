@@ -75,7 +75,7 @@ function getTopPagesWindow(allTopPages, pageLimit, topPagesOffset, isSummitPlg, 
 
 /**
  * Appends a new status entry to the statusHistory and marks the step as started.
- * Pure function — takes and returns a plain auditResult object.
+ * Stateless helper — takes and returns a plain auditResult object.
  * Computes queueDurationMs from the previous entry's completedAt.
  */
 export function startStatus(auditResult, status, metadata = {}) {
@@ -98,7 +98,7 @@ export function startStatus(auditResult, status, metadata = {}) {
 
 /**
  * Completes the current (last) status entry with completedAt and stepDurationMs.
- * Pure function — takes and returns a plain auditResult object.
+ * Stateless helper — takes and returns a plain auditResult object.
  */
 export function completeStatus(auditResult, metadata = {}) {
   const existing = auditResult || {};
@@ -116,7 +116,8 @@ export function completeStatus(auditResult, metadata = {}) {
 /**
  * Marks the current in-progress step as failed, or appends a new failed entry
  * if no step is in progress.
- * Pure function — takes and returns a plain auditResult object.
+ * Stateless helper — takes and returns a plain auditResult object.
+ * Note: does NOT set isError — callers must pass isError=true to persistAuditStatus separately.
  */
 export function failCurrentStatus(auditResult, failedStatus, metadata = {}) {
   const existing = auditResult || {};
@@ -155,6 +156,10 @@ async function persistAuditStatus(dataAccess, auditId, auditResult, log, isError
  * Persists the audit status with a fresh DB read to get the latest statusHistory.
  * Used by the guidance handler where concurrent Mystique batch responses can race.
  * The fresh read narrows the lost-update window to milliseconds.
+ *
+ * Always appends a new entry via startStatus + completeStatus (never failCurrentStatus).
+ * This is safe because the guidance handler only runs after Step 3 has completed its
+ * status entry — there should never be a dangling in-progress entry at this point.
  */
 export async function persistAuditStatusWithFreshRead(
   dataAccess,
@@ -168,7 +173,7 @@ export async function persistAuditStatusWithFreshRead(
     const { Audit } = dataAccess;
     const freshAudit = await Audit.findById(auditId);
     const existing = freshAudit?.getAuditResult() || {};
-    let auditResult = startStatus(existing, status, metadata);
+    let auditResult = startStatus(existing, status);
     auditResult = completeStatus(auditResult, metadata);
     const updates = { auditResult };
     if (isError) {
