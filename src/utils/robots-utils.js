@@ -36,6 +36,22 @@ export async function fetchRobotsTxt(siteUrl, log) {
 
     const parsed = robotsParser(robotsUrl, content);
     parsed.robotsUrl = robotsUrl;
+
+    // TEMP: remove after testing — log Disallow path patterns from raw robots.txt
+    const disallowPatterns = [];
+    for (const line of content.split(/\r?\n/)) {
+      const t = line.trim();
+      if (t.length > 0 && !t.startsWith('#')) {
+        const match = t.match(/^disallow:\s*(.*)$/i);
+        if (match) {
+          disallowPatterns.push(match[1].trim() || '(empty)');
+        }
+      }
+    }
+    log.info(
+      `[robots-utils] TEMP ${robotsUrl} Disallow patterns: ${JSON.stringify(disallowPatterns)}`,
+    );
+
     return parsed;
   } catch (error) {
     log.warn(`[robots-utils] Failed to fetch/parse robots.txt for ${siteUrl}: ${error.message}`);
