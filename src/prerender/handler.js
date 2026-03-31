@@ -722,12 +722,6 @@ export async function submitForScraping(context) {
     auditContext,
   } = context;
 
-  log.info(`${LOG_PREFIX} submitForScraping received auditContext=${JSON.stringify({
-    ...auditContext,
-    urlsCount: auditContext?.urls?.length || 0,
-    urlsPreview: Array.isArray(auditContext?.urls) ? auditContext.urls.slice(0, 5) : [],
-  })}`);
-
   // Check for AI-only mode - skip scraping step (step 1 already triggered Mystique)
   const mode = getModeFromData(data);
   if (mode === MODE_AI_ONLY) {
@@ -748,7 +742,7 @@ export async function submitForScraping(context) {
     filteredOutUrls=${filteredCount},
     baseUrl=${site.getBaseURL()},
     siteId=${siteId},
-    explicitUrls=${auditContext.urls.length},`);
+    csvUrls=${auditContext.urls.length},`);
 
     return {
       urls: explicitUrls.map((url) => ({ url })),

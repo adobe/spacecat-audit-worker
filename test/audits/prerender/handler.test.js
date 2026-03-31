@@ -379,9 +379,7 @@ describe('Prerender Audit', () => {
         ]);
         expect(result.siteId).to.equal('test-site-id');
         expect(result.processingType).to.equal('prerender');
-        expect(context.log.info).to.have.been.calledWithMatch('submitForScraping received auditContext=');
-        expect(context.log.info).to.have.been.calledWithMatch('"urlsCount":4');
-        expect(context.log.info).to.have.been.calledWithMatch('"urlsPreview":["https://example.com/page-1","https://example.com/page-1/","https://example.com/file.pdf","https://example.com/page-2"]');
+        expect(context.log.info).to.have.been.calledWithMatch('csvUrls=4');
       });
 
       it('should include includedURLs from site config', async () => {
