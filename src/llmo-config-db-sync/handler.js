@@ -40,8 +40,17 @@ function promptLookupKey(text, topicId) {
   return `${text}\0${topicId || ''}`;
 }
 
+function normalizeForCompare(field, value) {
+  if (field === 'regions' && Array.isArray(value)) {
+    return JSON.stringify(value.map((r) => r.toUpperCase()));
+  }
+  return JSON.stringify(value);
+}
+
 function changedFields(newRow, existingRow, fields) {
-  return fields.filter((f) => JSON.stringify(newRow[f]) !== JSON.stringify(existingRow[f]));
+  return fields.filter(
+    (f) => normalizeForCompare(f, newRow[f]) !== normalizeForCompare(f, existingRow[f]),
+  );
 }
 
 function diffRows(desiredRows, existingByKey, keyFn, compareFields) {
