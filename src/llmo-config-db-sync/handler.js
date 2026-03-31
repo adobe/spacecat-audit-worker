@@ -297,9 +297,7 @@ async function upsertInBatches(postgrestClient, table, rows, onConflict, log) {
 
 export default async function llmoConfigDbSync(message, context) {
   const { log, env } = context;
-  const PROD_SITE_IDS = [PROD_SITE_ID];
-  const { siteId, dryRun: dryRunParam = true } = message;
-  const dryRun = PROD_SITE_IDS.includes(siteId) ? true : dryRunParam;
+  const { siteId, dryRun = false } = message;
   const tag = dryRun ? '[llmo-config-db-sync] [DRY RUN] ' : '[llmo-config-db-sync]';
 
   if (!isSyncEnabledForSite(siteId)) {
