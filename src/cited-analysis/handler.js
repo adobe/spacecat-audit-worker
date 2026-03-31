@@ -29,8 +29,10 @@ const LOG_PREFIX = '[Cited]';
  *
  * This audit performs cited URL analysis by:
  * 1. Fetching top-cited URLs from the URL Store (discovered during brand presence analysis)
- * 2. Computing topics from LLMO brand-presence data; optional guidelines from Sentiment Config
- * 3. Sending all data to Mystique for analysis
+ * 2. Computing topics from LLMO brand-presence data (for URL enrichment);
+ *    optional guidelines from Sentiment Config
+ * 3. Sending config and enriched URLs to Mystique
+ *    (topics/guidelines are not on the SQS payload for now)
  *
  * Mystique will fetch the actual page content from the Content Store directly
  * (content can exceed SQS message size limits).
@@ -216,8 +218,6 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
         industry: config.industry,
         brandKeywords: config.brandKeywords,
         urls: enrichedUrls,
-        topics: sentimentConfig.topics,
-        guidelines: sentimentConfig.guidelines,
       },
     };
 
