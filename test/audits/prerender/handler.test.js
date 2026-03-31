@@ -5652,24 +5652,12 @@ describe('Prerender Audit', () => {
     let mockS3Client;
     let context;
 
-    const noSuchKeyError = () => {
-      const err = new Error('NoSuchKey');
-      err.name = 'NoSuchKey';
-      return err;
-    };
-
     // Helper: find the PutObjectCommand call
     const getPutCall = (stub) => stub.getCalls().find((c) => c.args[0].constructor.name === 'PutObjectCommand');
 
     beforeEach(() => {
       mockS3Client = {
-        // By default: GET status.json → NoSuchKey (no prior run), PUT → success
-        send: sandbox.stub().callsFake((command) => {
-          if (command.constructor.name === 'GetObjectCommand') {
-            return Promise.reject(noSuchKeyError());
-          }
-          return Promise.resolve({});
-        }),
+        send: sandbox.stub().resolves({}),
       };
 
       context = {
@@ -5685,7 +5673,7 @@ describe('Prerender Audit', () => {
       };
     });
 
-    it('should derive aggregate metrics from merged pages', async () => {
+    it('should derive aggregate metrics from current pages', async () => {
       const auditUrl = 'https://example.com';
       const auditData = {
         siteId: 'test-site-id',
@@ -6143,14 +6131,12 @@ describe('Prerender Audit', () => {
       expect(uploadedData.pages).to.have.lengthOf(2);
     });
 
-    it('should merge pages from existing status.json, current run overrides same URLs', async () => {
+    it('should upload only current run pages', async () => {
       const auditUrl = 'https://example.com';
       const auditData = {
         siteId: 'test-site-id',
         auditedAt: '2025-02-01T00:00:00.000Z',
         auditResult: {
-          totalUrlsChecked: 1,
-          urlsNeedingPrerender: 1,
           results: [
             {
               url: 'https://example.com/page1',
@@ -6164,90 +6150,17 @@ describe('Prerender Audit', () => {
         },
       };
 
-      const existingStatus = {
-        pages: [
-          {
-            url: 'https://example.com/page1',
-            scrapingStatus: 'success',
-            needsPrerender: false,
-            scrapedAt: '2025-01-01T00:00:00.000Z',
-          },
-          {
-            url: 'https://example.com/page2',
-            scrapingStatus: 'success',
-            needsPrerender: true,
-            scrapedAt: '2025-01-01T00:00:00.000Z',
-          },
-        ],
-      };
-
-      mockS3Client.send.callsFake((command) => {
-        if (command.constructor.name === 'GetObjectCommand') {
-          return Promise.resolve({
-            Body: { transformToString: () => Promise.resolve(JSON.stringify(existingStatus)) },
-          });
-        }
-        return Promise.resolve({});
-      });
-
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
       const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
-      // page1 overwritten by current run, page2 preserved from prior run
-      expect(uploadedData.pages).to.have.lengthOf(2);
+      expect(uploadedData.pages).to.have.lengthOf(1);
       const page1 = uploadedData.pages.find((p) => p.url === 'https://example.com/page1');
-      const page2 = uploadedData.pages.find((p) => p.url === 'https://example.com/page2');
       expect(page1.scrapedAt).to.equal('2025-02-01T00:00:00.000Z');
       expect(page1.needsPrerender).to.equal(true);
-      expect(page2.scrapedAt).to.equal('2025-01-01T00:00:00.000Z'); // preserved
     });
 
-    it('should merge status pages by pathname so www and non-www variants do not duplicate', async () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        siteId: 'test-site-id',
-        auditedAt: '2025-02-01T00:00:00.000Z',
-        auditResult: {
-          results: [
-            {
-              url: 'https://example.com/page1',
-              error: false,
-              needsPrerender: true,
-            },
-          ],
-        },
-      };
-
-      const existingStatus = {
-        pages: [
-          {
-            url: 'https://www.example.com/page1',
-            scrapingStatus: 'success',
-            needsPrerender: false,
-            scrapedAt: '2025-01-01T00:00:00.000Z',
-          },
-        ],
-      };
-
-      mockS3Client.send.callsFake((command) => {
-        if (command.constructor.name === 'GetObjectCommand') {
-          return Promise.resolve({
-            Body: { transformToString: () => Promise.resolve(JSON.stringify(existingStatus)) },
-          });
-        }
-        return Promise.resolve({});
-      });
-
-      await uploadStatusSummaryToS3(auditUrl, auditData, context);
-
-      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
-      expect(uploadedData.pages).to.have.lengthOf(1);
-      expect(uploadedData.pages[0].url).to.equal('https://example.com/page1');
-      expect(uploadedData.pages[0].needsPrerender).to.equal(true);
-    });
-
-    it('should aggregate metrics across runs from merged pages', async () => {
+    it('should use pages length for urlsSubmittedForScraping when auditResult does not provide it', async () => {
       const auditUrl = 'https://example.com';
       const auditData = {
         siteId: 'test-site-id',
@@ -6255,107 +6168,23 @@ describe('Prerender Audit', () => {
         auditResult: {
           results: [
             { url: 'https://example.com/new-page', error: false, needsPrerender: true },
+            { url: 'https://example.com/error-page', error: true, needsPrerender: false },
+          ],
+          missingPages: [
+            { url: 'https://example.com/missing-page', scrapingStatus: 'error', needsPrerender: false },
           ],
         },
       };
 
-      const existingStatus = {
-        urlsSubmittedForScraping: 2,
-        pages: [
-          { url: 'https://example.com/old-page', scrapingStatus: 'success', needsPrerender: true, scrapedAt: '2025-01-01T00:00:00.000Z' },
-          { url: 'https://example.com/forbidden', scrapingStatus: 'error', needsPrerender: false, scrapeError: { statusCode: 403, message: 'Forbidden' }, scrapedAt: '2025-01-01T00:00:00.000Z' },
-        ],
-      };
-
-      mockS3Client.send.callsFake((command) => {
-        if (command.constructor.name === 'GetObjectCommand') {
-          return Promise.resolve({
-            Body: { transformToString: () => Promise.resolve(JSON.stringify(existingStatus)) },
-          });
-        }
-        return Promise.resolve({});
-      });
-
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
       const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
-      // 3 unique pages across both runs
-      expect(uploadedData).to.not.have.property('totalUrlsChecked');
-      // new-page + old-page both needsPrerender=true
-      expect(uploadedData.urlsNeedingPrerender).to.equal(2);
-      // new-page (success) + old-page (success) = 2 scraped successfully; forbidden = error
-      expect(uploadedData.urlsScrapedSuccessfully).to.equal(2);
+      expect(uploadedData.pages).to.have.lengthOf(3);
       expect(uploadedData.urlsSubmittedForScraping).to.equal(3);
-      expect(uploadedData.scrapeForbidden).to.be.false;
-      expect(uploadedData.scrapeForbiddenCount).to.equal(1);
-    });
-
-    it('should treat missing existing status.json (NoSuchKey) as empty and not warn', async () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        siteId: 'test-site-id',
-        auditedAt: '2025-01-01T00:00:00.000Z',
-        auditResult: { totalUrlsChecked: 0, urlsNeedingPrerender: 0, results: [] },
-      };
-
-      // default stub already returns NoSuchKey for GET
-      await uploadStatusSummaryToS3(auditUrl, auditData, context);
-
-      expect(context.log.warn).to.not.have.been.calledWith(sinon.match(/Could not read existing status\.json/));
-      expect(getPutCall(mockS3Client.send)).to.exist;
-    });
-
-    it('should warn and start fresh when existing status.json is unreadable (non-NoSuchKey error)', async () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        siteId: 'test-site-id',
-        auditedAt: '2025-01-01T00:00:00.000Z',
-        auditResult: {
-          totalUrlsChecked: 1,
-          urlsNeedingPrerender: 1,
-          results: [{ url: 'https://example.com/page1', error: false, needsPrerender: true }],
-        },
-      };
-
-      mockS3Client.send.callsFake((command) => {
-        if (command.constructor.name === 'GetObjectCommand') {
-          return Promise.reject(new Error('AccessDenied'));
-        }
-        return Promise.resolve({});
-      });
-
-      await uploadStatusSummaryToS3(auditUrl, auditData, context);
-
-      expect(context.log.warn).to.have.been.calledWith(sinon.match(/Could not read existing status\.json.*starting fresh/));
-      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
-      expect(uploadedData.pages).to.have.lengthOf(1);
-    });
-
-    it('should treat existing status without a pages array as empty during merge', async () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        siteId: 'test-site-id',
-        auditedAt: '2025-02-01T00:00:00.000Z',
-        auditResult: {
-          results: [{ url: 'https://example.com/page1', error: false, needsPrerender: true }],
-        },
-      };
-
-      mockS3Client.send.callsFake((command) => {
-        if (command.constructor.name === 'GetObjectCommand') {
-          return Promise.resolve({
-            Body: { transformToString: () => Promise.resolve(JSON.stringify({ pages: null })) },
-          });
-        }
-        return Promise.resolve({});
-      });
-
-      await uploadStatusSummaryToS3(auditUrl, auditData, context);
-
-      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
-      expect(uploadedData.pages).to.have.lengthOf(1);
-      expect(uploadedData.pages[0].url).to.equal('https://example.com/page1');
+      expect(uploadedData.urlsScrapedSuccessfully).to.equal(1);
+      expect(uploadedData.scrapingErrorRate).to.be.closeTo(66.66, 0.01);
+      expect(mockS3Client.send).to.have.been.calledOnce;
     });
   });
 
@@ -7644,6 +7473,76 @@ describe('Prerender Audit', () => {
       expect(context.dataAccess.PageCitability.create).to.not.have.been.called;
       expect(existingRecord.setCitabilityScore).to.have.been.calledWith(0.75);
       expect(existingRecord.setIsDeployedAtEdge).to.have.been.calledWith(false);
+      expect(saveStub).to.have.been.calledOnce;
+    });
+
+    it('should match malformed URLs by their raw value when pathname normalization fails', async () => {
+      const saveStub = sandbox.stub().resolves();
+      const existingRecord = {
+        getUrl: () => 'not-a-valid-url',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStub,
+      };
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([existingRecord]),
+            create: sandbox.stub(),
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        {
+          url: 'not-a-valid-url',
+          citabilityScore: 0.33,
+        },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(context.dataAccess.PageCitability.create).to.not.have.been.called;
+      expect(existingRecord.setCitabilityScore).to.have.been.calledWith(0.33);
+      expect(saveStub).to.have.been.calledOnce;
+    });
+
+    it('should match existing PageCitability records for root URLs', async () => {
+      const saveStub = sandbox.stub().resolves();
+      const existingRecord = {
+        getUrl: () => 'https://www.example.com/',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStub,
+      };
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([existingRecord]),
+            create: sandbox.stub(),
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        {
+          url: 'https://example.com/',
+          citabilityScore: 0.91,
+        },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(context.dataAccess.PageCitability.create).to.not.have.been.called;
+      expect(existingRecord.setCitabilityScore).to.have.been.calledWith(0.91);
       expect(saveStub).to.have.been.calledOnce;
     });
 

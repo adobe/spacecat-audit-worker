@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
 import { subDays } from 'date-fns';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -394,46 +394,6 @@ function getModeFromData(data) {
 }
 
 /**
- * Fetches the latest scrapeJobId from the status.json file in S3
- * @param {string} siteId - The site ID
- * @param {Object} context - Audit context with s3Client and env
- * @returns {Promise<string|null>} - The scrapeJobId or null if not found
- */
-async function fetchLatestScrapeJobId(siteId, context) {
-  const { log, s3Client, env } = context;
-
-  try {
-    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
-    const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
-
-    log.info(`${LOG_PREFIX} ai-only: Fetching status.json from s3://${bucketName}/${statusKey}`);
-
-    const response = await s3Client.send(new GetObjectCommand({
-      Bucket: bucketName,
-      Key: statusKey,
-    }));
-
-    const statusContent = await response.Body.transformToString();
-    const statusData = JSON.parse(statusContent);
-
-    if (statusData.scrapeJobId) {
-      log.info(`${LOG_PREFIX} ai-only: Found scrapeJobId: ${statusData.scrapeJobId}`);
-      return statusData.scrapeJobId;
-    }
-
-    log.warn(`${LOG_PREFIX} ai-only: No scrapeJobId found in status.json`);
-    return null;
-  } catch (error) {
-    if (error.name === 'NoSuchKey') {
-      log.warn(`${LOG_PREFIX} ai-only: status.json not found for siteId=${siteId}`);
-    } else {
-      log.error(`${LOG_PREFIX} ai-only: Error fetching status.json: ${error.message}`);
-    }
-    return null;
-  }
-}
-
-/**
  * Sends a guidance:prerender message to Mystique with AI summary generation request
  * @param {string} auditUrl - Audited URL (site base URL)
  * @param {Object} auditData - Audit data used to build the message
@@ -582,21 +542,15 @@ export async function handleAiOnlyMode(context) {
 
   log.info(`${LOG_PREFIX} ai-only: Processing AI summary request for baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunityId || 'latest'}`);
 
-  // Fetch scrapeJobId from status.json if not provided
   if (!scrapeJobId) {
-    log.info(`${LOG_PREFIX} ai-only: scrapeJobId not provided, fetching from status.json for baseUrl=${baseUrl}, siteId=${siteId}`);
-    scrapeJobId = await fetchLatestScrapeJobId(siteId, context);
-
-    if (!scrapeJobId) {
-      const error = 'scrapeJobId not found. Either provide it in data or ensure a prerender audit has run recently.';
-      log.error(`${LOG_PREFIX} ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
-      return {
-        error,
-        status: 'failed',
-        fullAuditRef: `${MODE_AI_ONLY}/failed-${siteId}`,
-        auditResult: { error },
-      };
-    }
+    const error = 'scrapeJobId is required in ai-only mode.';
+    log.error(`${LOG_PREFIX} ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
+    return {
+      error,
+      status: 'failed',
+      fullAuditRef: `${MODE_AI_ONLY}/failed-${siteId}`,
+      auditResult: { error },
+    };
   }
 
   // Find the opportunity
@@ -1203,40 +1157,13 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       );
     }
 
-    // Read existing status.json and merge pages so previous runs are not lost.
-    // Pages from the current run overwrite any prior entry for the same URL.
-    let existingStatus = {};
-    let existingPages = [];
-    try {
-      const existing = await s3Client.send(new GetObjectCommand({
-        Bucket: bucketName,
-        Key: statusKey,
-      }));
-      existingStatus = JSON.parse(await existing.Body.transformToString());
-      existingPages = Array.isArray(existingStatus.pages) ? existingStatus.pages : [];
-    } catch (e) {
-      if (e.name !== 'NoSuchKey') {
-        log.warn(`${LOG_PREFIX} Could not read existing status.json for merge, starting fresh: ${e.message}`);
-      }
-    }
-
-    const currentUrlSet = new Set(currentPages.map((p) => normalizePathname(p.url)));
-    const mergedPages = [
-      ...currentPages,
-      ...existingPages.filter((p) => !currentUrlSet.has(normalizePathname(p.url))),
-    ];
-
-    // Derive aggregate metrics from the full merged page set and latest audit metadata.
-    const urlsNeedingPrerender = mergedPages.filter((p) => p.needsPrerender).length;
-    const urlsScrapedSuccessfully = mergedPages.filter((p) => p.scrapingStatus === 'success').length;
-    const currentUrlsSubmittedForScraping = auditResult.urlsSubmittedForScraping
-      ?? currentPages.filter((p) => p.scrapingStatus !== undefined).length;
-    const urlsSubmittedForScraping = (existingStatus.urlsSubmittedForScraping || 0)
-      + currentUrlsSubmittedForScraping;
+    const urlsNeedingPrerender = currentPages.filter((p) => p.needsPrerender).length;
+    const urlsScrapedSuccessfully = currentPages.filter((p) => p.scrapingStatus === 'success').length;
+    const urlsSubmittedForScraping = auditResult.urlsSubmittedForScraping ?? currentPages.length;
     const scrapingErrorRate = urlsSubmittedForScraping > 0
       ? ((urlsSubmittedForScraping - urlsScrapedSuccessfully) / urlsSubmittedForScraping) * 100
       : null;
-    const scrapeForbiddenCount = mergedPages.filter(
+    const scrapeForbiddenCount = currentPages.filter(
       (p) => p.scrapeError?.statusCode === 403,
     ).length;
     const latestScrapeForbidden = auditResult.scrapeForbidden
@@ -1246,7 +1173,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       baseUrl: auditUrl,
       siteId,
       auditType: AUDIT_TYPE,
-      scrapeJobId: scrapeJobId || existingStatus.scrapeJobId || null,
+      scrapeJobId: scrapeJobId || null,
       lastUpdated: scrapedAt,
       urlsNeedingPrerender,
       urlsSubmittedForScraping,
@@ -1255,7 +1182,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       scrapeForbidden: latestScrapeForbidden,
       scrapeForbiddenCount,
       lastAuditSuccess: auditResult.lastAuditSuccess !== false,
-      pages: mergedPages,
+      pages: currentPages,
     };
     await s3Client.send(new PutObjectCommand({
       Bucket: bucketName,

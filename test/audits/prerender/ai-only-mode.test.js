@@ -137,95 +137,21 @@ describe('Prerender AI-Only Mode', () => {
       );
     });
 
-    it('should fetch scrapeJobId from status.json if not provided', async () => {
+    it('should return error when scrapeJobId is not provided', async () => {
       context.data = JSON.stringify({
         mode: 'ai-only',
         opportunityId: 'opportunity-123',
-        // scrapeJobId not provided
       });
-
-      const statusData = {
-        scrapeJobId: 'fetched-scrape-job',
-      };
-
-      mockS3Client.send.resolves({
-        Body: {
-          transformToString: sandbox.stub().resolves(JSON.stringify(statusData)),
-        },
-      });
-
-      const result = await importTopPages(context);
-
-      expect(result.status).to.equal('complete');
-      expect(mockS3Client.send).to.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/scrapeJobId not provided, fetching from status.json/),
-      );
-      expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Found scrapeJobId: fetched-scrape-job/),
-      );
-    });
-
-    it('should handle NoSuchKey error when status.json not found', async () => {
-      context.data = JSON.stringify({
-        mode: 'ai-only',
-        // scrapeJobId not provided
-      });
-
-      const noSuchKeyError = new Error('The specified key does not exist');
-      noSuchKeyError.name = 'NoSuchKey';
-      mockS3Client.send.rejects(noSuchKeyError);
 
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('failed');
-      expect(result.error).to.match(/scrapeJobId not found/);
+      expect(result.error).to.equal('scrapeJobId is required in ai-only mode.');
       expect(result.fullAuditRef).to.match(/ai-only\/failed-/);
-      expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/status.json not found/),
-      );
-    });
-
-    it('should handle generic S3 errors when fetching status.json', async () => {
-      context.data = JSON.stringify({
-        mode: 'ai-only',
-        // scrapeJobId not provided
-      });
-
-      mockS3Client.send.rejects(new Error('S3 connection timeout'));
-
-      const result = await importTopPages(context);
-
-      expect(result.status).to.equal('failed');
-      expect(result.error).to.match(/scrapeJobId not found/);
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Error fetching status.json: S3 connection timeout/),
+        sinon.match(/scrapeJobId is required in ai-only mode/),
       );
-    });
-
-    it('should handle status.json without scrapeJobId field', async () => {
-      context.data = JSON.stringify({
-        mode: 'ai-only',
-        // scrapeJobId not provided
-      });
-
-      const statusData = {
-        // scrapeJobId missing
-        lastUpdated: '2025-01-01T00:00:00Z',
-      };
-
-      mockS3Client.send.resolves({
-        Body: {
-          transformToString: sandbox.stub().resolves(JSON.stringify(statusData)),
-        },
-      });
-
-      const result = await importTopPages(context);
-
-      expect(result.status).to.equal('failed');
-      expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/No scrapeJobId found in status.json/),
-      );
+      expect(mockS3Client.send).to.not.have.been.called;
     });
 
     it('should return error if opportunity not found by ID', async () => {
@@ -562,27 +488,11 @@ describe('Prerender AI-Only Mode', () => {
       // We pass malformed JSON directly to handleAiOnlyMode (bypassing getModeFromData)
       context.data = '{invalid json}';
 
-      // Mock S3 to return valid status.json (since scrapeJobId will be null from malformed data)
-      const statusJsonBuffer = Buffer.from(JSON.stringify({ scrapeJobId: 'test-scrape-job' }));
-      mockS3Client.send.resolves({
-        Body: {
-          transformToString: sandbox.stub().resolves(statusJsonBuffer.toString()),
-        },
-      });
-
       const result = await handleAiOnlyMode(context);
 
-      // Should complete successfully despite malformed JSON
-      expect(result.status).to.equal('complete');
-      expect(result.mode).to.equal('ai-only');
-      expect(result.opportunityId).to.equal('opportunity-123');
-
-      // Verify that opportunityId and scrapeJobId were null after parse error
-      // and scrapeJobId was fetched from S3
-      expect(mockS3Client.send).to.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/scrapeJobId not provided, fetching from status.json/),
-      );
+      expect(result.status).to.equal('failed');
+      expect(result.error).to.equal('scrapeJobId is required in ai-only mode.');
+      expect(mockS3Client.send).to.not.have.been.called;
     });
 
     it('should handle malformed JSON with provided scrapeJobId in object form', async () => {
@@ -624,4 +534,3 @@ describe('Prerender AI-Only Mode', () => {
     });
   });
 });
-
