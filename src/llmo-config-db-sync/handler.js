@@ -19,6 +19,7 @@ import { ok, internalServerError } from '@adobe/spacecat-shared-http-utils';
 const UPSERT_BATCH_SIZE = 3000;
 const FETCH_BATCH_SIZE = 5000;
 const PROMPT_ID_NAMESPACE = '1b671a64-40d5-491e-99b0-da01ff1f3341';
+const TOPIC_ID_NAMESPACE = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
 
 const CATEGORY_COMPARE_FIELDS = ['name', 'origin', 'status'];
 const TOPIC_COMPARE_FIELDS = ['name', 'description', 'status'];
@@ -165,9 +166,11 @@ async function fetchExistingState(postgrestClient, organizationId, log) {
   });
 
   const topicLookup = new Map();
+  const topicNameLookup = new Map();
   const existingTopics = new Map();
   (topicResult.data || []).forEach((t) => {
     topicLookup.set(t.topic_id, t.id);
+    topicNameLookup.set(t.name, t.id);
     existingTopics.set(t.topic_id, t);
   });
 
@@ -179,7 +182,7 @@ async function fetchExistingState(postgrestClient, organizationId, log) {
   log.info(`Loaded existing state: ${existingCats.size} categories, ${existingTopics.size} topics, ${existingPrompts.size} prompts`);
 
   return {
-    categoryLookup, topicLookup, existingCats, existingTopics, existingPrompts,
+    categoryLookup, topicLookup, topicNameLookup, existingCats, existingTopics, existingPrompts,
   };
 }
 
@@ -197,6 +200,7 @@ function collectPrompts(
   config,
   categoryLookup,
   topicLookup,
+  topicNameLookup,
   brandId,
   organizationId,
   existingPrompts,
@@ -240,8 +244,13 @@ function collectPrompts(
 
   if (config.deleted?.prompts) {
     Object.entries(config.deleted.prompts).forEach(([configPromptId, p]) => {
-      const topicUuid = p.topic ? (topicLookup.get(p.topic) || null) : null;
+      if (!p.topic) {
+        log.warn(`Skipping deleted prompt "${configPromptId}": no topic field`);
+        return;
+      }
+      const topicUuid = topicNameLookup.get(p.topic) || null;
       if (!topicUuid) {
+        log.warn(`Skipping deleted prompt "${configPromptId}": topic "${p.topic}" could not be resolved by name`);
         return;
       }
       const categoryUuid = p.categoryId ? (categoryLookup.get(p.categoryId) || null) : null;
@@ -331,7 +340,7 @@ export default async function llmoConfigDbSync(message, context) {
 
     // Step 2: Fetch all existing state in parallel
     const {
-      categoryLookup, topicLookup,
+      categoryLookup, topicLookup, topicNameLookup,
       existingCats, existingTopics, existingPrompts,
     } = await fetchExistingState(postgrestClient, organizationId, log);
 
@@ -397,16 +406,85 @@ export default async function llmoConfigDbSync(message, context) {
         const { data: topicData, error: topicError } = await postgrestClient
           .from('topics')
           .upsert(topicDiff.toUpsert, { onConflict: 'organization_id,topic_id' })
-          .select('id,topic_id');
+          .select('id,topic_id,name');
         if (topicError) throw new Error(`Failed to upsert topics: ${topicError.message}`);
-        (topicData || []).forEach((t) => topicLookup.set(t.topic_id, t.id));
+        (topicData || []).forEach((t) => {
+          topicLookup.set(t.topic_id, t.id);
+          topicNameLookup.set(t.name, t.id);
+        });
       }
     }
     log.info(`${tag}Topics: ${topicDiff.stats.inserted} inserted, ${topicDiff.stats.updated} updated, ${topicDiff.stats.unchanged} unchanged`);
 
+    // Step 4b: Ensure topics & categories referenced only by deleted prompts exist
+    if (s3Config.deleted?.prompts) {
+      const seenTopicNames = new Set();
+      const seenCatIds = new Set();
+      const missingTopicRows = [];
+      const missingCatRows = [];
+
+      Object.values(s3Config.deleted.prompts).forEach((p) => {
+        if (p.topic && !topicNameLookup.has(p.topic) && !seenTopicNames.has(p.topic)) {
+          seenTopicNames.add(p.topic);
+          missingTopicRows.push({
+            organization_id: organizationId,
+            topic_id: uuidv5(p.topic, TOPIC_ID_NAMESPACE),
+            name: p.topic,
+            description: null,
+            status: 'deleted',
+            created_by: null,
+            updated_by: null,
+          });
+        }
+        if (p.categoryId && !categoryLookup.has(p.categoryId) && !seenCatIds.has(p.categoryId)) {
+          seenCatIds.add(p.categoryId);
+          missingCatRows.push({
+            organization_id: organizationId,
+            category_id: p.categoryId,
+            name: p.category || p.categoryId,
+            origin: 'human',
+            status: 'deleted',
+            created_by: null,
+            updated_by: null,
+          });
+        }
+      });
+
+      if (missingCatRows.length > 0) {
+        if (dryRun) {
+          logDryRunSummary(log, 'deleted-ref categories', missingCatRows, []);
+        } else {
+          const { data: catData, error: catError } = await postgrestClient
+            .from('categories')
+            .upsert(missingCatRows, { onConflict: 'organization_id,category_id' })
+            .select('id,category_id');
+          if (catError) throw new Error(`Failed to upsert deleted-ref categories: ${catError.message}`);
+          (catData || []).forEach((c) => categoryLookup.set(c.category_id, c.id));
+        }
+        log.info(`${tag}Deleted-ref categories: ${missingCatRows.length} ensured`);
+      }
+
+      if (missingTopicRows.length > 0) {
+        if (dryRun) {
+          logDryRunSummary(log, 'deleted-ref topics', missingTopicRows, []);
+        } else {
+          const { data: topicData, error: topicError } = await postgrestClient
+            .from('topics')
+            .upsert(missingTopicRows, { onConflict: 'organization_id,topic_id' })
+            .select('id,topic_id,name');
+          if (topicError) throw new Error(`Failed to upsert deleted-ref topics: ${topicError.message}`);
+          (topicData || []).forEach((t) => {
+            topicLookup.set(t.topic_id, t.id);
+            topicNameLookup.set(t.name, t.id);
+          });
+        }
+        log.info(`${tag}Deleted-ref topics: ${missingTopicRows.length} ensured`);
+      }
+    }
+
     // Step 5: Build & diff prompts
     // eslint-disable-next-line max-len
-    const promptRows = collectPrompts(s3Config, categoryLookup, topicLookup, brandId, organizationId, existingPrompts, log);
+    const promptRows = collectPrompts(s3Config, categoryLookup, topicLookup, topicNameLookup, brandId, organizationId, existingPrompts, log);
     const promptDiff = diffRows(
       promptRows,
       existingPrompts,
