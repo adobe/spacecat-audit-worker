@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { mapToPaidOpportunity, mapToPaidSuggestion, isHighSeverityGuidanceBody } from './guidance-opportunity-mapper.js';
 import { getAuditData } from './audit-data-provider.js';
 import { createPaidLogger } from '../paid/paid-log.js';
@@ -33,7 +32,7 @@ export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Site, Opportunity, Suggestion } = dataAccess;
   const { siteId, auditId, data } = message;
-  const { url, guidance, suggestions } = data;
+  const { url, guidance } = data;
   const paidLog = createPaidLogger(log, GUIDANCE_TYPE);
 
   paidLog.received(siteId, url, auditId);
@@ -62,12 +61,6 @@ export default async function handler(message, context) {
   // Only proceed for high severity
   if (!isHighSeverityGuidanceBody(guidanceParsed.body)) {
     paidLog.skipping('severity not high enough', siteId, url, auditId);
-    return ok();
-  }
-
-  // Skip if Mystique returned no actionable suggestions
-  if (!isNonEmptyArray(suggestions)) {
-    paidLog.skipping('no suggestions from guidance engine', siteId, url, auditId);
     return ok();
   }
 
