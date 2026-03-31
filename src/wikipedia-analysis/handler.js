@@ -46,10 +46,30 @@ function summarizeWikipediaUrlOverride(resolution) {
 }
 
 /**
+ * Slack mrkdwn wraps URLs as `<https://…>` or `<https://…|link label>`.
+ * Strips that wrapper so values from Slack commands match `isValidUrl`.
+ *
+ * @param {string} raw
+ * @returns {string}
+ */
+function unwrapSlackMrkdwnLink(raw) {
+  let s = raw.trim();
+  if (s.length >= 2 && s.startsWith('<') && s.endsWith('>')) {
+    s = s.slice(1, -1).trim();
+    const pipeIdx = s.indexOf('|');
+    if (pipeIdx !== -1) {
+      s = s.slice(0, pipeIdx).trim();
+    }
+  }
+  return s.trim();
+}
+
+/**
  * Optional Wikipedia article URL from `message.data` (merged into RunnerAudit
  * `auditContext.messageData`).
- * `wikiUrl` wins over `wikipediaUrl` when both are set. Invalid / non-string
- * values are ignored (see runner).
+ * `wikiUrl` wins over `wikipediaUrl` when both are set. Slack sends
+ * `<https://…>` / `<https://…|label>`; those are normalized here. Invalid /
+ * non-string values are ignored (see runner).
  *
  * @param {object} [auditContext]
  * @param {{ debug?: Function, info?: Function }} [log]
@@ -86,26 +106,26 @@ function resolveWikipediaUrlOverride(auditContext, log) {
     return undefined;
   }
 
-  const trimmed = rawOverride.trim();
-  if (!trimmed) {
+  const normalized = unwrapSlackMrkdwnLink(rawOverride);
+  if (!normalized) {
     log?.info?.(
-      `${LOG_PREFIX} Wikipedia URL override rejected: empty or whitespace-only after trim`,
+      `${LOG_PREFIX} Wikipedia URL override rejected: empty or whitespace-only after Slack/mrkdwn normalization`,
     );
     return undefined;
   }
 
-  if (!isValidUrl(trimmed)) {
+  if (!isValidUrl(normalized)) {
     log?.info?.(
-      `${LOG_PREFIX} Wikipedia URL override rejected: isValidUrl=false for "${trimmed}"`,
+      `${LOG_PREFIX} Wikipedia URL override rejected: isValidUrl=false for "${normalized}"`,
     );
-    return { invalid: true, value: trimmed };
+    return { invalid: true, value: normalized };
   }
 
   log?.debug?.(
-    `${LOG_PREFIX} Wikipedia URL override accepted: "${trimmed}"`,
+    `${LOG_PREFIX} Wikipedia URL override accepted: "${normalized}"`,
   );
 
-  return { url: trimmed };
+  return { url: normalized };
 }
 
 /**

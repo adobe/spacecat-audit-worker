@@ -204,6 +204,44 @@ describe('Wikipedia Analysis Handler', () => {
       );
     });
 
+    it('should unwrap Slack mrkdwn wikiUrl <url> from messageData', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Slack_Wrapped';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: `  <${override}>  ` } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+    });
+
+    it('should unwrap Slack mrkdwn <url|label> from messageData', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Labeled';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikipediaUrl: `<${override}|Wikipedia page>` } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+    });
+
+    it('should reject Slack-style empty brackets for wikiUrl', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: '<>' } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/after Slack\/mrkdwn normalization/),
+      );
+    });
+
     it('should use wikipediaUrl from messageData when wikiUrl is absent', async () => {
       const override = 'https://en.wikipedia.org/wiki/Other';
       const result = await wikipediaAnalysisHandler.runner(
