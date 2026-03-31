@@ -68,6 +68,32 @@ describe('Prerender Audit', () => {
         fullAuditRef: 'scrapes/test-site-id/',
       });
     });
+
+    it('should preserve explicit auditContext URLs in the top-pages payload', async () => {
+      const context = {
+        site: { getId: () => 'test-site-id' },
+        finalUrl: 'https://example.com',
+        auditContext: {
+          urls: [
+            'https://example.com/page-1',
+            'https://example.com/page-2',
+          ],
+        },
+      };
+      const res = await importTopPages(context);
+      expect(res).to.deep.equal({
+        type: 'top-pages',
+        siteId: 'test-site-id',
+        auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
+        fullAuditRef: 'scrapes/test-site-id/',
+        auditContext: {
+          urls: [
+            'https://example.com/page-1',
+            'https://example.com/page-2',
+          ],
+        },
+      });
+    });
   });
   describe('HTML Analysis', () => {
     it('should analyze HTML and detect prerender opportunities', async () => {
@@ -313,6 +339,47 @@ describe('Prerender Audit', () => {
           storagePrefix: 'prerender',
         });
         expect(result.urls).to.deep.equal([{ url: 'https://example.com' }]);
+      });
+
+      it('should use explicit auditContext URLs when provided', async () => {
+        const mockSiteTopPage = {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+            { getUrl: () => 'https://example.com/top-page' },
+          ]),
+        };
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: {
+            SiteTopPage: mockSiteTopPage,
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub() },
+          auditContext: {
+            urls: [
+              'https://example.com/page-1',
+              'https://example.com/page-1/',
+              'https://example.com/file.pdf',
+              'https://example.com/page-2',
+            ],
+          },
+        };
+
+        const result = await submitForScraping(context);
+
+        expect(mockSiteTopPage.allBySiteIdAndSourceAndGeo.called).to.be.false;
+        expect(result.urls).to.deep.equal([
+          { url: 'https://example.com/page-1' },
+          { url: 'https://example.com/page-2' },
+        ]);
+        expect(result.siteId).to.equal('test-site-id');
+        expect(result.processingType).to.equal('prerender');
+        expect(context.log.info).to.have.been.calledWithMatch('csvUrls=4');
       });
 
       it('should include includedURLs from site config', async () => {
