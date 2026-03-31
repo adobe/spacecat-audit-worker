@@ -314,6 +314,46 @@ describe('Prerender Audit', () => {
         expect(result.urls).to.deep.equal([{ url: 'https://example.com' }]);
       });
 
+      it('should use explicit auditContext URLs when provided', async () => {
+        const mockSiteTopPage = {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+            { getUrl: () => 'https://example.com/top-page' },
+          ]),
+        };
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: {
+            SiteTopPage: mockSiteTopPage,
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub() },
+          auditContext: {
+            urls: [
+              'https://example.com/page-1',
+              'https://example.com/page-1/',
+              'https://example.com/file.pdf',
+              'https://example.com/page-2',
+            ],
+          },
+        };
+
+        const result = await submitForScraping(context);
+
+        expect(mockSiteTopPage.allBySiteIdAndSourceAndGeo.called).to.be.false;
+        expect(result.urls).to.deep.equal([
+          { url: 'https://example.com/page-1' },
+          { url: 'https://example.com/page-2' },
+        ]);
+        expect(result.siteId).to.equal('test-site-id');
+        expect(result.processingType).to.equal('prerender');
+      });
+
       it('should include includedURLs from site config', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-athena-client': {

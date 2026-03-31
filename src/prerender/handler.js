@@ -712,6 +712,7 @@ export async function submitForScraping(context) {
     site,
     log,
     data,
+    auditContext,
   } = context;
 
   // Check for AI-only mode - skip scraping step (step 1 already triggered Mystique)
@@ -722,6 +723,32 @@ export async function submitForScraping(context) {
   }
 
   const siteId = site.getId();
+  if (Array.isArray(auditContext?.urls) && auditContext.urls.length > 0) {
+    const { urls: explicitUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(auditContext.urls);
+
+    log.info(`
+    ${LOG_PREFIX} prerender_submit_scraping_metrics:
+    submittedUrls=${explicitUrls.length},
+    agenticUrls=0,
+    topPagesUrls=0,
+    includedURLs=0,
+    filteredOutUrls=${filteredCount},
+    baseUrl=${site.getBaseURL()},
+    siteId=${siteId},
+    explicitUrls=${auditContext.urls.length},`);
+
+    return {
+      urls: explicitUrls.map((url) => ({ url })),
+      siteId,
+      processingType: AUDIT_TYPE,
+      maxScrapeAge: 0,
+      options: {
+        pageLoadTimeout: 20000,
+        storagePrefix: AUDIT_TYPE,
+      },
+    };
+  }
+
   const topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
   const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
 
