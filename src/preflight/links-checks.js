@@ -23,8 +23,17 @@ const HEAD_FALLBACK_STATUSES = new Set([400, 401, 403, 405, 429, 451]);
 
 /**
  * Returns true only for status codes that definitively indicate a broken link.
- * 405 (Method Not Allowed) and bot/auth codes (400, 401, 403, 429, 451) are excluded
- * because they indicate access restrictions, not missing content.
+ *
+ * 404 (Not Found) and 410 (Gone) mean the content does not exist — unambiguously broken.
+ * 5xx means the server is failing to serve the content — also unambiguously broken.
+ *
+ * Auth/bot codes (400, 401, 403, 429, 451) and 405 are intentionally excluded: they
+ * indicate access restrictions or method limitations, not missing content. External pages
+ * that require authentication or block crawlers should not be reported as broken links.
+ * This differs from the internal-links audit, which surfaces auth-blocked internal pages
+ * as opportunities (FORBIDDEN_OR_BLOCKED); preflight covers external links where we have
+ * no credentials and access restrictions are expected and valid.
+ *
  * @param {number} status
  * @returns {boolean}
  */

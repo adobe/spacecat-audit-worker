@@ -304,6 +304,25 @@ describe('preflight/links-checks - runLinksChecks', () => {
     expect(headOptions.headers.Authorization).to.be.undefined;
   });
 
+  it('does not include Authorization header on GET retry for external links when pageAuthToken is provided', async () => {
+    // HEAD returns 405, triggering a GET retry. The auth token must not leak
+    // onto the GET call even though pageAuthToken is present in options.
+    fetchStub.onFirstCall().resolves(makeResponse(405)); // HEAD
+    fetchStub.onSecondCall().resolves(makeResponse(200)); // GET
+
+    await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="https://external.com/page">link</a>'),
+      context,
+      { pageAuthToken: 'Bearer token123' },
+    );
+
+    expect(fetchStub.callCount).to.equal(2);
+    // Both HEAD and GET share the same headers object — Authorization must be absent
+    expect(fetchStub.firstCall.args[1].headers.Authorization).to.be.undefined;
+    expect(fetchStub.secondCall.args[1].headers.Authorization).to.be.undefined;
+  });
+
   // ── OK responses ───────────────────────────────────────────────────────────
 
   it('returns no broken links when all links return 200', async () => {
