@@ -19,7 +19,6 @@ export const PROVIDERS = Object.freeze([
   'chatgpt',
   'copilot',
   'gemini',
-  'google-ai-overview',
   'google-ai-overviews',
   'perplexity',
 ]);

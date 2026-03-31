@@ -319,18 +319,14 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result[0]).to.include('chatgpt');
     });
 
-    it('should handle provider IDs with hyphens (google-ai-overview)', () => {
-      const qi = { data: [{ path: '/adobe/brand-presence/w7/brandpresence-google-ai-overview-w7-2026-010126.json' }] };
+    it('should handle provider IDs with hyphens (google-ai-overviews)', () => {
+      const qi = { data: [
+        { path: '/adobe/brand-presence/w7/brandpresence-google-ai-overviews-w7-2026-010126.json' },
+        { path: '/site/brand-presence/brandpresence-google-ai-overviews-w7-2026.json' },
+      ] };
       const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(result).to.have.lengthOf(1);
-      expect(result[0]).to.include('google-ai-overview');
-    });
-
-    it('should match google-ai-overviews (plural) as a known provider', () => {
-      const qi = { data: [{ path: '/site/brand-presence/brandpresence-google-ai-overviews-w7-2026.json' }] };
-      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(result).to.have.lengthOf(1);
-      expect(result[0]).to.include('google-ai-overviews');
+      expect(result).to.have.lengthOf(2);
+      result.forEach((r) => expect(r).to.include('google-ai-overviews'));
     });
 
     it('should match filenames without a trailing date suffix', () => {

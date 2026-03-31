@@ -178,17 +178,6 @@ describe('brand-presence-enrichment', () => {
       expect(paths).to.have.lengthOf(1);
       expect(paths[0]).to.include('copilot');
     });
-
-    it('matches google-ai-overviews (plural) as a known provider', () => {
-      const qi = {
-        data: [{
-          path: `/site/brand-presence/brandpresence-google-ai-overviews-w${DEFAULT_WEEK}-${DEFAULT_YEAR}.json`,
-        }],
-      };
-      const paths = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(paths).to.have.lengthOf(1);
-      expect(paths[0]).to.include('google-ai-overviews');
-    });
   });
 
   describe('formatTopicsForEnrichment', () => {
