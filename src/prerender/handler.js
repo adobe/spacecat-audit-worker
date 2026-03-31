@@ -1159,9 +1159,17 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       ...(result.scrapeError && { scrapeError: result.scrapeError }),
     }));
 
-    // Append URLs that were submitted to the scraper but produced no S3 result files.
-    // For each, try to read their scrape.json to surface the error stored during scraping.
-    if (scrapeJobId && dataAccess?.ScrapeUrl) {
+    // Prefer precomputed missingPages from getScrapeJobStats; fall back to querying ScrapeUrl
+    // for direct callers that only provide auditResult results.
+    if (Array.isArray(auditResult.missingPages)) {
+      currentPages.push(
+        ...auditResult.missingPages.map((page) => ({
+          ...page,
+          scrapedAt: page.scrapedAt || scrapedAt,
+          scrapeJobId: page.scrapeJobId || scrapeJobId || null,
+        })),
+      );
+    } else if (scrapeJobId && dataAccess?.ScrapeUrl) {
       try {
         const allScrapeUrls = await dataAccess.ScrapeUrl.allByScrapeJobId(scrapeJobId);
         const auditResultUrlSet = new Set(currentPages.map((p) => normalizePathname(p.url)));
@@ -1229,7 +1237,6 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     const latestScrapeForbidden = auditResult.scrapeForbidden
       ?? currentPages.some((p) => p.scrapeError?.statusCode === 403);
 
-    // Extract status information for all pages
     const statusSummary = {
       baseUrl: auditUrl,
       siteId,
@@ -1262,23 +1269,100 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
 }
 
 /**
- * Fetches submitted URL count from ScrapeUrl table when scrape job exists.
- * scrapeResultPaths only contains COMPLETE URLs, so urlsToCheck undercounts when some URLs failed.
+ * Computes scrape job statistics by combining COMPLETE-status URLs (already in comparisonResults)
+ * with FAILED-status URLs (absent from comparisonResults, queried from the ScrapeUrl table).
+ *
+ * getScrapeResultPaths only returns COMPLETE-status URLs, so 403s where the scraper set
+ * status=FAILED never enter comparisonResults. This function covers that gap.
+ *
  * @param {string|null} scrapeJobId - Scrape job ID
- * @param {number} urlsToCheckLength - Fallback count (from scrapeResultPaths or fallback list)
- * @param {Object} dataAccess - Data access with ScrapeUrl
- * @param {Object} log - Logger
- * @returns {Promise<number>} - Submitted URL count
+ * @param {Object[]} comparisonResults - Results from compareHtmlContent (COMPLETE-status URLs)
+ * @param {number} urlsToCheckLength - Fallback count when ScrapeUrl is unavailable
+ * @param {Object} context - Audit context with dataAccess, s3Client, env, log
+ * @returns {Promise<{urlsSubmittedForScraping: number, scrapeForbiddenCount: number,
+ *   scrapeForbidden: boolean, missingPages: Object[]}>}
  */
-async function getUrlsSubmittedForScrapingCount(scrapeJobId, urlsToCheckLength, dataAccess, log) {
-  if (!scrapeJobId || !dataAccess?.ScrapeUrl) return urlsToCheckLength;
+export async function getScrapeJobStats(
+  scrapeJobId,
+  comparisonResults,
+  urlsToCheckLength,
+  context,
+) {
+  const {
+    log, dataAccess, s3Client, env,
+  } = context;
+
+  // Count 403s from COMPLETE-status URLs (already processed by compareHtmlContent)
+  const urlsWithScrapeMetadata = comparisonResults.filter((r) => r.hasScrapeMetadata);
+  const completeForbiddenCount = urlsWithScrapeMetadata.filter((r) => r.scrapeForbidden).length;
+
+  if (!scrapeJobId || !dataAccess?.ScrapeUrl) {
+    const totalUrlsWithScrapeInfo = urlsWithScrapeMetadata.length;
+    return {
+      urlsSubmittedForScraping: urlsToCheckLength,
+      scrapeForbiddenCount: completeForbiddenCount,
+      scrapeForbidden: totalUrlsWithScrapeInfo > 0
+        && completeForbiddenCount === totalUrlsWithScrapeInfo,
+      missingPages: [],
+    };
+  }
+
   try {
     const allScrapeUrls = await dataAccess.ScrapeUrl.allByScrapeJobId(scrapeJobId);
-    log.debug(`${LOG_PREFIX} urlsSubmittedForScraping=${allScrapeUrls.length} from ScrapeUrl (scrapeJobId=${scrapeJobId}), urlsToCheck=${urlsToCheckLength}`);
-    return allScrapeUrls.length;
+    log.debug(`${LOG_PREFIX} urlsSubmittedForScraping=${allScrapeUrls.length} from ScrapeUrl`
+      + ` (scrapeJobId=${scrapeJobId}), urlsToCheck=${urlsToCheckLength}`);
+
+    // Find FAILED-status URLs absent from comparisonResults and read their scrape.json
+    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+    const comparisonUrlSet = new Set(comparisonResults.map((r) => r.url));
+    const missingUrls = allScrapeUrls.filter((su) => !comparisonUrlSet.has(su.getUrl()));
+
+    // Fetch scrape.json for each missing URL; track whether metadata was readable
+    const missingPagesRaw = await Promise.all(
+      missingUrls.map(async (su) => {
+        const url = su.getUrl();
+        const scrapeJsonKey = getS3Path(url, scrapeJobId, 'scrape.json');
+        const metadata = await getObjectFromKey(s3Client, bucketName, scrapeJsonKey, log)
+          .catch(() => null);
+        return { url, metadata };
+      }),
+    );
+
+    const missingPages = missingPagesRaw.map(({ url, metadata }) => ({
+      url,
+      scrapingStatus: 'failed',
+      needsPrerender: false,
+      ...(metadata?.error && { scrapeError: metadata.error }),
+    }));
+
+    // Combine 403 counts from both COMPLETE and FAILED-status URLs
+    const missingForbiddenCount = missingPages
+      .filter((p) => p.scrapeError?.statusCode === 403).length;
+    const scrapeForbiddenCount = completeForbiddenCount + missingForbiddenCount;
+    // Only count missing pages where scrape.json was actually readable in the denominator;
+    // pages with no recoverable metadata are unknown status and don't contribute to the signal
+    const missingWithMetadataCount = missingPagesRaw
+      .filter(({ metadata }) => metadata !== null).length;
+    const totalUrlsWithScrapeInfo = urlsWithScrapeMetadata.length + missingWithMetadataCount;
+    const scrapeForbidden = totalUrlsWithScrapeInfo > 0
+      && scrapeForbiddenCount === totalUrlsWithScrapeInfo;
+
+    return {
+      urlsSubmittedForScraping: allScrapeUrls.length,
+      scrapeForbiddenCount,
+      scrapeForbidden,
+      missingPages,
+    };
   } catch (e) {
-    log.warn(`${LOG_PREFIX} Failed to fetch ScrapeUrl count for scrapeJobId=${scrapeJobId}, using urlsToCheck.length: ${e.message}`);
-    return urlsToCheckLength;
+    log.warn(`${LOG_PREFIX} Failed to fetch ScrapeUrl stats for scrapeJobId=${scrapeJobId}, using fallback: ${e.message}`);
+    const totalUrlsWithScrapeInfo = urlsWithScrapeMetadata.length;
+    return {
+      urlsSubmittedForScraping: urlsToCheckLength,
+      scrapeForbiddenCount: completeForbiddenCount,
+      scrapeForbidden: totalUrlsWithScrapeInfo > 0
+        && completeForbiddenCount === totalUrlsWithScrapeInfo,
+      missingPages: [],
+    };
   }
 }
 
@@ -1367,29 +1451,25 @@ export async function processContentAndGenerateOpportunities(context) {
 
     log.info(`${LOG_PREFIX} Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender from total ${urlsToCheck.length} URLs scraped. isPaidLLMOCustomer=${isPaid}`);
 
-    // Check if all scrape.json files on S3 have statusCode=403
-    const urlsWithScrapeJson = comparisonResults.filter((result) => result.hasScrapeMetadata);
-    const urlsWithForbiddenScrape = urlsWithScrapeJson.filter((result) => result.scrapeForbidden);
-    const scrapeForbiddenCount = urlsWithForbiddenScrape.length;
-    const scrapeForbidden = urlsWithScrapeJson.length > 0
-      && scrapeForbiddenCount === urlsWithScrapeJson.length;
+    const { auditContext } = context;
+    const { scrapeJobId } = auditContext || {};
+    // getScrapeJobStats combines 403s from COMPLETE-status URLs (already in comparisonResults)
+    // and FAILED-status URLs (absent from comparisonResults, fetched from ScrapeUrl table).
+    // missingPages is reused by uploadStatusSummaryToS3 to avoid a redundant DB + S3 round-trip.
+    const {
+      urlsSubmittedForScraping,
+      scrapeForbiddenCount,
+      scrapeForbidden,
+      missingPages,
+    } = await getScrapeJobStats(scrapeJobId, comparisonResults, urlsToCheck.length, context);
 
-    log.info(`${LOG_PREFIX} Scrape analysis for baseUrl=${site.getBaseURL()}, siteId=${siteId}. scrapeForbidden=${scrapeForbidden}, scrapeForbiddenCount=${scrapeForbiddenCount}, totalUrlsChecked=${comparisonResults.length}, urlsWithScrapeJson=${urlsWithScrapeJson.length}, isPaidLLMOCustomer=${isPaid}`);
+    log.info(`${LOG_PREFIX} Scrape analysis for baseUrl=${site.getBaseURL()}, siteId=${siteId}. scrapeForbidden=${scrapeForbidden}, scrapeForbiddenCount=${scrapeForbiddenCount}, totalUrlsChecked=${comparisonResults.length}, isPaidLLMOCustomer=${isPaid}`);
 
     // Remove internal tracking fields from results before storing
     // eslint-disable-next-line
     const cleanResults = comparisonResults.map(({ hasScrapeMetadata, scrapeForbidden, ...result }) => result);
 
     const urlsNotNeedingPrerender = successfulComparisons.length - urlsNeedingPrerender.length;
-
-    const { auditContext } = context;
-    const { scrapeJobId } = auditContext || {};
-    const urlsSubmittedForScraping = await getUrlsSubmittedForScrapingCount(
-      scrapeJobId,
-      urlsToCheck.length,
-      dataAccess,
-      log,
-    );
     // Scraping error rate: % of submitted URLs that failed (base = urlsSubmittedForScraping)
     const failedCount = urlsSubmittedForScraping - successfulComparisons.length;
     const scrapingErrorRate = urlsSubmittedForScraping > 0
@@ -1413,6 +1493,7 @@ export async function processContentAndGenerateOpportunities(context) {
       urlsNotNeedingPrerender,
       scrapingErrorRate,
       results: cleanResults,
+      missingPages,
       scrapeForbidden,
       scrapeForbiddenCount,
       lastAuditSuccess: true,

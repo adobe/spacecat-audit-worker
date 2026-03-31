@@ -25,6 +25,7 @@ import prerenderHandler, {
   createScrapeForbiddenOpportunity,
   uploadStatusSummaryToS3,
   writeToCitabilityRecords,
+  getScrapeJobStats,
 } from '../../../src/prerender/handler.js';
 import { analyzeHtmlForPrerender } from '../../../src/prerender/utils/html-comparator.js';
 import { createOpportunityData } from '../../../src/prerender/opportunity-data-mapper.js';
@@ -1345,7 +1346,7 @@ describe('Prerender Audit', () => {
         expect(result.status).to.equal('complete');
         expect(result.auditResult.urlsSubmittedForScraping).to.equal(2);
         expect(context.log.warn).to.have.been.calledWith(
-          sinon.match(/Failed to fetch ScrapeUrl count.*DB connection failed/)
+          sinon.match(/Failed to fetch ScrapeUrl stats.*DB connection failed/)
         );
       });
 
@@ -5941,8 +5942,16 @@ describe('Prerender Audit', () => {
       });
     });
 
-    it('should append missing scrape URLs with scrape.json error data', async () => {
+    it('should use pre-computed missingPages and scrapeForbiddenCount from auditResult without re-fetching', async () => {
+      // missingPages and scrapeForbiddenCount are now computed once in getScrapeJobStats and
+      // stored in auditResult — uploadStatusSummaryToS3 must use them directly, not re-derive.
       const auditUrl = 'https://example.com';
+      const missingPage = {
+        url: 'https://example.com/forbidden-page',
+        scrapingStatus: 'failed',
+        needsPrerender: false,
+        scrapeError: { statusCode: 403, message: 'Forbidden' },
+      };
       const auditData = {
         siteId: 'test-site-id',
         scrapeJobId: 'scrape-job-123',
@@ -5950,10 +5959,69 @@ describe('Prerender Audit', () => {
         auditResult: {
           totalUrlsChecked: 1,
           urlsNeedingPrerender: 0,
+          scrapeForbiddenCount: 1,  // correctly computed by getScrapeJobStats
+          scrapeForbidden: false,    // correctly computed (1 of 2 URLs — not all)
           results: [
             { url: 'https://example.com/page1', error: false, needsPrerender: false },
           ],
+          missingPages: [missingPage],  // pre-computed — no DB re-fetch
         },
+      };
+
+      const allByScrapeJobIdStub = sandbox.stub();
+      context.dataAccess = { ScrapeUrl: { allByScrapeJobId: allByScrapeJobIdStub } };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      expect(allByScrapeJobIdStub).to.not.have.been.called; // no redundant DB call
+      const putCall = mockS3Client.send.getCalls().find((c) => c.args[0].constructor.name === 'PutObjectCommand');
+      const uploadedData = JSON.parse(putCall.args[0].input.Body);
+
+      expect(uploadedData.scrapeForbiddenCount).to.equal(1);
+      expect(uploadedData.scrapeForbidden).to.equal(false);
+      expect(uploadedData.pages).to.have.lengthOf(2); // page1 + forbidden-page
+    });
+
+    it('should use auditResult.scrapeForbidden=true when all pages are forbidden', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        scrapeJobId: 'scrape-job-123',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          totalUrlsChecked: 0,
+          urlsNeedingPrerender: 0,
+          scrapeForbiddenCount: 2,
+          scrapeForbidden: true,
+          results: [],
+          missingPages: [
+            { url: 'https://example.com/page1', scrapingStatus: 'failed', needsPrerender: false, scrapeError: { statusCode: 403 } },
+            { url: 'https://example.com/page2', scrapingStatus: 'failed', needsPrerender: false, scrapeError: { statusCode: 403 } },
+          ],
+        },
+      };
+
+      const allByScrapeJobIdStub = sandbox.stub();
+      context.dataAccess = { ScrapeUrl: { allByScrapeJobId: allByScrapeJobIdStub } };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      expect(allByScrapeJobIdStub).to.not.have.been.called;
+      const putCall = mockS3Client.send.getCalls().find((c) => c.args[0].constructor.name === 'PutObjectCommand');
+      const uploadedData = JSON.parse(putCall.args[0].input.Body);
+
+      expect(uploadedData.scrapeForbiddenCount).to.equal(2);
+      expect(uploadedData.scrapeForbidden).to.equal(true);
+      expect(uploadedData.pages).to.have.lengthOf(2);
+    });
+
+    it('should append missing scrape URL with scrapeError when scrape.json contains an error', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        scrapeJobId: 'scrape-job-123',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: { totalUrlsChecked: 0, urlsNeedingPrerender: 0, results: [] },
       };
 
       const scrapeError = { statusCode: 500, message: 'Connection timeout' };
@@ -5962,7 +6030,6 @@ describe('Prerender Audit', () => {
           if (command.input.Key.endsWith('status.json')) {
             return Promise.reject(noSuchKeyError());
           }
-          // scrape.json for missing pages
           return Promise.resolve({
             ContentType: 'application/json',
             Body: {
@@ -5976,7 +6043,7 @@ describe('Prerender Audit', () => {
       context.dataAccess = {
         ScrapeUrl: {
           allByScrapeJobId: sandbox.stub().resolves([
-            { getUrl: () => 'https://example.com/page1' }, // already in auditResult — should be excluded
+            { getUrl: () => 'https://example.com/page1' },
             { getUrl: () => 'https://example.com/missing-page' },
           ]),
         },
@@ -6007,7 +6074,6 @@ describe('Prerender Audit', () => {
         auditResult: { totalUrlsChecked: 0, urlsNeedingPrerender: 0, results: [] },
       };
 
-      // All GETs (status.json and scrape.json) return NoSuchKey
       mockS3Client.send.callsFake((command) => {
         if (command.constructor.name === 'GetObjectCommand') {
           return Promise.reject(noSuchKeyError());
@@ -6052,7 +6118,6 @@ describe('Prerender Audit', () => {
           if (command.input.Key.endsWith('status.json')) {
             return Promise.reject(noSuchKeyError());
           }
-          // scrape.json — no error field
           return Promise.resolve({
             ContentType: 'application/json',
             Body: { transformToString: () => Promise.resolve(JSON.stringify({ status: 'pending' })) },
@@ -6072,7 +6137,6 @@ describe('Prerender Audit', () => {
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
       const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
-
       expect(uploadedData.pages[0]).to.not.have.property('scrapeError');
     });
 
@@ -6094,7 +6158,7 @@ describe('Prerender Audit', () => {
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
       expect(context.log.warn).to.have.been.calledWith(sinon.match(/Failed to append missing scrape URLs.*scrapeJobId=scrape-job-123/));
-      expect(getPutCall(mockS3Client.send)).to.exist; // upload still proceeds
+      expect(getPutCall(mockS3Client.send)).to.exist;
     });
 
     it('should skip missing pages block when scrapeJobId is absent', async () => {
@@ -6105,7 +6169,6 @@ describe('Prerender Audit', () => {
         auditResult: { totalUrlsChecked: 0, urlsNeedingPrerender: 0, results: [] },
       };
       const allByScrapeJobIdStub = sandbox.stub();
-
       context.dataAccess = { ScrapeUrl: { allByScrapeJobId: allByScrapeJobIdStub } };
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
@@ -6530,7 +6593,7 @@ describe('Prerender Audit', () => {
     });
   });
 
-  describe('getUrlsSubmittedForScrapingCount coverage', () => {
+  describe('getScrapeJobStats', () => {
     let sandbox;
 
     beforeEach(() => {
@@ -6541,101 +6604,299 @@ describe('Prerender Audit', () => {
       sandbox.restore();
     });
 
-    it('should use ScrapeUrl count when scrapeJobId and ScrapeUrl are available', async () => {
-      const mockScrapeUrls = [{ id: '1' }, { id: '2' }, { id: '3' }];
-      const mockS3Client = { send: sandbox.stub().resolves({}) };
-
-      const getObjectFromKeyStub = sandbox.stub();
-      getObjectFromKeyStub.resolves(null);
-
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/utils/s3-utils.js': {
-          getObjectFromKey: getObjectFromKeyStub,
-        },
-      });
-
+    it('should return fallback when scrapeJobId is null', async () => {
       const context = {
-        site: {
-          getId: () => 'test-site-id',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({
-            getIncludedURLs: () => [],
-          }),
-        },
-        audit: { getId: () => 'audit-id' },
-        dataAccess: {
-          ScrapeUrl: {
-            allByScrapeJobId: sandbox.stub().resolves(mockScrapeUrls),
-          },
-          Opportunity: {
-            allBySiteIdAndStatus: sandbox.stub().resolves([]),
-          },
-        },
-        log: {
-          info: sandbox.stub(),
-          debug: sandbox.stub(),
-          warn: sandbox.stub(),
-          error: sandbox.stub(),
-        },
-        s3Client: mockS3Client,
-        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-        scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
-        auditContext: { scrapeJobId: 'test-scrape-job' },
+        log: { debug: sandbox.stub(), warn: sandbox.stub() },
+        dataAccess: { ScrapeUrl: { allByScrapeJobId: sandbox.stub() } },
+        s3Client: {},
+        env: { S3_SCRAPER_BUCKET_NAME: 'bucket' },
       };
-
-      const result = await mockHandler.processContentAndGenerateOpportunities(context);
-
-      expect(result.status).to.equal('complete');
-      expect(result.auditResult.urlsSubmittedForScraping).to.equal(3);
+      const result = await getScrapeJobStats(null, [], 5, context);
+      expect(result).to.deep.equal({
+        urlsSubmittedForScraping: 5, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [],
+      });
+      expect(context.dataAccess.ScrapeUrl.allByScrapeJobId).to.not.have.been.called;
     });
 
-    it('should fall back to urlsToCheck length when ScrapeUrl query throws', async () => {
-      const mockS3Client = { send: sandbox.stub().resolves({}) };
+    it('should return fallback when dataAccess.ScrapeUrl is unavailable', async () => {
+      const context = {
+        log: { debug: sandbox.stub(), warn: sandbox.stub() },
+        dataAccess: {},
+        s3Client: {},
+        env: { S3_SCRAPER_BUCKET_NAME: 'bucket' },
+      };
+      const result = await getScrapeJobStats('job-1', [], 5, context);
+      expect(result).to.deep.equal({
+        urlsSubmittedForScraping: 5, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [],
+      });
+    });
 
-      const getObjectFromKeyStub = sandbox.stub();
-      getObjectFromKeyStub.resolves(null);
+    it('should return zero forbidden when all URLs are in comparisonResults and none are 403', async () => {
+      const comparisonResults = [
+        { url: 'https://example.com/page1', hasScrapeMetadata: true, scrapeForbidden: false },
+        { url: 'https://example.com/page2', hasScrapeMetadata: true, scrapeForbidden: false },
+      ];
+      const allScrapeUrls = [
+        { getUrl: () => 'https://example.com/page1' },
+        { getUrl: () => 'https://example.com/page2' },
+      ];
+      const context = {
+        log: { debug: sandbox.stub(), warn: sandbox.stub() },
+        dataAccess: { ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves(allScrapeUrls) } },
+        s3Client: {},
+        env: { S3_SCRAPER_BUCKET_NAME: 'bucket' },
+      };
+      const result = await getScrapeJobStats('job-1', comparisonResults, 2, context);
+      expect(result).to.deep.equal({
+        urlsSubmittedForScraping: 2, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [],
+      });
+    });
 
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/utils/s3-utils.js': {
-          getObjectFromKey: getObjectFromKeyStub,
-        },
+    it('should count FAILED-status 403 URL absent from comparisonResults', async () => {
+      // page1 is COMPLETE-status (in comparisonResults, not 403); forbidden is FAILED-status (missing)
+      const comparisonResults = [{ url: 'https://example.com/page1', hasScrapeMetadata: true, scrapeForbidden: false }];
+      const allScrapeUrls = [
+        { getUrl: () => 'https://example.com/page1' },
+        { getUrl: () => 'https://example.com/forbidden' },
+      ];
+      const forbiddenMetadata = { error: { statusCode: 403, message: 'Forbidden' } };
+      const getObjectFromKeyStub = sandbox.stub().resolves(forbiddenMetadata);
+
+      const { getScrapeJobStats: getScrapeJobStatsMocked } = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
       });
 
       const context = {
-        site: {
-          getId: () => 'test-site-id',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({
-            getIncludedURLs: () => [],
-          }),
-        },
-        audit: { getId: () => 'audit-id' },
-        dataAccess: {
-          ScrapeUrl: {
-            allByScrapeJobId: sandbox.stub().rejects(new Error('DB connection failed')),
-          },
-          Opportunity: {
-            allBySiteIdAndStatus: sandbox.stub().resolves([]),
-          },
-        },
-        log: {
-          info: sandbox.stub(),
-          debug: sandbox.stub(),
-          warn: sandbox.stub(),
-          error: sandbox.stub(),
-        },
-        s3Client: mockS3Client,
+        log: { debug: sandbox.stub(), warn: sandbox.stub() },
+        dataAccess: { ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves(allScrapeUrls) } },
+        s3Client: {},
+        env: { S3_SCRAPER_BUCKET_NAME: 'bucket' },
+      };
+      const result = await getScrapeJobStatsMocked('job-1', comparisonResults, 1, context);
+      // 1 COMPLETE-status non-403 + 1 FAILED-status 403 → scrapeForbiddenCount=1, not all forbidden
+      expect(result.urlsSubmittedForScraping).to.equal(2);
+      expect(result.scrapeForbiddenCount).to.equal(1);
+      expect(result.scrapeForbidden).to.equal(false);
+      expect(result.missingPages).to.deep.equal([{
+        url: 'https://example.com/forbidden',
+        scrapingStatus: 'failed',
+        needsPrerender: false,
+        scrapeError: { statusCode: 403, message: 'Forbidden' },
+      }]);
+    });
+
+    it('should set scrapeForbidden=true when all URLs (COMPLETE and FAILED) are 403', async () => {
+      // page1 is COMPLETE-status 403 (in comparisonResults); forbidden is FAILED-status 403 (missing)
+      const comparisonResults = [{ url: 'https://example.com/page1', hasScrapeMetadata: true, scrapeForbidden: true }];
+      const allScrapeUrls = [
+        { getUrl: () => 'https://example.com/page1' },
+        { getUrl: () => 'https://example.com/forbidden' },
+      ];
+      const forbiddenMetadata = { error: { statusCode: 403, message: 'Forbidden' } };
+      const getObjectFromKeyStub = sandbox.stub().resolves(forbiddenMetadata);
+
+      const { getScrapeJobStats: getScrapeJobStatsMocked } = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+      });
+
+      const context = {
+        log: { debug: sandbox.stub(), warn: sandbox.stub() },
+        dataAccess: { ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves(allScrapeUrls) } },
+        s3Client: {},
+        env: { S3_SCRAPER_BUCKET_NAME: 'bucket' },
+      };
+      const result = await getScrapeJobStatsMocked('job-1', comparisonResults, 1, context);
+      expect(result.scrapeForbiddenCount).to.equal(2);
+      expect(result.scrapeForbidden).to.equal(true);
+    });
+
+    it('should not count FAILED-status URL whose scrape.json is not 403', async () => {
+      const comparisonResults = [{ url: 'https://example.com/page1', hasScrapeMetadata: true, scrapeForbidden: false }];
+      const allScrapeUrls = [
+        { getUrl: () => 'https://example.com/page1' },
+        { getUrl: () => 'https://example.com/error500' },
+      ];
+      const errorMetadata = { error: { statusCode: 500, message: 'Server Error' } };
+      const getObjectFromKeyStub = sandbox.stub().resolves(errorMetadata);
+
+      const { getScrapeJobStats: getScrapeJobStatsMocked } = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+      });
+
+      const context = {
+        log: { debug: sandbox.stub(), warn: sandbox.stub() },
+        dataAccess: { ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves(allScrapeUrls) } },
+        s3Client: {},
+        env: { S3_SCRAPER_BUCKET_NAME: 'bucket' },
+      };
+      const result = await getScrapeJobStatsMocked('job-1', comparisonResults, 1, context);
+      expect(result.urlsSubmittedForScraping).to.equal(2);
+      expect(result.scrapeForbiddenCount).to.equal(0);
+      expect(result.scrapeForbidden).to.equal(false);
+      expect(result.missingPages).to.deep.equal([{
+        url: 'https://example.com/error500',
+        scrapingStatus: 'failed',
+        needsPrerender: false,
+        scrapeError: { statusCode: 500, message: 'Server Error' },
+      }]);
+    });
+
+    it('should not count FAILED-status URL with unreadable scrape.json in denominator', async () => {
+      // page1 is COMPLETE-status 403; missing has no readable scrape.json (getObjectFromKey => null)
+      const comparisonResults = [{ url: 'https://example.com/page1', hasScrapeMetadata: true, scrapeForbidden: true }];
+      const allScrapeUrls = [
+        { getUrl: () => 'https://example.com/page1' },
+        { getUrl: () => 'https://example.com/missing' },
+      ];
+      // getObjectFromKey returns null — scrape.json not readable
+      const getObjectFromKeyStub = sandbox.stub().resolves(null);
+
+      const { getScrapeJobStats: getScrapeJobStatsMocked } = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+      });
+
+      const context = {
+        log: { debug: sandbox.stub(), warn: sandbox.stub() },
+        dataAccess: { ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves(allScrapeUrls) } },
+        s3Client: {},
+        env: { S3_SCRAPER_BUCKET_NAME: 'bucket' },
+      };
+      const result = await getScrapeJobStatsMocked('job-1', comparisonResults, 1, context);
+      // Denominator = 1 (only page1 with hasScrapeMetadata). Missing has no metadata → excluded.
+      // scrapeForbiddenCount=1, totalUrlsWithScrapeInfo=1 → scrapeForbidden=true
+      expect(result.scrapeForbiddenCount).to.equal(1);
+      expect(result.scrapeForbidden).to.equal(true);
+      expect(result.missingPages).to.deep.equal([{
+        url: 'https://example.com/missing',
+        scrapingStatus: 'failed',
+        needsPrerender: false,
+        // No scrapeError — metadata was null (scrape.json unreadable), so error unknown
+      }]);
+    });
+
+    it('should fall back when ScrapeUrl query throws', async () => {
+      const context = {
+        log: { debug: sandbox.stub(), warn: sandbox.stub() },
+        dataAccess: { ScrapeUrl: { allByScrapeJobId: sandbox.stub().rejects(new Error('DB connection failed')) } },
+        s3Client: {},
+        env: { S3_SCRAPER_BUCKET_NAME: 'bucket' },
+      };
+      const result = await getScrapeJobStats('job-1', [], 3, context);
+      expect(result).to.deep.equal({
+        urlsSubmittedForScraping: 3, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [],
+      });
+      expect(context.log.warn).to.have.been.calledWith(sinon.match('Failed to fetch ScrapeUrl stats'));
+    });
+
+    it('should fall back with scrapeForbidden=true when all COMPLETE URLs are 403 and ScrapeUrl query throws', async () => {
+      const context = {
+        log: { debug: sandbox.stub(), warn: sandbox.stub() },
+        dataAccess: { ScrapeUrl: { allByScrapeJobId: sandbox.stub().rejects(new Error('DB error')) } },
+        s3Client: {},
+        env: { S3_SCRAPER_BUCKET_NAME: 'bucket' },
+      };
+      // Two COMPLETE-status URLs, both 403 forbidden
+      const comparisonResults = [
+        { url: 'https://example.com/a', hasScrapeMetadata: true, scrapeForbidden: true },
+        { url: 'https://example.com/b', hasScrapeMetadata: true, scrapeForbidden: true },
+      ];
+      const result = await getScrapeJobStats('job-1', comparisonResults, 2, context);
+      expect(result).to.deep.equal({
+        urlsSubmittedForScraping: 2, scrapeForbiddenCount: 2, scrapeForbidden: true, missingPages: [],
+      });
+      expect(context.log.warn).to.have.been.calledWith(sinon.match('Failed to fetch ScrapeUrl stats'));
+    });
+
+    it('should integrate with processContentAndGenerateOpportunities to detect missing forbidden URLs', async () => {
+      // URL in scrapeResultPaths (has a scrape.json but no HTML — not 403, just incomplete)
+      const knownUrl = 'https://example.com/page1';
+      // URL in ScrapeUrl DB but NOT in scrapeResultPaths (only has scrape.json — 403 forbidden)
+      const forbiddenUrl = 'https://example.com/forbidden';
+
+      const allScrapeUrls = [
+        { getUrl: () => knownUrl },
+        { getUrl: () => forbiddenUrl },
+      ];
+
+      // getObjectFromKey call map by key suffix:
+      //   HTML files → null (no HTML for page1)
+      //   scrape.json (page1) → non-null, non-403 (hasScrapeMetadata=true but scrapeForbidden=false)
+      //   scrape.json (forbidden) → 403 metadata (called by getScrapeJobStats for missing URL)
+      const forbiddenMetadata = { error: { statusCode: 403, message: 'Forbidden' } };
+      const getObjectFromKeyStub = sandbox.stub().callsFake((_client, _bucket, key) => {
+        if (key.includes('forbidden') && key.endsWith('scrape.json')) return Promise.resolve(forbiddenMetadata);
+        if (key.endsWith('scrape.json')) return Promise.resolve({ isDeployedAtEdge: false }); // non-null, non-403
+        return Promise.resolve(null); // HTML files
+      });
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+      });
+
+      const context = {
+        site: { getId: () => 'site-id', getBaseURL: () => 'https://example.com' },
+        audit: { getId: () => 'audit-id', getFullAuditRef: () => 'ref', getAuditedAt: () => '2025-01-01T00:00:00Z', getInvocationId: () => 'inv-1' },
+        log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+        s3Client: { send: sandbox.stub().resolves({}) },
         env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-        scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
-        auditContext: { scrapeJobId: 'test-scrape-job' },
+        auditContext: { scrapeJobId: 'job-1' },
+        scrapeResultPaths: new Map([[knownUrl, '/tmp/p1']]),
+        dataAccess: {
+          ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves(allScrapeUrls) },
+          Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+        },
       };
 
       const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
       expect(result.status).to.equal('complete');
-      expect(context.log.warn).to.have.been.calledWith(
-        sinon.match('Failed to fetch ScrapeUrl count'),
-      );
+      // scrapeForbiddenCount should include the missing forbidden URL
+      expect(result.auditResult.scrapeForbiddenCount).to.equal(1);
+      // Only 1 of 2 total URLs is 403, so domain-wide scrapeForbidden should be false
+      expect(result.auditResult.scrapeForbidden).to.be.false;
+    });
+
+    it('should set scrapeForbidden=true when all URLs (including missing) are 403', async () => {
+      // Neither URL has complete HTML — both are only in ScrapeUrl DB with 403 scrape.json
+      // scrapeResultPaths is empty (no complete scrapes)
+      const forbiddenUrl1 = 'https://example.com/page1';
+      const forbiddenUrl2 = 'https://example.com/page2';
+
+      const allScrapeUrls = [
+        { getUrl: () => forbiddenUrl1 },
+        { getUrl: () => forbiddenUrl2 },
+      ];
+
+      const forbiddenMetadata = { error: { statusCode: 403, message: 'Forbidden' } };
+      const getObjectFromKeyStub = sandbox.stub().resolves(forbiddenMetadata);
+
+      const mockConvertToOpportunity = sandbox.stub().resolves({ getId: () => 'opp-1', getSuggestions: sandbox.stub().resolves([]) });
+      const mockHandlerWithOppty = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+        '../../../src/common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
+      });
+
+      const context = {
+        site: { getId: () => 'site-id', getBaseURL: () => 'https://example.com' },
+        audit: { getId: () => 'audit-id', getFullAuditRef: () => 'ref', getAuditedAt: () => '2025-01-01T00:00:00Z', getInvocationId: () => 'inv-1' },
+        log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+        s3Client: { send: sandbox.stub().resolves({}) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        auditContext: { scrapeJobId: 'job-1' },
+        scrapeResultPaths: new Map([[forbiddenUrl1, '/tmp/p1']]),
+        dataAccess: {
+          ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves(allScrapeUrls) },
+          Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+        },
+      };
+
+      const result = await mockHandlerWithOppty.processContentAndGenerateOpportunities(context);
+
+      expect(result.status).to.equal('complete');
+      expect(result.auditResult.scrapeForbiddenCount).to.equal(2);
+      expect(result.auditResult.scrapeForbidden).to.be.true;
     });
   });
 
@@ -7139,7 +7400,7 @@ describe('Prerender Audit', () => {
     });
   });
 
-  describe('getUrlsSubmittedForScrapingCount coverage', () => {
+  describe('getScrapeJobStats integration coverage', () => {
     let sandbox;
 
     beforeEach(() => {
@@ -7151,7 +7412,11 @@ describe('Prerender Audit', () => {
     });
 
     it('should use ScrapeUrl count when scrapeJobId and ScrapeUrl are available', async () => {
-      const mockScrapeUrls = [{ id: '1' }, { id: '2' }, { id: '3' }];
+      const mockScrapeUrls = [
+        { getUrl: () => 'https://example.com/test' },
+        { getUrl: () => 'https://example.com/missing-1' },
+        { getUrl: () => 'https://example.com/missing-2' },
+      ];
       const mockS3Client = { send: sandbox.stub().resolves({}) };
 
       const getObjectFromKeyStub = sandbox.stub();
@@ -7243,7 +7508,7 @@ describe('Prerender Audit', () => {
 
       expect(result.status).to.equal('complete');
       expect(context.log.warn).to.have.been.calledWith(
-        sinon.match('Failed to fetch ScrapeUrl count'),
+        sinon.match('Failed to fetch ScrapeUrl stats'),
       );
     });
   });
