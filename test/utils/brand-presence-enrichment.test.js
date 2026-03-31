@@ -37,6 +37,7 @@ describe('brand-presence-enrichment', () => {
 
   const SITE_ID = 'site-123';
   const DEFAULT_WEEK = 7;
+  const DEFAULT_WEEK_2 = 6;
   const DEFAULT_YEAR = 2026;
 
   let log;
@@ -45,7 +46,9 @@ describe('brand-presence-enrichment', () => {
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
     mockFetch = sandbox.stub();
-    mockIsoCalendarWeek = sandbox.stub().returns({ week: DEFAULT_WEEK, year: DEFAULT_YEAR });
+    mockIsoCalendarWeek = sandbox.stub();
+    mockIsoCalendarWeek.onFirstCall().returns({ week: DEFAULT_WEEK, year: DEFAULT_YEAR });
+    mockIsoCalendarWeek.onSecondCall().returns({ week: DEFAULT_WEEK_2, year: DEFAULT_YEAR });
 
     log = {
       info: sandbox.stub(),
@@ -163,6 +166,17 @@ describe('brand-presence-enrichment', () => {
         }],
       };
       expect(filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR)).to.deep.equal([]);
+    });
+
+    it('matches filenames without a trailing date suffix', () => {
+      const qi = {
+        data: [{
+          path: `/site/brand-presence/brandpresence-copilot-w${DEFAULT_WEEK}-${DEFAULT_YEAR}.json`,
+        }],
+      };
+      const paths = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
+      expect(paths).to.have.lengthOf(1);
+      expect(paths[0]).to.include('copilot');
     });
   });
 
