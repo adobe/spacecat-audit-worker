@@ -116,8 +116,9 @@ export function completeStatus(auditResult, metadata = {}) {
 /**
  * Marks the current in-progress step as failed, or appends a new failed entry
  * if no step is in progress.
- * Stateless helper — takes and returns a plain auditResult object.
- * Note: does NOT set isError — callers must pass isError=true to persistAuditStatus separately.
+ * Stateless helper — takes a plain auditResult object.
+ * @returns {{ auditResult: Object, isError: boolean }} — callers can destructure
+ *   and forward both fields to persistAuditStatus.
  */
 export function failCurrentStatus(auditResult, failedStatus, metadata = {}) {
   const existing = auditResult || {};
@@ -128,11 +129,14 @@ export function failCurrentStatus(auditResult, failedStatus, metadata = {}) {
     last.completedAt = new Date().toISOString();
     last.stepDurationMs = new Date(last.completedAt) - new Date(last.startedAt);
     Object.assign(last, metadata);
-    return { ...existing, status: failedStatus, statusHistory: history };
+    return {
+      auditResult: { ...existing, status: failedStatus, statusHistory: history },
+      isError: true,
+    };
   }
   let result = startStatus(existing, failedStatus, metadata);
   result = completeStatus(result);
-  return result;
+  return { auditResult: result, isError: true };
 }
 
 /**
@@ -240,9 +244,9 @@ export async function processScraping(context) {
     if (allTopPageUrls.length === 0) {
       const errorMsg = `No top pages found for site ${siteId}`;
       log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
-      auditResult = failCurrentStatus(auditResult, 'no_top_pages', { error: errorMsg });
-      await persistAuditStatus(dataAccess, audit.getId(), auditResult, log, true);
-      return { auditResult, fullAuditRef: audit.getFullAuditRef() };
+      const failed = failCurrentStatus(auditResult, 'no_top_pages', { error: errorMsg });
+      await persistAuditStatus(dataAccess, audit.getId(), failed.auditResult, log, failed.isError);
+      return { auditResult: failed.auditResult, fullAuditRef: audit.getFullAuditRef() };
     }
 
     // Read stored offset and check suggestions for advancement (fail-safe: default 0)
@@ -323,8 +327,8 @@ export async function processScraping(context) {
     };
   } catch (error) {
     log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] processScraping failed: ${error.message}`);
-    auditResult = failCurrentStatus(auditResult, 'scraping_failed', { error: error.message });
-    await persistAuditStatus(dataAccess, audit.getId(), auditResult, log, true);
+    const failed = failCurrentStatus(auditResult, 'scraping_failed', { error: error.message });
+    await persistAuditStatus(dataAccess, audit.getId(), failed.auditResult, log, failed.isError);
     throw error;
   }
 }
@@ -369,9 +373,9 @@ export async function processAltTextWithMystique(context) {
     if (pageUrls.length === 0) {
       const errorMsg = `No top pages found for site ${site.getId()}`;
       log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
-      auditResult = failCurrentStatus(auditResult, 'no_top_pages', { error: errorMsg });
-      await persistAuditStatus(dataAccess, audit.getId(), auditResult, log, true);
-      return { auditResult };
+      const failed = failCurrentStatus(auditResult, 'no_top_pages', { error: errorMsg });
+      await persistAuditStatus(dataAccess, audit.getId(), failed.auditResult, log, failed.isError);
+      return { auditResult: failed.auditResult };
     }
 
     // Filter out URLs without scrapes before sending to Mystique.
@@ -385,9 +389,9 @@ export async function processAltTextWithMystique(context) {
         const errorMsg = `Cannot proceed: none of the ${pageUrls.length} URLs have scrape results. `
           + 'Mystique will not be able to find content for these pages.';
         log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
-        auditResult = failCurrentStatus(auditResult, 'no_scrape_results', { error: errorMsg });
-        await persistAuditStatus(dataAccess, audit.getId(), auditResult, log, true);
-        return { auditResult };
+        const { auditResult: failedResult, isError } = failCurrentStatus(auditResult, 'no_scrape_results', { error: errorMsg });
+        await persistAuditStatus(dataAccess, audit.getId(), failedResult, log, isError);
+        return { auditResult: failedResult };
       }
       if (missingCount > 0) {
         log.warn(`[${AUDIT_TYPE}]: Excluding ${missingCount}/${pageUrls.length} URLs without scrapes`);
@@ -529,8 +533,8 @@ export async function processAltTextWithMystique(context) {
     return { auditResult };
   } catch (error) {
     log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Failed to process with Mystique: ${error.message}`);
-    auditResult = failCurrentStatus(auditResult, 'processing_failed', { error: error.message });
-    await persistAuditStatus(dataAccess, audit.getId(), auditResult, log, true);
+    const failed = failCurrentStatus(auditResult, 'processing_failed', { error: error.message });
+    await persistAuditStatus(dataAccess, audit.getId(), failed.auditResult, log, failed.isError);
     throw error;
   }
 }

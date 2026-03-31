@@ -1607,12 +1607,13 @@ describe('Image Alt Text Handler', () => {
         }],
       };
 
-      let result = handlerModule.startStatus(initialResult, 'scraping');
-      result = handlerModule.failCurrentStatus(result, 'scraping_failed', { error: 'test error' });
+      const started = handlerModule.startStatus(initialResult, 'scraping');
+      const result = handlerModule.failCurrentStatus(started, 'scraping_failed', { error: 'test error' });
 
-      expect(result.status).to.equal('scraping_failed');
-      expect(result.statusHistory).to.have.lengthOf(2);
-      const entry = result.statusHistory[1];
+      expect(result.isError).to.be.true;
+      expect(result.auditResult.status).to.equal('scraping_failed');
+      expect(result.auditResult.statusHistory).to.have.lengthOf(2);
+      const entry = result.auditResult.statusHistory[1];
       expect(entry.status).to.equal('scraping_failed');
       expect(entry.error).to.equal('test error');
       expect(entry.completedAt).to.be.a('string');
@@ -1634,8 +1635,9 @@ describe('Image Alt Text Handler', () => {
       // preparing entry is already completed, so failCurrentStatus should append
       const result = handlerModule.failCurrentStatus(initialResult, 'scraping_failed', { error: 'test' });
 
-      expect(result.status).to.equal('scraping_failed');
-      expect(result.statusHistory).to.have.lengthOf(2);
+      expect(result.isError).to.be.true;
+      expect(result.auditResult.status).to.equal('scraping_failed');
+      expect(result.auditResult.statusHistory).to.have.lengthOf(2);
     });
 
     it('startStatus should handle empty auditResult gracefully', () => {
@@ -1663,7 +1665,8 @@ describe('Image Alt Text Handler', () => {
     it('failCurrentStatus should handle null auditResult', () => {
       const result = handlerModule.failCurrentStatus(null, 'scraping_failed', { error: 'test' });
 
-      expect(result.status).to.equal('scraping_failed');
+      expect(result.isError).to.be.true;
+      expect(result.auditResult.status).to.equal('scraping_failed');
     });
   });
 
