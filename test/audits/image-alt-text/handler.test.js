@@ -24,6 +24,29 @@ use(chaiAsPromised);
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
+function createAuditMock(sandbox, initialResult = null) {
+  let auditResult = initialResult || {
+    status: 'preparing',
+    statusHistory: [{
+      status: 'preparing',
+      startedAt: '2026-03-30T10:00:00.000Z',
+      completedAt: '2026-03-30T10:00:00.000Z',
+      stepDurationMs: 0,
+      queueDurationMs: null,
+    }],
+  };
+  let isError = false;
+  return {
+    getId: () => 'audit-id',
+    getAuditResult: sandbox.stub().callsFake(() => auditResult),
+    setAuditResult: sandbox.stub().callsFake((val) => { auditResult = val; }),
+    getIsError: sandbox.stub().callsFake(() => isError),
+    setIsError: sandbox.stub().callsFake((val) => { isError = val; }),
+    save: sandbox.stub().resolves(),
+    getFullAuditRef: () => 'scrapes/site-id/',
+  };
+}
+
 describe('Image Alt Text Handler', () => {
   let sandbox;
   const bucketName = 'test-bucket';
@@ -62,9 +85,7 @@ describe('Image Alt Text Handler', () => {
           resolveFinalURL: () => 'https://example.com',
           getBaseURL: () => 'https://example.com',
         },
-        audit: {
-          getId: () => 'audit-id',
-        },
+        audit: createAuditMock(sandbox),
         env: {
           S3_SCRAPER_BUCKET_NAME: bucketName,
           IMS_HOST: 'test-ims-host',
@@ -111,15 +132,23 @@ describe('Image Alt Text Handler', () => {
   });
 
   describe('processImportStep', () => {
-    it('should prepare import step with correct parameters', async () => {
+    it('should prepare import step with correct parameters and initialize statusHistory', async () => {
       const result = await handlerModule.processImportStep(context);
 
-      expect(result).to.deep.equal({
-        auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
-        fullAuditRef: s3BucketPath,
-        type: 'top-pages',
-        siteId: 'site-id',
-      });
+      expect(result.auditResult.status).to.equal('preparing');
+      expect(result.fullAuditRef).to.equal(s3BucketPath);
+      expect(result.type).to.equal('top-pages');
+      expect(result.siteId).to.equal('site-id');
+
+      // Verify statusHistory is initialized
+      expect(result.auditResult.statusHistory).to.be.an('array').with.lengthOf(1);
+      const entry = result.auditResult.statusHistory[0];
+      expect(entry.status).to.equal('preparing');
+      expect(entry.startedAt).to.be.a('string');
+      expect(entry.completedAt).to.equal(entry.startedAt);
+      expect(entry.stepDurationMs).to.equal(0);
+      expect(entry.queueDurationMs).to.be.null;
+      expect(entry.finalUrl).to.equal('https://example.com');
     });
   });
 
@@ -188,19 +217,20 @@ describe('Image Alt Text Handler', () => {
       );
     });
 
-    it('should handle case when no top pages found', async () => {
+    it('should return no_top_pages status when no top pages found', async () => {
       getTopPageUrlsStub.resolves([]);
       context.site = {
         getId: () => 'site-id',
         getBaseURL: () => 'https://example.com',
       };
 
-      await expect(handlerModule.processAltTextWithMystique(context))
-        .to.be.rejectedWith('No top pages found for site site-id');
+      const result = await handlerModule.processAltTextWithMystique(context);
 
-      expect(context.log.error).to.have.been.calledWith(
-        '[alt-text]: Failed to process with Mystique: No top pages found for site site-id',
-      );
+      expect(result.auditResult.status).to.equal('no_top_pages');
+      expect(result.auditResult.statusHistory).to.be.an('array');
+      const lastEntry = result.auditResult.statusHistory[result.auditResult.statusHistory.length - 1];
+      expect(lastEntry.status).to.equal('no_top_pages');
+      expect(lastEntry.error).to.include('No top pages found');
     });
 
     it('should handle errors when sending to Mystique fails', async () => {
@@ -215,8 +245,12 @@ describe('Image Alt Text Handler', () => {
         .to.be.rejectedWith('Mystique send failed');
 
       expect(context.log.error).to.have.been.calledWith(
-        '[alt-text]: Failed to process with Mystique: Mystique send failed',
+        '[alt-text][AltTextProcessingError] Failed to process with Mystique: Mystique send failed',
       );
+
+      // Verify processing_failed status was set
+      const auditResult = context.audit.getAuditResult();
+      expect(auditResult.status).to.equal('processing_failed');
     });
 
     it('should update opportunity data when existing opportunity is found', async () => {
@@ -325,15 +359,15 @@ describe('Image Alt Text Handler', () => {
       );
     });
 
-    it('should handle case when all URL sources return empty', async () => {
+    it('should return no_top_pages status when all URL sources return empty', async () => {
       getTopPageUrlsStub.resolves([]);
       context.site = {
         getId: () => 'site-id',
         getBaseURL: () => 'https://example.com',
       };
 
-      await expect(handlerModule.processAltTextWithMystique(context))
-        .to.be.rejectedWith('No top pages found for site site-id');
+      const result = await handlerModule.processAltTextWithMystique(context);
+      expect(result.auditResult.status).to.equal('no_top_pages');
     });
 
     describe('outdating suggestions for URLs no longer in top pages', () => {
@@ -725,6 +759,7 @@ describe('Image Alt Text Handler', () => {
             getId: () => 'site-id',
             getBaseURL: () => 'https://example.com',
           },
+          audit: createAuditMock(sandbox),
           dataAccess: {
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
@@ -765,11 +800,17 @@ describe('Image Alt Text Handler', () => {
       );
     });
 
-    it('should throw error when no top pages found', async () => {
+    it('should return no_top_pages status when no top pages found', async () => {
       getTopPageUrlsStub.resolves([]);
 
-      await expect(handlerModule.processScraping(context))
-        .to.be.rejectedWith('No top pages found for site site-id');
+      const result = await handlerModule.processScraping(context);
+
+      expect(result.auditResult.status).to.equal('no_top_pages');
+      expect(result.fullAuditRef).to.equal('scrapes/site-id/');
+      const lastEntry = result.auditResult.statusHistory[result.auditResult.statusHistory.length - 1];
+      expect(lastEntry.status).to.equal('no_top_pages');
+      expect(lastEntry.error).to.include('No top pages found');
+      expect(context.audit.getIsError()).to.be.true;
     });
 
     it('should limit pages to 20 when summit-plg is enabled', async () => {
@@ -838,9 +879,7 @@ describe('Image Alt Text Handler', () => {
             getId: () => 'site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: {
-            getId: () => 'audit-id',
-          },
+          audit: createAuditMock(sandbox),
           dataAccess: {
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
@@ -949,7 +988,7 @@ describe('Image Alt Text Handler', () => {
         .to.be.rejectedWith('Configuration error');
 
       expect(context.log.error).to.have.been.calledWith(
-        '[alt-text]: Failed to process with Mystique: Configuration error',
+        '[alt-text][AltTextProcessingError] Failed to process with Mystique: Configuration error',
       );
     });
   });
@@ -975,9 +1014,7 @@ describe('Image Alt Text Handler', () => {
             getId: () => 'site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: {
-            getId: () => 'audit-id',
-          },
+          audit: createAuditMock(sandbox),
           dataAccess: {
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
@@ -1104,7 +1141,7 @@ describe('Image Alt Text Handler', () => {
       });
     });
 
-    it('should throw when no URLs have scrapes', async () => {
+    it('should return no_scrape_results status when no URLs have scrapes', async () => {
       context.site = {
         getId: () => 'site-id',
         getBaseURL: () => 'https://example.com',
@@ -1113,12 +1150,13 @@ describe('Image Alt Text Handler', () => {
       // scrapeResultPaths has no matching URLs
       context.scrapeResultPaths = new Map();
 
-      await expect(handlerModule.processAltTextWithMystique(context))
-        .to.be.rejectedWith('Cannot proceed: none of the 2 URLs have scrape results');
+      const result = await handlerModule.processAltTextWithMystique(context);
 
-      expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Failed to process with Mystique.*Cannot proceed/),
-      );
+      expect(result.auditResult.status).to.equal('no_scrape_results');
+      const lastEntry = result.auditResult.statusHistory[result.auditResult.statusHistory.length - 1];
+      expect(lastEntry.status).to.equal('no_scrape_results');
+      expect(lastEntry.error).to.include('Cannot proceed');
+      expect(context.audit.getIsError()).to.be.true;
       expect(sendAltTextOpportunityToMystiqueStub).to.not.have.been.called;
     });
 
@@ -1206,6 +1244,7 @@ describe('Image Alt Text Handler', () => {
             getId: () => 'site-id',
             getBaseURL: () => 'https://example.com',
           },
+          audit: createAuditMock(sandbox),
           dataAccess: {
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
@@ -1467,6 +1506,343 @@ describe('Image Alt Text Handler', () => {
       expect(result.urls).to.have.lengthOf(20);
       expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/Failed to save opportunity offset/),
+      );
+    });
+  });
+
+  describe('status helper functions', () => {
+    let auditMock;
+
+    beforeEach(() => {
+      auditMock = createAuditMock(sandbox);
+    });
+
+    it('startStatus should append entry with queueDurationMs from previous completedAt', async () => {
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
+      });
+
+      handlerModule.startStatus(auditMock, 'scraping', { urlCount: 5 });
+      const result = auditMock.getAuditResult();
+
+      expect(result.status).to.equal('scraping');
+      expect(result.statusHistory).to.have.lengthOf(2);
+      const entry = result.statusHistory[1];
+      expect(entry.status).to.equal('scraping');
+      expect(entry.startedAt).to.be.a('string');
+      expect(entry.urlCount).to.equal(5);
+      expect(entry.queueDurationMs).to.be.a('number');
+    });
+
+    it('completeStatus should set completedAt and stepDurationMs', async () => {
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
+      });
+
+      handlerModule.startStatus(auditMock, 'scraping');
+      handlerModule.completeStatus(auditMock, { urlCount: 10 });
+      const result = auditMock.getAuditResult();
+
+      const entry = result.statusHistory[1];
+      expect(entry.completedAt).to.be.a('string');
+      expect(entry.stepDurationMs).to.be.a('number');
+      expect(entry.stepDurationMs).to.be.at.least(0);
+      expect(entry.urlCount).to.equal(10);
+    });
+
+    it('failCurrentStatus should update in-progress entry', async () => {
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
+      });
+
+      handlerModule.startStatus(auditMock, 'scraping');
+      handlerModule.failCurrentStatus(auditMock, 'scraping_failed', { error: 'test error' });
+      const result = auditMock.getAuditResult();
+
+      expect(result.status).to.equal('scraping_failed');
+      expect(result.statusHistory).to.have.lengthOf(2);
+      const entry = result.statusHistory[1];
+      expect(entry.status).to.equal('scraping_failed');
+      expect(entry.error).to.equal('test error');
+      expect(entry.completedAt).to.be.a('string');
+      expect(entry.stepDurationMs).to.be.a('number');
+      expect(auditMock.getIsError()).to.be.true;
+    });
+
+    it('failCurrentStatus should append new entry when no in-progress step', async () => {
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
+      });
+
+      // preparing entry is already completed, so failCurrentStatus should append
+      handlerModule.failCurrentStatus(auditMock, 'scraping_failed', { error: 'test' });
+      const result = auditMock.getAuditResult();
+
+      expect(result.status).to.equal('scraping_failed');
+      expect(result.statusHistory).to.have.lengthOf(2);
+      expect(auditMock.getIsError()).to.be.true;
+    });
+
+    it('startStatus should handle empty auditResult gracefully', async () => {
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
+      });
+
+      const emptyAudit = createAuditMock(sandbox, {});
+      handlerModule.startStatus(emptyAudit, 'scraping');
+      const result = emptyAudit.getAuditResult();
+
+      expect(result.status).to.equal('scraping');
+      expect(result.statusHistory).to.have.lengthOf(1);
+      expect(result.statusHistory[0].queueDurationMs).to.be.null;
+    });
+
+    it('startStatus should handle null auditResult', async () => {
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
+      });
+
+      let currentResult = null;
+      const nullAudit = {
+        getId: () => 'audit-id',
+        getAuditResult: sandbox.stub().callsFake(() => currentResult),
+        setAuditResult: sandbox.stub().callsFake((val) => { currentResult = val; }),
+        setIsError: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getFullAuditRef: () => 'scrapes/site-id/',
+      };
+      handlerModule.startStatus(nullAudit, 'scraping');
+      const result = nullAudit.getAuditResult();
+
+      expect(result.status).to.equal('scraping');
+      expect(result.statusHistory).to.have.lengthOf(1);
+    });
+
+    it('completeStatus should handle null auditResult', async () => {
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
+      });
+
+      let currentResult = null;
+      const nullAudit = {
+        getId: () => 'audit-id',
+        getAuditResult: sandbox.stub().callsFake(() => currentResult),
+        setAuditResult: sandbox.stub().callsFake((val) => { currentResult = val; }),
+        setIsError: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getFullAuditRef: () => 'scrapes/site-id/',
+      };
+      handlerModule.completeStatus(nullAudit, { urlCount: 5 });
+      const result = nullAudit.getAuditResult();
+
+      // Should handle gracefully — empty history, no last entry to complete
+      expect(result.statusHistory).to.have.lengthOf(0);
+    });
+
+    it('failCurrentStatus should handle null auditResult', async () => {
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
+      });
+
+      let currentResult = null;
+      const nullAudit = {
+        getId: () => 'audit-id',
+        getAuditResult: sandbox.stub().callsFake(() => currentResult),
+        setAuditResult: sandbox.stub().callsFake((val) => { currentResult = val; }),
+        setIsError: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getFullAuditRef: () => 'scrapes/site-id/',
+      };
+      handlerModule.failCurrentStatus(nullAudit, 'scraping_failed', { error: 'test' });
+      const result = nullAudit.getAuditResult();
+
+      expect(result.status).to.equal('scraping_failed');
+    });
+  });
+
+  describe('processScraping status tracking', () => {
+    let configurationMock;
+
+    beforeEach(async () => {
+      configurationMock = {
+        isHandlerEnabledForSite: sandbox.stub().returns(false),
+      };
+
+      getTopPageUrlsStub.resolves([
+        'https://example.com/page1',
+        'https://example.com/page2',
+      ]);
+
+      context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          site: {
+            getId: () => 'site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: createAuditMock(sandbox),
+          dataAccess: {
+            Opportunity: {
+              allBySiteIdAndStatus: sandbox.stub().resolves([]),
+            },
+            Configuration: {
+              findLatest: sandbox.stub().resolves(configurationMock),
+            },
+          },
+        })
+        .build();
+
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
+      });
+    });
+
+    it('should set scraping status at start and complete on success', async () => {
+      await handlerModule.processScraping(context);
+
+      const auditResult = context.audit.getAuditResult();
+      expect(auditResult.status).to.equal('scraping');
+      expect(auditResult.statusHistory).to.have.lengthOf(2);
+
+      const scrapingEntry = auditResult.statusHistory[1];
+      expect(scrapingEntry.status).to.equal('scraping');
+      expect(scrapingEntry.startedAt).to.be.a('string');
+      expect(scrapingEntry.completedAt).to.be.a('string');
+      expect(scrapingEntry.stepDurationMs).to.be.a('number');
+      expect(scrapingEntry.queueDurationMs).to.be.a('number');
+      expect(scrapingEntry.urlCount).to.equal(2);
+    });
+
+    it('should set scraping_failed on unexpected error and not mask original error', async () => {
+      getTopPageUrlsStub.rejects(new Error('Unexpected DB error'));
+
+      await expect(handlerModule.processScraping(context))
+        .to.be.rejectedWith('Unexpected DB error');
+
+      const auditResult = context.audit.getAuditResult();
+      expect(auditResult.status).to.equal('scraping_failed');
+      expect(context.audit.getIsError()).to.be.true;
+    });
+
+    it('should not mask original error if status save fails', async () => {
+      getTopPageUrlsStub.rejects(new Error('Original error'));
+      // Make audit.save fail on the failCurrentStatus call (3rd call — 1st is startStatus, 2nd is also save)
+      context.audit.save = sandbox.stub()
+        .onFirstCall().resolves()
+        .onSecondCall().rejects(new Error('Save failed'));
+
+      await expect(handlerModule.processScraping(context))
+        .to.be.rejectedWith('Original error');
+    });
+  });
+
+  describe('processAltTextWithMystique status tracking', () => {
+    let sendAltTextOpportunityToMystiqueStub;
+
+    beforeEach(async () => {
+      sendAltTextOpportunityToMystiqueStub = sandbox.stub().resolves();
+
+      context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          site: {
+            getId: () => 'site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: createAuditMock(sandbox),
+          dataAccess: {
+            Opportunity: {
+              allBySiteIdAndStatus: sandbox.stub().resolves([]),
+              create: sandbox.stub().resolves({
+                getId: sandbox.stub().returns('opportunity-id'),
+                getData: sandbox.stub().returns({}),
+                setData: sandbox.stub(),
+                save: sandbox.stub().resolves(),
+                getType: sandbox.stub().returns('alt-text'),
+              }),
+            },
+            Configuration: {
+              findLatest: sandbox.stub().resolves({
+                getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
+                isHandlerEnabledForSite: sandbox.stub().returns(false),
+              }),
+            },
+          },
+        })
+        .build();
+
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '@adobe/spacecat-shared-utils': { tracingFetch: tracingFetchStub },
+        '../../../src/image-alt-text/opportunityHandler.js': {
+          default: sandbox.stub(),
+          sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
+        },
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
+      });
+    });
+
+    it('should set processing status at start and complete with urlCount and batchCount on success', async () => {
+      await handlerModule.processAltTextWithMystique(context);
+
+      const auditResult = context.audit.getAuditResult();
+      expect(auditResult.status).to.equal('processing');
+
+      const processingEntry = auditResult.statusHistory[auditResult.statusHistory.length - 1];
+      expect(processingEntry.status).to.equal('processing');
+      expect(processingEntry.completedAt).to.be.a('string');
+      expect(processingEntry.stepDurationMs).to.be.a('number');
+      expect(processingEntry.urlCount).to.equal(2);
+      expect(processingEntry.batchCount).to.equal(1);
+    });
+
+    it('should set processing_failed on Mystique send failure', async () => {
+      sendAltTextOpportunityToMystiqueStub.rejects(new Error('Mystique down'));
+
+      await expect(handlerModule.processAltTextWithMystique(context))
+        .to.be.rejectedWith('Mystique down');
+
+      const auditResult = context.audit.getAuditResult();
+      expect(auditResult.status).to.equal('processing_failed');
+      const lastEntry = auditResult.statusHistory[auditResult.statusHistory.length - 1];
+      expect(lastEntry.error).to.include('Mystique down');
+      expect(context.audit.getIsError()).to.be.true;
+    });
+
+    it('should not mask original error if status save fails during processing_failed', async () => {
+      sendAltTextOpportunityToMystiqueStub.rejects(new Error('Original error'));
+      // First save succeeds (startStatus), second fails (failCurrentStatus save)
+      let saveCallCount = 0;
+      context.audit.save = sandbox.stub().callsFake(() => {
+        saveCallCount += 1;
+        if (saveCallCount >= 2) return Promise.reject(new Error('Save failed'));
+        return Promise.resolve();
+      });
+
+      await expect(handlerModule.processAltTextWithMystique(context))
+        .to.be.rejectedWith('Original error');
+
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to save audit status: Save failed/),
       );
     });
   });
