@@ -330,6 +330,14 @@ export async function syncSuggestions({
     return;
   }
   const { log } = context;
+
+  // Validate newSuggestionStatus if provided
+  if (newSuggestionStatus !== null) {
+    const validStatuses = Object.values(SuggestionDataAccess.STATUSES);
+    if (!validStatuses.includes(newSuggestionStatus)) {
+      throw new Error(`Invalid newSuggestionStatus: ${newSuggestionStatus}. Must be one of: ${validStatuses.join(', ')}`);
+    }
+  }
   const newDataKeys = new Set(newData.map(buildKey));
   // Use pre-fetched suggestions if provided, otherwise fetch from DB
   const existingSuggestions = prefetchedSuggestions ?? await opportunity.getSuggestions();

@@ -42,12 +42,20 @@ function filterUrls(urlEntries, deviceType, log) {
         return null;
       }
 
+      // Normalize URL to prevent XSS and ensure consistency
+      const normalizedUrl = new URL(entry.url).href;
+
       const metrics = entry.metrics?.find((m) => m.deviceType === deviceType);
       if (!metrics) return null;
       if (metrics.pageviews < MIN_PAGEVIEWS) return null;
 
+      // Filter out URLs with no CWV data (all three metrics are null)
+      if (metrics.lcp == null && metrics.cls == null && metrics.inp == null) {
+        return null;
+      }
+
       return {
-        url: entry.url,
+        url: normalizedUrl,
         pageviews: metrics.pageviews,
         bounceRate: metrics.bounceRate,
         engagement: metrics.engagement,
@@ -76,7 +84,7 @@ function buildTrendData(dailyData, deviceType, log) {
     let poor = 0;
 
     for (const url of urls) {
-      const category = categorizeUrl(url.lcp, url.cls, url.inp) || 'good';
+      const category = categorizeUrl(url.lcp, url.cls, url.inp);
       if (category === 'good') good += 1;
       else if (category === 'needsImprovement') needsImprovement += 1;
       else if (category === 'poor') poor += 1;
@@ -138,17 +146,16 @@ function round(value, decimals) {
  * with change values computed as point-to-point (current day vs 7 days before).
  * Uses cached filtered URLs for performance.
  */
+// eslint-disable-next-line no-unused-vars
 function buildUrlDetails(dailyData, filteredCache, deviceType, log) {
   const len = dailyData.length;
   const latestDay = dailyData[len - 1];
-  const latestUrls = filteredCache.get(latestDay.date)
-  /* c8 ignore next */ || filterUrls(latestDay.data, deviceType, log);
+  const latestUrls = filteredCache.get(latestDay.date);
 
   // Point-to-point comparison: current day vs 7 days before
   const previousDayIndex = len >= 8 ? len - 8 : 0;
   const previousDay = dailyData[previousDayIndex];
-  const previousUrls = filteredCache.get(previousDay.date)
-  /* c8 ignore next */ || filterUrls(previousDay.data, deviceType, log);
+  const previousUrls = filteredCache.get(previousDay.date);
 
   const fields = ['pageviews', 'lcp', 'cls', 'inp', 'bounceRate', 'engagement', 'clickRate'];
   const pctFields = new Set(['bounceRate', 'engagement', 'clickRate']);
@@ -159,7 +166,7 @@ function buildUrlDetails(dailyData, filteredCache, deviceType, log) {
     const detail = {
       id: String(index + 1),
       url: url.url,
-      status: categorizeUrl(url.lcp, url.cls, url.inp) || 'good',
+      status: categorizeUrl(url.lcp, url.cls, url.inp),
     };
 
     const prevUrl = previousUrlMap.get(url.url);

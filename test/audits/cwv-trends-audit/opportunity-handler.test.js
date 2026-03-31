@@ -202,6 +202,7 @@ describe('CWV Trends Opportunity Handler', () => {
     await opportunityHandler('https://ex.com', makeAuditData(['mobile']), makeContext());
 
     const { newSuggestionStatus } = syncSuggestionsStub.firstCall.args[0];
+    // Status should be 'NEW' constant (not a string literal)
     expect(newSuggestionStatus).to.equal('NEW');
   });
 
@@ -263,6 +264,19 @@ describe('CWV Trends Opportunity Handler', () => {
       expect.fail('Should have thrown');
     } catch (err) {
       expect(err.message).to.equal('Save failed');
+    }
+  });
+
+  it('throws when syncSuggestions fails', async () => {
+    allBySiteIdAndStatusStub.resolves([]);
+    createStub.resolves(makeMockOpportunity());
+    syncSuggestionsStub.rejects(new Error('sync failed'));
+
+    try {
+      await opportunityHandler('https://ex.com', makeAuditData(['mobile']), makeContext());
+      expect.fail('Should have thrown');
+    } catch (err) {
+      expect(err.message).to.equal('sync failed');
     }
   });
 });

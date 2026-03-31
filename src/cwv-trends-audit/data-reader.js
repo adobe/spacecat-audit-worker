@@ -50,15 +50,8 @@ function validateJsonData(raw, dateStr, log) {
       log.warn(`Failed to parse JSON for date ${dateStr}`);
       return null;
     }
-  } else {
-    // For already-parsed objects, check serialized size
-    const serialized = JSON.stringify(raw);
-    const sizeBytes = Buffer.byteLength(serialized, 'utf8');
-    if (sizeBytes > MAX_JSON_SIZE_BYTES) {
-      log.warn(`JSON data for ${dateStr} exceeds size limit: ${(sizeBytes / 1024 / 1024).toFixed(2)} MB`);
-      return null;
-    }
   }
+  // For already-parsed objects, skip size check as S3 client already handled transfer
 
   // Validate structure
   if (!parsed || !Array.isArray(parsed)) {

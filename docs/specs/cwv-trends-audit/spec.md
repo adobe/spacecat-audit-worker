@@ -102,8 +102,10 @@ cwv-trends-audit runner
 ### URL Filtering & Validation
 
 - **URL validation:** Reject invalid/malformed URLs (must be valid http/https URLs)
+- **URL normalization:** After validation, URLs are normalized via `new URL(url).href` to percent-encode special characters and prevent XSS vulnerabilities
 - Filter by configured device type (match `metrics[].deviceType`)
 - Minimum `MIN_PAGEVIEWS = 1000` pageviews
+- **No CWV data filter:** URLs where all three CWV metrics (lcp, cls, inp) are null are filtered out. Absence of measurement is not the same as good performance
 - Skip URLs with `deviceType === 'undefined'` (log warning)
 - Sort by pageviews descending
 - **Performance:** Filtered URLs are cached to avoid redundant filtering operations
@@ -119,7 +121,7 @@ cwv-trends-audit runner
 - **Good:** All available metrics within good thresholds
 - **Poor:** Any metric exceeds poor threshold (OR logic)
 - **Needs Improvement:** Everything else
-- **Null metrics:** Skip in categorization (use available metrics only). URLs with no CWV metrics default to `good` status
+- **Null metrics:** Skip in categorization (use available metrics only). URLs with all null CWV metrics are filtered out during URL filtering and do not appear in results
 
 ### Summary Calculation
 
@@ -144,8 +146,8 @@ The data from S3 already contains P75 values for the last 7 days, so we use the 
 - Percentage fields (`bounceRate`, `engagement`, `clickRate`) multiplied by 100
 - Raw fields (`pageviews`, `lcp`, `cls`, `inp`) kept as-is
 - **Change values:** Point-to-point comparison (current day - 7 days before), NOT weekly averages
-- **Null handling:** All numeric fields default to `0` instead of `null` (prevents UI `.toFixed()` errors). Status defaults to `good` when no CWV metrics are available
-- All URLs validated for proper format (must be valid http/https URLs)
+- **Null handling:** All numeric fields default to `0` instead of `null` (prevents UI `.toFixed()` errors)
+- All URLs validated for proper format (must be valid http/https URLs) and normalized to percent-encode special characters
 
 ---
 
@@ -223,9 +225,14 @@ The opportunity handler directly finds or creates a `generic-opportunity` by mat
 
 **Merge behavior:** A custom `mergeDataFunction` ensures that on subsequent audit runs, the `suggestionValue` field is fully replaced with the latest audit result (JSON-stringified). The default shallow merge would not update `suggestionValue` since the raw device result doesn't contain that key.
 
-This ensures one suggestion per device type per site, containing the complete Web Performance Trends Report data for UI consumption.
+**Status override:** The `newSuggestionStatus` parameter is set to `SuggestionDataAccess.STATUSES.NEW` to force all new suggestions to `NEW` status, regardless of site's `requiresValidation` setting. This parameter is validated against allowed statuses to prevent arbitrary strings.
 
-> **Note:** The audit result is JSON-stringified and wrapped in `suggestionValue` to match the UI's expected data structure. The `WebPerformanceTrendsReportPage` component accesses `suggestions[0].data.suggestionValue` and expects it to be a JSON string that it parses with `parsePayload()`.
+**Double-serialization rationale:** The audit result is JSON-stringified and stored in `suggestionValue` (which itself lives in a JSON column). This is intentional for frontend compatibility - the `WebPerformanceTrendsReportPage` component explicitly checks `typeof suggestionValue === 'string'` before calling `parsePayload()` (see `WebPerformanceTrendsReportPage.tsx:137-139`). While this creates double-serialization, it is required by the UI's current implementation. The trade-off is accepted because:
+- The UI owns the data contract and changing it would require coordinated frontend/backend releases
+- The data is only queried by opportunity ID (no need for JSON column queries on nested fields)
+- Debugging can use `JSON.parse(JSON.parse(data.suggestionValue))` when needed
+
+This ensures one suggestion per device type per site, containing the complete Web Performance Trends Report data for UI consumption.
 
 > **Note:** Suggestion type `CONTENT_UPDATE` matches the ESO API pattern in `experience-system-outages/src/services/spaceCatForwarder.cjs`. ESO doesn't set tags; we add `['Web Performance', 'CWV']` for UI filtering.
 

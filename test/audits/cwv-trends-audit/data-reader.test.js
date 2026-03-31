@@ -148,8 +148,9 @@ describe('CWV Trends Data Reader', () => {
       expect(result).to.have.lengthOf(1);
     });
 
-    it('rejects already-parsed object exceeding size limit', async () => {
+    it('accepts already-parsed object (skips size check)', async () => {
       // Create a large JSON array as already-parsed object (>15 MB)
+      // Size check is skipped for pre-parsed objects as S3 client already handled transfer
       const largeData = Array(120000).fill({
         url: 'https://example.com/page-with-a-longer-path-to-increase-size',
         metrics: [{
@@ -160,8 +161,8 @@ describe('CWV Trends Data Reader', () => {
       // Pass already-parsed object (not string)
       getObjectFromKeyStub.resolves(largeData);
       const result = await readTrendData({}, 'bucket', 'site-1', new Date('2025-11-28T00:00:00Z'), 1, log);
-      expect(result).to.have.lengthOf(0);
-      expect(log.warn).to.have.been.calledWith(sinon.match(/exceeds size limit/));
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].data).to.equal(largeData);
     });
   });
 });

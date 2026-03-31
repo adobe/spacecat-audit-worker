@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
+import { Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { OPPORTUNITY_TITLES } from './constants.js';
@@ -108,14 +108,18 @@ export default async function opportunityHandler(finalUrl, auditData, context) {
         type: 'CONTENT_UPDATE',
         rank: result.summary.totalUrls,
         data: {
+          // Frontend expects suggestionValue as a JSON string
+          // (see WebPerformanceTrendsReportPage.tsx:137-139)
+          // UI checks `typeof suggestionValue === 'string'` before parsePayload()
           suggestionValue: JSON.stringify(result),
         },
       }),
       mergeDataFunction: (existingData, newResult) => ({
         ...existingData,
+        // Frontend expects suggestionValue as a JSON string (UI requirement)
         suggestionValue: JSON.stringify(newResult),
       }),
-      newSuggestionStatus: 'NEW',
+      newSuggestionStatus: SuggestionDataAccess.STATUSES.NEW,
     });
   }));
 

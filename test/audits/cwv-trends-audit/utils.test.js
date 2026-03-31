@@ -176,15 +176,22 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     expect(details[2].status).to.equal('poor');
   });
 
-  it('defaults status to good when all CWV metrics are null', async () => {
-    const urls = [buildUrl('https://ex.com/p', 'mobile', {
-      pageviews: 5000, lcp: null, cls: null, inp: null,
-    })];
+  it('filters out URLs when all CWV metrics are null', async () => {
+    const urls = [
+      buildUrl('https://ex.com/no-cwv', 'mobile', {
+        pageviews: 5000, lcp: null, cls: null, inp: null,
+      }),
+      buildUrl('https://ex.com/good', 'mobile', {
+        pageviews: 4000, lcp: 2000, cls: 0.05, inp: 100,
+      }),
+    ];
     readTrendDataStub.resolves(buildDays(makeDates(28), urls));
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
 
-    expect(mobileResult(result).urlDetails[0].status).to.equal('good');
+    // URL with no CWV data should be filtered out
+    expect(mobileResult(result).urlDetails).to.have.lengthOf(1);
+    expect(mobileResult(result).urlDetails[0].url).to.equal('https://ex.com/good');
   });
 
   it('converts bounceRate, engagement, clickRate to percentages', async () => {
@@ -213,6 +220,19 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     expect(d.bounceRate).to.equal(0);
     expect(d.engagement).to.equal(0);
     expect(d.clickRate).to.equal(0);
+  });
+
+  it('handles null non-percentage fields', async () => {
+    const urls = [buildUrl('https://ex.com/p', 'mobile', {
+      pageviews: 5000, lcp: null, cls: 0.08, inp: 180,
+    })];
+    readTrendDataStub.resolves(buildDays(makeDates(28), urls));
+
+    const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
+    const d = mobileResult(result).urlDetails[0];
+
+    expect(d.lcp).to.equal(0);
+    expect(d.lcpChange).to.equal(0);
   });
 
   it('counts CWV categories per day in trendData', async () => {
@@ -269,7 +289,7 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     expect(desktopResult(result).urlDetails).to.have.lengthOf(0);
   });
 
-  it('handles null CWV metrics in categorization', async () => {
+  it('filters URLs with all null CWV metrics', async () => {
     const urls = [
       buildUrl('https://ex.com/nulls', 'mobile', { lcp: null, cls: null, inp: null }),
       buildUrl('https://ex.com/good', 'mobile', { pageviews: 3000, lcp: 2000, cls: 0.05, inp: 100 }),
@@ -278,9 +298,10 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
 
     const result = await cwvTrendsRunner('https://ex.com', makeContext(), makeSite());
 
-    expect(mobileResult(result).urlDetails).to.have.lengthOf(2);
-    // Null CWV metrics default to 'good' in both trendData and urlDetails
-    expect(mobileResult(result).trendData[0].good).to.equal(2);
+    // URL with all null metrics should be filtered out
+    expect(mobileResult(result).urlDetails).to.have.lengthOf(1);
+    expect(mobileResult(result).urlDetails[0].url).to.equal('https://ex.com/good');
+    expect(mobileResult(result).trendData[0].good).to.equal(1);
     expect(mobileResult(result).trendData[0].poor).to.equal(0);
   });
 
