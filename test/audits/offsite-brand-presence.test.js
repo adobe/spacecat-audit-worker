@@ -31,6 +31,7 @@ const {
 use(sinonChai);
 
 const DEFAULT_WEEK = 7;
+const DEFAULT_WEEK_2 = 6;
 const DEFAULT_YEAR = 2026;
 
 describe('Offsite Brand Presence Handler', () => {
@@ -57,7 +58,9 @@ describe('Offsite Brand Presence Handler', () => {
     sandbox = sinon.createSandbox();
 
     mockFetch = sandbox.stub();
-    mockIsoCalendarWeek = sandbox.stub().returns({ week: DEFAULT_WEEK, year: DEFAULT_YEAR });
+    mockIsoCalendarWeek = sandbox.stub();
+    mockIsoCalendarWeek.onFirstCall().returns({ week: DEFAULT_WEEK, year: DEFAULT_YEAR });
+    mockIsoCalendarWeek.onSecondCall().returns({ week: DEFAULT_WEEK_2, year: DEFAULT_YEAR });
     mockSubmitScrapeJob = sandbox.stub().resolves({ job_id: 'mock-job' });
     mockDrsIsConfigured = sandbox.stub().returns(true);
 
@@ -1565,15 +1568,43 @@ describe('Offsite Brand Presence Handler', () => {
       });
     });
 
-    it('should include week (zero-padded) and year in the audit result', async () => {
-      mockIsoCalendarWeek.returns({ week: 5, year: DEFAULT_YEAR });
+    it('should include both previous weeks in the audit result', async () => {
+      mockIsoCalendarWeek.onFirstCall().returns({ week: 5, year: DEFAULT_YEAR });
+      mockIsoCalendarWeek.onSecondCall().returns({ week: 4, year: DEFAULT_YEAR });
       const responses = buildHappyResponses({ week: 5 });
       stubFetchSequence(responses);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      expect(result.auditResult.week).to.equal('05');
-      expect(result.auditResult.year).to.equal(DEFAULT_YEAR);
+      expect(result.auditResult.weeks).to.deep.equal([
+        { week: 5, year: DEFAULT_YEAR },
+        { week: 4, year: DEFAULT_YEAR },
+      ]);
+    });
+
+    it('should handle year boundary when previous weeks span two years', async () => {
+      mockIsoCalendarWeek.onFirstCall().returns({ week: 1, year: 2026 });
+      mockIsoCalendarWeek.onSecondCall().returns({ week: 52, year: 2025 });
+
+      const qi = {
+        data: [
+          { path: '/adobe/brand-presence/w1/brandpresence-chatgpt-w1-2026-010126.json' },
+          { path: '/adobe/brand-presence/w52/brandpresence-chatgpt-w52-2025-221225.json' },
+        ],
+      };
+      const responses = buildHappyResponses({
+        queryIndex: qi,
+        providerResponses: [okJsonResponse({}), okJsonResponse({})],
+      });
+      stubFetchSequence(responses);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.weeks).to.deep.equal([
+        { week: 1, year: 2026 },
+        { week: 52, year: 2025 },
+      ]);
     });
   });
 });
