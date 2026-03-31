@@ -34,7 +34,6 @@ const DOMAIN_ALIASES = Object.freeze({
 
 /**
  * Gets the ISO week number and year for the previous two weeks.
- * Handles year boundaries correctly (e.g. week 1 of 2026 → weeks 52/53 of 2025).
  * @returns {Array<{ week: number, year: number }>} Previous two weeks (most recent first)
  */
 function getPreviousWeeks() {
