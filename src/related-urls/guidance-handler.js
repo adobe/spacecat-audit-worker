@@ -22,12 +22,12 @@ import {
   readFromSharePoint,
   uploadToSharePoint,
 } from '../utils/report-uploader.js';
-import { SPREADSHEET_COLUMNS } from '../faqs/utils.js';
+import {
+  RELATED_URLS_COLUMN_HEADER, RELATED_URLS_DELIMITER, SPREADSHEET_COLUMNS,
+} from '../faqs/utils.js';
 
 const WEEKS_TO_LOOK_BACK = 4;
 const MAX_URLS_TO_WRITE = 5;
-const CELL_DELIMITER = '; ';
-const RELATED_URLS_COLUMN_HEADER = 'Related URLs';
 
 function normalizeText(value) {
   return value
@@ -195,7 +195,7 @@ function updateWorksheetWithRelatedUrls(worksheet, promptRegionMap) {
     }
 
     // Excel displays newlines in a single cell nicely across platforms.
-    targetRow.getCell(relatedUrlsCol).value = topUrls.join(CELL_DELIMITER);
+    targetRow.getCell(relatedUrlsCol).value = topUrls.join(RELATED_URLS_DELIMITER);
     updatedCount += 1;
   });
 

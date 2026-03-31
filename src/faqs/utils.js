@@ -16,6 +16,9 @@ import { ContentAIClient } from '../utils/content-ai.js';
  * Column indices for the brand presence spreadsheet.
  * Excel uses 1-based indexing for columns.
  */
+export const RELATED_URLS_COLUMN_HEADER = 'Related URLs';
+export const RELATED_URLS_DELIMITER = '; ';
+
 export const SPREADSHEET_COLUMNS = {
   CATEGORY: 1,
   TOPICS: 2,
