@@ -6153,6 +6153,25 @@ describe('Prerender Audit', () => {
       expect(context.log.warn).to.have.been.calledWith(sinon.match('Failed to fetch ScrapeUrl stats'));
     });
 
+    it('should fall back with scrapeForbidden=true when all COMPLETE URLs are 403 and ScrapeUrl query throws', async () => {
+      const context = {
+        log: { debug: sandbox.stub(), warn: sandbox.stub() },
+        dataAccess: { ScrapeUrl: { allByScrapeJobId: sandbox.stub().rejects(new Error('DB error')) } },
+        s3Client: {},
+        env: { S3_SCRAPER_BUCKET_NAME: 'bucket' },
+      };
+      // Two COMPLETE-status URLs, both 403 forbidden
+      const comparisonResults = [
+        { url: 'https://example.com/a', hasScrapeMetadata: true, scrapeForbidden: true },
+        { url: 'https://example.com/b', hasScrapeMetadata: true, scrapeForbidden: true },
+      ];
+      const result = await getScrapeJobStats('job-1', comparisonResults, 2, context);
+      expect(result).to.deep.equal({
+        urlsSubmittedForScraping: 2, scrapeForbiddenCount: 2, scrapeForbidden: true, missingPages: [],
+      });
+      expect(context.log.warn).to.have.been.calledWith(sinon.match('Failed to fetch ScrapeUrl stats'));
+    });
+
     it('should integrate with processContentAndGenerateOpportunities to detect missing forbidden URLs', async () => {
       // URL in scrapeResultPaths (has a scrape.json but no HTML — not 403, just incomplete)
       const knownUrl = 'https://example.com/page1';
