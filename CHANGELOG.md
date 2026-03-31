@@ -1,3 +1,10 @@
+## [1.383.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.383.0...v1.383.1) (2026-03-31)
+
+
+### Bug Fixes
+
+* **prerender:** simplify urlsSubmittedForScraping calculation ([#2257](https://github.com/adobe/spacecat-audit-worker/issues/2257)) ([d66943c](https://github.com/adobe/spacecat-audit-worker/commit/d66943cd326c9cab752d5fb982c6170680ffe4cc))
+
 # [1.383.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.382.4...v1.383.0) (2026-03-31)
 
 
