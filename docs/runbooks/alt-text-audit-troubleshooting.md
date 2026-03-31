@@ -36,7 +36,7 @@ top pages from Ahrefs/RUM      page content                    suggestions per b
                                                               (guidance:missing-alt-text)
 ```
 
-Each step persists its status to the audit record via `audit.setAuditResult()` + `audit.save()`. The full history is in `auditResult.statusHistory`.
+Each step persists its status to the audit record via `Audit.updateByKeys()`. The full history is in `auditResult.statusHistory`.
 
 ---
 
@@ -63,7 +63,7 @@ Each step persists its status to the audit record via `audit.setAuditResult()` +
 ```bash
 SITE_ID="<site-id>"
 
-curl -s "https://spacecat.experiencecloud.live/api/v1/sites/${SITE_ID}/audits/alt-text/latest" \
+curl -s "https://spacecat.experiencecloud.live/api/v1/sites/${SITE_ID}/latest-audit/alt-text" \
   -H "x-api-key: ${SPACECAT_API_KEY}" | jq '{
     id: .id,
     status: .auditResult.status,

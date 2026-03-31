@@ -1,3 +1,10 @@
+## [1.382.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.382.3...v1.382.4) (2026-03-31)
+
+
+### Bug Fixes
+
+* changed save status history approach as a result of a current limitatation of the audit model ([#2251](https://github.com/adobe/spacecat-audit-worker/issues/2251)) ([9f5aa6e](https://github.com/adobe/spacecat-audit-worker/commit/9f5aa6ea6c022841400163db5b3bbcf63e1c79f3)), closes [#2227](https://github.com/adobe/spacecat-audit-worker/issues/2227)
+
 ## [1.382.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.382.2...v1.382.3) (2026-03-31)
 
 
