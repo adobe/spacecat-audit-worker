@@ -16,7 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
-import wikipediaAnalysisHandler from '../../../src/wikipedia-analysis/handler.js';
+import wikipediaAnalysisHandler, { extractBrandFromUrl } from '../../../src/wikipedia-analysis/handler.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
@@ -122,7 +122,7 @@ describe('Wikipedia Analysis Handler', () => {
       expect(result.fullAuditRef).to.equal(baseURL);
     });
 
-    it('should use baseURL even if it looks invalid', async () => {
+    it('should use baseURL as-is when it cannot be parsed as a URL', async () => {
       mockSite.getConfig.returns({
         getCompanyName: sandbox.stub().returns(''),
         getWikipediaUrl: sandbox.stub().returns(''),
@@ -133,7 +133,6 @@ describe('Wikipedia Analysis Handler', () => {
 
       const result = await wikipediaAnalysisHandler.runner('invalid-url', context, mockSite);
 
-      // Should succeed and use whatever baseURL is provided
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.config.companyName).to.equal('invalid-url');
     });
@@ -154,7 +153,7 @@ describe('Wikipedia Analysis Handler', () => {
       expect(context.log.warn).to.have.been.called;
     });
 
-    it('should use baseURL as companyName when company name is not configured', async () => {
+    it('should extract brand from URL when company name is not configured', async () => {
       mockSite.getConfig.returns({
         getCompanyName: sandbox.stub().returns(null),
         getWikipediaUrl: sandbox.stub().returns(''),
@@ -166,17 +165,17 @@ describe('Wikipedia Analysis Handler', () => {
       const result = await wikipediaAnalysisHandler.runner('https://bmw.com', context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.config.companyName).to.equal('https://bmw.com');
+      expect(result.auditResult.config.companyName).to.equal('bmw');
     });
 
-    it('should handle missing config gracefully and use baseURL', async () => {
+    it('should handle missing config gracefully and extract brand from URL', async () => {
       mockSite.getConfig.returns(null);
       mockSite.getBaseURL.returns('https://test-company.com');
 
       const result = await wikipediaAnalysisHandler.runner('https://test-company.com', context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.config.companyName).to.equal('https://test-company.com');
+      expect(result.auditResult.config.companyName).to.equal('test-company');
     });
 
     it('should handle errors during execution', async () => {
@@ -420,6 +419,85 @@ describe('Wikipedia Analysis Handler', () => {
       const postProcessor = wikipediaAnalysisHandler.postProcessors[0];
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
       expect(context.log.error).to.have.been.calledWith('[Wikipedia] Failed to send Mystique message: SQS Error');
+    });
+  });
+
+  describe('extractBrandFromUrl', () => {
+    it('should strip protocol, www, and TLD from a full URL', () => {
+      expect(extractBrandFromUrl('https://www.landroverusa.com')).to.equal('landrover');
+    });
+
+    it('should strip TLD from a bare domain', () => {
+      expect(extractBrandFromUrl('allianz.fr')).to.equal('allianz');
+    });
+
+    it('should strip regional suffix "usa"', () => {
+      expect(extractBrandFromUrl('https://www.landroverusa.com')).to.equal('landrover');
+    });
+
+    it('should strip regional suffix "global"', () => {
+      expect(extractBrandFromUrl('https://www.toyotaglobal.com')).to.equal('toyota');
+    });
+
+    it('should strip regional suffix "international"', () => {
+      expect(extractBrandFromUrl('https://brandinternational.com')).to.equal('brand');
+    });
+
+    it('should strip regional suffix "worldwide"', () => {
+      expect(extractBrandFromUrl('https://brandworldwide.com')).to.equal('brand');
+    });
+
+    it('should strip country code suffixes', () => {
+      expect(extractBrandFromUrl('https://www.branduk.com')).to.equal('brand');
+      expect(extractBrandFromUrl('https://www.brandfr.com')).to.equal('brand');
+      expect(extractBrandFromUrl('https://www.brandde.com')).to.equal('brand');
+      expect(extractBrandFromUrl('https://www.brandau.com')).to.equal('brand');
+      expect(extractBrandFromUrl('https://www.brandca.com')).to.equal('brand');
+      expect(extractBrandFromUrl('https://www.brandjp.com')).to.equal('brand');
+    });
+
+    it('should preserve hyphens in brand names', () => {
+      expect(extractBrandFromUrl('https://www.mercedes-benz.ca')).to.equal('mercedes-benz');
+    });
+
+    it('should handle ccTLD-only domains', () => {
+      expect(extractBrandFromUrl('https://www.bmw.de')).to.equal('bmw');
+      expect(extractBrandFromUrl('https://allianz.fr')).to.equal('allianz');
+    });
+
+    it('should handle multi-part TLDs like .co.uk', () => {
+      expect(extractBrandFromUrl('https://www.brand.co.uk')).to.equal('brand');
+    });
+
+    it('should handle simple .com domains', () => {
+      expect(extractBrandFromUrl('https://nespresso.com')).to.equal('nespresso');
+      expect(extractBrandFromUrl('https://www.salesforce.com')).to.equal('salesforce');
+    });
+
+    it('should handle plain brand names as input', () => {
+      expect(extractBrandFromUrl('Nespresso')).to.equal('nespresso');
+      expect(extractBrandFromUrl('toyota')).to.equal('toyota');
+    });
+
+    it('should return original string for unparseable input', () => {
+      expect(extractBrandFromUrl('')).to.equal('');
+    });
+
+    it('should handle domains without www', () => {
+      expect(extractBrandFromUrl('https://landroverusa.com')).to.equal('landrover');
+    });
+
+    it('should handle domain-only input without protocol', () => {
+      expect(extractBrandFromUrl('landroverusa.com')).to.equal('landrover');
+    });
+
+    it('should keep the full name when stripping the region suffix would leave nothing', () => {
+      expect(extractBrandFromUrl('https://usa.com')).to.equal('usa');
+    });
+
+    it('should be case-insensitive for region suffixes', () => {
+      expect(extractBrandFromUrl('https://www.brandUSA.com')).to.equal('brand');
+      expect(extractBrandFromUrl('https://www.brandGlobal.com')).to.equal('brand');
     });
   });
 });
