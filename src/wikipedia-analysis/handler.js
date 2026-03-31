@@ -20,30 +20,90 @@ const LOG_PREFIX = '[Wikipedia]';
 const REGION_SUFFIXES_RE = /(?:usa|us|uk|eu|de|fr|es|it|nl|be|at|ch|au|ca|jp|kr|cn|br|mx|in|za|global|international|worldwide)$/i;
 
 /**
+ * Short hint for logs: type and safe preview of a messageData override field.
+ * @param {unknown} value
+ * @returns {string}
+ */
+function formatOverrideFieldHint(value) {
+  if (value === undefined) return 'undefined';
+  if (value === null) return 'null';
+  if (typeof value === 'string') {
+    const t = value.trim();
+    const preview = t.length > 120 ? `${t.slice(0, 120)}…` : t;
+    return `string(len=${value.length}, preview="${preview}")`;
+  }
+  return `${typeof value}(${String(value)})`;
+}
+
+/**
+ * @param {{ url: string }|{ invalid: true, value: string }|undefined} resolution
+ * @returns {string}
+ */
+function summarizeWikipediaUrlOverride(resolution) {
+  if (resolution === undefined) return 'none';
+  if (resolution.invalid) return `invalid(trimmed="${resolution.value}")`;
+  return `url="${resolution.url}"`;
+}
+
+/**
  * Optional Wikipedia article URL from `message.data` (merged into RunnerAudit
  * `auditContext.messageData`).
  * `wikiUrl` wins over `wikipediaUrl` when both are set. Invalid / non-string
  * values are ignored (see runner).
  *
  * @param {object} [auditContext]
+ * @param {{ debug?: Function, info?: Function }} [log]
  * @returns {{ url: string }|{ invalid: true, value: string }|undefined}
  */
-function resolveWikipediaUrlOverride(auditContext) {
-  const rawOverride = auditContext?.messageData?.wikiUrl
-    || auditContext?.messageData?.wikipediaUrl;
+function resolveWikipediaUrlOverride(auditContext, log) {
+  const md = auditContext?.messageData;
+  if (!md) {
+    log?.debug?.(
+      `${LOG_PREFIX} Wikipedia URL override: no messageData (put wikiUrl/wikipediaUrl in message.data)`,
+    );
+    return undefined;
+  }
+
+  const wikiVal = md.wikiUrl;
+  const wikipediaVal = md.wikipediaUrl;
+  log?.debug?.(
+    `${LOG_PREFIX} Wikipedia URL override: messageData fields wikiUrl=${formatOverrideFieldHint(wikiVal)} wikipediaUrl=${formatOverrideFieldHint(wikipediaVal)}`,
+  );
+
+  const rawOverride = wikiVal || wikipediaVal;
+
+  if (rawOverride === undefined || rawOverride === null || rawOverride === '') {
+    log?.debug?.(
+      `${LOG_PREFIX} Wikipedia URL override: neither wikiUrl nor wikipediaUrl is a usable value`,
+    );
+    return undefined;
+  }
 
   if (typeof rawOverride !== 'string') {
+    log?.info?.(
+      `${LOG_PREFIX} Wikipedia URL override rejected: expected string from wikiUrl||wikipediaUrl, got ${typeof rawOverride}`,
+    );
     return undefined;
   }
 
   const trimmed = rawOverride.trim();
   if (!trimmed) {
+    log?.info?.(
+      `${LOG_PREFIX} Wikipedia URL override rejected: empty or whitespace-only after trim`,
+    );
     return undefined;
   }
 
   if (!isValidUrl(trimmed)) {
+    log?.info?.(
+      `${LOG_PREFIX} Wikipedia URL override rejected: isValidUrl=false for "${trimmed}"`,
+    );
     return { invalid: true, value: trimmed };
   }
+
+  log?.debug?.(
+    `${LOG_PREFIX} Wikipedia URL override accepted: "${trimmed}"`,
+  );
 
   return { url: trimmed };
 }
@@ -118,7 +178,10 @@ async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) 
   try {
     const wikipediaConfig = getWikipediaConfig(site);
 
-    const wikipediaUrlOverride = resolveWikipediaUrlOverride(auditContext);
+    const wikipediaUrlOverride = resolveWikipediaUrlOverride(auditContext, log);
+    log.info(
+      `${LOG_PREFIX} wikipediaUrlOverride resolution: ${summarizeWikipediaUrlOverride(wikipediaUrlOverride)}`,
+    );
     if (wikipediaUrlOverride?.invalid) {
       log.warn(`${LOG_PREFIX} Ignoring invalid wikipedia URL override: ${wikipediaUrlOverride.value}`);
     } else if (wikipediaUrlOverride?.url) {
@@ -212,7 +275,12 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     };
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`${LOG_PREFIX} Queued Wikipedia analysis request to Mystique for ${config.companyName}`);
+    const wikipediaUrlForLog = config.wikipediaUrl?.trim()
+      ? config.wikipediaUrl
+      : '(empty → auto-detect)';
+    log.info(
+      `${LOG_PREFIX} Queued Wikipedia analysis request to Mystique for ${config.companyName} wikipediaUrl=${wikipediaUrlForLog}`,
+    );
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
     // Re-throw to fail the audit if we can't send to Mystique

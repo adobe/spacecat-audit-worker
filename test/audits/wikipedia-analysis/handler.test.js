@@ -295,6 +295,33 @@ describe('Wikipedia Analysis Handler', () => {
 
       expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
     });
+
+    it('should use wikipediaUrl when wikiUrl is null in messageData', async () => {
+      const fallback = 'https://en.wikipedia.org/wiki/Fallback_From_Null_Wiki';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: null, wikipediaUrl: fallback } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(fallback);
+    });
+
+    it('should accept a long valid wikiUrl override (preview truncation in debug)', async () => {
+      const path = `https://en.wikipedia.org/wiki/${'x'.repeat(100)}`;
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: path } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(path);
+      expect(context.log.debug).to.have.been.calledWith(
+        sinon.match(/Wikipedia URL override: messageData fields/),
+      );
+    });
   });
 
   describe('Post Processor - sendMystiqueMessagePostProcessor', () => {
@@ -331,6 +358,33 @@ describe('Wikipedia Analysis Handler', () => {
             companyWebsite: baseURL,
           }),
         }),
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Queued Wikipedia analysis request to Mystique for Example Corp wikipediaUrl=https:\/\/en\.wikipedia\.org\/wiki\/Example_Corp/),
+      );
+    });
+
+    it('should log auto-detect when wikipediaUrl is blank in queued Mystique log', async () => {
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          status: 'pending_analysis',
+          config: {
+            companyName: 'Example Corp',
+            companyWebsite: baseURL,
+            wikipediaUrl: '   ',
+            competitors: [],
+            competitorRegion: null,
+          },
+        },
+      };
+
+      const postProcessor = wikipediaAnalysisHandler.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/wikipediaUrl=\(empty → auto-detect\)/),
       );
     });
 
