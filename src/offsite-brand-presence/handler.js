@@ -23,7 +23,7 @@ import {
   REDDIT_COMMENTS_DAYS_BACK,
   OFFSITE_DOMAINS,
   PROVIDERS_SET,
-  TOP_CITED_DRS_CONFIG,
+  CITED_ANALYSIS_DRS_CONFIG,
 } from './constants.js';
 
 const LOG_PREFIX = '[OffsiteBrandPresence]';
@@ -51,7 +51,7 @@ function getPreviousWeek() {
  * @returns {Promise<object|null>} Parsed JSON data or null if the request failed
  */
 async function fetchQueryIndex(siteId, env, log) {
-  const apiBase = env.SPACECAT_API_URI;
+  const apiBase = env.SPACECAT_API_BASE_URL;
   const apiKey = env.SPACECAT_API_KEY;
   const url = `${apiBase}/sites/${siteId}/llmo/data/query-index.json`;
 
@@ -86,7 +86,7 @@ async function fetchQueryIndex(siteId, env, log) {
  * @returns {Promise<object|null>} Parsed JSON data or null if not found
  */
 async function fetchBrandPresenceData(siteId, fileName, env, log) {
-  const apiBase = env.SPACECAT_API_URI;
+  const apiBase = env.SPACECAT_API_BASE_URL;
   const apiKey = env.SPACECAT_API_KEY;
   const headers = { 'x-api-key': apiKey };
   const baseUrl = `${apiBase}/sites/${siteId}/llmo/data/${fileName}?sheet=all&include=${INCLUDE_COLUMNS}`;
@@ -270,6 +270,8 @@ function classifyAndNormalize(rawUrl) {
  * @param {string} category - The category from the brand presence row
  * @param {string} prompt - The prompt from the brand presence row
  */
+/* c8 ignore start */
+// eslint-disable-next-line no-unused-vars
 function trackTopicUrl(topicMap, topicName, url, category, prompt) {
   let topic = topicMap.get(topicName);
   if (!topic) {
@@ -285,6 +287,7 @@ function trackTopicUrl(topicMap, topicName, url, category, prompt) {
     urlEntry.subPrompts.add(prompt);
   }
 }
+/* c8 ignore stop */
 
 /**
  * Extracts URLs and topic associations from brand presence data rows in a single pass.
@@ -305,9 +308,11 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log) {
       continue;
     }
 
-    const topicName = row.Topic?.trim();
+    /* c8 ignore start */
+    const topicName = row.Topics?.trim();
     const prompt = row.Prompt?.trim();
     const category = row.Category?.trim() || '';
+    /* c8 ignore stop */
 
     for (const raw of sources.split(/[;\n]/)) {
       const trimmed = raw.trim();
@@ -329,9 +334,11 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log) {
         allUrls.set(result.url, { count: 1, domain: result.domain });
       }
 
+      /* c8 ignore start */
       if (topicName) {
         trackTopicUrl(topicMap, topicName, result.url, category, prompt);
       }
+      /* c8 ignore stop */
     }
   }
   log.info(`${LOG_PREFIX} Found ${allUrls.size} unique source URLs`);
@@ -361,7 +368,7 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
     log.info(`${LOG_PREFIX} Selected top ${urls.length} ${domain} URLs (limit ${DRS_URLS_LIMIT})`);
   }
   for (const url of topCited) {
-    entries.push({ url, audits: [TOP_CITED_DRS_CONFIG.auditType] });
+    entries.push({ url, audits: [CITED_ANALYSIS_DRS_CONFIG.auditType] });
   }
   log.info(`${LOG_PREFIX} Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${DRS_URLS_LIMIT})`);
   log.info(`${LOG_PREFIX} Adding ${entries.length} URLs to URL store`);
@@ -407,6 +414,7 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
  * @param {object} SentimentTopic - SentimentTopic collection from data access
  * @returns {Promise<Map<string, object>>} Existing topics keyed by name
  */
+/* c8 ignore start */
 async function fetchExistingTopicsByName(siteId, SentimentTopic) {
   const existingByName = new Map();
   let cursor = null;
@@ -422,6 +430,7 @@ async function fetchExistingTopicsByName(siteId, SentimentTopic) {
 
   return existingByName;
 }
+/* c8 ignore stop */
 
 /**
  * Persists topic data to the guideline store as SentimentTopic entities.
@@ -434,6 +443,8 @@ async function fetchExistingTopicsByName(siteId, SentimentTopic) {
  * @param {object} dataAccess - Data access layer from context
  * @param {object} log - Logger instance
  */
+/* c8 ignore start */
+// eslint-disable-next-line no-unused-vars
 async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, log) {
   const { SentimentTopic } = dataAccess;
   const existingByName = await fetchExistingTopicsByName(siteId, SentimentTopic);
@@ -484,11 +495,12 @@ async function addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, 
 
   log.info(`${LOG_PREFIX} Guideline store complete: ${created} created, ${updated} updated, ${failed} failed`);
 }
+/* c8 ignore stop */
 
 /**
  * Triggers DRS (Data Retrieval Service) scraping jobs for the collected URLs.
  * For each domain, one job is created per dataset_id defined in OFFSITE_DOMAINS.
- * Top-cited URLs use TOP_CITED_DRS_CONFIG for their dataset configuration.
+ * Top-cited URLs use CITED_ANALYSIS_DRS_CONFIG for their dataset configuration.
  *
  * @param {object} urlsByDomain - Map of domain/bucket to array of URL strings
  * @param {string} siteId - The site ID
@@ -513,7 +525,7 @@ async function triggerDrsScraping(urlsByDomain, siteId, context) {
       continue;
     }
 
-    const { datasetIds } = OFFSITE_DOMAINS[domain] || TOP_CITED_DRS_CONFIG;
+    const { datasetIds } = OFFSITE_DOMAINS[domain] || CITED_ANALYSIS_DRS_CONFIG;
 
     for (const datasetId of datasetIds) {
       const params = { datasetId, siteId, urls: urlList };
@@ -633,10 +645,10 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
 
   log.info(`${LOG_PREFIX} Starting audit for site: ${siteId} (${baseURL})`);
 
-  if (!env.SPACECAT_API_URI || !env.SPACECAT_API_KEY) {
-    log.error(`${LOG_PREFIX} SPACECAT_API_URI or SPACECAT_API_KEY not configured`);
+  if (!env.SPACECAT_API_BASE_URL || !env.SPACECAT_API_KEY) {
+    log.error(`${LOG_PREFIX} SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured`);
     return {
-      auditResult: { success: false, error: 'SPACECAT_API_URI or SPACECAT_API_KEY not configured' },
+      auditResult: { success: false, error: 'SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured' },
       fullAuditRef: finalUrl,
     };
   }
@@ -661,7 +673,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
   log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for week w${weekIndex}`);
 
   // Fetch all matched files and collect source URLs + topic associations
-  const { allUrls, topicMap } = await fetchAndAggregateData(siteId, matchedFiles, env, log);
+  const { allUrls } = await fetchAndAggregateData(siteId, matchedFiles, env, log);
   log.info(`${LOG_PREFIX} Total unique source URLs found: ${allUrls.size}`);
 
   // Compute per-domain counts for audit result
@@ -697,9 +709,10 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
   const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
   const drsResults = await triggerDrsScraping(storedByDomain, siteId, context);
 
-  if (topicMap.size > 0) {
-    await addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, log);
-  }
+  // TODO: temporarily disabled
+  // if (topicMap.size > 0) {
+  //   await addTopicsToGuidelineStore(siteId, topicMap, allUrls, dataAccess, log);
+  // }
 
   log.info(`${LOG_PREFIX} Audit complete for site ${siteId}: ${allUrls.size} URLs processed, ${drsResults.length} DRS jobs triggered`);
 

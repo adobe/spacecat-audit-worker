@@ -13,11 +13,24 @@
 /* eslint-env mocha */
 
 import { expect, use } from 'chai';
+import { hasText } from '@adobe/spacecat-shared-utils';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 
 use(sinonChai);
+
+function mockSlackUtils() {
+  const postMessageSafe = sinon.stub().resolves({ success: true });
+  const postMessageOptional = sinon.stub().callsFake(async (ctx, channelId, text, options = {}) => {
+    const { threadTs } = options;
+    if (hasText(channelId) && hasText(threadTs)) {
+      return postMessageSafe(ctx, channelId, text, options);
+    }
+    return { success: false, result: null };
+  });
+  return { postMessageSafe, postMessageOptional };
+}
 
 async function loadHandler({ loginImpl, oneshotImpl } = {}) {
   const login = sinon.stub();
@@ -43,11 +56,11 @@ async function loadHandler({ loginImpl, oneshotImpl } = {}) {
     createFrom: sinon.stub().returns(splunkClient),
   };
 
-  const postMessageSafe = sinon.stub().resolves({ success: true });
+  const { postMessageSafe, postMessageOptional } = mockSlackUtils();
 
   const handlerModule = await esmock('../../src/identify-redirects/handler.js', {
     '@adobe/spacecat-shared-splunk-client': { default: SplunkAPIClient },
-    '../../src/utils/slack-utils.js': { postMessageSafe },
+    '../../src/utils/slack-utils.js': { postMessageSafe, postMessageOptional },
   });
 
   return {
@@ -58,6 +71,7 @@ async function loadHandler({ loginImpl, oneshotImpl } = {}) {
     login,
     oneshotSearch,
     postMessageSafe,
+    postMessageOptional,
   };
 }
 
@@ -105,25 +119,26 @@ describe('identify-redirects handler', () => {
   });
 
   it('ignores messages missing slackContext.channelId/threadTs', async () => {
-    const { identifyRedirects, postMessageSafe } = await loadHandler();
+    const { identifyRedirects, postMessageOptional, postMessageSafe } = await loadHandler();
     const resp = await identifyRedirects(null, context);
     expect(resp).to.exist;
-    expect(context.log.warn).to.have.been.calledWithMatch('Missing slackContext.channelId');
+    expect(context.log.info).to.have.been.calledWithMatch('Missing slackContext.channelId');
+    expect(postMessageOptional).to.have.been.called;
     expect(postMessageSafe).to.not.have.been.called;
   });
 
   it('posts a warning when required inputs are missing', async () => {
-    const { identifyRedirects, postMessageSafe } = await loadHandler();
+    const { identifyRedirects, postMessageOptional } = await loadHandler();
     await identifyRedirects({
       slackContext: { channelId: 'C1', threadTs: '123.456' },
     }, context);
 
-    expect(postMessageSafe).to.have.been.calledOnce;
-    expect(postMessageSafe.firstCall.args[1]).to.equal('C1');
-    expect(postMessageSafe.firstCall.args[2]).to.include('identify-redirects job missing required inputs');
-    expect(postMessageSafe.firstCall.args[2]).to.include('baseURL=n/a');
-    expect(postMessageSafe.firstCall.args[2]).to.include('programId=n/a');
-    expect(postMessageSafe.firstCall.args[2]).to.include('environmentId=n/a');
+    expect(postMessageOptional).to.have.been.calledOnce;
+    expect(postMessageOptional.firstCall.args[1]).to.equal('C1');
+    expect(postMessageOptional.firstCall.args[2]).to.include('identify-redirects job missing required inputs');
+    expect(postMessageOptional.firstCall.args[2]).to.include('baseURL=n/a');
+    expect(postMessageOptional.firstCall.args[2]).to.include('programId=n/a');
+    expect(postMessageOptional.firstCall.args[2]).to.include('environmentId=n/a');
   });
 
   it('includes slack target in missing-inputs messages when provided', async () => {
@@ -594,11 +609,11 @@ describe('identify-redirects handler', () => {
     const SplunkAPIClient = {
       createFrom: sinon.stub().returns(splunkClient),
     };
-    const postMessageSafe = sinon.stub().resolves({ success: true });
+    const { postMessageSafe, postMessageOptional } = mockSlackUtils();
 
     const identifyRedirects = (await esmock('../../src/identify-redirects/handler.js', {
       '@adobe/spacecat-shared-splunk-client': { default: SplunkAPIClient },
-      '../../src/utils/slack-utils.js': { postMessageSafe },
+      '../../src/utils/slack-utils.js': { postMessageSafe, postMessageOptional },
     })).default;
 
     await identifyRedirects({
@@ -641,11 +656,11 @@ describe('identify-redirects handler', () => {
     const SplunkAPIClient = {
       createFrom: sinon.stub().returns(splunkClient),
     };
-    const postMessageSafe = sinon.stub().resolves({ success: true });
+    const { postMessageSafe, postMessageOptional } = mockSlackUtils();
 
     const identifyRedirects = (await esmock('../../src/identify-redirects/handler.js', {
       '@adobe/spacecat-shared-splunk-client': { default: SplunkAPIClient },
-      '../../src/utils/slack-utils.js': { postMessageSafe },
+      '../../src/utils/slack-utils.js': { postMessageSafe, postMessageOptional },
     })).default;
 
     await identifyRedirects({
@@ -672,11 +687,11 @@ describe('identify-redirects handler', () => {
     const SplunkAPIClient = {
       createFrom: sinon.stub().returns(splunkClient),
     };
-    const postMessageSafe = sinon.stub().resolves({ success: true });
+    const { postMessageSafe, postMessageOptional } = mockSlackUtils();
 
     const identifyRedirects = (await esmock('../../src/identify-redirects/handler.js', {
       '@adobe/spacecat-shared-splunk-client': { default: SplunkAPIClient },
-      '../../src/utils/slack-utils.js': { postMessageSafe },
+      '../../src/utils/slack-utils.js': { postMessageSafe, postMessageOptional },
     })).default;
 
     await identifyRedirects({
@@ -703,11 +718,11 @@ describe('identify-redirects handler', () => {
     const SplunkAPIClient = {
       createFrom: sinon.stub().returns(splunkClient),
     };
-    const postMessageSafe = sinon.stub().resolves({ success: true });
+    const { postMessageSafe, postMessageOptional } = mockSlackUtils();
 
     const identifyRedirects = (await esmock('../../src/identify-redirects/handler.js', {
       '@adobe/spacecat-shared-splunk-client': { default: SplunkAPIClient },
-      '../../src/utils/slack-utils.js': { postMessageSafe },
+      '../../src/utils/slack-utils.js': { postMessageSafe, postMessageOptional },
     })).default;
 
     await identifyRedirects({
@@ -744,11 +759,11 @@ describe('identify-redirects handler', () => {
     const SplunkAPIClient = {
       createFrom: sinon.stub().returns(splunkClient),
     };
-    const postMessageSafe = sinon.stub().resolves({ success: true });
+    const { postMessageSafe, postMessageOptional } = mockSlackUtils();
 
     const identifyRedirects = (await esmock('../../src/identify-redirects/handler.js', {
       '@adobe/spacecat-shared-splunk-client': { default: SplunkAPIClient },
-      '../../src/utils/slack-utils.js': { postMessageSafe },
+      '../../src/utils/slack-utils.js': { postMessageSafe, postMessageOptional },
     })).default;
 
     await identifyRedirects({

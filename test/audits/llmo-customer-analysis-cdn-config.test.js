@@ -280,6 +280,7 @@ describe('CDN Config Handler', () => {
       
       mockSiteConfig = {
         updateLlmoCdnBucketConfig: sandbox.stub(),
+        getLlmoCdnBucketConfig: sandbox.stub().returns({ bucketName: 'old-bucket', orgId: 'old-org' }),
       };
 
       mockSite = {
@@ -330,6 +331,23 @@ describe('CDN Config Handler', () => {
       expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('cdn-logs-analysis', mockSite);
       expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('page-citability', mockSite);
       expect(mockConfiguration.save).to.have.been.called;
+      expect(context.log.warn).to.have.been.calledWith(
+        'CDN_CONFIG_DELETED: CDN provider removed — this will break CDN log reporting',
+        sinon.match({ siteId: 'site-123', baseURL: 'https://example.com', before: { bucketName: 'old-bucket', orgId: 'old-org' } }),
+      );
+    });
+
+    it('should handle missing previous config gracefully on deletion', async () => {
+      mockSiteConfig.getLlmoCdnBucketConfig.returns(null);
+      mockConfiguration.disableHandlerForSite = sandbox.stub();
+
+      await expect(cdnConfigHandler.handleCdnBucketConfigChanges(context, {}))
+        .to.be.rejectedWith('CDN provider is required for CDN configuration');
+
+      expect(context.log.warn).to.have.been.calledWith(
+        'CDN_CONFIG_DELETED: CDN provider removed — this will break CDN log reporting',
+        sinon.match({ before: {} }),
+      );
     });
 
     it('should handle commerce-fastly provider with service found', async () => {
@@ -350,6 +368,41 @@ describe('CDN Config Handler', () => {
       expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ orgId: 'commerce-org' });
     });
 
+    it('should run Fastly analysis and reporting for commerce-fastly provider', async () => {
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({}), getFullAuditRef: () => '' });
+
+      nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=5000')
+        .reply(200, {
+          data: [{
+            ServiceName: 'commerce-org',
+            ServiceID: 'service-123',
+            domains: 'example.com,www.example.com',
+          }],
+        });
+
+      const data = { cdnProvider: 'commerce-fastly' };
+
+      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+      expect(context.sqs.sendMessage).to.have.been.called;
+      const cdnLogsAnalysisCalls = context.sqs.sendMessage.getCalls()
+        .filter((call) => call.args[1].type === 'cdn-logs-analysis');
+      expect(cdnLogsAnalysisCalls.length).to.be.greaterThan(0);
+      expect(context.sqs.sendMessage).to.have.been.calledWith(
+        sinon.match.any,
+        sinon.match({ type: 'cdn-logs-report' }),
+      );
+    });
+
+    it('should not run Fastly analysis for commerce-fastly provider when pathId is not resolved', async () => {
+      const data = { bucketName: 'test-bucket', cdnProvider: 'commerce-fastly' };
+
+      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
     it('should handle bucket configuration when bucketName provided', async () => {
       const data = { bucketName: 'test-bucket', cdnProvider: 'commerce-fastly' };
 
@@ -357,6 +410,16 @@ describe('CDN Config Handler', () => {
 
       expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ bucketName: 'test-bucket' });
       expect(mockSite.save).to.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        'CDN_CONFIG_CHANGED: CDN bucket configuration updated',
+        sinon.match({
+          siteId: 'site-123',
+          baseURL: 'https://example.com',
+          cdnProvider: 'commerce-fastly',
+          before: { bucketName: 'old-bucket', orgId: 'old-org' },
+          after: { bucketName: 'test-bucket' },
+        }),
+      );
     });
 
     it('should handle bucket configuration when allowedPaths provided', async () => {
@@ -410,6 +473,23 @@ describe('CDN Config Handler', () => {
       );
     });
 
+    it('should stagger aem-cs-fastly cdn-logs-analysis messages by 5 seconds per day', async () => {
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({}), getFullAuditRef: () => '' });
+
+      const data = { cdnProvider: 'aem-cs-fastly' };
+
+      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+      const cdnLogsAnalysisCalls = context.sqs.sendMessage
+        .getCalls()
+        .filter((call) => call.args[1].type === 'cdn-logs-analysis');
+
+      expect(cdnLogsAnalysisCalls.length).to.be.greaterThan(0);
+      cdnLogsAnalysisCalls.forEach((call, index) => {
+        expect(call.args[3]).to.equal(index * 5);
+      });
+    });
+
     it('should skip aem-cs-fastly processing when site already has cdn-logs-analysis with fullAuditRef', async () => {
       context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ 
         getAuditResult: () => ({ providers: ['fastly'] }), 
@@ -430,6 +510,37 @@ describe('CDN Config Handler', () => {
       expect(context.dataAccess.LatestAudit.findBySiteIdAndAuditType).to.have.been.calledWith(
         'site-123',
         'cdn-logs-analysis'
+      );
+    });
+
+    it('should skip commerce-fastly processing when site already has cdn-logs-analysis with fullAuditRef', async () => {
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({
+        getAuditResult: () => ({ providers: ['fastly'] }),
+        getFullAuditRef: () => 'some-audit-ref',
+      });
+
+      nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=5000')
+        .reply(200, {
+          data: [{
+            ServiceName: 'commerce-org',
+            ServiceID: 'service-123',
+            domains: 'example.com,www.example.com',
+          }],
+        });
+
+      const data = { cdnProvider: 'commerce-fastly' };
+
+      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).to.have.been.calledWith(
+        sinon.match.any,
+        sinon.match({ type: 'cdn-logs-report' }),
+      );
+      expect(context.dataAccess.LatestAudit.findBySiteIdAndAuditType).to.have.been.calledWith(
+        'site-123',
+        'cdn-logs-analysis',
       );
     });
 
