@@ -85,8 +85,6 @@ export class StepAudit extends BaseAudit {
       ...baseAuditContext,
     };
 
-    log.info(`Chaining step ${step.name} to ${nextStepName}${preserved.onDemand !== undefined ? ` (onDemand=${preserved.onDemand})` : ''}`);
-
     if (step.destination === AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT) {
       const scrapeClient = ScrapeClient.createFrom(context);
       const payload = destination.formatPayload(stepResult, auditContext, context);

@@ -165,7 +165,6 @@ describe('Job-based Step-Audit Tests', () => {
 
     // Should send a continuation message for the next step
     expect(sendMsgStub).to.have.been.called;
-    expect(context.log.info).to.have.been.calledWith('Chaining step first to second');
   }).timeout(20000);
 
   it('continues execution from specified step', async () => {
@@ -346,7 +345,6 @@ describe('Job-based Step-Audit Tests', () => {
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     const [, payload] = context.sqs.sendMessage.firstCall.args;
     expect(payload.auditContext).to.include({ onDemand: true });
-    expect(context.log.info).to.have.been.calledWith('Chaining step first to second (onDemand=true)');
   });
 
   it('does not add promiseToken to step context for AEM_CS sites if message.promiseToken is missing', async () => {

@@ -53,8 +53,6 @@ export class AsyncJobRunner extends StepAudit {
       ...(promiseToken ? { promiseToken } : {}),
     };
 
-    log.info(`Chaining step ${step.name} to ${nextStepName}${preserved.onDemand !== undefined ? ` (onDemand=${preserved.onDemand})` : ''}`);
-
     const queueUrl = destination.getQueueUrl(context);
     const payload = destination.formatPayload(stepResult, auditContext, context);
     await sendContinuationMessage({ queueUrl, payload }, context);

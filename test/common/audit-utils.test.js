@@ -24,6 +24,7 @@ import {
   sendContinuationMessage,
   checkProductCodeEntitlements,
   parseMessageDataForRunnerAudit,
+  preservePassthroughKeys,
 } from '../../src/common/audit-utils.js';
 import { MockContextBuilder } from '../shared.js';
 

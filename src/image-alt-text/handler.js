@@ -48,10 +48,10 @@ async function getTopPagesLimit(site, context) {
   const onDemand = context.auditContext?.onDemand === true;
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
-  const isSummitPlgEnabled = !onDemand
-    && configuration.isHandlerEnabledForSite('summit-plg', site);
+  const summitPlgFromConfig = configuration.isHandlerEnabledForSite('summit-plg', site);
+  const isSummitPlgEnabled = !onDemand && summitPlgFromConfig;
   const pageLimit = isSummitPlgEnabled ? SUMMIT_PLG_PAGE_LIMIT : DEFAULT_PAGE_LIMIT;
-  log.debug(`[${AUDIT_TYPE}]: Page limit set to ${pageLimit} (summit-plg: ${isSummitPlgEnabled}, onDemand: ${onDemand})`);
+  log.info(`[${AUDIT_TYPE}]: Page limit set to ${pageLimit} (summit-plg: ${isSummitPlgEnabled}, onDemand: ${onDemand})`);
   return { pageLimit, isSummitPlg: isSummitPlgEnabled };
 }
 
