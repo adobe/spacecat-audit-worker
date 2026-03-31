@@ -410,6 +410,14 @@ export async function processScrapedContent(context) {
     try {
       const scrapedObject = await getObjectFromKey(s3Client, bucketName, key, log);
 
+      // Skip 4xx pages when statusCode is present (new scrapes); old scrapes have no statusCode
+      if (scrapedObject?.statusCode != null
+        && scrapedObject.statusCode >= 400
+        && scrapedObject.statusCode < 500) {
+        log.info(`[canonical] Skipping page with HTTP ${scrapedObject.statusCode} for ${key}`);
+        return null;
+      }
+
       // If the scrape result is empty, skip the page for canonical audit
       if (scrapedObject?.scrapeResult?.rawBody?.length < 300) {
         log.warn(`[canonical] Scrape result is empty for ${key} (rawBody length: ${scrapedObject?.scrapeResult?.rawBody?.length || 0})`);
