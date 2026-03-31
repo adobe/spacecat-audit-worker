@@ -75,15 +75,22 @@ No scrape results (Step 3)  -> 'no_scrape_results'   [appends to statusHistory]
 
 ### Helper Functions
 
-Three exported helpers in `handler.js` manage status tracking:
+Three pure helper functions in `handler.js` manage status tracking. They take and return plain `auditResult` objects (no audit model dependency):
 
-- **`startStatus(audit, status, metadata)`** -- Appends a new entry to `statusHistory` with `startedAt` and computed `queueDurationMs`. Preserves existing auditResult fields via spread.
-- **`completeStatus(audit, metadata)`** -- Completes the last entry with `completedAt`, `stepDurationMs`, and optional metadata. Preserves existing fields via spread.
-- **`failCurrentStatus(audit, failedStatus, metadata)`** -- If a step is in-progress (no `completedAt`), mutates the last entry to the failed status. If no in-progress step, delegates to `startStatus` + `completeStatus`.
+- **`startStatus(auditResult, status, metadata)`** -- Returns a new auditResult with a new entry appended to `statusHistory` containing `startedAt` and computed `queueDurationMs`. Preserves existing auditResult fields via spread.
+- **`completeStatus(auditResult, metadata)`** -- Returns a new auditResult with the last entry completed (`completedAt`, `stepDurationMs`, and optional metadata). Preserves existing fields via spread.
+- **`failCurrentStatus(auditResult, failedStatus, metadata)`** -- Returns a new auditResult with the in-progress entry marked as failed. If no in-progress step, delegates to `startStatus` + `completeStatus`.
+
+Two persistence helpers handle writing to the database:
+
+- **`persistAuditStatus(dataAccess, auditId, auditResult, log, isError)`** -- Writes auditResult to DB via `Audit.updateByKeys()`. Used by Steps 2/3 (single-threaded, no concurrency risk).
+- **`persistAuditStatusWithFreshRead(dataAccess, auditId, status, metadata, log, isError)`** -- Reads latest auditResult from DB before writing, to minimize lost-update window from concurrent Mystique batch responses. Used by the guidance handler.
 
 ### Key Framework Insight
 
-Only Step 1's return value is persisted by the framework (via `processAuditResult()` when `!hasNext`). Steps 2 and 3 must explicitly call `audit.setAuditResult()` + `audit.save()` to update the audit record. This follows the pattern established by `page-type/guidance-handler.js` and `internal-links/result-utils.js`.
+Only Step 1's return value is persisted by the framework (via `processAuditResult()` → `Audit.create()` when `!hasNext`). Steps 2/3 and the guidance handler must explicitly persist status updates.
+
+The Audit schema has `allowUpdates(false)`, which means `audit.setAuditResult()` and `audit.save()` do not exist on Audit model instances. Instead, we use `Audit.updateByKeys({ auditId }, { auditResult, isError })` -- a collection-level method that bypasses the model restriction and writes directly to PostgREST.
 
 ### Coralogix Alert Tag
 
@@ -135,9 +142,13 @@ All "cannot proceed" conditions (no top pages, no scrape results) use `log.error
 
 4. **Silent return vs throw on data errors** -- Error paths like "no top pages" return status objects instead of throwing. This persists the error status to the audit record. The StepAudit framework still chains to the next step (matching canonical audit pattern), but the downstream step handles missing data gracefully.
 
-5. **Helpers use spread to preserve fields** -- All three helpers use `{ ...existing, ... }` when calling `setAuditResult` to avoid silently dropping top-level fields. This was identified and fixed during code review.
+5. **Pure helper functions** -- Status helpers are pure functions that take/return plain `auditResult` objects. This avoids dependency on the Audit model (which has `allowUpdates(false)`) and makes them trivially testable.
 
-6. **Consistent error log severity** -- All "cannot proceed" conditions use `log.error` with the Coralogix tag for consistent alerting. Fixed during code review (was inconsistently using `log.info` for some).
+6. **Consistent error log severity** -- All "cannot proceed" conditions use `log.error` with the Coralogix tag for consistent alerting.
+
+7. **`Audit.updateByKeys` for persistence** -- The Audit schema disables updates (`allowUpdates(false)`), so `audit.setAuditResult()` and `audit.save()` don't exist. We use `Audit.updateByKeys()` (a collection-level method) that bypasses model restrictions and writes directly to PostgREST.
+
+8. **Two persistence flavors for race safety** -- Steps 2/3 are single-threaded per audit, so a simple write suffices. The guidance handler can receive concurrent Mystique batch responses, so it uses a fresh-read-before-write pattern to minimize lost updates.
 
 ---
 
@@ -146,4 +157,4 @@ All "cannot proceed" conditions (no top pages, no scrape results) use `log.error
 1. All tests pass: `npm run test:spec -- test/audits/image-alt-text/handler.test.js test/audits/image-alt-text/guidance-missing-alt-text-handler.test.js test/audits/image-alt-text/opportunity-handler.test.js`
 2. 100% line/branch/function coverage on all modified source files
 3. No `throw new Error` in `image-alt-text/` without a status persisted first
-4. All `audit.save()` calls for error status wrapped in try-catch to avoid masking original errors
+4. All `Audit.updateByKeys()` calls wrapped in try-catch to avoid masking original errors
