@@ -219,8 +219,11 @@ export async function handleCdnBucketConfigChanges(context, data) {
   configuration.enableHandlerForSite('page-citability', site);
   await configuration.save();
 
-  // Run analysis and reporting for CS fastly customers
-  if (cdnProvider === SERVICE_PROVIDER_TYPES.AEM_CS_FASTLY) {
+  // Run analysis and reporting for Adobe-managed Fastly customers
+  if (
+    cdnProvider === SERVICE_PROVIDER_TYPES.AEM_CS_FASTLY
+    || (cdnProvider === SERVICE_PROVIDER_TYPES.COMMERCE_FASTLY && pathId)
+  ) {
     await handleAdobeFastly(siteId, context);
   }
 }

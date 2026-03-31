@@ -311,7 +311,7 @@ async function run(message, context) {
       const site = await Site.findById(siteId);
       if (site) {
         // Set the requiresValidation flag on the site object
-        const requiresValidation = await checkSiteRequiresValidation(site, context);
+        const requiresValidation = await checkSiteRequiresValidation(site, context, type);
         site.requiresValidation = requiresValidation;
         context.site = site;
       }

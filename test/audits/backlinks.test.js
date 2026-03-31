@@ -946,19 +946,16 @@ describe('Backlinks Tests', function () {
       context.env.BRIGHT_DATA_ZONE = 'test-zone';
       context.env.BRIGHT_DATA_VALIDATE_URLS = 'true';
 
-      // Mock Bright Data returning a result
+      // SERP result must score > 0 against broken URL (same section + keyword overlap)
       mockBrightDataClient.googleSearchWithFallback.resolves({
-        results: [{ link: 'https://example.com/valid-page', title: 'Valid Page' }],
-        query: 'site:example.com broken page',
-        keywords: 'broken page',
+        results: [{ link: 'https://example.com/blog/broken-page-updated', title: 'Updated Page' }],
+        query: 'site:example.com blog broken page',
+        keywords: 'blog broken page',
       });
 
-      // Mock the URL validation - nock returns 200 for valid URLs (both HEAD and GET)
+      // Mock the URL validation - nock returns 200 for valid URLs
       nock('https://example.com')
-        .head('/valid-page')
-        .reply(200);
-      nock('https://example.com')
-        .get('/valid-page')
+        .get('/blog/broken-page-updated')
         .reply(200);
 
       context.audit.getAuditResult.returns({
@@ -966,7 +963,6 @@ describe('Backlinks Tests', function () {
         brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
       });
 
-      // Setup opportunity properly for the mocked handler
       const mockOpportunity = {
         getId: () => 'opportunity-id',
         setAuditId: sinon.stub(),
@@ -980,7 +976,6 @@ describe('Backlinks Tests', function () {
       };
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
 
-      // Use /blog/ prefix to match topPages paths
       const mockSuggestion = {
         getId: () => 'test-suggestion-1',
         getData: () => ({
@@ -990,14 +985,15 @@ describe('Backlinks Tests', function () {
         setData: sinon.stub(),
         save: sinon.stub().resolves(),
       };
-      const testSuggestions = [mockSuggestion];
-      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(testSuggestions);
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves([mockSuggestion]);
       context.dataAccess.Suggestion.findById = sinon.stub().resolves(mockSuggestion);
 
       await mockedGenerateSuggestionData(context);
 
-      // Suggestion should be updated since URL is valid
+      // Suggestion should be updated with validated URL
       expect(mockSuggestion.setData).to.have.been.calledOnce;
+      const savedData = mockSuggestion.setData.getCall(0).args[0];
+      expect(savedData.urlsSuggested).to.deep.equal(['https://example.com/blog/broken-page-updated']);
     });
 
     it('should skip suggestion when validated URL returns 404', async () => {
