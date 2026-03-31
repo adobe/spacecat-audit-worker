@@ -77,7 +77,7 @@ describe('LLM Error Pages Utils', () => {
   describe('getLlmProviderPattern', () => {
     it('should return correct pattern for valid provider', () => {
       const result = getLlmProviderPattern('chatgpt');
-      expect(result).to.equal('(?i)ChatGPT|GPTBot|OAI-SearchBot');
+      expect(result).to.equal('(?i)(ChatGPT|GPTBot|OAI-SearchBot)(?!.*(Tokowaka|Spacecat))');
     });
 
     it('should return null for invalid provider', () => {
@@ -97,7 +97,7 @@ describe('LLM Error Pages Utils', () => {
 
     it('should be case insensitive', () => {
       const result = getLlmProviderPattern('CHATGPT');
-      expect(result).to.equal('(?i)ChatGPT|GPTBot|OAI-SearchBot');
+      expect(result).to.equal('(?i)(ChatGPT|GPTBot|OAI-SearchBot)(?!.*(Tokowaka|Spacecat))');
     });
   });
 
@@ -117,14 +117,14 @@ describe('LLM Error Pages Utils', () => {
     it('should build filter for specific providers', () => {
       const result = buildLlmUserAgentFilter(['chatgpt', 'perplexity']);
       expect(result).to.include('REGEXP_LIKE(user_agent,');
-      expect(result).to.include('ChatGPT|GPTBot|OAI-SearchBot');
+      expect(result).to.include('(ChatGPT|GPTBot|OAI-SearchBot)(?!.*(Tokowaka|Spacecat))');
       expect(result).to.include('Perplexity');
     });
 
     it('should build filter for all providers when none specified', () => {
       const result = buildLlmUserAgentFilter();
       expect(result).to.include('REGEXP_LIKE(user_agent,');
-      expect(result).to.include('ChatGPT|GPTBot|OAI-SearchBot');
+      expect(result).to.include('(ChatGPT|GPTBot|OAI-SearchBot)(?!.*(Tokowaka|Spacecat))');
       expect(result).to.include('Perplexity');
       expect(result).to.include('Claude(?!-web)');
       expect(result).to.include('Gemini');
@@ -216,7 +216,7 @@ describe('LLM Error Pages Utils', () => {
         sinon.match({
           databaseName: 'test_db',
           tableName: 'test_table',
-          whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+          whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)(ChatGPT|GPTBot|OAI-SearchBot)(?!.*(Tokowaka|Spacecat))\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
         }),
         './src/llm-error-pages/sql/llm-error-pages.sql',
       );
@@ -238,7 +238,7 @@ describe('LLM Error Pages Utils', () => {
         sinon.match({
           databaseName: 'test_db',
           tableName: 'test_table',
-          whereClause: 'WHERE REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+          whereClause: 'WHERE REGEXP_LIKE(user_agent, \'(?i)(ChatGPT|GPTBot|OAI-SearchBot)(?!.*(Tokowaka|Spacecat))\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
         }),
         './src/llm-error-pages/sql/llm-error-pages.sql',
       );
@@ -270,7 +270,7 @@ describe('LLM Error Pages Utils', () => {
         sinon.match({
           databaseName: 'test_db',
           tableName: 'test_table',
-          whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+          whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)(ChatGPT|GPTBot|OAI-SearchBot)(?!.*(Tokowaka|Spacecat))\') AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
         }),
         './src/llm-error-pages/sql/llm-error-pages.sql',
       );

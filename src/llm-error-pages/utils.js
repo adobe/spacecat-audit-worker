@@ -20,7 +20,7 @@ import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
 // ============================================================================
 
 export const LLM_USER_AGENT_PATTERNS = {
-  chatgpt: '(?i)ChatGPT|GPTBot|OAI-SearchBot',
+  chatgpt: '(?i)(ChatGPT|GPTBot|OAI-SearchBot)(?!.*(Tokowaka|Spacecat))',
   perplexity: '(?i)Perplexity',
   claude: '(?i)Claude(?!-web)',
   gemini: '(?i)Gemini',
