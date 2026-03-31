@@ -71,7 +71,7 @@ function diffRows(desiredRows, existingByKey, keyFn, compareFields) {
       const changed = changedFields(row, existing, compareFields);
       if (changed.length > 0) {
         toUpsert.push(row);
-        dryRunUpdates.push({ ...row, _changedFields: changed });
+        dryRunUpdates.push({ ...row, _changedFields: changed, _existing: existing });
         updated += 1;
       } else {
         unchanged += 1;
@@ -86,12 +86,38 @@ function diffRows(desiredRows, existingByKey, keyFn, compareFields) {
 
 function logDryRunSummary(log, label, toInsert, toUpdate) {
   log.info(`[DRY RUN] ${label}: ${toInsert.length} to insert, ${toUpdate.length} to update`);
+
   toUpdate.slice(0, 10).forEach((row) => {
-    const { _changedFields, ...data } = row;
-    log.info(`[DRY RUN] ${label} update (changed: ${_changedFields.join(', ')}): ${JSON.stringify(data)}`);
+    const { _changedFields, _existing, ...data } = row;
+    const keyFields = Object.entries(data)
+      .filter(([k]) => k.endsWith('_id') && !_changedFields.includes(k))
+      .map(([k, v]) => `${k}=${v}`)
+      .join(', ');
+
+    const diff = _changedFields.map((f) => {
+      const oldVal = JSON.stringify(_existing[f]);
+      const newVal = JSON.stringify(data[f]);
+      return `  ${f}: ${oldVal} → ${newVal}`;
+    }).join('\n');
+
+    log.info(`[DRY RUN] ${label} UPDATE [${keyFields}]:\n${diff}`);
   });
-  if (toInsert.length > 0) {
-    log.info(`[DRY RUN] ${label} insert sample: ${JSON.stringify(toInsert[0])}`);
+
+  toInsert.slice(0, 5).forEach((row) => {
+    log.info(`[DRY RUN] ${label} INSERT: ${JSON.stringify(row)}`);
+  });
+
+  if (toUpdate.length > 0) {
+    const fieldFreq = {};
+    toUpdate.forEach(({ _changedFields }) => {
+      _changedFields.forEach((f) => {
+        fieldFreq[f] = (fieldFreq[f] || 0) + 1;
+      });
+    });
+    const summary = Object.entries(fieldFreq)
+      .map(([f, count]) => `${f}: ${count}`)
+      .join(', ');
+    log.info(`[DRY RUN] ${label} changed-field distribution: ${summary}`);
   }
 }
 
