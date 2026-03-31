@@ -15,16 +15,16 @@
 import { expect } from 'chai';
 import { pickUrlsFromSerpResults } from '../../src/support/bright-data-serp-urls.js';
 
+const BROKEN = 'https://example.com/dk/blog/seo-guide';
+
 describe('pickUrlsFromSerpResults', () => {
   it('returns empty array when results is not an array', () => {
-    expect(pickUrlsFromSerpResults(undefined, 'https://example.com/x')).to.deep.equal([]);
-    expect(pickUrlsFromSerpResults({}, 'https://example.com/x')).to.deep.equal([]);
+    expect(pickUrlsFromSerpResults(undefined, BROKEN)).to.deep.equal([]);
+    expect(pickUrlsFromSerpResults({}, BROKEN)).to.deep.equal([]);
   });
 
-  it('treats non-positive integer maxUrls as default cap', () => {
-    const results = [{ link: 'https://example.com/a' }];
-    expect(pickUrlsFromSerpResults(results, 'https://example.com/x', { maxUrls: 0 })).to.deep.equal(['https://example.com/a']);
-    expect(pickUrlsFromSerpResults(results, 'https://example.com/x', { maxUrls: -1 })).to.deep.equal(['https://example.com/a']);
+  it('returns empty array when results is empty', () => {
+    expect(pickUrlsFromSerpResults([], BROKEN)).to.deep.equal([]);
   });
 
   it('ignores organic rows without link', () => {
@@ -32,66 +32,114 @@ describe('pickUrlsFromSerpResults', () => {
       {},
       { link: null },
       { link: '' },
-      { link: 'https://example.com/ok' },
+      { link: 'https://example.com/dk/blog/seo-tips' },
     ];
-    expect(pickUrlsFromSerpResults(results, 'https://example.com/x')).to.deep.equal(['https://example.com/ok']);
-  });
-
-  it('uses default cap of 5 when maxUrls is missing or not a positive integer', () => {
-    const results = Array.from({ length: 8 }, (_, i) => ({ link: `https://example.com/p${i}` }));
-    expect(pickUrlsFromSerpResults(results, 'https://example.com/x')).to.have.lengthOf(5);
-    expect(pickUrlsFromSerpResults(results, 'https://example.com/x', { maxUrls: 3.7 })).to.have.lengthOf(5);
-    expect(pickUrlsFromSerpResults(results, 'https://example.com/x', {})).to.have.lengthOf(5);
-  });
-
-  it('dedupes duplicate URLs in the non-locale-matched bucket', () => {
-    const results = [
-      { link: 'https://example.com/fr/page' },
-      { link: 'https://example.com/fr/page' },
-    ];
-    expect(pickUrlsFromSerpResults(results, 'https://example.com/dk/old')).to.deep.equal([
-      'https://example.com/fr/page',
-    ]);
-  });
-
-  it('returns multiple non-file URLs in SERP order with locale matches first', () => {
-    const results = [
-      { link: 'https://example.com/dk/brochure.pdf' },
-      { link: 'https://example.com/dk/page-a' },
-      { link: 'https://example.com/dk/page-b' },
-      { link: 'https://example.com/us/page' },
-    ];
-    const picked = pickUrlsFromSerpResults(results, 'https://example.com/dk/old');
-    expect(picked).to.deep.equal([
-      'https://example.com/dk/page-a',
-      'https://example.com/dk/page-b',
-      'https://example.com/us/page',
-    ]);
+    const picked = pickUrlsFromSerpResults(results, BROKEN);
+    expect(picked).to.deep.equal(['https://example.com/dk/blog/seo-tips']);
   });
 
   it('skips all-PDF results', () => {
     const results = [
-      { link: 'https://example.com/a.pdf' },
-      { link: 'https://example.com/b.pdf' },
+      { link: 'https://example.com/dk/blog/seo-guide.pdf' },
+      { link: 'https://example.com/dk/blog/seo-guide.pptx' },
     ];
-    expect(pickUrlsFromSerpResults(results, 'https://example.com/x')).to.deep.equal([]);
+    expect(pickUrlsFromSerpResults(results, BROKEN)).to.deep.equal([]);
   });
 
-  it('respects maxUrls', () => {
+  it('filters out URLs that score 0 (wrong domain, homepage, unrelated)', () => {
     const results = [
-      { link: 'https://example.com/1' },
-      { link: 'https://example.com/2' },
-      { link: 'https://example.com/3' },
+      { link: 'https://other.com/dk/blog/seo-guide' },
+      { link: 'https://example.com/' },
+      { link: 'https://example.com/careers/apply-now' },
     ];
-    expect(pickUrlsFromSerpResults(results, 'https://example.com/x', { maxUrls: 2 }))
-      .to.deep.equal(['https://example.com/1', 'https://example.com/2']);
+    expect(pickUrlsFromSerpResults(results, BROKEN)).to.deep.equal([]);
   });
 
   it('dedupes by case-insensitive URL', () => {
     const results = [
-      { link: 'https://example.com/Same' },
-      { link: 'https://example.com/same' },
+      { link: 'https://example.com/dk/blog/SEO-Guide-Updated' },
+      { link: 'https://example.com/dk/blog/seo-guide-updated' },
     ];
-    expect(pickUrlsFromSerpResults(results, 'https://example.com/x')).to.deep.equal(['https://example.com/Same']);
+    const picked = pickUrlsFromSerpResults(results, BROKEN);
+    expect(picked).to.deep.equal(['https://example.com/dk/blog/SEO-Guide-Updated']);
+  });
+
+  it('uses default cap of 5', () => {
+    const results = Array.from({ length: 8 }, (_, i) => ({
+      link: `https://example.com/dk/blog/seo-guide-variant-${i}`,
+    }));
+    const picked = pickUrlsFromSerpResults(results, BROKEN);
+    expect(picked).to.have.lengthOf(5);
+  });
+
+  it('treats non-positive integer maxUrls as default cap', () => {
+    const results = [{ link: 'https://example.com/dk/blog/seo-tips' }];
+    expect(pickUrlsFromSerpResults(results, BROKEN, { maxUrls: 0 })).to.have.lengthOf(1);
+    expect(pickUrlsFromSerpResults(results, BROKEN, { maxUrls: -1 })).to.have.lengthOf(1);
+    expect(pickUrlsFromSerpResults(results, BROKEN, { maxUrls: 3.7 })).to.have.lengthOf(1);
+  });
+
+  it('respects maxUrls', () => {
+    const results = [
+      { link: 'https://example.com/dk/blog/seo-tips' },
+      { link: 'https://example.com/dk/blog/seo-strategies' },
+      { link: 'https://example.com/dk/blog/seo-basics' },
+    ];
+    const picked = pickUrlsFromSerpResults(results, BROKEN, { maxUrls: 2 });
+    expect(picked).to.have.lengthOf(2);
+  });
+
+  it('places locale-matching URLs before non-matching ones', () => {
+    const results = [
+      { link: 'https://example.com/fr/blog/seo-guide-updated' },
+      { link: 'https://example.com/dk/blog/seo-tips' },
+    ];
+    const picked = pickUrlsFromSerpResults(results, BROKEN);
+    expect(picked[0]).to.equal('https://example.com/dk/blog/seo-tips');
+    expect(picked[1]).to.equal('https://example.com/fr/blog/seo-guide-updated');
+  });
+
+  it('sorts by score within the same locale group', () => {
+    const results = [
+      { link: 'https://example.com/dk/other/seo-stuff' },
+      { link: 'https://example.com/dk/blog/seo-guide-updated' },
+    ];
+    const picked = pickUrlsFromSerpResults(results, BROKEN);
+    expect(picked[0]).to.equal('https://example.com/dk/blog/seo-guide-updated');
+    expect(picked[1]).to.equal('https://example.com/dk/other/seo-stuff');
+  });
+
+  it('sorts by score within the non-locale group', () => {
+    const results = [
+      { link: 'https://example.com/fr/resources/seo-guide' },
+      { link: 'https://example.com/fr/blog/seo-guide-updated' },
+    ];
+    const picked = pickUrlsFromSerpResults(results, BROKEN);
+    expect(picked[0]).to.equal('https://example.com/fr/blog/seo-guide-updated');
+    expect(picked[1]).to.equal('https://example.com/fr/resources/seo-guide');
+  });
+
+  it('combines locale priority and score sorting', () => {
+    const results = [
+      { link: 'https://example.com/fr/blog/seo-guide-updated' },
+      { link: 'https://example.com/dk/resources/seo-guide' },
+      { link: 'https://example.com/dk/blog/seo-tips' },
+      { link: 'https://example.com/fr/resources/seo-guide' },
+    ];
+    const picked = pickUrlsFromSerpResults(results, BROKEN);
+    expect(picked[0]).to.include('/dk/');
+    expect(picked[1]).to.include('/dk/');
+    expect(picked[2]).to.include('/fr/');
+    expect(picked[3]).to.include('/fr/');
+  });
+
+  it('excludes unscrape-able file types from scored results', () => {
+    const results = [
+      { link: 'https://example.com/dk/blog/seo-guide.pdf' },
+      { link: 'https://example.com/dk/blog/seo-guide.xls' },
+      { link: 'https://example.com/dk/blog/seo-tips' },
+    ];
+    const picked = pickUrlsFromSerpResults(results, BROKEN);
+    expect(picked).to.deep.equal(['https://example.com/dk/blog/seo-tips']);
   });
 });
