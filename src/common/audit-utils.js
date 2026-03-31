@@ -94,3 +94,32 @@ export async function sendContinuationMessage(message, context) {
     throw e;
   }
 }
+
+/**
+ * Normalizes SQS `message.data` (JSON string or object) for RunnerAudit.
+ * Returns a plain object, or `undefined` if missing, empty, invalid JSON, or not a plain object
+ * (arrays excluded).
+ * @param {unknown} data - `message.data` from the audit job payload
+ * @returns {object|undefined}
+ */
+export function parseMessageDataForRunnerAudit(data) {
+  if (data === undefined || data === null) {
+    return undefined;
+  }
+  let parsed = data;
+  if (typeof data === 'string') {
+    const trimmed = data.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      return undefined;
+    }
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return undefined;
+  }
+  return parsed;
+}
