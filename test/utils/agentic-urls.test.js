@@ -429,7 +429,7 @@ describe('agentic-urls', () => {
       );
     });
 
-    it('should use overrideBaseURL from site config over finalUrl and getBaseURL', async () => {
+    it('should keep using finalUrl even when overrideBaseURL exists in site config', async () => {
       const site = {
         ...createMockSite(),
         getBaseURL: () => 'https://example.com',
@@ -449,9 +449,9 @@ describe('agentic-urls', () => {
 
       const result = await getTopAgenticUrlsFromAthena(site, context);
 
-      expect(result).to.deep.equal(['https://override.example.com/page1']);
+      expect(result).to.deep.equal(['https://www.example.com/page1']);
       expect(context.log.info).to.have.been.calledWith(
-        'Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=https://override.example.com',
+        'Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=https://www.example.com',
       );
     });
 
