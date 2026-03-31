@@ -327,7 +327,7 @@ describe('Reddit Analysis Handler', () => {
   });
 
   describe('Post Processor - sendMystiqueMessagePostProcessor', () => {
-    it('should throw test error instead of sending to Mystique when audit is successful', async () => {
+    it('should send message to Mystique queue with all store data when audit is successful', async () => {
       const auditData = {
         siteId,
         auditResult: {
@@ -349,23 +349,42 @@ describe('Reddit Analysis Handler', () => {
       };
 
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
-      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith(
-        /\[TEST\] Mystique SQS send disabled \(reddit-analysis\)/,
-      );
+      const result = await postProcessor(baseURL, auditData, context);
 
-      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(result).to.deep.equal(auditData);
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).to.have.been.calledWith(
+        'spacecat-to-mystique',
+        sinon.match({
+          type: 'guidance:reddit-analysis',
+          siteId,
+          url: baseURL,
+          auditId,
+          deliveryType: 'aem_edge',
+          data: sinon.match({
+            companyName: 'Example Corp',
+            companyWebsite: baseURL,
+            competitors: ['Competitor A'],
+            competitorRegion: 'US',
+            industry: 'Technology',
+            brandKeywords: ['example'],
+            topics: mockComputedTopics,
+            guidelines: mockGuidelines,
+          }),
+        }),
+      );
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.urls).to.have.lengthOf(mockUrls.length);
+      expect(sentMessage.data.urls[0].url).to.equal(mockUrls[0].url);
       expect(context.log.info).to.have.been.calledWith(
         `[Reddit] mystiqueUrlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
       );
       expect(context.log.info).to.have.been.calledWith(
         '[Reddit] Queued Reddit analysis request to Mystique for Example Corp with 2 URLs',
       );
-      expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/\[Reddit\] Failed to send Mystique message: \[TEST\]/),
-      );
     });
 
-    it('should slice URLs using auditResult.mystiqueUrlLimit (send disabled)', async () => {
+    it('should slice URLs using auditResult.mystiqueUrlLimit', async () => {
       const auditData = {
         siteId,
         auditResult: {
@@ -380,18 +399,17 @@ describe('Reddit Analysis Handler', () => {
       };
 
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
-      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith(
-        /\[TEST\] Mystique SQS send disabled \(reddit-analysis\)/,
-      );
+      await postProcessor(baseURL, auditData, context);
 
       expect(context.log.info).to.have.been.calledWith('[Reddit] mystiqueUrlLimit=1 (URLs sent to Mystique)');
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.urls).to.have.lengthOf(1);
       expect(context.log.info).to.have.been.calledWith(
         '[Reddit] Queued Reddit analysis request to Mystique for Test with 1 URLs',
       );
-      expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
-    it('should limit URLs to MYSTIQUE_URLS_LIMIT when many URLs exist (send disabled)', async () => {
+    it('should limit URLs to MYSTIQUE_URLS_LIMIT when many URLs exist', async () => {
       const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 30 }, (_, i) => ({
         url: `https://reddit.com/r/test/page-${i}`, type: 'reddit-analysis', metadata: {},
       }));
@@ -409,16 +427,16 @@ describe('Reddit Analysis Handler', () => {
       };
 
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
-      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith(
-        /\[TEST\] Mystique SQS send disabled \(reddit-analysis\)/,
-      );
+      await postProcessor(baseURL, auditData, context);
+
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
         `[Reddit] Queued Reddit analysis request to Mystique for Test with ${MYSTIQUE_URLS_LIMIT} URLs`,
       );
-      expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
-    it('should limit URLs to mystiqueUrlLimit when set below cap (send disabled)', async () => {
+    it('should limit URLs to mystiqueUrlLimit when set below cap', async () => {
       const manyUrls = Array.from({ length: 20 }, (_, i) => ({
         url: `https://reddit.com/r/test/page-${i}`, type: 'reddit-analysis', metadata: {},
       }));
@@ -437,18 +455,17 @@ describe('Reddit Analysis Handler', () => {
       };
 
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
-      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith(
-        /\[TEST\] Mystique SQS send disabled \(reddit-analysis\)/,
-      );
+      await postProcessor(baseURL, auditData, context);
 
       expect(context.log.info).to.have.been.calledWith('[Reddit] mystiqueUrlLimit=4 (URLs sent to Mystique)');
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.urls).to.have.lengthOf(4);
       expect(context.log.info).to.have.been.calledWith(
         '[Reddit] Queued Reddit analysis request to Mystique for Test with 4 URLs',
       );
-      expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
-    it('should fall back to MYSTIQUE_URLS_LIMIT when urlLimit is absent (send disabled)', async () => {
+    it('should fall back to MYSTIQUE_URLS_LIMIT when urlLimit is absent', async () => {
       const manyUrls = Array.from({ length: MYSTIQUE_URLS_LIMIT + 5 }, (_, i) => ({
         url: `https://reddit.com/r/test/page-${i}`, type: 'reddit-analysis', metadata: {},
       }));
@@ -466,16 +483,13 @@ describe('Reddit Analysis Handler', () => {
       };
 
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
-      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith(
-        /\[TEST\] Mystique SQS send disabled \(reddit-analysis\)/,
-      );
+      await postProcessor(baseURL, auditData, context);
+
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
         `[Reddit] mystiqueUrlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
       );
-      expect(context.log.info).to.have.been.calledWith(
-        `[Reddit] Queued Reddit analysis request to Mystique for Test with ${MYSTIQUE_URLS_LIMIT} URLs`,
-      );
-      expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
     it('should skip sending message when audit failed', async () => {
@@ -552,7 +566,7 @@ describe('Reddit Analysis Handler', () => {
       expect(context.log.warn).to.have.been.calledWith('[Reddit] Site not found, skipping Mystique message');
     });
 
-    it('should throw test error before SQS (send disabled)', async () => {
+    it('should throw error when SQS send fails', async () => {
       context.sqs.sendMessage.rejects(new Error('SQS Error'));
 
       const auditData = {
@@ -565,10 +579,8 @@ describe('Reddit Analysis Handler', () => {
       };
 
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
-      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith(
-        /\[TEST\] Mystique SQS send disabled \(reddit-analysis\)/,
-      );
-      expect(context.sqs.sendMessage).to.not.have.been.called;
+      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
+      expect(context.log.error).to.have.been.calledWith('[Reddit] Failed to send Mystique message: SQS Error');
     });
   });
 });

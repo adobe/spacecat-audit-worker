@@ -231,21 +231,16 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     };
 
     log.debug(`${LOG_PREFIX} Built Mystique message type ${message.type}`);
-    // TODO(REMOVE): local debugging — uncomment sendMessage and delete throw before merge
-    // await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.info(
       `${LOG_PREFIX} Queued Reddit analysis request to Mystique for ${config.companyName} `
         + `with ${enrichedUrls.length} URLs`,
     );
-    throw new Error('[TEST] Mystique SQS send disabled (reddit-analysis); restore sendMessage before merge');
+    return auditData;
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
     throw error;
   }
-  /* c8 ignore start — unreachable until send restored ([TEST] throw) */
-  // eslint-disable-next-line no-unreachable -- see c8 ignore above
-  return auditData;
-  /* c8 ignore stop */
 }
 
 export default new AuditBuilder()
