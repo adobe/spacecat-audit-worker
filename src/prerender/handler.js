@@ -1127,7 +1127,7 @@ export async function writeToCitabilityRecords(comparisonResults, siteId, contex
  */
 export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
   const {
-    log, s3Client, env, dataAccess,
+    log, s3Client, env,
   } = context;
   const {
     auditResult,
@@ -1159,8 +1159,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       ...(result.scrapeError && { scrapeError: result.scrapeError }),
     }));
 
-    // Prefer precomputed missingPages from getScrapeJobStats; fall back to querying ScrapeUrl
-    // for direct callers that only provide auditResult results.
+    // missingPages should be precomputed by getScrapeJobStats and passed via auditResult.
     if (Array.isArray(auditResult.missingPages)) {
       currentPages.push(
         ...auditResult.missingPages.map((page) => ({
@@ -1169,33 +1168,6 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
           scrapeJobId: page.scrapeJobId || scrapeJobId || null,
         })),
       );
-    } else if (scrapeJobId && dataAccess?.ScrapeUrl) {
-      try {
-        const allScrapeUrls = await dataAccess.ScrapeUrl.allByScrapeJobId(scrapeJobId);
-        const auditResultUrlSet = new Set(currentPages.map((p) => normalizePathname(p.url)));
-
-        const missingPages = await Promise.all(
-          allScrapeUrls
-            .filter((su) => !auditResultUrlSet.has(normalizePathname(su.getUrl())))
-            .map(async (su) => {
-              const url = su.getUrl();
-              const scrapeJsonKey = getS3Path(url, scrapeJobId, 'scrape.json');
-              const metadata = await getObjectFromKey(s3Client, bucketName, scrapeJsonKey, log)
-                .catch(() => null);
-              return {
-                url,
-                scrapingStatus: 'failed',
-                needsPrerender: false,
-                scrapedAt,
-                scrapeJobId,
-                ...(metadata?.error && { scrapeError: metadata.error }),
-              };
-            }),
-        );
-        currentPages.push(...missingPages);
-      } catch (e) {
-        log.warn(`${LOG_PREFIX} Failed to append missing scrape URLs to status.json for scrapeJobId=${scrapeJobId}: ${e.message}`);
-      }
     }
 
     // Read existing status.json and merge pages so previous runs are not lost.
