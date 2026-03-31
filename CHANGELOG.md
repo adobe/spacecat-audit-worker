@@ -1,3 +1,10 @@
+# [1.382.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.381.1...v1.382.0) (2026-03-31)
+
+
+### Features
+
+* support explicit prerender audit urls ([#2247](https://github.com/adobe/spacecat-audit-worker/issues/2247)) ([8cebc28](https://github.com/adobe/spacecat-audit-worker/commit/8cebc284af193c93983ff4d535ccfd8a46a1f2fc))
+
 ## [1.381.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.381.0...v1.381.1) (2026-03-31)
 
 
