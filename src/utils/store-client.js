@@ -54,8 +54,6 @@ export const URL_TYPES = {
   CITED: Audit.AUDIT_TYPES.CITED_ANALYSIS,
 };
 
-export const MYSTIQUE_URLS_LIMIT = 50;
-
 /**
  * Audit types for guidelines queries
  * These are used as the ?audit= query parameter in /sites/{siteId}/sentiment/config
