@@ -32,13 +32,15 @@ const DOMAIN_ALIASES = Object.freeze({
 });
 
 /**
- * Gets the previous ISO week number and year.
- * @returns {{ week: number, year: number }} Previous week number and year
+ * Gets the ISO week number and year for the previous two weeks.
+ * @returns {Array<{ week: number, year: number }>} Previous two weeks (most recent first)
  */
-function getPreviousWeek() {
-  const now = new Date();
-  now.setUTCDate(now.getUTCDate() - 7);
-  return isoCalendarWeek(now);
+function getPreviousWeeks() {
+  return [1, 2].map((i) => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - (7 * i));
+    return isoCalendarWeek(d);
+  });
 }
 
 /**
@@ -397,13 +399,17 @@ export async function computeTopicsFromBrandPresence(siteId, context) {
     return [];
   }
 
-  const { week, year } = getPreviousWeek();
-  const weekIndex = String(week).padStart(2, '0');
+  const previousWeeks = getPreviousWeeks();
+  const weekLabels = previousWeeks
+    .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
+    .join(', ');
 
-  log.info(`${LOG_PREFIX} Processing week w${weekIndex} of year ${year}`);
+  log.info(`${LOG_PREFIX} Processing weeks: ${weekLabels}`);
 
-  const matchedFiles = filterBrandPresenceFiles(queryIndex, week, year);
-  log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for week w${weekIndex}`);
+  const matchedFiles = previousWeeks.flatMap(
+    ({ week, year }) => filterBrandPresenceFiles(queryIndex, week, year),
+  );
+  log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for weeks ${weekLabels}`);
 
   if (matchedFiles.length === 0) {
     return [];
