@@ -187,6 +187,220 @@ describe('Wikipedia Analysis Handler', () => {
       expect(result.auditResult.error).to.equal('Config error');
       expect(context.log.error).to.have.been.called;
     });
+
+    it('should override wikipediaUrl from auditContext.messageData.wikiUrl', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Override_Article';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: override } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+      expect(context.log.info).to.have.been.calledWith(
+        `[Wikipedia] Using Wikipedia URL override from audit message: ${override}`,
+      );
+    });
+
+    it('should unwrap Slack mrkdwn wikiUrl <url> from messageData', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Slack_Wrapped';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: `  <${override}>  ` } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+    });
+
+    it('should unwrap Slack mrkdwn <url|label> from messageData', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Labeled';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikipediaUrl: `<${override}|Wikipedia page>` } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+    });
+
+    it('should unwrap outer ASCII double quotes around wikiUrl', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Quoted_Wrap';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: `  "${override}"  ` } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+    });
+
+    it('should unwrap outer escaped double quotes (\\") around wikiUrl', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Escaped_Quote_Wrap';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: `\\"${override}\\"` } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+    });
+
+    it('should unwrap quotes outside Slack mrkdwn link', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Both_Wrappers';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: `"<${override}|label>"` } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+    });
+
+    it('should reject Slack-style empty brackets for wikiUrl', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: '<>' } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/after Slack\/mrkdwn normalization/),
+      );
+    });
+
+    it('should use wikipediaUrl from messageData when wikiUrl is absent', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Other';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikipediaUrl: override } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+    });
+
+    it('should prefer wikiUrl over wikipediaUrl in messageData', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        {
+          messageData: {
+            wikiUrl: 'https://en.wikipedia.org/wiki/First',
+            wikipediaUrl: 'https://en.wikipedia.org/wiki/Second',
+          },
+        },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/First');
+    });
+
+    it('should not use top-level wikiUrl without messageData (Slack/API use message.data only)', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { urlLimit: 10 }, wikiUrl: 'https://en.wikipedia.org/wiki/Top' },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
+    });
+
+    it('should ignore invalid override and keep site config', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: 'not-a-valid-url' } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
+      expect(context.log.warn).to.have.been.calledWith(
+        '[Wikipedia] Ignoring invalid wikipedia URL override: not-a-valid-url',
+      );
+    });
+
+    it('should trim wikiUrl override', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: '  https://en.wikipedia.org/wiki/Trimmed  ' } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Trimmed');
+    });
+
+    it('should treat null auditContext like no override', async () => {
+      const result = await wikipediaAnalysisHandler.runner(baseURL, context, mockSite, null);
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
+    });
+
+    it('should ignore whitespace-only override', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: '   ' } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
+    });
+
+    it('should ignore non-string wikiUrl in messageData', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: 12345 } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
+    });
+
+    it('should use wikipediaUrl when wikiUrl is null in messageData', async () => {
+      const fallback = 'https://en.wikipedia.org/wiki/Fallback_From_Null_Wiki';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: null, wikipediaUrl: fallback } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(fallback);
+    });
+
+    it('should accept a long valid wikiUrl override and log messageData fields', async () => {
+      const path = `https://en.wikipedia.org/wiki/${'x'.repeat(100)}`;
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: path } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(path);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(
+          (msg) => typeof msg === 'string'
+            && msg.includes('Wikipedia URL override: messageData fields wikiUrl=')
+            && msg.includes(path)
+            && msg.includes('wikipediaUrl='),
+        ),
+      );
+    });
   });
 
   describe('Post Processor - sendMystiqueMessagePostProcessor', () => {
@@ -223,6 +437,33 @@ describe('Wikipedia Analysis Handler', () => {
             companyWebsite: baseURL,
           }),
         }),
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Queued Wikipedia analysis request to Mystique for companyName=Example Corp wikipediaUrl=https:\/\/en\.wikipedia\.org\/wiki\/Example_Corp/),
+      );
+    });
+
+    it('should log auto-detect when wikipediaUrl is blank in queued Mystique log', async () => {
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          status: 'pending_analysis',
+          config: {
+            companyName: 'Example Corp',
+            companyWebsite: baseURL,
+            wikipediaUrl: '   ',
+            competitors: [],
+            competitorRegion: null,
+          },
+        },
+      };
+
+      const postProcessor = wikipediaAnalysisHandler.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/wikipediaUrl=\(empty → auto-detect\)/),
       );
     });
 
