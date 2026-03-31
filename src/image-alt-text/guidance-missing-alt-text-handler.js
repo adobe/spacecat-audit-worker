@@ -29,22 +29,29 @@ function mapMystiqueSuggestionsToSuggestionDTOs(mystiquesuggestions, opportunity
   return mystiquesuggestions.map((suggestion) => {
     const suggestionId = `${suggestion.pageUrl}/${suggestion.imageId}`;
 
+    const recommendation = {
+      id: suggestionId,
+      pageUrl: suggestion.pageUrl,
+      imageUrl: suggestion.imageUrl,
+      altText: suggestion.altText,
+      isAppropriate: suggestion.isAppropriate,
+      isDecorative: suggestion.isDecorative,
+      xpath: suggestion.xpath,
+      language: suggestion.language,
+      hasAltAttribute: suggestion.hasAltAttribute,
+      isDecorativeByAgent: suggestion.isDecorativeByAgent ?? false,
+    };
+
+    // Preserve factId from Mystique enrichment (autofix bridge)
+    if (suggestion.factId) {
+      recommendation.factId = suggestion.factId;
+    }
+
     return {
       opportunityId,
       type: SuggestionModel.TYPES.CONTENT_UPDATE,
       data: {
-        recommendations: [{
-          id: suggestionId,
-          pageUrl: suggestion.pageUrl,
-          imageUrl: suggestion.imageUrl,
-          altText: suggestion.altText,
-          isAppropriate: suggestion.isAppropriate,
-          isDecorative: suggestion.isDecorative,
-          xpath: suggestion.xpath,
-          language: suggestion.language,
-          hasAltAttribute: suggestion.hasAltAttribute,
-          isDecorativeByAgent: suggestion.isDecorativeByAgent ?? false,
-        }],
+        recommendations: [recommendation],
       },
       rank: 1,
     };
