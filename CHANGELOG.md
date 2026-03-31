@@ -1,3 +1,10 @@
+## [1.382.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.382.1...v1.382.2) (2026-03-31)
+
+
+### Bug Fixes
+
+* process brand presence files from the last two weeks ([#2253](https://github.com/adobe/spacecat-audit-worker/issues/2253)) ([d062112](https://github.com/adobe/spacecat-audit-worker/commit/d062112433cf87f1a3c1232a582f1ae1549d53ba))
+
 ## [1.382.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.382.0...v1.382.1) (2026-03-31)
 
 
