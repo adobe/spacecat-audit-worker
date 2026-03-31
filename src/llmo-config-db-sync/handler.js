@@ -86,10 +86,10 @@ function diffRows(desiredRows, existingByKey, keyFn, compareFields) {
   };
 }
 
-function logDryRunSummary(log, label, toInsert, toUpdate) {
-  log.info(`[DRY RUN] ${label}: ${toInsert.length} to insert, ${toUpdate.length} to update`);
+function logDiffSummary(log, label, toInsert, toUpdate) {
+  log.info(`[DIFF] ${label}: ${toInsert.length} to insert, ${toUpdate.length} to update`);
 
-  toUpdate.slice(0, 100).forEach((row) => {
+  toUpdate.slice(0, 5).forEach((row) => {
     const { _changedFields, _existing, ...data } = row;
     const keyFields = Object.entries(data)
       .filter(([k]) => k.endsWith('_id') && !_changedFields.includes(k))
@@ -102,11 +102,11 @@ function logDryRunSummary(log, label, toInsert, toUpdate) {
       return `  ${f}: ${oldVal} → ${newVal}`;
     }).join('\n');
 
-    log.info(`[DRY RUN] ${label} UPDATE [${keyFields}]:\n${diff}`);
+    log.info(`[DIFF] ${label} UPDATE [${keyFields}]:\n${diff}`);
   });
 
   toInsert.slice(0, 5).forEach((row) => {
-    log.info(`[DRY RUN] ${label} INSERT: ${JSON.stringify(row)}`);
+    log.info(`[DIFF] ${label} INSERT: ${JSON.stringify(row)}`);
   });
 
   if (toUpdate.length > 0) {
@@ -119,7 +119,7 @@ function logDryRunSummary(log, label, toInsert, toUpdate) {
     const summary = Object.entries(fieldFreq)
       .map(([f, count]) => `${f}: ${count}`)
       .join(', ');
-    log.info(`[DRY RUN] ${label} changed-field distribution: ${summary}`);
+    log.info(`[DIFF] ${label} changed-field distribution: ${summary}`);
   }
 }
 
@@ -365,10 +365,9 @@ export default async function llmoConfigDbSync(message, context) {
       (r) => r.category_id,
       CATEGORY_COMPARE_FIELDS,
     );
+    logDiffSummary(log, 'categories', catDiff.dryRunInserts, catDiff.dryRunUpdates);
     if (catDiff.toUpsert.length > 0) {
-      if (dryRun) {
-        logDryRunSummary(log, 'categories', catDiff.dryRunInserts, catDiff.dryRunUpdates);
-      } else {
+      if (!dryRun) {
         const { data: catData, error: catError } = await postgrestClient
           .from('categories')
           .upsert(catDiff.toUpsert, { onConflict: 'organization_id,category_id' })
@@ -404,20 +403,17 @@ export default async function llmoConfigDbSync(message, context) {
       (r) => r.topic_id,
       TOPIC_COMPARE_FIELDS,
     );
-    if (topicDiff.toUpsert.length > 0) {
-      if (dryRun) {
-        logDryRunSummary(log, 'topics', topicDiff.dryRunInserts, topicDiff.dryRunUpdates);
-      } else {
-        const { data: topicData, error: topicError } = await postgrestClient
-          .from('topics')
-          .upsert(topicDiff.toUpsert, { onConflict: 'organization_id,topic_id' })
-          .select('id,topic_id,name');
-        if (topicError) throw new Error(`Failed to upsert topics: ${topicError.message}`);
-        (topicData || []).forEach((t) => {
-          topicLookup.set(t.topic_id, t.id);
-          topicNameLookup.set(t.name, t.id);
-        });
-      }
+    logDiffSummary(log, 'topics', topicDiff.dryRunInserts, topicDiff.dryRunUpdates);
+    if (topicDiff.toUpsert.length > 0 && !dryRun) {
+      const { data: topicData, error: topicError } = await postgrestClient
+        .from('topics')
+        .upsert(topicDiff.toUpsert, { onConflict: 'organization_id,topic_id' })
+        .select('id,topic_id,name');
+      if (topicError) throw new Error(`Failed to upsert topics: ${topicError.message}`);
+      (topicData || []).forEach((t) => {
+        topicLookup.set(t.topic_id, t.id);
+        topicNameLookup.set(t.name, t.id);
+      });
     }
     log.info(`${tag}Topics: ${topicDiff.stats.inserted} inserted, ${topicDiff.stats.updated} updated, ${topicDiff.stats.unchanged} unchanged`);
 
@@ -456,9 +452,8 @@ export default async function llmoConfigDbSync(message, context) {
       });
 
       if (missingCatRows.length > 0) {
-        if (dryRun) {
-          logDryRunSummary(log, 'deleted-ref categories', missingCatRows, []);
-        } else {
+        logDiffSummary(log, 'deleted-ref categories', missingCatRows, []);
+        if (!dryRun) {
           const { data: catData, error: catError } = await postgrestClient
             .from('categories')
             .upsert(missingCatRows, { onConflict: 'organization_id,category_id' })
@@ -470,9 +465,8 @@ export default async function llmoConfigDbSync(message, context) {
       }
 
       if (missingTopicRows.length > 0) {
-        if (dryRun) {
-          logDryRunSummary(log, 'deleted-ref topics', missingTopicRows, []);
-        } else {
+        logDiffSummary(log, 'deleted-ref topics', missingTopicRows, []);
+        if (!dryRun) {
           const { data: topicData, error: topicError } = await postgrestClient
             .from('topics')
             .upsert(missingTopicRows, { onConflict: 'organization_id,topic_id' })
@@ -496,12 +490,9 @@ export default async function llmoConfigDbSync(message, context) {
       (r) => promptLookupKey(r.text, r.topic_id),
       PROMPT_COMPARE_FIELDS,
     );
-    if (promptDiff.toUpsert.length > 0) {
-      if (dryRun) {
-        logDryRunSummary(log, 'prompts', promptDiff.dryRunInserts, promptDiff.dryRunUpdates);
-      } else {
-        await upsertInBatches(postgrestClient, 'prompts', promptDiff.toUpsert, 'brand_id,prompt_id', log);
-      }
+    logDiffSummary(log, 'prompts', promptDiff.dryRunInserts, promptDiff.dryRunUpdates);
+    if (promptDiff.toUpsert.length > 0 && !dryRun) {
+      await upsertInBatches(postgrestClient, 'prompts', promptDiff.toUpsert, 'brand_id,prompt_id', log);
     }
     log.info(`${tag}Prompts: ${promptDiff.stats.inserted} inserted, ${promptDiff.stats.updated} updated, ${promptDiff.stats.unchanged} unchanged`);
 
