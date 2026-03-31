@@ -616,6 +616,54 @@ describe('CDN Analysis Handler', () => {
       expect(deletePrefixes[1]).to.include('aggregated-referral/test-site-id/2025/06/15/10/');
     });
 
+    it('should ignore missing consolidated bucket during forceReprocess cleanup', async () => {
+      const auditContext = {
+        year: 2025, month: 6, day: 15, hour: 10,
+        forceReprocess: true,
+        isSubAudit: true,
+      };
+
+      const orgId = 'test-ims-org-id';
+      const noSuchBucketError = new Error('The specified bucket does not exist');
+      noSuchBucketError.name = 'NoSuchBucket';
+      noSuchBucketError.Code = 'NoSuchBucket';
+      const deleteSpy = sandbox.spy();
+
+      context.s3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'HeadBucketCommand') {
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'DeleteObjectsCommand') {
+          deleteSpy();
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'ListObjectsV2Command') {
+          const { Bucket = '', Prefix = '' } = command.input || {};
+          if (Bucket === 'spacecat-dev-cdn-logs-aggregates-us-east-1') {
+            return Promise.reject(noSuchBucketError);
+          }
+          if (Prefix === `${orgId}/raw/`) {
+            return Promise.resolve({
+              CommonPrefixes: [{ Prefix: `${orgId}/raw/aem-cs-fastly/` }],
+            });
+          }
+          if (Prefix.includes('/raw/aem-cs-fastly/2025/06/15/10/')) {
+            return Promise.resolve({ Contents: [{ Key: `${Prefix}file1.log` }] });
+          }
+          return Promise.resolve({ Contents: [] });
+        }
+        return Promise.resolve({});
+      });
+
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext);
+
+      expect(result.auditResult.providers).to.be.an('array').with.length(1);
+      expect(deleteSpy).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Skipping partition cleanup.*bucket does not exist yet/),
+      );
+    });
+
     it('should rebuild and warn when only one aggregate path exists', async () => {
       const auditContext = {
         year: 2025, month: 6, day: 15, hour: 10,

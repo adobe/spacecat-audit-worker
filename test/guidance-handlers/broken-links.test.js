@@ -95,6 +95,64 @@ describe('guidance-broken-links-remediation handler', () => {
     });
   });
 
+  it('should preserve factId from Mystique enrichment', async () => {
+    const messageWithFactId = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          brokenUrl: 'https://foo.com/with-factid',
+          suggestedUrls: ['https://foo.com/fixed'],
+          aiRationale: 'Suggested fix',
+          factId: 'legacy:opp-123:sugg-456',
+        }],
+      },
+    };
+
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+    });
+    const mockSetData = sandbox.stub();
+    const mockSaveMany = sandbox.stub().resolves();
+    mockContext.dataAccess.Suggestion.batchGetByKeys = sandbox.stub().resolves({
+      data: [{
+        getId: () => 'test-suggestion-id-1',
+        setData: mockSetData,
+        getData: sandbox.stub().returns({
+          url_to: 'https://foo.com/with-factid',
+          url_from: 'https://referrer.com',
+        }),
+      }],
+    });
+    mockContext.dataAccess.Suggestion.saveMany = mockSaveMany;
+    nock('https://foo.com')
+      .get('/fixed')
+      .reply(200);
+
+    const response = await brokenLinksGuidanceHandler(messageWithFactId, mockContext);
+    expect(response.status).to.equal(200);
+
+    expect(mockSaveMany).to.have.been.calledOnce;
+    expect(mockSetData).to.have.been.calledWith({
+      url_to: 'https://foo.com/with-factid',
+      url_from: 'https://referrer.com',
+      urlsSuggested: ['https://foo.com/fixed'],
+      aiRationale: 'Suggested fix',
+      factId: 'legacy:opp-123:sugg-456',
+    });
+  });
+
   it('should return 404 if Site is not found', async () => {
     mockContext.dataAccess.Site.findById = sandbox.stub().resolves(null);
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({});

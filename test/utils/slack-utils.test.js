@@ -14,7 +14,12 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 
 import { BaseSlackClient } from '@adobe/spacecat-shared-slack-client';
-import { postMessage, postMessageSafe } from '../../src/utils/slack-utils.js';
+import {
+  postMessage,
+  postMessageOptional,
+  postMessageSafe,
+  SLACK_TARGETS,
+} from '../../src/utils/slack-utils.js';
 
 describe('Slack Utils', () => {
   let context;
@@ -94,6 +99,52 @@ describe('Slack Utils', () => {
       expect(result.success).to.be.false;
       expect(result.error).to.equal(error);
       expect(context.log.error.calledWith('Failed to send Slack message to channel C123:', error)).to.be.true;
+    });
+  });
+
+  describe('postMessageOptional', () => {
+    it('returns success:false and does not call Slack when channelId is missing', async () => {
+      const result = await postMessageOptional(context, '', 'Hello', { threadTs: '1234567890.123456' });
+
+      expect(result).to.deep.equal({ success: false, result: null });
+      expect(mockSlackClient.postMessage.called).to.be.false;
+    });
+
+    it('returns success:false and does not call Slack when threadTs is missing', async () => {
+      const result = await postMessageOptional(context, 'C123', 'Hello', {});
+
+      expect(result).to.deep.equal({ success: false, result: null });
+      expect(mockSlackClient.postMessage.called).to.be.false;
+    });
+
+    it('delegates to postMessageSafe when channelId and threadTs are present', async () => {
+      const result = await postMessageOptional(context, 'C123', 'Hello', { threadTs: '1234567890.123456' });
+
+      expect(result.success).to.be.true;
+      expect(result.result).to.deep.equal({ channel: 'C123', ts: '1234567890.123456' });
+      expect(mockSlackClient.postMessage.calledOnce).to.be.true;
+      expect(context.log.info.calledWith('Successfully sent Slack message to channel C123')).to.be.true;
+    });
+
+    it('passes target workspace through to the Slack client when sending', async () => {
+      await postMessageOptional(context, 'C123', 'Hello', {
+        threadTs: '1234567890.123456',
+        target: SLACK_TARGETS.WORKSPACE_EXTERNAL,
+      });
+
+      expect(
+        BaseSlackClient.createFrom.calledWith(context, SLACK_TARGETS.WORKSPACE_EXTERNAL),
+      ).to.be.true;
+    });
+
+    it('returns error from postMessageSafe when Slack post fails', async () => {
+      const error = new Error('Slack API error');
+      mockSlackClient.postMessage.rejects(error);
+
+      const result = await postMessageOptional(context, 'C123', 'Hello', { threadTs: '1234567890.123456' });
+
+      expect(result.success).to.be.false;
+      expect(result.error).to.equal(error);
     });
   });
 });
