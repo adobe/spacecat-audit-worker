@@ -20,45 +20,43 @@ const LOG_PREFIX = '[Wikipedia]';
 const REGION_SUFFIXES_RE = /(?:usa|us|uk|eu|de|fr|es|it|nl|be|at|ch|au|ca|jp|kr|cn|br|mx|in|za|global|international|worldwide)$/i;
 
 /**
- * Short hint for logs: type and safe preview of a messageData override field.
- * @param {unknown} value
- * @returns {string}
- */
-function formatOverrideFieldHint(value) {
-  if (value === undefined) return 'undefined';
-  if (value === null) return 'null';
-  if (typeof value === 'string') {
-    const t = value.trim();
-    const preview = t.length > 120 ? `${t.slice(0, 120)}…` : t;
-    return `string(len=${value.length}, preview="${preview}")`;
-  }
-  return `${typeof value}(${String(value)})`;
-}
-
-/**
- * @param {{ url: string }|{ invalid: true, value: string }|undefined} resolution
- * @returns {string}
- */
-function summarizeWikipediaUrlOverride(resolution) {
-  if (resolution === undefined) return 'none';
-  if (resolution.invalid) return `invalid(trimmed="${resolution.value}")`;
-  return `url="${resolution.url}"`;
-}
-
-/**
  * Slack mrkdwn wraps URLs as `<https://…>` or `<https://…|link label>`.
  * Strips that wrapper so values from Slack commands match `isValidUrl`.
+ * Also strips a single outer layer of `"…"` or `\"…\"` (e.g. JSON/shell quoting).
+ *
+ * We peel wrappers from the outside in (slice / pipe split), not with global
+ * `.replace(/[<>"]/g, …)`: Slack links use `<url|label>` — the URL is only the
+ * part before `|`; dropping every `<`/`>` would leave `url|label` and break
+ * `isValidUrl`. Likewise we only strip matching outer quotes so a `"` or `\`
+ * inside the URL (e.g. query) is not removed.
  *
  * @param {string} raw
  * @returns {string}
  */
 function unwrapSlackMrkdwnLink(raw) {
   let s = raw.trim();
-  if (s.length >= 2 && s.startsWith('<') && s.endsWith('>')) {
-    s = s.slice(1, -1).trim();
-    const pipeIdx = s.indexOf('|');
-    if (pipeIdx !== -1) {
-      s = s.slice(0, pipeIdx).trim();
+  const maxPasses = 6;
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    const before = s;
+
+    if (s.length >= 2 && s.startsWith('<') && s.endsWith('>')) {
+      s = s.slice(1, -1).trim();
+      const pipeIdx = s.indexOf('|');
+      if (pipeIdx !== -1) {
+        s = s.slice(0, pipeIdx).trim();
+      }
+    }
+
+    s = s.trim();
+    if (s.length >= 4 && s.startsWith('\\"') && s.endsWith('\\"')) {
+      s = s.slice(2, -2);
+    } else if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+      s = s.slice(1, -1);
+    }
+
+    s = s.trim();
+    if (s === before) {
+      break;
     }
   }
   return s.trim();
@@ -78,22 +76,23 @@ function unwrapSlackMrkdwnLink(raw) {
 function resolveWikipediaUrlOverride(auditContext, log) {
   const md = auditContext?.messageData;
   if (!md) {
-    log?.debug?.(
-      `${LOG_PREFIX} Wikipedia URL override: no messageData (put wikiUrl/wikipediaUrl in message.data)`,
+    log?.info?.(
+      `${LOG_PREFIX} Wikipedia URL override: no messageData`,
     );
     return undefined;
   }
 
   const wikiVal = md.wikiUrl;
   const wikipediaVal = md.wikipediaUrl;
-  log?.debug?.(
-    `${LOG_PREFIX} Wikipedia URL override: messageData fields wikiUrl=${formatOverrideFieldHint(wikiVal)} wikipediaUrl=${formatOverrideFieldHint(wikipediaVal)}`,
+
+  log?.info?.(
+    `${LOG_PREFIX} Wikipedia URL override: messageData fields wikiUrl=${wikiVal} wikipediaUrl=${wikipediaVal}`,
   );
 
   const rawOverride = wikiVal || wikipediaVal;
 
   if (rawOverride === undefined || rawOverride === null || rawOverride === '') {
-    log?.debug?.(
+    log?.info?.(
       `${LOG_PREFIX} Wikipedia URL override: neither wikiUrl nor wikipediaUrl is a usable value`,
     );
     return undefined;
@@ -121,7 +120,7 @@ function resolveWikipediaUrlOverride(auditContext, log) {
     return { invalid: true, value: normalized };
   }
 
-  log?.debug?.(
+  log?.info?.(
     `${LOG_PREFIX} Wikipedia URL override accepted: "${normalized}"`,
   );
 
@@ -199,9 +198,6 @@ async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) 
     const wikipediaConfig = getWikipediaConfig(site);
 
     const wikipediaUrlOverride = resolveWikipediaUrlOverride(auditContext, log);
-    log.info(
-      `${LOG_PREFIX} wikipediaUrlOverride resolution: ${summarizeWikipediaUrlOverride(wikipediaUrlOverride)}`,
-    );
     if (wikipediaUrlOverride?.invalid) {
       log.warn(`${LOG_PREFIX} Ignoring invalid wikipedia URL override: ${wikipediaUrlOverride.value}`);
     } else if (wikipediaUrlOverride?.url) {
@@ -221,7 +217,7 @@ async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) 
       };
     }
 
-    log.info(`${LOG_PREFIX} Wikipedia config: companyName=${wikipediaConfig.companyName}, website=${wikipediaConfig.companyWebsite}`);
+    log.info(`${LOG_PREFIX} Wikipedia config: companyName=${wikipediaConfig.companyName}, website=${wikipediaConfig.companyWebsite}, wikipediaUrl=${wikipediaConfig.wikipediaUrl}`);
 
     return {
       auditResult: {
@@ -298,8 +294,9 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     const wikipediaUrlForLog = config.wikipediaUrl?.trim()
       ? config.wikipediaUrl
       : '(empty → auto-detect)';
+
     log.info(
-      `${LOG_PREFIX} Queued Wikipedia analysis request to Mystique for ${config.companyName} wikipediaUrl=${wikipediaUrlForLog}`,
+      `${LOG_PREFIX} Queued Wikipedia analysis request to Mystique for companyName=${config.companyName} wikipediaUrl=${wikipediaUrlForLog}`,
     );
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);

@@ -228,6 +228,42 @@ describe('Wikipedia Analysis Handler', () => {
       expect(result.auditResult.config.wikipediaUrl).to.equal(override);
     });
 
+    it('should unwrap outer ASCII double quotes around wikiUrl', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Quoted_Wrap';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: `  "${override}"  ` } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+    });
+
+    it('should unwrap outer escaped double quotes (\\") around wikiUrl', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Escaped_Quote_Wrap';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: `\\"${override}\\"` } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+    });
+
+    it('should unwrap quotes outside Slack mrkdwn link', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Both_Wrappers';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: `"<${override}|label>"` } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+    });
+
     it('should reject Slack-style empty brackets for wikiUrl', async () => {
       const result = await wikipediaAnalysisHandler.runner(
         baseURL,
@@ -346,7 +382,7 @@ describe('Wikipedia Analysis Handler', () => {
       expect(result.auditResult.config.wikipediaUrl).to.equal(fallback);
     });
 
-    it('should accept a long valid wikiUrl override (preview truncation in debug)', async () => {
+    it('should accept a long valid wikiUrl override and log messageData fields', async () => {
       const path = `https://en.wikipedia.org/wiki/${'x'.repeat(100)}`;
       const result = await wikipediaAnalysisHandler.runner(
         baseURL,
@@ -356,8 +392,13 @@ describe('Wikipedia Analysis Handler', () => {
       );
 
       expect(result.auditResult.config.wikipediaUrl).to.equal(path);
-      expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(/Wikipedia URL override: messageData fields/),
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(
+          (msg) => typeof msg === 'string'
+            && msg.includes('Wikipedia URL override: messageData fields wikiUrl=')
+            && msg.includes(path)
+            && msg.includes('wikipediaUrl='),
+        ),
       );
     });
   });
@@ -398,7 +439,7 @@ describe('Wikipedia Analysis Handler', () => {
         }),
       );
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Queued Wikipedia analysis request to Mystique for Example Corp wikipediaUrl=https:\/\/en\.wikipedia\.org\/wiki\/Example_Corp/),
+        sinon.match(/Queued Wikipedia analysis request to Mystique for companyName=Example Corp wikipediaUrl=https:\/\/en\.wikipedia\.org\/wiki\/Example_Corp/),
       );
     });
 
