@@ -119,12 +119,11 @@ async function addScreenshots(context, siteId, markdown, jobId) {
   return `${sanitizeMarkdown(markdownWithScreenshots)}`;
 }
 
-export function isLowSeverityGuidanceBody(body) {
-  if (body.issueSeverity) {
+export function isHighSeverityGuidanceBody(body) {
+  if (body?.issueSeverity) {
     const sev = body.issueSeverity.toLowerCase();
-    return sev.includes('none') || sev.includes('low');
+    return sev.includes('high');
   }
-
   return false;
 }
 
