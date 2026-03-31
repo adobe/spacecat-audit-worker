@@ -6139,6 +6139,39 @@ describe('Prerender Audit', () => {
       }]);
     });
 
+    it('should not count FAILED-status URL with unreadable scrape.json in denominator', async () => {
+      // page1 is COMPLETE-status 403; missing has no readable scrape.json (getObjectFromKey => null)
+      const comparisonResults = [{ url: 'https://example.com/page1', hasScrapeMetadata: true, scrapeForbidden: true }];
+      const allScrapeUrls = [
+        { getUrl: () => 'https://example.com/page1' },
+        { getUrl: () => 'https://example.com/missing' },
+      ];
+      // getObjectFromKey returns null — scrape.json not readable
+      const getObjectFromKeyStub = sandbox.stub().resolves(null);
+
+      const { getScrapeJobStats: getScrapeJobStatsMocked } = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+      });
+
+      const context = {
+        log: { debug: sandbox.stub(), warn: sandbox.stub() },
+        dataAccess: { ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves(allScrapeUrls) } },
+        s3Client: {},
+        env: { S3_SCRAPER_BUCKET_NAME: 'bucket' },
+      };
+      const result = await getScrapeJobStatsMocked('job-1', comparisonResults, 1, context);
+      // Denominator = 1 (only page1 with hasScrapeMetadata). Missing has no metadata → excluded.
+      // scrapeForbiddenCount=1, totalUrlsWithScrapeInfo=1 → scrapeForbidden=true
+      expect(result.scrapeForbiddenCount).to.equal(1);
+      expect(result.scrapeForbidden).to.equal(true);
+      expect(result.missingPages).to.deep.equal([{
+        url: 'https://example.com/missing',
+        scrapingStatus: 'failed',
+        needsPrerender: false,
+        // No scrapeError — metadata was null (scrape.json unreadable), so error unknown
+      }]);
+    });
+
     it('should fall back when ScrapeUrl query throws', async () => {
       const context = {
         log: { debug: sandbox.stub(), warn: sandbox.stub() },

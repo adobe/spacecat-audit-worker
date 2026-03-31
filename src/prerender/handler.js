@@ -1124,26 +1124,33 @@ export async function getScrapeJobStats(
     const comparisonUrlSet = new Set(comparisonResults.map((r) => r.url));
     const missingUrls = allScrapeUrls.filter((su) => !comparisonUrlSet.has(su.getUrl()));
 
-    const missingPages = await Promise.all(
+    // Fetch scrape.json for each missing URL; track whether metadata was readable
+    const missingPagesRaw = await Promise.all(
       missingUrls.map(async (su) => {
         const url = su.getUrl();
         const scrapeJsonKey = getS3Path(url, scrapeJobId, 'scrape.json');
         const metadata = await getObjectFromKey(s3Client, bucketName, scrapeJsonKey, log)
           .catch(() => null);
-        return {
-          url,
-          scrapingStatus: 'failed',
-          needsPrerender: false,
-          ...(metadata?.error && { scrapeError: metadata.error }),
-        };
+        return { url, metadata };
       }),
     );
+
+    const missingPages = missingPagesRaw.map(({ url, metadata }) => ({
+      url,
+      scrapingStatus: 'failed',
+      needsPrerender: false,
+      ...(metadata?.error && { scrapeError: metadata.error }),
+    }));
 
     // Combine 403 counts from both COMPLETE and FAILED-status URLs
     const missingForbiddenCount = missingPages
       .filter((p) => p.scrapeError?.statusCode === 403).length;
     const scrapeForbiddenCount = completeForbiddenCount + missingForbiddenCount;
-    const totalUrlsWithScrapeInfo = urlsWithScrapeMetadata.length + missingUrls.length;
+    // Only count missing pages where scrape.json was actually readable in the denominator;
+    // pages with no recoverable metadata are unknown status and don't contribute to the signal
+    const missingWithMetadataCount = missingPagesRaw
+      .filter(({ metadata }) => metadata !== null).length;
+    const totalUrlsWithScrapeInfo = urlsWithScrapeMetadata.length + missingWithMetadataCount;
     const scrapeForbidden = totalUrlsWithScrapeInfo > 0
       && scrapeForbiddenCount === totalUrlsWithScrapeInfo;
 
