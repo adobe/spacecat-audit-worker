@@ -5980,6 +5980,7 @@ describe('Prerender Audit', () => {
       expect(uploadedData.scrapeForbiddenCount).to.equal(1);
       expect(uploadedData.scrapeForbidden).to.equal(false);
       expect(uploadedData.pages).to.have.lengthOf(2); // page1 + forbidden-page
+      expect(uploadedData.pages[1].scrapeJobId).to.equal('scrape-job-123');
     });
 
     it('should preserve scrapeJobId already present on a pre-computed missing page', async () => {
@@ -6011,6 +6012,35 @@ describe('Prerender Audit', () => {
 
       expect(uploadedData.pages).to.have.lengthOf(1);
       expect(uploadedData.pages[0].scrapeJobId).to.equal('missing-page-job-456');
+    });
+
+    it('should set scrapeJobId to null for a pre-computed missing page when neither source provides one', async () => {
+      const auditUrl = 'https://example.com';
+      const missingPage = {
+        url: 'https://example.com/forbidden-page',
+        scrapingStatus: 'failed',
+        needsPrerender: false,
+      };
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          scrapeForbiddenCount: 0,
+          scrapeForbidden: false,
+          results: [],
+          missingPages: [missingPage],
+        },
+      };
+
+      context.dataAccess = { ScrapeUrl: { allByScrapeJobId: sandbox.stub() } };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const putCall = getPutCall(mockS3Client.send);
+      const uploadedData = JSON.parse(putCall.args[0].input.Body);
+
+      expect(uploadedData.pages).to.have.lengthOf(1);
+      expect(uploadedData.pages[0]).to.have.property('scrapeJobId', null);
     });
 
     it('should use auditResult.scrapeForbidden=true when all pages are forbidden', async () => {
