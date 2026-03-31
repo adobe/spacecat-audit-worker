@@ -19,8 +19,11 @@ import chaiAsPromised from 'chai-as-promised';
 
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import {
-  isAuditEnabledForSite, loadExistingAudit, sendContinuationMessage, checkProductCodeEntitlements,
-  preservePassthroughKeys,
+  isAuditEnabledForSite,
+  loadExistingAudit,
+  sendContinuationMessage,
+  checkProductCodeEntitlements,
+  parseMessageDataForRunnerAudit,
 } from '../../src/common/audit-utils.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -378,6 +381,33 @@ describe('Audit Utils Tests', () => {
         `Failed to send message to queue ${message.queueUrl}`,
         sinon.match.instanceOf(Error),
       );
+    });
+  });
+
+  describe('parseMessageDataForRunnerAudit', () => {
+    it('returns undefined when data is missing or null', () => {
+      expect(parseMessageDataForRunnerAudit(undefined)).to.equal(undefined);
+      expect(parseMessageDataForRunnerAudit(null)).to.equal(undefined);
+    });
+
+    it('returns object when data is a plain object', () => {
+      expect(parseMessageDataForRunnerAudit({ urlLimit: '10' })).to.deep.equal({ urlLimit: '10' });
+    });
+
+    it('parses JSON string data', () => {
+      expect(parseMessageDataForRunnerAudit('{"urlLimit":"5"}')).to.deep.equal({ urlLimit: '5' });
+    });
+
+    it('returns undefined when data string is invalid JSON', () => {
+      expect(parseMessageDataForRunnerAudit('{not-json')).to.equal(undefined);
+    });
+
+    it('returns undefined when data string is whitespace only', () => {
+      expect(parseMessageDataForRunnerAudit('   \n\t  ')).to.equal(undefined);
+    });
+
+    it('returns undefined when data is not a plain object', () => {
+      expect(parseMessageDataForRunnerAudit([1, 2])).to.equal(undefined);
     });
   });
 });
