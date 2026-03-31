@@ -329,7 +329,7 @@ describe('Cited Analysis Handler', () => {
   });
 
   describe('Post Processor - sendMystiqueMessagePostProcessor', () => {
-    it('should send message to Mystique queue with all store data when audit is successful', async () => {
+    it('should send message to Mystique queue with config and enriched URLs when audit is successful', async () => {
       const auditData = {
         siteId,
         auditResult: {
@@ -370,12 +370,11 @@ describe('Cited Analysis Handler', () => {
             competitorRegion: 'US',
             industry: 'Technology',
             brandKeywords: ['example'],
-            topics: mockComputedTopics,
-            guidelines: mockGuidelines,
           }),
         }),
       );
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data).to.not.have.keys('topics', 'guidelines');
       expect(sentMessage.data.urls).to.have.lengthOf(mockUrls.length);
       expect(sentMessage.data.urls[0].url).to.equal(mockUrls[0].url);
       expect(context.log.info).to.have.been.calledWith(
