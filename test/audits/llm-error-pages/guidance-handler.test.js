@@ -66,6 +66,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
           urlTo: 'https://example.com/products/item',
           suggestedUrls: ['/products'],
           aiRationale: 'Closest match',
+          suggestionId: 'llm-404-suggestion-w34-2025-0',
         }],
       },
     };
@@ -76,7 +77,6 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
           getId: () => 'test-site-id',
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
-            // keep legacy for code paths that still read it
             getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
             getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
@@ -273,6 +273,58 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
+  });
+
+  it('falls back to generateReportingPeriods when brokenLinks have no suggestionId', async () => {
+    const existingWorkbook = new ExcelJS.Workbook();
+    const sheet = existingWorkbook.addWorksheet('data');
+    sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
+    sheet.addRow(['Chatbots', 'ChatGPT', 150, 245.5, 'US', '/products/item', 'Adobe Creative', 'Product Page', '', '', '']);
+    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
+    readFromSharePointStub.resolves(existingBuffer);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-1',
+      data: {
+        brokenLinks: [{
+          urlFrom: 'ChatGPT',
+          urlTo: 'https://example.com/products/item',
+          suggestedUrls: ['/products'],
+          aiRationale: 'Closest match',
+        }],
+      },
+    };
+
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'test-site-id',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getCdnLogsConfig: () => null,
+            getLlmoDataFolder: () => 'test-customer',
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
+        }),
+      },
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
+      },
+    };
+
+    const context = {
+      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+      dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
+      env: { AWS_ENV: 'test', AWS_REGION: 'us-east-1' },
+    };
+
+    const resp = await guidanceHandler.default(message, context);
+    expect(resp.status).to.equal(200);
+
+    const filenameArg = readFromSharePointStub.firstCall.args[0];
+    expect(filenameArg).to.match(/^agentictraffic-errors-404-w\d{2}-\d{4}\.xlsx$/);
   });
 
   it('handles brokenLinks with actual URL matching and updates', async () => {

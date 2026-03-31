@@ -40,6 +40,9 @@ describe('CodeFixResponseHandler', () => {
       Opportunity: {
         findById: sandbox.stub().resolves(mockOpportunity),
       },
+      Suggestion: {
+        saveMany: sandbox.stub().resolves(),
+      },
     };
 
     context = new MockContextBuilder()
@@ -238,11 +241,13 @@ describe('CodeFixResponseHandler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(200);
-      // Both suggestion1 and suggestion2 should be updated (they have aria-allowed-attr)
-      expect(mockSuggestion1.save).to.have.been.calledOnce;
-      expect(mockSuggestion2.save).to.have.been.calledOnce;
+      // Suggestions are batch-saved via Suggestion.saveMany
+      expect(mockDataAccess.Suggestion.saveMany).to.have.been.called;
+      // suggestion1 and suggestion2 should be updated (they have aria-allowed-attr)
+      expect(mockSuggestion1.setData).to.have.been.called;
+      expect(mockSuggestion2.setData).to.have.been.called;
       // suggestion3 should NOT be updated (it has link-name)
-      expect(mockSuggestion3.save).to.not.have.been.called;
+      expect(mockSuggestion3.setData).to.not.have.been.called;
     });
 
     it('should match suggestions by URL+issue type+selector for PER_PAGE_PER_COMPONENT granularity (new format)', async () => {
@@ -293,9 +298,10 @@ describe('CodeFixResponseHandler', () => {
 
       expect(result.status).to.equal(200);
       // Only buttonSuggestion should be updated (matches URL, type, selector)
-      expect(mockSuggestion1.save).to.not.have.been.called;
-      expect(mockSuggestion2.save).to.not.have.been.called;
-      expect(buttonSuggestion.save).to.have.been.calledOnce;
+      expect(mockDataAccess.Suggestion.saveMany).to.have.been.called;
+      expect(mockSuggestion1.setData).to.not.have.been.called;
+      expect(mockSuggestion2.setData).to.not.have.been.called;
+      expect(buttonSuggestion.setData).to.have.been.called;
     });
 
     it('should use backwards compatible matching for old format (types array)', async () => {
@@ -338,7 +344,7 @@ describe('CodeFixResponseHandler', () => {
 
       expect(result.status).to.equal(200);
       // Old format suggestion should be updated using URL+source+type matching
-      expect(oldFormatSuggestion.save).to.have.been.calledOnce;
+      expect(mockDataAccess.Suggestion.saveMany).to.have.been.called;
     });
 
     it('should not update suggestions when aggregation key does not match', async () => {

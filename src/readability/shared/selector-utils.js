@@ -11,6 +11,63 @@
  */
 
 /**
+ * CSS.escape polyfill for Node.js environment.
+ * Based on https://drafts.csswg.org/cssom/#serialize-an-identifier
+ *
+ * @param {string} value - The string to escape
+ * @returns {string} The escaped CSS identifier
+ */
+function cssEscape(value) {
+  const string = String(value);
+  const { length } = string;
+  let result = '';
+
+  for (let index = 0; index < length; index += 1) {
+    const codeUnit = string.charCodeAt(index);
+
+    // If the character is NULL (U+0000), replace with U+FFFD
+    if (codeUnit === 0x0000) {
+      result += '\uFFFD';
+    } else if (
+      // If the character is in the range [\1-\1F] (U+0001 to U+001F) or is U+007F
+      (codeUnit >= 0x0001 && codeUnit <= 0x001F) || codeUnit === 0x007F
+      // Or is a digit and is the first character or second character after a hyphen
+    ) {
+      result += `\\${codeUnit.toString(16)} `;
+    } else if (
+      // If the character is the first character and is a hyphen, and there is no second character
+      index === 0 && codeUnit === 0x002D && length === 1
+    ) {
+      result += `\\${string.charAt(index)}`;
+    } else if (
+      // If the character is not handled by one of the above rules and is
+      // greater than or equal to U+0080, is `-` (U+002D) or `_` (U+005F), or
+      // is in one of the ranges [0-9] (U+0030 to U+0039), [A-Z] (U+0041 to
+      // U+005A), or [a-z] (U+0061 to U+007A), emit the character as-is.
+      codeUnit >= 0x0080
+      || codeUnit === 0x002D
+      || codeUnit === 0x005F
+      || (codeUnit >= 0x0030 && codeUnit <= 0x0039)
+      || (codeUnit >= 0x0041 && codeUnit <= 0x005A)
+      || (codeUnit >= 0x0061 && codeUnit <= 0x007A)
+    ) {
+      result += string.charAt(index);
+    } else {
+      // Otherwise, the character needs to be escaped
+      result += `\\${string.charAt(index)}`;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Common attributes that can help uniquely identify elements.
+ * Checked in order of preference before falling back to nth-of-type.
+ */
+const UNIQUE_ATTRIBUTES = ['data-testid', 'data-id', 'data-name', 'name', 'role', 'aria-label'];
+
+/**
  * Generates a CSS selector for a single element (without parent context).
  * Works with cheerio elements.
  *
@@ -28,7 +85,7 @@ function getSingleElementSelector(element, includeTag = true) {
 
   // 1. Check for ID (highest priority)
   if (id) {
-    return includeTag ? `${tag}#${id}` : `#${id}`;
+    return includeTag ? `${tag}#${cssEscape(id)}` : `#${cssEscape(id)}`;
   }
 
   // 2. Handle body element
@@ -43,19 +100,31 @@ function getSingleElementSelector(element, includeTag = true) {
   if (className && typeof className === 'string') {
     const classes = className.trim().split(/\s+/).filter(Boolean);
     if (classes.length > 0) {
-      const classSelector = classes.slice(0, 2).join('.');
-      selector = `${tag}.${classSelector}`;
+      const classSelector = classes
+        .slice(0, 2)
+        .map((c) => `.${cssEscape(c.trim())}`)
+        .join('');
+      selector = `${tag}${classSelector}`;
     }
   }
 
-  // 5. Add position information based on siblings of the same type (nth-of-type)
+  // 5. Check for unique attributes before falling back to nth-of-type
   if (!parent) {
     return selector;
   }
 
-  // Get all sibling elements of the same tag type
+  // 6. Try unique attributes first (data-testid, role, etc.)
+  for (const attr of UNIQUE_ATTRIBUTES) {
+    const attrValue = attribs?.[attr];
+    if (attrValue && typeof attrValue === 'string' && attrValue.trim()) {
+      return `${selector}[${attr}="${cssEscape(attrValue.trim())}"]`;
+    }
+  }
+
+  // 7. Add position information based on siblings of the same type (nth-of-type)
+  // Get all direct sibling elements of the same tag type (case-insensitive)
   const siblingsOfSameTag = parent.children.filter(
-    (child) => child.type === 'tag' && child.name === name,
+    (child) => child.type === 'tag' && child.name.toLowerCase() === tag,
   );
 
   // Only one element of this type, no position needed
@@ -73,11 +142,10 @@ function getSingleElementSelector(element, includeTag = true) {
  * Works with cheerio elements.
  *
  * @param {Element} element - The cheerio element to generate a selector path for
- * @param {number} depth - Current depth level (for limiting path length)
  * @param {boolean} isTarget - Whether this is the target element (affects ID format)
  * @returns {string} A CSS selector path string
  */
-function buildSelectorPath(element, depth = 0, isTarget = true) {
+function buildSelectorPath(element, isTarget = true) {
   if (!element || !element.name) {
     return '';
   }
@@ -115,14 +183,8 @@ function buildSelectorPath(element, depth = 0, isTarget = true) {
     return selector;
   }
 
-  // Limit path depth to 3 total elements
-  // (depth 0 = target, depth 1 = 1st parent, depth 2 = 2nd parent)
-  if (depth >= 2) {
-    return selector;
-  }
-
   // Recursively get parent selector (not the target, so ID won't include tag)
-  const parentSelector = buildSelectorPath(parent, depth + 1, false);
+  const parentSelector = buildSelectorPath(parent, false);
 
   // If parent selector is empty or html, just return current selector
   if (!parentSelector || parentSelector === 'html') {

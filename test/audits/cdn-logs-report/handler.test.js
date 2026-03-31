@@ -174,6 +174,7 @@ describe('CDN Logs Report Handler', function test() {
         value: ['www.example.com'],
         key: 'host',
       }],
+      getLlmoCountryCodeIgnoreList: () => undefined,
     };
     return { ...defaultConfig, ...overrides };
   };
@@ -231,6 +232,8 @@ describe('CDN Logs Report Handler', function test() {
       .withSandbox(sandbox)
       .withOverrides({
         env: {
+          AWS_ENV: 'test',
+          AWS_REGION: 'us-east-1',
           SHAREPOINT_CLIENT_ID: 'test-client-id',
           SHAREPOINT_CLIENT_SECRET: 'test-client-secret',
           SHAREPOINT_AUTHORITY: 'https://login.microsoftonline.com/test-tenant-id',
@@ -280,6 +283,219 @@ describe('CDN Logs Report Handler', function test() {
   });
 
   describe('Cdn logs report audit handler', () => {
+    it('skips patterns regeneration when query-index already lists patterns.json', async () => {
+      const fetchRemotePatternsStub = sandbox.stub().resolves(null);
+      const queryIndexHasPatternsFileStub = sandbox.stub().resolves(true);
+      const generatePatternsWorkbookStub = sandbox.stub().resolves(true);
+      const runWeeklyReportStub = sandbox.stub().resolves({ success: true, uploadResult: null });
+      const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
+        '../../../src/cdn-logs-report/utils/report-utils.js': {
+          loadSql: sandbox.stub().resolves('SELECT 1'),
+          generateReportingPeriods: sandbox.stub().returns({
+            weeks: [],
+            periodIdentifier: 'w12-2026',
+          }),
+          fetchRemotePatterns: fetchRemotePatternsStub,
+          queryIndexHasPatternsFile: queryIndexHasPatternsFileStub,
+          getConfigCategories: sandbox.stub().resolves(['Category A']),
+        },
+        '../../../src/utils/cdn-utils.js': {
+          pathHasData: sandbox.stub().resolves(true),
+          getS3Config: sandbox.stub().returns({
+            bucket: 'test-bucket',
+            customerDomain: 'example_com',
+            customerName: 'example',
+            databaseName: 'cdn_logs_example_com',
+            getAthenaTempLocation: () => 's3://temp',
+          }),
+          getCdnAwsRuntime: sandbox.stub().returns({
+            s3Client: {},
+            createAthenaClient: sandbox.stub().returns({
+              execute: sandbox.stub().resolves(),
+            }),
+          }),
+        },
+        '../../../src/cdn-logs-report/utils/report-runner.js': {
+          runWeeklyReport: runWeeklyReportStub,
+        },
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
+          bulkPublishToAdminHlx: sandbox.stub().resolves(),
+        },
+        '../../../src/cdn-logs-report/constants/report-configs.js': {
+          getConfigs: sandbox.stub().returns([{
+            name: 'agentic',
+            aggregatedLocation: 's3://bucket/aggregated/test-site/',
+            tableName: 'aggregated_logs_example_com_consolidated',
+            filePrefix: 'agentictraffic',
+            folderSuffix: 'agentic-traffic',
+            workbookCreator: 'Spacecat Agentic Flat Report',
+            queryFunction: sandbox.stub(),
+            sheetName: 'shared-all',
+          }]),
+        },
+        '../../../src/cdn-logs-report/patterns/patterns-uploader.js': {
+          generatePatternsWorkbook: generatePatternsWorkbookStub,
+        },
+      });
+
+      const result = await localHandler.runner(
+        'https://example.com',
+        context,
+        site,
+        createAuditContext(sandbox, { weekOffset: -1, categoriesUpdated: false }),
+      );
+
+      expect(fetchRemotePatternsStub).to.have.been.calledOnce;
+      expect(queryIndexHasPatternsFileStub).to.have.been.calledOnce;
+      expect(generatePatternsWorkbookStub).to.not.have.been.called;
+      expect(runWeeklyReportStub).to.have.been.calledOnce;
+      expect(context.log.info).to.have.been.calledWith(sinon.match('Skipping fresh patterns generation for test-folder'));
+      expect(result.auditResult).to.have.length(1);
+    });
+
+    it('skips patterns regeneration when patterns.json fetch fails with a non-404 error', async () => {
+      const fetchRemotePatternsStub = sandbox.stub().resolves({ error: true, status: 500, source: 'patterns' });
+      const queryIndexHasPatternsFileStub = sandbox.stub().resolves(false);
+      const generatePatternsWorkbookStub = sandbox.stub().resolves(true);
+      const runWeeklyReportStub = sandbox.stub().resolves({ success: true, uploadResult: null });
+      const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
+        '../../../src/cdn-logs-report/utils/report-utils.js': {
+          loadSql: sandbox.stub().resolves('SELECT 1'),
+          generateReportingPeriods: sandbox.stub().returns({
+            weeks: [],
+            periodIdentifier: 'w12-2026',
+          }),
+          fetchRemotePatterns: fetchRemotePatternsStub,
+          queryIndexHasPatternsFile: queryIndexHasPatternsFileStub,
+          getConfigCategories: sandbox.stub().resolves(['Category A']),
+        },
+        '../../../src/utils/cdn-utils.js': {
+          pathHasData: sandbox.stub().resolves(true),
+          getS3Config: sandbox.stub().returns({
+            bucket: 'test-bucket',
+            customerDomain: 'example_com',
+            customerName: 'example',
+            databaseName: 'cdn_logs_example_com',
+            getAthenaTempLocation: () => 's3://temp',
+          }),
+          getCdnAwsRuntime: sandbox.stub().returns({
+            s3Client: {},
+            createAthenaClient: sandbox.stub().returns({
+              execute: sandbox.stub().resolves(),
+            }),
+          }),
+        },
+        '../../../src/cdn-logs-report/utils/report-runner.js': {
+          runWeeklyReport: runWeeklyReportStub,
+        },
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
+          bulkPublishToAdminHlx: sandbox.stub().resolves(),
+        },
+        '../../../src/cdn-logs-report/constants/report-configs.js': {
+          getConfigs: sandbox.stub().returns([{
+            name: 'agentic',
+            aggregatedLocation: 's3://bucket/aggregated/test-site/',
+            tableName: 'aggregated_logs_example_com_consolidated',
+            filePrefix: 'agentictraffic',
+            folderSuffix: 'agentic-traffic',
+            workbookCreator: 'Spacecat Agentic Flat Report',
+            queryFunction: sandbox.stub(),
+            sheetName: 'shared-all',
+          }]),
+        },
+        '../../../src/cdn-logs-report/patterns/patterns-uploader.js': {
+          generatePatternsWorkbook: generatePatternsWorkbookStub,
+        },
+      });
+
+      const result = await localHandler.runner(
+        'https://example.com',
+        context,
+        site,
+        createAuditContext(sandbox, { weekOffset: -1, categoriesUpdated: false }),
+      );
+
+      expect(fetchRemotePatternsStub).to.have.been.calledOnce;
+      expect(queryIndexHasPatternsFileStub).to.not.have.been.called;
+      expect(generatePatternsWorkbookStub).to.not.have.been.called;
+      expect(runWeeklyReportStub).to.have.been.calledOnce;
+      expect(context.log.info).to.have.been.calledWith(sinon.match('Skipping fresh patterns generation for test-folder'));
+      expect(result.auditResult).to.have.length(1);
+    });
+
+    it('skips patterns regeneration when query-index fetch fails with a non-404 error', async () => {
+      const fetchRemotePatternsStub = sandbox.stub().resolves(null);
+      const queryIndexHasPatternsFileStub = sandbox.stub().resolves({ error: true, status: 500, source: 'query-index' });
+      const generatePatternsWorkbookStub = sandbox.stub().resolves(true);
+      const runWeeklyReportStub = sandbox.stub().resolves({ success: true, uploadResult: null });
+      const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
+        '../../../src/cdn-logs-report/utils/report-utils.js': {
+          loadSql: sandbox.stub().resolves('SELECT 1'),
+          generateReportingPeriods: sandbox.stub().returns({
+            weeks: [],
+            periodIdentifier: 'w12-2026',
+          }),
+          fetchRemotePatterns: fetchRemotePatternsStub,
+          queryIndexHasPatternsFile: queryIndexHasPatternsFileStub,
+          getConfigCategories: sandbox.stub().resolves(['Category A']),
+        },
+        '../../../src/utils/cdn-utils.js': {
+          pathHasData: sandbox.stub().resolves(true),
+          getS3Config: sandbox.stub().returns({
+            bucket: 'test-bucket',
+            customerDomain: 'example_com',
+            customerName: 'example',
+            databaseName: 'cdn_logs_example_com',
+            getAthenaTempLocation: () => 's3://temp',
+          }),
+          getCdnAwsRuntime: sandbox.stub().returns({
+            s3Client: {},
+            createAthenaClient: sandbox.stub().returns({
+              execute: sandbox.stub().resolves(),
+            }),
+          }),
+        },
+        '../../../src/cdn-logs-report/utils/report-runner.js': {
+          runWeeklyReport: runWeeklyReportStub,
+        },
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
+          bulkPublishToAdminHlx: sandbox.stub().resolves(),
+        },
+        '../../../src/cdn-logs-report/constants/report-configs.js': {
+          getConfigs: sandbox.stub().returns([{
+            name: 'agentic',
+            aggregatedLocation: 's3://bucket/aggregated/test-site/',
+            tableName: 'aggregated_logs_example_com_consolidated',
+            filePrefix: 'agentictraffic',
+            folderSuffix: 'agentic-traffic',
+            workbookCreator: 'Spacecat Agentic Flat Report',
+            queryFunction: sandbox.stub(),
+            sheetName: 'shared-all',
+          }]),
+        },
+        '../../../src/cdn-logs-report/patterns/patterns-uploader.js': {
+          generatePatternsWorkbook: generatePatternsWorkbookStub,
+        },
+      });
+
+      const result = await localHandler.runner(
+        'https://example.com',
+        context,
+        site,
+        createAuditContext(sandbox, { weekOffset: -1, categoriesUpdated: false }),
+      );
+
+      expect(fetchRemotePatternsStub).to.have.been.calledOnce;
+      expect(queryIndexHasPatternsFileStub).to.have.been.calledOnce;
+      expect(generatePatternsWorkbookStub).to.not.have.been.called;
+      expect(runWeeklyReportStub).to.have.been.calledOnce;
+      expect(context.log.info).to.have.been.calledWith(sinon.match('Skipping fresh patterns generation for test-folder'));
+      expect(result.auditResult).to.have.length(1);
+    });
+
     it('successfully processes CDN logs report', async () => {
       const clock = sinon.useFakeTimers({
         now: new Date('2025-01-07'),
@@ -306,7 +522,7 @@ describe('CDN Logs Report Handler', function test() {
       expect(context.log.debug).to.have.been.calledWith('Starting CDN logs report audit for https://example.com');
 
       // Verify Athena interactions
-      expect(context.athenaClient.execute).to.have.been.callCount(3);
+      expect(context.athenaClient.execute).to.have.been.callCount(1);
       expect(context.athenaClient.query).to.have.been.callCount(2);
     });
 
@@ -324,6 +540,22 @@ describe('CDN Logs Report Handler', function test() {
       expect(context.log.debug).to.have.been.calledWith(
         sinon.match(`week offset: ${weekOffset}`),
       );
+    });
+
+    it('uses site cdn config region aggregate location when region is configured', async () => {
+      context.env.AWS_REGION = 'eu-west-1';
+      site.getConfig = () => createSiteConfig({
+        getLlmoCdnBucketConfig: () => ({ bucketName: 'cdn-logs-adobe-dev', region: 'eu-west-1' }),
+      });
+      const auditContext = createAuditContext(sandbox, { weekOffset: 0 });
+
+      await handler.runner('https://example.com', context, site, auditContext);
+
+      const listObjectsCalls = context.s3Client.send.getCalls()
+        .filter((call) => call.args[0]?.constructor?.name === 'ListObjectsV2Command');
+      expect(listObjectsCalls.length).to.be.greaterThan(0);
+      expect(listObjectsCalls[0].args[0].input.Bucket)
+        .to.equal('spacecat-test-cdn-logs-aggregates-eu-west-1');
     });
 
     it('runs -1 and 0 on Monday when no weekOffset provided', async () => {
@@ -377,19 +609,6 @@ describe('CDN Logs Report Handler', function test() {
       expect(result.auditResult).to.have.length.greaterThan(0);
       
       expect(context.log.error).to.have.been.calledWith('Failed to bulk publish reports:', sinon.match.instanceOf(Error));
-    });
-
-    it('handles table creation errors', async () => {
-      context.athenaClient.execute.onSecondCall().rejects(new Error('Table creation failed'));
-      const auditContext = createAuditContext(sandbox);
-
-      try {
-        await handler.runner('https://example.com', context, site, auditContext);
-        expect.fail('Expected error to be thrown');
-      } catch (error) {
-        expect(error.message).to.equal('Table creation failed');
-        expect(context.log.error).to.have.been.calledWith('Failed to ensure table exists: Table creation failed');
-      }
     });
 
     describe('LLMO pattern fetch scenarios', () => {

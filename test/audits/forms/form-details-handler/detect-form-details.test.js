@@ -242,7 +242,7 @@ describe('Detect Form Details Handler', () => {
           form: 'testUrl1',
           formSource: 'formSource1',
           a11yIssues: [],
-          formTitle: 'Contact Form',
+          formTitle: 'Forms missing key accessibility attributes — enhancements prepared to support all users',
           formDetails: {
             is_lead_gen: true,
             form_type: 'Contact Form',

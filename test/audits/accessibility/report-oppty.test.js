@@ -114,15 +114,14 @@ describe('Accessibility Report Opportunity Utils', () => {
   describe('createReportOpportunitySuggestionInstance', () => {
     it('should create correct suggestion instance structure with requiresValidation=true', () => {
       const suggestionValue = 'Test accessibility suggestion content';
-      const context = { site: { requiresValidation: true }, dataAccess: {} };
 
-      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
 
       expect(suggestion).to.deep.equal([
         {
           type: 'CODE_CHANGE',
           rank: 1,
-          status: 'PENDING_VALIDATION',
+          status: 'NEW',
           data: {
             suggestionValue: 'Test accessibility suggestion content',
           },
@@ -132,21 +131,14 @@ describe('Accessibility Report Opportunity Utils', () => {
     
     it('should use fallback string literals when Suggestion.STATUSES is undefined', () => {
       const suggestionValue = 'Test accessibility suggestion content';
-      // Create a context with dataAccess.Suggestion but no STATUSES property
-      const context = { 
-        site: { requiresValidation: true }, 
-        dataAccess: { 
-          Suggestion: { /* No STATUSES property */ } 
-        } 
-      };
 
-      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
 
       expect(suggestion).to.deep.equal([
         {
           type: 'CODE_CHANGE',
           rank: 1,
-          status: 'PENDING_VALIDATION', // Should use the fallback string literal
+          status: 'NEW',
           data: {
             suggestionValue: 'Test accessibility suggestion content',
           },
@@ -156,9 +148,8 @@ describe('Accessibility Report Opportunity Utils', () => {
     
     it('should create correct suggestion instance structure with requiresValidation=false', () => {
       const suggestionValue = 'Test accessibility suggestion content';
-      const context = { site: { requiresValidation: false } };
 
-      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
 
       expect(suggestion).to.deep.equal([
         {
@@ -174,15 +165,8 @@ describe('Accessibility Report Opportunity Utils', () => {
     
     it('should use fallback string literals when Suggestion.STATUSES is undefined and requiresValidation=false', () => {
       const suggestionValue = 'Test accessibility suggestion content';
-      // Create a context with dataAccess.Suggestion but no STATUSES property
-      const context = { 
-        site: { requiresValidation: false }, 
-        dataAccess: { 
-          Suggestion: { /* No STATUSES property */ } 
-        } 
-      };
 
-      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
 
       expect(suggestion).to.deep.equal([
         {
@@ -198,27 +182,14 @@ describe('Accessibility Report Opportunity Utils', () => {
     
     it('should use fallback string literals when Suggestion.TYPES is undefined', () => {
       const suggestionValue = 'Test accessibility suggestion content';
-      // Create a context with dataAccess.Suggestion with STATUSES but no TYPES property
-      const context = { 
-        site: { requiresValidation: true }, 
-        dataAccess: { 
-          Suggestion: { 
-            STATUSES: { 
-              PENDING_VALIDATION: 'PENDING_VALIDATION',
-              NEW: 'NEW'
-            }
-            /* No TYPES property */ 
-          } 
-        } 
-      };
 
-      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
 
       expect(suggestion).to.deep.equal([
         {
           type: 'CODE_CHANGE', // Should use the fallback string literal
           rank: 1,
-          status: 'PENDING_VALIDATION',
+          status: 'NEW',
           data: {
             suggestionValue: 'Test accessibility suggestion content',
           },
@@ -228,29 +199,14 @@ describe('Accessibility Report Opportunity Utils', () => {
     
     it('should use fallback string literals when Suggestion.TYPES.CODE_CHANGE is undefined', () => {
       const suggestionValue = 'Test accessibility suggestion content';
-      // Create a context with dataAccess.Suggestion with STATUSES and TYPES but no CODE_CHANGE property
-      const context = { 
-        site: { requiresValidation: true }, 
-        dataAccess: { 
-          Suggestion: { 
-            STATUSES: { 
-              PENDING_VALIDATION: 'PENDING_VALIDATION',
-              NEW: 'NEW'
-            },
-            TYPES: {
-              // No CODE_CHANGE property
-            }
-          } 
-        } 
-      };
 
-      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
 
       expect(suggestion).to.deep.equal([
         {
           type: 'CODE_CHANGE', // Should use the fallback string literal
           rank: 1,
-          status: 'PENDING_VALIDATION',
+          status: 'NEW',
           data: {
             suggestionValue: 'Test accessibility suggestion content',
           },
@@ -259,14 +215,13 @@ describe('Accessibility Report Opportunity Utils', () => {
     });
     
     it('should handle undefined suggestionValue', () => {
-      const context = { site: { requiresValidation: true } };
-      const suggestion = createReportOpportunitySuggestionInstance(undefined, context);
+      const suggestion = createReportOpportunitySuggestionInstance(undefined);
 
       expect(suggestion).to.deep.equal([
         {
           type: 'CODE_CHANGE',
           rank: 1,
-          status: 'PENDING_VALIDATION',
+          status: 'NEW',
           data: {
             suggestionValue: undefined,
           },
@@ -276,7 +231,7 @@ describe('Accessibility Report Opportunity Utils', () => {
     
     it('should handle null context', () => {
       const suggestionValue = 'Test accessibility suggestion content';
-      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, null);
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
       
       expect(suggestion).to.deep.equal([
         {
@@ -292,14 +247,13 @@ describe('Accessibility Report Opportunity Utils', () => {
     
     it('should handle null context.dataAccess', () => {
       const suggestionValue = 'Test accessibility suggestion content';
-      const context = { site: { requiresValidation: true }, dataAccess: null };
-      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
       
       expect(suggestion).to.deep.equal([
         {
           type: 'CODE_CHANGE',
           rank: 1,
-          status: 'PENDING_VALIDATION',
+          status: 'NEW',
           data: {
             suggestionValue: 'Test accessibility suggestion content',
           },
@@ -326,18 +280,16 @@ describe('Accessibility Report Opportunity Utils', () => {
 
     it('should handle empty suggestion value', () => {
       const suggestionValue = '';
-      const context = { site: { requiresValidation: true } };
 
-      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
 
       expect(suggestion[0].data.suggestionValue).to.equal('');
     });
 
     it('should handle null suggestion value', () => {
       const suggestionValue = null;
-      const context = { site: { requiresValidation: true } };
 
-      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
 
       expect(suggestion[0].data.suggestionValue).to.be.null;
     });
@@ -348,9 +300,8 @@ describe('Accessibility Report Opportunity Utils', () => {
         description: 'Ensure text has sufficient contrast ratio',
         priority: 'high',
       };
-      const context = { site: { requiresValidation: true } };
 
-      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
 
       expect(suggestion[0].data.suggestionValue).to.deep.equal(suggestionValue);
     });
@@ -364,8 +315,8 @@ describe('Accessibility Report Opportunity Utils', () => {
         runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Runbook_Template.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
         origin: 'AUTOMATION',
         type: 'a11y-assistive',
-        title: 'Accessibility - Assistive technology is incompatible on site',
-        description: 'This report provides a structured overview of all detected accessibility issues across your website, organized by severity and page. Each issue includes WCAG guidelines, impact assessment, and actionable recommendations for improvement.',
+        title: 'Make your site clearer for assistive tech users — we\'ll fix your aria label issues',
+        description: 'Clear ARIA labels help screen readers convey content accurately — improving inclusivity and usability.',
         tags: ['a11y'],
         status: 'NEW',
         data: {
@@ -428,8 +379,8 @@ describe('Accessibility Report Opportunity Utils', () => {
         runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Runbook_Template.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
         origin: 'AUTOMATION',
         type: 'a11y-color-contrast',
-        title: 'Accessibility - Color contrast is insufficient on site',
-        description: 'This report provides a structured overview of all detected accessibility issues across your website, organized by severity and page. Each issue includes WCAG guidelines, impact assessment, and actionable recommendations for improvement.',
+        title: 'Color contrast ratio fixes may help visitors view your content and help the site stay ADA/WCAG compliant',
+        description: 'Sufficient color contrast ensures legibility for all users — supporting accessibility and brand reputation.',
         tags: ['a11y'],
         status: 'NEW',
         data: {
@@ -451,11 +402,10 @@ describe('Accessibility Report Opportunity Utils', () => {
       expect(colorContrast).to.have.property('tags');
       expect(colorContrast).to.have.property('status');
 
-      // Should have same runbook, tags, origin, and description as assistive opportunity
+      // Should have same runbook, tags, and origin as assistive opportunity
       expect(colorContrast.runbook).to.equal(assistive.runbook);
       expect(colorContrast.tags).to.deep.equal(assistive.tags);
       expect(colorContrast.origin).to.equal(assistive.origin);
-      expect(colorContrast.description).to.equal(assistive.description);
     });
 
     it('should have unique type compared to other opportunities', () => {
@@ -482,14 +432,13 @@ describe('Accessibility Report Opportunity Utils', () => {
       const assistive = createAccessibilityAssistiveOpportunity();
       const base = createBaseReportOpportunity(1, 2024);
 
-      expect(colorContrast.title).to.equal('Accessibility - Color contrast is insufficient on site');
+      expect(colorContrast.title).to.equal('Color contrast ratio fixes may help visitors view your content and help the site stay ADA/WCAG compliant');
       expect(colorContrast.title).to.not.equal(assistive.title);
       expect(colorContrast.title).to.not.equal(base.title);
 
       // Should contain accessibility-specific keywords
-      expect(colorContrast.title).to.include('Accessibility');
       expect(colorContrast.title).to.include('Color contrast');
-      expect(colorContrast.title).to.include('insufficient');
+      expect(colorContrast.title).to.include('ADA/WCAG');
     });
 
     it('should include data sources information', () => {

@@ -81,4 +81,25 @@ export function getPreviousWeekYear(today = new Date()) {
   return `${week}-${year}`;
 }
 
+/**
+ * Computes the week offset between a target date and today. Returns 0 for the
+ * current week, -1 for last week, etc. Weeks start on Monday (ISO).
+ *
+ * Used to map a specific day to the weekOffset parameter expected by cdn-logs-report,
+ * so that multiple days in the same week produce a single report trigger.
+ */
+export function computeWeekOffset(year, month, day) {
+  const targetDate = new Date(Date.UTC(year, month - 1, day));
+  const today = new Date();
+  const getMonday = (d) => {
+    const date = new Date(d);
+    const dow = date.getUTCDay();
+    date.setUTCDate(date.getUTCDate() - (dow === 0 ? 6 : dow - 1));
+    date.setUTCHours(0, 0, 0, 0);
+    return date;
+  };
+  const diffMs = getMonday(targetDate) - getMonday(today);
+  return Math.round(diffMs / (7 * 24 * 60 * 60 * 1000));
+}
+
 /* c8 ignore end */

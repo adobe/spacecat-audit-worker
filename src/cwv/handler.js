@@ -10,124 +10,65 @@
  * governing permissions and limitations under the License.
  */
 
-import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { syncSuggestions } from '../utils/data-access.js';
-import { removeTrailingSlash } from '../utils/url-utils.js';
-import { createOpportunityData } from './opportunity-data-mapper.js';
-import { convertToOpportunity } from '../common/opportunity.js';
-import calculateKpiDeltasForAudit from './kpi-metrics.js';
-import { sendSQSMessageForAutoSuggest } from './auto-suggest.js';
-import { isHomepage } from './utils.js';
+import { buildCWVAuditResult } from './cwv-audit-result.js';
+import { syncOpportunitiesAndSuggestions } from './opportunity-sync.js';
+import { processAutoSuggest } from './auto-suggest.js';
 
-const DAILY_THRESHOLD = 1000; // pageviews
-const INTERVAL = 7; // days
-// The number of top pages with issues that will be included in the report
-const TOP_PAGES_COUNT = 15;
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 
-export async function CWVRunner(auditUrl, context, site) {
+/**
+ * Step 1: CWV Data Collection and Code Import
+ * Builds CWV audit result and triggers code import
+ * @param {Object} context - Context object containing site, finalUrl, log, env
+ *                           (with env.RUM_ADMIN_KEY)
+ * @returns {Promise<Object>} Object containing auditResult, fullAuditRef (for persister),
+ *                            and import worker parameters (type, siteId, allowCache)
+ */
+export async function collectCWVDataAndImportCode(context) {
+  const { site, log } = context;
   const siteId = site.getId();
-  const baseURL = removeTrailingSlash(site.getBaseURL());
 
-  const rumAPIClient = RUMAPIClient.createFrom(context);
-  const groupedURLs = site.getConfig().getGroupedURLs(Audit.AUDIT_TYPES.CWV);
-  const options = {
-    domain: auditUrl,
-    interval: INTERVAL,
-    granularity: 'hourly',
-    groupedURLs,
-  };
-  const cwvData = await rumAPIClient.query(Audit.AUDIT_TYPES.CWV, options);
+  log.info(`[audit-worker-cwv] siteId: ${siteId} | Step 1: Collecting CWV data and triggering code import`);
 
-  const stats = { homepage: false, topNCount: 0, thresholdCount: 0 };
-
-  // Always include: homepage + top N pages + pages meeting threshold
-  const filteredCwvData = [...cwvData]
-    .sort((a, b) => b.pageviews - a.pageviews)
-    .reduce((list, item) => {
-      // 1) Homepage
-      if (isHomepage(item, baseURL)) {
-        list.push(item);
-        stats.homepage = true;
-        return list;
-      }
-
-      // 2) Top N by pageviews (excluding homepage)
-      if (stats.topNCount < TOP_PAGES_COUNT) {
-        list.push(item);
-        stats.topNCount += 1;
-        return list;
-      }
-
-      // 3) Threshold group (pages meeting threshold, excluding homepage and topN)
-      if (item.pageviews >= DAILY_THRESHOLD * INTERVAL) {
-        list.push(item);
-        stats.thresholdCount += 1;
-      }
-
-      return list;
-    }, []);
-
-  context.log.info(
-    `[audit-worker-cwv] siteId: ${siteId} | baseURL: ${baseURL} | Total=${cwvData.length}, Reported=${filteredCwvData.length} | `
-    + `Homepage: ${stats.homepage ? 'included' : 'not included'} | `
-    + `Top${TOP_PAGES_COUNT} pages: ${stats.topNCount} | `
-    + `Pages above threshold: ${stats.thresholdCount}`,
-  );
+  const { auditResult, fullAuditRef } = await buildCWVAuditResult(context);
 
   return {
-    auditResult: {
-      cwv: filteredCwvData,
-      auditContext: {
-        interval: INTERVAL,
-      },
-    },
-    fullAuditRef: auditUrl,
+    // These fields are required for the first step to persist audit result
+    auditResult,
+    fullAuditRef,
+    // Trigger code import
+    type: 'code',
+    siteId,
+    allowCache: false,
   };
 }
 
-export async function opportunityAndSuggestions(auditUrl, auditData, context, site) {
-  const groupedURLs = site.getConfig().getGroupedURLs(Audit.AUDIT_TYPES.CWV);
-  const kpiDeltas = calculateKpiDeltasForAudit(auditData, context, groupedURLs);
-  const opportunity = await convertToOpportunity(
-    auditUrl,
-    auditData,
-    context,
-    createOpportunityData,
-    Audit.AUDIT_TYPES.CWV,
-    kpiDeltas,
-  );
-  // Sync suggestions
-  const buildKey = (data) => (data.type === 'url' ? data.url : data.pattern);
-  const maxOrganicForUrls = Math.max(...auditData.auditResult.cwv.filter((entry) => entry.type === 'url').map((entry) => entry.pageviews));
+/**
+ * Step 2: Sync Opportunities and Suggestions
+ * Creates opportunities and suggestions in SpaceCat and sends auto-suggest messages to Mystique
+ * @param {Object} context - Context object containing site, audit, finalUrl, log, dataAccess,
+ *                           sqs, env, s3Client
+ * @returns {Promise<Object>} Status object with 'complete' status
+ */
+export async function syncOpportunityAndSuggestionsStep(context) {
+  const { site, log } = context;
+  const siteId = site.getId();
 
-  await syncSuggestions({
-    opportunity,
-    newData: auditData.auditResult.cwv,
-    context,
-    buildKey,
-    mapNewSuggestion: (entry) => ({
-      opportunityId: opportunity.getId(),
-      type: 'CODE_CHANGE',
-      // the rank logic for CWV is as follows:
-      // 1. if the entry is a group, then the rank is the max organic for URLs
-      //   plus the organic for the group
-      // 2. if the entry is a URL, then the rank is the max organic for URLs
-      // Reason is because UI first shows groups and then URLs
-      rank: entry.type === 'group' ? maxOrganicForUrls + entry.organic : entry.organic,
-      data: {
-        ...entry,
-      },
-    }),
-  });
+  log.info(`[audit-worker-cwv] siteId: ${siteId} | Step 2: Syncing opportunities and suggestions`);
 
-  await sendSQSMessageForAutoSuggest(context, opportunity, site);
+  const opportunity = await syncOpportunitiesAndSuggestions(context);
+  await processAutoSuggest(context, opportunity, site);
+
+  return {
+    status: 'complete',
+  };
 }
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .withRunner(CWVRunner)
-  .withPostProcessors([opportunityAndSuggestions])
+  .addStep('collectCWVDataAndImportCode', collectCWVDataAndImportCode, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('syncOpportunityAndSuggestions', syncOpportunityAndSuggestionsStep)
   .build();

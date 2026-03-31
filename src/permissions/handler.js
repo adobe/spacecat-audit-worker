@@ -25,6 +25,7 @@ import {
 import { syncSuggestions } from '../utils/data-access.js';
 import { mapTooStrongSuggestion } from './suggestion-data-mapper.js';
 import { fetchPermissionsReport, markOpportunityAsFixed } from './common.js';
+import { noopUrlResolver } from '../common/index.js';
 
 const INTERVAL = 7; // days
 const AUDIT_TYPE = 'security-permissions'; // Audit.AUDIT_TYPES.SECURITY_PERMISSIONS;
@@ -185,5 +186,6 @@ export const tooStrongOpportunityStep = async (auditUrl, auditData, context, sit
 
 export default new AuditBuilder()
   .withRunner(permissionsAuditRunner)
+  .withUrlResolver(noopUrlResolver)
   .withPostProcessors([tooStrongOpportunityStep])
   .build();

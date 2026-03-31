@@ -97,7 +97,12 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([
-        { urlTo: 'https://main--example--page.aem.page/broken', href: 'https://main--example--page.aem.page/page1', status: 404 },
+        {
+          urlTo: 'https://main--example--page.aem.page/broken',
+          href: 'https://main--example--page.aem.page/page1',
+          status: 404,
+          elements: [{ selector: 'body > a' }],
+        },
       ]);
     });
 
@@ -158,7 +163,12 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([
-        { urlTo: 'https://main--example--page.aem.page/head-fails-get-404', href: 'https://main--example--page.aem.page/page1', status: 404 },
+        {
+          urlTo: 'https://main--example--page.aem.page/head-fails-get-404',
+          href: 'https://main--example--page.aem.page/page1',
+          status: 404,
+          elements: [{ selector: 'body > a' }],
+        },
       ]);
       expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://main--example--page.aem.page/head-fails-get-404');
     });
@@ -315,7 +325,12 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenExternalLinks).to.deep.equal([
-        { urlTo: 'https://external-site.com/broken', href: 'https://main--example--page.aem.page/page1', status: 404 },
+        {
+          urlTo: 'https://external-site.com/broken',
+          href: 'https://main--example--page.aem.page/page1',
+          status: 404,
+          elements: [{ selector: 'body > a' }],
+        },
       ]);
     });
 
@@ -376,7 +391,12 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenExternalLinks).to.deep.equal([
-        { urlTo: 'https://external-site.com/head-fails-get-404', href: 'https://main--example--page.aem.page/page1', status: 404 },
+        {
+          urlTo: 'https://external-site.com/head-fails-get-404',
+          href: 'https://main--example--page.aem.page/page1',
+          status: 404,
+          elements: [{ selector: 'body > a' }],
+        },
       ]);
       expect(context.log.warn).to.have.been.calledWithMatch('[preflight-audit] HEAD request failed (HEAD request failed), retrying with GET: https://external-site.com/head-fails-get-404');
     });
@@ -401,10 +421,20 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([
-        { urlTo: 'https://main--example--page.aem.page/internal-broken', href: 'https://main--example--page.aem.page/page1', status: 404 },
+        {
+          urlTo: 'https://main--example--page.aem.page/internal-broken',
+          href: 'https://main--example--page.aem.page/page1',
+          status: 404,
+          elements: [{ selector: 'body > a:nth-of-type(1)' }],
+        },
       ]);
       expect(result.auditResult.brokenExternalLinks).to.deep.equal([
-        { urlTo: 'https://external-site.com/external-broken', href: 'https://main--example--page.aem.page/page1', status: 500 },
+        {
+          urlTo: 'https://external-site.com/external-broken',
+          href: 'https://main--example--page.aem.page/page1',
+          status: 500,
+          elements: [{ selector: 'body > a:nth-of-type(2)' }],
+        },
       ]);
     });
 
@@ -433,7 +463,10 @@ describe('Preflight Audit', () => {
       // Check that only the body link is logged as internal
       expect(context.log.debug).to.have.been.calledWith(
         '[preflight-audit] Found internal links:',
-        new Set(['https://main--example--page.aem.page/body-link']),
+        sinon.match.instanceOf(Map).and(sinon.match((linksMap) => {
+          const selectors = linksMap.get('https://main--example--page.aem.page/body-link');
+          return selectors instanceof Set && selectors.has('body > main > a');
+        })),
       );
     });
   });
@@ -679,7 +712,7 @@ describe('Preflight Audit', () => {
         TierClient.createForSite.restore();
       }
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       sinon.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -723,6 +756,12 @@ describe('Preflight Audit', () => {
               transformToString: sinon.stub().resolves(JSON.stringify({
                 scrapeResult: {
                   rawBody: html.replaceAll('https://example.com', 'https://main--example--page.aem.page'),
+                  canonical: {
+                    exists: true,
+                    count: 1,
+                    href: 'https://main--example--page.aem.page/wrong',
+                    inHead: true,
+                  },
                   tags: {
                     title: 'Page 1 Title',
                     description: 'Page 1 Description',
@@ -730,6 +769,7 @@ describe('Preflight Audit', () => {
                   },
                 },
                 finalUrl: 'https://main--example--page.aem.page/page1',
+                scrapedAt: Date.now(),
               })),
             },
           });
@@ -831,6 +871,7 @@ describe('Preflight Audit', () => {
                   },
                 },
                 finalUrl: 'https://main--example--page.aem.page',
+                scrapedAt: Date.now(),
               })),
             },
           });
@@ -998,7 +1039,7 @@ describe('Preflight Audit', () => {
       expect(finalJobEntity.setEndedAt).to.have.been.called;
       expect(finalJobEntity.save).to.have.been.called;
       expect(finalJobEntity.setResult).to.have.been.called;
-      
+
       // Verify that aiSuggestion contains fallback URL when no suitable suggestions found
       const actualResult = finalJobEntity.setResult.getCall(0).args[0];
       const linksAudit = actualResult[0].audits.find(a => a.name === 'links');
@@ -1271,6 +1312,12 @@ describe('Preflight Audit', () => {
               transformToString: sinon.stub().resolves(JSON.stringify({
                 scrapeResult: {
                   rawBody: html,
+                  canonical: {
+                    exists: true,
+                    count: 1,
+                    href: 'https://main--example--page.aem.page/readability-test',
+                    inHead: true,
+                  },
                   tags: {
                     title: 'Readability Test Page',
                     description: 'Test page for readability',
@@ -1548,6 +1595,63 @@ describe('Preflight Audit', () => {
       // Verify other checks were not performed
       expect(audits.find((a) => a.name === AUDIT_BODY_SIZE)).to.not.exist;
       expect(audits.find((a) => a.name === AUDIT_H1_COUNT)).to.not.exist;
+    });
+
+    it('lorem ipsum filter keeps only innermost elements when nested', async () => {
+      job.getMetadata = () => ({
+        payload: {
+          step: PREFLIGHT_STEP_IDENTIFY,
+          urls: ['https://main--example--page.aem.page/page1'],
+        },
+      });
+
+      const nestedHtml = '<body>'
+        + '<div id="outer">Lorem ipsum dolor sit amet'
+        + '<p id="inner">Lorem ipsum nested text</p>'
+        + '</div>'
+        + '</body>';
+
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({
+            Contents: [
+              { Key: 'scrapes/site-123/page1/scrape.json' },
+            ],
+            IsTruncated: false,
+          });
+        }
+        return Promise.resolve({
+          ContentType: 'application/json',
+          Body: {
+            transformToString: sinon.stub().resolves(JSON.stringify({
+              scrapeResult: {
+                rawBody: nestedHtml,
+              },
+              finalUrl: 'https://main--example--page.aem.page/page1',
+            })),
+          },
+        });
+      });
+
+      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_LOREM_IPSUM}-preflight`, site).returns(true);
+
+      await preflightAuditFunction(context);
+
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+      const result = finalJobEntity.setResult.getCall(0).args[0];
+
+      const { audits } = result[0];
+      const loremIpsumAudit = audits.find((a) => a.name === AUDIT_LOREM_IPSUM);
+      expect(loremIpsumAudit).to.exist;
+      expect(loremIpsumAudit.opportunities).to.have.lengthOf(1);
+      expect(loremIpsumAudit.opportunities[0].check).to.equal('placeholder-text');
+
+      const { elements } = loremIpsumAudit.opportunities[0];
+      expect(elements).to.be.an('array');
+      expect(elements).to.have.lengthOf(1);
+      expect(elements[0].selector).to.include('p#inner');
+      expect(elements[0].selector).to.not.match(/^(body > )?div#outer$/);
     });
 
     it('handles individual AUDIT_H1_COUNT check', async () => {
@@ -1957,7 +2061,7 @@ describe('Preflight Audit', () => {
 
       // Ensure entitlement checks pass for accessibility
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       if (TierClient.createForSite && TierClient.createForSite.restore) {
         TierClient.createForSite.restore();
@@ -3095,7 +3199,7 @@ describe('Preflight Audit', () => {
 
         // Ensure entitlement checks pass for polling tests; avoid double-stubbing
         const mockTierClient = {
-          checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+          checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
         };
         if (TierClient.createForSite && TierClient.createForSite.restore) {
           TierClient.createForSite.restore();
@@ -3359,7 +3463,7 @@ describe('Preflight Audit', () => {
 
       // Ensure entitlement checks pass for coverage tests
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -4107,7 +4211,6 @@ describe('Preflight Audit', () => {
             }
             return { url, checks: [] };
           },
-          getBrandGuidelines: getBrandGuidelinesStub,
           getH1HeadingASuggestion: getH1HeadingASuggestionStub,
           HEADINGS_CHECKS: {
             HEADING_MISSING_H1: { check: 'heading-missing-h1' },
@@ -4115,6 +4218,9 @@ describe('Preflight Audit', () => {
             HEADING_H1_LENGTH: { check: 'heading-h1-length' },
             HEADING_EMPTY: { check: 'heading-empty' },
           },
+        },
+        '../../src/headings/shared-utils.js': {
+          getBrandGuidelines: getBrandGuidelinesStub,
         },
         '../../src/preflight/utils.js': {
           saveIntermediateResults: sinon.stub().resolves(),
@@ -4188,18 +4294,6 @@ describe('Preflight Audit', () => {
         timeExecutionBreakdown: [],
       };
 
-      it('should skip AI enhancement during identify step', async () => {
-        // Change step to 'identify'
-        auditContext.step = 'identify';
-  
-        await headings(context, auditContext);
-  
-        // Verify that getBrandGuidelines was never called (no AI enhancement)
-        expect(getBrandGuidelinesStub).to.not.have.been.called;
-        expect(getH1HeadingASuggestionStub).to.not.have.been.called;
-      });
-  
-
       await headings(context, modifiedAuditContext);
       expect(context.log.warn).to.have.been.called;
       const warnCalls = context.log.warn.getCalls();
@@ -4207,6 +4301,17 @@ describe('Preflight Audit', () => {
         call.args[0] && call.args[0].includes('No audit entry found for https://example.com/page2')
       );
       expect(relevantCall).to.exist;
+    });
+
+      it('should skip AI enhancement during identify step', async () => {
+        // Change step to 'identify'
+        auditContext.step = 'identify';
+
+        await headings(context, auditContext);
+
+        // Verify that getBrandGuidelines was never called (no AI enhancement)
+        expect(getBrandGuidelinesStub).to.not.have.been.called;
+        expect(getH1HeadingASuggestionStub).to.not.have.been.called;
     });
 
     it('should add aiSuggestion when AI suggestion is available', async () => {
@@ -4264,7 +4369,7 @@ describe('Preflight Audit', () => {
         .audits.find((a) => a.name === 'headings');
       const page2Audit = auditContext.audits.get('https://example.com/page2')
         .audits.find((a) => a.name === 'headings');
-      
+
       expect(page1Audit.opportunities).to.have.length.greaterThan(0);
       expect(page2Audit.opportunities).to.have.length.greaterThan(0);
     });
@@ -4287,7 +4392,6 @@ describe('Preflight Audit', () => {
               ],
             };
           },
-          getBrandGuidelines: getBrandGuidelinesStub,
           getH1HeadingASuggestion: getH1HeadingASuggestionStub,
           HEADINGS_CHECKS: {
             HEADING_MISSING_H1: { check: 'heading-missing-h1' },
@@ -4295,6 +4399,9 @@ describe('Preflight Audit', () => {
             HEADING_H1_LENGTH: { check: 'heading-h1-length' },
             HEADING_EMPTY: { check: 'heading-empty' },
           },
+        },
+        '../../src/headings/shared-utils.js': {
+          getBrandGuidelines: getBrandGuidelinesStub,
         },
         '../../src/preflight/utils.js': {
           saveIntermediateResults: sinon.stub().resolves(),
@@ -4333,18 +4440,17 @@ describe('Preflight Audit', () => {
       // Verify the opportunity was added with 'Moderate' seoImpact
       const testAudit = testAuditContext.audits.get('https://example.com/test')
         .audits.find((a) => a.name === 'headings');
-      
+
       expect(testAudit.opportunities).to.have.lengthOf(1);
       expect(testAudit.opportunities[0].seoImpact).to.equal('Moderate');
     });
 
-    it('should handle validatePageHeadingFromScrapeJson returning falsy value', async () => {      
+    it('should handle validatePageHeadingFromScrapeJson returning falsy value', async () => {
       const headingsModuleWithNullReturn = await esmock('../../src/preflight/headings.js', {
         '../../src/headings/handler.js': {
           validatePageHeadingFromScrapeJson: async (url) => {
             return null;
           },
-          getBrandGuidelines: getBrandGuidelinesStub,
           getH1HeadingASuggestion: getH1HeadingASuggestionStub,
           HEADINGS_CHECKS: {
             HEADING_MISSING_H1: { check: 'heading-missing-h1' },
@@ -4352,6 +4458,9 @@ describe('Preflight Audit', () => {
             HEADING_H1_LENGTH: { check: 'heading-h1-length' },
             HEADING_EMPTY: { check: 'heading-empty' },
           },
+        },
+        '../../src/headings/shared-utils.js': {
+          getBrandGuidelines: getBrandGuidelinesStub,
         },
         '../../src/preflight/utils.js': {
           saveIntermediateResults: sinon.stub().resolves(),
@@ -4391,9 +4500,204 @@ describe('Preflight Audit', () => {
       // The fallback { url, checks: [] } is used, so no opportunities are added
       const testAudit = testAuditContext.audits.get('https://example.com/test')
         .audits.find((a) => a.name === 'headings');
-      
+
       expect(testAudit.opportunities).to.have.lengthOf(0);
       expect(context.log.debug).to.have.been.called;
+    });
+
+    it('should generate AI suggestions for HEADING_EMPTY check type', async () => {
+      const headingsModuleWithEmptyCheck = await esmock('../../src/preflight/headings.js', {
+        '../../src/headings/handler.js': {
+          validatePageHeadingFromScrapeJson: async (url) => {
+            return {
+              url,
+              checks: [
+                {
+                  check: 'heading-empty',
+                  checkTitle: 'Empty Heading',
+                  description: 'Page has empty heading tags',
+                  explanation: 'Headings should not be empty',
+                  success: false,
+                  pageTags: { h1: [''], title: 'Test Page' },
+                },
+              ],
+            };
+          },
+          getH1HeadingASuggestion: getH1HeadingASuggestionStub,
+          HEADINGS_CHECKS: {
+            HEADING_MISSING_H1: { check: 'heading-missing-h1' },
+            HEADING_MULTIPLE_H1: { check: 'heading-multiple-h1' },
+            HEADING_H1_LENGTH: { check: 'heading-h1-length' },
+            HEADING_EMPTY: { check: 'heading-empty' },
+          },
+        },
+        '../../src/headings/shared-utils.js': {
+          getBrandGuidelines: getBrandGuidelinesStub,
+        },
+        '../../src/preflight/utils.js': {
+          saveIntermediateResults: sinon.stub().resolves(),
+        },
+      });
+
+      getBrandGuidelinesStub.resolves({ brandName: 'Test Brand' });
+      getH1HeadingASuggestionStub.resolves('AI-suggested heading for empty tag');
+
+      const testAuditContext = {
+        previewUrls: ['https://example.com/test'],
+        step: 'suggest',
+        audits: new Map([
+          ['https://example.com/test', {
+            audits: [],
+          }],
+        ]),
+        auditsResult: {},
+        scrapedObjects: [
+          {
+            data: {
+              finalUrl: 'https://example.com/test',
+              scrapeResult: {
+                rawBody: '<html><body><h1></h1></body></html>',
+                tags: { title: 'Test', description: 'Test', h1: [''] },
+              },
+            },
+          },
+        ],
+        timeExecutionBreakdown: [],
+      };
+
+      await headingsModuleWithEmptyCheck.default(context, testAuditContext);
+
+      // Verify AI suggestion was generated for empty heading check
+      expect(getH1HeadingASuggestionStub).to.have.been.called;
+      const testAudit = testAuditContext.audits.get('https://example.com/test')
+        .audits.find((a) => a.name === 'headings');
+
+      expect(testAudit.opportunities).to.have.lengthOf(1);
+      expect(testAudit.opportunities[0].aiSuggestion).to.equal('AI-suggested heading for empty tag');
+    });
+
+    it('should handle error during headings validation processing', async () => {
+      const headingsModuleWithError = await esmock('../../src/preflight/headings.js', {
+        '../../src/headings/handler.js': {
+          validatePageHeadingFromScrapeJson: async (url) => {
+            throw new Error('Validation processing failed');
+          },
+          getH1HeadingASuggestion: getH1HeadingASuggestionStub,
+          HEADINGS_CHECKS: {
+            HEADING_MISSING_H1: { check: 'heading-missing-h1' },
+            HEADING_MULTIPLE_H1: { check: 'heading-multiple-h1' },
+            HEADING_H1_LENGTH: { check: 'heading-h1-length' },
+            HEADING_EMPTY: { check: 'heading-empty' },
+          },
+        },
+        '../../src/headings/shared-utils.js': {
+          getBrandGuidelines: getBrandGuidelinesStub,
+        },
+        '../../src/preflight/utils.js': {
+          saveIntermediateResults: sinon.stub().resolves(),
+        },
+      });
+
+      const testAuditContext = {
+        previewUrls: ['https://example.com/test'],
+        step: 'identify',
+        audits: new Map([
+          ['https://example.com/test', {
+            audits: [],
+          }],
+        ]),
+        auditsResult: {},
+        scrapedObjects: [
+          {
+            data: {
+              finalUrl: 'https://example.com/test',
+              scrapeResult: {
+                rawBody: '<html><body><h1>Test</h1></body></html>',
+                tags: { title: 'Test', description: 'Test', h1: ['Test'] },
+              },
+            },
+          },
+        ],
+        timeExecutionBreakdown: [],
+      };
+
+      await headingsModuleWithError.default(context, testAuditContext);
+
+      // Verify error was caught and logged
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Headings audit failed: Validation processing failed/),
+      );
+    });
+
+    it('should add aiSuggestion when isAISuggested is true', async () => {
+      const headingsModuleWithAISuggestion = await esmock('../../src/preflight/headings.js', {
+        '../../src/headings/handler.js': {
+          validatePageHeadingFromScrapeJson: async (url) => {
+            return {
+              url,
+              checks: [
+                {
+                  check: 'heading-missing-h1',
+                  checkTitle: 'Missing H1',
+                  description: 'Page is missing an H1',
+                  explanation: 'Add an H1',
+                  success: false,
+                  pageTags: { h1: [] },
+                },
+              ],
+            };
+          },
+          getH1HeadingASuggestion: getH1HeadingASuggestionStub,
+          HEADINGS_CHECKS: {
+            HEADING_MISSING_H1: { check: 'heading-missing-h1' },
+            HEADING_MULTIPLE_H1: { check: 'heading-multiple-h1' },
+            HEADING_H1_LENGTH: { check: 'heading-h1-length' },
+            HEADING_EMPTY: { check: 'heading-empty' },
+          },
+        },
+        '../../src/headings/shared-utils.js': {
+          getBrandGuidelines: getBrandGuidelinesStub,
+        },
+        '../../src/preflight/utils.js': {
+          saveIntermediateResults: sinon.stub().resolves(),
+        },
+      });
+
+      getBrandGuidelinesStub.resolves({ brandName: 'Test Brand' });
+      getH1HeadingASuggestionStub.resolves('AI-powered heading suggestion');
+
+      const testAuditContext = {
+        previewUrls: ['https://example.com/test'],
+        step: 'suggest',
+        audits: new Map([
+          ['https://example.com/test', {
+            audits: [],
+          }],
+        ]),
+        auditsResult: {},
+        scrapedObjects: [
+          {
+            data: {
+              finalUrl: 'https://example.com/test',
+              scrapeResult: {
+                rawBody: '<html><body></body></html>',
+                tags: { title: 'Test', description: 'Test', h1: [] },
+              },
+            },
+          },
+        ],
+        timeExecutionBreakdown: [],
+      };
+
+      await headingsModuleWithAISuggestion.default(context, testAuditContext);
+
+      const testAudit = testAuditContext.audits.get('https://example.com/test')
+        .audits.find((a) => a.name === 'headings');
+
+      expect(testAudit.opportunities).to.have.lengthOf(1);
+      expect(testAudit.opportunities[0]).to.have.property('aiSuggestion');
+      expect(testAudit.opportunities[0].aiSuggestion).to.equal('AI-powered heading suggestion');
+      expect(testAudit.opportunities[0]).to.not.have.property('suggestion');
     });
   });
 
@@ -4467,7 +4771,7 @@ describe('Preflight Audit', () => {
 
       // Ensure entitlement checks pass for enabled checks calculation
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       if (TierClient.createForSite && TierClient.createForSite.restore) {
         TierClient.createForSite.restore();

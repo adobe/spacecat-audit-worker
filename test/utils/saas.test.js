@@ -292,6 +292,18 @@ describe('saas utils', () => {
       expect(result).to.equal(existingConfig);
     });
 
+    it('should throw when provided config is not an object', async () => {
+      const params = {
+        config: 'invalid-config',
+        storeUrl: 'https://example.com',
+        contentUrl: 'https://example.com/page',
+        locale: 'en_US',
+      };
+
+      await expect(getConfig(params, mockLog))
+        .to.be.rejectedWith('Missing required config parameters for en_US locale');
+    });
+
     it('should fetch config from spreadsheet with array data format', async () => {
       const configData = {
         data: [
@@ -830,6 +842,63 @@ describe('saas extractors - additional cases', () => {
   });
   afterEach(() => sinon.restore());
 
+  it('supports dot-separated commerce keys in PAAS data arrays', async () => {
+    const configData = {
+      data: [
+        { key: 'commerce.customer.group', value: 'cg' },
+        { key: 'commerce.environment.id', value: 'eid' },
+        { key: 'commerce.store.code', value: 'sc' },
+        { key: 'commerce.store.view.code', value: 'svc' },
+        { key: 'commerce.website.code', value: 'wc' },
+        { key: 'commerce.x.api.key', value: 'key' },
+        { key: 'commerce.endpoint', value: 'https://co.example/graphql' },
+      ],
+    };
+    const mockResp = { ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(configData) };
+    fetchStub.resolves(mockResp);
+
+    const res = await extractCommerceConfigFromPAAS({ storeUrl: 'https://example.com' }, log);
+    expect(res.url).to.equal('https://co.example/graphql');
+    expect(res.headers['Magento-Environment-Id']).to.equal('eid');
+    expect(res.headers['Magento-Store-Code']).to.equal('sc');
+    expect(res.headers['Magento-Store-View-Code']).to.equal('svc');
+    expect(res.headers['Magento-Website-Code']).to.equal('wc');
+    expect(res.headers['Magento-Customer-Group']).to.equal('cg');
+    expect(res.headers['x-api-key']).to.equal('key');
+  });
+
+  it('allows PAAS configs without customer group and x-api-key', async () => {
+    const configData = {
+      data: [
+        { key: 'commerce-environment-id', value: 'eid' },
+        { key: 'commerce-store-code', value: 'sc' },
+        { key: 'commerce-store-view-code', value: 'svc' },
+        { key: 'commerce-website-code', value: 'wc' },
+        { key: 'commerce-endpoint', value: 'https://co.example/graphql' },
+      ],
+    };
+    const mockResp = { ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(configData) };
+    fetchStub.resolves(mockResp);
+
+    const res = await extractCommerceConfigFromPAAS({ storeUrl: 'https://example.com' }, log);
+    expect(res.url).to.equal('https://co.example/graphql');
+    expect(res.headers['Magento-Environment-Id']).to.equal('eid');
+    expect(res.headers['Magento-Store-Code']).to.equal('sc');
+    expect(res.headers['Magento-Store-View-Code']).to.equal('svc');
+    expect(res.headers['Magento-Website-Code']).to.equal('wc');
+    expect(res.headers['Magento-Customer-Group']).to.be.undefined;
+    expect(res.headers['x-api-key']).to.be.undefined;
+  });
+
+  it('throws when PAAS fallback config is not an object', async () => {
+    const configData = { public: { default: 'invalid' } };
+    const mockResp = { ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(configData) };
+    fetchStub.resolves(mockResp);
+
+    await expect(extractCommerceConfigFromPAAS({ storeUrl: 'https://example.com' }, log))
+      .to.be.rejectedWith('Missing required config parameters for default locale');
+  });
+
   it('uses public.default when data is non-array object', async () => {
     const configData = {
       data: { any: 'object' },
@@ -853,9 +922,8 @@ describe('saas extractors - additional cases', () => {
     expect(res.headers['Magento-Store-View-Code']).to.equal('svc');
   });
 
-  it('falls back to public after missing section with two-step fetch when no public initially', async () => {
-    const firstConfig = {};
-    const secondConfig = {
+  it('falls back to public when section is missing and public exists in fetched config', async () => {
+    const configData = {
       public: {
         default: {
           'commerce-endpoint': 'https://co.example/graphql',
@@ -872,12 +940,37 @@ describe('saas extractors - additional cases', () => {
         },
       },
     };
-    fetchStub.onCall(0).resolves({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(firstConfig) });
-    fetchStub.onCall(1).resolves({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(secondConfig) });
+    fetchStub.resolves({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(configData) });
 
     const res = await extractCommerceConfigFromACCS({ storeUrl: 'https://example.com', locale: '/en/us/', configSection: 'private' }, log);
     expect(res.url).to.equal('https://co.example/graphql');
     expect(res.headers['Magento-Environment-Id']).to.equal('eid');
+    expect(fetchStub).to.have.been.calledOnce;
+  });
+
+  it('falls back to public using prefetched data without refetching', async () => {
+    const prefetchedConfig = {
+      public: {
+        default: {
+          'commerce-endpoint': 'https://co.example/graphql',
+          headers: {
+            all: {
+              'Magento-Environment-Id': 'eid',
+            },
+          },
+        },
+      },
+    };
+
+    const res = await extractCommerceConfigFromACCS({
+      storeUrl: 'https://example.com',
+      configSection: 'private',
+      configData: prefetchedConfig,
+    }, log);
+
+    expect(res.url).to.equal('https://co.example/graphql');
+    expect(res.headers['Magento-Environment-Id']).to.equal('eid');
+    expect(fetchStub).to.not.have.been.called;
   });
 
   it('uses {} for defaultConfig when section.default is missing and merges locale data', async () => {
@@ -944,6 +1037,27 @@ describe('saas extractors - ACCS and ACO', () => {
     const res = await extractCommerceConfigFromACCS(params, log);
     expect(res.url).to.equal('https://co.example/graphql');
     expect(res.headers['x-api-key']).to.equal('key');
+  });
+
+  it('supports dot-separated commerce endpoint in ACCS config', async () => {
+    const configData = {
+      public: {
+        default: {
+          'commerce.endpoint': 'https://co.example/graphql',
+          headers: {
+            all: {
+              'Magento-Environment-Id': 'eid',
+            },
+          },
+        },
+      },
+    };
+    const mockResp = { ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(configData) };
+    fetchStub.resolves(mockResp);
+
+    const res = await extractCommerceConfigFromACCS({ storeUrl: 'https://example.com' }, log);
+    expect(res.url).to.equal('https://co.example/graphql');
+    expect(res.headers['Magento-Environment-Id']).to.equal('eid');
   });
 
   it('accepts direct config in final shape and validates headers', async () => {
@@ -1081,11 +1195,43 @@ describe('saas extractors - fallbacks and routing', () => {
     };
 
     await expect(extractCommerceConfigFromACCS({ config: incompleteLegacyConfig }, log))
-      .to.be.rejectedWith('Missing required commerce config fields for default locale: headers.Magento-Store-View-Code, headers.x-api-key');
+      .to.be.rejectedWith('Missing required commerce config fields for default locale: headers.Magento-Store-View-Code');
+  });
+
+  it('throws when locale data is missing after fallback resolution', async () => {
+    const configData = {
+      public: {
+        '/en/': {
+          'commerce-endpoint': 'https://co.example/graphql',
+          headers: { all: { 'Magento-Environment-Id': 'eid' } },
+        },
+      },
+    };
+    const mockResp = { ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(configData) };
+    fetchStub.resolves(mockResp);
+
+    await expect(extractCommerceConfigFromACCS({ storeUrl: 'https://example.com', locale: '/fr/' }, log))
+      .to.be.rejectedWith('Locale data not found for "default" in section "public"');
+  });
+
+  it('uses explicit configSection when present and valid', async () => {
+    const configData = {
+      private: {
+        default: {
+          'commerce-endpoint': 'https://co.example/graphql',
+          headers: { all: { 'Magento-Environment-Id': 'eid' } },
+        },
+      },
+    };
+    const mockResp = { ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(configData) };
+    fetchStub.resolves(mockResp);
+
+    const res = await extractCommerceConfigFromACCS({ storeUrl: 'https://example.com', configSection: 'private' }, log);
+    expect(res.url).to.equal('https://co.example/graphql');
+    expect(res.headers['Magento-Environment-Id']).to.equal('eid');
   });
 
   it("uses empty locale path when locale is 'default' (PAAS)", async () => {
-    fetchStub.reset();
     const paasData = {
       data: [
         { key: 'commerce-customer-group', value: 'cg' },
@@ -1097,11 +1243,12 @@ describe('saas extractors - fallbacks and routing', () => {
         { key: 'commerce-endpoint', value: 'https://co.example/graphql' },
       ],
     };
-    fetchStub.onCall(0).resolves({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(paasData) });
+    fetchStub.resolves({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(paasData) });
     const site = { getId: () => 'site-default', getConfig: () => ({ getHandlers: () => ({ auditPAAS: { instanceType: 'PAAS' } }) }) };
     const res = await getCommerceConfig(site, 'auditPAAS', 'https://example.com', log, 'default');
     expect(res.url).to.equal('https://co.example/graphql');
     expect(fetchStub).to.have.been.calledWith('https://example.com/configs.json');
+    expect(fetchStub).to.have.been.calledOnce;
   });
 
   it('throws when neither locale nor default config is present', async () => {
@@ -1181,6 +1328,334 @@ describe('saas extractors - fallbacks and routing', () => {
     expect(log.error.firstCall.args[0]).to.equal(
       'Error fetching commerce config for site site-error:',
     );
+  });
+
+  it('falls back to config.json when configs.json fails (PAAS, no explicit configName)', async () => {
+    const paasConfigData = {
+      data: [
+        { key: 'commerce-endpoint', value: 'https://paas.example/graphql' },
+        { key: 'commerce-customer-group', value: 'cg' },
+        { key: 'commerce-environment-id', value: 'paas-env' },
+        { key: 'commerce-store-code', value: 'sc' },
+        { key: 'commerce-store-view-code', value: 'svc' },
+        { key: 'commerce-website-code', value: 'wc' },
+        { key: 'commerce-x-api-key', value: 'key' },
+      ],
+    };
+    fetchStub.onCall(0).resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      headers: { get: () => null },
+      text: () => Promise.resolve(''),
+    });
+    fetchStub.onCall(1).resolves({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(paasConfigData) });
+    fetchStub.onCall(2).resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      headers: { get: () => null },
+      text: () => Promise.resolve(''),
+    });
+
+    const site = {
+      getId: () => 'site-fallback-config',
+      getConfig: () => ({ getHandlers: () => ({ auditPAAS: { instanceType: 'PAAS' } }) }),
+    };
+    const res = await getCommerceConfig(site, 'auditPAAS', 'https://example.com', log, 'default');
+    expect(res.url).to.equal('https://paas.example/graphql');
+    expect(res.headers['Magento-Environment-Id']).to.equal('paas-env');
+    expect(fetchStub).to.have.been.calledWith('https://example.com/configs.json');
+    expect(fetchStub).to.have.been.calledWith('https://example.com/config.json');
+    expect(fetchStub).to.have.been.calledThrice;
+  });
+
+  it('falls back to configs.json when config.json fails (ACCS)', async () => {
+    const accsConfigData = {
+      public: {
+        default: {
+          'commerce-endpoint': 'https://accs.example/graphql',
+          headers: {
+            cs: {
+              'Magento-Environment-Id': 'env-accs',
+            },
+          },
+        },
+      },
+    };
+    fetchStub.onCall(0).resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      headers: { get: () => null },
+      text: () => Promise.resolve(''),
+    });
+    fetchStub.onCall(1).resolves({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(accsConfigData) });
+    fetchStub.onCall(2).resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      headers: { get: () => null },
+      text: () => Promise.resolve(''),
+    });
+
+    const site = {
+      getId: () => 'site-accs-fallback-configs',
+      getConfig: () => ({ getHandlers: () => ({ auditACCS: { instanceType: 'ACCS' } }) }),
+    };
+
+    const res = await getCommerceConfig(site, 'auditACCS', 'https://example.com', log, 'default');
+    expect(res.url).to.equal('https://accs.example/graphql');
+    expect(res.headers['Magento-Environment-Id']).to.equal('env-accs');
+    expect(fetchStub).to.have.been.calledWith('https://example.com/config.json');
+    expect(fetchStub).to.have.been.calledWith('https://example.com/configs.json');
+    expect(fetchStub).to.have.been.calledThrice;
+  });
+
+  it('falls back to global.json when config and configs fail (ACCS)', async () => {
+    const accsConfigData = {
+      public: {
+        default: {
+          'commerce-endpoint': 'https://accs.example/graphql',
+          headers: {
+            cs: {
+              'Magento-Environment-Id': 'env-accs',
+            },
+          },
+        },
+      },
+    };
+    fetchStub.onCall(0).resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      headers: { get: () => null },
+      text: () => Promise.resolve(''),
+    });
+    fetchStub.onCall(1).resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      headers: { get: () => null },
+      text: () => Promise.resolve(''),
+    });
+    fetchStub.onCall(2).resolves({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(accsConfigData) });
+
+    const site = {
+      getId: () => 'site-accs-fallback-global',
+      getConfig: () => ({ getHandlers: () => ({ auditACCS: { instanceType: 'ACCS' } }) }),
+    };
+
+    const res = await getCommerceConfig(site, 'auditACCS', 'https://example.com', log, 'default');
+    expect(res.url).to.equal('https://accs.example/graphql');
+    expect(res.headers['Magento-Environment-Id']).to.equal('env-accs');
+    expect(fetchStub).to.have.been.calledThrice;
+  });
+
+  it('falls back to configs.json when config.json fails (ACO)', async () => {
+    const accsConfigData = {
+      public: {
+        default: {
+          'commerce-endpoint': 'https://aco.example/graphql',
+          headers: {
+            cs: {
+              'Magento-Environment-Id': 'env-aco',
+            },
+          },
+        },
+      },
+    };
+    fetchStub.onCall(0).resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      headers: { get: () => null },
+      text: () => Promise.resolve(''),
+    });
+    fetchStub.onCall(1).resolves({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(accsConfigData) });
+    fetchStub.onCall(2).resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      headers: { get: () => null },
+      text: () => Promise.resolve(''),
+    });
+
+    const site = {
+      getId: () => 'site-aco-fallback-configs',
+      getConfig: () => ({ getHandlers: () => ({ auditACO: { instanceType: 'ACO' } }) }),
+    };
+
+    const res = await getCommerceConfig(site, 'auditACO', 'https://example.com', log, 'default');
+    expect(res.url).to.equal('https://aco.example/graphql');
+    expect(res.headers['Magento-Environment-Id']).to.equal('env-aco');
+    expect(fetchStub).to.have.been.calledThrice;
+  });
+
+  it('falls back to global.json when config and configs fail (ACO)', async () => {
+    const accsConfigData = {
+      public: {
+        default: {
+          'commerce-endpoint': 'https://aco.example/graphql',
+          headers: {
+            cs: {
+              'Magento-Environment-Id': 'env-aco',
+            },
+          },
+        },
+      },
+    };
+    fetchStub.onCall(0).resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      headers: { get: () => null },
+      text: () => Promise.resolve(''),
+    });
+    fetchStub.onCall(1).resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      headers: { get: () => null },
+      text: () => Promise.resolve(''),
+    });
+    fetchStub.onCall(2).resolves({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(accsConfigData) });
+
+    const site = {
+      getId: () => 'site-aco-fallback-global',
+      getConfig: () => ({ getHandlers: () => ({ auditACO: { instanceType: 'ACO' } }) }),
+    };
+
+    const res = await getCommerceConfig(site, 'auditACO', 'https://example.com', log, 'default');
+    expect(res.url).to.equal('https://aco.example/graphql');
+    expect(res.headers['Magento-Environment-Id']).to.equal('env-aco');
+    expect(fetchStub).to.have.been.calledThrice;
+  });
+
+  it('falls back to global.json when configs and config fail (PAAS, no explicit configName)', async () => {
+    const globalConfigData = {
+      data: [
+        { key: 'commerce-endpoint', value: 'https://global.example/graphql' },
+        { key: 'commerce-customer-group', value: 'cg' },
+        { key: 'commerce-environment-id', value: 'global-env' },
+        { key: 'commerce-store-code', value: 'sc' },
+        { key: 'commerce-store-view-code', value: 'svc' },
+        { key: 'commerce-website-code', value: 'wc' },
+        { key: 'commerce-x-api-key', value: 'key' },
+      ],
+    };
+    fetchStub.onCall(0).resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      headers: { get: () => null },
+      text: () => Promise.resolve(''),
+    });
+    fetchStub.onCall(1).resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      headers: { get: () => null },
+      text: () => Promise.resolve(''),
+    });
+    fetchStub.onCall(2).resolves({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(globalConfigData) });
+
+    const site = {
+      getId: () => 'site-global-fallback',
+      getConfig: () => ({ getHandlers: () => ({ auditPAAS: { instanceType: 'PAAS' } }) }),
+    };
+
+    const res = await getCommerceConfig(site, 'auditPAAS', 'https://example.com', log, 'default');
+    expect(res.url).to.equal('https://global.example/graphql');
+    expect(res.headers['Magento-Environment-Id']).to.equal('global-env');
+    expect(fetchStub).to.have.been.calledThrice;
+  });
+
+  it('selects the fallback with the most data when primary fails', async () => {
+    const minimalConfigData = {
+      data: [
+        { key: 'commerce-endpoint', value: 'https://config.example/graphql' },
+        { key: 'commerce-environment-id', value: 'env-config' },
+        { key: 'commerce-store-code', value: 'sc' },
+        { key: 'commerce-store-view-code', value: 'svc' },
+        { key: 'commerce-website-code', value: 'wc' },
+      ],
+    };
+    const fullConfigData = {
+      data: [
+        { key: 'commerce-endpoint', value: 'https://global.example/graphql' },
+        { key: 'commerce-environment-id', value: 'env-global' },
+        { key: 'commerce-store-code', value: 'sc' },
+        { key: 'commerce-store-view-code', value: 'svc' },
+        { key: 'commerce-website-code', value: 'wc' },
+        { key: 'commerce-customer-group', value: 'cg' },
+        { key: 'commerce-x-api-key', value: 'key' },
+      ],
+    };
+
+    fetchStub.onCall(0).resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      headers: { get: () => null },
+      text: () => Promise.resolve(''),
+    });
+    fetchStub.onCall(1).resolves({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(minimalConfigData) });
+    fetchStub.onCall(2).resolves({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(fullConfigData) });
+
+    const site = {
+      getId: () => 'site-fallback-most-data',
+      getConfig: () => ({ getHandlers: () => ({ auditPAAS: { instanceType: 'PAAS' } }) }),
+    };
+
+    const res = await getCommerceConfig(site, 'auditPAAS', 'https://example.com', log, 'default');
+    expect(res.url).to.equal('https://global.example/graphql');
+    expect(res.headers['Magento-Environment-Id']).to.equal('env-global');
+    expect(res.headers['Magento-Customer-Group']).to.equal('cg');
+    expect(res.headers['x-api-key']).to.equal('key');
+    expect(fetchStub).to.have.been.calledThrice;
+  });
+
+  it('does not fall back when configName is explicitly set', async () => {
+    fetchStub.resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      headers: { get: () => null },
+      text: () => Promise.resolve(''),
+    });
+
+    const site = {
+      getId: () => 'site-explicit-config',
+      getConfig: () => ({ getHandlers: () => ({ auditPAAS: { instanceType: 'PAAS', configName: 'configs' } }) }),
+    };
+
+    await expect(
+      getCommerceConfig(site, 'auditPAAS', 'https://example.com', log, 'default'),
+    ).to.be.rejectedWith("Request 'spreadsheet' to 'https://example.com/configs.json' failed (404): Not Found");
+
+    expect(fetchStub).to.have.been.calledOnce;
+  });
+
+  it('rethrows the primary error when all fallback configs fail', async () => {
+    fetchStub.resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      headers: { get: () => null },
+      text: () => Promise.resolve(''),
+    });
+
+    const site = {
+      getId: () => 'site-all-fallbacks-fail',
+      getConfig: () => ({ getHandlers: () => ({ auditPAAS: { instanceType: 'PAAS' } }) }),
+    };
+
+    await expect(
+      getCommerceConfig(site, 'auditPAAS', 'https://example.com', log, 'default'),
+    ).to.be.rejectedWith(/configs\.json/);
+
+    expect(fetchStub).to.have.been.calledThrice;
   });
 
 });
@@ -1387,4 +1862,3 @@ describe('saas extractors - AC-* header support', () => {
       .to.be.rejectedWith('Missing required commerce config fields for default locale: headers.Magento-Environment-Id');
   });
 });
-

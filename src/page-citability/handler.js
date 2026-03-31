@@ -11,7 +11,6 @@
  */
 
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
-import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { subDays } from 'date-fns';
 import { wwwUrlResolver } from '../common/index.js';
@@ -19,39 +18,28 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import { calculateCitabilityScore } from './analyzer.js';
 import {
-  extractCustomerDomain,
-  resolveConsolidatedBucketName,
+  getS3Config,
+  getCdnAwsRuntime,
   buildDateFilter,
   buildUserAgentFilter,
   buildSiteFilters,
 } from '../utils/cdn-utils.js';
+import { EXCLUDED_URL_SUFFIXES } from '../utils/agentic-urls.js';
+import { buildExcludedUrlSuffixesFilter } from '../cdn-logs-report/utils/query-builder.js';
 import { joinBaseAndPath } from '../utils/url-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const LOG_PREFIX = '[PageCitability]';
-
-export async function getS3Config(site, context) {
-  const customerDomain = extractCustomerDomain(site);
-  const domainParts = customerDomain.split(/[._]/);
-  /* c8 ignore next */
-  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const bucket = resolveConsolidatedBucketName(context);
-
-  return {
-    bucket,
-    customerName,
-    customerDomain,
-    databaseName: `cdn_logs_${customerDomain}`,
-    tableName: `aggregated_logs_${customerDomain}_consolidated`,
-    getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
-  };
-}
+const PAGE_CITABILITY_SCRAPE_OPTIONS = {
+  hideConsentBanners: true,
+};
 
 const createEmptyResult = (baseURL, siteId) => ({
   auditResult: { urlCount: 0 },
   fullAuditRef: baseURL,
   processingType: 'page-citability',
   urls: [{ url: baseURL }],
+  options: PAGE_CITABILITY_SCRAPE_OPTIONS,
   siteId,
 });
 
@@ -84,8 +72,9 @@ export async function extractUrls(context) {
     urlsToAnalyze = auditContext.urls.map((url) => ({ url }));
     skipJoinPath = true;
   } else {
-    const s3Config = await getS3Config(site, context);
-    const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
+    const awsRuntime = getCdnAwsRuntime(site, context);
+    const s3Config = getS3Config(site, context);
+    const athenaClient = awsRuntime.createAthenaClient(s3Config.getAthenaTempLocation());
     const filters = site.getConfig().getLlmoCdnlogsFilter();
 
     const variables = {
@@ -94,6 +83,7 @@ export async function extractUrls(context) {
       dateFilter: getDateFilter(),
       userAgentFilter: buildUserAgentFilter(),
       siteFilters: buildSiteFilters(filters, site),
+      excludedUrlSuffixesFilter: buildExcludedUrlSuffixesFilter(EXCLUDED_URL_SUFFIXES),
     };
 
     const query = await getStaticContent(variables, './src/page-citability/sql/top-urls.sql');
@@ -154,6 +144,7 @@ export async function extractUrls(context) {
     fullAuditRef: finalUrl,
     urls: urlsForScraping,
     processingType: 'page-citability',
+    options: PAGE_CITABILITY_SCRAPE_OPTIONS,
     siteId,
   };
 }
@@ -169,6 +160,8 @@ async function fetchScrapedData(s3Path, context) {
 }
 
 async function processUrl(url, scrapeResult, context, existingRecordsMap) {
+  const { log } = context;
+
   try {
     /* c8 ignore next 3 */
     if (!scrapeResult?.location) {
@@ -182,7 +175,7 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
       return { url, success: false, error: 'Missing bot or human view data' };
     }
 
-    const { rawPage: botHtml } = scrapeData.botView;
+    const { rawPage: botHtml, isDeployedAtEdge } = scrapeData.botView;
     const { rawPage: humanHtml } = scrapeData.humanView;
 
     /* c8 ignore next 3 */
@@ -198,15 +191,14 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
     const existingRecord = existingRecordsMap.get(url);
 
     if (existingRecord) {
-      // Update existing record
       existingRecord.setCitabilityScore(scores.citabilityScore);
       existingRecord.setContentRatio(scores.contentRatio);
       existingRecord.setWordDifference(scores.wordDifference);
       existingRecord.setBotWords(scores.botWords);
       existingRecord.setNormalWords(scores.normalWords);
+      existingRecord.setIsDeployedAtEdge(isDeployedAtEdge);
       await existingRecord.save();
     } else {
-      // Create new record
       await PageCitability.create({
         siteId,
         url,
@@ -215,13 +207,19 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
         wordDifference: scores.wordDifference,
         botWords: scores.botWords,
         normalWords: scores.normalWords,
+        isDeployedAtEdge,
       });
     }
 
-    return { url, success: true, ...scores };
-    /* c8 ignore next 3 */
+    return {
+      url, success: true, ...scores, isDeployedAtEdge,
+    };
+    /* c8 ignore next 6 */
   } catch (error) {
-    return { url, success: false, error: error.message };
+    log.error(`${LOG_PREFIX} Error processing ${url}: ${error.message}`);
+    return {
+      url, success: false, error: error.message,
+    };
   }
 }
 
@@ -260,10 +258,15 @@ export async function analyzeCitability(context) {
   }
 
   const successful = results.filter((r) => r.success).length;
-  log.info(`${LOG_PREFIX} Completed: ${successful}/${results.length} successful`);
+  const deployedAtEdge = results.filter((r) => r.isDeployedAtEdge).length;
+  log.info(`${LOG_PREFIX} Completed: ${successful}/${results.length} successful (${deployedAtEdge} deployed at edge)`);
 
   return {
-    auditResult: { successfulPages: successful, failedPages: results.length - successful },
+    auditResult: {
+      successfulPages: successful,
+      failedPages: results.length - successful,
+      deployedAtEdge,
+    },
     fullAuditRef: audit.getFullAuditRef(),
   };
 }

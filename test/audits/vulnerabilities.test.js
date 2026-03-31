@@ -24,7 +24,7 @@ import {
   VULNERABILITY_REPORT_NO_VULNERABILITIES,
   VULNERABILITY_REPORT_MULTIPLE_COMPONENTS,
 } from '../fixtures/vulnerabilities/vulnerability-reports.js';
-import { vulnerabilityAuditRunner, opportunityAndSuggestionsStep, dataContainsCode } from '../../src/vulnerabilities/handler.js';
+import { vulnerabilityAuditRunner, opportunityAndSuggestionsStep, extractCodeInfo } from '../../src/vulnerabilities/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -50,6 +50,16 @@ describe('Vulnerabilities Handler Integration Tests', () => {
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
     mockVulnerabilityReport = VULNERABILITY_REPORT_WITH_VULNERABILITIES;
+    const createdOpportunity = {
+      getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+      getType: () => 'security-vulnerabilities',
+      getSiteId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+      setStatus: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([]),
+      setUpdatedBy: sandbox.stub().resolves(),
+      save: sandbox.stub().resolves(),
+      addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+    };
 
     context = new MockContextBuilder()
       .withSandbox(sandbox)
@@ -86,16 +96,8 @@ describe('Vulnerabilities Handler Integration Tests', () => {
           },
           Opportunity: {
             allBySiteIdAndStatus: sandbox.stub().resolves([]),
-            create: sandbox.stub().resolves({
-              getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-              getType: () => 'security-vulnerabilities',
-              getSiteId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-              setStatus: sandbox.stub().resolves(),
-              getSuggestions: sandbox.stub().resolves([]),
-              setUpdatedBy: sandbox.stub().resolves(),
-              save: sandbox.stub().resolves(),
-              addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
-            }),
+            create: sandbox.stub().resolves(createdOpportunity),
+            findById: sandbox.stub().resolves(createdOpportunity),
           },
           Suggestion: {
             bulkUpdateStatus: sandbox.stub().resolves(),
@@ -370,13 +372,14 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       };
 
       // Mock existing opportunity
+      const suggestions = [
+        { getId: () => 'suggestion1', getStatus: () => 'NEW' },
+        { getId: () => 'suggestion2', getStatus: () => 'NEW' },
+      ];
       const mockOpportunity = {
         getType: () => 'security-vulnerabilities',
         setStatus: sandbox.stub().resolves(),
-        getSuggestions: sandbox.stub().resolves([
-          { id: 'suggestion1', status: 'NEW' },
-          { id: 'suggestion2', status: 'NEW' },
-        ]),
+        getSuggestions: sandbox.stub().resolves(suggestions),
         setUpdatedBy: sandbox.stub().resolves(),
         save: sandbox.stub().resolves(),
       };
@@ -389,10 +392,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(mockOpportunity.setStatus).to.have.been.calledWith('RESOLVED');
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith(
-        [
-          { id: 'suggestion1', status: 'NEW' },
-          { id: 'suggestion2', status: 'NEW' },
-        ],
+        suggestions,
         'FIXED',
       );
       expect(mockOpportunity.setUpdatedBy).to.have.been.calledWith('system');
@@ -522,7 +522,47 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(springSuggestion.data.cves[1].score).to.equal(5.5);
     });
 
-    it('should handle auto suggest to trigger mystique', async () => {
+    it('should skip starfish-auto-code when auto suggest is disabled', async () => {
+      const configuration = {
+        isHandlerEnabledForSite: sandbox.stub(),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+      configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities').returns(true);
+      configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities-auto-suggest').returns(false);
+
+      context.audit = {
+        getAuditResult: () => ({
+          vulnerabilityReport: VULNERABILITY_REPORT_WITH_VULNERABILITIES,
+          success: true,
+        }),
+        getId: () => 'test-audit-id',
+      };
+
+      const result = await opportunityAndSuggestionsStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('should handle auto suggest to trigger starfish-auto-code', async () => {
+      const mockOpportunity = {
+        getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+        getSuggestions: sandbox.stub()
+          .onCall(0)
+          .resolves([])
+          .onCall(1)
+          .resolves([
+            { getId: () => 'suggestion-new', getStatus: () => 'NEW' },
+            { getId: () => 'suggestion-pending', getStatus: () => 'PENDING_VALIDATION' },
+            { getId: () => 'suggestion-fixed', getStatus: () => 'FIXED' },
+          ]),
+      };
+
+      context.dataAccess.Opportunity.create.resolves(mockOpportunity);
+      context.dataAccess.Opportunity.findById.resolves(null);
+
       const configuration = {
         isHandlerEnabledForSite: sandbox.stub(),
       };
@@ -551,15 +591,17 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       ];
 
       context.data = { importResults: codeData };
+      context.env.QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE = 'test-starfish-queue';
 
       const result = await opportunityAndSuggestionsStep(context);
       expect(result).to.deep.equal({ status: 'complete' });
 
-      // Verify SQS message to mystique was sent
+      // Verify SQS message to starfish-auto-code was sent
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
 
-      // Verify the message structure
+      // Verify the queue URL and message structure
       const messageCall = context.sqs.sendMessage.getCall(0);
+      expect(messageCall.args[0]).to.equal('test-starfish-queue');
       const message = messageCall.args[1];
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
@@ -567,8 +609,52 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(message).to.have.property('siteId', context.site.getId());
       expect(message).to.have.property('auditId', 'test-audit-id');
       expect(message).to.have.property('deliveryType', 'aem_cs');
-      expect(message.data).to.have.property('importResults', codeData);
-      expect(message.data).to.have.property('suggestions');
+      expect(message.data).to.have.property('opportunityId');
+      expect(message.data).to.have.property('suggestionIds');
+      expect(message.data.suggestionIds).to.deep.equal([
+        'suggestion-new',
+        'suggestion-pending',
+      ]);
+      expect(message.data).to.have.property('codeBucket', 'spacecat-importer-bucket');
+      expect(message.data).to.have.property(
+        'codePath',
+        'code/ad3d5bb7-9e85-4195-94e8-833cc5a73253/github/adobe/mystique-project/main/repository.zip',
+      );
+    });
+
+    it('should skip starfish-auto-code when queue env var is not configured', async () => {
+      const configuration = {
+        isHandlerEnabledForSite: sandbox.stub(),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+      configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities').returns(true);
+      configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities-auto-suggest').returns(true);
+
+      context.audit = {
+        getAuditResult: () => ({
+          vulnerabilityReport: VULNERABILITY_REPORT_WITH_VULNERABILITIES,
+          success: true,
+        }),
+        getId: () => 'test-audit-id',
+      };
+
+      context.data = {
+        importResults: [{
+          result: [{
+            codeBucket: 'spacecat-importer-bucket',
+            codePath: 'code/test/repository.zip',
+          }],
+        }],
+      };
+
+      // QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE is not set in context.env
+
+      const result = await opportunityAndSuggestionsStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(context.log.warn).to.have.been.calledWithMatch(/QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE is not configured/);
     });
 
     it('should handle configuration lookup failure gracefully', async () => {
@@ -620,8 +706,8 @@ describe('Vulnerabilities Handler Integration Tests', () => {
   });
 });
 
-describe('dataContainsCode', () => {
-  describe('returns true for valid data', () => {
+describe('extractCodeInfo', () => {
+  describe('returns code info for valid data', () => {
     it('accepts valid nested structure with codeBucket and codePath', () => {
       const data = {
         importResults: [{
@@ -631,7 +717,10 @@ describe('dataContainsCode', () => {
           }],
         }],
       };
-      expect(dataContainsCode(data)).to.be.true;
+      expect(extractCodeInfo(data)).to.deep.equal({
+        codeBucket: 'spacecat-importer-bucket',
+        codePath: 'code/test/repository.zip',
+      });
     });
 
     it('accepts data with whitespace that trims to valid strings', () => {
@@ -643,7 +732,10 @@ describe('dataContainsCode', () => {
           }],
         }],
       };
-      expect(dataContainsCode(data)).to.be.true;
+      expect(extractCodeInfo(data)).to.deep.equal({
+        codeBucket: '  my-bucket  ',
+        codePath: '  path/to/code  ',
+      });
     });
 
     it('accepts data with multiple importResults or results (uses first)', () => {
@@ -661,69 +753,75 @@ describe('dataContainsCode', () => {
           ],
         }],
       };
-      expect(dataContainsCode(multipleImportResults)).to.be.true;
-      expect(dataContainsCode(multipleResults)).to.be.true;
+      expect(extractCodeInfo(multipleImportResults)).to.deep.equal({
+        codeBucket: 'bucket-1',
+        codePath: 'path-1',
+      });
+      expect(extractCodeInfo(multipleResults)).to.deep.equal({
+        codeBucket: 'bucket-1',
+        codePath: 'path-1',
+      });
     });
   });
 
-  describe('returns false for invalid data', () => {
+  describe('returns null for invalid data', () => {
     it('rejects invalid top-level data', () => {
-      expect(dataContainsCode(null)).to.be.false;
-      expect(dataContainsCode(undefined)).to.be.false;
-      expect(dataContainsCode('not an object')).to.be.false;
-      expect(dataContainsCode(123)).to.be.false;
-      expect(dataContainsCode({})).to.be.false;
+      expect(extractCodeInfo(null)).to.be.null;
+      expect(extractCodeInfo(undefined)).to.be.null;
+      expect(extractCodeInfo('not an object')).to.be.null;
+      expect(extractCodeInfo(123)).to.be.null;
+      expect(extractCodeInfo({})).to.be.null;
     });
 
     it('rejects invalid importResults', () => {
-      expect(dataContainsCode({ otherProperty: 'value' })).to.be.false;
-      expect(dataContainsCode({ importResults: null })).to.be.false;
-      expect(dataContainsCode({ importResults: 'not-an-array' })).to.be.false;
-      expect(dataContainsCode({ importResults: [] })).to.be.false;
-      expect(dataContainsCode({ importResults: [null] })).to.be.false;
-      expect(dataContainsCode({ importResults: ['not-an-object'] })).to.be.false;
+      expect(extractCodeInfo({ otherProperty: 'value' })).to.be.null;
+      expect(extractCodeInfo({ importResults: null })).to.be.null;
+      expect(extractCodeInfo({ importResults: 'not-an-array' })).to.be.null;
+      expect(extractCodeInfo({ importResults: [] })).to.be.null;
+      expect(extractCodeInfo({ importResults: [null] })).to.be.null;
+      expect(extractCodeInfo({ importResults: ['not-an-object'] })).to.be.null;
     });
 
     it('rejects invalid result property', () => {
-      expect(dataContainsCode({ importResults: [{ otherProperty: 'value' }] })).to.be.false;
-      expect(dataContainsCode({ importResults: [{ result: null }] })).to.be.false;
-      expect(dataContainsCode({ importResults: [{ result: 'not-an-array' }] })).to.be.false;
-      expect(dataContainsCode({ importResults: [{ result: [] }] })).to.be.false;
-      expect(dataContainsCode({ importResults: [{ result: [null] }] })).to.be.false;
-      expect(dataContainsCode({ importResults: [{ result: ['not-an-object'] }] })).to.be.false;
+      expect(extractCodeInfo({ importResults: [{ otherProperty: 'value' }] })).to.be.null;
+      expect(extractCodeInfo({ importResults: [{ result: null }] })).to.be.null;
+      expect(extractCodeInfo({ importResults: [{ result: 'not-an-array' }] })).to.be.null;
+      expect(extractCodeInfo({ importResults: [{ result: [] }] })).to.be.null;
+      expect(extractCodeInfo({ importResults: [{ result: [null] }] })).to.be.null;
+      expect(extractCodeInfo({ importResults: [{ result: ['not-an-object'] }] })).to.be.null;
     });
 
     it('rejects missing or invalid codeBucket', () => {
-      expect(dataContainsCode({
+      expect(extractCodeInfo({
         importResults: [{ result: [{ codePath: 'path/to/code' }] }],
-      })).to.be.false;
-      expect(dataContainsCode({
+      })).to.be.null;
+      expect(extractCodeInfo({
         importResults: [{ result: [{ codeBucket: null, codePath: 'path/to/code' }] }],
-      })).to.be.false;
-      expect(dataContainsCode({
+      })).to.be.null;
+      expect(extractCodeInfo({
         importResults: [{ result: [{ codeBucket: 123, codePath: 'path/to/code' }] }],
-      })).to.be.false;
-      expect(dataContainsCode({
+      })).to.be.null;
+      expect(extractCodeInfo({
         importResults: [{ result: [{ codeBucket: '', codePath: 'path/to/code' }] }],
-      })).to.be.false;
-      expect(dataContainsCode({
+      })).to.be.null;
+      expect(extractCodeInfo({
         importResults: [{ result: [{ codeBucket: '   ', codePath: 'path/to/code' }] }],
-      })).to.be.false;
+      })).to.be.null;
     });
 
     it('rejects missing or invalid codePath', () => {
-      expect(dataContainsCode({
+      expect(extractCodeInfo({
         importResults: [{ result: [{ codeBucket: 'my-bucket' }] }],
-      })).to.be.false;
-      expect(dataContainsCode({
+      })).to.be.null;
+      expect(extractCodeInfo({
         importResults: [{ result: [{ codeBucket: 'my-bucket', codePath: 123 }] }],
-      })).to.be.false;
-      expect(dataContainsCode({
+      })).to.be.null;
+      expect(extractCodeInfo({
         importResults: [{ result: [{ codeBucket: 'my-bucket', codePath: '' }] }],
-      })).to.be.false;
-      expect(dataContainsCode({
+      })).to.be.null;
+      expect(extractCodeInfo({
         importResults: [{ result: [{ codeBucket: 'my-bucket', codePath: '   ' }] }],
-      })).to.be.false;
+      })).to.be.null;
     });
   });
 });

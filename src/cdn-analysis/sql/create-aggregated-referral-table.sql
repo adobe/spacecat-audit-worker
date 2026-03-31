@@ -19,6 +19,7 @@ PARTITIONED BY (
 STORED AS PARQUET
 LOCATION '{{aggregatedLocation}}'
 TBLPROPERTIES (
+  'schema_version'     = '1',
   'projection.enabled' = 'true',
   'projection.year.type' = 'integer',
   'projection.year.range' = '2024,2030',

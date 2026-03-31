@@ -47,9 +47,8 @@ export function convertToOpportunityEntity(siteId, auditId, rawOppty = {}, guida
       'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/Doc.aspx?sourcedoc=%7B19613D9B-93D4-4112-B7C8-DBE0D9DCC55B%7D&file=Experience_Success_Studio_High_Organic_Traffic_Low_CTR_Runbook.docx&action=default&mobileredirect=true',
     type: 'high-organic-low-ctr',
     origin: 'AUTOMATION',
-    title: 'Page with high organic traffic but low click through rate detected',
-    description:
-      'Adjusting the wording, images and/or layout on the page to resonate more with a specific audience should increase the overall engagement on the page and ultimately bump conversion.',
+    title: 'A high-traffic page isn\'t engaging visitors — suggestions for optimization ready for review',
+    description: 'High traffic but low engagement signals missed opportunities — improving content relevance lifts conversions.',
     status: 'NEW',
     guidance: {
       recommendations: guidance,

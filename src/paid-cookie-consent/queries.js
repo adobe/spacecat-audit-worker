@@ -196,3 +196,120 @@ ORDER BY traffic_loss DESC
 ${limit ? `LIMIT ${limit}` : ''}
 `.trim();
 }
+
+/**
+ * Generates SQL query for bounce gap metrics calculation.
+ * Fetches bounce rates for both consent='show' and consent='hidden' by traffic source.
+ * Used to calculate: projectedTrafficLost = PV_shown × max(0, BR_shown - BR_hidden)
+ *
+ * @param {Object} params - Template parameters
+ * @param {string} params.siteId - Site ID
+ * @param {string} params.tableName - Table name
+ * @param {string} params.temporalCondition - Temporal condition
+ * @returns {string} The SQL query string
+ */
+export function getBounceGapMetricsTemplate({
+  siteId,
+  tableName,
+  temporalCondition,
+}) {
+  return `
+WITH raw AS (
+    SELECT
+        trf_type,
+        consent,
+        pageviews,
+        engaged
+    FROM ${tableName}
+    WHERE siteid = '${siteId}'
+    AND consent IN ('show', 'hidden')
+    AND (${temporalCondition})
+),
+agg AS (
+    SELECT
+        trf_type,
+        consent,
+        COUNT(*) AS row_count,
+        CAST(SUM(pageviews) AS BIGINT) AS pageviews,
+        CAST(SUM(engaged) AS BIGINT) AS engagements
+    FROM raw
+    GROUP BY trf_type, consent
+)
+SELECT
+    trf_type,
+    consent,
+    pageviews,
+    1 - CAST(engagements AS DOUBLE) / NULLIF(row_count, 0) AS bounce_rate
+FROM agg
+ORDER BY trf_type, consent
+`.trim();
+}
+
+/**
+ * Generates SQL query for per-page consent banner bounce gap.
+ * Pivots consent='show' vs consent='hidden' bounce rates per page path,
+ * then computes bounce_gap_pageviews = pv_show × max(0, BR_show - BR_hidden).
+ * Only includes pages that have data for both consent states.
+ *
+ * @param {Object} params - Template parameters
+ * @param {string} params.siteId - Site ID
+ * @param {string} params.tableName - Table name
+ * @param {string} params.temporalCondition - Temporal condition
+ * @param {number} [params.limit] - Max rows to return
+ * @returns {string} The SQL query string
+ */
+export function getTopPagesWithBounceGapTemplate({
+  siteId,
+  tableName,
+  temporalCondition,
+  limit,
+}) {
+  return `
+WITH raw AS (
+    SELECT path, consent, pageviews, engaged
+    FROM ${tableName}
+    WHERE siteid = '${siteId}'
+    AND consent IN ('show', 'hidden')
+    AND (${temporalCondition})
+),
+agg AS (
+    SELECT path, consent,
+        COUNT(*) AS row_count,
+        CAST(SUM(pageviews) AS BIGINT) AS pageviews,
+        CAST(SUM(engaged) AS BIGINT) AS engagements
+    FROM raw
+    GROUP BY path, consent
+),
+pivoted AS (
+    SELECT path,
+        MAX(CASE WHEN consent = 'show' THEN pageviews END) AS pv_show,
+        MAX(CASE WHEN consent = 'show' THEN row_count END) AS rc_show,
+        MAX(CASE WHEN consent = 'show' THEN engagements END) AS eng_show,
+        MAX(CASE WHEN consent = 'hidden' THEN pageviews END) AS pv_hidden,
+        MAX(CASE WHEN consent = 'hidden' THEN row_count END) AS rc_hidden,
+        MAX(CASE WHEN consent = 'hidden' THEN engagements END) AS eng_hidden
+    FROM agg
+    GROUP BY path
+)
+SELECT
+    path,
+    pv_show,
+    ROUND(1.0 - CAST(eng_show AS DOUBLE) / NULLIF(rc_show, 0), 4) AS bounce_rate_show,
+    pv_hidden,
+    ROUND(1.0 - CAST(eng_hidden AS DOUBLE) / NULLIF(rc_hidden, 0), 4) AS bounce_rate_hidden,
+    ROUND(
+        (1.0 - CAST(eng_show AS DOUBLE) / NULLIF(rc_show, 0))
+        - (1.0 - CAST(eng_hidden AS DOUBLE) / NULLIF(rc_hidden, 0)),
+    4) AS bounce_rate_delta,
+    ROUND(
+        CAST(pv_show AS DOUBLE) * GREATEST(0.0,
+            (1.0 - CAST(eng_show AS DOUBLE) / NULLIF(rc_show, 0))
+            - (1.0 - CAST(eng_hidden AS DOUBLE) / NULLIF(rc_hidden, 0))
+        ),
+    2) AS bounce_gap_pageviews
+FROM pivoted
+WHERE pv_show IS NOT NULL AND pv_hidden IS NOT NULL
+ORDER BY bounce_gap_pageviews DESC
+${limit ? `LIMIT ${limit}` : ''}
+`.trim();
+}

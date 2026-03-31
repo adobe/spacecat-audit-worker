@@ -346,6 +346,38 @@ describe('summarization guidance handler', () => {
     expect(syncSuggestionsStub).to.have.been.calledOnce;
   });
 
+  it('should filter out suggestions when page_summary_present or key_points_present is true', async () => {
+    fetchStub.resolves({
+      ok: true,
+      status: 200,
+      json: sinon.stub().resolves({
+        guidance: mockSummarizationData.guidance,
+        suggestions: [
+          {
+            ...mockSummarizationData.suggestions[0],
+            page_summary_present: true,
+            key_points_present: true,
+          },
+        ],
+      }),
+    });
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(dummyOpportunity);
+
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        presignedUrl: 'https://s3.aws.com/summaries.json',
+      },
+    };
+    await handler(message, context);
+
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
+    const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+    expect(syncArgs.newData).to.have.length(0);
+  });
+
   it('should create suggestion with correct data structure', async () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(dummyOpportunity);
@@ -364,9 +396,9 @@ describe('summarization guidance handler', () => {
     const syncCall = syncSuggestionsStub.getCall(0);
     const syncArgs = syncCall.args[0];
 
-    // Verify newData structure contains page, key points, and section suggestions
+    // Verify newData structure contains page and key points suggestions (no section summaries)
     expect(syncArgs.newData).to.be.an('array');
-    expect(syncArgs.newData).to.have.length(3); // page + key points + section
+    expect(syncArgs.newData).to.have.length(2); // page + key points
 
     // Test the mapNewSuggestion function
     const testData = {
@@ -551,9 +583,9 @@ describe('summarization guidance handler', () => {
     const syncCall = syncSuggestionsStub.getCall(0);
     const syncArgs = syncCall.args[0];
     
-    // Verify the newData structure (from getJsonSummarySuggestion)
+    // Verify the newData structure (from getJsonSummarySuggestion) - page + key points only
     expect(syncArgs.newData).to.be.an('array');
-    expect(syncArgs.newData).to.have.length(3); // page summary + key points + section summary
+    expect(syncArgs.newData).to.have.length(2); // page summary + key points
     
     // Test the first suggestion (page-level)
     const pageLevelSuggestion = syncArgs.newData[0];
@@ -572,15 +604,6 @@ describe('summarization guidance handler', () => {
     expect(keyPointsSuggestion).to.have.property('url', 'https://adobe.com/page1');
     expect(keyPointsSuggestion).to.have.nested.property('transformRules.selector', 'h1');
     expect(keyPointsSuggestion).to.have.nested.property('transformRules.action', 'insertAfter');
-    
-    // Test the third suggestion (section-level)
-    const sectionLevelSuggestion = syncArgs.newData[2];
-    expect(sectionLevelSuggestion).to.have.property('summarizationText', 'Section summary 1');
-    expect(sectionLevelSuggestion).to.have.property('fullPage', false);
-    expect(sectionLevelSuggestion).to.have.property('keyPoints', false);
-    expect(sectionLevelSuggestion).to.have.property('url', 'https://adobe.com/page1');
-    expect(sectionLevelSuggestion).to.have.nested.property('transformRules.selector', 'h2.section-heading');
-    expect(sectionLevelSuggestion).to.have.nested.property('transformRules.action', 'insertAfter');
     
     // Test the mapNewSuggestion function
     const testSuggestionData = {

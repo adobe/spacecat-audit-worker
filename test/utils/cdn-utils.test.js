@@ -23,9 +23,12 @@ import {
   getBucketInfo,
   discoverCdnProviders,
   isStandardAdobeCdnBucket,
-  shouldRecreateRawTable,
+  shouldRecreateTable,
   buildSiteFilters,
   mapServiceToCdnProvider,
+  resolveConsolidatedBucketName,
+  resolveSiteCdnRegion,
+  getS3Config,
 } from '../../src/utils/cdn-utils.js';
 
 use(sinonChai);
@@ -287,14 +290,102 @@ describe('CDN Utils', () => {
     });
   });
 
-  describe('shouldRecreateRawTable', () => {
+  describe('resolveSiteCdnRegion', () => {
+    it('uses site cdn bucket config region when provided', () => {
+      const site = {
+        getConfig: () => ({
+          getLlmoCdnBucketConfig: () => ({ region: 'eu-west-1' }),
+        }),
+      };
+      const context = {
+        env: { AWS_REGION: 'us-east-1' },
+      };
+
+      expect(resolveSiteCdnRegion(site, context)).to.equal('eu-west-1');
+    });
+
+    it('falls back to runtime region when site region is missing', () => {
+      const site = {
+        getConfig: () => ({
+          getLlmoCdnBucketConfig: () => ({}),
+        }),
+      };
+      const context = {
+        env: { AWS_REGION: 'us-west-2' },
+      };
+
+      expect(resolveSiteCdnRegion(site, context)).to.equal('us-west-2');
+    });
+  });
+
+  describe('resolveConsolidatedBucketName', () => {
+    it('uses explicit region override when provided', () => {
+      const context = {
+        env: {
+          AWS_ENV: 'dev',
+          AWS_REGION: 'us-east-1',
+        },
+      };
+
+      expect(resolveConsolidatedBucketName(context, 'eu-west-1'))
+        .to.equal('spacecat-dev-cdn-logs-aggregates-eu-west-1');
+    });
+
+    it('falls back to runtime region when override is missing', () => {
+      const context = {
+        env: {
+          AWS_ENV: 'dev',
+          AWS_REGION: 'us-west-1',
+        },
+      };
+
+      expect(resolveConsolidatedBucketName(context))
+        .to.equal('spacecat-dev-cdn-logs-aggregates-us-west-1');
+    });
+  });
+
+  describe('getS3Config', () => {
+    it('builds shared CDN config from site and context', () => {
+      const site = {
+        getBaseURL: () => 'https://www.example.com',
+        getId: () => 'site-123',
+        getConfig: () => ({
+          getLlmoCdnBucketConfig: () => ({ region: 'eu-west-1' }),
+        }),
+      };
+      const context = {
+        env: {
+          AWS_ENV: 'test',
+          AWS_REGION: 'us-east-1',
+        },
+      };
+
+      const config = getS3Config(site, context);
+
+      expect(config.region).to.equal('eu-west-1');
+      expect(config.bucket).to.equal('spacecat-test-cdn-logs-aggregates-eu-west-1');
+      expect(config.customerName).to.equal('example');
+      expect(config.customerDomain).to.equal('example_com');
+      expect(config.databaseName).to.equal('cdn_logs_example_com');
+      expect(config.tableName).to.equal('aggregated_logs_example_com_consolidated');
+      expect(config.referralTableName).to.equal('aggregated_referral_logs_example_com_consolidated');
+      expect(config.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/aggregated/site-123/');
+      expect(config.aggregatedReferralLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/aggregated-referral/site-123/');
+      expect(config.getAthenaTempLocation()).to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/temp/athena-results/');
+    });
+  });
+
+  describe('shouldRecreateTable', () => {
     let athenaClient;
+    let log;
     const database = 'test-database';
     const rawTable = 'test-raw-table';
     const expectedLocation = 's3://test-bucket/raw/';
+    const sqlTemplate = "TBLPROPERTIES ('schema_version' = '1')";
 
     beforeEach(() => {
       athenaClient = { query: sandbox.stub(), execute: sandbox.stub() };
+      log = { info: sandbox.stub() };
     });
 
     afterEach(() => {
@@ -304,40 +395,78 @@ describe('CDN Utils', () => {
     it('returns true if table does not exist', async () => {
       athenaClient.query.resolves([]);
 
-      const result = await shouldRecreateRawTable(
+      const result = await shouldRecreateTable(
         athenaClient,
         database,
         rawTable,
         expectedLocation,
+        sqlTemplate,
+        log,
       );
 
       expect(result).to.be.true;
     });
 
     it('returns true if table exists and location does not match', async () => {
-      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}/other'` }]);
+      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}/other' TBLPROPERTIES ('schema_version' = '1')` }]);
 
-      const result = await shouldRecreateRawTable(
+      const result = await shouldRecreateTable(
         athenaClient,
         database,
         rawTable,
         expectedLocation,
+        sqlTemplate,
+        log,
       );
 
       expect(result).to.be.true;
     });
 
-    it('returns false if table exists and location matches', async () => {
-      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}'` }]);
+    it('returns false if table exists and location and schema version match', async () => {
+      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}' TBLPROPERTIES ('schema_version' = '1')` }]);
 
-      const result = await shouldRecreateRawTable(
+      const result = await shouldRecreateTable(
         athenaClient,
         database,
         rawTable,
         expectedLocation,
+        sqlTemplate,
+        log,
       );
 
       expect(result).to.be.false;
+    });
+
+    it('returns true if schema version mismatch', async () => {
+      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}' TBLPROPERTIES ('schema_version' = '0')` }]);
+
+      const result = await shouldRecreateTable(
+        athenaClient,
+        database,
+        rawTable,
+        expectedLocation,
+        sqlTemplate,
+        log,
+      );
+
+      expect(result).to.be.true;
+      expect(athenaClient.execute.calledOnce).to.be.true;
+    });
+
+    it('returns true if table has no schema version (legacy table)', async () => {
+      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}'` }]);
+
+      const result = await shouldRecreateTable(
+        athenaClient,
+        database,
+        rawTable,
+        expectedLocation,
+        sqlTemplate,
+        log,
+      );
+
+      expect(result).to.be.true;
+      expect(athenaClient.execute.calledOnce).to.be.true;
     });
   });
 
@@ -371,7 +500,7 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$')");
+      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?adobe.com$'))");
     });
 
     it('normalizes www prefix to optional pattern', () => {
@@ -381,7 +510,7 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$')");
+      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?adobe.com$'))");
     });
 
     it('keeps subdomain and adds optional www prefix', () => {
@@ -391,7 +520,7 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("REGEXP_LIKE(host, '(?i)^(www.)?business.adobe.com$')");
+      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?business.adobe.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?business.adobe.com$'))");
     });
   });
 });

@@ -10,7 +10,13 @@
  * governing permissions and limitations under the License.
  */
 
-import { HeadBucketCommand, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  HeadBucketCommand,
+  ListObjectsV2Command,
+  GetObjectCommand,
+} from '@aws-sdk/client-s3';
+import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import zlib from 'zlib';
 import { hasText } from '@adobe/spacecat-shared-utils';
 import { PROVIDER_USER_AGENT_PATTERNS } from '../common/user-agent-classification.js';
@@ -107,11 +113,36 @@ export async function resolveCdnBucketName(site, context) {
   const {
     s3Client, log, env,
   } = context;
+  const resolveClientRegion = async () => {
+    const region = s3Client?.config?.region;
+    return typeof region === 'function' ? region() : region;
+  };
+  const logBucketRegionError = async (error, bucket) => {
+    const statusCode = error?.$metadata?.httpStatusCode;
+    const bucketRegionHint = error?.$response?.headers?.['x-amz-bucket-region'];
+
+    if (statusCode === 301) {
+      const clientRegion = await resolveClientRegion();
+      log.error(`Bucket ${bucket} is in region ${bucketRegionHint || 'unknown'} but client is using ${clientRegion}.`, {
+        bucket,
+        configuredRegion: site.getConfig()?.getLlmoCdnBucketConfig?.()?.region,
+        runtimeRegion: env?.AWS_REGION,
+        clientRegion,
+        bucketRegionHint,
+        requestId: error?.$metadata?.requestId,
+      });
+    }
+  };
 
   // If the bucket name is configured, use it
   const { bucketName } = site.getConfig()?.getLlmoCdnBucketConfig() || {};
   if (bucketName) {
-    await s3Client.send(new HeadBucketCommand({ Bucket: bucketName }));
+    try {
+      await s3Client.send(new HeadBucketCommand({ Bucket: bucketName }));
+    } catch (error) {
+      await logBucketRegionError(error, bucketName);
+      throw error;
+    }
     return bucketName;
   }
 
@@ -123,6 +154,7 @@ export async function resolveCdnBucketName(site, context) {
       await s3Client.send(new HeadBucketCommand({ Bucket: standardBucket }));
       return standardBucket;
     } catch (error) {
+      await logBucketRegionError(error, standardBucket);
       log.info(`Standardized bucket ${standardBucket} not found`, error);
     }
   }
@@ -315,26 +347,93 @@ export async function discoverCdnProviders(s3Client, bucketName, timeParts) {
   return [];
 }
 
-export function resolveConsolidatedBucketName(context) {
-  const { env } = context;
+export function resolveSiteCdnRegion(site, context) {
+  const configuredRegion = site?.getConfig?.()?.getLlmoCdnBucketConfig?.()?.region;
+  if (configuredRegion) {
+    return configuredRegion;
+  }
+
+  return context?.env?.AWS_REGION || 'us-east-1';
+}
+
+export function resolveConsolidatedBucketName(context, region) {
+  const { env = {} } = context;
   const { AWS_ENV, AWS_REGION = 'us-east-1' } = env;
+  const resolvedRegion = region || AWS_REGION;
   const environment = AWS_ENV || 'prod';
-  return `spacecat-${environment}-cdn-logs-aggregates-${AWS_REGION}`;
+  return `spacecat-${environment}-cdn-logs-aggregates-${resolvedRegion}`;
+}
+
+export function getS3Config(site, context) {
+  const region = resolveSiteCdnRegion(site, context);
+  const customerDomain = extractCustomerDomain(site);
+  const domainParts = customerDomain.split(/[._]/);
+  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
+  const bucket = resolveConsolidatedBucketName(context, region);
+  const siteId = site?.getId?.();
+  return {
+    bucket,
+    region,
+    siteId,
+    customerName,
+    customerDomain,
+    databaseName: `cdn_logs_${customerDomain}`,
+    tableName: `aggregated_logs_${customerDomain}_consolidated`,
+    referralTableName: `aggregated_referral_logs_${customerDomain}_consolidated`,
+    aggregatedLocation: siteId ? `s3://${bucket}/aggregated/${siteId}/` : undefined,
+    aggregatedReferralLocation: siteId ? `s3://${bucket}/aggregated-referral/${siteId}/` : undefined,
+    getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
+  };
+}
+
+export function getCdnAwsRuntime(site, context) {
+  const region = resolveSiteCdnRegion(site, context);
+  const runtimeRegion = context?.env?.AWS_REGION || 'us-east-1';
+  const s3Client = region === runtimeRegion ? context.s3Client : new S3Client({ region });
+  const athenaContext = region === runtimeRegion
+    ? context
+    : {
+      ...context,
+      athenaClient: undefined,
+      env: {
+        ...context.env,
+        AWS_REGION: region,
+      },
+    };
+
+  return {
+    region,
+    s3Client,
+    createAthenaClient: (tempLocation, opts = {}) => AWSAthenaClient.fromContext(
+      athenaContext,
+      tempLocation,
+      opts,
+    ),
+  };
 }
 
 /**
- * Checks if raw table location matches expected location and recreates if needed
+ * Extracts schema_version from SQL or CREATE TABLE statement
+ */
+function extractSchemaVersion(str) {
+  const match = str?.match(/'schema_version'\s*=\s*'([^']+)'/i);
+  return match?.[1] || '0';
+}
+
+/**
+ * Checks if table needs recreation based on location or schema version mismatch.
  * @returns {Promise<boolean>} True if table needs to be created
  */
-export async function shouldRecreateRawTable(
+export async function shouldRecreateTable(
   athenaClient,
   database,
-  rawTable,
+  tableName,
   expectedLocation,
+  sqlTemplate,
   log,
 ) {
   try {
-    const result = await athenaClient.query(`SHOW CREATE TABLE ${database}.${rawTable}`, database, `[Athena Query] Check raw table location ${database}.${rawTable}`);
+    const result = await athenaClient.query(`SHOW CREATE TABLE ${database}.${tableName}`, database, `[Athena Query] Check table ${database}.${tableName}`);
     const createStatement = result?.map((row) => row.createtab_stmt).join('\n');
     const locationMatch = createStatement?.match(/LOCATION\s*['"]([^'"]+)['"]/i);
 
@@ -342,8 +441,18 @@ export async function shouldRecreateRawTable(
 
     const normalize = (loc) => (loc.endsWith('/') ? loc : `${loc}/`);
     if (normalize(locationMatch[1]) !== normalize(expectedLocation)) {
-      log.info(`Table location mismatch. Dropping table ${database}.${rawTable}`);
-      await athenaClient.execute(`DROP TABLE IF EXISTS ${database}.${rawTable}`, database, `[Athena Query] Drop raw table ${database}.${rawTable}`);
+      log.info(`Table location mismatch. Dropping table ${database}.${tableName}`);
+      await athenaClient.execute(`DROP TABLE IF EXISTS ${database}.${tableName}`, database, `[Athena Query] Drop raw table ${database}.${tableName}`);
+      return true;
+    }
+
+    // Check schema version mismatch
+    const currentVersion = extractSchemaVersion(createStatement);
+    const expectedVersion = extractSchemaVersion(sqlTemplate);
+
+    if (currentVersion !== expectedVersion) {
+      log.info(`Schema version mismatch for ${database}.${tableName} (current: ${currentVersion}, expected: ${expectedVersion}). Dropping table.`);
+      await athenaClient.execute(`DROP TABLE IF EXISTS ${database}.${tableName}`, database, `[Athena Query] Drop raw table ${database}.${tableName}`);
       return true;
     }
 
@@ -358,7 +467,7 @@ export function buildSiteFilters(filters, site) {
     const baseURL = site.getBaseURL();
     const { host } = new URL(baseURL);
     const rootHost = host.replace(/^www\./, '');
-    return `REGEXP_LIKE(host, '(?i)^(www.)?${rootHost}$')`;
+    return `(REGEXP_LIKE(host, '(?i)^(www.)?${rootHost}$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?${rootHost}$'))`;
   }
 
   const clauses = filters.map(({ key, value, type }) => {
@@ -393,18 +502,24 @@ export function buildDateFilter(startDate, endDate) {
 }
 
 /**
- * Builds user agent filter for AI agents (ChatGPT, Perplexity, Google, Claude)
- * Reusable across different audit modules for CDN log analysis
+ * Builds user agent filter for reports
+ * It excludes searchbots for now (Googlebot, Bingbot, Google-Extended)
+ * Used by cdn-logs-report and page-citability audits
  */
 export function buildUserAgentFilter() {
   const {
-    chatgpt, perplexity, google, claude, mistralai, amazon,
+    chatgpt,
+    perplexity,
+    googleai,
+    claude,
+    mistralai,
+    amazon,
   } = PROVIDER_USER_AGENT_PATTERNS;
 
   return `(
     REGEXP_LIKE(user_agent, '${chatgpt}') OR 
     REGEXP_LIKE(user_agent, '${perplexity}') OR 
-    REGEXP_LIKE(user_agent, '${google}') OR
+    REGEXP_LIKE(user_agent, '${googleai}') OR
     REGEXP_LIKE(user_agent, '${claude}') OR
     REGEXP_LIKE(user_agent, '${mistralai}') OR
     REGEXP_LIKE(user_agent, '${amazon}')

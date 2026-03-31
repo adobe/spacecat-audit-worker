@@ -103,38 +103,20 @@ describe('LLMO Referral Traffic Handler', () => {
   });
 
   describe('referralTrafficRunner', () => {
-    it('should skip spreadsheet creation when no OpTel data is available', async () => {
-      // Mock the OpTel check query to return no data
-      mockAthenaClient.query.onFirstCall().resolves([{ row_count: 0 }]);
+    it('should skip spreadsheet creation when no data is available', async () => {
+      // Mock the query to return no data
+      mockAthenaClient.query.resolves([]);
 
       const result = await handlerModule.referralTrafficRunner(context);
 
       expect(result.auditResult.rowCount).to.equal(0);
-      expect(result.auditResult.hasOptelData).to.equal(false);
-      expect(result.fullAuditRef).to.include('No OpTel Data Available');
+      expect(result.fullAuditRef).to.include('No OpTel Data Found');
       expect(mockAthenaClient.query).to.have.been.calledOnce;
       expect(saveExcelReportStub).to.not.have.been.called;
     });
 
-    it('should create empty spreadsheet when OpTel data exists but no LLM traffic', async () => {
-      // Mock the OpTel check query to return data
-      mockAthenaClient.query.onFirstCall().resolves([{ row_count: 100 }]);
-      // Mock the LLM traffic query to return no data
-      mockAthenaClient.query.onSecondCall().resolves([]);
-
-      const result = await handlerModule.referralTrafficRunner(context);
-
-      expect(result.auditResult.rowCount).to.equal(0);
-      expect(result.auditResult.hasOptelData).to.equal(true);
-      expect(result.auditResult.hasLlmTraffic).to.equal(false);
-      expect(result.auditResult.filename).to.equal('referral-traffic-w10-2025.xlsx');
-      expect(result.fullAuditRef).to.include('test-folder/referral-traffic');
-      expect(mockAthenaClient.query).to.have.been.calledTwice;
-      expect(saveExcelReportStub).to.have.been.calledOnce;
-    });
-
-    it('should create populated spreadsheet when LLM traffic data exists', async () => {
-      const mockLlmData = [
+    it('should create populated spreadsheet when traffic data exists', async () => {
+      const mockTrafficData = [
         {
           path: '/page1',
           trf_type: 'earned',
@@ -148,17 +130,35 @@ describe('LLMO Referral Traffic Handler', () => {
         },
       ];
 
-      // Mock the OpTel check query to return data
-      mockAthenaClient.query.onFirstCall().resolves([{ row_count: 100 }]);
-      // Mock the LLM traffic query to return data
-      mockAthenaClient.query.onSecondCall().resolves(mockLlmData);
+      // Mock the query to return data
+      mockAthenaClient.query.resolves(mockTrafficData);
 
       const result = await handlerModule.referralTrafficRunner(context);
 
       expect(result.auditResult.rowCount).to.equal(1);
-      expect(result.auditResult.hasOptelData).to.equal(true);
-      expect(result.auditResult.hasLlmTraffic).to.equal(true);
       expect(result.auditResult.filename).to.equal('referral-traffic-w10-2025.xlsx');
+      expect(result.auditResult.outputLocation).to.equal('test-folder/referral-traffic');
+      expect(result.fullAuditRef).to.equal('test-folder/referral-traffic/referral-traffic-w10-2025.xlsx');
+      expect(mockAthenaClient.query).to.have.been.calledOnce;
+      expect(saveExcelReportStub).to.have.been.calledOnce;
+    });
+
+    it('should enrich data with page intents and region', async () => {
+      const mockTrafficData = [
+        { path: '/us/page1', trf_type: 'earned' },
+        { path: '/de/page2', trf_type: 'earned' },
+      ];
+
+      const mockPageIntents = [
+        { getUrl: () => 'https://example.com/us/page1', getPageIntent: () => 'purchase' },
+      ];
+
+      site.getPageIntents.resolves(mockPageIntents);
+      mockAthenaClient.query.resolves(mockTrafficData);
+
+      const result = await handlerModule.referralTrafficRunner(context);
+
+      expect(result.auditResult.rowCount).to.equal(2);
       expect(saveExcelReportStub).to.have.been.calledOnce;
     });
   });

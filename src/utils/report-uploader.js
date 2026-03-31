@@ -100,8 +100,9 @@ async function fetchWithRetry(url, options, endpointName, log, maxRetries = 3) {
         : null;
       const xErrorInfo = xError ? `, x-error: ${xError}` : '';
 
-      // Only retry on 503 and x-error contains "429"
-      const isRetryable = error.status === 503 && (xError && xError.includes('429'));
+      // Retry direct throttling, Helix throttling wrapped as 503.
+      const isRetryable = error.status === 429
+        || (error.status === 503 && xError && xError.includes('429'));
       const shouldRetry = isRetryable && attemptNumber <= maxRetries;
 
       if (!shouldRetry) {
@@ -244,8 +245,12 @@ export async function uploadAndPublishFile(
 async function runBulkJob(route, operation, paths, log) {
   const headers = { Cookie: `auth_token=${process.env.ADMIN_HLX_API_KEY}`, 'Content-Type': 'application/json' };
   const url = `https://admin.hlx.page/${route}/adobe/project-elmo-ui-data/main/*`;
-  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ paths }) });
-  if (!res.ok) throw new Error(`${operation} request failed: ${res.status} for url: ${url}`);
+  const res = await fetchWithRetry(
+    url,
+    { method: 'POST', headers, body: JSON.stringify({ paths }) },
+    `${operation} request`,
+    log,
+  );
   const data = await res.json();
   const jobUrl = data.links?.self;
   if (!jobUrl) throw new Error(`No job URL from ${operation}`);
@@ -256,8 +261,12 @@ async function runBulkJob(route, operation, paths, log) {
     // eslint-disable-next-line no-await-in-loop
     await sleep(5000);
     // eslint-disable-next-line no-await-in-loop
-    const statusRes = await fetch(jobUrl, { method: 'GET', headers });
-    if (!statusRes.ok) throw new Error(`${operation} status check failed: ${statusRes.status} for job URL: ${jobUrl}`);
+    const statusRes = await fetchWithRetry(
+      jobUrl,
+      { method: 'GET', headers },
+      `${operation} status check`,
+      log,
+    );
     // eslint-disable-next-line no-await-in-loop
     const status = await statusRes.json();
     const { state, progress } = status;

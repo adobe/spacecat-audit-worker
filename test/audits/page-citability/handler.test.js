@@ -127,6 +127,7 @@ describe('Page Citability Handler', () => {
       expect(result.urls[1].url).to.equal(`${baseURL}/page3`);
       expect(result.auditResult.urlCount).to.equal(2);
       expect(result.processingType).to.equal('page-citability');
+      expect(result.options).to.deep.equal({ hideConsentBanners: true });
       expect(result.siteId).to.equal(siteId);
       expect(result.fullAuditRef).to.equal(baseURL);
     });
@@ -143,6 +144,7 @@ describe('Page Citability Handler', () => {
       expect(result.urls[0].url).to.equal('https://example.com/custom-page1');
       expect(result.urls[1].url).to.equal('https://example.com/custom-page2');
       expect(result.auditResult.urlCount).to.equal(2);
+      expect(result.options).to.deep.equal({ hideConsentBanners: true });
     });
 
     it('should run all URLs when provided in auditContext without batch size limit', async () => {
@@ -212,6 +214,7 @@ describe('Page Citability Handler', () => {
       expect(result.auditResult.urlCount).to.equal(0);
       expect(result.urls).to.deep.equal([{ url: baseURL }]);
       expect(result.processingType).to.equal('page-citability');
+      expect(result.options).to.deep.equal({ hideConsentBanners: true });
     });
 
     it('should rethrow non-SCHEMA_NOT_FOUND errors', async () => {
@@ -229,6 +232,7 @@ describe('Page Citability Handler', () => {
       expect(result.auditResult.urlCount).to.equal(0);
       expect(result.urls).to.deep.equal([{ url: baseURL }]);
       expect(result.processingType).to.equal('page-citability');
+      expect(result.options).to.deep.equal({ hideConsentBanners: true });
 
       // Test all URLs already analyzed
       context.athenaClient.query.resolves([
@@ -395,6 +399,7 @@ describe('Page Citability Handler', () => {
         setWordDifference: sandbox.stub(),
         setBotWords: sandbox.stub(),
         setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
         save: sandbox.stub().resolves(),
       };
 
@@ -411,6 +416,7 @@ describe('Page Citability Handler', () => {
       expect(mockExistingRecord.setWordDifference).to.have.been.calledOnce;
       expect(mockExistingRecord.setBotWords).to.have.been.calledOnce;
       expect(mockExistingRecord.setNormalWords).to.have.been.calledOnce;
+      expect(mockExistingRecord.setIsDeployedAtEdge).to.have.been.calledOnce;
       expect(mockExistingRecord.save).to.have.been.calledOnce;
       expect(mockPageCitability.create).to.not.have.been.called;
     });

@@ -13,6 +13,8 @@
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionModel, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { addAltTextSuggestions, getProjectedMetrics } from './opportunityHandler.js';
+import { persistAuditStatusWithFreshRead } from './handler.js';
+import { ALT_TEXT_PROCESSING_ERROR_TAG } from './constants.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
@@ -27,20 +29,29 @@ function mapMystiqueSuggestionsToSuggestionDTOs(mystiquesuggestions, opportunity
   return mystiquesuggestions.map((suggestion) => {
     const suggestionId = `${suggestion.pageUrl}/${suggestion.imageId}`;
 
+    const recommendation = {
+      id: suggestionId,
+      pageUrl: suggestion.pageUrl,
+      imageUrl: suggestion.imageUrl,
+      altText: suggestion.altText,
+      isAppropriate: suggestion.isAppropriate,
+      isDecorative: suggestion.isDecorative,
+      xpath: suggestion.xpath,
+      language: suggestion.language,
+      hasAltAttribute: suggestion.hasAltAttribute,
+      isDecorativeByAgent: suggestion.isDecorativeByAgent ?? false,
+    };
+
+    // Preserve factId from Mystique enrichment (autofix bridge)
+    if (suggestion.factId) {
+      recommendation.factId = suggestion.factId;
+    }
+
     return {
       opportunityId,
       type: SuggestionModel.TYPES.CONTENT_UPDATE,
       data: {
-        recommendations: [{
-          id: suggestionId,
-          pageUrl: suggestion.pageUrl,
-          imageUrl: suggestion.imageUrl,
-          altText: suggestion.altText,
-          isAppropriate: suggestion.isAppropriate,
-          isDecorative: suggestion.isDecorative,
-          xpath: suggestion.xpath,
-          language: suggestion.language,
-        }],
+        recommendations: [recommendation],
       },
       rank: 1,
     };
@@ -71,9 +82,15 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
   * TODO: ASSETS-59781 - Update alt-text opportunity to use syncSuggestions
   * instead of current approach. This will enable handling of PENDING_VALIDATION status.
   */
-  // Find suggestions to remove for these pages
+  // Find suggestions to remove, do not remove those that are manually edited
   const suggestionsToRemove = existingSuggestions.filter((suggestion) => {
-    const pageUrl = suggestion.getData()?.recommendations?.[0]?.pageUrl;
+    const rec = suggestion.getData()?.recommendations?.[0];
+    const pageUrl = rec?.pageUrl;
+
+    // Never delete manually edited suggestions
+    if (rec?.isManuallyEdited === true) {
+      return false;
+    }
     return pageUrl && pageUrlSet.has(pageUrl);
   }).filter((suggestion) => {
     const IGNORED_STATUSES = ['SKIPPED', 'FIXED', 'OUTDATED'];
@@ -142,14 +159,18 @@ export default async function handler(message, context) {
       (oppty) => oppty.getType() === AUDIT_TYPE,
     );
   } catch (e) {
-    log.error(`[${AUDIT_TYPE}]: Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
+    log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
+    const fetchError = `Failed to fetch opportunities: ${e.message}`;
+    await persistAuditStatusWithFreshRead(dataAccess, auditId, 'guidance_failed', { error: fetchError }, log, true);
     throw new Error(`[${AUDIT_TYPE}]: Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
   }
 
   if (!altTextOppty) {
-    const errorMsg = `[${AUDIT_TYPE}]: No existing opportunity found for siteId ${siteId}. Opportunity should be created by main handler before processing suggestions.`;
-    log.error(errorMsg);
-    throw new Error(errorMsg);
+    const errorMsg = `No existing opportunity found for siteId ${siteId}. `
+      + 'Opportunity should be created by main handler before processing suggestions.';
+    log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
+    await persistAuditStatusWithFreshRead(dataAccess, auditId, 'guidance_failed', { error: errorMsg }, log, true);
+    throw new Error(`[${AUDIT_TYPE}]: ${errorMsg}`);
   }
 
   const existingData = altTextOppty.getData() || {};
@@ -229,8 +250,14 @@ export default async function handler(message, context) {
     altTextOppty.setData(updatedOpportunityData);
     altTextOppty.setUpdatedBy('system');
     await altTextOppty.save();
+
+    // Update audit status to success on each Mystique response
+    await persistAuditStatusWithFreshRead(dataAccess, auditId, 'success', {}, log);
   } else {
     log.info(`[${AUDIT_TYPE}]: No suggestions to process for siteId: ${siteId}`);
+
+    // Track empty Mystique response in status history for observability
+    await persistAuditStatusWithFreshRead(dataAccess, auditId, 'success', { empty: true }, log);
   }
   return ok();
 }

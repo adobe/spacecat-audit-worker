@@ -10,11 +10,30 @@
  * governing permissions and limitations under the License.
  */
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import {
+  createInternalLinksAuditLogger,
+  isInternalLinksContextLogger,
+} from './logging.js';
 
-const LINK_TIMEOUT = 3000;
+const AUDIT_TYPE = 'broken-internal-links';
+
+// 5s timeout handles slow pages while avoiding false positives
+// Batching allows longer timeouts without Lambda timeout risk
+const LINK_TIMEOUT = 5000;
 export const CPC_DEFAULT_VALUE = 1;
 export const TRAFFIC_MULTIPLIER = 0.01; // 1%
 export const MAX_LINKS_TO_CONSIDER = 10;
+const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Spacecat/1.0';
+export const STATUS_BUCKETS = {
+  NOT_FOUND_404: 'not_found_404',
+  GONE_410: 'gone_410',
+  FORBIDDEN_OR_BLOCKED: 'forbidden_or_blocked',
+  SERVER_ERROR_5XX: 'server_error_5xx',
+  TIMEOUT_OR_NETWORK: 'timeout_or_network',
+  REDIRECT_CHAIN_EXCESSIVE: 'redirect_chain_excessive',
+  SOFT_404: 'soft_404',
+  MASKED_BY_LINKCHECKER: 'masked_by_linkchecker',
+};
 
 /**
  * Resolve Cost per click (CPC) value
@@ -23,9 +42,13 @@ export const MAX_LINKS_TO_CONSIDER = 10;
  */
 export const resolveCpcValue = () => CPC_DEFAULT_VALUE;
 
+function getUserAgent() {
+  return process.env.BROKEN_LINKS_USER_AGENT || DEFAULT_USER_AGENT;
+}
+
 /**
  * Calculates KPI deltas based on broken internal links audit data
- * @param {Object} auditData - The audit data containing results
+ * @param {Array} brokenInternalLinks - Array of broken link objects
  * @returns {Object} KPI delta calculations
  */
 export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
@@ -42,8 +65,7 @@ export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
   Object.keys(linksMap).forEach((url) => {
     const links = linksMap[url];
     let linksToBeIncremented;
-    // Sort links by traffic domain if there are more than MAX_LINKS_TO_CONSIDER
-    // and only consider top MAX_LINKS_TO_CONSIDER for calculating deltas
+    // For many links to same URL, only consider top MAX_LINKS_TO_CONSIDER by traffic
     if (links.length > MAX_LINKS_TO_CONSIDER) {
       links.sort((a, b) => b.trafficDomain - a.trafficDomain);
       linksToBeIncremented = links.slice(0, MAX_LINKS_TO_CONSIDER);
@@ -63,46 +85,280 @@ export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
   };
 };
 
-/**
- * Checks if a URL is inaccessible/not reachable by attempting to fetch it.
- * A URL is considered inaccessible if:
- * - The fetch request fails (network errors or timeouts)
- * - The response status code is >= 400 (400-499)
- * The check will timeout after LINK_TIMEOUT milliseconds.
- * Non-404 client errors (400-499) will log a warning.
- * All errors (network, timeout etc) will log an error and return true.
- * @param {string} url - The URL to validate
- * @returns {Promise<boolean>} True if the URL is inaccessible, times out, or errors
- * false if reachable/accessible
- */
-export async function isLinkInaccessible(url, log) {
-  try {
-    const response = await fetch(url, { timeout: LINK_TIMEOUT });
-    const { status } = response;
+function isRedirectChainError(error) {
+  const message = error?.message?.toLowerCase() || '';
+  const code = error?.code?.toLowerCase() || '';
+  return (
+    message.includes('redirect')
+    && (
+      message.includes('too many')
+      || message.includes('maximum')
+      || message.includes('max')
+    )
+  ) || code.includes('redirect');
+}
 
-    // Log non-404, non-200 status codes
-    if (status >= 400 && status < 500 && status !== 404) {
-      log.warn(`broken-internal-links audit: Warning: ${url} returned client error: ${status}`);
+export function classifyStatusBucket(status, error = null) {
+  if (error) {
+    if (isRedirectChainError(error)) return STATUS_BUCKETS.REDIRECT_CHAIN_EXCESSIVE;
+    return null;
+  }
+
+  if (status === 404) return STATUS_BUCKETS.NOT_FOUND_404;
+  if (status === 410) return STATUS_BUCKETS.GONE_410;
+  if (status === 401 || status === 403 || status === 429 || status === 451) {
+    return STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED;
+  }
+  if (status === 408) return STATUS_BUCKETS.TIMEOUT_OR_NETWORK;
+  if (status >= 500) return STATUS_BUCKETS.SERVER_ERROR_5XX;
+
+  return null;
+}
+
+/**
+ * Checks if a URL points to a static asset
+ * @param {string} url - The URL to check
+ * @returns {boolean} True if it's a static asset (image, SVG, CSS, JS, etc.)
+ */
+function isStaticAsset(url) {
+  return /\.(svg|png|jpe?g|gif|webp|avif|css|js|ico|woff2?|ttf|otf|eot|pdf|mp4|webm|mp3|ogg)(\?.*)?$/i.test(url);
+}
+
+function shouldInspectForSoft404(contentType, isAsset) {
+  /* c8 ignore next - Defensive fallback for null/undefined contentType */
+  return !isAsset && /^text\/html\b|^application\/xhtml\+xml\b/i.test(contentType || '');
+}
+
+function isSoft404Text(bodyText) {
+  /* c8 ignore next - Defensive fallback for null/undefined bodyText */
+  const text = String(bodyText || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+  if (!text) {
+    return false;
+  }
+
+  const normalizedText = text.slice(0, 12000);
+
+  return [
+    /404 not found/,
+    /page not found/,
+    /not found/,
+    /the page you (requested|are looking for).{0,40}(could not be found|does not exist|is unavailable)/,
+    /sorry[, ]+we (couldn'?t|can'?t) find/,
+    /sorry[, ]+the page.{0,40}(could not be found|does not exist|is unavailable)/,
+    /we can'?t seem to find the page/,
+    /this page no longer exists/,
+    /the requested url was not found/,
+    /error 404/,
+    /seite nicht gefunden/,
+    /page introuvable/,
+    /page non trouv[ée]e/,
+    /p[áa]gina no encontrada/,
+    /pagina non trovata/,
+    /p[áa]gina n[ãa]o encontrada/,
+    /pagina niet gevonden/,
+    /ページが見つかりません/,
+  ].some((pattern) => pattern.test(normalizedText));
+}
+
+async function releaseResponseBody(response, log, requestLabel) {
+  if (!response) return;
+
+  /* c8 ignore start - Runtime-specific response body cleanup */
+  try {
+    if (typeof response.body?.cancel === 'function') {
+      await response.body.cancel();
+      return;
     }
 
-    // URL is valid if status code is less than 400, otherwise it is invalid
-    return status >= 400;
+    if (typeof response.arrayBuffer === 'function') {
+      await response.arrayBuffer();
+    }
   } catch (error) {
-    log.error(`broken-internal-links audit: Error checking ${url}: ${error.code === 'ETIMEOUT' ? `Request timed out after ${LINK_TIMEOUT}ms` : error.message}`);
-    // Any error means the URL is inaccessible
-    return true;
+    log.debug(`Failed to release ${requestLabel} response body: ${error.message}`);
+  }
+  /* c8 ignore stop */
+}
+
+/**
+ * Checks a link using HEAD request (faster than GET)
+ * @param {string} url - The URL to check
+ * @param {Object} log - Logger instance
+ * @returns {Promise<Object|null>} Result object with metadata, or null if inconclusive
+ */
+async function checkLinkWithHead(url, log) {
+  let headResponse;
+  try {
+    headResponse = await fetch(url, {
+      method: 'HEAD',
+      timeout: LINK_TIMEOUT,
+      headers: {
+        'User-Agent': getUserAgent(),
+      },
+    });
+    const { status } = headResponse;
+    const contentType = headResponse.headers.get('content-type') || null;
+    const statusBucket = classifyStatusBucket(status);
+
+    if (status === 405) {
+      return null;
+    }
+
+    if (statusBucket === null) {
+      return {
+        isBroken: false, httpStatus: status, statusBucket: null, contentType,
+      };
+    }
+
+    if (statusBucket !== STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED) {
+      log.info(`✗ BROKEN LINK FOUND: ${url} (HEAD ${status}, bucket=${statusBucket})`);
+      return {
+        isBroken: true, httpStatus: status, statusBucket, contentType,
+      };
+    }
+
+    // For auth errors, return null to trigger GET verification before classifying.
+    return null;
+  } catch (headError) {
+    return null;
+  /* c8 ignore next 2 - Finally branch always runs; c8 tracks try/catch path split */
+  } finally {
+    await releaseResponseBody(headResponse, log, 'HEAD');
   }
 }
 
 /**
- * Classifies links into priority categories based on views
+ * Checks a link using GET request
+ * @param {string} url - The URL to check
+ * @param {boolean} isAsset - Whether the URL is a static asset
+ * @param {Object} log - Logger instance
+ * @returns {Promise<Object>} Result object with metadata
+ */
+async function checkLinkWithGet(url, isAsset, log) {
+  let getResponse;
+  try {
+    const getHeaders = {
+      'User-Agent': getUserAgent(),
+    };
+
+    // For assets, request only 1 byte to avoid full download
+    if (isAsset) {
+      getHeaders.Range = 'bytes=0-0';
+    }
+
+    getResponse = await fetch(url, {
+      method: 'GET',
+      timeout: LINK_TIMEOUT,
+      headers: getHeaders,
+    });
+    const { status } = getResponse;
+    const contentType = getResponse.headers.get('content-type') || null;
+    const statusBucket = classifyStatusBucket(status);
+
+    if (statusBucket === null && status === 200 && shouldInspectForSoft404(contentType, isAsset)) {
+      const responseText = await getResponse.text();
+      if (isSoft404Text(responseText)) {
+        log.info(`✗ BROKEN LINK FOUND: ${url} (GET ${status}, bucket=${STATUS_BUCKETS.SOFT_404})`);
+        return {
+          isBroken: true, httpStatus: status, statusBucket: STATUS_BUCKETS.SOFT_404, contentType,
+        };
+      }
+    }
+
+    if (statusBucket === null) {
+      return {
+        isBroken: false, httpStatus: status, statusBucket: null, contentType,
+      };
+    }
+
+    return {
+      isBroken: true, httpStatus: status, statusBucket, contentType,
+    };
+  } catch (getError) {
+    let errorMessage = getError.message || 'Unknown error';
+
+    if (getError.code) {
+      errorMessage = `${getError.code}: ${errorMessage}`;
+    }
+    if (getError.type) {
+      errorMessage = `${getError.type} - ${errorMessage}`;
+    }
+    if (getError.errno) {
+      errorMessage = `${errorMessage} (errno: ${getError.errno})`;
+    }
+
+    const statusBucket = classifyStatusBucket(null, getError);
+    if (statusBucket === null) {
+      log.warn(`Skipping inconclusive link validation for ${url} (ERROR: ${errorMessage})`);
+      return {
+        isBroken: false,
+        inconclusive: true,
+        httpStatus: null,
+        statusBucket: null,
+        contentType: null,
+      };
+    }
+
+    log.error(`✗ BROKEN LINK FOUND: ${url} (ERROR: ${errorMessage}, bucket=${statusBucket})`);
+    return {
+      isBroken: true, inconclusive: false, httpStatus: null, statusBucket, contentType: null,
+    };
+  /* c8 ignore next 2 - Finally branch always runs; c8 tracks try/catch path split */
+  } finally {
+    await releaseResponseBody(getResponse, log, 'GET');
+  }
+}
+
+/**
+ * Checks if a URL is inaccessible by attempting to fetch it.
+ * Returns validation metadata for SEO-relevant broken conditions including:
+ * 404, 410, blocked/forbidden, 5xx, and excessive redirects.
+ * Transport failures are treated as inconclusive so they do not get reported as broken.
+ *
+ * Strategy: HEAD first (faster), fallback to GET if inconclusive.
+ * Static assets skip HEAD (often fail) and use GET with Range header.
+ *
+ * @param {string} url - The URL to validate
+ * @param {Object} baseLog - Base logger object
+ * @param {string} siteId - Site ID for logging context
+ * @returns {Promise<Object>} Validation result with
+ *   { isBroken, inconclusive, httpStatus, statusBucket, contentType }
+ */
+export async function isLinkInaccessible(url, baseLog, siteId, auditId = null) {
+  const log = isInternalLinksContextLogger(baseLog)
+    ? baseLog
+    : createInternalLinksAuditLogger(baseLog, AUDIT_TYPE, siteId, auditId);
+
+  // Validate URL as it appears on the page (no path encoding rewrite).
+  // Rewriting %20→hyphen would hide broken canonicals that point to the wrong URL.
+  const isAsset = isStaticAsset(url);
+
+  // Static assets often fail HEAD, so skip to GET with Range header
+  if (!isAsset) {
+    const headResult = await checkLinkWithHead(url, log);
+    if (headResult !== null) {
+      return headResult;
+    }
+  }
+
+  return checkLinkWithGet(url, isAsset, log);
+}
+
+/**
+ * Classifies links into priority categories based on traffic.
  * High: top 25%, Medium: next 25%, Low: bottom 50%
- * @param {Array} links - Array of objects with views property
- * @returns {Array} - Links with priority classifications included
+ * @param {Array} links - Array of objects with trafficDomain property
+ * @returns {Array} - Links sorted by trafficDomain (descending) with priority classifications
  */
 export function calculatePriority(links) {
-  // Sort links by views in descending order
-  const sortedLinks = [...links].sort((a, b) => b.views - a.views);
+  // Sort links by trafficDomain in descending order (handle undefined/null)
+  const sortedLinks = [...links].sort((a, b) => (b.trafficDomain || 0) - (a.trafficDomain || 0));
 
   // Calculate indices for the 25% and 50% marks
   const quarterIndex = Math.ceil(sortedLinks.length * 0.25);

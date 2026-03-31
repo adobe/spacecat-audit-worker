@@ -29,6 +29,17 @@ export class MockContextBuilder {
       error: this.sandbox.spy(),
     };
 
+    // Create a mock AsyncJob constructor function
+    const mockAsyncJobConstructor = this.sandbox.stub().returns({});
+    mockAsyncJobConstructor.findById = this.sandbox.stub();
+    // Add AsyncJob.Status constants
+    mockAsyncJobConstructor.Status = {
+      PENDING: 'PENDING',
+      IN_PROGRESS: 'IN_PROGRESS',
+      COMPLETED: 'COMPLETED',
+      FAILED: 'FAILED',
+    };
+
     const mockDataAccess = {
       Configuration: {
         findLatest: this.sandbox.stub(),
@@ -61,10 +72,13 @@ export class MockContextBuilder {
       },
       Suggestion: {
         bulkUpdateStatus: this.sandbox.stub(),
+        saveMany: this.sandbox.stub().resolves(),
         allByOpportunityIdAndStatus: this.sandbox.stub(),
       },
-      AsyncJob: {
-        findById: this.sandbox.stub(),
+      AsyncJob: mockAsyncJobConstructor,
+      PageCitability: {
+        allBySiteId: this.sandbox.stub().resolves([]),
+        create: this.sandbox.stub().resolves({}),
       },
     };
 
@@ -78,11 +92,19 @@ export class MockContextBuilder {
       AWS_REGION: 'us-east-1',
     };
 
+    const mockSite = {
+      getId: this.sandbox.stub().returns('site-123'),
+      getBaseURL: this.sandbox.stub().returns('https://example.com'),
+      getDeliveryType: this.sandbox.stub().returns('aem_edge'),
+      getGitHubURL: this.sandbox.stub().returns('https://github.com/owner/repo'),
+    };
+
     let context = {
       log: mockLog,
       dataAccess: mockDataAccess,
       sqs: mockSqs,
       env: mockEnv,
+      site: mockSite,
       invocation: {
         id: 'some-id',
       },

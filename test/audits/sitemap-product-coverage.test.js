@@ -838,6 +838,10 @@ describe('Sitemap Product Coverage Audit', () => {
         rank: 0,
         data: auditData.suggestions[0],
       });
+
+      expect(callArgs).to.have.property('buildKey');
+      expect(callArgs.buildKey).to.be.a('function');
+      expect(callArgs.buildKey(auditData.suggestions[0])).to.equal(auditData.suggestions[0].url);
     });
   });
 

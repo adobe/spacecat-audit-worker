@@ -42,7 +42,7 @@ function highestScore(vulnerabilities) {
  */
 export function mapVulnerabilityToSuggestion(opportunity, vulnerability) {
   const {
-    name, version, recommendedVersion, vulnerabilities,
+    name, version, recommendedVersion, vulnerabilities, dependencyTree,
   } = vulnerability;
 
   // Handle null/undefined vulnerabilities
@@ -63,6 +63,7 @@ export function mapVulnerabilityToSuggestion(opportunity, vulnerability) {
         summary: vuln.description,
         url: vuln.url || '',
       })),
+      dependency_tree: dependencyTree,
     },
   };
 }

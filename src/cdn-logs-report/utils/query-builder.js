@@ -161,9 +161,36 @@ async function createTopUrlsQuery(options) {
   });
 }
 
+/**
+ * Builds a SQL exclusion filter for URL suffixes.
+ * @param {Array<string>} suffixes - Array of URL suffixes to exclude
+ * @returns {string} SQL filter clause (e.g., "AND NOT (url LIKE '%.pdf' OR url LIKE '%.docx')")
+ */
+export function buildExcludedUrlSuffixesFilter(suffixes = []) {
+  if (!Array.isArray(suffixes) || suffixes.length === 0) {
+    return '';
+  }
+
+  const escapedSuffixes = suffixes
+    .filter(Boolean)
+    .map((suffix) => suffix
+      .trim()
+      .toLowerCase()
+      .replace(/'/g, "''") // SQL escape
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+
+  if (escapedSuffixes.length === 0) {
+    return '';
+  }
+
+  const pattern = `(?i)(${escapedSuffixes.join('|')})$`;
+
+  return `AND NOT regexp_like(url, '${pattern}')`;
+}
+
 async function createTopUrlsQueryWithLimit(options) {
   const {
-    periods, databaseName, tableName, site, limit,
+    periods, databaseName, tableName, site, limit, excludedUrlSuffixes = [],
   } = options;
 
   const filters = site.getConfig().getLlmoCdnlogsFilter();
@@ -174,11 +201,14 @@ async function createTopUrlsQueryWithLimit(options) {
     siteFilters,
   );
 
+  const excludedUrlSuffixesFilter = buildExcludedUrlSuffixesFilter(excludedUrlSuffixes);
+
   return loadSql('top-agentic-urls-by-limit', {
     databaseName,
     tableName,
     whereClause,
     limit,
+    excludedUrlSuffixesFilter,
   });
 }
 

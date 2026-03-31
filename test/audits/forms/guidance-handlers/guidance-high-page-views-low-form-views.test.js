@@ -163,4 +163,65 @@ describe('Guidance High Page Views Low Form Views Handler', () => {
     await handler(messageWithoutSuggestions, context);
     expect(existingOpportunity.addSuggestions).to.be.not.called;
   });
+
+  it('should replace the variations in the existing suggestion object with new variations', async () => {
+    let _suggestions = [
+      {
+        id: 'suggestion-id',
+        data: {
+          variations: [{ name: 'Old Variation' }],
+        },
+      }
+    ];
+    const existingOpportunity = {
+      getData: sinon.stub().returns({ form: 'https://example.com', formsource: '.form' }),
+      getType: sinon.stub().returns(FORM_OPPORTUNITY_TYPES.LOW_VIEWS),
+      setAuditId: sinon.stub(),
+      setGuidance: sinon.stub(),
+      addSuggestions: sinon.stub(),
+      save: sinon.stub().resolvesThis(),
+      getId: sinon.stub().resolves('testId'),
+      getSuggestions: sinon.stub().resolves(_suggestions),
+      setUpdatedBy: sinon.stub(),
+    };
+    dataAccessStub.Opportunity.allBySiteId.resolves([existingOpportunity]);
+
+    const newSuggestion = [
+      {
+        id: "6d72ded8-c435-4e6e-a697-5b9f44519c3c",
+        name: "Optimize Form Field Visibility",
+        changes: [
+          {
+            type: "text",
+            element: null,
+            text: "Optimize Form Field Visibility"
+          }
+        ],
+        variationPageUrl:
+            "/test",
+        screenshotUrl:
+            "/test",
+        previewImage:
+            "/test",
+        variationMdPageUrl: "",
+        variationChanges: null,
+        variationEditPageUrl: "",
+        projectedImpact: 0.2
+      }
+    ]
+
+    const messageWithSuggestions = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        url: 'https://example.com',
+        form_source: '.form',
+        guidance: 'Some guidance',
+        suggestions: newSuggestion
+      },
+    };
+    await handler(messageWithSuggestions, context);
+    expect(existingOpportunity.addSuggestions).to.be.not.called;
+    expect(_suggestions[0].data.variations).to.deep.equal(newSuggestion)
+  });
 });

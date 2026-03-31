@@ -34,8 +34,17 @@ const TRACKED_STATUS_CODES = Object.freeze([301, 302, 404]);
  */
 export async function findSitemap(inputUrl, log) {
   // Extract and validate pages from sitemaps
-  const siteMapUrlsResult = await getSitemapUrls(inputUrl);
-  if (!siteMapUrlsResult.success) return siteMapUrlsResult;
+  const siteMapUrlsResult = await getSitemapUrls(inputUrl, log);
+  if (!siteMapUrlsResult.success) {
+    /* c8 ignore start */
+    const reasons = siteMapUrlsResult.reasons || [];
+    log?.error(`Sitemap: getSitemapUrls failed for ${inputUrl}: ${reasons.length} reason(s)`);
+    reasons.forEach((r, i) => {
+      log?.error(`  reason ${i + 1}: error=${r.error ?? '(none)'}, value=${r.value ?? '(none)'}`);
+    });
+    /* c8 ignore end */
+    return siteMapUrlsResult;
+  }
   const extractedPaths = siteMapUrlsResult.details?.extractedPaths || {};
   const filteredSitemapUrls = siteMapUrlsResult.details?.filteredSitemapUrls || [];
   const notOkPagesFromSitemap = {};
@@ -49,7 +58,18 @@ export async function findSitemap(inputUrl, log) {
 
       if (urlsToCheck?.length) {
         // eslint-disable-next-line no-await-in-loop
-        const existingPages = await filterValidUrls(urlsToCheck);
+        const existingPages = await filterValidUrls(urlsToCheck, log);
+
+        /* c8 ignore start */
+        log?.info(`.. Sitemap: stats for ${sitemapUrl} - OK: ${existingPages.ok.length}, Not OK: ${existingPages.notOk.length}, Network Errors: ${existingPages.networkErrors.length}, Other Errors: ${existingPages.otherStatusCodes.length}`);
+        if (existingPages.otherStatusCodes.length > 0) {
+          const statusCodeCounts = existingPages.otherStatusCodes.reduce((acc, item) => {
+            acc[item.statusCode] = (acc[item.statusCode] || 0) + 1;
+            return acc;
+          }, {});
+          log?.info(`.... Other status codes breakdown ('code': count) for ${sitemapUrl}: ${JSON.stringify(statusCodeCounts)}`);
+        }
+        /* c8 ignore end */
 
         // Collect issues for tracked status codes only
         if (existingPages.notOk?.length > 0) {
@@ -58,6 +78,8 @@ export async function findSitemap(inputUrl, log) {
           if (trackedIssues.length > 0) {
             notOkPagesFromSitemap[sitemapUrl] = trackedIssues;
           }
+          /* c8 ignore next */
+          log?.debug(`Number of URLs with tracked status from sitemap ${sitemapUrl}: ${trackedIssues.length}`);
         }
 
         // Keep sitemap if it has valid URLs or acceptable redirects
@@ -157,6 +179,8 @@ export function generateSuggestions(auditUrl, auditData, context) {
     : reasons.map(({ error }) => ({ type: 'error', error }));
 
   const pagesWithIssues = getPagesWithIssues(auditData);
+  /* c8 ignore next */
+  log.info(`Sitemap: Found ${pagesWithIssues.length} pages with issues in sitemaps for ${auditUrl}`);
   const suggestions = [...response, ...pagesWithIssues]
     .filter(Boolean)
     .map((issue) => ({
@@ -166,7 +190,8 @@ export function generateSuggestions(auditUrl, auditData, context) {
         : 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
     }));
 
-  log.debug(`Generated ${suggestions.length} suggestions for ${auditUrl}`);
+  /* c8 ignore next */
+  log.info(`Sitemap audit generated ${suggestions.length} suggestions for ${auditUrl}`);
   return { ...auditData, suggestions };
 }
 
@@ -174,12 +199,19 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
 
   if (auditData.auditResult.success === false) {
-    log.debug('Sitemap audit failed, skipping opportunity and suggestions creation');
+    log.error('Sitemap audit failed, skipping opportunity and suggestions creation');
+    /* c8 ignore start */
+    const wouldCreate = auditData.suggestions ?? [];
+    log.info(`.. Sitemap audit: ${wouldCreate.length} suggestion(s) would have been created for ${auditUrl}`);
+    wouldCreate.forEach((s, i) => {
+      log.info(`.... Sitemap audit suggestion ${i + 1}/${wouldCreate.length}: type=${s.type ?? 'unknown'}, ${s.type === 'error' ? `error=${s.error}` : `sitemapUrl=${s.sitemapUrl}, pageUrl=${s.pageUrl}, statusCode=${s.statusCode}`}`);
+    });
+    /* c8 ignore end */
     return { ...auditData };
   }
 
   if (!auditData.suggestions?.length) {
-    log.debug('No sitemap issues found, skipping opportunity creation');
+    log.info('No sitemap issues found, skipping opportunity creation');
     return { ...auditData };
   }
 

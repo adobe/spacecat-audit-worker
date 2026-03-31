@@ -1,0 +1,10 @@
+Index: head.html
+===================================================================
+--- head.html
++++ head.html
+@@ -1,3 +1,3 @@
+-<script src="/scripts/aem.js" type="module"></script>
+-<script src="/scripts/scripts.js" type="module"></script>
++<script nonce="aem" src="/scripts/aem.js" type="module"></script>
++<script nonce="aem" src="/scripts/scripts.js" type="module"></script>
+ <link rel="stylesheet" href="/styles/styles.css"/>

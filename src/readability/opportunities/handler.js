@@ -10,19 +10,65 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { Suggestion as SuggestionModel, Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../../common/audit-builder.js';
 import { convertToOpportunity } from '../../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestions } from '../../utils/data-access.js';
-import { noopUrlResolver } from '../../common/base-audit.js';
+import { wwwUrlResolver } from '../../common/base-audit.js';
 import { analyzePageReadability, sendReadabilityToMystique } from '../shared/analysis-utils.js';
+import { getMergedAuditInputUrls, sortTopPagesByTraffic } from '../../utils/audit-input-urls.js';
 import {
   TOP_PAGES_LIMIT,
 } from '../shared/constants.js';
+import { getTopAgenticUrlsFromAthena } from '../../utils/agentic-urls.js';
 
 const { AUDIT_STEP_DESTINATIONS, AUDIT_TYPES } = Audit;
+const AUDIT_TYPE = 'readability';
+
+async function getReadabilityUrlsToScrape(context) {
+  const { site, dataAccess, log } = context;
+  const result = await getMergedAuditInputUrls({
+    site,
+    dataAccess,
+    auditType: AUDIT_TYPE,
+    getAgenticUrls: () => getTopAgenticUrlsFromAthena(site, context, TOP_PAGES_LIMIT),
+    getTopPages: async () => {
+      const topPages = await dataAccess?.SiteTopPage?.allBySiteIdAndSourceAndGeo?.(
+        site.getId(),
+        'ahrefs',
+        'global',
+      );
+      return sortTopPagesByTraffic(topPages || [], (page) => ({
+        urlId: page.getId?.() ?? page.getUrl(),
+      }));
+    },
+  });
+
+  log.info(
+    `[ReadabilityAudit] URL inputs: topPages=${result.topPagesUrls.length}, `
+    + `agentic=${result.agenticUrls.length}, includedURLs=${result.includedURLs.length}, `
+    + `filteredOutUrls=${result.filteredCount}, finalUrls=${result.urls.length}`,
+  );
+
+  const topPagesByUrl = new Map(result.topPages.map((page) => [page.url, page]));
+
+  const urlsToScrape = result.urls
+    .slice(0, TOP_PAGES_LIMIT)
+    .map((url, index) => {
+      const topPage = topPagesByUrl.get(url);
+      return {
+        url,
+        traffic: topPage?.traffic ?? 0,
+        urlId: topPage?.urlId ?? `merged-${index}`,
+      };
+    });
+
+  return {
+    ...result,
+    urlsToScrape,
+  };
+}
 
 export async function processImportStep(context) {
   const { site, finalUrl } = context;
@@ -41,7 +87,7 @@ export async function processImportStep(context) {
 // First step: sends a message to the content scraper to get page content for readability analysis
 export async function scrapeReadabilityData(context) {
   const {
-    site, log, finalUrl, env, dataAccess,
+    site, log, finalUrl, env,
   } = context;
   const siteId = site.getId();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
@@ -57,25 +103,15 @@ export async function scrapeReadabilityData(context) {
 
   log.info(`[ReadabilityAudit] Step 1: Preparing content scrape for readability audit for ${site.getBaseURL()} with siteId ${siteId}`);
 
-  // Get top pages for readability analysis
-  const { SiteTopPage } = dataAccess;
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  const { urlsToScrape } = await getReadabilityUrlsToScrape(context);
 
-  log.info(`[ReadabilityAudit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}`);
-
-  if (!isNonEmptyArray(topPages)) {
-    log.info(`[ReadabilityAudit] No top pages found for site ${siteId} (${site.getBaseURL()}), skipping audit`);
+  if (urlsToScrape.length === 0) {
+    log.info(`[ReadabilityAudit] No URLs found for site ${siteId} (${site.getBaseURL()}), skipping audit`);
     return {
       status: 'NO_OPPORTUNITIES',
-      message: 'No top pages found, skipping audit',
+      message: 'No URLs found, skipping audit',
     };
   }
-
-  // Take top pages by traffic, sorted descending
-  const urlsToScrape = topPages
-    .map((page) => ({ url: page.getUrl(), traffic: page.getTraffic(), urlId: page.getId() }))
-    .sort((a, b) => b.traffic - a.traffic)
-    .slice(0, TOP_PAGES_LIMIT);
 
   log.info(`[ReadabilityAudit] Top ${TOP_PAGES_LIMIT} pages for site ${siteId} (${site.getBaseURL()}): ${JSON.stringify(urlsToScrape, null, 2)}`);
 
@@ -138,7 +174,10 @@ export async function processReadabilityOpportunities(context) {
       };
     }
 
-    const { readabilityIssues, urlsProcessed } = readabilityAnalysisResult;
+    const { readabilityIssues: allIssues, urlsProcessed } = readabilityAnalysisResult;
+
+    // Filter out issues without a selector — they cannot be uniquely identified
+    const readabilityIssues = allIssues.filter((issue) => Boolean(issue.selector));
 
     // Create opportunity and suggestions
     const opportunity = await convertToOpportunity(
@@ -170,7 +209,7 @@ export async function processReadabilityOpportunities(context) {
     });
 
     // Sync suggestions with existing ones (preserve ignored/fixed suggestions)
-    const buildKey = (data) => `${data.pageUrl}|${data.textPreview?.substring(0, 200)}`;
+    const buildKey = (data) => `${data.pageUrl}-${data.selector}`;
 
     await syncSuggestions({
       opportunity,
@@ -221,7 +260,7 @@ export async function processReadabilityOpportunities(context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver(noopUrlResolver)
+  .withUrlResolver(wwwUrlResolver)
   .addStep(
     'import-top-pages',
     processImportStep,

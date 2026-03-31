@@ -17,6 +17,7 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { wwwUrlResolver } from '../common/index.js';
+import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -69,9 +70,19 @@ export async function checkLLMBlocked(context) {
     finalUrl,
     audit,
   } = context;
-  const { SiteTopPage } = dataAccess;
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  if (topPages.length === 0) {
+
+  // Try to get top agentic URLs from Athena first
+  let topPageUrls = await getTopAgenticUrlsFromAthena(site, context);
+
+  // Fallback to Ahrefs if Athena returns no data
+  if (!topPageUrls || topPageUrls.length === 0) {
+    log.info('[LLM-BLOCKED] No agentic URLs from Athena, falling back to Ahrefs');
+    const { SiteTopPage } = dataAccess;
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+    topPageUrls = topPages.map((page) => page.getUrl());
+  }
+
+  if (topPageUrls.length === 0) {
     throw new Error('No top pages found for site');
   }
 
@@ -101,12 +112,11 @@ export async function checkLLMBlocked(context) {
   const robotsTxtHash = hash(plainRobotsTxt);
 
   agents.forEach((agent) => {
-    topPages.forEach((page) => {
-      const isAllowedGenerally = robots.isAllowed(page.getUrl());
-      const isAllowedForRobot = robots.isAllowed(page.getUrl(), agent);
+    topPageUrls.forEach((url) => {
+      const isAllowedGenerally = robots.isAllowed(url);
+      const isAllowedForRobot = robots.isAllowed(url, agent);
       if (isAllowedGenerally && !isAllowedForRobot) {
-        const line = robots.getMatchingLineNumber(page.getUrl(), agent);
-        const url = page.getUrl();
+        const line = robots.getMatchingLineNumber(url, agent);
 
         if (resultsMap[line]) {
           resultsMap[line].items.push({ url, agent });
@@ -135,7 +145,7 @@ export async function checkLLMBlocked(context) {
     context,
     createOpportunityData,
     'llm-blocked',
-    { fullRobots: plainRobotsTxt, numProcessedUrls: topPages.length },
+    { fullRobots: plainRobotsTxt, numProcessedUrls: topPageUrls.length },
   );
 
   // Create the suggestions

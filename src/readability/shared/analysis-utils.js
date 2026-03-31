@@ -115,7 +115,7 @@ async function analyzeTextReadability(
         fleschReadingEase: Math.round(readabilityScore * 100) / 100,
         language: detectedLanguage,
         traffic,
-        rank: Math.round(rank * 100) / 100,
+        rank: Math.round(rank),
         category: categorizeReadabilityIssue(readabilityScore, traffic),
         seoImpact: calculateSeoImpact(readabilityScore, traffic),
         seoRecommendation:
@@ -131,6 +131,12 @@ async function analyzeTextReadability(
 }
 
 /**
+ * Collapses runs of whitespace into single spaces.
+ * Used to normalize text extracted from table/grid layouts before length checks.
+ */
+const collapseWhitespace = (text) => text.replace(/\s+/g, ' ');
+
+/**
  * Returns an array of meaningful text elements from the provided document.
  * Selects <p>, <blockquote>, <div> and <li> elements, but excludes elements
  * that are descendants of <header> or <footer>.
@@ -140,10 +146,10 @@ async function analyzeTextReadability(
  * @returns {Element[]} Array of meaningful text elements for readability analysis and enhancement.
  */
 const getMeaningfulElementsForReadability = ($) => {
-  $('header, footer').remove();
+  $('header, footer, style, script, noscript').remove();
   return $('p, blockquote, li, div').toArray().filter((el) => {
     const text = $(el).text()?.trim();
-    return text && text.length >= MIN_TEXT_LENGTH;
+    return text && collapseWhitespace(text).length >= MIN_TEXT_LENGTH;
   });
 };
 
@@ -207,7 +213,8 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log, scraped
       })
       .filter(({ element }) => {
         const textContent = $(element).text()?.trim();
-        return textContent && textContent.length >= MIN_TEXT_LENGTH && /\s/.test(textContent);
+        return textContent && collapseWhitespace(textContent).length >= MIN_TEXT_LENGTH
+          && /\s/.test(textContent);
       });
 
     // Process each element and collect analysis promises
@@ -227,7 +234,8 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log, scraped
             return tempDiv.text();
           })
           .map((p) => p.trim())
-          .filter((p) => p.length >= MIN_TEXT_LENGTH && /\s/.test(p));
+          .filter((p) => collapseWhitespace(p).length >= MIN_TEXT_LENGTH
+            && /\s/.test(p));
 
         paragraphs.forEach((paragraph) => {
           const analysisPromise = analyzeTextReadability(

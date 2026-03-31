@@ -14,9 +14,15 @@ PARTITIONED BY (
   month string,
   day   string
 )
-ROW FORMAT SERDE 'org.apache.hive.hcatalog.data.JsonSerDe'
+ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
+WITH SERDEPROPERTIES (
+  'ignore.malformed.json' = 'true',
+  'dots.in.keys'          = 'false',
+  'case.insensitive'      = 'true'
+)
 LOCATION '{{rawLocation}}'
 TBLPROPERTIES (
+  'schema_version'            = '1',
   'projection.enabled'        = 'true',
   'storage.location.template' = '{{rawLocation}}${year}/${month}/${day}/',
   'projection.year.type'      = 'integer',

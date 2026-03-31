@@ -137,71 +137,22 @@ export async function referralTrafficRunner(context) {
     temporalCondition,
   };
 
-  // Step 1: Check if ANY OpTel data exists for this domain
-  log.info(`[llmo-referral-traffic] Checking for OpTel data availability for ${baseURL}`);
-  const checkOptelQuery = await getStaticContent(
-    variables,
-    './src/llmo-referral-traffic/sql/check-optel-data.sql',
-  );
-  const optelCheckDescription = `[Athena Query] Checking OpTel data availability for ${baseURL}`;
-  const optelCheckResults = await athenaClient.query(
-    checkOptelQuery,
-    databaseName,
-    optelCheckDescription,
-  );
-
-  const hasOptelData = optelCheckResults.length > 0 && optelCheckResults[0].row_count > 0;
-
-  if (!hasOptelData) {
-    log.info(`[llmo-referral-traffic] No OpTel data available for ${baseURL} - skipping spreadsheet creation`);
-    return {
-      auditResult: {
-        rowCount: 0,
-        hasOptelData: false,
-      },
-      fullAuditRef: `No OpTel Data Available for ${baseURL}`,
-    };
-  }
-
-  log.info(`[llmo-referral-traffic] OpTel data found for ${baseURL}, checking for LLM referral traffic`);
-
-  // Step 2: Fetch LLM referral traffic data
+  // run athena query - fetch data
   const query = await getStaticContent(variables, './src/llmo-referral-traffic/sql/referral-traffic.sql');
-  const description = `[Athena Query] Fetching LLM referral traffic data for ${baseURL}`;
+  const description = `[Athena Query] Fetching referral traffic data for ${baseURL}`;
   const results = await athenaClient.query(query, databaseName, description);
 
-  // If OpTel data exists but no LLM referral traffic, create empty spreadsheet
+  // early return if no rum data available
   if (results.length === 0) {
-    log.info(`[llmo-referral-traffic] OpTel data exists but no LLM referral traffic found for ${baseURL} - creating empty spreadsheet`);
-
-    const sharepointClient = await createLLMOSharepointClient(context);
-    const workbook = await createWorkbook(results); // Creates empty workbook
-    const llmoFolder = site.getConfig()?.getLlmoDataFolder();
-    const outputLocation = `${llmoFolder}/referral-traffic`;
-    const filename = `referral-traffic-w${String(week).padStart(2, '0')}-${year}.xlsx`;
-
-    await saveExcelReport({
-      sharepointClient,
-      workbook,
-      filename,
-      outputLocation,
-      log,
-    });
-
+    log.info(`[llmo-referral-traffic] No OpTel data found for ${baseURL}`);
     return {
       auditResult: {
-        filename,
-        outputLocation,
-        rowCount: 0,
-        hasOptelData: true,
-        hasLlmTraffic: false,
+        rowCount: results.length,
       },
-      fullAuditRef: `${outputLocation}/${filename}`,
+      fullAuditRef: `No OpTel Data Found for ${baseURL}`,
     };
   }
 
-  // LLM referral traffic data found - enrich and create spreadsheet
-  log.info(`[llmo-referral-traffic] Found ${results.length} LLM referral traffic records for ${baseURL}`);
   log.info('[llmo-referral-traffic] Enriching data with page intents and region information');
   const pageIntents = await site.getPageIntents();
   log.info(`[llmo-referral-traffic] Retrieved ${pageIntents.length} page intents for site ${siteId}`);
@@ -238,8 +189,6 @@ export async function referralTrafficRunner(context) {
       filename,
       outputLocation,
       rowCount: results.length,
-      hasOptelData: true,
-      hasLlmTraffic: true,
     },
     fullAuditRef: `${outputLocation}/${filename}`,
   };

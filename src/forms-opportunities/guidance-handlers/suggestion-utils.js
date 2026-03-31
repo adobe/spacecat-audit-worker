@@ -12,24 +12,43 @@
 
 import { v4 as uuidv4 } from 'uuid';
 
-/**
- * Fetches existing suggestions and merges them with new suggestions
- * @param opportunity
- * @param newSuggestions
- * @returns {Promise<void>}
- */
+function getEmptyVariationList() {
+  return [
+    {
+      name: 'Control',
+      changes: [
+        {
+          type: 'text',
+          element: null,
+          text: 'Control',
+        },
+      ],
+      variationEditPageUrl: null,
+      id: uuidv4(),
+      variationPageUrl: '',
+      explanation: null,
+      projectedImpact: null,
+      previewImage: '',
+    },
+  ];
+}
 export async function addSuggestions(
   opportunity,
   newSuggestions,
 ) {
+  let variations = [];
+
+  if (newSuggestions) {
+    variations = [...newSuggestions];
+  }
+
   const existingSuggestions = await opportunity.getSuggestions();
 
-  if (
-    (existingSuggestions && existingSuggestions.length > 0)
-    || (newSuggestions && newSuggestions.length > 0)
-  ) {
-    // merge existing and new suggestions and add to opportunity.
-    // To be done once M starts generating suggestions for this guidance
+  if (existingSuggestions && existingSuggestions.length > 0) {
+    if (existingSuggestions[0].data && existingSuggestions[0].data.variations) {
+      // replacing the entire variations with the new ones
+      existingSuggestions[0].data.variations = variations;
+    }
   } else {
     const emptySuggestionList = [
       {
@@ -39,24 +58,7 @@ export async function addSuggestions(
         rank: 1,
         status: 'PENDING_VALIDATION',
         data: {
-          variations: [
-            {
-              name: 'Control',
-              changes: [
-                {
-                  type: 'text',
-                  element: null,
-                  text: 'Control',
-                },
-              ],
-              variationEditPageUrl: null,
-              id: uuidv4(),
-              variationPageUrl: '',
-              explanation: null,
-              projectedImpact: null,
-              previewImage: '',
-            },
-          ],
+          variations: variations.length > 0 ? variations : getEmptyVariationList(),
         },
         kpiDeltas: {
           estimatedKPILift: 0,

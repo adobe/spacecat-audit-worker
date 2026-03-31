@@ -69,6 +69,7 @@ export function processSuggestionsForMystique(suggestions, useCodeFixFlow = true
   const SKIPPED_STATUSES = [
     SuggestionDataAccess.STATUSES.FIXED,
     SuggestionDataAccess.STATUSES.SKIPPED,
+    SuggestionDataAccess.STATUSES.OUTDATED,
   ];
 
   // Helper: Extract issue items from a suggestion that need Mystique processing
@@ -86,14 +87,15 @@ export function processSuggestionsForMystique(suggestions, useCodeFixFlow = true
       .flatMap((issue) => issue.htmlWithIssues
         .filter((html) => shouldSendIssueToMystique(html, data, useCodeFixFlow))
         .map((html) => {
-          const targetSelector = html.target_selector || html.targetSelector || '';
+          // Payload is always normalized to snake_case (update_from, target_selector).
+          const targetSelector = html.target_selector ?? '';
           const aggregationKey = useCodeFixFlow
             ? buildAggregationKey(issue.type, data.url, targetSelector, data.source)
             : buildKey(data.url);
 
           return {
             issueName: issue.type,
-            faultyLine: html.update_from || html.updateFrom || '',
+            faultyLine: html.update_from ?? '',
             targetSelector,
             issueDescription: issue.description || '',
             suggestionId,

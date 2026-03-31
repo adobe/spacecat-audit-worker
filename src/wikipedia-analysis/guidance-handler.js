@@ -15,7 +15,6 @@ import {
 } from '@adobe/spacecat-shared-http-utils';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
-
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
@@ -60,19 +59,6 @@ function getRankFromPriority(priority) {
     LOW: 3,
   };
   return priorityRanks[priority] ?? 4;
-}
-
-/**
- * Maps Wikipedia suggestions to suggestion DTO format
- * @param {Array} suggestions - Raw suggestions from Mystique
- * @returns {Array} Mapped suggestions
- */
-function mapSuggestions(suggestions) {
-  return suggestions.map((suggestion) => ({
-    rank: getRankFromPriority(suggestion.priority),
-    type: 'CONTENT_UPDATE',
-    data: suggestion, // Pass through entire suggestion object
-  }));
 }
 
 /**
@@ -143,15 +129,15 @@ export default async function handler(message, context) {
 
     log.info(`[Wikipedia] Processing ${suggestions.length} suggestions for ${company}`);
 
-    // Create guidance object
-    const guidance = [{
+    // Create guidance object (must be an object, not an array, per Opportunity schema)
+    const guidance = {
       insight: `Wikipedia analysis identified ${suggestions.length} improvement opportunities for ${company}`,
       rationale: industryAnalysis
         ? `Based on comparison with ${industryAnalysis.industry} competitors`
         : 'Based on Wikipedia best practices analysis',
       recommendation: 'Review and implement the suggested improvements to enhance Wikipedia presence and LLM citability',
       type: 'CONTENT_UPDATE',
-    }];
+    };
 
     // Create opportunity
     const opportunity = await createOpportunity(
@@ -162,19 +148,16 @@ export default async function handler(message, context) {
       context,
     );
 
-    // Map and sync suggestions
-    const mappedSuggestions = mapSuggestions(suggestions);
-
     await syncSuggestions({
       context,
       opportunity,
-      newData: mappedSuggestions,
-      buildKey: (suggestion) => `wikipedia::${suggestion.data.id}`,
+      newData: suggestions,
+      buildKey: (suggestion) => `wikipedia::${suggestion.id}`,
       mapNewSuggestion: (suggestion) => ({
         opportunityId: opportunity.getId(),
-        type: suggestion.type,
-        rank: suggestion.rank,
-        data: suggestion.data,
+        type: 'CONTENT_UPDATE',
+        rank: getRankFromPriority(suggestion.priority),
+        data: suggestion,
       }),
     });
 

@@ -44,6 +44,10 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
           url: 'https://github.com/FasterXML/jackson-databind/issues/2816',
         },
       ],
+      dependencyTree: [
+        '[root]',
+        'biz.netcentric.cq.tools.accesscontroltool/accesscontroltool-bundle@3.5.1',
+      ],
     };
   });
 
@@ -86,6 +90,10 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
               url: 'https://github.com/FasterXML/jackson-databind/issues/2816',
             },
           ],
+          dependency_tree: [
+            '[root]',
+            'biz.netcentric.cq.tools.accesscontroltool/accesscontroltool-bundle@3.5.1',
+          ],
         },
       });
     });
@@ -127,6 +135,14 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
       });
     });
 
+    it('should default to rank 0 when vulnerabilities are missing', () => {
+      const { vulnerabilities, ...baseVulnerability } = mockVulnerability;
+      const result = mapVulnerabilityToSuggestion(mockOpportunity, baseVulnerability);
+
+      expect(result.rank).to.equal(0);
+      expect(result.data.cves).to.deep.equal([]);
+    });
+
     it('should handle missing optional fields and various score formats', () => {
       const vulnerability = createVulnerability({
         name: 'test-library',
@@ -151,6 +167,9 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
       expect(result.data.cves[1].score_text).to.equal('8.0 High');
       expect(result.data.cves[2].score_text).to.equal('5.7 Medium');
       expect(result.data.cves[3].score_text).to.equal('0 Low');
+      expect(result.data.dependency_tree).to.have.lengthOf(2);
+      expect(result.data.dependency_tree[0]).to.equal('[root]');
+      expect(result.data.dependency_tree[1]).to.equal('biz.netcentric.cq.tools.accesscontroltool/accesscontroltool-bundle@3.5.1');
     });
 
     it('should handle different severity levels and same scores', () => {

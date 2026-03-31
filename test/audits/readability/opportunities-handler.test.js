@@ -35,6 +35,7 @@ describe('Readability Opportunities Handler', () => {
   let mockSyncSuggestions;
   let mockAnalyzePageReadability;
   let mockSendReadabilityToMystique;
+  let mockGetTopAgenticUrlsFromAthena;
 
   beforeEach(async () => {
     mockLog = {
@@ -47,6 +48,7 @@ describe('Readability Opportunities Handler', () => {
     mockSite = {
       getId: sinon.stub().returns('site-123'),
       getBaseURL: sinon.stub().returns('https://example.com'),
+      getConfig: sinon.stub().returns({ getIncludedURLs: sinon.stub().returns([]) }),
     };
 
     mockAudit = {
@@ -69,6 +71,7 @@ describe('Readability Opportunities Handler', () => {
     mockSyncSuggestions = sinon.stub();
     mockAnalyzePageReadability = sinon.stub();
     mockSendReadabilityToMystique = sinon.stub();
+    mockGetTopAgenticUrlsFromAthena = sinon.stub().resolves([]);
 
     const handler = await esmock(
       '../../../src/readability/opportunities/handler.js',
@@ -82,6 +85,9 @@ describe('Readability Opportunities Handler', () => {
         '../../../src/readability/shared/analysis-utils.js': {
           analyzePageReadability: mockAnalyzePageReadability,
           sendReadabilityToMystique: mockSendReadabilityToMystique,
+        },
+        '../../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
         },
       },
     );
@@ -148,7 +154,7 @@ describe('Readability Opportunities Handler', () => {
       );
     });
 
-    it('should return NO_OPPORTUNITIES when no top pages found ', async () => {
+    it('should return NO_OPPORTUNITIES when no URLs are found ', async () => {
       mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
 
       const context = {
@@ -163,10 +169,10 @@ describe('Readability Opportunities Handler', () => {
 
       expect(result).to.deep.equal({
         status: 'NO_OPPORTUNITIES',
-        message: 'No top pages found, skipping audit',
+        message: 'No URLs found, skipping audit',
       });
       expect(mockLog.info).to.have.been.calledWith(
-        '[ReadabilityAudit] No top pages found for site site-123 (https://example.com), skipping audit',
+        '[ReadabilityAudit] No URLs found for site site-123 (https://example.com), skipping audit',
       );
     });
 
@@ -237,7 +243,7 @@ describe('Readability Opportunities Handler', () => {
       );
     });
 
-    it('should log found top pages count ', async () => {
+    it('should log merged URL input counts ', async () => {
       const topPages = [
         { getUrl: () => 'https://example.com/page1', getTraffic: () => 100, getId: () => 'page-1' },
       ];
@@ -254,8 +260,104 @@ describe('Readability Opportunities Handler', () => {
       await scrapeReadabilityData(context);
 
       expect(mockLog.info).to.have.been.calledWith(
-        '[ReadabilityAudit] Found 1 top pages for site https://example.com',
+        '[ReadabilityAudit] URL inputs: topPages=1, agentic=0, includedURLs=0, filteredOutUrls=0, finalUrls=1',
       );
+    });
+
+    it('should include site-config URLs in scrape inputs', async () => {
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+      mockSite.getConfig.returns({
+        getIncludedURLs: sinon.stub().returns(['https://example.com/included-page']),
+      });
+
+      const context = {
+        site: mockSite,
+        log: mockLog,
+        finalUrl: 'https://example.com',
+        env: mockEnv,
+        dataAccess: mockDataAccess,
+      };
+
+      const result = await scrapeReadabilityData(context);
+
+      expect(result.auditResult.status).to.equal('SCRAPING_REQUESTED');
+      expect(result.urls).to.deep.equal([
+        {
+          url: 'https://example.com/included-page',
+          traffic: 0,
+          urlId: 'merged-0',
+        },
+      ]);
+    });
+
+    it('should prioritize included URLs, then Athena, then Ahrefs sorted by traffic', async () => {
+      mockGetTopAgenticUrlsFromAthena.resolves([
+        'https://example.com/agentic-page1',
+      ]);
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+        { getUrl: () => 'https://example.com/ahrefs-page1', getTraffic: () => 100, getId: () => 'page-1' },
+        { getUrl: () => 'https://example.com/ahrefs-page2', getTraffic: () => 500, getId: () => 'page-2' },
+      ]);
+      mockSite.getConfig.returns({
+        getIncludedURLs: sinon.stub().returns(['https://example.com/included-page']),
+      });
+
+      const context = {
+        site: mockSite,
+        log: mockLog,
+        finalUrl: 'https://example.com',
+        env: mockEnv,
+        dataAccess: mockDataAccess,
+      };
+
+      const result = await scrapeReadabilityData(context);
+
+      expect(result.urls).to.deep.equal([
+        {
+          url: 'https://example.com/included-page',
+          traffic: 0,
+          urlId: 'merged-0',
+        },
+        {
+          url: 'https://example.com/agentic-page1',
+          traffic: 0,
+          urlId: 'merged-1',
+        },
+        {
+          url: 'https://example.com/ahrefs-page2',
+          traffic: 500,
+          urlId: 'page-2',
+        },
+        {
+          url: 'https://example.com/ahrefs-page1',
+          traffic: 100,
+          urlId: 'page-1',
+        },
+      ]);
+    });
+
+    it('should default traffic and urlId when top pages do not provide them', async () => {
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+        { getUrl: () => 'https://example.com/page-without-metadata' },
+      ]);
+
+      const context = {
+        site: mockSite,
+        log: mockLog,
+        finalUrl: 'https://example.com',
+        env: mockEnv,
+        dataAccess: mockDataAccess,
+      };
+
+      const result = await scrapeReadabilityData(context);
+
+      expect(result.urls).to.deep.equal([
+        {
+          url: 'https://example.com/page-without-metadata',
+          traffic: 0,
+          urlId: 'https://example.com/page-without-metadata',
+        },
+      ]);
     });
   });
 
@@ -317,6 +419,7 @@ describe('Readability Opportunities Handler', () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content-1',
           textContent: 'This is some long text content for testing purposes.',
           readabilityScore: 25,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -324,6 +427,7 @@ describe('Readability Opportunities Handler', () => {
         },
         {
           pageUrl: 'https://example.com/page2',
+          selector: 'p.content-2',
           textContent: 'Another text content block.',
           readabilityScore: 20,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -372,6 +476,7 @@ describe('Readability Opportunities Handler', () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
           textContent: 'Test content',
           readabilityScore: 25,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -471,6 +576,7 @@ describe('Readability Opportunities Handler', () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
           textContent: longText,
           readabilityScore: 25,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -516,6 +622,7 @@ describe('Readability Opportunities Handler', () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
           textContent: 'Test content',
           readabilityScore: 25,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -594,6 +701,7 @@ describe('Readability Opportunities Handler', () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content-1',
           textContent: 'Test content',
           readabilityScore: 25,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -601,6 +709,7 @@ describe('Readability Opportunities Handler', () => {
         },
         {
           pageUrl: 'https://example.com/page2',
+          selector: 'p.content-2',
           textContent: 'More content',
           readabilityScore: 22,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -646,6 +755,7 @@ describe('Readability Opportunities Handler', () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
           textContent: 'Short text preview content',
           readabilityScore: 25,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -686,14 +796,15 @@ describe('Readability Opportunities Handler', () => {
 
       // Test buildKey function
       const buildKey = syncCall.buildKey;
-      const testData = { pageUrl: 'https://test.com', textPreview: 'preview text' };
-      expect(buildKey(testData)).to.equal('https://test.com|preview text');
+      const testData = { pageUrl: 'https://test.com', selector: 'p.intro' };
+      expect(buildKey(testData)).to.equal('https://test.com-p.intro');
     });
 
     it('should call convertToOpportunity with correct parameters ', async () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
           textContent: 'Content',
           readabilityScore: 25,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -743,6 +854,7 @@ describe('Readability Opportunities Handler', () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
           textContent: 'Content',
           readabilityScore: 25,
           scrapedAt: new Date('2025-06-15T10:30:00.000Z'),
@@ -851,6 +963,7 @@ describe('Readability Opportunities Handler', () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
           textContent: 'Content',
           readabilityScore: 25,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -899,10 +1012,43 @@ describe('Readability Opportunities Handler', () => {
       expect(mapNewSuggestion(dataWithUndefinedRank).rank).to.be.undefined;
     });
 
+    it('should return NO_OPPORTUNITIES when scrapeResultPaths is empty', async () => {
+      const context = {
+        site: mockSite,
+        log: mockLog,
+        s3Client: mockS3Client,
+        env: mockEnv,
+        audit: mockAudit,
+        scrapeResultPaths: new Map(), // Empty map
+      };
+
+      const result = await processReadabilityOpportunities(context);
+
+      expect(result.status).to.equal('NO_OPPORTUNITIES');
+      expect(result.message).to.equal('No scrape result paths available');
+    });
+
+    it('should return NO_OPPORTUNITIES when scrapeResultPaths is null', async () => {
+      const context = {
+        site: mockSite,
+        log: mockLog,
+        s3Client: mockS3Client,
+        env: mockEnv,
+        audit: mockAudit,
+        scrapeResultPaths: null,
+      };
+
+      const result = await processReadabilityOpportunities(context);
+
+      expect(result.status).to.equal('NO_OPPORTUNITIES');
+      expect(result.message).to.equal('No scrape result paths available');
+    });
+
     it('should mapNewSuggestion include entire data object in data field ', async () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
           textContent: 'Content',
           readabilityScore: 25,
           scrapedAt: '2025-01-01T00:00:00.000Z',
@@ -961,6 +1107,136 @@ describe('Readability Opportunities Handler', () => {
       expect(result.data.textPreview).to.equal('Complex text preview with lots of data');
       expect(result.data.selector).to.equal('article > p:nth-child(2)');
       expect(result.data.customField).to.equal('extra data');
+    });
+  });
+
+  describe('scrapeReadabilityData - Athena/Ahrefs fallback', () => {
+    it('should include Athena URLs when available', async () => {
+      mockGetTopAgenticUrlsFromAthena.resolves([
+        'https://example.com/athena-page1',
+        'https://example.com/athena-page2',
+      ]);
+
+      const context = {
+        site: mockSite,
+        log: mockLog,
+        finalUrl: 'https://example.com',
+        env: mockEnv,
+        dataAccess: mockDataAccess,
+      };
+
+      const result = await scrapeReadabilityData(context);
+
+      expect(result.auditResult.status).to.equal('SCRAPING_REQUESTED');
+      expect(result.urls).to.have.lengthOf(2);
+      expect(result.urls[0].url).to.equal('https://example.com/athena-page1');
+      expect(result.urls[1].url).to.equal('https://example.com/athena-page2');
+      expect(mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledOnce;
+    });
+
+    it('should use Ahrefs URLs when Athena returns empty array', async () => {
+      mockGetTopAgenticUrlsFromAthena.resolves([]);
+
+      const topPages = [
+        { getUrl: () => 'https://example.com/ahrefs-page1', getTraffic: () => 100, getId: () => 'page-1' },
+      ];
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+
+      const context = {
+        site: mockSite,
+        log: mockLog,
+        finalUrl: 'https://example.com',
+        env: mockEnv,
+        dataAccess: mockDataAccess,
+      };
+
+      const result = await scrapeReadabilityData(context);
+
+      expect(result.auditResult.status).to.equal('SCRAPING_REQUESTED');
+      expect(result.urls[0].url).to.equal('https://example.com/ahrefs-page1');
+    });
+
+    it('should use Ahrefs URLs when Athena returns null', async () => {
+      mockGetTopAgenticUrlsFromAthena.resolves(null);
+
+      const topPages = [
+        { getUrl: () => 'https://example.com/ahrefs-page1', getTraffic: () => 100, getId: () => 'page-1' },
+      ];
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+
+      const context = {
+        site: mockSite,
+        log: mockLog,
+        finalUrl: 'https://example.com',
+        env: mockEnv,
+        dataAccess: mockDataAccess,
+      };
+
+      const result = await scrapeReadabilityData(context);
+
+      expect(result.auditResult.status).to.equal('SCRAPING_REQUESTED');
+      expect(result.urls[0].url).to.equal('https://example.com/ahrefs-page1');
+    });
+
+    it('should map agentic-only URLs with merged IDs and zero traffic', async () => {
+      mockGetTopAgenticUrlsFromAthena.resolves([
+        'https://example.com/athena-page1',
+        'https://example.com/athena-page2',
+      ]);
+
+      const context = {
+        site: mockSite,
+        log: mockLog,
+        finalUrl: 'https://example.com',
+        env: mockEnv,
+        dataAccess: mockDataAccess,
+      };
+
+      const result = await scrapeReadabilityData(context);
+
+      expect(result.urls[0]).to.deep.equal({
+        url: 'https://example.com/athena-page1',
+        traffic: 0,
+        urlId: 'merged-0',
+      });
+      expect(result.urls[1]).to.deep.equal({
+        url: 'https://example.com/athena-page2',
+        traffic: 0,
+        urlId: 'merged-1',
+      });
+    });
+
+    it('should proceed when agentic and Ahrefs URLs fully overlap', async () => {
+      mockGetTopAgenticUrlsFromAthena.resolves([
+        'https://example.com/shared-page',
+      ]);
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+        {
+          getUrl: () => 'https://example.com/shared-page',
+          getTraffic: () => 250,
+          getId: () => 'shared-1',
+        },
+      ]);
+
+      const context = {
+        site: mockSite,
+        log: mockLog,
+        finalUrl: 'https://example.com',
+        env: mockEnv,
+        dataAccess: mockDataAccess,
+      };
+
+      const result = await scrapeReadabilityData(context);
+
+      expect(result.status).to.be.undefined;
+      expect(result.auditResult.status).to.equal('SCRAPING_REQUESTED');
+      expect(result.urls).to.deep.equal([
+        {
+          url: 'https://example.com/shared-page',
+          traffic: 250,
+          urlId: 'shared-1',
+        },
+      ]);
     });
   });
 });

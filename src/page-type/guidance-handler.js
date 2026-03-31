@@ -27,15 +27,15 @@ async function updateSitePageTypes(site, patterns, log) {
     const pageTypes = convertPatternsToPageTypes(patterns);
 
     if (existingPageTypes && existingPageTypes.length > 0) {
-      log.info(`Overriding existing pageTypes configuration (${existingPageTypes.length} patterns) with new patterns (${patterns.length} patterns) for site ${site.getId()}`);
+      log.info(`[${GUIDANCE_TYPE}] Overriding existing pageTypes configuration (${existingPageTypes.length} patterns) with new patterns (${patterns.length} patterns) for site: ${site.getId()}`);
     }
 
     site.setPageTypes(pageTypes);
 
     await site.save();
-    log.info(`Updated site pageTypes configuration with ${patterns.length} patterns for site ${site.getId()}`);
+    log.info(`[${GUIDANCE_TYPE}] Updated site pageTypes configuration with ${patterns.length} patterns for site: ${site.getId()}`);
   } catch (error) {
-    log.error(`Failed to update site pageTypes for site ${site.getId()}: ${error.message}`);
+    log.error(`[${GUIDANCE_TYPE}] Failed to update site pageTypes for site: ${site.getId()}: ${error.message}`);
     throw error;
   }
 }
@@ -45,11 +45,11 @@ export default async function handler(message, context) {
   const { Site, Audit } = dataAccess;
   const { siteId, auditId, data } = message;
 
-  log.info(`Message received for ${GUIDANCE_TYPE} handler site: ${siteId} message: ${JSON.stringify(message)}`);
+  log.info(`[${GUIDANCE_TYPE}] Message received for site: ${siteId}, audit: ${auditId}`);
 
   const site = await Site.findById(siteId);
   if (!site) {
-    log.warn(`No site found for siteId: ${siteId}`);
+    log.warn(`[${GUIDANCE_TYPE}] Failed: no site found for site: ${siteId}, audit: ${auditId}`);
     return notFound();
   }
 
@@ -67,7 +67,7 @@ export default async function handler(message, context) {
 
   if (!pageTypesData) {
     auditResult.error = 'No valid guidance body received';
-    log.warn(`No valid guidance body received for site: ${siteId}`);
+    log.warn(`[${GUIDANCE_TYPE}] Skipping: no valid guidance body for site: ${siteId}, audit: ${auditId}`);
   } else {
     const {
       patterns, validation, execution_metrics: executionMetrics, accuracy_pct: accuracyPct,
@@ -86,16 +86,16 @@ export default async function handler(message, context) {
     if (!Array.isArray(patterns) || patterns.length === 0) {
       auditResult.error = 'No valid patterns received';
       auditResult.patternsStored = false;
-      log.warn(`No valid patterns received for site: ${siteId}`);
+      log.warn(`[${GUIDANCE_TYPE}] Skipping: no valid patterns for site: ${siteId}, audit: ${auditId}`);
     } else {
       // Check accuracy threshold
       if (accuracyPct == null || accuracyPct < MIN_ACCURACY_THRESHOLD) {
         auditResult.error = `Accuracy ${accuracyPct}% below threshold ${MIN_ACCURACY_THRESHOLD}%`;
         auditResult.patternsStored = false;
-        log.warn(`Page type detection accuracy ${accuracyPct}% is below threshold ${MIN_ACCURACY_THRESHOLD}% for site: ${siteId}. Skipping pattern storage.`);
+        log.warn(`[${GUIDANCE_TYPE}] Skipping: accuracy ${accuracyPct}% below threshold ${MIN_ACCURACY_THRESHOLD}% for site: ${siteId}, audit: ${auditId}`);
       } else {
         try {
-          log.info(`Updating site page types for site: ${siteId} with patterns: ${JSON.stringify(patterns)}`);
+          log.info(`[${GUIDANCE_TYPE}] Updating patterns for site: ${siteId}, audit: ${auditId}, patterns: ${JSON.stringify(patterns)}`);
           const existingPageTypes = site.getPageTypes();
           const hadExistingPageTypes = existingPageTypes && existingPageTypes.length > 0;
 
@@ -107,17 +107,17 @@ export default async function handler(message, context) {
             auditResult.previousPageTypesCount = existingPageTypes.length;
           }
 
-          log.info(`Successfully stored ${patterns.length} page type patterns for site: ${siteId}`);
+          log.info(`[${GUIDANCE_TYPE}] Created: stored ${patterns.length} patterns for site: ${siteId}, audit: ${auditId}`);
         } catch (error) {
           auditResult.error = `Failed to store patterns: ${error.message}`;
           auditResult.patternsStored = false;
           auditResult.newPageTypesAdded = false;
-          log.error(`Failed to store page type patterns for site: ${siteId}: ${error.message}`);
+          log.error(`[${GUIDANCE_TYPE}] Failed: could not store patterns for site: ${siteId}, audit: ${auditId}: ${error.message}`);
         }
       }
 
-      log.info(`Validation results: ${accuracyPct}% accuracy with ${validation?.sample_size} samples`);
-      log.info(`Execution metrics: processed ${executionMetrics?.total_urls} URLs in ${executionMetrics?.total_duration_seconds}s`);
+      log.info(`[${GUIDANCE_TYPE}] Validation: ${accuracyPct}% accuracy with ${validation?.sample_size} samples`);
+      log.info(`[${GUIDANCE_TYPE}] Execution: processed ${executionMetrics?.total_urls} URLs in ${executionMetrics?.total_duration_seconds}s`);
     }
   }
 
@@ -128,12 +128,12 @@ export default async function handler(message, context) {
       if (audit) {
         audit.setAuditResult(auditResult);
         await audit.save();
-        log.info(`Saved audit result for auditId: ${auditId}`);
+        log.info(`[${GUIDANCE_TYPE}] Saved audit result for site: ${siteId}, audit: ${auditId}`);
       } else {
-        log.warn(`Audit not found for auditId: ${auditId}`);
+        log.warn(`[${GUIDANCE_TYPE}] Failed: audit not found for site: ${siteId}, audit: ${auditId}`);
       }
     } catch (error) {
-      log.error(`Failed to save audit result for auditId: ${auditId}: ${error.message}`);
+      log.error(`[${GUIDANCE_TYPE}] Failed: could not save audit result for site: ${siteId}, audit: ${auditId}: ${error.message}`);
     }
   }
 

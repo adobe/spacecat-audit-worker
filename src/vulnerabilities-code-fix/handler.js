@@ -12,60 +12,145 @@
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { getObjectFromKey } from '../utils/s3-utils.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_VULNERABILITIES;
 
+/**
+ * Handler for processing vulnerabilities code fix results from starfish-auto-code.
+ *
+ * Receives a pointer to an S3 report, reads it once, and updates matching
+ * suggestions with the diffs from applied results.
+ *
+ * Expected message format:
+ * {
+ *   "siteId": "<site-id>",
+ *   "type": "codefix:security-vulnerabilities",
+ *   "data": {
+ *     "opportunityId": "<uuid>",
+ *     "reportBucket": "<s3-bucket>",
+ *     "reportPath": "results/<job-id>/report.json"
+ *   }
+ * }
+ *
+ * @param {Object} message - The SQS message
+ * @param {Object} context - The context object containing dataAccess, log, s3Client, etc.
+ * @returns {Promise<Response>} - HTTP response
+ */
 export default async function handler(message, context) {
-  const { log, dataAccess } = context;
-  const { auditId, siteId, data } = message;
-  const {
-    opportunityId, patches: patchedSuggestions,
-  } = data;
+  const { log, dataAccess, s3Client } = context;
+  const { siteId, data } = message;
+  const { Site, Opportunity, Suggestion } = dataAccess;
 
-  log.debug(`[${AUDIT_TYPE} Code-Fix] Message received in vulnerabilities code-fix handler: ${JSON.stringify(message, null, 2)}`);
+  log.debug(`[${AUDIT_TYPE} Code-Fix] Message received: ${JSON.stringify(message, null, 2)}`);
 
-  const { Site } = dataAccess;
+  // Validate siteId
+  if (!siteId) {
+    log.error(`[${AUDIT_TYPE} Code-Fix] No siteId provided in message`);
+    return badRequest('No siteId provided in message');
+  }
   const site = await Site.findById(siteId);
   if (!site) {
     log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Site not found`);
     return notFound('Site not found');
   }
 
-  const { Audit: AuditModel } = dataAccess;
-  const audit = await AuditModel.findById(auditId);
-  if (!audit) {
-    log.warn(`[${AUDIT_TYPE} Code-Fix] [Site: ${site.getId()}] No audit found for auditId: ${auditId}`);
-    return notFound('Audit not found');
+  // Validate data
+  if (!data) {
+    log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] No data provided in message`);
+    return badRequest('No data provided in message');
   }
-  const { Opportunity } = dataAccess;
-  const opportunity = await Opportunity.findById(opportunityId);
+  const { opportunityId, reportBucket, reportPath } = data;
 
+  // Verify opportunityId
+  if (!opportunityId) {
+    log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] No opportunityId provided in message data`);
+    return badRequest('No opportunityId provided in message data');
+  }
+  const opportunity = await Opportunity.findById(opportunityId);
   if (!opportunity) {
-    log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${site.getId()}] Opportunity not found for ID: ${opportunityId}`);
+    log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Opportunity not found for ID: ${opportunityId}`);
     return notFound('Opportunity not found');
   }
 
   // Verify the opportunity belongs to the correct site
   if (opportunity.getSiteId() !== siteId) {
-    const errorMsg = `[${AUDIT_TYPE} Code-Fix] [Opportunity: ${opportunityId}] Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`;
-    log.error(errorMsg);
+    log.error(`[${AUDIT_TYPE} Code-Fix] [Opportunity: ${opportunityId}] Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`);
     return badRequest('Site ID mismatch');
   }
 
-  const { Suggestion } = dataAccess;
-  await Promise.all(patchedSuggestions.map(async (patchedSuggestion) => {
-    const suggestion = await Suggestion.findById(patchedSuggestion.suggestionId);
-    if (!suggestion) {
-      log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${site.getId()}] Suggestion not found for ID: ${patchedSuggestion.suggestionId}`);
-      return {};
+  // Validate report pointer
+  if (!reportBucket || !reportPath) {
+    log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Missing reportBucket or reportPath in message data`);
+    return badRequest('Missing reportBucket or reportPath in message data');
+  }
+
+  // Fetch report from S3
+  let reportData;
+  try {
+    const raw = await getObjectFromKey(s3Client, reportBucket, reportPath, log);
+    if (!raw) {
+      log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] No report found at s3://${reportBucket}/${reportPath}`);
+      return ok();
     }
-    suggestion.setData({
-      ...suggestion.getData(),
-      patch: patchedSuggestion.patch,
-    });
+    reportData = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Failed to read report from s3://${reportBucket}/${reportPath}: ${error.message}`);
+    return ok();
+  }
 
-    return suggestion.save();
-  }));
+  // Check job-level status
+  if (reportData.status === 'failed') {
+    log.warn(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Job failed (report status: failed). No results to process.`);
+    return ok();
+  }
 
+  // Validate results array
+  const { results } = reportData;
+  if (!Array.isArray(results) || results.length === 0) {
+    log.warn(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Report has no results to process.`);
+    return ok();
+  }
+
+  // Collect applied suggestion IDs and batch-fetch
+  const appliedResults = results.filter((r) => r.status === 'applied');
+  if (appliedResults.length === 0) {
+    log.info(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] No applied results in report. Nothing to update.`);
+    return ok();
+  }
+
+  const suggestionIds = appliedResults.map((r) => r.suggestionId);
+  const { data: existingSuggestions = [] } = await Suggestion.batchGetByKeys(
+    suggestionIds.map((id) => ({ suggestionId: id })),
+  );
+  const suggestionMap = new Map(existingSuggestions.map((s) => [s.getId(), s]));
+
+  // Update matching suggestions
+  const toSave = [];
+  for (const result of appliedResults) {
+    const { suggestionId, diff } = result;
+
+    if (!diff) {
+      log.warn(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Applied result for suggestion ${suggestionId} has no diff. Skipping.`);
+    } else {
+      const suggestion = suggestionMap.get(suggestionId);
+      if (!suggestion) {
+        log.warn(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Suggestion not found for ID: ${suggestionId}. Skipping.`);
+      } else {
+        suggestion.setData({
+          ...suggestion.getData(),
+          patchContent: diff,
+          isCodeChangeAvailable: true,
+        });
+        toSave.push(suggestion);
+      }
+    }
+  }
+
+  if (toSave.length > 0) {
+    await Suggestion.saveMany(toSave);
+  }
+
+  log.info(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Updated ${toSave.length} suggestions from report.`);
   return ok();
 }

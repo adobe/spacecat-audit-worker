@@ -14,20 +14,137 @@ import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { FORM_OPPORTUNITY_TYPES, formOpportunitiesMap } from '../constants.js';
 import { getSuccessCriteriaDetails } from '../utils.js';
-import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
 import {
   aggregateA11yIssuesByOppType,
   createIndividualOpportunitySuggestions,
+  findOrCreateAccessibilityOpportunity,
 } from '../../accessibility/utils/generate-individual-opportunities.js';
 import { aggregateAccessibilityData, sendRunImportMessage, sendCodeFixMessagesToMystique } from '../../accessibility/utils/data-processing.js';
 import { URL_SOURCE_SEPARATOR, A11Y_METRICS_AGGREGATOR_IMPORT_TYPE, WCAG_CRITERIA_COUNTS } from '../../accessibility/utils/constants.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
 
-const filterAccessibilityOpportunities = (opportunities) => opportunities.filter((opportunity) => opportunity.getTags()?.includes('Forms Accessibility'));
+/**
+ * Normalizes a single htmlWithIssues item to the canonical shape expected by the pipeline.
+ * The parent issue object uses camelCase (aiGenerated, wcagRule, etc.); only htmlWithIssues
+ * entries use snake_case (update_from, target_selector) because codefix-handler and
+ * mystique-data-processing expect that shape for these items.
+ *
+ * @param {string|Object} item - Raw item from Mystique or string HTML
+ * @returns {{ update_from: string, target_selector: string }}
+ */
+function normalizeHtmlWithIssuesItem(item) {
+  if (item == null) {
+    return { update_from: '', target_selector: '' };
+  }
+  if (typeof item === 'string') {
+    return { update_from: item, target_selector: '' };
+  }
+  const updateFrom = item.updateFrom ?? item.update_from ?? '';
+  const targetSelector = item.targetSelector ?? item.target_selector ?? '';
+  return {
+    update_from: String(updateFrom),
+    target_selector: String(targetSelector),
+  };
+}
 
 /**
- * Creates individual suggestions for form accessibility issues from Mystique data
- * Each htmlWithIssues creates one suggestion
+ * Extracts form accessibility data from Mystique a11y data
+ * This function processes the raw a11y data and creates structured data for suggestions
+ *
+ * @param {Array} a11yData - Array of form accessibility data from Mystique
+ * @param {Object} log - Logger instance
+ * @returns {Array} Array of formatted form accessibility data
+ */
+export function extractFormAccessibilityData(a11yData, log) {
+  const formAccessibilityData = [];
+
+  if (!a11yData || !Array.isArray(a11yData)) {
+    return formAccessibilityData;
+  }
+
+  a11yData
+    .filter((formData) => formData.a11yIssues?.length > 0)
+    .forEach((formData) => {
+      const { form: pageUrl, formSource: source, a11yIssues } = formData;
+
+      a11yIssues.forEach((issue) => {
+        const { type, severity, htmlWithIssues } = issue;
+        let understandingUrl = '';
+        try {
+          const { understandingUrl: docUrl } = getSuccessCriteriaDetails(issue.wcagRule);
+          understandingUrl = docUrl;
+        } catch (error) {
+          log.error(`[FormMystiqueSuggestions] Error getting success criteria details: ${error.message}`);
+          return;
+        }
+        // Create one suggestion for each htmlWithIssues. Items use snake_case (update_from,
+        // target_selector) for the pipeline; the rest of the issue stays camelCase.
+        if (htmlWithIssues && htmlWithIssues.length > 0) {
+          htmlWithIssues.forEach((htmlIssue) => {
+            const normalizedItem = normalizeHtmlWithIssuesItem(htmlIssue);
+            const formattedIssue = {
+              type,
+              description: issue.description,
+              wcagRule: issue.wcagRule,
+              wcagLevel: issue.wcagLevel,
+              understandingUrl,
+              severity,
+              occurrences: 1,
+              htmlWithIssues: [normalizedItem],
+              failureSummary: issue.failureSummary,
+            };
+
+            const urlObject = {
+              type: 'url',
+              url: pageUrl,
+              ...(source && { source }),
+              issues: [formattedIssue],
+            };
+            if ('aiGenerated' in issue) {
+              urlObject.aiGenerated = issue.aiGenerated;
+            }
+
+            formAccessibilityData.push(urlObject);
+          });
+        }
+      });
+    });
+
+  return formAccessibilityData;
+}
+
+/**
+ * Normalizes form a11y issue from Mystique: required fields present.
+ * Issue fields stay camelCase; only htmlWithIssues items use snake_case (update_from,
+ * target_selector) for the codefix/mystique-data-processing pipeline.
+ *
+ * @param {Object} issue - Raw issue from Mystique (may use camelCase)
+ * @returns {Object|null} Normalized issue or null if invalid
+ */
+function normalizeFormA11yIssue(issue) {
+  if (!issue || typeof issue !== 'object') {
+    return null;
+  }
+  const type = issue.type ?? issue.Type ?? '';
+  const htmlWithIssues = Array.isArray(issue.htmlWithIssues) ? issue.htmlWithIssues : [];
+  if (htmlWithIssues.length === 0) return null;
+  const normalizedHtml = htmlWithIssues.map(normalizeHtmlWithIssuesItem);
+  return {
+    type: String(type),
+    description: String(issue.description ?? issue.Description ?? ''),
+    wcagRule: String(issue.wcagRule ?? issue.wcag_rule ?? ''),
+    wcagLevel: String(issue.wcagLevel ?? issue.wcag_level ?? ''),
+    severity: (issue.severity ?? issue.Severity) === 'critical' ? 'critical' : 'serious',
+    failureSummary: String(issue.failureSummary ?? issue.failure_summary ?? ''),
+    htmlWithIssues: normalizedHtml,
+    aiGenerated: Boolean(issue.aiGenerated ?? issue.ai_generated ?? true),
+  };
+}
+
+/**
+ * Creates individual suggestions for form accessibility issues from Mystique data.
+ * Each htmlWithIssues creates one suggestion. Incoming data is normalized to the canonical
+ * format (update_from, target_selector) for codefix-handler and mystique-data-processing.
  *
  * @param {Array} a11yData - Array of form accessibility data from Mystique
  * @param {Object} opportunity - The existing form opportunity to attach suggestions to
@@ -43,17 +160,29 @@ export async function createFormAccessibilitySuggestionsFromMystique(
 
   try {
     log.info('[FormMystiqueSuggestions] Creating individual suggestions from Mystique data');
+    log.info(`[FormMystiqueSuggestions] a11yData: ${JSON.stringify(a11yData, null, 2)}`);
 
-    // Create aggregated issues from M messages - Must be sync with aggregateAccessibilityIssues
+    if (!Array.isArray(a11yData)) {
+      log.warn('[FormMystiqueSuggestions] a11yData is not an array, skipping');
+      return;
+    }
+
     const formAccessibilityData = [];
 
     a11yData
-      .filter((formData) => formData.a11yIssues?.length > 0)
+      .filter((formData) => formData && Array.isArray(formData.a11yIssues)
+        && formData.a11yIssues.length > 0)
       .forEach((formData) => {
-        const { form: pageUrl, formSource: source, a11yIssues } = formData;
+        const {
+          form, Form, formSource: source, a11yIssues,
+        } = formData;
+        const pageUrl = form ?? Form ?? '';
 
-        a11yIssues.forEach((issue) => {
-          const { type, severity, htmlWithIssues } = issue;
+        a11yIssues.forEach((rawIssue) => {
+          const issue = normalizeFormA11yIssue(rawIssue);
+          if (!issue) {
+            return;
+          }
           let understandingUrl = '';
           try {
             const { understandingUrl: docUrl } = getSuccessCriteriaDetails(issue.wcagRule);
@@ -62,34 +191,30 @@ export async function createFormAccessibilitySuggestionsFromMystique(
             log.error(`[FormMystiqueSuggestions] Error getting success criteria details: ${error.message}`);
             return;
           }
-          // Create one suggestion for each htmlWithIssues
-          if (htmlWithIssues && htmlWithIssues.length > 0) {
-            htmlWithIssues.forEach((htmlIssue) => {
-              const formattedIssue = {
-                type,
-                description: issue.description,
-                wcagRule: issue.wcagRule,
-                wcagLevel: issue.wcagLevel,
-                understandingUrl,
-                severity,
-                occurrences: 1,
-                htmlWithIssues: [htmlIssue],
-                failureSummary: issue.failureSummary,
-              };
+          // Create one suggestion for each htmlWithIssues item (canonical shape)
+          issue.htmlWithIssues.forEach((normalizedHtmlItem) => {
+            const formattedIssue = {
+              type: issue.type,
+              description: issue.description,
+              wcagRule: issue.wcagRule,
+              wcagLevel: issue.wcagLevel,
+              understandingUrl,
+              severity: issue.severity,
+              occurrences: 1,
+              htmlWithIssues: [normalizedHtmlItem],
+              failureSummary: issue.failureSummary,
+            };
 
-              const urlObject = {
-                type: 'url',
-                url: pageUrl,
-                ...(source && { source }),
-                issues: [formattedIssue],
-              };
-              if ('aiGenerated' in issue) {
-                urlObject.aiGenerated = issue.aiGenerated;
-              }
+            const urlObject = {
+              type: 'url',
+              url: pageUrl,
+              ...(source && { source }),
+              issues: [formattedIssue],
+            };
+            urlObject.aiGenerated = issue.aiGenerated;
 
-              formAccessibilityData.push(urlObject);
-            });
-          }
+            formAccessibilityData.push(urlObject);
+          });
         });
       });
 
@@ -117,45 +242,31 @@ export async function createFormAccessibilitySuggestionsFromMystique(
   }
 }
 
-/**
- * Create a11y opportunity for the given siteId and auditId
- * @param {string} auditId - The auditId of the audit
- * @param {string} siteId - The siteId of the site
- * @param {object} context - The context object
- * @returns {Promise<void>}
- */
-async function createOpportunity(auditId, siteId, context) {
-  const {
-    dataAccess, log,
-  } = context;
-  const { Opportunity } = dataAccess;
-  let opportunity = null;
+export function createFormAccessibilityOpportunityInstance() {
+  return {
+    runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/Ebpoflp2gHFNl4w5-9C7dFEBBHHE4gTaRzHaofqSxJMuuQ?e=Ss6mep',
+    type: FORM_OPPORTUNITY_TYPES.FORM_A11Y,
+    origin: 'AUTOMATION',
+    title: 'Forms missing key accessibility attributes — enhancements prepared to support all users',
+    description: 'Improving accessibility for forms ensures assistive technologies can correctly interpret each input, helps users understand what\'s required, and makes form completion more intuitive for everyone.',
+    tags: [
+      'Forms Accessibility',
+    ],
+    status: 'NEW',
+    data: {
+      dataSources: ['axe-core'],
+    },
+  };
+}
 
-  try {
-    // change status to IGNORED for older opportunities
-    await updateStatusToIgnored(dataAccess, siteId, log, null, filterAccessibilityOpportunities);
-
-    const opportunityData = {
-      siteId,
-      auditId,
-      runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/Ebpoflp2gHFNl4w5-9C7dFEBBHHE4gTaRzHaofqSxJMuuQ?e=Ss6mep',
-      type: FORM_OPPORTUNITY_TYPES.FORM_A11Y,
-      origin: 'AUTOMATION',
-      title: 'Accessibility - Assistive technology is incompatible on form',
-      description: '',
-      tags: [
-        'Forms Accessibility',
-      ],
-      data: {
-        dataSources: ['axe-core'],
-      },
-    };
-    opportunity = await Opportunity.create(opportunityData);
-    log.debug(`[Form Opportunity] [Site Id: ${siteId}] Created new a11y opportunity`);
-  } catch (e) {
-    log.error(`[Form Opportunity] [Site Id: ${siteId}] Failed to create a11y opportunity with error: ${e.message}`);
-    throw new Error(`[Form Opportunity] [Site Id: ${siteId}] Failed to create a11y opportunity with error: ${e.message}`);
-  }
+async function findOrCreateFormA11yOpportunity(auditId, siteId, context) {
+  const opportunityInstance = createFormAccessibilityOpportunityInstance();
+  const auditData = { siteId, auditId };
+  const { opportunity } = await findOrCreateAccessibilityOpportunity(
+    opportunityInstance,
+    auditData,
+    context,
+  );
   return opportunity;
 }
 
@@ -283,7 +394,7 @@ export async function createAccessibilityOpportunity(auditData, context) {
     // Create opportunity only if there are violations
     let opportunity = null;
     if (totalViolations > 0) {
-      opportunity = await createOpportunity(auditId, siteId, context);
+      opportunity = await findOrCreateFormA11yOpportunity(auditId, siteId, context);
 
       // Create individual suggestions for the opportunity (if opportunity was created/updated)
       if (opportunity) {
@@ -333,10 +444,16 @@ export async function createAccessibilityOpportunity(auditData, context) {
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Site, Opportunity } = dataAccess;
-  const { auditId, siteId, data } = message;
+  const {
+    auditId, siteId, data, options,
+  } = message;
   const { opportunityId, a11y } = data;
   log.debug(`[Form Opportunity] [Site Id: ${siteId}] Received message in accessibility handler: ${JSON.stringify(message, null, 2)}`);
-
+  // if a11y preflight is detected, skip guidance and creation of opportunity
+  if (options && options.a11yPreflight) {
+    log.info(`[Form Opportunity] [Site Id: ${siteId}] A11y preflight detected, skipping guidance`);
+    return ok();
+  }
   const site = await Site.findById(siteId);
   if (!site) {
     log.error(`[Form Opportunity] [Site Id: ${siteId}] Site not found for siteId: ${siteId}`);
@@ -352,7 +469,14 @@ export default async function handler(message, context) {
         return notFound('A11y opportunity not found');
       }
     } else {
-      opportunity = await createOpportunity(auditId, siteId, context);
+      // First check if there are any issues from Mystique before creating opportunity
+      const formAccessibilityData = extractFormAccessibilityData(a11y, log);
+      if (formAccessibilityData.length === 0) {
+        log.info(`[Form Opportunity] [Site Id: ${siteId}] No accessibility issues found from Mystique, skipping opportunity creation`);
+        return ok();
+      }
+
+      opportunity = await findOrCreateFormA11yOpportunity(auditId, siteId, context);
     }
     if (!opportunity) {
       log.info(`[Form Opportunity] [Site Id: ${siteId}] A11y opportunity not detected, skipping guidance`);

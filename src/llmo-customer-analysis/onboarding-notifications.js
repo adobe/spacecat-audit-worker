@@ -17,13 +17,13 @@ import { postMessageSafe } from '../utils/slack-utils.js';
  */
 function createOnboardingBlocks(eventType, siteId, baseUrl, details = {}) {
   switch (eventType) {
-    case 'first_configuration':
+    case 'first_onboarding':
       return [
         {
           type: 'header',
           text: {
             type: 'plain_text',
-            text: '⚙️ First Configuration Provided!',
+            text: '✨ Onboarding Detected!',
             emoji: true,
           },
         },
@@ -38,17 +38,13 @@ function createOnboardingBlocks(eventType, siteId, baseUrl, details = {}) {
               type: 'mrkdwn',
               text: `*Site ID:*\n\`${siteId}\``,
             },
-            {
-              type: 'mrkdwn',
-              text: `*Config Version:*\n${details.configVersion ? `\`${details.configVersion}\`` : '_Not specified_'}`,
-            },
           ],
         },
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '🎯 *First configuration received*',
+            text: '🎯 *Onboarding detected*',
           },
         },
         {
@@ -112,7 +108,7 @@ function createOnboardingBlocks(eventType, siteId, baseUrl, details = {}) {
  * Sends Slack notification for customer onboarding events
  * @param {object} context - The context object
  * @param {object} site - The site object
- * @param {string} eventType - Type of event (first_configuration, cdn_provisioning)
+ * @param {string} eventType - Type of event (first_onboarding, cdn_provisioning)
  * @param {object} details - Additional event details
  */
 export async function sendOnboardingNotification(context, site, eventType, details = {}) {
@@ -128,7 +124,7 @@ export async function sendOnboardingNotification(context, site, eventType, detai
   }
 
   const colors = {
-    first_configuration: '#1473E6', // Adobe Blue
+    first_onboarding: '#1473E6', // Adobe Blue
     cdn_provisioning: '#FF6B35', // Adobe Orange
   };
 

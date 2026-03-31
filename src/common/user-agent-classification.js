@@ -14,7 +14,8 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
   chatgpt: '(?i)(ChatGPT|GPTBot|OAI-SearchBot)(?!.*(Tokowaka|Spacecat))',
   perplexity: '(?i)Perplexity',
   claude: '(?i)Claude(?!-web)',
-  google: '(?i)(^Google$|Gemini-Deep-Research|Google-NotebookLM|GoogleAgent)',
+  googleai: '(?i)(^Google$|Gemini-Deep-Research|Google-NotebookLM|GoogleAgent)',
+  google: '(?i)(Google-Extended|Googlebot)',
   mistralai: '(?i)MistralAI-User',
   copilot: '(?i)Copilot',
   bing: '(?i)Bingbot',
@@ -30,8 +31,8 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   { pattern: '%chatgpt-user%', displayName: 'ChatGPT-User' },
   { pattern: '%gptbot%', displayName: 'GPTBot' },
   { pattern: '%oai-searchbot%', displayName: 'OAI-SearchBot' },
-  { pattern: '%chatgpt%20atlas%', displayName: 'ChatGPT Atlas' },
-  { pattern: '%chatgpt%', displayName: 'ChatGPT Clients' },
+  { pattern: '%chatgpt%atlas%', displayName: 'ChatGPT Atlas' },
+  { pattern: '%chatgpt/%', displayName: 'ChatGPT Clients' },
 
   // Perplexity
   { pattern: '%perplexitybot%', displayName: 'PerplexityBot' },
@@ -46,6 +47,9 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   { pattern: '%googleagent-shopping%', displayName: 'GoogleAgent-Shopping' },
   { pattern: '%googleagent-mariner%', displayName: 'GoogleAgent-Mariner' },
   { pattern: '%google-notebooklm%', displayName: 'Google-NotebookLM' },
+  { pattern: '%googlebot%', displayName: 'GoogleBot' },
+  { pattern: '%bingbot%', displayName: 'BingBot' },
+  { pattern: '%google-extended%', displayName: 'Google-Extended' },
   // Claude
   { pattern: '%claude-user%', displayName: 'Claude-User' },
   { pattern: '%claudebot%', displayName: 'ClaudeBot' },
@@ -76,12 +80,15 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%gptbot%', result: 'Training bots' },
     { pattern: '%oai-searchbot%', result: 'Web search crawlers' },
     { pattern: '%chatgpt-user%', result: 'Chatbots' },
-    { pattern: '%chatgpt%', result: 'Media fetchers' },
+    { pattern: '%chatgpt%atlas%', result: 'Media fetcher' },
+    { pattern: '%chatgpt/%', result: 'Media fetchers' },
     // Perplexity
     { pattern: '%perplexitybot%', result: 'Web search crawlers' },
     { pattern: '%perplexity-user%', result: 'Chatbots' },
     { pattern: '%perplexity/%', result: 'Media fetchers' },
     // Google
+    { pattern: '%googlebot%', result: 'Search Bots' },
+    { pattern: '%google-extended%', result: 'Search Bots' },
     { pattern: '%gemini-deep-research%', result: 'Research' },
     { pattern: 'google', result: 'Chatbots' },
     { pattern: '%googleagent-urlcontext%', result: 'Chatbots' },
@@ -89,6 +96,8 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%googleagent-shopping%', result: 'Shopping agents' },
     { pattern: '%googleagent-mariner%', result: 'Action agents' },
     { pattern: '%google-notebooklm%', result: 'Research' },
+    // Bing
+    { pattern: '%bingbot%', result: 'Search Bots' },
     // Claude
     { pattern: '%claudebot%', result: 'Training bots' },
     { pattern: '%claude-searchbot%', result: 'Web search crawlers' },

@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { prependSchema } from '@adobe/spacecat-shared-utils';
+import { prependSchema, stripWWW } from '@adobe/spacecat-shared-utils';
 
 /**
  * Checks if a URL is within the audit scope defined by baseURL.
@@ -55,7 +55,9 @@ export function isWithinAuditScope(url, baseURL) {
     const parsedUrl = new URL(urlWithSchema);
 
     // Compare hostnames (and ports, if present) - protocol-agnostic
-    if (parsedUrl.hostname !== parsedBaseURL.hostname || parsedUrl.port !== parsedBaseURL.port) {
+    const normalizedUrlHost = stripWWW(parsedUrl.hostname);
+    const normalizedBaseHost = stripWWW(parsedBaseURL.hostname);
+    if (normalizedUrlHost !== normalizedBaseHost || parsedUrl.port !== parsedBaseURL.port) {
       return false;
     }
 

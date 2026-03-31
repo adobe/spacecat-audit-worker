@@ -15,7 +15,6 @@ export function getConfigs(bucket, customerDomain, siteId) {
   return [
     {
       name: 'agentic',
-      createTableSql: 'create-aggregated-table',
       aggregatedLocation: `s3://${bucket}/aggregated/${siteId}/`,
       tableName: `aggregated_logs_${customerDomain}_consolidated`,
       filePrefix: 'agentictraffic',
@@ -26,7 +25,6 @@ export function getConfigs(bucket, customerDomain, siteId) {
     },
     {
       name: 'referral',
-      createTableSql: 'create-aggregated-referral-table',
       aggregatedLocation: `s3://${bucket}/aggregated-referral/${siteId}/`,
       tableName: `aggregated_referral_logs_${customerDomain}_consolidated`,
       filePrefix: 'referral-traffic',

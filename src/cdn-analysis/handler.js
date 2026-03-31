@@ -11,7 +11,7 @@
  */
 /* eslint-disable object-curly-newline */
 import { getStaticContent, isInteger, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
-import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
+import { DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
   resolveCdnBucketName,
@@ -21,11 +21,14 @@ import {
   discoverCdnProviders,
   mapServiceToCdnProvider,
   CDN_TYPES,
-  resolveConsolidatedBucketName,
+  SERVICE_PROVIDER_TYPES,
+  getS3Config,
+  getCdnAwsRuntime,
   pathHasData,
-  shouldRecreateRawTable,
+  shouldRecreateTable,
 } from '../utils/cdn-utils.js';
 import { getImsOrgId } from '../utils/data-access.js';
+import { computeWeekOffset } from '../utils/date-utils.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -63,20 +66,165 @@ async function loadSql(provider, filename, variables) {
 }
 
 /**
- * Returns aggregated table names based on customer domain and mode.
+ * Creates or recreates a table if schema version or location changed.
  */
-function getAggregatedTableNames(customerDomain) {
-  return {
-    aggregatedTable: `aggregated_logs_${customerDomain}_consolidated`,
-    aggregatedReferralTable: `aggregated_referral_logs_${customerDomain}_consolidated`,
-  };
+async function ensureTable(client, database, table, location, sql, log) {
+  const needsCreation = await shouldRecreateTable(client, database, table, location, sql, log);
+  if (needsCreation) {
+    const msg = `[Athena Query] Create table ${database}.${table}`;
+    await client.execute(sql, database, msg);
+  }
+}
+
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Removes all S3 objects under a given prefix. Used to clear aggregated Parquet
+ * files before re-inserting during forceReprocess, since Athena external tables
+ * do not support SQL DELETE.
+ */
+async function clearS3Partition(s3Client, bucket, prefix, log) {
+  const isNoSuchBucket = (error) => error?.name === 'NoSuchBucket'
+    /* c8 ignore next 2 */
+    || error?.Code === 'NoSuchBucket'
+    || error?.code === 'NoSuchBucket';
+
+  let continuationToken;
+  do {
+    let response;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      response = await s3Client.send(new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      }));
+    } catch (error) {
+      if (isNoSuchBucket(error)) {
+        log.info(`Skipping partition cleanup for s3://${bucket}/${prefix} because bucket does not exist yet.`);
+        return;
+      }
+      /* c8 ignore next 2 */
+      throw error;
+    }
+    /* c8 ignore next */
+    const keys = (response.Contents || []).map((obj) => ({ Key: obj.Key }));
+    if (keys.length > 0) {
+      // eslint-disable-next-line no-await-in-loop
+      await s3Client.send(new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: { Objects: keys, Quiet: true },
+      }));
+      log.info(`Cleared ${keys.length} object(s) from s3://${bucket}/${prefix}`);
+    }
+    continuationToken = response.NextContinuationToken;
+  } while (continuationToken);
+}
+
+/**
+ * Scans an S3 bucket for byocdn-other log files uploaded in the 24 hours preceding
+ * auditDate. Returns a Set of day strings (e.g. "2025/02/17") that have recent uploads.
+ *
+ * Using auditDate (derived from auditContext) rather than Date.now() ensures the window
+ * is anchored to the audit's scheduled time, so replays or delayed runs stay correct.
+ *
+ * byocdn-other files can arrive at any time, so we include all days (including today)
+ * and rely on forceReprocess in sub-audits to re-aggregate if needed.
+ */
+export async function findRecentUploads(s3Client, bucketName, pathId, auditDate, log) {
+  const prefix = pathId
+    ? `${pathId}/raw/${SERVICE_PROVIDER_TYPES.BYOCDN_OTHER}/`
+    : `raw/${SERVICE_PROVIDER_TYPES.BYOCDN_OTHER}/`;
+  const cutoff = new Date(auditDate.getTime() - ONE_DAY_MS);
+  const detectedDays = new Set();
+  let continuationToken;
+
+  do {
+    // eslint-disable-next-line no-await-in-loop
+    const response = await s3Client.send(new ListObjectsV2Command({
+      Bucket: bucketName,
+      Prefix: prefix,
+      ContinuationToken: continuationToken,
+    }));
+
+    for (const obj of response.Contents || []) {
+      if (obj.LastModified >= cutoff) {
+        const match = obj.Key.match(/\/raw\/byocdn-other\/(\d{4})\/(\d{2})\/(\d{2})\//);
+        if (match) {
+          detectedDays.add(`${match[1]}/${match[2]}/${match[3]}`);
+        }
+      }
+    }
+
+    continuationToken = response.NextContinuationToken;
+  } while (continuationToken);
+
+  log.info(`Found ${detectedDays.size} byocdn-other day(s) with recent uploads`);
+  return detectedDays;
+}
+
+/**
+ * Triggers cdn-logs-analysis sub-audits for each detected day, and one
+ * cdn-logs-report per affected week (deduplicated by weekOffset).
+ *
+ * Sub-audits include isSubAudit: true to prevent recursive scanning,
+ * and forceReprocess: true because the same day may already have partial
+ * aggregated data from an earlier run.
+ *
+ * cdn-logs-report messages are delayed by 900s so analysis finishes first.
+ */
+async function triggerSubAudits(context, site, detectedDays) {
+  const { sqs, dataAccess, log } = context;
+  const { Configuration } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  const auditQueue = configuration.getQueues().audits;
+  const siteId = site.getId();
+
+  const weekOffsets = new Set();
+
+  for (const dayKey of detectedDays) {
+    const [year, month, day] = dayKey.split('/').map(Number);
+
+    // eslint-disable-next-line no-await-in-loop
+    await sqs.sendMessage(auditQueue, {
+      type: 'cdn-logs-analysis',
+      siteId,
+      auditContext: {
+        year,
+        month,
+        day,
+        hour: 23,
+        processFullDay: true,
+        forceReprocess: true,
+        isSubAudit: true,
+      },
+    });
+    log.info(`Triggered cdn-logs-analysis sub-audit for siteId=${siteId} day=${dayKey}`);
+
+    weekOffsets.add(computeWeekOffset(year, month, day));
+  }
+
+  for (const weekOffset of weekOffsets) {
+    // eslint-disable-next-line no-await-in-loop
+    await sqs.sendMessage(auditQueue, {
+      type: 'cdn-logs-report',
+      siteId,
+      auditContext: { weekOffset },
+    }, null, 900);
+    log.info(`Triggered cdn-logs-report for siteId=${siteId} weekOffset=${weekOffset}`);
+  }
 }
 
 export async function processCdnLogs(auditUrl, context, site, auditContext) {
-  const { log, s3Client, dataAccess } = context;
+  const { log, dataAccess } = context;
   const auditType = 'cdn-logs-analysis';
+  const awsRuntime = getCdnAwsRuntime(site, context);
+  const { s3Client } = awsRuntime;
 
-  const bucketName = await resolveCdnBucketName(site, context);
+  const bucketName = await resolveCdnBucketName(site, {
+    ...context,
+    s3Client,
+  });
   if (!bucketName) {
     return {
       auditResult: {
@@ -99,22 +247,64 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
     ? await discoverCdnProviders(s3Client, bucketName, { year, month, day, hour })
     : providers;
 
-  log.debug(`Processing ${serviceProviders.length} service provider(s) in bucket: ${bucketName}`);
+  log.info(`Processing ${serviceProviders.length} service provider(s) in bucket: ${bucketName}`);
 
-  const database = `cdn_logs_${customerDomain}`;
-  const { aggregatedTable, aggregatedReferralTable } = getAggregatedTableNames(
-    customerDomain,
-  );
-  const consolidatedBucket = resolveConsolidatedBucketName(context);
+  const s3Config = getS3Config(site, context);
+  const {
+    bucket: consolidatedBucket,
+    databaseName: database,
+    tableName: aggregatedTable,
+    referralTableName: aggregatedReferralTable,
+  } = s3Config;
   const siteId = site.getId();
+  const athenaClient = awsRuntime.createAthenaClient(
+    s3Config.getAthenaTempLocation(),
+    { maxPollAttempts: 500 },
+  );
+
+  // byocdn-other files arrive on unpredictable schedules, so the dispatcher-scheduled
+  // daily run (isSubAudit is absent, hour=23) doesn't process logs itself. Instead it
+  // scans S3 for all days with recent uploads and triggers a sub-audit per day. The
+  // sub-audits (isSubAudit: true) then do the actual Athena processing below.
+  // The hour=23 guard mirrors the existing daily-only check for CDN_TYPES.OTHER below,
+  // ensuring the S3 scan runs once per day and not on every hourly invocation.
+  const wasScheduledByJobsDispatcher = !auditContext?.isSubAudit;
+  const hasByocdnOther = serviceProviders.includes(SERVICE_PROVIDER_TYPES.BYOCDN_OTHER);
+
+  if (hasByocdnOther && wasScheduledByJobsDispatcher && hour === '23') {
+    const auditDate = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), 23, 0, 0));
+    try {
+      const recentUploads = await findRecentUploads(s3Client, bucketName, pathId, auditDate, log);
+      if (recentUploads.size > 0) {
+        await triggerSubAudits(context, site, recentUploads);
+      } else {
+        log.info(`No recent byocdn-other files found for siteId=${siteId}, nothing to trigger`);
+      }
+    } catch (e) {
+      log.error(`Failed to scan/trigger byocdn-other sub-audits: ${e.message}`);
+    }
+    return {
+      auditResult: {
+        database,
+        providers: [],
+        completedAt: new Date().toISOString(),
+        scanAndTriggerOnly: true,
+      },
+      fullAuditRef: auditUrl,
+    };
+  }
+
   const results = [];
 
   // Check if aggregated data already exists for this hour
   const hasAggregatedData = await pathHasData(s3Client, `s3://${consolidatedBucket}/aggregated/${siteId}/${year}/${month}/${day}/${hour}/`);
   const hasAggregatedReferralData = await pathHasData(s3Client, `s3://${consolidatedBucket}/aggregated-referral/${siteId}/${year}/${month}/${day}/${hour}/`);
+  const hasPartialAggregates = hasAggregatedData !== hasAggregatedReferralData;
+  const aggregatedPrefix = `aggregated/${siteId}/${year}/${month}/${day}/${hour}/`;
+  const aggregatedReferralPrefix = `aggregated-referral/${siteId}/${year}/${month}/${day}/${hour}/`;
 
-  if (hasAggregatedData && hasAggregatedReferralData) {
-    log.info(`${auditType} aggregated data already exists for siteId=${siteId} at path=s3://${consolidatedBucket}/aggregated/${siteId}/${year}/${month}/${day}/${hour}/ Skipping processing.`);
+  if (hasAggregatedData && hasAggregatedReferralData && !auditContext?.forceReprocess) {
+    log.info(`${auditType} aggregated data already exists for siteId=${siteId} at path=s3://${consolidatedBucket}/${aggregatedPrefix} Skipping processing.`);
     return {
       auditResult: {
         database,
@@ -124,6 +314,15 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
       },
       fullAuditRef: auditUrl,
     };
+  }
+
+  if (hasPartialAggregates) {
+    log.warn(`${auditType} found partial aggregates for siteId=${siteId}. Rebuilding s3://${consolidatedBucket}/${aggregatedPrefix} and s3://${consolidatedBucket}/${aggregatedReferralPrefix}.`);
+  }
+
+  if (auditContext?.forceReprocess || hasPartialAggregates) {
+    await clearS3Partition(s3Client, consolidatedBucket, aggregatedPrefix, log);
+    await clearS3Partition(s3Client, consolidatedBucket, aggregatedReferralPrefix, log);
   }
 
   // Create database and aggregated tables once
@@ -151,9 +350,6 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
         siteId,
       );
       const rawTable = `raw_logs_${customerDomain}_${serviceProvider.replace(/-/g, '_')}`;
-      const athenaClient = AWSAthenaClient.fromContext(context, paths.tempLocation, {
-        maxPollAttempts: 500,
-      });
 
       if (!tablesCreated) {
         // eslint-disable-next-line no-await-in-loop
@@ -161,7 +357,6 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
         // eslint-disable-next-line no-await-in-loop
         await athenaClient.execute(sqlDb, database, `[Athena Query] Create database ${database}`);
 
-        // Create aggregated table
         // eslint-disable-next-line no-await-in-loop
         const sqlAggregatedTable = await loadSql('', 'create-aggregated-table', {
           databaseName: database,
@@ -169,9 +364,10 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
           aggregatedLocation: paths.aggregatedLocation,
         });
         // eslint-disable-next-line no-await-in-loop
-        await athenaClient.execute(sqlAggregatedTable, database, `[Athena Query] Create aggregated table ${database}.${aggregatedTable}`);
+        const aggLoc = paths.aggregatedLocation;
+        // eslint-disable-next-line no-await-in-loop
+        await ensureTable(athenaClient, database, aggregatedTable, aggLoc, sqlAggregatedTable, log);
 
-        // Create aggregated referral table
         // eslint-disable-next-line no-await-in-loop
         const sqlAggregatedReferralTable = await loadSql('', 'create-aggregated-referral-table', {
           databaseName: database,
@@ -179,30 +375,24 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
           aggregatedLocation: paths.aggregatedReferralLocation,
         });
         // eslint-disable-next-line no-await-in-loop
-        await athenaClient.execute(sqlAggregatedReferralTable, database, `[Athena Query] Create aggregated referral table ${database}.${aggregatedReferralTable}`);
+        await ensureTable(
+          athenaClient,
+          database,
+          aggregatedReferralTable,
+          paths.aggregatedReferralLocation,
+          sqlAggregatedReferralTable,
+          log,
+        );
 
         tablesCreated = true;
       }
 
       // eslint-disable-next-line no-await-in-loop
-      const needsCreation = await shouldRecreateRawTable(
-        athenaClient,
-        database,
-        rawTable,
-        paths.rawLocation,
-        log,
-      );
-
-      if (needsCreation) {
-        // eslint-disable-next-line no-await-in-loop
-        const sqlRaw = await loadSql(cdnType, 'create-raw-table', {
-          database,
-          rawTable,
-          rawLocation: paths.rawLocation,
-        });
-        // eslint-disable-next-line no-await-in-loop
-        await athenaClient.execute(sqlRaw, database, `[Athena Query] Create raw logs table ${database}.${rawTable}`);
-      }
+      const sqlRaw = await loadSql(cdnType, 'create-raw-table', {
+        database, rawTable, rawLocation: paths.rawLocation,
+      });
+      // eslint-disable-next-line no-await-in-loop
+      await ensureTable(athenaClient, database, rawTable, paths.rawLocation, sqlRaw, log);
 
       // Check if raw logs exist for this hour/day
       // For CloudFlare, check daily file; for others, check hourly directory
@@ -217,10 +407,10 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
       })();
 
       // eslint-disable-next-line no-await-in-loop
-      const hasRawData = await pathHasData(context.s3Client, rawDataPath);
+      const hasRawData = await pathHasData(s3Client, rawDataPath);
 
       if (!hasRawData) {
-        log.info(`${auditType} no raw logs found for siteId=${siteId}, serviceProvider=${serviceProvider}, cdnType=${cdnType} at path=${rawDataPath}`);
+        log.info(`${auditType} no raw logs found for siteId=${siteId}, siteUrl=${host}, serviceProvider=${serviceProvider}, cdnType=${cdnType} at path=${rawDataPath}`);
         // eslint-disable-next-line no-continue
         continue;
       }

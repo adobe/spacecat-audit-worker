@@ -43,6 +43,7 @@ describe('LLM Error Pages Handler', function () {
   let mockCategorizeErrorsByStatusCode;
   let mockDownloadExistingCdnSheet;
   let mockMatchErrorsWithCdnData;
+  let mockGetTopAgenticUrlsFromAthena;
 
   const topPages = [
     { getUrl: () => 'https://example.com/page1' },
@@ -95,7 +96,7 @@ describe('LLM Error Pages Handler', function () {
     // Setup mocks for esmock
     mockAthenaClient = { query: sandbox.stub().resolves([]) };
 
-    mockGetS3Config = sandbox.stub().resolves({
+    mockGetS3Config = sandbox.stub().returns({
       bucket: 'test-bucket',
       customerName: 'test-customer',
       databaseName: 'test_db',
@@ -109,6 +110,7 @@ describe('LLM Error Pages Handler', function () {
         year: 2025,
         startDate: new Date('2025-08-18T00:00:00Z'),
         endDate: new Date('2025-08-24T23:59:59Z'),
+        periodIdentifier: 'w34-2025',
       }],
     });
 
@@ -167,6 +169,9 @@ describe('LLM Error Pages Handler', function () {
       category: 'Test',
     })));
 
+    // Mock getTopAgenticUrlsFromAthena to return empty (fall back to Ahrefs)
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
+
     // Mock ExcelJS
     const mockWorksheet = {
       addRow: sandbox.stub(),
@@ -203,7 +208,6 @@ describe('LLM Error Pages Handler', function () {
         default: {},
       },
       '../../../src/llm-error-pages/utils.js': {
-        getS3Config: mockGetS3Config,
         generateReportingPeriods: mockGenerateReportingPeriods,
         processErrorPagesResults: mockProcessResults,
         buildLlmErrorPagesQuery: mockBuildQuery,
@@ -223,6 +227,13 @@ describe('LLM Error Pages Handler', function () {
       },
       '../../../src/utils/cdn-utils.js': {
         buildSiteFilters: mockBuildSiteFilters,
+        getS3Config: mockGetS3Config,
+        getCdnAwsRuntime: () => ({
+          createAthenaClient: () => mockAthenaClient,
+        }),
+      },
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
       },
       exceljs: {
         default: mockExcelJS,
@@ -341,10 +352,10 @@ describe('LLM Error Pages Handler', function () {
 
       expect(result.type).to.equal('audit-result');
       expect(result.siteId).to.equal('site-id-123');
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
-      expect(result.auditResult.totalErrors).to.equal(3);
-      expect(result.auditResult.categorizedResults).to.exist;
+      expect(result.auditResult[0].success).to.be.true;
+      expect(result.auditResult[0].periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
+      expect(result.auditResult[0].totalErrors).to.equal(3);
+      expect(result.auditResult[0].categorizedResults).to.exist;
       expect(result.fullAuditRef).to.equal('https://example.com');
 
       expect(context.log.info).to.have.been.calledWith('[LLM-ERROR-PAGES] Starting audit for https://example.com');
@@ -355,18 +366,61 @@ describe('LLM Error Pages Handler', function () {
       );
     });
 
-    it('should handle audit failure gracefully', async () => {
+    it('should produce two weeks when run on a Monday without weekOffset', async () => {
+      const monday = new Date('2025-08-18T12:00:00Z'); // Monday
+      const clock = sinon.useFakeTimers(monday.getTime());
+      try {
+        mockGenerateReportingPeriods.returns({
+          weeks: [
+            { weekNumber: 33, year: 2025, startDate: new Date('2025-08-11'), endDate: new Date('2025-08-17'), periodIdentifier: 'w33-2025' },
+            { weekNumber: 34, year: 2025, startDate: new Date('2025-08-18'), endDate: new Date('2025-08-24'), periodIdentifier: 'w34-2025' },
+          ],
+        });
+        const result = await runAuditAndSendToMystique(context);
+        expect(result.auditResult).to.have.length(2);
+        expect(mockGenerateReportingPeriods).to.have.been.calledWith(sinon.match.date, [-1, 0]);
+      } finally {
+        clock.restore();
+      }
+    });
+
+    it('should use current week only when not Monday and no weekOffset', async () => {
+      const wednesday = new Date('2025-08-20T12:00:00Z'); // Wednesday
+      const clock = sinon.useFakeTimers(wednesday.getTime());
+      try {
+        const result = await runAuditAndSendToMystique(context);
+        expect(result.auditResult).to.have.length(1);
+        expect(mockGenerateReportingPeriods).to.have.been.calledWith(sinon.match.date, [0]);
+      } finally {
+        clock.restore();
+      }
+    });
+
+    it('should handle per-week query failure gracefully', async () => {
       mockAthenaClient.query.rejects(new Error('Database error'));
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.equal('Database error');
+      expect(result.auditResult[0].success).to.be.false;
+      expect(result.auditResult[0].error).to.equal('Database error');
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/\[LLM-ERROR-PAGES\] Audit failed: Database error/),
+        sinon.match(/\[LLM-ERROR-PAGES\] Failed for/),
         sinon.match.instanceOf(Error),
       );
       expect(context.sqs.sendMessage).not.to.have.been.called;
+    });
+
+    it('should handle audit failure gracefully when setup fails before week loop', async () => {
+      mockCreateLLMOSharepointClient.rejects(new Error('SharePoint connection failed'));
+
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(result.auditResult[0].success).to.be.false;
+      expect(result.auditResult[0].error).to.equal('SharePoint connection failed');
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/\[LLM-ERROR-PAGES\] Audit failed: SharePoint connection failed/),
+        sinon.match.instanceOf(Error),
+      );
     });
 
     it('should skip Mystique when SQS not configured', async () => {
@@ -374,7 +428,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] SQS or Mystique queue not configured, skipping message',
       );
@@ -385,7 +439,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] SQS or Mystique queue not configured, skipping message',
       );
@@ -400,7 +454,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message',
       );
@@ -424,7 +478,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const [, message] = context.sqs.sendMessage.firstCall.args;
       expect(message.data.brokenLinks.length).to.be.at.most(50);
@@ -478,7 +532,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(mockSaveExcelReport).to.have.been.calledThrice;
     });
 
@@ -490,7 +544,6 @@ describe('LLM Error Pages Handler', function () {
           AWSAthenaClient: { fromContext: sandbox.stub().returns(mockAthenaClient) },
         },
         '../../../src/llm-error-pages/utils.js': {
-          getS3Config: mockGetS3Config,
           generateReportingPeriods: mockGenerateReportingPeriods,
           processErrorPagesResults: () => ({
             totalErrors: 2,
@@ -514,6 +567,10 @@ describe('LLM Error Pages Handler', function () {
         },
         '../../../src/utils/cdn-utils.js': {
           buildSiteFilters: mockBuildSiteFilters,
+          getS3Config: mockGetS3Config,
+          getCdnAwsRuntime: () => ({
+            createAthenaClient: () => mockAthenaClient,
+          }),
         },
         exceljs: {
           default: {
@@ -559,7 +616,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(mockBuildSiteFilters).to.have.been.calledWith([], site);
     });
 
@@ -568,7 +625,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
     });
 
     it('should use fallback delivery type when not available', async () => {
@@ -636,13 +693,366 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message',
       );
       expect(context.sqs.sendMessage).not.to.have.been.called;
     });
   });
+});
+
+describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
+  this.timeout(10000);
+  let sandbox;
+  let mockGetTopAgenticUrlsFromAthena;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should use Athena URLs in importTopPagesAndScrape when available', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([
+      'https://example.com/athena-page1',
+      'https://example.com/athena-page2',
+    ]);
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
+      },
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://example.com',
+        getId: () => 'site-123',
+      },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    const result = await handler.importTopPagesAndScrape(context);
+
+    expect(result.auditResult.success).to.be.true;
+    expect(result.auditResult.topPages).to.deep.equal([
+      'https://example.com/athena-page1',
+      'https://example.com/athena-page2',
+    ]);
+    // Ahrefs should NOT be called when Athena returns data
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
+  });
+
+  it('should fall back to Ahrefs in importTopPagesAndScrape when Athena returns empty', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
+      },
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    const topPages = [
+      { getUrl: () => 'https://example.com/ahrefs-page1' },
+      { getUrl: () => 'https://example.com/ahrefs-page2' },
+    ];
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://example.com',
+        getId: () => 'site-123',
+      },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+        },
+      },
+    };
+
+    const result = await handler.importTopPagesAndScrape(context);
+
+    expect(result.auditResult.success).to.be.true;
+    expect(result.auditResult.topPages).to.deep.equal([
+      'https://example.com/ahrefs-page1',
+      'https://example.com/ahrefs-page2',
+    ]);
+    expect(context.log.info).to.have.been.calledWith('[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to Ahrefs');
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith('site-123', 'ahrefs', 'global');
+  });
+
+  it('should return failure when both Athena and Ahrefs return empty in importTopPagesAndScrape', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
+      },
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://example.com',
+        getId: () => 'site-123',
+      },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    const result = await handler.importTopPagesAndScrape(context);
+
+    expect(result.auditResult.success).to.be.false;
+    expect(result.auditResult.topPages).to.deep.equal([]);
+    expect(context.log.warn).to.have.been.calledWith('[LLM-ERROR-PAGES] No top pages found for site');
+  });
+
+  it('should use Ahrefs URLs in submitForScraping', async () => {
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
+      },
+    });
+
+    const topPages = [{ getUrl: () => 'https://example.com/ahrefs-page1' }];
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://example.com',
+        getId: () => 'site-123',
+      },
+      audit: { getAuditResult: () => ({ success: true }) },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+        },
+      },
+    };
+
+    const result = await handler.submitForScraping(context);
+
+    expect(result.urls).to.deep.equal([{ url: 'https://example.com/ahrefs-page1' }]);
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith('site-123', 'ahrefs', 'global');
+  });
+
+  it('should throw error when no Ahrefs pages in submitForScraping', async () => {
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
+      },
+    });
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://example.com',
+        getId: () => 'site-123',
+      },
+      audit: { getAuditResult: () => ({ success: true }) },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    try {
+      await handler.submitForScraping(context);
+      expect.fail('Should have thrown an error');
+    } catch (error) {
+      expect(error.message).to.equal('No top pages to submit for scraping');
+    }
+    expect(context.log.warn).to.have.been.calledWith('[LLM-ERROR-PAGES] No top pages to submit for scraping');
+  });
+
+  it('should use Athena URLs for alternativeUrls in runAuditAndSendToMystique when available', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([
+      'https://example.com/athena-alt1',
+      'https://example.com/athena-alt2',
+    ]);
+
+    const mockAthenaClient = { query: sandbox.stub().resolves([]) };
+    const mockProcessResults = sandbox.stub().returns({
+      totalErrors: 1,
+      errorPages: [{ user_agent: 'Bot', url: '/404-page', status: 404, total_requests: 10, userAgent: 'Bot' }],
+      summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+    });
+    const mockCategorizeErrors = sandbox.stub().returns({
+      404: [{ user_agent: 'Bot', url: '/404-page', status: 404, total_requests: 10, userAgent: 'Bot' }],
+    });
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
+      },
+      '@adobe/spacecat-shared-athena-client': {
+        AWSAthenaClient: { fromContext: sandbox.stub().returns(mockAthenaClient) },
+      },
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+      '../../../src/llm-error-pages/utils.js': {
+        getS3Config: sandbox.stub().resolves({
+          bucket: 'test', customerName: 'test', databaseName: 'test_db', tableName: 'test_table',
+          getAthenaTempLocation: () => 's3://test/temp/',
+        }),
+        generateReportingPeriods: sandbox.stub().returns({ weeks: [{ weekNumber: 1, year: 2025, startDate: new Date(), endDate: new Date(), periodIdentifier: 'w01-2025' }] }),
+        processErrorPagesResults: mockProcessResults,
+        buildLlmErrorPagesQuery: sandbox.stub().resolves('SELECT'),
+        getAllLlmProviders: sandbox.stub().returns([]),
+        categorizeErrorsByStatusCode: mockCategorizeErrors,
+        consolidateErrorsByUrl: (errors) => errors,
+        sortErrorsByTrafficVolume: (errors) => errors,
+        toPathOnly: (url) => url,
+        SPREADSHEET_COLUMNS: [],
+      },
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: sandbox.stub().resolves({}),
+        saveExcelReport: sandbox.stub().resolves(),
+      },
+      '../../../src/utils/cdn-utils.js': {
+        buildSiteFilters: sandbox.stub().returns(''),
+        getS3Config: sandbox.stub().returns({
+          bucket: 'test', customerName: 'test', databaseName: 'test_db', tableName: 'test_table',
+          getAthenaTempLocation: () => 's3://test/temp/',
+        }),
+        getCdnAwsRuntime: () => ({
+          createAthenaClient: () => mockAthenaClient,
+        }),
+      },
+      exceljs: {
+        default: { Workbook: function Workbook() { return { addWorksheet: () => ({ addRow: sandbox.stub() }) }; } },
+      },
+    });
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      sqs: { sendMessage: sandbox.stub().resolves({}) },
+      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' },
+      site: {
+        getBaseURL: () => 'https://example.com',
+        getId: () => 'site-123',
+        getDeliveryType: () => 'aem_edge',
+        getConfig: () => ({ getLlmoCdnlogsFilter: () => [], getLlmoDataFolder: () => 'test' }),
+      },
+      audit: { getId: () => 'audit-123' },
+      dataAccess: {
+        SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+      },
+    };
+
+    const result = await handler.runAuditAndSendToMystique(context);
+
+    expect(result.auditResult[0].success).to.be.true;
+    const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+    expect(sentMessage.data.alternativeUrls).to.deep.equal([
+      'https://example.com/athena-alt1',
+      'https://example.com/athena-alt2',
+    ]);
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
+  });
+
+  it('should fall back to Ahrefs for alternativeUrls in runAuditAndSendToMystique when Athena returns empty', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
+
+    const mockAthenaClient = { query: sandbox.stub().resolves([]) };
+    const mockProcessResults = sandbox.stub().returns({
+      totalErrors: 1,
+      errorPages: [{ user_agent: 'Bot', url: '/404-page', status: 404, total_requests: 10, userAgent: 'Bot' }],
+      summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+    });
+    const mockCategorizeErrors = sandbox.stub().returns({
+      404: [{ user_agent: 'Bot', url: '/404-page', status: 404, total_requests: 10, userAgent: 'Bot' }],
+    });
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
+      },
+      '@adobe/spacecat-shared-athena-client': {
+        AWSAthenaClient: { fromContext: sandbox.stub().returns(mockAthenaClient) },
+      },
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+      '../../../src/llm-error-pages/utils.js': {
+        generateReportingPeriods: sandbox.stub().returns({ weeks: [{ weekNumber: 1, year: 2025, startDate: new Date(), endDate: new Date(), periodIdentifier: 'w01-2025' }] }),
+        processErrorPagesResults: mockProcessResults,
+        buildLlmErrorPagesQuery: sandbox.stub().resolves('SELECT'),
+        getAllLlmProviders: sandbox.stub().returns([]),
+        categorizeErrorsByStatusCode: mockCategorizeErrors,
+        consolidateErrorsByUrl: (errors) => errors,
+        sortErrorsByTrafficVolume: (errors) => errors,
+        toPathOnly: (url) => url,
+        SPREADSHEET_COLUMNS: [],
+      },
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: sandbox.stub().resolves({}),
+        saveExcelReport: sandbox.stub().resolves(),
+      },
+      '../../../src/utils/cdn-utils.js': {
+        buildSiteFilters: sandbox.stub().returns(''),
+        getS3Config: sandbox.stub().returns({
+          bucket: 'test', customerName: 'test', databaseName: 'test_db', tableName: 'test_table',
+          getAthenaTempLocation: () => 's3://test/temp/',
+        }),
+        getCdnAwsRuntime: () => ({
+          createAthenaClient: () => mockAthenaClient,
+        }),
+      },
+      exceljs: {
+        default: { Workbook: function Workbook() { return { addWorksheet: () => ({ addRow: sandbox.stub() }) }; } },
+      },
+    });
+
+    const topPages = [{ getUrl: () => 'https://example.com/ahrefs-alt1' }];
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      sqs: { sendMessage: sandbox.stub().resolves({}) },
+      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' },
+      site: {
+        getBaseURL: () => 'https://example.com',
+        getId: () => 'site-123',
+        getDeliveryType: () => 'aem_edge',
+        getConfig: () => ({ getLlmoCdnlogsFilter: () => [], getLlmoDataFolder: () => 'test' }),
+      },
+      audit: { getId: () => 'audit-123' },
+      dataAccess: {
+        SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages) },
+      },
+    };
+
+    const result = await handler.runAuditAndSendToMystique(context);
+
+    expect(result.auditResult[0].success).to.be.true;
+    const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.alternativeUrls).to.deep.equal(['https://example.com/ahrefs-alt1']);
+      expect(context.log.info).to.have.been.calledWith(
+        '[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to Ahrefs',
+      );
+    });
 });
 
 describe('LLM Error Pages Handler (isolated)', function () {
@@ -678,7 +1088,7 @@ describe('LLM Error Pages Handler (isolated)', function () {
       },
     };
     const mockAthenaClient = { query: sandbox.stub().resolves([]) };
-    const mockGetS3Config = sandbox.stub().resolves({
+    const mockGetS3Config = sandbox.stub().returns({
       bucket: 'test-bucket',
       customerName: 'test-customer',
       databaseName: 'test_db',
@@ -691,6 +1101,7 @@ describe('LLM Error Pages Handler (isolated)', function () {
         year: 2025,
         startDate: new Date('2025-08-18T00:00:00Z'),
         endDate: new Date('2025-08-24T23:59:59Z'),
+        periodIdentifier: 'w34-2025',
       }],
     });
     const mockBuildSiteFilters = sandbox.stub().returns('');
@@ -720,7 +1131,6 @@ describe('LLM Error Pages Handler (isolated)', function () {
         default: {},
       },
       '../../../src/llm-error-pages/utils.js': {
-        getS3Config: mockGetS3Config,
         generateReportingPeriods: mockGenerateReportingPeriods,
         processErrorPagesResults: () => ({
           totalErrors: 2,
@@ -741,6 +1151,13 @@ describe('LLM Error Pages Handler (isolated)', function () {
       '../../../src/utils/report-uploader.js': {
         createLLMOSharepointClient: sandbox.stub().resolves({}),
         saveExcelReport: mockSaveExcelReport,
+      },
+      '../../../src/utils/cdn-utils.js': {
+        buildSiteFilters: mockBuildSiteFilters,
+        getS3Config: mockGetS3Config,
+        getCdnAwsRuntime: () => ({
+          createAthenaClient: () => mockAthenaClient,
+        }),
       },
       exceljs: {
         default: {
@@ -767,5 +1184,117 @@ describe('LLM Error Pages Handler (isolated)', function () {
     sinon.assert.match(dataRows[0][6], '');
     sinon.assert.match(dataRows[0][7], '');
     sinon.assert.match(dataRows[1][2], 0);
+  });
+});
+
+describe('LLM Error Pages Handler – default export routing', function () {
+  this.timeout(10000);
+
+  it('routes to backfillAudit when weekOffset is present', async () => {
+    const sandbox = sinon.createSandbox();
+    const mockBackfillRun = sandbox.stub().resolves({ status: 200 });
+    const mockStepRun = sandbox.stub().resolves({ status: 200 });
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class AuditBuilder {
+          withUrlResolver() { return this; }
+          addStep() { return this; }
+          withRunner() { this._runner = true; return this; }
+          build() { return { run: this._runner ? mockBackfillRun : mockStepRun }; }
+        },
+      },
+    });
+
+    await handler.default.run({ auditContext: { weekOffset: -1 } }, {});
+    expect(mockBackfillRun).to.have.been.calledOnce;
+    expect(mockStepRun).not.to.have.been.called;
+
+    sandbox.restore();
+  });
+
+  it('routes to stepAudit when weekOffset is absent', async () => {
+    const sandbox = sinon.createSandbox();
+    const mockBackfillRun = sandbox.stub().resolves({ status: 200 });
+    const mockStepRun = sandbox.stub().resolves({ status: 200 });
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class AuditBuilder {
+          withUrlResolver() { return this; }
+          addStep() { return this; }
+          withRunner() { this._runner = true; return this; }
+          build() { return { run: this._runner ? mockBackfillRun : mockStepRun }; }
+        },
+      },
+    });
+
+    await handler.default.run({}, {});
+    expect(mockStepRun).to.have.been.calledOnce;
+    expect(mockBackfillRun).not.to.have.been.called;
+
+    sandbox.restore();
+  });
+
+  it('backfillAudit runner calls runAuditAndSendToMystique with enriched context', async () => {
+    const sandbox = sinon.createSandbox();
+    let capturedRunner;
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class AuditBuilder {
+          withUrlResolver() { return this; }
+          addStep() { return this; }
+          withRunner(runner) { capturedRunner = runner; return this; }
+          build() { return { run: sandbox.stub() }; }
+        },
+      },
+      '@adobe/spacecat-shared-athena-client': {
+        AWSAthenaClient: { fromContext: sandbox.stub().returns({ query: sandbox.stub().resolves([]) }) },
+      },
+      '../../../src/llm-error-pages/utils.js': {
+        getS3Config: sandbox.stub().resolves({
+          databaseName: 'db', tableName: 'tbl', customerName: 'test',
+          getAthenaTempLocation: () => 's3://tmp/',
+        }),
+        generateReportingPeriods: sandbox.stub().returns({
+          weeks: [{ startDate: new Date(), endDate: new Date(), periodIdentifier: 'w01-2025' }],
+        }),
+        processErrorPagesResults: sandbox.stub().returns({ totalErrors: 0, errorPages: [], summary: { uniqueUrls: 0 } }),
+        buildLlmErrorPagesQuery: sandbox.stub().resolves('SELECT'),
+        getAllLlmProviders: sandbox.stub().returns([]),
+        categorizeErrorsByStatusCode: sandbox.stub().returns({}),
+        consolidateErrorsByUrl: (e) => e,
+        sortErrorsByTrafficVolume: (e) => e,
+        toPathOnly: (u) => u,
+        SPREADSHEET_COLUMNS: [],
+      },
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: sandbox.stub().resolves({}),
+        saveExcelReport: sandbox.stub().resolves(),
+      },
+      '../../../src/utils/cdn-utils.js': {
+        buildSiteFilters: sandbox.stub().returns(''),
+      },
+      exceljs: {
+        default: { Workbook: function Workbook() { return { addWorksheet: () => ({ addRow: sandbox.stub() }) }; } },
+      },
+    });
+
+    expect(capturedRunner).to.be.a('function');
+
+    const mockSite = {
+      getBaseURL: () => 'https://example.com',
+      getId: () => 'site-1',
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [], getLlmoDataFolder: () => 'test' }),
+    };
+    const mockContext = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+    };
+
+    const result = await capturedRunner('https://example.com', mockContext, mockSite, { weekOffset: -1 });
+    expect(result).to.have.property('auditResult');
+
+    sandbox.restore();
   });
 });

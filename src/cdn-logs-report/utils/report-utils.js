@@ -10,44 +10,30 @@
  * governing permissions and limitations under the License.
  */
 
-import { getStaticContent, llmoConfig } from '@adobe/spacecat-shared-utils';
-import {
-  getWeek,
-  getYear,
-} from 'date-fns';
-import {
-  extractCustomerDomain,
-  resolveConsolidatedBucketName,
-} from '../../utils/cdn-utils.js';
+import { getStaticContent, isoCalendarWeek, llmoConfig } from '@adobe/spacecat-shared-utils';
 import { uploadToSharePoint } from '../../utils/report-uploader.js';
 
-export async function getS3Config(site, context) {
-  const customerDomain = extractCustomerDomain(site);
-  const domainParts = customerDomain.split(/[._]/);
-  /* c8 ignore next */
-  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const bucket = resolveConsolidatedBucketName(context);
+function fetchErrorResult(source, status) {
+  return status ? { error: true, status, source } : { error: true, source };
+}
 
-  return {
-    bucket,
-    customerName,
-    customerDomain,
-    databaseName: `cdn_logs_${customerDomain}`,
-    getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
-  };
+function isNotFoundError(error) {
+  return error?.status === 404 || error?.statusCode === 404;
 }
 
 export async function loadSql(filename, variables) {
   return getStaticContent(variables, `./src/cdn-logs-report/sql/${filename}.sql`);
 }
 
-export function validateCountryCode(code) {
+export function validateCountryCode(code, siteIgnoreList = []) {
   const DEFAULT_COUNTRY_CODE = 'GLOBAL';
   // these are codes that are not valid to be regions as these are small islands
-  const ignoreCountryCodes = ['TV', 'ST'];
+  const globalIgnoreCodes = ['TV', 'ST'];
   if (!code || typeof code !== 'string') return DEFAULT_COUNTRY_CODE;
 
   const upperCode = code.toUpperCase();
+  const upperSiteIgnoreList = siteIgnoreList.map((c) => c.toUpperCase());
+  const ignoreCountryCodes = [...globalIgnoreCodes, ...upperSiteIgnoreList];
 
   if (upperCode === DEFAULT_COUNTRY_CODE || ignoreCountryCodes.includes(upperCode)) {
     return DEFAULT_COUNTRY_CODE;
@@ -66,29 +52,6 @@ export function validateCountryCode(code) {
   }
 
   return DEFAULT_COUNTRY_CODE;
-}
-
-export async function ensureTableExists(athenaClient, databaseName, reportConfig, log) {
-  const {
-    createTableSql, tableName, aggregatedLocation,
-  } = reportConfig;
-
-  try {
-    const createTableQuery = await loadSql(createTableSql, {
-      databaseName,
-      tableName,
-      aggregatedLocation,
-    });
-
-    log.debug(`Creating or checking table: ${tableName}`);
-    const sqlCreateTableDescription = `[Athena Query] Create table ${databaseName}.${tableName}`;
-    await athenaClient.execute(createTableQuery, databaseName, sqlCreateTableDescription);
-
-    log.debug(`Table ${tableName} is ready`);
-  } catch (error) {
-    log.error(`Failed to ensure table exists: ${error.message}`);
-    throw error;
-  }
 }
 
 /**
@@ -115,13 +78,7 @@ export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1)
   weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
   weekEnd.setUTCHours(23, 59, 59, 999);
 
-  const localDate = new Date(
-    weekStart.getUTCFullYear(),
-    weekStart.getUTCMonth(),
-    weekStart.getUTCDate(),
-  );
-  const weekNumber = getWeek(localDate, { weekStartsOn: 1, firstWeekContainsDate: 4 });
-  const year = getYear(localDate);
+  const { week: weekNumber, year } = isoCalendarWeek(weekStart);
 
   const periodIdentifier = `w${String(weekNumber).padStart(2, '0')}-${year}`;
 
@@ -135,16 +92,17 @@ export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1)
 /**
  * Fetches remote patterns for a site
  */
-export async function fetchRemotePatterns(site) {
+export async function fetchRemotePatterns(site, log = console) {
   const dataFolder = site.getConfig()?.getLlmoDataFolder();
 
   if (!dataFolder) {
+    log.warn('fetchRemotePatterns: no dataFolder configured for site, skipping patterns fetch');
     return null;
   }
 
-  try {
-    const url = `https://main--project-elmo-ui-data--adobe.aem.live/${dataFolder}/agentic-traffic/patterns/patterns.json`;
+  const url = `https://main--project-elmo-ui-data--adobe.aem.live/${dataFolder}/agentic-traffic/patterns/patterns.json`;
 
+  try {
     const res = await fetch(url, {
       headers: {
         'User-Agent': 'spacecat-audit-worker',
@@ -153,17 +111,69 @@ export async function fetchRemotePatterns(site) {
     });
 
     if (!res.ok) {
+      if (res.status !== 404) {
+        log.error(`fetchRemotePatterns: failed to fetch patterns from ${url} — status ${res.status} ${res.statusText}`);
+        return fetchErrorResult('patterns', res.status);
+      }
       return null;
     }
 
     const data = await res.json();
 
+    log.info(`fetchRemotePatterns: successfully loaded patterns — ${data.pagetype?.data?.length || 0} page patterns, ${data.products?.data?.length || 0} topic patterns`);
+
     return {
       pagePatterns: data.pagetype?.data || [],
       topicPatterns: data.products?.data || [],
     };
-  } catch {
-    return null;
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return null;
+    }
+    log.error(`fetchRemotePatterns: error fetching patterns from ${url} — ${error.message}`);
+    return fetchErrorResult('patterns');
+  }
+}
+
+/**
+ * Checks query-index.json to confirm whether patterns.json already exists for a site.
+ */
+export async function queryIndexHasPatternsFile(site, log = console) {
+  const dataFolder = site.getConfig()?.getLlmoDataFolder();
+
+  if (!dataFolder) {
+    log.warn('queryIndexHasPatternsFile: no dataFolder configured for site, skipping query-index fetch');
+    return false;
+  }
+
+  const url = `https://main--project-elmo-ui-data--adobe.aem.live/${dataFolder}/query-index.json?limit=5000`;
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'spacecat-audit-worker',
+        Authorization: `token ${process.env.LLMO_HLX_API_KEY}`,
+      },
+    });
+
+    if (!res.ok) {
+      if (res.status !== 404) {
+        log.error(`queryIndexHasPatternsFile: failed to fetch query-index from ${url} — status ${res.status} ${res.statusText}`);
+        return fetchErrorResult('query-index', res.status);
+      }
+      return false;
+    }
+
+    const data = await res.json();
+    const paths = Array.isArray(data?.data) ? data.data : [];
+
+    return paths.some((entry) => entry?.path === `/${dataFolder}/agentic-traffic/patterns/patterns.json`);
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return false;
+    }
+    log.error(`queryIndexHasPatternsFile: error fetching query-index from ${url} — ${error.message}`);
+    return fetchErrorResult('query-index');
   }
 }
 
