@@ -87,7 +87,7 @@ function diffRows(desiredRows, existingByKey, keyFn, compareFields) {
 function logDryRunSummary(log, label, toInsert, toUpdate) {
   log.info(`[DRY RUN] ${label}: ${toInsert.length} to insert, ${toUpdate.length} to update`);
 
-  toUpdate.slice(0, 10).forEach((row) => {
+  toUpdate.slice(0, 100).forEach((row) => {
     const { _changedFields, _existing, ...data } = row;
     const keyFields = Object.entries(data)
       .filter(([k]) => k.endsWith('_id') && !_changedFields.includes(k))
@@ -183,15 +183,13 @@ async function fetchExistingState(postgrestClient, organizationId, log) {
   };
 }
 
-function resolvePromptId(p, topicId, topicUuid, existingPrompts, log, index) {
+function resolvePromptId(p, topicId, topicUuid, existingPrompts) {
   const existing = existingPrompts.get(promptLookupKey(p.prompt, topicUuid));
   if (existing) {
-    log.info(`Matched existing prompt_id "${existing.prompt_id}" for topic "${topicId}" at index ${index}`);
     return existing.prompt_id;
   }
   if (!p.prompt) return null;
   const generated = uuidv5(`${topicId}:${p.prompt}`, PROMPT_ID_NAMESPACE);
-  log.info(`Generated prompt id ${generated} for topic "${topicId}" at index ${index}`);
   return generated;
 }
 
@@ -213,7 +211,7 @@ function collectPrompts(
       const categoryUuid = topic.category ? (categoryLookup.get(topic.category) || null) : null;
 
       (topic.prompts || []).forEach((p, index) => {
-        const promptId = resolvePromptId(p, topicId, topicUuid, existingPrompts, log, index);
+        const promptId = resolvePromptId(p, topicId, topicUuid, existingPrompts);
         if (!promptId) {
           log.error(`Skipping prompt without text in topic "${topicId}" at index ${index}`);
           return;
@@ -244,7 +242,6 @@ function collectPrompts(
     Object.entries(config.deleted.prompts).forEach(([configPromptId, p]) => {
       const topicUuid = p.topic ? (topicLookup.get(p.topic) || null) : null;
       if (!topicUuid) {
-        log.info(`Skipping deleted prompt "${configPromptId}": topic not resolved`);
         return;
       }
       const categoryUuid = p.categoryId ? (categoryLookup.get(p.categoryId) || null) : null;
