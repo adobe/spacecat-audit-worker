@@ -65,7 +65,7 @@ async function fetchQueryIndex(siteId, env, log) {
       return null;
     }
 
-    return response.json();
+    return await response.json();
   } catch (error) {
     log.error(`${LOG_PREFIX} Error fetching query-index: ${error.message}`);
     return null;

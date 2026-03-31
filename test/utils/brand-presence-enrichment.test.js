@@ -235,6 +235,17 @@ describe('brand-presence-enrichment', () => {
       expect(log.error).to.have.been.calledWithMatch(/Error fetching query-index/);
     });
 
+    it('returns empty array when query-index json() rejects', async () => {
+      mockFetch.resolves({
+        ok: true,
+        json: sandbox.stub().rejects(new SyntaxError('Unexpected token')),
+      });
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
+      expect(result).to.deep.equal([]);
+      expect(log.error).to.have.been.calledWithMatch(/Error fetching query-index/);
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to fetch query-index for site/);
+    });
+
     it('treats null JSON body on brand presence page as empty rows', async () => {
       const qi = makeQueryIndex(['copilot']);
       mockFetch
