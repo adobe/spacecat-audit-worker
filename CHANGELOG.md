@@ -1,3 +1,10 @@
+# [1.385.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.384.1...v1.385.0) (2026-03-31)
+
+
+### Features
+
+* Writing the delivery config for the detected CDN ([#2172](https://github.com/adobe/spacecat-audit-worker/issues/2172)) ([7ffe9fa](https://github.com/adobe/spacecat-audit-worker/commit/7ffe9fa147b057bf11f0db7f0dbe390362633d97))
+
 ## [1.384.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.384.0...v1.384.1) (2026-03-31)
 
 
