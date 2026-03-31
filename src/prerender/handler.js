@@ -680,7 +680,7 @@ export async function handleAiOnlyMode(context) {
  */
 export async function importTopPages(context) {
   const {
-    site, finalUrl, data, log,
+    site, finalUrl, data, log, auditContext,
   } = context;
 
   // Check for AI-only mode (from command like: audit:prerender mode:ai-only)
@@ -696,6 +696,13 @@ export async function importTopPages(context) {
     siteId: site.getId(),
     auditResult: { status: 'preparing', finalUrl },
     fullAuditRef: s3BucketPath,
+    ...(Array.isArray(auditContext?.urls) && auditContext.urls.length > 0
+      ? {
+        auditContext: {
+          urls: auditContext.urls,
+        },
+      }
+      : {}),
   };
 }
 
@@ -724,6 +731,7 @@ export async function submitForScraping(context) {
     site,
     log,
     data,
+    auditContext,
   } = context;
 
   // Check for AI-only mode - skip scraping step (step 1 already triggered Mystique)
@@ -734,6 +742,31 @@ export async function submitForScraping(context) {
   }
 
   const siteId = site.getId();
+  if (Array.isArray(auditContext?.urls) && auditContext.urls.length > 0) {
+    const { urls: explicitUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(auditContext.urls);
+
+    log.info(`
+    ${LOG_PREFIX} prerender_submit_scraping_metrics:
+    submittedUrls=${explicitUrls.length},
+    agenticUrls=0,
+    topPagesUrls=0,
+    includedURLs=0,
+    filteredOutUrls=${filteredCount},
+    baseUrl=${site.getBaseURL()},
+    siteId=${siteId},
+    csvUrls=${auditContext.urls.length},`);
+
+    return {
+      urls: explicitUrls.map((url) => ({ url })),
+      siteId,
+      processingType: AUDIT_TYPE,
+      maxScrapeAge: 0,
+      options: {
+        pageLoadTimeout: 20000,
+        storagePrefix: AUDIT_TYPE,
+      },
+    };
+  }
 
   const topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
   // getTopAgenticUrls internally handles errors and returns [] on failure
