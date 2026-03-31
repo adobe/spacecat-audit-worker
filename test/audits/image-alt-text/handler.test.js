@@ -25,7 +25,7 @@ use(chaiAsPromised);
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
 function createAuditMock(sandbox, initialResult = null) {
-  let auditResult = initialResult || {
+  const auditResult = initialResult || {
     status: 'preparing',
     statusHistory: [{
       status: 'preparing',
@@ -35,14 +35,9 @@ function createAuditMock(sandbox, initialResult = null) {
       queueDurationMs: null,
     }],
   };
-  let isError = false;
   return {
     getId: () => 'audit-id',
-    getAuditResult: sandbox.stub().callsFake(() => auditResult),
-    setAuditResult: sandbox.stub().callsFake((val) => { auditResult = val; }),
-    getIsError: sandbox.stub().callsFake(() => isError),
-    setIsError: sandbox.stub().callsFake((val) => { isError = val; }),
-    save: sandbox.stub().resolves(),
+    getAuditResult: sandbox.stub().returns(auditResult),
     getFullAuditRef: () => 'scrapes/site-id/',
   };
 }
@@ -94,6 +89,9 @@ describe('Image Alt Text Handler', () => {
           IMS_CLIENT_SECRET: 'test-client-secret',
         },
         dataAccess: {
+          Audit: {
+            updateByKeys: sandbox.stub().resolves(),
+          },
           Opportunity: {
             allBySiteIdAndStatus: sandbox.stub().resolves([]),
             create: sandbox.stub().resolves({
@@ -184,6 +182,13 @@ describe('Image Alt Text Handler', () => {
         '../../../src/image-alt-text/opportunityHandler.js': {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
+          chunkArray: (array, chunkSize) => {
+            const chunks = [];
+            for (let i = 0; i < array.length; i += chunkSize) {
+              chunks.push(array.slice(i, i + chunkSize));
+            }
+            return chunks;
+          },
         },
         '../../../src/image-alt-text/url-utils.js': {
           getTopPageUrls: getTopPageUrlsStub,
@@ -248,9 +253,11 @@ describe('Image Alt Text Handler', () => {
         '[alt-text][AltTextProcessingError] Failed to process with Mystique: Mystique send failed',
       );
 
-      // Verify processing_failed status was set
-      const auditResult = context.audit.getAuditResult();
-      expect(auditResult.status).to.equal('processing_failed');
+      // Verify processing_failed status was persisted via Audit.updateByKeys
+      expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledWith(
+        sinon.match({ auditId: 'audit-id' }),
+        sinon.match({ auditResult: sinon.match({ status: 'processing_failed' }), isError: true }),
+      );
     });
 
     it('should update opportunity data when existing opportunity is found', async () => {
@@ -761,6 +768,9 @@ describe('Image Alt Text Handler', () => {
           },
           audit: createAuditMock(sandbox),
           dataAccess: {
+            Audit: {
+              updateByKeys: sandbox.stub().resolves(),
+            },
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
             },
@@ -810,7 +820,10 @@ describe('Image Alt Text Handler', () => {
       const lastEntry = result.auditResult.statusHistory[result.auditResult.statusHistory.length - 1];
       expect(lastEntry.status).to.equal('no_top_pages');
       expect(lastEntry.error).to.include('No top pages found');
-      expect(context.audit.getIsError()).to.be.true;
+      expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledWith(
+        sinon.match({ auditId: 'audit-id' }),
+        sinon.match({ isError: true }),
+      );
     });
 
     it('should limit pages to 20 when summit-plg is enabled', async () => {
@@ -866,6 +879,9 @@ describe('Image Alt Text Handler', () => {
           },
           audit: createAuditMock(sandbox),
           dataAccess: {
+            Audit: {
+              updateByKeys: sandbox.stub().resolves(),
+            },
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
               create: sandbox.stub().resolves({
@@ -888,6 +904,13 @@ describe('Image Alt Text Handler', () => {
         '../../../src/image-alt-text/opportunityHandler.js': {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
+          chunkArray: (array, chunkSize) => {
+            const chunks = [];
+            for (let i = 0; i < array.length; i += chunkSize) {
+              chunks.push(array.slice(i, i + chunkSize));
+            }
+            return chunks;
+          },
         },
         '../../../src/image-alt-text/url-utils.js': {
           getTopPageUrls: getTopPageUrlsStub,
@@ -1001,6 +1024,9 @@ describe('Image Alt Text Handler', () => {
           },
           audit: createAuditMock(sandbox),
           dataAccess: {
+            Audit: {
+              updateByKeys: sandbox.stub().resolves(),
+            },
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
               create: sandbox.stub().resolves({
@@ -1026,6 +1052,13 @@ describe('Image Alt Text Handler', () => {
         '../../../src/image-alt-text/opportunityHandler.js': {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
+          chunkArray: (array, chunkSize) => {
+            const chunks = [];
+            for (let i = 0; i < array.length; i += chunkSize) {
+              chunks.push(array.slice(i, i + chunkSize));
+            }
+            return chunks;
+          },
         },
         '../../../src/image-alt-text/url-utils.js': {
           getTopPageUrls: getTopPageUrlsStub,
@@ -1119,6 +1152,13 @@ describe('Image Alt Text Handler', () => {
         '../../../src/image-alt-text/opportunityHandler.js': {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
+          chunkArray: (array, chunkSize) => {
+            const chunks = [];
+            for (let i = 0; i < array.length; i += chunkSize) {
+              chunks.push(array.slice(i, i + chunkSize));
+            }
+            return chunks;
+          },
         },
         '../../../src/image-alt-text/url-utils.js': {
           getTopPageUrls: getTopPageUrlsStub,
@@ -1141,7 +1181,10 @@ describe('Image Alt Text Handler', () => {
       const lastEntry = result.auditResult.statusHistory[result.auditResult.statusHistory.length - 1];
       expect(lastEntry.status).to.equal('no_scrape_results');
       expect(lastEntry.error).to.include('Cannot proceed');
-      expect(context.audit.getIsError()).to.be.true;
+      expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledWith(
+        sinon.match({ auditId: 'audit-id' }),
+        sinon.match({ isError: true }),
+      );
       expect(sendAltTextOpportunityToMystiqueStub).to.not.have.been.called;
     });
 
@@ -1231,6 +1274,9 @@ describe('Image Alt Text Handler', () => {
           },
           audit: createAuditMock(sandbox),
           dataAccess: {
+            Audit: {
+              updateByKeys: sandbox.stub().resolves(),
+            },
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
             },
@@ -1496,21 +1542,27 @@ describe('Image Alt Text Handler', () => {
   });
 
   describe('status helper functions', () => {
-    let auditMock;
-
-    beforeEach(() => {
-      auditMock = createAuditMock(sandbox);
-    });
-
-    it('startStatus should append entry with queueDurationMs from previous completedAt', async () => {
+    beforeEach(async () => {
       handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
         '../../../src/image-alt-text/url-utils.js': {
           getTopPageUrls: getTopPageUrlsStub,
         },
       });
+    });
 
-      handlerModule.startStatus(auditMock, 'scraping', { urlCount: 5 });
-      const result = auditMock.getAuditResult();
+    it('startStatus should append entry with queueDurationMs from previous completedAt', () => {
+      const initialResult = {
+        status: 'preparing',
+        statusHistory: [{
+          status: 'preparing',
+          startedAt: '2026-03-30T10:00:00.000Z',
+          completedAt: '2026-03-30T10:00:00.000Z',
+          stepDurationMs: 0,
+          queueDurationMs: null,
+        }],
+      };
+
+      const result = handlerModule.startStatus(initialResult, 'scraping', { urlCount: 5 });
 
       expect(result.status).to.equal('scraping');
       expect(result.statusHistory).to.have.lengthOf(2);
@@ -1521,16 +1573,20 @@ describe('Image Alt Text Handler', () => {
       expect(entry.queueDurationMs).to.be.a('number');
     });
 
-    it('completeStatus should set completedAt and stepDurationMs', async () => {
-      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
-        '../../../src/image-alt-text/url-utils.js': {
-          getTopPageUrls: getTopPageUrlsStub,
-        },
-      });
+    it('completeStatus should set completedAt and stepDurationMs', () => {
+      const initialResult = {
+        status: 'preparing',
+        statusHistory: [{
+          status: 'preparing',
+          startedAt: '2026-03-30T10:00:00.000Z',
+          completedAt: '2026-03-30T10:00:00.000Z',
+          stepDurationMs: 0,
+          queueDurationMs: null,
+        }],
+      };
 
-      handlerModule.startStatus(auditMock, 'scraping');
-      handlerModule.completeStatus(auditMock, { urlCount: 10 });
-      const result = auditMock.getAuditResult();
+      let result = handlerModule.startStatus(initialResult, 'scraping');
+      result = handlerModule.completeStatus(result, { urlCount: 10 });
 
       const entry = result.statusHistory[1];
       expect(entry.completedAt).to.be.a('string');
@@ -1539,16 +1595,20 @@ describe('Image Alt Text Handler', () => {
       expect(entry.urlCount).to.equal(10);
     });
 
-    it('failCurrentStatus should update in-progress entry', async () => {
-      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
-        '../../../src/image-alt-text/url-utils.js': {
-          getTopPageUrls: getTopPageUrlsStub,
-        },
-      });
+    it('failCurrentStatus should update in-progress entry', () => {
+      const initialResult = {
+        status: 'preparing',
+        statusHistory: [{
+          status: 'preparing',
+          startedAt: '2026-03-30T10:00:00.000Z',
+          completedAt: '2026-03-30T10:00:00.000Z',
+          stepDurationMs: 0,
+          queueDurationMs: null,
+        }],
+      };
 
-      handlerModule.startStatus(auditMock, 'scraping');
-      handlerModule.failCurrentStatus(auditMock, 'scraping_failed', { error: 'test error' });
-      const result = auditMock.getAuditResult();
+      let result = handlerModule.startStatus(initialResult, 'scraping');
+      result = handlerModule.failCurrentStatus(result, 'scraping_failed', { error: 'test error' });
 
       expect(result.status).to.equal('scraping_failed');
       expect(result.statusHistory).to.have.lengthOf(2);
@@ -1557,105 +1617,51 @@ describe('Image Alt Text Handler', () => {
       expect(entry.error).to.equal('test error');
       expect(entry.completedAt).to.be.a('string');
       expect(entry.stepDurationMs).to.be.a('number');
-      expect(auditMock.getIsError()).to.be.true;
     });
 
-    it('failCurrentStatus should append new entry when no in-progress step', async () => {
-      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
-        '../../../src/image-alt-text/url-utils.js': {
-          getTopPageUrls: getTopPageUrlsStub,
-        },
-      });
+    it('failCurrentStatus should append new entry when no in-progress step', () => {
+      const initialResult = {
+        status: 'preparing',
+        statusHistory: [{
+          status: 'preparing',
+          startedAt: '2026-03-30T10:00:00.000Z',
+          completedAt: '2026-03-30T10:00:00.000Z',
+          stepDurationMs: 0,
+          queueDurationMs: null,
+        }],
+      };
 
       // preparing entry is already completed, so failCurrentStatus should append
-      handlerModule.failCurrentStatus(auditMock, 'scraping_failed', { error: 'test' });
-      const result = auditMock.getAuditResult();
+      const result = handlerModule.failCurrentStatus(initialResult, 'scraping_failed', { error: 'test' });
 
       expect(result.status).to.equal('scraping_failed');
       expect(result.statusHistory).to.have.lengthOf(2);
-      expect(auditMock.getIsError()).to.be.true;
     });
 
-    it('startStatus should handle empty auditResult gracefully', async () => {
-      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
-        '../../../src/image-alt-text/url-utils.js': {
-          getTopPageUrls: getTopPageUrlsStub,
-        },
-      });
-
-      const emptyAudit = createAuditMock(sandbox, {});
-      handlerModule.startStatus(emptyAudit, 'scraping');
-      const result = emptyAudit.getAuditResult();
+    it('startStatus should handle empty auditResult gracefully', () => {
+      const result = handlerModule.startStatus({}, 'scraping');
 
       expect(result.status).to.equal('scraping');
       expect(result.statusHistory).to.have.lengthOf(1);
       expect(result.statusHistory[0].queueDurationMs).to.be.null;
     });
 
-    it('startStatus should handle null auditResult', async () => {
-      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
-        '../../../src/image-alt-text/url-utils.js': {
-          getTopPageUrls: getTopPageUrlsStub,
-        },
-      });
-
-      let currentResult = null;
-      const nullAudit = {
-        getId: () => 'audit-id',
-        getAuditResult: sandbox.stub().callsFake(() => currentResult),
-        setAuditResult: sandbox.stub().callsFake((val) => { currentResult = val; }),
-        setIsError: sandbox.stub(),
-        save: sandbox.stub().resolves(),
-        getFullAuditRef: () => 'scrapes/site-id/',
-      };
-      handlerModule.startStatus(nullAudit, 'scraping');
-      const result = nullAudit.getAuditResult();
+    it('startStatus should handle null auditResult', () => {
+      const result = handlerModule.startStatus(null, 'scraping');
 
       expect(result.status).to.equal('scraping');
       expect(result.statusHistory).to.have.lengthOf(1);
     });
 
-    it('completeStatus should handle null auditResult', async () => {
-      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
-        '../../../src/image-alt-text/url-utils.js': {
-          getTopPageUrls: getTopPageUrlsStub,
-        },
-      });
-
-      let currentResult = null;
-      const nullAudit = {
-        getId: () => 'audit-id',
-        getAuditResult: sandbox.stub().callsFake(() => currentResult),
-        setAuditResult: sandbox.stub().callsFake((val) => { currentResult = val; }),
-        setIsError: sandbox.stub(),
-        save: sandbox.stub().resolves(),
-        getFullAuditRef: () => 'scrapes/site-id/',
-      };
-      handlerModule.completeStatus(nullAudit, { urlCount: 5 });
-      const result = nullAudit.getAuditResult();
+    it('completeStatus should handle null auditResult', () => {
+      const result = handlerModule.completeStatus(null, { urlCount: 5 });
 
       // Should handle gracefully — empty history, no last entry to complete
       expect(result.statusHistory).to.have.lengthOf(0);
     });
 
-    it('failCurrentStatus should handle null auditResult', async () => {
-      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
-        '../../../src/image-alt-text/url-utils.js': {
-          getTopPageUrls: getTopPageUrlsStub,
-        },
-      });
-
-      let currentResult = null;
-      const nullAudit = {
-        getId: () => 'audit-id',
-        getAuditResult: sandbox.stub().callsFake(() => currentResult),
-        setAuditResult: sandbox.stub().callsFake((val) => { currentResult = val; }),
-        setIsError: sandbox.stub(),
-        save: sandbox.stub().resolves(),
-        getFullAuditRef: () => 'scrapes/site-id/',
-      };
-      handlerModule.failCurrentStatus(nullAudit, 'scraping_failed', { error: 'test' });
-      const result = nullAudit.getAuditResult();
+    it('failCurrentStatus should handle null auditResult', () => {
+      const result = handlerModule.failCurrentStatus(null, 'scraping_failed', { error: 'test' });
 
       expect(result.status).to.equal('scraping_failed');
     });
@@ -1683,6 +1689,9 @@ describe('Image Alt Text Handler', () => {
           },
           audit: createAuditMock(sandbox),
           dataAccess: {
+            Audit: {
+              updateByKeys: sandbox.stub().resolves(),
+            },
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
             },
@@ -1703,11 +1712,16 @@ describe('Image Alt Text Handler', () => {
     it('should set scraping status at start and complete on success', async () => {
       await handlerModule.processScraping(context);
 
-      const auditResult = context.audit.getAuditResult();
-      expect(auditResult.status).to.equal('scraping');
-      expect(auditResult.statusHistory).to.have.lengthOf(2);
+      // Verify Audit.updateByKeys was called twice (start + complete)
+      expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledTwice;
 
-      const scrapingEntry = auditResult.statusHistory[1];
+      // Check the second (completion) call has the completed scraping entry
+      const secondCall = context.dataAccess.Audit.updateByKeys.getCall(1);
+      const persistedResult = secondCall.args[1].auditResult;
+      expect(persistedResult.status).to.equal('scraping');
+      expect(persistedResult.statusHistory).to.have.lengthOf(2);
+
+      const scrapingEntry = persistedResult.statusHistory[1];
       expect(scrapingEntry.status).to.equal('scraping');
       expect(scrapingEntry.startedAt).to.be.a('string');
       expect(scrapingEntry.completedAt).to.be.a('string');
@@ -1722,15 +1736,17 @@ describe('Image Alt Text Handler', () => {
       await expect(handlerModule.processScraping(context))
         .to.be.rejectedWith('Unexpected DB error');
 
-      const auditResult = context.audit.getAuditResult();
-      expect(auditResult.status).to.equal('scraping_failed');
-      expect(context.audit.getIsError()).to.be.true;
+      // Verify that updateByKeys was called with scraping_failed and isError: true
+      expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledWith(
+        sinon.match({ auditId: 'audit-id' }),
+        sinon.match({ auditResult: sinon.match({ status: 'scraping_failed' }), isError: true }),
+      );
     });
 
     it('should not mask original error if status save fails', async () => {
       getTopPageUrlsStub.rejects(new Error('Original error'));
-      // Make audit.save fail on the failCurrentStatus call (3rd call — 1st is startStatus, 2nd is also save)
-      context.audit.save = sandbox.stub()
+      // Make Audit.updateByKeys fail on the second call (failCurrentStatus persist)
+      context.dataAccess.Audit.updateByKeys = sandbox.stub()
         .onFirstCall().resolves()
         .onSecondCall().rejects(new Error('Save failed'));
 
@@ -1754,6 +1770,9 @@ describe('Image Alt Text Handler', () => {
           },
           audit: createAuditMock(sandbox),
           dataAccess: {
+            Audit: {
+              updateByKeys: sandbox.stub().resolves(),
+            },
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
               create: sandbox.stub().resolves({
@@ -1779,6 +1798,13 @@ describe('Image Alt Text Handler', () => {
         '../../../src/image-alt-text/opportunityHandler.js': {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
+          chunkArray: (array, chunkSize) => {
+            const chunks = [];
+            for (let i = 0; i < array.length; i += chunkSize) {
+              chunks.push(array.slice(i, i + chunkSize));
+            }
+            return chunks;
+          },
         },
         '../../../src/image-alt-text/url-utils.js': {
           getTopPageUrls: getTopPageUrlsStub,
@@ -1787,12 +1813,15 @@ describe('Image Alt Text Handler', () => {
     });
 
     it('should set processing status at start and complete with urlCount and batchCount on success', async () => {
-      await handlerModule.processAltTextWithMystique(context);
+      const result = await handlerModule.processAltTextWithMystique(context);
 
-      const auditResult = context.audit.getAuditResult();
-      expect(auditResult.status).to.equal('processing');
+      // Verify Audit.updateByKeys was called twice (start + complete)
+      expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledTwice;
 
-      const processingEntry = auditResult.statusHistory[auditResult.statusHistory.length - 1];
+      // Check the returned auditResult
+      expect(result.auditResult.status).to.equal('processing');
+
+      const processingEntry = result.auditResult.statusHistory[result.auditResult.statusHistory.length - 1];
       expect(processingEntry.status).to.equal('processing');
       expect(processingEntry.completedAt).to.be.a('string');
       expect(processingEntry.stepDurationMs).to.be.a('number');
@@ -1806,28 +1835,174 @@ describe('Image Alt Text Handler', () => {
       await expect(handlerModule.processAltTextWithMystique(context))
         .to.be.rejectedWith('Mystique down');
 
-      const auditResult = context.audit.getAuditResult();
-      expect(auditResult.status).to.equal('processing_failed');
-      const lastEntry = auditResult.statusHistory[auditResult.statusHistory.length - 1];
+      // Verify that updateByKeys was called with processing_failed and isError: true
+      expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledWith(
+        sinon.match({ auditId: 'audit-id' }),
+        sinon.match({ auditResult: sinon.match({ status: 'processing_failed' }), isError: true }),
+      );
+      const failCall = context.dataAccess.Audit.updateByKeys.getCalls().find(
+        (c) => c.args[1]?.isError === true,
+      );
+      const lastEntry = failCall.args[1].auditResult
+        .statusHistory[failCall.args[1].auditResult.statusHistory.length - 1];
       expect(lastEntry.error).to.include('Mystique down');
-      expect(context.audit.getIsError()).to.be.true;
     });
 
     it('should not mask original error if status save fails during processing_failed', async () => {
       sendAltTextOpportunityToMystiqueStub.rejects(new Error('Original error'));
-      // First save succeeds (startStatus), second fails (failCurrentStatus save)
-      let saveCallCount = 0;
-      context.audit.save = sandbox.stub().callsFake(() => {
-        saveCallCount += 1;
-        if (saveCallCount >= 2) return Promise.reject(new Error('Save failed'));
-        return Promise.resolve();
-      });
+      // First updateByKeys succeeds (startStatus), second fails (failCurrentStatus persist)
+      context.dataAccess.Audit.updateByKeys = sandbox.stub()
+        .onFirstCall().resolves()
+        .onSecondCall().rejects(new Error('Save failed'));
 
       await expect(handlerModule.processAltTextWithMystique(context))
         .to.be.rejectedWith('Original error');
 
       expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/Failed to save audit status: Save failed/),
+      );
+    });
+  });
+
+  describe('persistAuditStatusWithFreshRead', () => {
+    beforeEach(async () => {
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/image-alt-text/url-utils.js': {
+          getTopPageUrls: getTopPageUrlsStub,
+        },
+      });
+    });
+
+    it('should read fresh audit, apply status, and persist via updateByKeys', async () => {
+      const freshAuditResult = {
+        status: 'processing',
+        statusHistory: [{
+          status: 'processing',
+          startedAt: '2026-03-30T10:00:00.000Z',
+          completedAt: '2026-03-30T10:00:00.000Z',
+          stepDurationMs: 0,
+          queueDurationMs: null,
+        }],
+      };
+      const findByIdStub = sandbox.stub().resolves({
+        getAuditResult: () => freshAuditResult,
+      });
+      const updateByKeysStub = sandbox.stub().resolves();
+      const dataAccess = {
+        Audit: {
+          findById: findByIdStub,
+          updateByKeys: updateByKeysStub,
+        },
+      };
+      const log = context.log;
+
+      await handlerModule.persistAuditStatusWithFreshRead(
+        dataAccess, 'audit-123', 'guidance_complete', { batchIndex: 2 }, log,
+      );
+
+      expect(findByIdStub).to.have.been.calledWith('audit-123');
+      expect(updateByKeysStub).to.have.been.calledOnce;
+      const callArgs = updateByKeysStub.getCall(0).args;
+      expect(callArgs[0]).to.deep.equal({ auditId: 'audit-123' });
+      expect(callArgs[1].auditResult.status).to.equal('guidance_complete');
+      expect(callArgs[1].auditResult.statusHistory).to.have.lengthOf(2);
+      const lastEntry = callArgs[1].auditResult.statusHistory[1];
+      expect(lastEntry.status).to.equal('guidance_complete');
+      expect(lastEntry.batchIndex).to.equal(2);
+      expect(lastEntry.completedAt).to.be.a('string');
+    });
+
+    it('should set isError when isError parameter is true', async () => {
+      const freshAuditResult = {
+        status: 'processing',
+        statusHistory: [{
+          status: 'processing',
+          startedAt: '2026-03-30T10:00:00.000Z',
+          completedAt: '2026-03-30T10:00:00.000Z',
+          stepDurationMs: 0,
+          queueDurationMs: null,
+        }],
+      };
+      const findByIdStub = sandbox.stub().resolves({
+        getAuditResult: () => freshAuditResult,
+      });
+      const updateByKeysStub = sandbox.stub().resolves();
+      const dataAccess = {
+        Audit: {
+          findById: findByIdStub,
+          updateByKeys: updateByKeysStub,
+        },
+      };
+
+      await handlerModule.persistAuditStatusWithFreshRead(
+        dataAccess, 'audit-123', 'processing_failed', { error: 'fail' }, context.log, true,
+      );
+
+      const callArgs = updateByKeysStub.getCall(0).args;
+      expect(callArgs[1].isError).to.be.true;
+    });
+
+    it('should handle findById returning null gracefully', async () => {
+      const findByIdStub = sandbox.stub().resolves(null);
+      const updateByKeysStub = sandbox.stub().resolves();
+      const dataAccess = {
+        Audit: {
+          findById: findByIdStub,
+          updateByKeys: updateByKeysStub,
+        },
+      };
+
+      await handlerModule.persistAuditStatusWithFreshRead(
+        dataAccess, 'audit-123', 'guidance_complete', {}, context.log,
+      );
+
+      expect(updateByKeysStub).to.have.been.calledOnce;
+      const callArgs = updateByKeysStub.getCall(0).args;
+      expect(callArgs[1].auditResult.status).to.equal('guidance_complete');
+    });
+
+    it('should warn and not throw when findById fails', async () => {
+      const findByIdStub = sandbox.stub().rejects(new Error('DB read error'));
+      const updateByKeysStub = sandbox.stub().resolves();
+      const dataAccess = {
+        Audit: {
+          findById: findByIdStub,
+          updateByKeys: updateByKeysStub,
+        },
+      };
+
+      await handlerModule.persistAuditStatusWithFreshRead(
+        dataAccess, 'audit-123', 'guidance_complete', {}, context.log,
+      );
+
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to save audit status: DB read error/),
+      );
+      expect(updateByKeysStub).to.not.have.been.called;
+    });
+
+    it('should warn and not throw when updateByKeys fails', async () => {
+      const freshAuditResult = {
+        status: 'processing',
+        statusHistory: [],
+      };
+      const findByIdStub = sandbox.stub().resolves({
+        getAuditResult: () => freshAuditResult,
+      });
+      const updateByKeysStub = sandbox.stub().rejects(new Error('DB write error'));
+      const dataAccess = {
+        Audit: {
+          findById: findByIdStub,
+          updateByKeys: updateByKeysStub,
+        },
+      };
+
+      await handlerModule.persistAuditStatusWithFreshRead(
+        dataAccess, 'audit-123', 'guidance_complete', {}, context.log,
+      );
+
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to save audit status: DB write error/),
       );
     });
   });

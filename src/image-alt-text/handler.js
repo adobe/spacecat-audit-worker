@@ -74,12 +74,13 @@ function getTopPagesWindow(allTopPages, pageLimit, topPagesOffset, isSummitPlg, 
 }
 
 /**
- * Appends a new status entry to the audit's statusHistory and marks the step as started.
+ * Appends a new status entry to the statusHistory and marks the step as started.
+ * Pure function — takes and returns a plain auditResult object.
  * Computes queueDurationMs from the previous entry's completedAt.
  */
-export function startStatus(audit, status, metadata = {}) {
-  const existing = audit.getAuditResult() || {};
-  const history = existing.statusHistory || [];
+export function startStatus(auditResult, status, metadata = {}) {
+  const existing = auditResult || {};
+  const history = [...(existing.statusHistory || [])];
   const previousEntry = history[history.length - 1];
 
   const now = new Date().toISOString();
@@ -92,15 +93,16 @@ export function startStatus(audit, status, metadata = {}) {
   }
 
   history.push(entry);
-  audit.setAuditResult({ ...existing, status, statusHistory: history });
+  return { ...existing, status, statusHistory: history };
 }
 
 /**
  * Completes the current (last) status entry with completedAt and stepDurationMs.
+ * Pure function — takes and returns a plain auditResult object.
  */
-export function completeStatus(audit, metadata = {}) {
-  const existing = audit.getAuditResult() || {};
-  const history = existing.statusHistory || [];
+export function completeStatus(auditResult, metadata = {}) {
+  const existing = auditResult || {};
+  const history = [...(existing.statusHistory || [])];
   const last = history[history.length - 1];
   if (last) {
     const now = new Date().toISOString();
@@ -108,39 +110,73 @@ export function completeStatus(audit, metadata = {}) {
     last.stepDurationMs = new Date(now) - new Date(last.startedAt);
     Object.assign(last, metadata);
   }
-  audit.setAuditResult({ ...existing, statusHistory: history });
+  return { ...existing, statusHistory: history };
 }
 
 /**
  * Marks the current in-progress step as failed, or appends a new failed entry
  * if no step is in progress.
+ * Pure function — takes and returns a plain auditResult object.
  */
-export function failCurrentStatus(audit, failedStatus, metadata = {}) {
-  const existing = audit.getAuditResult() || {};
-  const history = existing.statusHistory || [];
+export function failCurrentStatus(auditResult, failedStatus, metadata = {}) {
+  const existing = auditResult || {};
+  const history = [...(existing.statusHistory || [])];
   const last = history[history.length - 1];
   if (last && !last.completedAt) {
     last.status = failedStatus;
     last.completedAt = new Date().toISOString();
     last.stepDurationMs = new Date(last.completedAt) - new Date(last.startedAt);
     Object.assign(last, metadata);
-    audit.setAuditResult({ ...existing, status: failedStatus, statusHistory: history });
-  } else {
-    startStatus(audit, failedStatus, metadata);
-    completeStatus(audit);
+    return { ...existing, status: failedStatus, statusHistory: history };
   }
-  audit.setIsError(true);
+  let result = startStatus(existing, failedStatus, metadata);
+  result = completeStatus(result);
+  return result;
 }
 
 /**
- * Safely persists the current audit status. Status tracking should never
- * crash the audit — if the save fails, we log a warning and continue.
+ * Persists the audit status via Audit.updateByKeys (bypasses allowUpdates(false)).
+ * Used by Steps 2/3 where the audit object is loaded once and tracked in a local variable.
  */
-async function saveStatus(audit, log) {
+async function persistAuditStatus(dataAccess, auditId, auditResult, log, isError = false) {
   try {
-    await audit.save();
-  } catch (saveError) {
-    log.warn(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Failed to save audit status: ${saveError.message}`);
+    const { Audit } = dataAccess;
+    const updates = { auditResult };
+    if (isError) {
+      updates.isError = true;
+    }
+    await Audit.updateByKeys({ auditId }, updates);
+  } catch (error) {
+    log.warn(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Failed to save audit status: ${error.message}`);
+  }
+}
+
+/**
+ * Persists the audit status with a fresh DB read to get the latest statusHistory.
+ * Used by the guidance handler where concurrent Mystique batch responses can race.
+ * The fresh read narrows the lost-update window to milliseconds.
+ */
+export async function persistAuditStatusWithFreshRead(
+  dataAccess,
+  auditId,
+  status,
+  metadata,
+  log,
+  isError = false,
+) {
+  try {
+    const { Audit } = dataAccess;
+    const freshAudit = await Audit.findById(auditId);
+    const existing = freshAudit?.getAuditResult() || {};
+    let auditResult = startStatus(existing, status, metadata);
+    auditResult = completeStatus(auditResult, metadata);
+    const updates = { auditResult };
+    if (isError) {
+      updates.isError = true;
+    }
+    await Audit.updateByKeys({ auditId }, updates);
+  } catch (error) {
+    log.warn(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Failed to save audit status: ${error.message}`);
   }
 }
 
@@ -181,8 +217,9 @@ export async function processScraping(context) {
   const { Opportunity } = dataAccess;
   const siteId = site.getId();
 
-  startStatus(audit, 'scraping');
-  await saveStatus(audit, log);
+  let auditResult = audit.getAuditResult();
+  auditResult = startStatus(auditResult, 'scraping');
+  await persistAuditStatus(dataAccess, audit.getId(), auditResult, log);
 
   try {
     log.debug(`[${AUDIT_TYPE}]: Processing scraping step for site ${siteId}`);
@@ -198,9 +235,9 @@ export async function processScraping(context) {
     if (allTopPageUrls.length === 0) {
       const errorMsg = `No top pages found for site ${siteId}`;
       log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
-      failCurrentStatus(audit, 'no_top_pages', { error: errorMsg });
-      await saveStatus(audit, log);
-      return { auditResult: audit.getAuditResult(), fullAuditRef: audit.getFullAuditRef() };
+      auditResult = failCurrentStatus(auditResult, 'no_top_pages', { error: errorMsg });
+      await persistAuditStatus(dataAccess, audit.getId(), auditResult, log, true);
+      return { auditResult, fullAuditRef: audit.getFullAuditRef() };
     }
 
     // Read stored offset and check suggestions for advancement (fail-safe: default 0)
@@ -267,8 +304,8 @@ export async function processScraping(context) {
     // consumers (e.g., mystique) through the scrape jobs API.
     log.info(`[${AUDIT_TYPE}]: Sending ${topPages.length} URLs to scrape client (maxScrapeAge: ${SCRAPE_MAX_AGE_HOURS}h)`);
 
-    completeStatus(audit, { urlCount: topPages.length });
-    await saveStatus(audit, log);
+    auditResult = completeStatus(auditResult, { urlCount: topPages.length });
+    await persistAuditStatus(dataAccess, audit.getId(), auditResult, log);
 
     return {
       urls: topPages.map((url) => ({ url })),
@@ -281,8 +318,8 @@ export async function processScraping(context) {
     };
   } catch (error) {
     log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] processScraping failed: ${error.message}`);
-    failCurrentStatus(audit, 'scraping_failed', { error: error.message });
-    await saveStatus(audit, log);
+    auditResult = failCurrentStatus(auditResult, 'scraping_failed', { error: error.message });
+    await persistAuditStatus(dataAccess, audit.getId(), auditResult, log, true);
     throw error;
   }
 }
@@ -294,8 +331,9 @@ export async function processAltTextWithMystique(context) {
 
   log.debug(`[${AUDIT_TYPE}]: Processing alt-text with Mystique for site ${site.getId()}`);
 
-  startStatus(audit, 'processing');
-  await saveStatus(audit, log);
+  let auditResult = audit.getAuditResult();
+  auditResult = startStatus(auditResult, 'processing');
+  await persistAuditStatus(dataAccess, audit.getId(), auditResult, log);
 
   try {
     const { Opportunity, Suggestion } = dataAccess;
@@ -326,9 +364,9 @@ export async function processAltTextWithMystique(context) {
     if (pageUrls.length === 0) {
       const errorMsg = `No top pages found for site ${site.getId()}`;
       log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
-      failCurrentStatus(audit, 'no_top_pages', { error: errorMsg });
-      await saveStatus(audit, log);
-      return { auditResult: audit.getAuditResult() };
+      auditResult = failCurrentStatus(auditResult, 'no_top_pages', { error: errorMsg });
+      await persistAuditStatus(dataAccess, audit.getId(), auditResult, log, true);
+      return { auditResult };
     }
 
     // Filter out URLs without scrapes before sending to Mystique.
@@ -342,9 +380,9 @@ export async function processAltTextWithMystique(context) {
         const errorMsg = `Cannot proceed: none of the ${pageUrls.length} URLs have scrape results. `
           + 'Mystique will not be able to find content for these pages.';
         log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
-        failCurrentStatus(audit, 'no_scrape_results', { error: errorMsg });
-        await saveStatus(audit, log);
-        return { auditResult: audit.getAuditResult() };
+        auditResult = failCurrentStatus(auditResult, 'no_scrape_results', { error: errorMsg });
+        await persistAuditStatus(dataAccess, audit.getId(), auditResult, log, true);
+        return { auditResult };
       }
       if (missingCount > 0) {
         log.warn(`[${AUDIT_TYPE}]: Excluding ${missingCount}/${pageUrls.length} URLs without scrapes`);
@@ -479,14 +517,15 @@ export async function processAltTextWithMystique(context) {
 
     log.debug(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);
 
-    completeStatus(audit, { urlCount: pageUrls.length, batchCount: urlBatches.length });
-    await saveStatus(audit, log);
+    const statusMeta = { urlCount: pageUrls.length, batchCount: urlBatches.length };
+    auditResult = completeStatus(auditResult, statusMeta);
+    await persistAuditStatus(dataAccess, audit.getId(), auditResult, log);
 
-    return { auditResult: audit.getAuditResult() };
+    return { auditResult };
   } catch (error) {
     log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Failed to process with Mystique: ${error.message}`);
-    failCurrentStatus(audit, 'processing_failed', { error: error.message });
-    await saveStatus(audit, log);
+    auditResult = failCurrentStatus(auditResult, 'processing_failed', { error: error.message });
+    await persistAuditStatus(dataAccess, audit.getId(), auditResult, log, true);
     throw error;
   }
 }
