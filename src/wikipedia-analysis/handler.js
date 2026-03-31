@@ -10,25 +10,157 @@
  * governing permissions and limitations under the License.
  */
 
+import { isValidUrl } from '@adobe/spacecat-shared-utils';
+
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import StoreClient, { StoreEmptyError, URL_TYPES, GUIDELINE_TYPES } from '../utils/store-client.js';
 
 const LOG_PREFIX = '[Wikipedia]';
+
+const REGION_SUFFIXES_RE = /(?:usa|us|uk|eu|de|fr|es|it|nl|be|at|ch|au|ca|jp|kr|cn|br|mx|in|za|global|international|worldwide)$/i;
+
+/**
+ * Slack mrkdwn wraps URLs as `<https://…>` or `<https://…|link label>`.
+ * Strips that wrapper so values from Slack commands match `isValidUrl`.
+ * Also strips a single outer layer of `"…"` or `\"…\"` (e.g. JSON/shell quoting).
+ *
+ * We peel wrappers from the outside in (slice / pipe split), not with global
+ * `.replace(/[<>"]/g, …)`: Slack links use `<url|label>` — the URL is only the
+ * part before `|`; dropping every `<`/`>` would leave `url|label` and break
+ * `isValidUrl`. Likewise we only strip matching outer quotes so a `"` or `\`
+ * inside the URL (e.g. query) is not removed.
+ *
+ * @param {string} raw
+ * @returns {string}
+ */
+function unwrapSlackMrkdwnLink(raw) {
+  let s = raw.trim();
+  const maxPasses = 6;
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    const before = s;
+
+    if (s.length >= 2 && s.startsWith('<') && s.endsWith('>')) {
+      s = s.slice(1, -1).trim();
+      const pipeIdx = s.indexOf('|');
+      if (pipeIdx !== -1) {
+        s = s.slice(0, pipeIdx).trim();
+      }
+    }
+
+    s = s.trim();
+    if (s.length >= 4 && s.startsWith('\\"') && s.endsWith('\\"')) {
+      s = s.slice(2, -2);
+    } else if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+      s = s.slice(1, -1);
+    }
+
+    s = s.trim();
+    if (s === before) {
+      break;
+    }
+  }
+  return s.trim();
+}
+
+/**
+ * Optional Wikipedia article URL from `message.data` (merged into RunnerAudit
+ * `auditContext.messageData`).
+ * `wikiUrl` wins over `wikipediaUrl` when both are set. Slack sends
+ * `<https://…>` / `<https://…|label>`; those are normalized here. Invalid /
+ * non-string values are ignored (see runner).
+ *
+ * @param {object} [auditContext]
+ * @param {{ debug?: Function, info?: Function }} [log]
+ * @returns {{ url: string }|{ invalid: true, value: string }|undefined}
+ */
+function resolveWikipediaUrlOverride(auditContext, log) {
+  const md = auditContext?.messageData;
+  if (!md) {
+    log?.info?.(
+      `${LOG_PREFIX} Wikipedia URL override: no messageData`,
+    );
+    return undefined;
+  }
+
+  const wikiVal = md.wikiUrl;
+  const wikipediaVal = md.wikipediaUrl;
+
+  log?.info?.(
+    `${LOG_PREFIX} Wikipedia URL override: messageData fields wikiUrl=${wikiVal} wikipediaUrl=${wikipediaVal}`,
+  );
+
+  const rawOverride = wikiVal || wikipediaVal;
+
+  if (rawOverride === undefined || rawOverride === null || rawOverride === '') {
+    log?.info?.(
+      `${LOG_PREFIX} Wikipedia URL override: neither wikiUrl nor wikipediaUrl is a usable value`,
+    );
+    return undefined;
+  }
+
+  if (typeof rawOverride !== 'string') {
+    log?.info?.(
+      `${LOG_PREFIX} Wikipedia URL override rejected: expected string from wikiUrl||wikipediaUrl, got ${typeof rawOverride}`,
+    );
+    return undefined;
+  }
+
+  const normalized = unwrapSlackMrkdwnLink(rawOverride);
+  if (!normalized) {
+    log?.info?.(
+      `${LOG_PREFIX} Wikipedia URL override rejected: empty or whitespace-only after Slack/mrkdwn normalization`,
+    );
+    return undefined;
+  }
+
+  if (!isValidUrl(normalized)) {
+    log?.info?.(
+      `${LOG_PREFIX} Wikipedia URL override rejected: isValidUrl=false for "${normalized}"`,
+    );
+    return { invalid: true, value: normalized };
+  }
+
+  log?.info?.(
+    `${LOG_PREFIX} Wikipedia URL override accepted: "${normalized}"`,
+  );
+
+  return { url: normalized };
+}
 
 /**
  * Wikipedia Analysis Audit Handler
  *
- * This audit performs Wikipedia analysis by:
- * 1. Fetching Wikipedia URLs from the URL Store (discovered during brand presence analysis)
- * 2. Fetching analysis topics and guidelines from the Sentiment Config
- * 3. Sending all data to Mystique for analysis
+ * This audit triggers the Wikipedia Analysis workflow in Mystique to:
+ * 1. Analyze the company's Wikipedia page
+ * 2. Find and analyze competitor Wikipedia pages
+ * 3. Generate improvement suggestions
  *
- * Mystique will fetch the actual page content from the Content Store directly
- * (content can exceed SQS message size limits).
- *
- * Results are returned via the guidance handler.
+ * The audit sends a message to Mystique which performs the actual analysis
+ * and returns results via the guidance handler.
  */
+
+/**
+ * Extracts a human-readable brand name from a site URL.
+ * Strips protocol, www prefix, TLD, and common regional/market suffixes
+ * so the result is suitable for Wikipedia search.
+ *
+ * @param {string} baseURL - The site's base URL or domain
+ * @returns {string} Cleaned brand name
+ */
+function extractBrandFromUrl(baseURL) {
+  try {
+    const urlStr = baseURL.startsWith('http') ? baseURL : `https://${baseURL}`;
+    const { hostname } = new URL(urlStr);
+
+    const name = hostname
+      .replace(/^www\./, '')
+      .split('.')[0];
+
+    return name.replace(REGION_SUFFIXES_RE, '') || name;
+  } catch {
+    return baseURL;
+  }
+}
 
 /**
  * Retrieves Wikipedia-related configuration from the site
@@ -40,45 +172,11 @@ function getWikipediaConfig(site) {
   const baseURL = site.getBaseURL();
 
   return {
-    companyName: config?.getCompanyName?.() || baseURL,
+    companyName: config?.getCompanyName?.() || extractBrandFromUrl(baseURL),
     companyWebsite: baseURL,
-    competitors: config?.getCompetitors?.() || [],
+    wikipediaUrl: config?.getWikipediaUrl?.() || '', // Empty = auto-detect
+    competitors: config?.getCompetitors?.() || [], // Empty = auto-detect
     competitorRegion: config?.getCompetitorRegion?.() || null,
-    // Include any additional config that might be useful for analysis
-    industry: config?.getIndustry?.() || null,
-    brandKeywords: config?.getBrandKeywords?.() || [],
-  };
-}
-
-/**
- * Fetches all required data from stores for Wikipedia analysis
- * @param {string} siteId - The site ID
- * @param {Object} context - The audit context
- * @returns {Promise<Object>} Object containing urls and sentimentConfig
- * @throws {StoreEmptyError} If any store returns empty results
- */
-async function fetchStoreData(siteId, context) {
-  const { log } = context;
-  const storeClient = StoreClient.createFrom(context);
-
-  log.info(`${LOG_PREFIX} Fetching data from stores for siteId: ${siteId}`);
-
-  // Fetch Wikipedia URLs from URL Store
-  // Uses: GET /sites/{siteId}/url-store/by-audit/wikipedia-analysis
-  const urls = await storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA);
-  log.info(`${LOG_PREFIX} Retrieved ${urls.length} Wikipedia URLs from URL Store`);
-
-  // Fetch sentiment config (topics + guidelines) filtered by audit type
-  // Uses: GET /sites/{siteId}/sentiment/config?audit=wikipedia-analysis
-  const auditType = GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS;
-  const sentimentConfig = await storeClient.getGuidelines(siteId, auditType);
-  const topicCount = sentimentConfig.topics.length;
-  const guidelineCount = sentimentConfig.guidelines.length;
-  log.info(`${LOG_PREFIX} Retrieved ${topicCount} topics and ${guidelineCount} guidelines`);
-
-  return {
-    urls,
-    sentimentConfig,
   };
 }
 
@@ -87,17 +185,25 @@ async function fetchStoreData(siteId, context) {
  * @param {string} url - The resolved URL for the audit
  * @param {Object} context - The audit context
  * @param {Object} site - The site being audited
+ * @param {Object} [auditContext] - RunnerAudit context; optional
+ *     `messageData.wikiUrl` / `messageData.wikipediaUrl` from `message.data`
  * @returns {Promise<Object>} Audit result
  */
-async function runWikipediaAnalysisAudit(url, context, site) {
+async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) {
   const { log } = context;
-  const siteId = site.getId();
 
-  log.info(`${LOG_PREFIX} Starting Wikipedia analysis audit for site: ${siteId}`);
+  log.info(`${LOG_PREFIX} Starting Wikipedia analysis audit for site: ${site.getId()}`);
 
   try {
-    // Get site configuration
     const wikipediaConfig = getWikipediaConfig(site);
+
+    const wikipediaUrlOverride = resolveWikipediaUrlOverride(auditContext, log);
+    if (wikipediaUrlOverride?.invalid) {
+      log.warn(`${LOG_PREFIX} Ignoring invalid wikipedia URL override: ${wikipediaUrlOverride.value}`);
+    } else if (wikipediaUrlOverride?.url) {
+      wikipediaConfig.wikipediaUrl = wikipediaUrlOverride.url;
+      log.info(`${LOG_PREFIX} Using Wikipedia URL override from audit message: ${wikipediaUrlOverride.url}`);
+    }
 
     // Validate that we have a company name
     if (!wikipediaConfig.companyName) {
@@ -111,36 +217,17 @@ async function runWikipediaAnalysisAudit(url, context, site) {
       };
     }
 
-    log.info(`${LOG_PREFIX} Config: companyName=${wikipediaConfig.companyName}, website=${wikipediaConfig.companyWebsite}`);
-
-    // Fetch data from all stores
-    const storeData = await fetchStoreData(siteId, context);
-
-    log.info(`${LOG_PREFIX} Successfully fetched all store data for ${wikipediaConfig.companyName}`);
+    log.info(`${LOG_PREFIX} Wikipedia config: companyName=${wikipediaConfig.companyName}, website=${wikipediaConfig.companyWebsite}, wikipediaUrl=${wikipediaConfig.wikipediaUrl}`);
 
     return {
       auditResult: {
         success: true,
         status: 'pending_analysis',
         config: wikipediaConfig,
-        storeData,
       },
       fullAuditRef: url,
     };
   } catch (error) {
-    // Handle store empty errors specifically
-    if (error instanceof StoreEmptyError) {
-      log.error(`${LOG_PREFIX} Store data missing: ${error.message}`);
-      return {
-        auditResult: {
-          success: false,
-          error: error.message,
-          storeName: error.storeName,
-        },
-        fullAuditRef: url,
-      };
-    }
-
     log.error(`${LOG_PREFIX} Audit failed: ${error.message}`);
     return {
       auditResult: {
@@ -185,11 +272,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       return auditData;
     }
 
-    const { config, storeData } = auditResult;
-    const { urls, sentimentConfig } = storeData;
+    const { config } = auditResult;
 
-    // Build message with all data Mystique needs
-    // Note: Content is fetched by Mystique directly from Content Store (avoids SQS size limits)
     const message = {
       type: 'guidance:wikipedia-analysis',
       siteId,
@@ -198,23 +282,22 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
       data: {
-        // Site configuration
         companyName: config.companyName,
         companyWebsite: config.companyWebsite,
+        wikipediaUrl: config.wikipediaUrl,
         competitors: config.competitors,
         competitorRegion: config.competitorRegion,
-        industry: config.industry,
-        brandKeywords: config.brandKeywords,
-
-        // Store data - Mystique will fetch content separately
-        urls, // Array of URL objects from URL Store
-        topics: sentimentConfig.topics, // Sentiment topics
-        guidelines: sentimentConfig.guidelines, // Analysis guidelines filtered by audit type
       },
     };
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`${LOG_PREFIX} Queued Wikipedia analysis request to Mystique for ${config.companyName} with ${urls.length} URLs`);
+    const wikipediaUrlForLog = config.wikipediaUrl?.trim()
+      ? config.wikipediaUrl
+      : '(empty → auto-detect)';
+
+    log.info(
+      `${LOG_PREFIX} Queued Wikipedia analysis request to Mystique for companyName=${config.companyName} wikipediaUrl=${wikipediaUrlForLog}`,
+    );
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
     // Re-throw to fail the audit if we can't send to Mystique
@@ -223,6 +306,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
   return auditData;
 }
+
+export { extractBrandFromUrl };
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)

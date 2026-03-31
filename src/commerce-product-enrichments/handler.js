@@ -225,6 +225,7 @@ async function sendEnrichment(productPages, commerceConfig, site, env, log, {
 
   const enrichmentPayload = {
     siteId: site.getId(),
+    storeViewUrl: commerceConfig.storeViewUrl,
     environmentId: commerceConfig.headers['Magento-Environment-Id'],
     websiteCode: commerceConfig.headers['Magento-Website-Code'],
     storeCode: commerceConfig.headers['Magento-Store-Code'],
@@ -232,8 +233,8 @@ async function sendEnrichment(productPages, commerceConfig, site, env, log, {
     scrapes: allScrapes,
   };
 
-  log.info(`${LOG_PREFIX} Step 3: Sending enrichment to ${enrichmentEndpoint} with ${enrichmentPayload.scrapes.length} scrapes`);
-  log.debug(`${LOG_PREFIX} Step 3: Enrichment payload:`, JSON.stringify(enrichmentPayload));
+  const { scrapes, ...payloadWithoutScrapes } = enrichmentPayload;
+  log.info(`${LOG_PREFIX} Step 3: Sending enrichment to ${enrichmentEndpoint}`, { ...payloadWithoutScrapes, scrapesCount: scrapes.length });
 
   const imsClient = ImsClient.createFrom({
     log,

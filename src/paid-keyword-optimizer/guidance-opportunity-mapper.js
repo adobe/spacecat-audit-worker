@@ -30,14 +30,14 @@ function formatNumberWithK(num) {
 }
 
 /**
- * Checks if the guidance body indicates a low severity issue
+ * Checks if the guidance body indicates a severity that should be skipped.
+ * Only "none" is skipped; "low" now produces modify_heading opportunities.
  * @param {Object} guidanceBody - The guidance body object (guidance[0].body)
- * @returns {boolean} True if severity is low or none
+ * @returns {boolean} True if severity is "none"
  */
 export function isLowSeverityGuidanceBody(guidanceBody) {
   if (guidanceBody && guidanceBody.issueSeverity) {
-    const sev = guidanceBody.issueSeverity.toLowerCase();
-    return sev.includes('none') || sev.includes('low');
+    return guidanceBody.issueSeverity.toLowerCase() === 'none';
   }
 
   return false;
@@ -56,7 +56,7 @@ export function isLowSeverityGuidanceBody(guidanceBody) {
  * @returns {Object} Opportunity entity
  */
 export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
-  const stats = audit.getAuditResult();
+  const stats = audit.getAuditResult() || {};
   const { guidance } = message.data;
   const guidanceEntry = guidance?.[0] || {};
   const {
@@ -84,7 +84,7 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
     origin: 'AUTOMATION',
     title: 'Low-performing paid search page detected',
     description: 'Page with predominantly paid search traffic and high bounce rate. '
-      + `Average bounce rate: ${(stats.averageBounceRate * 100).toFixed(1)}%, `
+      + `Average bounce rate: ${(avgBounceRate * 100).toFixed(1)}%, `
       + `Total page views: ${formatNumberWithK(stats.totalPageViews)}.`,
     guidance: {
       recommendations: [
@@ -114,6 +114,7 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
       trackedPageKPIValue: pageBounceRate,
       trackedKPISiteAverage: avgBounceRate,
       opportunityImpact: impact,
+      gapAnalysis: body?.gapAnalysis || {},
       metrics: [],
       samples: 0,
     },
