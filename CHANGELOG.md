@@ -1,3 +1,10 @@
+# [1.383.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.382.4...v1.383.0) (2026-03-31)
+
+
+### Features
+
+* **prerender:** daily batching with PageCitability deduplication ([#2146](https://github.com/adobe/spacecat-audit-worker/issues/2146)) ([ce68df2](https://github.com/adobe/spacecat-audit-worker/commit/ce68df2bc5b9c45d4bc17b510ce9be448bcca9d4))
+
 ## [1.382.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.382.3...v1.382.4) (2026-03-31)
 
 
