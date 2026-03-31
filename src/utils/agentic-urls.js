@@ -19,6 +19,14 @@ import { weeklyBreakdownQueries } from '../cdn-logs-report/utils/query-builder.j
 
 const DEFAULT_TOP_AGENTIC_URLS_LIMIT = 200;
 
+function getPreferredBaseUrl(site, context) {
+  const overrideBaseUrl = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL;
+  return overrideBaseUrl
+    || (context.finalUrl && !/^https?:\/\//.test(context.finalUrl)
+      ? `https://${context.finalUrl}`
+      : context.finalUrl || site.getBaseURL());
+}
+
 // URL suffixes to exclude from agentic URL results
 export const EXCLUDED_URL_SUFFIXES = [
   '/sitemap.xml',
@@ -57,11 +65,8 @@ export async function getTopAgenticUrlsFromAthena(
   limit = DEFAULT_TOP_AGENTIC_URLS_LIMIT,
 ) {
   const { log } = context;
-  // Use finalUrl from context if available (it's a hostname, so add https://),
-  // otherwise fall back to site.getBaseURL() which already includes the protocol
-  const baseUrl = context.finalUrl && !/^https?:\/\//.test(context.finalUrl)
-    ? `https://${context.finalUrl}`
-    : context.finalUrl || site.getBaseURL();
+  const baseUrl = getPreferredBaseUrl(site, context);
+
   try {
     const awsRuntime = getCdnAwsRuntime(site, context);
     const s3Config = getS3Config(site, context);
