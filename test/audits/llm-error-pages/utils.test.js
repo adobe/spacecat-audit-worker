@@ -126,7 +126,7 @@ describe('LLM Error Pages Utils', () => {
       expect(result).to.include('REGEXP_LIKE(user_agent,');
       expect(result).to.include('ChatGPT|GPTBot|OAI-SearchBot');
       expect(result).to.include('Perplexity');
-      expect(result).to.include('Claude|Anthropic');
+      expect(result).to.include('Claude(?!-web)');
       expect(result).to.include('Gemini');
       expect(result).to.include('Copilot');
     });

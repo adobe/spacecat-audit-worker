@@ -53,4 +53,3 @@ GROUP BY
   product,
   category
 ORDER BY total_requests DESC
-LIMIT 500
