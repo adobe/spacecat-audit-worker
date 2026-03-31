@@ -16,7 +16,8 @@ import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
 import { getPreviousWeekTriples } from '../utils/date-utils.js';
 import {
-  RELATED_URLS_COLUMN_HEADER, RELATED_URLS_DELIMITER, SPREADSHEET_COLUMNS, validateContentAI,
+  RELATED_URLS_COLUMN_HEADER, RELATED_URLS_DELIMITER,
+  buildColumnMap, getColumn, validateContentAI,
 } from './utils.js';
 
 const MAX_SUGGESTION_PROMPTS = 200;
@@ -96,21 +97,16 @@ async function readBrandPresenceSpreadsheet(filename, outputLocation, sharepoint
 
     log.info(`[FAQ] Reading all ${totalDataRows} rows from spreadsheet (total rows: ${worksheet.rowCount})`);
 
-    const headerRow = worksheet.getRow(1);
-    const headerValues = headerRow.values || [];
-    let relatedUrlsCol = 0;
-    for (let i = 1; i < headerValues.length; i += 1) {
-      const headerText = headerValues[i]?.toString?.().trim().toLowerCase();
-      if (headerText === RELATED_URLS_COLUMN_HEADER.toLowerCase()) {
-        relatedUrlsCol = i;
-        break;
-      }
-    }
+    const colMap = buildColumnMap(worksheet);
+    const topicsCol = getColumn(colMap, 'Topics');
+    const promptCol = getColumn(colMap, 'Prompt');
+    const urlCol = getColumn(colMap, 'URL');
+    const relatedUrlsCol = getColumn(colMap, RELATED_URLS_COLUMN_HEADER);
 
     rows.forEach((row) => {
-      const topic = row.getCell(SPREADSHEET_COLUMNS.TOPICS).value;
-      const prompt = row.getCell(SPREADSHEET_COLUMNS.PROMPT).value;
-      const url = row.getCell(SPREADSHEET_COLUMNS.URL).value || '';
+      const topic = topicsCol ? row.getCell(topicsCol).value : null;
+      const prompt = promptCol ? row.getCell(promptCol).value : null;
+      const url = urlCol ? row.getCell(urlCol).value || '' : '';
       const relatedUrlsRaw = relatedUrlsCol
         ? row.getCell(relatedUrlsCol).value
         : null;

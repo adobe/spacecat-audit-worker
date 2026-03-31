@@ -20,6 +20,11 @@ import { resolvePromptUrl } from '../../../src/faqs/handler.js';
 
 use(sinonChai);
 
+const BRAND_PRESENCE_HEADERS = [
+  undefined, 'Category', 'Topics', 'Prompt', 'Origin', 'Region',
+  'Volume', 'URL',
+];
+
 describe('FAQs Handler', () => {
   let context;
   let sandbox;
@@ -137,7 +142,7 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 5,
-            getRow: () => ({ values: [] }),
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: (start, count) => [
               {
                 getCell: (col) => {
@@ -286,7 +291,7 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 1,
-            getRow: () => ({ values: [] }),
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: () => [],
           },
         ],
@@ -384,7 +389,7 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 2,
-            getRow: () => ({ values: [] }),
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: () => [
               {
                 getCell: (col) => {
@@ -451,7 +456,7 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 2,
-            getRow: () => ({ values: [] }),
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: () => [
               {
                 getCell: (col) => {
@@ -539,7 +544,7 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 5,
-            getRow: () => ({ values: [] }),
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: () => null,
           },
         ],
@@ -607,7 +612,7 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 4,
-            getRow: () => ({ values: [] }),
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: () => [
               {
                 getCell: (col) => {
@@ -679,7 +684,7 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 3,
-            getRow: () => ({ values: [] }),
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: () => [
               {
                 getCell: (col) => {
@@ -746,7 +751,7 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 3,
-            getRow: () => ({ values: [] }),
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: () => [
               {
                 getCell: (col) => {
@@ -812,7 +817,7 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 3,
-            getRow: () => ({ values: [] }),
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: () => [
               {
                 getCell: (col) => {
@@ -878,7 +883,7 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 6,
-            getRow: () => ({ values: [] }),
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: () => [
               {
                 getCell: (col) => {
@@ -1159,7 +1164,7 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 2,
-            getRow: () => ({ values: [undefined, 'Category', 'Topics', 'Prompt'] }),
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: () => [
               {
                 getCell: (col) => {
@@ -1207,7 +1212,7 @@ describe('FAQs Handler', () => {
       expect(result.auditResult.promptsByUrl[0].url).to.equal('https://adobe.com/fallback');
     });
 
-    it('should handle header row with null values', async () => {
+    it('should handle header row with null values gracefully (no columns resolved)', async () => {
       const mockWorkbook = {
         worksheets: [
           {
@@ -1215,12 +1220,7 @@ describe('FAQs Handler', () => {
             getRow: () => ({ values: null }),
             getRows: () => [
               {
-                getCell: (col) => {
-                  if (col === 2) return { value: 'Topic1' };
-                  if (col === 3) return { value: 'Some question?' };
-                  if (col === 7) return { value: 'https://adobe.com/fallback' };
-                  return { value: '' };
-                },
+                getCell: () => ({ value: 'ignored' }),
               },
             ],
           },
@@ -1256,8 +1256,8 @@ describe('FAQs Handler', () => {
       const runner = excelJsMock.default.runner;
       const result = await runner('https://adobe.com', context, site);
 
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.promptsByUrl[0].url).to.equal('https://adobe.com/fallback');
+      expect(result.auditResult.success).to.equal(false);
+      expect(result.auditResult.promptsByUrl).to.be.an('array').with.lengthOf(0);
     });
 
     it('should handle site config without getIncludedURLs method', async () => {
@@ -1269,7 +1269,7 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 2,
-            getRow: () => ({ values: [] }),
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: () => [
               {
                 getCell: (col) => {
