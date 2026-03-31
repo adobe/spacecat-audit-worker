@@ -326,6 +326,31 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result[0]).to.include('google-ai-overview');
     });
 
+    it('should match google-ai-overviews (plural) as a known provider', () => {
+      const qi = { data: [{ path: '/site/brand-presence/brandpresence-google-ai-overviews-w7-2026.json' }] };
+      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
+      expect(result).to.have.lengthOf(1);
+      expect(result[0]).to.include('google-ai-overviews');
+    });
+
+    it('should match filenames without a trailing date suffix', () => {
+      const qi = { data: [
+        { path: '/site/brand-presence/brandpresence-chatgpt-w7-2026.json' },
+        { path: '/site/brand-presence/brandpresence-perplexity-w7-2026.json' },
+      ] };
+      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
+      expect(result).to.have.lengthOf(2);
+    });
+
+    it('should match filenames with and without trailing date suffix in the same index', () => {
+      const qi = { data: [
+        { path: '/site/brand-presence/brandpresence-gemini-w7-2026-010126.json' },
+        { path: '/site/brand-presence/brandpresence-copilot-w7-2026.json' },
+      ] };
+      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
+      expect(result).to.have.lengthOf(2);
+    });
+
     it('should reject entries that do not match the brand-presence filename pattern', () => {
       const qi = {
         data: [
