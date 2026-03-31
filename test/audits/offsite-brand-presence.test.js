@@ -319,11 +319,32 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result[0]).to.include('chatgpt');
     });
 
-    it('should handle provider IDs with hyphens (google-ai-overview)', () => {
-      const qi = { data: [{ path: '/adobe/brand-presence/w7/brandpresence-google-ai-overview-w7-2026-010126.json' }] };
+    it('should handle provider IDs with hyphens (google-ai-overviews)', () => {
+      const qi = { data: [
+        { path: '/adobe/brand-presence/w7/brandpresence-google-ai-overviews-w7-2026-010126.json' },
+        { path: '/site/brand-presence/brandpresence-google-ai-overviews-w7-2026.json' },
+      ] };
       const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(result).to.have.lengthOf(1);
-      expect(result[0]).to.include('google-ai-overview');
+      expect(result).to.have.lengthOf(2);
+      result.forEach((r) => expect(r).to.include('google-ai-overviews'));
+    });
+
+    it('should match filenames without a trailing date suffix', () => {
+      const qi = { data: [
+        { path: '/site/brand-presence/brandpresence-chatgpt-w7-2026.json' },
+        { path: '/site/brand-presence/brandpresence-perplexity-w7-2026.json' },
+      ] };
+      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
+      expect(result).to.have.lengthOf(2);
+    });
+
+    it('should match filenames with and without trailing date suffix in the same index', () => {
+      const qi = { data: [
+        { path: '/site/brand-presence/brandpresence-gemini-w7-2026-010126.json' },
+        { path: '/site/brand-presence/brandpresence-copilot-w7-2026.json' },
+      ] };
+      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
+      expect(result).to.have.lengthOf(2);
     });
 
     it('should reject entries that do not match the brand-presence filename pattern', () => {
