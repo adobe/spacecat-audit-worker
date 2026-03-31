@@ -189,14 +189,14 @@ describe('YouTube Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('pending_analysis');
       expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
       expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(expectedSentimentConfigForPostProcessor);
-      expect(result.auditResult.mystiqueUrlLimit).to.equal(MYSTIQUE_URLS_LIMIT);
+      expect(result.auditResult.config.urlLimit).to.equal(MYSTIQUE_URLS_LIMIT);
       expect(result.fullAuditRef).to.equal(baseURL);
       expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'youtube-analysis');
       expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, GUIDELINE_TYPES.YOUTUBE_ANALYSIS);
       expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
     });
 
-    it('should set mystiqueUrlLimit on auditResult from messageData.urlLimit', async () => {
+    it('should set config.urlLimit on auditResult from messageData.urlLimit', async () => {
       const result = await youtubeAnalysisHandler.default.runner(
         baseURL,
         context,
@@ -204,7 +204,7 @@ describe('YouTube Analysis Handler', () => {
         { messageData: { urlLimit: '7' } },
       );
 
-      expect(result.auditResult.mystiqueUrlLimit).to.equal(7);
+      expect(result.auditResult.config.urlLimit).to.equal(7);
       expect(context.log.info).to.have.been.calledWith('[YouTube] auditContext: {"messageData":{"urlLimit":"7"}}');
     });
 
@@ -380,20 +380,19 @@ describe('YouTube Analysis Handler', () => {
       expect(sentMessage.data.urls).to.have.lengthOf(mockUrls.length);
       expect(sentMessage.data.urls[0].url).to.equal(mockUrls[0].url);
       expect(context.log.info).to.have.been.calledWith(
-        `[YouTube] mystiqueUrlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
+        `[YouTube] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
       );
       expect(context.log.info).to.have.been.calledWith(
         '[YouTube] Queued YouTube analysis request to Mystique for Example Corp with 2 URLs',
       );
     });
 
-    it('should slice URLs using auditResult.mystiqueUrlLimit', async () => {
+    it('should slice URLs using config.urlLimit', async () => {
       const auditData = {
         siteId,
         auditResult: {
           success: true,
-          config: { companyName: 'Test' },
-          mystiqueUrlLimit: 1,
+          config: { companyName: 'Test', urlLimit: 1 },
           storeData: {
             urls: mockUrls,
             sentimentConfig: expectedSentimentConfigForPostProcessor,
@@ -404,7 +403,7 @@ describe('YouTube Analysis Handler', () => {
       const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
       await postProcessor(baseURL, auditData, context);
 
-      expect(context.log.info).to.have.been.calledWith('[YouTube] mystiqueUrlLimit=1 (URLs sent to Mystique)');
+      expect(context.log.info).to.have.been.calledWith('[YouTube] urlLimit=1 (URLs sent to Mystique)');
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(1);
     });
@@ -459,7 +458,7 @@ describe('YouTube Analysis Handler', () => {
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        `[YouTube] mystiqueUrlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
+        `[YouTube] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
       );
     });
 

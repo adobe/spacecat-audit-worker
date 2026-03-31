@@ -127,15 +127,14 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
     const storeData = await fetchStoreData(siteId, context);
     log.info(`${LOG_PREFIX} Successfully fetched all store data for ${citedConfig.companyName}`);
 
-    const mystiqueUrlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
+    const urlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
 
     return {
       auditResult: {
         success: true,
         status: 'pending_analysis',
-        config: citedConfig,
+        config: { ...citedConfig, urlLimit },
         storeData,
-        mystiqueUrlLimit,
       },
       fullAuditRef: url,
     };
@@ -194,13 +193,13 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       return auditData;
     }
 
-    const mystiqueUrlLimit = auditResult.mystiqueUrlLimit ?? MYSTIQUE_URLS_LIMIT;
-    log.info(`${LOG_PREFIX} mystiqueUrlLimit=${mystiqueUrlLimit} (URLs sent to Mystique)`);
-
     const { config, storeData } = auditResult;
+    const urlLimit = config?.urlLimit ?? MYSTIQUE_URLS_LIMIT;
+    log.info(`${LOG_PREFIX} urlLimit=${urlLimit} (URLs sent to Mystique)`);
+
     const { urls, sentimentConfig } = storeData;
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
-      .slice(0, mystiqueUrlLimit);
+      .slice(0, urlLimit);
 
     const message = {
       type: 'guidance:cited-analysis',
