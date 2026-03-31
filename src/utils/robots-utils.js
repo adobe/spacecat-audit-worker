@@ -37,6 +37,7 @@ export async function fetchRobotsTxt(siteUrl, log) {
     const parsed = robotsParser(robotsUrl, content);
     parsed.robotsUrl = robotsUrl;
 
+    /* c8 ignore start — TEMP logging for manual testing; remove block when deleting TEMP log */
     // TEMP: remove after testing — log Disallow path patterns from raw robots.txt
     const disallowPatterns = [];
     for (const line of content.split(/\r?\n/)) {
@@ -51,6 +52,7 @@ export async function fetchRobotsTxt(siteUrl, log) {
     log.info(
       `[robots-utils] TEMP ${robotsUrl} Disallow patterns: ${JSON.stringify(disallowPatterns)}`,
     );
+    /* c8 ignore stop */
 
     return parsed;
   } catch (error) {
