@@ -1229,10 +1229,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     // Derive aggregate metrics from the full merged page set and latest audit metadata.
     const urlsNeedingPrerender = mergedPages.filter((p) => p.needsPrerender).length;
     const urlsScrapedSuccessfully = mergedPages.filter((p) => p.scrapingStatus === 'success').length;
-    const currentUrlsSubmittedForScraping = auditResult.urlsSubmittedForScraping
-      ?? currentPages.filter((p) => p.scrapingStatus !== undefined).length;
-    const urlsSubmittedForScraping = (existingStatus.urlsSubmittedForScraping || 0)
-      + currentUrlsSubmittedForScraping;
+    const urlsSubmittedForScraping = mergedPages.length;
     const scrapingErrorRate = urlsSubmittedForScraping > 0
       ? ((urlsSubmittedForScraping - urlsScrapedSuccessfully) / urlsSubmittedForScraping) * 100
       : null;
