@@ -1,3 +1,10 @@
+## [1.384.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.384.0...v1.384.1) (2026-03-31)
+
+
+### Bug Fixes
+
+* ignore override base url for agentic urls ([#2260](https://github.com/adobe/spacecat-audit-worker/issues/2260)) ([0005544](https://github.com/adobe/spacecat-audit-worker/commit/0005544c1585ef82557e1d5c69e5de4b10f79818))
+
 # [1.384.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.383.1...v1.384.0) (2026-03-31)
 
 
