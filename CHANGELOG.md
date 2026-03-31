@@ -1,3 +1,25 @@
+## [1.381.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.381.0...v1.381.1) (2026-03-31)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.33.1 ([#2248](https://github.com/adobe/spacecat-audit-worker/issues/2248)) ([ca3109b](https://github.com/adobe/spacecat-audit-worker/commit/ca3109b4cd2b7c8b0394e3468c4cac75bb6eab01))
+* skip clearing s3 bucket if bucket does not exist ([#2236](https://github.com/adobe/spacecat-audit-worker/issues/2236)) ([31ec14e](https://github.com/adobe/spacecat-audit-worker/commit/31ec14e6c8e0916a773a16a8960e229507789ce7))
+
+# [1.381.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.380.2...v1.381.0) (2026-03-31)
+
+
+### Features
+
+* reddit-youtube-cited analysis topics data from brand presence and optional args via spacecat slack command ([#2211](https://github.com/adobe/spacecat-audit-worker/issues/2211)) ([6925898](https://github.com/adobe/spacecat-audit-worker/commit/6925898701519d2f3850d7b16423ad2fa095e436))
+
+## [1.380.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.380.1...v1.380.2) (2026-03-31)
+
+
+### Bug Fixes
+
+* handle null guidance and require high severity for consent-banner ([#2233](https://github.com/adobe/spacecat-audit-worker/issues/2233)) ([ed5da9b](https://github.com/adobe/spacecat-audit-worker/commit/ed5da9ba704552e6186ab227dcf2d15ab4cdc1df)), closes [Hi#severity](https://github.com/Hi/issues/severity)
+
 ## [1.380.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.380.0...v1.380.1) (2026-03-31)
 
 
