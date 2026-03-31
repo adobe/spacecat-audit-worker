@@ -683,7 +683,7 @@ export async function handleAiOnlyMode(context) {
  */
 export async function importTopPages(context) {
   const {
-    site, finalUrl, data, log,
+    site, finalUrl, data, log, auditContext,
   } = context;
 
   // Check for AI-only mode (from command like: audit:prerender mode:ai-only)
@@ -699,6 +699,13 @@ export async function importTopPages(context) {
     siteId: site.getId(),
     auditResult: { status: 'preparing', finalUrl },
     fullAuditRef: s3BucketPath,
+    ...(Array.isArray(auditContext?.urls) && auditContext.urls.length > 0
+      ? {
+        auditContext: {
+          urls: auditContext.urls,
+        },
+      }
+      : {}),
   };
 }
 

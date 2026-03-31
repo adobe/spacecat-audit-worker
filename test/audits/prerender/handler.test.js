@@ -68,6 +68,32 @@ describe('Prerender Audit', () => {
         fullAuditRef: 'scrapes/test-site-id/',
       });
     });
+
+    it('should preserve explicit auditContext URLs in the top-pages payload', async () => {
+      const context = {
+        site: { getId: () => 'test-site-id' },
+        finalUrl: 'https://example.com',
+        auditContext: {
+          urls: [
+            'https://example.com/page-1',
+            'https://example.com/page-2',
+          ],
+        },
+      };
+      const res = await importTopPages(context);
+      expect(res).to.deep.equal({
+        type: 'top-pages',
+        siteId: 'test-site-id',
+        auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
+        fullAuditRef: 'scrapes/test-site-id/',
+        auditContext: {
+          urls: [
+            'https://example.com/page-1',
+            'https://example.com/page-2',
+          ],
+        },
+      });
+    });
   });
   describe('HTML Analysis', () => {
     it('should analyze HTML and detect prerender opportunities', async () => {
