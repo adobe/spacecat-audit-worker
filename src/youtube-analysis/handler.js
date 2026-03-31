@@ -15,7 +15,10 @@ import { wwwUrlResolver } from '../common/index.js';
 import StoreClient, {
   StoreEmptyError, URL_TYPES, GUIDELINE_TYPES,
 } from '../utils/store-client.js';
-import { resolveMystiqueUrlLimit } from '../utils/offsite-audit-utils.js';
+import {
+  MYSTIQUE_URLS_LIMIT,
+  resolveMystiqueUrlLimit,
+} from '../utils/offsite-audit-utils.js';
 import { computeTopicsFromBrandPresence } from '../utils/brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 
@@ -132,12 +135,15 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
     const storeData = await fetchStoreData(siteId, context);
     log.info(`${LOG_PREFIX} Successfully fetched all store data for ${youtubeConfig.companyName}`);
 
+    const mystiqueUrlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
+
     return {
       auditResult: {
         success: true,
         status: 'pending_analysis',
         config: youtubeConfig,
         storeData,
+        mystiqueUrlLimit,
       },
       fullAuditRef: url,
     };
@@ -170,17 +176,9 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
  * @param {string} auditUrl - The audit URL
  * @param {Object} auditData - The audit data
  * @param {Object} context - The context object
- * @param {Object} [_site] - Site model from BaseAudit (unused)
- * @param {Object} [auditContext] - SQS audit context (e.g. `messageData.urlLimit`)
  * @returns {Promise<Object>} Updated audit data
  */
-async function sendMystiqueMessagePostProcessor(
-  auditUrl,
-  auditData,
-  context,
-  _site,
-  auditContext = {},
-) {
+async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
   const {
     log, sqs, env, dataAccess, audit,
   } = context;
@@ -204,7 +202,7 @@ async function sendMystiqueMessagePostProcessor(
       return auditData;
     }
 
-    const mystiqueUrlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
+    const mystiqueUrlLimit = auditResult.mystiqueUrlLimit ?? MYSTIQUE_URLS_LIMIT;
     log.info(`${LOG_PREFIX} mystiqueUrlLimit=${mystiqueUrlLimit} (URLs sent to Mystique)`);
 
     const { config, storeData } = auditResult;

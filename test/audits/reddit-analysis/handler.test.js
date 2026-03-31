@@ -186,6 +186,7 @@ describe('Reddit Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('pending_analysis');
       expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
       expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(expectedSentimentConfig);
+      expect(result.auditResult.mystiqueUrlLimit).to.equal(MYSTIQUE_URLS_LIMIT);
       expect(result.fullAuditRef).to.equal(baseURL);
       expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'reddit-analysis');
       expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, GUIDELINE_TYPES.REDDIT_ANALYSIS);
@@ -200,9 +201,15 @@ describe('Reddit Analysis Handler', () => {
       expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
     });
 
-    it('should log auditContext (mystiqueUrlLimit is resolved in post processor)', async () => {
-      await redditAnalysisHandler.default.runner(baseURL, context, mockSite, { messageData: { urlLimit: '3' } });
+    it('should set mystiqueUrlLimit on auditResult from messageData.urlLimit', async () => {
+      const result = await redditAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { urlLimit: '3' } },
+      );
 
+      expect(result.auditResult.mystiqueUrlLimit).to.equal(3);
       expect(context.log.info).to.have.been.calledWith('[Reddit] auditContext: {"messageData":{"urlLimit":"3"}}');
     });
 
@@ -342,7 +349,7 @@ describe('Reddit Analysis Handler', () => {
       };
 
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
-      const result = await postProcessor(baseURL, auditData, context, mockSite, {});
+      const result = await postProcessor(baseURL, auditData, context);
 
       expect(result).to.deep.equal(auditData);
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
@@ -377,12 +384,13 @@ describe('Reddit Analysis Handler', () => {
       );
     });
 
-    it('should apply auditContext.messageData.urlLimit in post processor', async () => {
+    it('should slice URLs using auditResult.mystiqueUrlLimit', async () => {
       const auditData = {
         siteId,
         auditResult: {
           success: true,
           config: { companyName: 'Test' },
+          mystiqueUrlLimit: 1,
           storeData: {
             urls: mockUrls,
             sentimentConfig: expectedSentimentConfig,
@@ -391,7 +399,7 @@ describe('Reddit Analysis Handler', () => {
       };
 
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
-      await postProcessor(baseURL, auditData, context, mockSite, { messageData: { urlLimit: '1' } });
+      await postProcessor(baseURL, auditData, context);
 
       expect(context.log.info).to.have.been.calledWith('[Reddit] mystiqueUrlLimit=1 (URLs sent to Mystique)');
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
@@ -419,7 +427,7 @@ describe('Reddit Analysis Handler', () => {
       };
 
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
-      await postProcessor(baseURL, auditData, context, mockSite, {});
+      await postProcessor(baseURL, auditData, context);
 
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
@@ -438,6 +446,7 @@ describe('Reddit Analysis Handler', () => {
         auditResult: {
           success: true,
           config: { companyName: 'Test' },
+          mystiqueUrlLimit: 4,
           storeData: {
             urls: manyUrls,
             sentimentConfig: { topics: [], guidelines: [] },
@@ -446,7 +455,7 @@ describe('Reddit Analysis Handler', () => {
       };
 
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
-      await postProcessor(baseURL, auditData, context, mockSite, { messageData: { urlLimit: '4' } });
+      await postProcessor(baseURL, auditData, context);
 
       expect(context.log.info).to.have.been.calledWith('[Reddit] mystiqueUrlLimit=4 (URLs sent to Mystique)');
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
@@ -474,7 +483,7 @@ describe('Reddit Analysis Handler', () => {
       };
 
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
-      await postProcessor(baseURL, auditData, context, mockSite, {});
+      await postProcessor(baseURL, auditData, context);
 
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
@@ -570,7 +579,7 @@ describe('Reddit Analysis Handler', () => {
       };
 
       const postProcessor = redditAnalysisHandler.default.postProcessors[0];
-      await expect(postProcessor(baseURL, auditData, context, mockSite, {})).to.be.rejectedWith('SQS Error');
+      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
       expect(context.log.error).to.have.been.calledWith('[Reddit] Failed to send Mystique message: SQS Error');
     });
   });
