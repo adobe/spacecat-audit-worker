@@ -1,3 +1,10 @@
+## [1.380.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.380.0...v1.380.1) (2026-03-31)
+
+
+### Bug Fixes
+
+* deduplicate same/similar forms across different urls ([#1936](https://github.com/adobe/spacecat-audit-worker/issues/1936)) ([2e05d1d](https://github.com/adobe/spacecat-audit-worker/commit/2e05d1d92452c4e23a76e26568f6d2f8d03562e2))
+
 # [1.380.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.379.1...v1.380.0) (2026-03-31)
 
 
