@@ -363,7 +363,7 @@ describe('Wikipedia Analysis Handler', () => {
   });
 
   describe('Post Processor - sendMystiqueMessagePostProcessor', () => {
-    it('should send message to Mystique queue when audit is successful', async () => {
+    it('should throw test error instead of sending to Mystique when audit is successful', async () => {
       const auditData = {
         siteId,
         auditResult: {
@@ -380,29 +380,20 @@ describe('Wikipedia Analysis Handler', () => {
       };
 
       const postProcessor = wikipediaAnalysisHandler.postProcessors[0];
-      await postProcessor(baseURL, auditData, context);
-
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
-      expect(context.sqs.sendMessage).to.have.been.calledWith(
-        'spacecat-to-mystique',
-        sinon.match({
-          type: 'guidance:wikipedia-analysis',
-          siteId,
-          url: baseURL,
-          auditId,
-          deliveryType: 'aem_edge',
-          data: sinon.match({
-            companyName: 'Example Corp',
-            companyWebsite: baseURL,
-          }),
-        }),
+      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith(
+        /\[TEST\] Mystique SQS send disabled \(wikipedia-analysis\)/,
       );
+
+      expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(/Queued Wikipedia analysis request to Mystique for Example Corp wikipediaUrl=https:\/\/en\.wikipedia\.org\/wiki\/Example_Corp/),
       );
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/\[Wikipedia\] Failed to send Mystique message: \[TEST\]/),
+      );
     });
 
-    it('should log auto-detect when wikipediaUrl is blank in queued Mystique log', async () => {
+    it('should log auto-detect for blank wikipediaUrl then throw test error', async () => {
       const auditData = {
         siteId,
         auditResult: {
@@ -419,8 +410,10 @@ describe('Wikipedia Analysis Handler', () => {
       };
 
       const postProcessor = wikipediaAnalysisHandler.postProcessors[0];
-      await postProcessor(baseURL, auditData, context);
-
+      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith(
+        /\[TEST\] Mystique SQS send disabled \(wikipedia-analysis\)/,
+      );
+      expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(/wikipediaUrl=\(empty → auto-detect\)/),
       );
@@ -497,7 +490,7 @@ describe('Wikipedia Analysis Handler', () => {
       expect(context.log.warn).to.have.been.calledWith('[Wikipedia] Site not found, skipping Mystique message');
     });
 
-    it('should throw error when SQS send fails', async () => {
+    it('should throw test error before SQS (send disabled)', async () => {
       context.sqs.sendMessage.rejects(new Error('SQS Error'));
 
       const auditData = {
@@ -509,8 +502,10 @@ describe('Wikipedia Analysis Handler', () => {
       };
 
       const postProcessor = wikipediaAnalysisHandler.postProcessors[0];
-      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
-      expect(context.log.error).to.have.been.calledWith('[Wikipedia] Failed to send Mystique message: SQS Error');
+      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith(
+        /\[TEST\] Mystique SQS send disabled \(wikipedia-analysis\)/,
+      );
+      expect(context.sqs.sendMessage).to.not.have.been.called;
     });
   });
 

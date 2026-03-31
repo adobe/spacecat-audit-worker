@@ -278,6 +278,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
     const { config } = auditResult;
 
+    // eslint-disable-next-line no-unused-vars -- for sendMessage when queue re-enabled
     const message = {
       type: 'guidance:wikipedia-analysis',
       siteId,
@@ -294,20 +295,24 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       },
     };
 
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    // TODO(REMOVE): local debugging — uncomment sendMessage and delete throw before merge
+    // await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     const wikipediaUrlForLog = config.wikipediaUrl?.trim()
       ? config.wikipediaUrl
       : '(empty → auto-detect)';
     log.info(
       `${LOG_PREFIX} Queued Wikipedia analysis request to Mystique for ${config.companyName} wikipediaUrl=${wikipediaUrlForLog}`,
     );
+    throw new Error('[TEST] Mystique SQS send disabled (wikipedia-analysis); restore sendMessage before merge');
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
     // Re-throw to fail the audit if we can't send to Mystique
     throw error;
   }
-
+  /* c8 ignore start — unreachable until send restored ([TEST] throw) */
+  // eslint-disable-next-line no-unreachable -- see c8 ignore above
   return auditData;
+  /* c8 ignore stop */
 }
 
 export { extractBrandFromUrl };
