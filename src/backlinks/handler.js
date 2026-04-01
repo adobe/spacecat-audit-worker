@@ -32,8 +32,6 @@ import BrightDataClient, { buildLocaleSearchUrl } from '../support/bright-data-c
 import { pickUrlsFromSerpResults } from '../support/bright-data-serp-urls.js';
 import { sleep } from '../support/utils.js';
 
-const { AUDIT_STEP_DESTINATIONS } = Audit;
-
 const TIMEOUT = 3000;
 const BRIGHT_DATA_VALIDATE_URLS = 'BRIGHT_DATA_VALIDATE_URLS';
 const BRIGHT_DATA_MAX_RESULTS = 'BRIGHT_DATA_MAX_RESULTS';
@@ -603,9 +601,38 @@ export const generateSuggestionData = async (context) => {
   };
 };
 
+/* c8 ignore start */
+async function mockAuditAndGenerateSuggestions(context) {
+  const { site, log, dataAccess } = context;
+  const siteId = site.getId();
+
+  // Step 1: get mock broken backlinks
+  log.info(`[MOCK] Running audit for site ${siteId}`);
+  const result = await brokenBacklinksAuditRunner(context.finalUrl, context, site);
+
+  // Persist audit
+  const { Audit: AuditCollection } = dataAccess;
+  context.audit = await AuditCollection.create({
+    siteId,
+    auditType: 'broken-backlinks',
+    auditResult: result.auditResult,
+    fullAuditRef: result.fullAuditRef,
+    isLive: true,
+    auditedAt: new Date().toISOString(),
+  });
+  log.info(`[MOCK] Created audit ${context.audit.getId()}`);
+
+  // Step 3: generate suggestions + send to Mystique
+  await generateSuggestionData(context);
+
+  return {
+    auditResult: result.auditResult,
+    fullAuditRef: result.fullAuditRef,
+  };
+}
+/* c8 ignore stop */
+
 export default new AuditBuilder()
   .withUrlResolver((site) => site.resolveFinalURL())
-  .addStep('audit-and-import-top-pages', runAuditAndImportTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
-  .addStep('generate-suggestion-data', generateSuggestionData)
+  .addStep('mock-audit-and-suggest', mockAuditAndGenerateSuggestions)
   .build();
