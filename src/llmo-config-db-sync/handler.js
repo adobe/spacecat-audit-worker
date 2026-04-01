@@ -89,7 +89,7 @@ function diffRows(desiredRows, existingByKey, keyFn, compareFields) {
 function logDiffSummary(log, label, toInsert, toUpdate) {
   log.info(`[DIFF] ${label}: ${toInsert.length} to insert, ${toUpdate.length} to update`);
 
-  toUpdate.slice(0, 100).forEach((row) => {
+  toUpdate.slice(0, 5).forEach((row) => {
     const { _changedFields, _existing, ...data } = row;
     const keyFields = Object.entries(data)
       .filter(([k]) => k.endsWith('_id') && !_changedFields.includes(k))
@@ -105,7 +105,7 @@ function logDiffSummary(log, label, toInsert, toUpdate) {
     log.info(`[DIFF] ${label} UPDATE [${keyFields}]:\n${diff}`);
   });
 
-  toInsert.slice(0, 100).forEach((row) => {
+  toInsert.slice(0, 5).forEach((row) => {
     log.info(`[DIFF] ${label} INSERT: ${JSON.stringify(row)}`);
   });
 
