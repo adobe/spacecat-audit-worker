@@ -10,6 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
+// organic -> x, y, z -> strip the domain -> extract domain -> www
+// agentic -> x, y, z -> strip the domain -> use finalurl and pass ahead
+
+// Suggestion key (existing) : https://goog.le/test|prerender -> /test
+// Suggestion key : /test -> /test
+
 import {
   getS3Config,
   getCdnAwsRuntime,
@@ -19,7 +25,7 @@ import { weeklyBreakdownQueries } from '../cdn-logs-report/utils/query-builder.j
 
 const DEFAULT_TOP_AGENTIC_URLS_LIMIT = 200;
 
-function getPreferredBaseUrl(site, context) {
+export function getPreferredBaseUrl(site, context) {
   return context.finalUrl && !/^https?:\/\//.test(context.finalUrl)
     ? `https://${context.finalUrl}`
     : context.finalUrl || site.getBaseURL();
