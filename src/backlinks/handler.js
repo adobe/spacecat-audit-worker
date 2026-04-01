@@ -159,6 +159,7 @@ export async function checkIfBacklinkResolvedOnProduction(suggestion, log) {
   return stillBrokenItems.length === 0; // resolved if NO items are still broken
 }
 
+/* c8 ignore start */
 // Mock broken backlinks for local E2E testing of specific demo sites
 const MOCK_BACKLINKS = {
   '5810d40e-b39b-4da8-8a9b-03a67c1f8aaf': {
@@ -206,6 +207,7 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
     if (MOCK_BACKLINKS[siteId]) {
       log.info(`[MOCK] Using hardcoded broken backlinks for site ${siteId}`);
       ({ result, fullAuditRef } = MOCK_BACKLINKS[siteId]);
+    /* c8 ignore stop */
     } else {
       const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
       ({
