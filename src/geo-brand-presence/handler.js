@@ -29,7 +29,6 @@
 /* eslint-disable no-use-before-define */
 
 import {
-  isString,
   isNonEmptyArray,
   isNonEmptyObject,
   isoCalendarWeek,
@@ -167,7 +166,7 @@ function deduplicatePrompts(prompts, siteId, log) {
  * @param {Object} context - The execution context including audit, logging, site info, etc.
  * @param {Function} [getPresignedUrlOverride=getSignedUrl]
  * - (Optional) Override for generating presigned URLs.
- * @returns {Promise<Object>} The audit result for the current step.
+ * @returns {Promise<void>}
  */
 export async function loadPromptsAndSendDetection(
   context,
@@ -175,74 +174,24 @@ export async function loadPromptsAndSendDetection(
 ) {
   /* c8 ignore start */
   const {
-    auditContext, brandPresenceCadence, data, log, sqs, env, site, audit, s3Client, finalUrl,
+    auditContext, log, sqs, env, site, audit, s3Client, brandPresenceCadence,
   } = context;
 
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
-
-  let endDate;
-  let aiPlatform;
-  let referenceDate;
-  let cadence = brandPresenceCadence;
-
-  if (isString(data) && data.length > 0) {
-    try {
-      const parsedData = JSON.parse(data);
-      if (isNonEmptyObject(parsedData)) {
-        if (parsedData.endDate && Date.parse(parsedData.endDate)) {
-          endDate = parsedData.endDate;
-        }
-        if (parsedData.referenceDate && Date.parse(parsedData.referenceDate)) {
-          referenceDate = parsedData.referenceDate;
-        }
-        aiPlatform = parsedData.aiPlatform;
-        cadence = parsedData.cadence || cadence;
-      }
-    } catch (e) {
-      if (Date.parse(data)) {
-        endDate = data;
-      } else {
-        log.warn('GEO BRAND PRESENCE: Could not parse data as JSON or date string: %s', data);
-      }
-    }
-  }
-
-  const existingAuditResult = audit?.getAuditResult?.();
-  if (!aiPlatform && existingAuditResult?.aiPlatform) {
-    aiPlatform = existingAuditResult.aiPlatform;
-  }
-  if (!referenceDate && existingAuditResult?.referenceDate) {
-    referenceDate = existingAuditResult.referenceDate;
-  }
-  if (!cadence && existingAuditResult?.cadence) {
-    cadence = existingAuditResult.cadence;
-  }
-
-  if (cadence === 'daily' && !referenceDate) {
-    referenceDate = new Date().toISOString();
-  }
-
-  const auditResult = {
-    keywordQuestions: [],
-    aiPlatform,
-  };
-
-  if (referenceDate) {
-    auditResult.referenceDate = referenceDate;
-  }
-
-  if (cadence) {
-    auditResult.cadence = cadence;
-  }
-
-  const isDaily = cadence === 'daily';
+  const isDaily = brandPresenceCadence === 'daily';
 
   const { calendarWeek: providedCalendarWeek, success } = auditContext ?? /* c8 ignore next */ {};
+  const auditResult = audit?.getAuditResult();
+  const aiPlatform = auditResult?.aiPlatform;
 
   let dailyDateContext;
   if (isDaily) {
-    const date = new Date(referenceDate ?? new Date());
+    const referenceDate = auditResult?.referenceDate
+      || context.data?.referenceDate
+      || auditContext?.referenceDate
+      || new Date();
+    const date = new Date(referenceDate);
     date.setUTCDate(date.getUTCDate() - 1);
 
     const { week, year } = isoCalendarWeek(date);
@@ -264,29 +213,10 @@ export async function loadPromptsAndSendDetection(
   }
 
   // For weekly cadence, validate calendarWeek; for daily, use dailyDateContext
-  let dateContext;
-  if (isDaily) {
-    dateContext = dailyDateContext;
-  } else if (isNonEmptyObject(providedCalendarWeek)
-    && providedCalendarWeek.week
-    && providedCalendarWeek.year) {
-    dateContext = providedCalendarWeek;
-  } else {
-    dateContext = isoCalendarWeek(new Date());
-  }
+  const dateContext = isDaily ? dailyDateContext : providedCalendarWeek;
   if (!isNonEmptyObject(dateContext) || !dateContext.week || !dateContext.year) {
-    log.error(
-      'GEO BRAND PRESENCE: Invalid date context for site id %s (%s). Cannot send data to Mystique',
-      siteId,
-      baseURL,
-      auditContext,
-    );
-    return {
-      siteId,
-      endDate,
-      auditResult,
-      fullAuditRef: finalUrl,
-    };
+    log.error('GEO BRAND PRESENCE: Invalid date context for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
+    return;
   }
 
   log.debug('GEO BRAND PRESENCE: Loading prompts from LLMO config for site id %s (%s)', siteId, baseURL);
@@ -362,12 +292,7 @@ export async function loadPromptsAndSendDetection(
 
   if (allPrompts.length === 0) {
     log.warn('GEO BRAND PRESENCE: No prompts found for site id %s (%s), skipping detection', siteId, baseURL);
-    return {
-      siteId,
-      endDate,
-      auditResult,
-      fullAuditRef: finalUrl,
-    };
+    return;
   }
 
   const s3Context = isDaily
@@ -382,12 +307,7 @@ export async function loadPromptsAndSendDetection(
 
   if (!isNonEmptyArray(providersToUse)) {
     log.warn('GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping message to mystique', siteId, baseURL);
-    return {
-      siteId,
-      endDate,
-      auditResult,
-      fullAuditRef: finalUrl,
-    };
+    return;
   }
 
   const opptyTypes = isDaily
@@ -428,12 +348,6 @@ export async function loadPromptsAndSendDetection(
   const stepCompleteMsg = 'GEO BRAND PRESENCE%s: Unified step complete - detection '
     + 'messages sent directly to Mystique (categorization will happen internally if needed) for site id %s (%s)';
   log.info(stepCompleteMsg, cadenceLabel, siteId, baseURL);
-  return {
-    siteId,
-    endDate,
-    auditResult,
-    fullAuditRef: finalUrl,
-  };
   /* c8 ignore end */
 }
 
