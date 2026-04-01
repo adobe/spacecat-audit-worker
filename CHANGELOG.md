@@ -1,3 +1,11 @@
+## [1.387.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.387.0...v1.387.1) (2026-04-01)
+
+
+### Bug Fixes
+
+* deduplicate JSON-LD Product SKUs in product page detection ([#2265](https://github.com/adobe/spacecat-audit-worker/issues/2265)) ([b0336f1](https://github.com/adobe/spacecat-audit-worker/commit/b0336f1734ff295b175b6644bc5ba045a8fae49d))
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.36.1 ([#2264](https://github.com/adobe/spacecat-audit-worker/issues/2264)) ([89e44c8](https://github.com/adobe/spacecat-audit-worker/commit/89e44c8a91c4c4b8e1144c821e8f8b0bd247c39a))
+
 # [1.387.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.386.0...v1.387.0) (2026-04-01)
 
 
