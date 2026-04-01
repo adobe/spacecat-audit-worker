@@ -27,6 +27,14 @@ function normalizeLabel(value) {
 
 function inferContentType(urlPath = '') {
   const path = String(urlPath).toLowerCase();
+  if (/\.(png|apng)$/.test(path)) return 'png';
+  if (/\.(jpg|jpeg|jpe|jfif|pjpeg|pjp)$/.test(path)) return 'jpg';
+  if (/\.gif$/.test(path)) return 'gif';
+  if (/\.webp$/.test(path)) return 'webp';
+  if (/\.svg$/.test(path)) return 'svg';
+  if (/\.ico$/.test(path)) return 'ico';
+  if (/\.bmp$/.test(path)) return 'bmp';
+  if (/\.avif$/.test(path)) return 'avif';
   if (/\.xml$/.test(path)) return 'xml';
   if (/\.pdf$/.test(path)) return 'pdf';
   if (/\.(html|htm)$/.test(path)) return 'html';
