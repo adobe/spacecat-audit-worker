@@ -38,19 +38,43 @@ export async function fetchRobotsTxt(siteUrl, log) {
     parsed.robotsUrl = robotsUrl;
 
     /* c8 ignore start — TEMP logging for manual testing; remove block when deleting TEMP log */
-    // TEMP: remove after testing — log Disallow path patterns from raw robots.txt
-    const disallowPatterns = [];
-    for (const line of content.split(/\r?\n/)) {
-      const t = line.trim();
-      if (t.length > 0 && !t.startsWith('#')) {
-        const match = t.match(/^disallow:\s*(.*)$/i);
-        if (match) {
-          disallowPatterns.push(match[1].trim() || '(empty)');
+    // TEMP: Disallow lines only in groups with User-agent: * (matches isAllowed(url, '*')).
+    const tempDisallowPathsForWildcardUserAgent = (raw) => {
+      const lines = raw.split(/\r?\n/);
+      const groups = [];
+      let g = { agents: [], disallows: [] };
+      const flush = () => {
+        if (g.agents.length > 0 || g.disallows.length > 0) {
+          groups.push(g);
+        }
+        g = { agents: [], disallows: [] };
+      };
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t) {
+          flush();
+        } else if (!t.startsWith('#')) {
+          const uaMatch = t.match(/^user-agent:\s*(.+)$/i);
+          const disMatch = t.match(/^disallow:\s*(.*)$/i);
+          if (uaMatch) {
+            g.agents.push(uaMatch[1].trim());
+          } else if (disMatch) {
+            g.disallows.push(disMatch[1].trim() || '(empty)');
+          }
         }
       }
-    }
+      flush();
+      const patterns = [];
+      for (const gr of groups) {
+        if (gr.agents.includes('*')) {
+          patterns.push(...gr.disallows);
+        }
+      }
+      return patterns;
+    };
+    const disallowPatterns = tempDisallowPathsForWildcardUserAgent(content);
     log.info(
-      `[robots-utils] TEMP ${robotsUrl} Disallow patterns: ${JSON.stringify(disallowPatterns)}`,
+      `[robots-utils] TEMP ${robotsUrl} Disallow (User-agent * only): ${JSON.stringify(disallowPatterns)}`,
     );
     /* c8 ignore stop */
 
