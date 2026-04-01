@@ -1,3 +1,10 @@
+# [1.388.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.387.3...v1.388.0) (2026-04-01)
+
+
+### Features
+
+* normalise all prerender URL sources to preferredBase domain ([#2266](https://github.com/adobe/spacecat-audit-worker/issues/2266)) ([894be47](https://github.com/adobe/spacecat-audit-worker/commit/894be47cb6e7662f2ca02f8f77382c41b17dfea1))
+
 ## [1.387.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.387.2...v1.387.3) (2026-04-01)
 
 
