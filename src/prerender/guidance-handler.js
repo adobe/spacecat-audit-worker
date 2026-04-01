@@ -141,7 +141,7 @@ export default async function handler(message, context) {
     suggestions.forEach((incoming) => {
       // Handle potential null/undefined elements in suggestions array
       const {
-        url, aiSummary, valuable,
+        url, aiSummary, valuable, prompts,
       } = incoming || {};
 
       if (!url) {
@@ -176,6 +176,10 @@ export default async function handler(message, context) {
         aiSummary: hasValidAiSummary ? aiSummary : (currentData.aiSummary ?? ''),
         // Default to true if not provided, but respect explicit boolean from Mystique
         valuable: isValuable,
+        // Use new prompts if provided; otherwise preserve existing
+        prompts: Array.isArray(prompts) && prompts.length > 0
+          ? prompts
+          : (currentData.prompts ?? []),
       };
 
       existing.setData(updatedData);

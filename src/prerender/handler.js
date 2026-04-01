@@ -441,7 +441,13 @@ async function fetchLatestScrapeJobId(siteId, context) {
  * @param {Object} context - Processing context
  * @returns {Promise<number>} - Number of suggestions sent to Mystique
  */
-async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, opportunity, context) {
+async function sendPrerenderGuidanceRequestToMystique(
+  auditUrl,
+  auditData,
+  opportunity,
+  context,
+  generatePrompts = false,
+) {
   const {
     log, sqs, env, site,
   } = context;
@@ -518,6 +524,8 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
         url: data.url,
         originalHtmlMarkdownKey,
         markdownDiffKey,
+        // Signal whether this suggestion already has prompts so Mystique can skip re-generation
+        hasPrompts: Array.isArray(data.prompts) && data.prompts.length > 0,
       });
     });
 
@@ -537,6 +545,7 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
       data: {
         opportunityId,
         suggestions: suggestionsPayload,
+        generatePrompts,
       },
     };
 
@@ -567,14 +576,16 @@ export async function handleAiOnlyMode(context) {
   const siteId = site.getId();
   const baseUrl = site.getBaseURL();
 
-  // Parse optional params from data field (opportunityId, scrapeJobId)
+  // Parse optional params from data field (opportunityId, scrapeJobId, generatePrompts)
   let opportunityId = null;
   let scrapeJobId = null;
+  let generatePrompts = false;
   if (data) {
     try {
       const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
       opportunityId = parsedData.opportunityId;
       scrapeJobId = parsedData.scrapeJobId;
+      generatePrompts = !!parsedData.generatePrompts;
     } catch (e) {
       // Ignore parse errors - graceful degradation for malformed JSON
     }
@@ -657,6 +668,7 @@ export async function handleAiOnlyMode(context) {
     auditData,
     opportunity,
     context,
+    generatePrompts,
   );
 
   log.info(`${LOG_PREFIX} ai-only: Successfully queued AI summary request for ${suggestionCount} suggestion(s). baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunity.getId()}`);
