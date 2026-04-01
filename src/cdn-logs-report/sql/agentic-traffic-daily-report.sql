@@ -8,7 +8,6 @@ WITH classified_data AS (
     {{countryExtraction}} as country_code,
     url,
     host,
-    cdn_provider,
     {{topicExtraction}} as product,
     {{pageCategoryClassification}} as category
   FROM {{databaseName}}.{{tableName}}
@@ -23,7 +22,6 @@ SELECT
   country_code,
   url,
   host,
-  cdn_provider,
   product,
   category
 FROM classified_data
@@ -35,7 +33,6 @@ GROUP BY
   country_code,
   url,
   host,
-  cdn_provider,
   product,
   category
 ORDER BY number_of_hits DESC

@@ -343,7 +343,7 @@ describe('CDN Logs Report Handler', function test() {
         'https://example.com',
         context,
         site,
-        createAuditContext(sandbox, { weekOffset: -1, categoriesUpdated: false }),
+        createAuditContext(sandbox, { categoriesUpdated: false }),
       );
 
       expect(fetchRemotePatternsStub).to.have.been.calledOnce;
@@ -414,7 +414,7 @@ describe('CDN Logs Report Handler', function test() {
         'https://example.com',
         context,
         site,
-        createAuditContext(sandbox, { weekOffset: -1, categoriesUpdated: false }),
+        createAuditContext(sandbox, { categoriesUpdated: false }),
       );
 
       expect(fetchRemotePatternsStub).to.have.been.calledOnce;
@@ -611,12 +611,13 @@ describe('CDN Logs Report Handler', function test() {
       expect(context.log.error).to.have.been.calledWith('Failed to bulk publish reports:', sinon.match.instanceOf(Error));
     });
 
-    it('logs when daily agentic export is enabled but the agentic report config is missing', async () => {
+    it('skips daily export when the agentic report config is missing', async () => {
       const runWeeklyReportStub = sandbox.stub().resolves({ success: true, uploadResult: null });
+      const runDailyAgenticExportStub = sandbox.stub().resolves();
       const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
         '../../../src/cdn-logs-report/agentic-daily-export.js': {
           isAgenticDailyExportEnabled: sandbox.stub().returns(true),
-          runDailyAgenticExport: sandbox.stub().resolves(),
+          runDailyAgenticExport: runDailyAgenticExportStub,
         },
         '../../../src/cdn-logs-report/utils/report-utils.js': {
           loadSql: sandbox.stub().resolves('SELECT 1'),
@@ -672,12 +673,10 @@ describe('CDN Logs Report Handler', function test() {
         'https://example.com',
         context,
         site,
-        createAuditContext(sandbox, { weekOffset: -1, categoriesUpdated: false }),
+        createAuditContext(sandbox, { categoriesUpdated: false }),
       );
 
-      expect(context.log.debug).to.have.been.calledWith(
-        'Skipping daily agentic export for test-site: agentic report config not found',
-      );
+      expect(runDailyAgenticExportStub).to.not.have.been.called;
       expect(result.dailyAgenticExport).to.equal(undefined);
       expect(runWeeklyReportStub).to.have.been.calledOnce;
     });
@@ -758,6 +757,90 @@ describe('CDN Logs Report Handler', function test() {
         siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
         rowCount: 12,
       });
+    });
+
+    it('skips sharepoint and weekly reports when auditContext.date is provided', async () => {
+      const runDailyAgenticExportStub = sandbox.stub().resolves({
+        enabled: true,
+        success: true,
+        siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+        trafficDate: '2026-03-31',
+      });
+      const createSharepointStub = sandbox.stub().resolves(createMockSharepointClient(sandbox));
+      const bulkPublishStub = sandbox.stub().resolves();
+      const runWeeklyReportStub = sandbox.stub().resolves({ success: true, uploadResult: null });
+      const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
+        '../../../src/cdn-logs-report/agentic-daily-export.js': {
+          isAgenticDailyExportEnabled: sandbox.stub().returns(true),
+          runDailyAgenticExport: runDailyAgenticExportStub,
+        },
+        '../../../src/cdn-logs-report/utils/report-runner.js': {
+          runWeeklyReport: runWeeklyReportStub,
+        },
+      }, {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: createSharepointStub,
+          saveExcelReport: saveExcelReportStub,
+          bulkPublishToAdminHlx: bulkPublishStub,
+        },
+      });
+
+      const allowlistedSite = {
+        ...site,
+        getId: () => '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+        getSiteId: () => '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+      };
+
+      const result = await localHandler.runner(
+        'https://example.com',
+        context,
+        allowlistedSite,
+        createAuditContext(sandbox, { date: '2026-04-01T10:00:00Z' }),
+      );
+
+      expect(createSharepointStub).to.not.have.been.called;
+      expect(runWeeklyReportStub).to.not.have.been.called;
+      expect(bulkPublishStub).to.not.have.been.called;
+      expect(runDailyAgenticExportStub).to.have.been.calledOnce;
+      expect(runDailyAgenticExportStub.firstCall.args[0].referenceDate.toISOString())
+        .to.equal('2026-04-01T10:00:00.000Z');
+      expect(result.auditResult).to.deep.equal([]);
+      expect(result.dailyAgenticExport).to.deep.equal({
+        enabled: true,
+        success: true,
+        siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+        trafficDate: '2026-03-31',
+      });
+    });
+
+    it('skips daily export when auditContext.weekOffset is provided', async () => {
+      const runDailyAgenticExportStub = sandbox.stub().resolves({
+        enabled: true,
+        success: true,
+      });
+      const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
+        '../../../src/cdn-logs-report/agentic-daily-export.js': {
+          isAgenticDailyExportEnabled: sandbox.stub().returns(true),
+          runDailyAgenticExport: runDailyAgenticExportStub,
+        },
+      }, {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
+          saveExcelReport: saveExcelReportStub,
+          bulkPublishToAdminHlx: sandbox.stub().resolves(),
+        },
+      });
+
+      const result = await localHandler.runner(
+        'https://example.com',
+        context,
+        site,
+        createAuditContext(sandbox, { weekOffset: -2 }),
+      );
+
+      expect(runDailyAgenticExportStub).to.not.have.been.called;
+      expect(result.dailyAgenticExport).to.equal(undefined);
+      expect(result.auditResult).to.not.be.empty;
     });
 
     describe('LLMO pattern fetch scenarios', () => {

@@ -134,6 +134,7 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.include('user_agent_display');
     expect(query).to.include('avg_ttfb_ms');
     expect(query).to.include("WHERE agent_type != 'Other'");
+    expect(query).to.not.include('cdn_provider');
   });
 
   it('handles site with no page patterns', async () => {
