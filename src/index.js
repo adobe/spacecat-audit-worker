@@ -106,6 +106,7 @@ import permissionsRedundant from './permissions/handler.redundant.js';
 import faqs from './faqs/handler.js';
 import faqsGuidance from './faqs/guidance-handler.js';
 import highValuePages from './high-value-pages/handler.js';
+import moneyPages from './money-pages/handler.js';
 import relatedUrls from './related-urls/handler.js';
 import relatedUrlsGuidance from './related-urls/guidance-handler.js';
 import pageCitability from './page-citability/handler.js';
@@ -223,6 +224,7 @@ const HANDLERS = {
   faqs,
   'guidance:faqs': faqsGuidance,
   'high-value-pages': highValuePages,
+  'money-pages': moneyPages,
   'related-urls': relatedUrls,
   'guidance:related-urls': relatedUrlsGuidance,
   'page-citability': pageCitability,
