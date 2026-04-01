@@ -29,6 +29,10 @@ import { wwwUrlResolver } from '../common/base-audit.js';
 import { createLLMOSharepointClient, bulkPublishToAdminHlx } from '../utils/report-uploader.js';
 import { getConfigs } from './constants/report-configs.js';
 import { generatePatternsWorkbook } from './patterns/patterns-uploader.js';
+import {
+  isAgenticDailyExportEnabled,
+  runDailyAgenticExport,
+} from './agentic-daily-export.js';
 
 async function runCdnLogsReport(url, context, site, auditContext) {
   const { log } = context;
@@ -49,6 +53,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   );
   const siteId = site.getId();
   const reportConfigs = getConfigs(s3Config.bucket, s3Config.customerDomain, siteId);
+  const agenticReportConfig = reportConfigs.find((config) => config.name === 'agentic');
 
   const results = [];
   const reportsToPublish = [];
@@ -143,6 +148,28 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     }
   }
 
+  let dailyAgenticExport;
+  if (agenticReportConfig && isAgenticDailyExportEnabled(site, context)) {
+    try {
+      dailyAgenticExport = await runDailyAgenticExport({
+        athenaClient,
+        s3Client,
+        s3Config,
+        site,
+        context,
+        reportConfig: agenticReportConfig,
+      });
+    } catch (error) {
+      context.log.error(`Failed daily agentic export for site ${siteId}: ${error.message}`, error);
+      dailyAgenticExport = {
+        enabled: true,
+        success: false,
+        siteId,
+        error: error.message,
+      };
+    }
+  }
+
   // Batch publish all uploaded reports using bulk API
   if (reportsToPublish.length > 0) {
     try {
@@ -154,6 +181,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
 
   return {
     auditResult: results,
+    dailyAgenticExport,
     fullAuditRef: `${site.getConfig()?.getLlmoDataFolder()}`,
   };
 }
