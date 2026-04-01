@@ -159,16 +159,60 @@ export async function checkIfBacklinkResolvedOnProduction(suggestion, log) {
   return stillBrokenItems.length === 0; // resolved if NO items are still broken
 }
 
+// Mock broken backlinks for local E2E testing of specific demo sites
+const MOCK_BACKLINKS = {
+  '5810d40e-b39b-4da8-8a9b-03a67c1f8aaf': {
+    result: {
+      backlinks: [
+        {
+          title: 'WKND FAQs page (broken)',
+          url_from: 'https://example-referrer.com/links-page',
+          url_to: 'https://main--wknd-backlink-test--mimchome.aem.page/faqs',
+          traffic_domain: 1200,
+        },
+        {
+          title: 'WKND Magazines page (broken)',
+          url_from: 'https://another-referrer.com/resources',
+          url_to: 'https://main--wknd-backlink-test--mimchome.aem.page/magazines',
+          traffic_domain: 800,
+        },
+      ],
+    },
+    fullAuditRef: 'mock://local-dev-test/site-5810d40e',
+  },
+  'eeda97b6-87fd-47a6-b66d-cd0f99a9b3d4': {
+    result: {
+      backlinks: [
+        {
+          title: 'WKND SharePoint FAQs (broken)',
+          url_from: 'https://partner-blog.com/recommendations',
+          url_to: 'https://main--wknd-backlink-test-sharepoint--mimchome.aem.live/faqs',
+          traffic_domain: 950,
+        },
+      ],
+    },
+    fullAuditRef: 'mock://local-dev-test/site-eeda97b6',
+  },
+};
+
 export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
   const { log } = context;
   const siteId = site.getId();
 
   try {
-    const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
-    const {
-      result,
-      fullAuditRef,
-    } = await ahrefsAPIClient.getBrokenBacklinks(auditUrl);
+    let result;
+    let fullAuditRef;
+
+    if (MOCK_BACKLINKS[siteId]) {
+      log.info(`[MOCK] Using hardcoded broken backlinks for site ${siteId}`);
+      ({ result, fullAuditRef } = MOCK_BACKLINKS[siteId]);
+    } else {
+      const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
+      ({
+        result,
+        fullAuditRef,
+      } = await ahrefsAPIClient.getBrokenBacklinks(auditUrl));
+    }
     log.debug(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditUrl}`);
     const excludedURLs = site.getConfig().getExcludedURLs('broken-backlinks');
 
