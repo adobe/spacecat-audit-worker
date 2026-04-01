@@ -124,6 +124,23 @@ function isStaticAsset(url) {
   return /\.(svg|png|jpe?g|gif|webp|avif|css|js|ico|woff2?|ttf|otf|eot|pdf|mp4|webm|mp3|ogg)(\?.*)?$/i.test(url);
 }
 
+/**
+ * Checks if a URL has a malformed path segment — e.g. "/.html" where the
+ * filename is just an extension with no base name. These are CMS artifacts
+ * (empty slug + extension) and are not real pages to audit.
+ * @param {string} url - The URL to check
+ * @returns {boolean} True if the URL path ends with a bare extension segment
+ */
+function isMalformedPageUrl(url) {
+  try {
+    const { pathname } = new URL(url);
+    const lastSegment = pathname.split('/').pop();
+    return /^\.[a-z0-9]+$/i.test(lastSegment);
+  } catch {
+    return false;
+  }
+}
+
 function shouldInspectForSoft404(contentType, isAsset) {
   /* c8 ignore next - Defensive fallback for null/undefined contentType */
   return !isAsset && /^text\/html\b|^application\/xhtml\+xml\b/i.test(contentType || '');
@@ -341,6 +358,14 @@ export async function isLinkInaccessible(url, baseLog, siteId, auditId = null) {
 
   // Static assets (images, fonts, CSS, JS, etc.) are excluded from broken link detection.
   if (isAsset) {
+    return {
+      isBroken: false, inconclusive: false, httpStatus: null, statusBucket: null, contentType: null,
+    };
+  }
+
+  // Malformed URLs (e.g. "/.html" — bare extension, no page name) are CMS artifacts and not
+  // real pages. Skip them to avoid false positives.
+  if (isMalformedPageUrl(url)) {
     return {
       isBroken: false, inconclusive: false, httpStatus: null, statusBucket: null, contentType: null,
     };
