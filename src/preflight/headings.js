@@ -97,15 +97,20 @@ function getElementsFromCheck(scrapeJsonObject, check) {
       break;
     }
 
+    // Resolve the element via its structural selector, disambiguate by text content,
+    // then re-generate a UE-aware selector
     case 'heading-order-invalid': {
-      const headingText = check.transformRules?.currValue?.trim();
-      const oldSelector = check.transformRules?.selector || '';
-      const tagFromSelector = oldSelector.match(/^(h[1-6])/)?.[1];
-      if (headingText && tagFromSelector) {
-        const candidates = $(tagFromSelector).toArray();
-        const match = candidates.find((h) => $(h).text().trim() === headingText);
-        if (match) {
-          const selector = getDomElementSelector(match);
+      const oldSelector = check.transformRules?.selector;
+      if (oldSelector) {
+        let element = $(oldSelector).get(0);
+        const headingText = check.transformRules?.currValue?.trim();
+        if (element && headingText && $(element).text().trim() !== headingText) {
+          // Ambiguous selector matched the wrong element — find by text instead
+          const allMatches = $(oldSelector).toArray();
+          element = allMatches.find((h) => $(h).text().trim() === headingText) || element;
+        }
+        if (element) {
+          const selector = getDomElementSelector(element);
           if (selector) selectors.push(selector);
         }
       }
@@ -274,6 +279,11 @@ export default async function headings(context, auditContext) {
             if (elementData?.elements?.length > 0) {
               Object.assign(opportunity, elementData);
             }
+          }
+
+          const headingContent = check.transformRules?.currValue?.trim();
+          if (headingContent) {
+            opportunity.content = headingContent;
           }
 
           audit.opportunities.push(opportunity);
