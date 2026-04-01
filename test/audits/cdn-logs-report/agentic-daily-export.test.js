@@ -31,6 +31,14 @@ describe('agentic daily export', () => {
     sandbox.restore();
   });
 
+  function createConfiguration(queueUrl = 'https://sqs.us-east-1.amazonaws.com/123/analytics-queue') {
+    return {
+      getQueues: () => ({
+        analytics: queueUrl,
+      }),
+    };
+  }
+
   it('uploads both CSV artifacts and dispatches the analytics event', async () => {
     const queryBuilder = {
       createAgenticDailyReportQuery: sandbox.stub().resolves('SELECT * FROM daily_agentic'),
@@ -85,8 +93,12 @@ describe('agentic daily export', () => {
     };
     const context = {
       env: {
-        ANALYTICS_QUEUE_URL: 'https://sqs.us-east-1.amazonaws.com/123/analytics-queue',
         AGENTIC_DAILY_EXPORT_SITE_IDS: 'site-1',
+      },
+      dataAccess: {
+        Configuration: {
+          findLatest: sandbox.stub().resolves(createConfiguration()),
+        },
       },
       log: {
         info: sandbox.spy(),
@@ -201,8 +213,10 @@ describe('agentic daily export', () => {
         }),
       },
       context: {
-        env: {
-          ANALYTICS_QUEUE_URL: 'https://sqs.us-east-1.amazonaws.com/123/analytics-queue',
+        dataAccess: {
+          Configuration: {
+            findLatest: sandbox.stub().resolves(createConfiguration()),
+          },
         },
         log: {
           info: sandbox.spy(),
@@ -270,6 +284,13 @@ describe('agentic daily export', () => {
       },
       context: {
         env: {},
+        dataAccess: {
+          Configuration: {
+            findLatest: sandbox.stub().resolves({
+              getQueues: () => ({}),
+            }),
+          },
+        },
         log: {
           info: sandbox.spy(),
           warn: sandbox.spy(),
@@ -282,7 +303,7 @@ describe('agentic daily export', () => {
         tableName: 'aggregated_logs_example_consolidated',
       },
       referenceDate: new Date('2026-04-01T10:00:00Z'),
-    })).to.be.rejectedWith('ANALYTICS_QUEUE_URL is required for agentic daily export dispatch');
+    })).to.be.rejectedWith('analytics queue is not configured');
 
     expect(athenaClient.execute).to.not.have.been.called;
     expect(athenaClient.query).to.not.have.been.called;
@@ -354,8 +375,10 @@ describe('agentic daily export', () => {
         }),
       },
       context: {
-        env: {
-          ANALYTICS_QUEUE_URL: 'https://sqs.us-east-1.amazonaws.com/123/analytics-queue',
+        dataAccess: {
+          Configuration: {
+            findLatest: sandbox.stub().resolves(createConfiguration()),
+          },
         },
         log: {
           info: sandbox.spy(),
@@ -443,8 +466,10 @@ describe('agentic daily export', () => {
         }),
       },
       context: {
-        env: {
-          ANALYTICS_QUEUE_URL: 'https://sqs.us-east-1.amazonaws.com/123/analytics-queue',
+        dataAccess: {
+          Configuration: {
+            findLatest: sandbox.stub().resolves(createConfiguration()),
+          },
         },
         log: {
           info: sandbox.spy(),
@@ -505,8 +530,10 @@ describe('agentic daily export', () => {
         }),
       },
       context: {
-        env: {
-          ANALYTICS_QUEUE_URL: 'https://sqs.us-east-1.amazonaws.com/123/analytics-queue',
+        dataAccess: {
+          Configuration: {
+            findLatest: sandbox.stub().resolves(createConfiguration()),
+          },
         },
         log: {
           info: sandbox.spy(),
