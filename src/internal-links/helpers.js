@@ -322,7 +322,7 @@ async function checkLinkWithGet(url, isAsset, log) {
  * Transport failures are treated as inconclusive so they do not get reported as broken.
  *
  * Strategy: HEAD first (faster), fallback to GET if inconclusive.
- * Static assets skip HEAD (often fail) and use GET with Range header.
+ * Static assets are excluded from broken-link detection (not SEO page targets).
  *
  * @param {string} url - The URL to validate
  * @param {Object} baseLog - Base logger object
@@ -339,15 +339,19 @@ export async function isLinkInaccessible(url, baseLog, siteId, auditId = null) {
   // Rewriting %20→hyphen would hide broken canonicals that point to the wrong URL.
   const isAsset = isStaticAsset(url);
 
-  // Static assets often fail HEAD, so skip to GET with Range header
-  if (!isAsset) {
-    const headResult = await checkLinkWithHead(url, log);
-    if (headResult !== null) {
-      return headResult;
-    }
+  // Static assets (images, fonts, CSS, JS, etc.) are excluded from broken link detection.
+  if (isAsset) {
+    return {
+      isBroken: false, inconclusive: false, httpStatus: null, statusBucket: null, contentType: null,
+    };
   }
 
-  return checkLinkWithGet(url, isAsset, log);
+  const headResult = await checkLinkWithHead(url, log);
+  if (headResult !== null) {
+    return headResult;
+  }
+
+  return checkLinkWithGet(url, false, log);
 }
 
 /**
