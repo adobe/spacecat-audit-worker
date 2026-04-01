@@ -154,8 +154,9 @@ async function cleanupBundleFromS3({
   }
 }
 
-function getAnalyticsQueueUrl(context) {
-  return context?.env?.ANALYTICS_QUEUE_URL || process.env.ANALYTICS_QUEUE_URL || '';
+async function getAnalyticsQueueUrl(context) {
+  const configuration = await context?.dataAccess?.Configuration?.findLatest?.();
+  return configuration?.getQueues?.().analytics || '';
 }
 
 async function dispatchAnalyticsEvent({
@@ -169,7 +170,7 @@ async function dispatchAnalyticsEvent({
 }) {
   if (!queueUrl) {
     // Defensive assertion: runDailyAgenticExport validates this before any work starts.
-    throw new Error('ANALYTICS_QUEUE_URL is required for agentic daily export dispatch');
+    throw new Error('analytics queue is not configured');
   }
 
   const message = {
@@ -208,9 +209,9 @@ export async function runDailyAgenticExport({
   const { log } = context;
   const trafficDateObj = getPreviousUtcDate(referenceDate);
   const trafficDate = trafficDateObj.toISOString().split('T')[0];
-  const queueUrl = getAnalyticsQueueUrl(context);
+  const queueUrl = await getAnalyticsQueueUrl(context);
   if (!queueUrl) {
-    throw new Error('ANALYTICS_QUEUE_URL is required for agentic daily export dispatch');
+    throw new Error('analytics queue is not configured');
   }
 
   await ensureAthenaDatabase(athenaClient, s3Config.databaseName);
