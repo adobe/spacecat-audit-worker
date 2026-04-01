@@ -28,6 +28,43 @@ const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
 
 const GEO_FREE_SPLIT_COUNT = 23;
+
+/**
+ * Checks whether the brandalf feature flag is enabled for an organization
+ * by calling the SpaceCat API feature-flags endpoint.
+ *
+ * @param {string} organizationId - SpaceCat org UUID
+ * @param {object} env - Environment variables (needs SPACECAT_API_BASE_URL, SPACECAT_API_KEY)
+ * @param {object} log - Logger
+ * @returns {Promise<boolean>} true if brandalf is enabled, false otherwise
+ */
+async function isBrandalfEnabled(organizationId, env, log) {
+  const { SPACECAT_API_BASE_URL: apiBase, SPACECAT_API_KEY: apiKey } = env;
+  if (!apiBase || !apiKey) {
+    log.warn('SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured; cannot check brandalf flag');
+    return false;
+  }
+
+  try {
+    const url = `${apiBase}/organizations/${encodeURIComponent(organizationId)}/feature-flags?product=LLMO`;
+    const response = await fetch(url, {
+      headers: { 'x-api-key': apiKey },
+    });
+
+    if (!response.ok) {
+      log.warn(`Failed to fetch feature flags for org ${organizationId}: ${response.status}`);
+      return false;
+    }
+
+    const flags = await response.json();
+    return Array.isArray(flags) && flags.some(
+      (f) => f.flagName === 'brandalf' && f.flagValue === true,
+    );
+  } catch (error) {
+    log.warn(`Error checking brandalf flag for org ${organizationId}: ${error.message}`);
+    return false;
+  }
+}
 const GEO_FREE_SPLITS = Array.from(
   { length: GEO_FREE_SPLIT_COUNT },
   (_, i) => `geo-brand-presence-free-${i + 1}`,
@@ -326,38 +363,43 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   const triggeredSteps = [];
   const hasOptelData = await checkOptelData(domain, context);
-  const { configVersion, previousConfigVersion, onboardingMode } = auditContext;
-  const isV2 = onboardingMode === 'v2';
+  const { configVersion, previousConfigVersion } = auditContext;
   const isFirstTimeOnboarding = !previousConfigVersion;
 
-  // For v2 onboarding, resolve brand ID so the DRS scheduler can use v2 prompts
+  // For brandalf-enabled orgs, resolve brand ID so the DRS scheduler can use v2 prompts
   let brandId;
   let organizationId;
-  if (isV2 && isFirstTimeOnboarding) {
-    try {
-      organizationId = site.getOrganizationId?.() || auditContext.imsOrgId;
-      if (organizationId) {
-        const { postgrestClient } = context.dataAccess?.services || {};
-        if (postgrestClient?.from) {
-          const { data: brands } = await postgrestClient
-            .from('brands')
-            .select('id, brand_sites(site_id)')
-            .eq('organization_id', organizationId)
-            .eq('status', 'active');
+  if (isFirstTimeOnboarding) {
+    const orgId = site.getOrganizationId?.() || auditContext.imsOrgId;
+    if (orgId) {
+      const isV2 = await isBrandalfEnabled(orgId, env, log);
+      if (isV2) {
+        organizationId = orgId;
+        try {
+          const { postgrestClient } = context.dataAccess?.services || {};
+          if (postgrestClient?.from) {
+            const { data: brands } = await postgrestClient
+              .from('brands')
+              .select('id, brand_sites(site_id)')
+              .eq('organization_id', organizationId)
+              .eq('status', 'active');
 
-          const match = brands?.find(
-            (b) => b.brand_sites?.some((bs) => bs.site_id === siteId),
-          );
-          if (match) {
-            brandId = match.id;
-            log.info(`Resolved brand ${brandId} for site ${siteId} (v2 onboarding)`);
+            const match = brands?.find(
+              (b) => b.brand_sites?.some((bs) => bs.site_id === siteId),
+            );
+            if (match) {
+              brandId = match.id;
+              log.info(`Resolved brand ${brandId} for site ${siteId} (v2 onboarding)`);
+            } else {
+              log.warn(`No brand found matching site ${siteId} in org ${organizationId} for v2 BP schedule`);
+            }
           } else {
-            log.warn(`No brand found matching site ${siteId} in org ${organizationId} for v2 BP schedule`);
+            log.warn('postgrestClient not available; cannot resolve brand for v2 BP schedule');
           }
+        } catch (error) {
+          log.warn(`Failed to resolve brand for v2 BP schedule: ${error.message}`);
         }
       }
-    } catch (error) {
-      log.warn(`Failed to resolve brand for v2 BP schedule: ${error.message}`);
     }
   }
 
