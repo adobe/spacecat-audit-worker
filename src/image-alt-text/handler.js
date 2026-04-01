@@ -10,12 +10,13 @@
  * governing permissions and limitations under the License.
  */
 import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
-import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendAltTextOpportunityToMystique, chunkArray } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
-import { MYSTIQUE_BATCH_SIZE, SUMMIT_PLG_PAGE_LIMIT, DEFAULT_PAGE_LIMIT } from './constants.js';
-import { getScrapeJsonPath } from '../headings/utils.js';
+import {
+  MYSTIQUE_BATCH_SIZE, SUMMIT_PLG_PAGE_LIMIT, DEFAULT_PAGE_LIMIT,
+  SCRAPE_MAX_AGE_HOURS, SCRAPE_PAGE_LOAD_TIMEOUT, ALT_TEXT_PROCESSING_ERROR_TAG,
+} from './constants.js';
 import { getTopPageUrls } from './url-utils.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
@@ -72,13 +73,140 @@ function getTopPagesWindow(allTopPages, pageLimit, topPagesOffset, isSummitPlg, 
   return { topPages, effectiveOffset };
 }
 
+/**
+ * Appends a new status entry to the statusHistory and marks the step as started.
+ * Stateless helper — takes and returns a plain auditResult object.
+ * Computes queueDurationMs from the previous entry's completedAt.
+ */
+export function startStatus(auditResult, status, metadata = {}) {
+  const existing = auditResult || {};
+  const history = [...(existing.statusHistory || [])];
+  const previousEntry = history[history.length - 1];
+
+  const now = new Date().toISOString();
+  const entry = { status, startedAt: now, ...metadata };
+
+  if (previousEntry?.completedAt) {
+    entry.queueDurationMs = new Date(now) - new Date(previousEntry.completedAt);
+  } else {
+    entry.queueDurationMs = null;
+  }
+
+  history.push(entry);
+  return { ...existing, status, statusHistory: history };
+}
+
+/**
+ * Completes the current (last) status entry with completedAt and stepDurationMs.
+ * Stateless helper — takes and returns a plain auditResult object.
+ */
+export function completeStatus(auditResult, metadata = {}) {
+  const existing = auditResult || {};
+  const history = [...(existing.statusHistory || [])];
+  const last = history[history.length - 1];
+  if (last) {
+    const now = new Date().toISOString();
+    last.completedAt = now;
+    last.stepDurationMs = new Date(now) - new Date(last.startedAt);
+    Object.assign(last, metadata);
+  }
+  return { ...existing, statusHistory: history };
+}
+
+/**
+ * Marks the current in-progress step as failed, or appends a new failed entry
+ * if no step is in progress.
+ * Stateless helper — takes a plain auditResult object.
+ * @returns {{ auditResult: Object, isError: boolean }} — callers can destructure
+ *   and forward both fields to persistAuditStatus.
+ */
+export function failCurrentStatus(auditResult, failedStatus, metadata = {}) {
+  const existing = auditResult || {};
+  const history = [...(existing.statusHistory || [])];
+  const last = history[history.length - 1];
+  if (last && !last.completedAt) {
+    last.status = failedStatus;
+    last.completedAt = new Date().toISOString();
+    last.stepDurationMs = new Date(last.completedAt) - new Date(last.startedAt);
+    Object.assign(last, metadata);
+    return {
+      auditResult: { ...existing, status: failedStatus, statusHistory: history },
+      isError: true,
+    };
+  }
+  let result = startStatus(existing, failedStatus, metadata);
+  result = completeStatus(result);
+  return { auditResult: result, isError: true };
+}
+
+/**
+ * Persists the audit status via Audit.updateByKeys (bypasses allowUpdates(false)).
+ * Used by Steps 2/3 where the audit object is loaded once and tracked in a local variable.
+ */
+async function persistAuditStatus(dataAccess, auditId, auditResult, log, isError = false) {
+  try {
+    const { Audit } = dataAccess;
+    const updates = { auditResult };
+    if (isError) {
+      updates.isError = true;
+    }
+    await Audit.updateByKeys({ auditId }, updates);
+  } catch (error) {
+    log.warn(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Failed to save audit status: ${error.message}`);
+  }
+}
+
+/**
+ * Persists the audit status with a fresh DB read to get the latest statusHistory.
+ * Used by the guidance handler where concurrent Mystique batch responses can race.
+ * The fresh read narrows the lost-update window to milliseconds.
+ *
+ * Always appends a new entry via startStatus + completeStatus (never failCurrentStatus).
+ * This is safe because the guidance handler only runs after Step 3 has completed its
+ * status entry — there should never be a dangling in-progress entry at this point.
+ */
+export async function persistAuditStatusWithFreshRead(
+  dataAccess,
+  auditId,
+  status,
+  metadata,
+  log,
+  isError = false,
+) {
+  try {
+    const { Audit } = dataAccess;
+    const freshAudit = await Audit.findById(auditId);
+    const existing = freshAudit?.getAuditResult() || {};
+    let auditResult = startStatus(existing, status);
+    auditResult = completeStatus(auditResult, metadata);
+    const updates = { auditResult };
+    if (isError) {
+      updates.isError = true;
+    }
+    await Audit.updateByKeys({ auditId }, updates);
+  } catch (error) {
+    log.warn(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Failed to save audit status: ${error.message}`);
+  }
+}
+
 export async function processImportStep(context) {
   const { site, finalUrl } = context;
 
   const s3BucketPath = `scrapes/${site.getId()}/`;
+  const now = new Date().toISOString();
 
   return {
-    auditResult: { status: 'preparing', finalUrl },
+    auditResult: {
+      status: 'preparing',
+      statusHistory: [{
+        status: 'preparing',
+        startedAt: now,
+        completedAt: now,
+        stepDurationMs: 0,
+        queueDurationMs: null,
+        finalUrl,
+      }],
+    },
     fullAuditRef: s3BucketPath,
     type: 'top-pages',
     siteId: site.getId(),
@@ -86,145 +214,123 @@ export async function processImportStep(context) {
 }
 
 /**
- * Checks for existing scrapes and submits missing URLs to scrape client
+ * Sends all top page URLs to the scrape client for scraping.
+ * The scrape client handles caching via maxScrapeAge.
  * @param {Object} context - Lambda context
- * @returns {Promise<Object>} - Scraping payload with missing URLs
+ * @returns {Promise<Object>} - Scraping payload with all top page URLs
  */
 export async function processScraping(context) {
   const {
-    log, site, dataAccess, s3Client, env,
+    log, site, dataAccess, audit,
   } = context;
   const { Opportunity } = dataAccess;
   const siteId = site.getId();
 
-  log.debug(`[${AUDIT_TYPE}]: Processing scraping step for site ${siteId}`);
+  let auditResult = audit.getAuditResult();
+  auditResult = startStatus(auditResult, 'scraping');
+  await persistAuditStatus(dataAccess, audit.getId(), auditResult, log);
 
-  // Get page limit based on summit-plg configuration
-  const { pageLimit, isSummitPlg } = await getTopPagesLimit(site, context);
-
-  // Get top page URLs via fallback chain (Ahrefs -> RUM -> includedURLs)
-  const allTopPageUrls = await getTopPageUrls({
-    siteId, site, dataAccess, context, log,
-  });
-
-  if (allTopPageUrls.length === 0) {
-    throw new Error(`No top pages found for site ${siteId}`);
-  }
-
-  // Read stored offset and check suggestions for advancement (fail-safe: default 0)
-  let topPagesOffset = 0;
-  let altTextOppty = null;
   try {
-    const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
-    altTextOppty = opportunities.find(
-      (oppty) => oppty.getType() === AUDIT_TYPE,
-    );
-    if (altTextOppty) {
-      const storedOffset = altTextOppty.getData()?.topPagesOffset || 0;
+    log.debug(`[${AUDIT_TYPE}]: Processing scraping step for site ${siteId}`);
 
-      if (isSummitPlg) {
-        // Check for NEW suggestions in the current window
-        const suggestions = await altTextOppty.getSuggestions();
-        const windowPages = allTopPageUrls
-          .slice(storedOffset, storedOffset + pageLimit);
-        const windowSet = new Set(windowPages);
+    // Get page limit based on summit-plg configuration
+    const { pageLimit, isSummitPlg } = await getTopPagesLimit(site, context);
 
-        const newSuggestionsInWindow = suggestions.filter((s) => {
-          const pageUrl = s.getData()?.recommendations?.[0]?.pageUrl;
-          return pageUrl
-            && windowSet.has(pageUrl)
-            && s.getStatus() === 'NEW';
-        });
+    // Get top page URLs via fallback chain (Ahrefs -> RUM -> includedURLs)
+    const allTopPageUrls = await getTopPageUrls({
+      siteId, site, dataAccess, context, log,
+    });
 
-        if (newSuggestionsInWindow.length === 0) {
-          topPagesOffset = storedOffset + pageLimit;
-          log.debug(`[${AUDIT_TYPE}]: No NEW suggestions in current window, advancing offset to ${topPagesOffset}`);
+    if (allTopPageUrls.length === 0) {
+      const errorMsg = `No top pages found for site ${siteId}`;
+      log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
+      const failed = failCurrentStatus(auditResult, 'no_top_pages', { error: errorMsg });
+      await persistAuditStatus(dataAccess, audit.getId(), failed.auditResult, log, failed.isError);
+      return { auditResult: failed.auditResult, fullAuditRef: audit.getFullAuditRef() };
+    }
+
+    // Read stored offset and check suggestions for advancement (fail-safe: default 0)
+    let topPagesOffset = 0;
+    let altTextOppty = null;
+    try {
+      const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+      altTextOppty = opportunities.find(
+        (oppty) => oppty.getType() === AUDIT_TYPE,
+      );
+      if (altTextOppty) {
+        const storedOffset = altTextOppty.getData()?.topPagesOffset || 0;
+
+        if (isSummitPlg) {
+          // Check for NEW suggestions in the current window
+          const suggestions = await altTextOppty.getSuggestions();
+          const windowPages = allTopPageUrls
+            .slice(storedOffset, storedOffset + pageLimit);
+          const windowSet = new Set(windowPages);
+
+          const newSuggestionsInWindow = suggestions.filter((s) => {
+            const pageUrl = s.getData()?.recommendations?.[0]?.pageUrl;
+            return pageUrl
+              && windowSet.has(pageUrl)
+              && s.getStatus() === 'NEW';
+          });
+
+          if (newSuggestionsInWindow.length === 0) {
+            topPagesOffset = storedOffset + pageLimit;
+            log.debug(`[${AUDIT_TYPE}]: No NEW suggestions in current window, advancing offset to ${topPagesOffset}`);
+          } else {
+            topPagesOffset = storedOffset;
+            log.debug(`[${AUDIT_TYPE}]: ${newSuggestionsInWindow.length} NEW suggestions in current window, keeping offset at ${topPagesOffset}`);
+          }
         } else {
           topPagesOffset = storedOffset;
-          log.debug(`[${AUDIT_TYPE}]: ${newSuggestionsInWindow.length} NEW suggestions in current window, keeping offset at ${topPagesOffset}`);
         }
-      } else {
-        topPagesOffset = storedOffset;
       }
-    }
-  } catch (error) {
-    log.warn(`[${AUDIT_TYPE}]: Failed to read opportunity offset, defaulting to 0: ${error.message}`);
-  }
-
-  // Compute page window using offset (handles wrap-around)
-  const window = getTopPagesWindow(allTopPageUrls, pageLimit, topPagesOffset, isSummitPlg, log);
-  const { topPages, effectiveOffset } = window;
-
-  // Save the effective offset back to the opportunity
-  if (altTextOppty) {
-    try {
-      const existingData = altTextOppty.getData() || {};
-      altTextOppty.setData({
-        ...existingData,
-        topPagesOffset: effectiveOffset,
-      });
-      await altTextOppty.save();
     } catch (error) {
-      log.warn(`[${AUDIT_TYPE}]: Failed to save opportunity offset: ${error.message}`);
+      log.warn(`[${AUDIT_TYPE}]: Failed to read opportunity offset, defaulting to 0: ${error.message}`);
     }
-  }
-  log.debug(`[${AUDIT_TYPE}]: Checking scrapes for ${topPages.length} top pages (limit: ${pageLimit})`);
 
-  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+    // Compute page window using offset (handles wrap-around)
+    const window = getTopPagesWindow(allTopPageUrls, pageLimit, topPagesOffset, isSummitPlg, log);
+    const { topPages, effectiveOffset } = window;
 
-  // Check S3 for existing scrapes in parallel
-  const scrapeCheckResults = await Promise.allSettled(
-    topPages.map(async (url) => {
+    // Save the effective offset back to the opportunity
+    if (altTextOppty) {
       try {
-        const s3Key = getScrapeJsonPath(url, siteId);
-
-        await s3Client.send(new HeadObjectCommand({
-          Bucket: bucketName,
-          Key: s3Key,
-        }));
-
-        // If HeadObjectCommand succeeds, scrape exists
-        return { url, exists: true };
+        const existingData = altTextOppty.getData() || {};
+        altTextOppty.setData({
+          ...existingData,
+          topPagesOffset: effectiveOffset,
+        });
+        await altTextOppty.save();
       } catch (error) {
-        // If NotFound or NoSuchKey, scrape doesn't exist
-        // For any other error, assume scrape is missing (fail-safe)
-        if (error.name === 'NotFound' || error.name === 'NoSuchKey') {
-          log.debug(`[${AUDIT_TYPE}]: Scrape not found for ${url}`);
-        } else {
-          log.warn(`[${AUDIT_TYPE}]: Error checking scrape for ${url}: ${error.message}, assuming missing`);
-        }
-        return { url, exists: false };
+        log.warn(`[${AUDIT_TYPE}]: Failed to save opportunity offset: ${error.message}`);
       }
-    }),
-  );
+    }
+    // Send ALL top page URLs to SCRAPE_CLIENT.
+    // The scrape client handles caching via maxScrapeAge — it reuses recent scrapes
+    // and only re-scrapes stale/missing URLs. This ensures all URLs are registered
+    // in the scrape job's storage records, making them discoverable by downstream
+    // consumers (e.g., mystique) through the scrape jobs API.
+    log.info(`[${AUDIT_TYPE}]: Sending ${topPages.length} URLs to scrape client (maxScrapeAge: ${SCRAPE_MAX_AGE_HOURS}h)`);
 
-  // Collect URLs that need scraping
-  const urlsToScrape = scrapeCheckResults
-    .filter((result) => result.status === 'fulfilled' && !result.value.exists)
-    .map((result) => ({ url: result.value.url }));
+    auditResult = completeStatus(auditResult, { urlCount: topPages.length });
+    await persistAuditStatus(dataAccess, audit.getId(), auditResult, log);
 
-  log.info(`[${AUDIT_TYPE}]: Found ${urlsToScrape.length} URLs needing scraping out of ${topPages.length} top pages`);
-
-  // If no URLs need scraping, send the first URL anyway to ensure next step can proceed
-  if (urlsToScrape.length === 0) {
-    log.debug(`[${AUDIT_TYPE}]: All scrapes exist, sending first URL to ensure scrape client step completes`);
     return {
-      urls: [{ url: topPages[0] }],
+      urls: topPages.map((url) => ({ url })),
       siteId,
       type: 'default',
-      allowCache: true,
-      maxScrapeAge: 0,
+      maxScrapeAge: SCRAPE_MAX_AGE_HOURS,
+      options: {
+        pageLoadTimeout: SCRAPE_PAGE_LOAD_TIMEOUT,
+      },
     };
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] processScraping failed: ${error.message}`);
+    const failed = failCurrentStatus(auditResult, 'scraping_failed', { error: error.message });
+    await persistAuditStatus(dataAccess, audit.getId(), failed.auditResult, log, failed.isError);
+    throw error;
   }
-
-  // Return payload for SCRAPE_CLIENT
-  return {
-    urls: urlsToScrape,
-    siteId,
-    type: 'default',
-    allowCache: false,
-    maxScrapeAge: 0,
-  };
 }
 
 export async function processAltTextWithMystique(context) {
@@ -233,6 +339,10 @@ export async function processAltTextWithMystique(context) {
   } = context;
 
   log.debug(`[${AUDIT_TYPE}]: Processing alt-text with Mystique for site ${site.getId()}`);
+
+  let auditResult = audit.getAuditResult();
+  auditResult = startStatus(auditResult, 'processing');
+  await persistAuditStatus(dataAccess, audit.getId(), auditResult, log);
 
   try {
     const { Opportunity, Suggestion } = dataAccess;
@@ -261,7 +371,36 @@ export async function processAltTextWithMystique(context) {
     // Get ALL page URLs to send to Mystique
     const pageUrls = [...topPages];
     if (pageUrls.length === 0) {
-      throw new Error(`No top pages found for site ${site.getId()}`);
+      const errorMsg = `No top pages found for site ${site.getId()}`;
+      log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
+      const failed = failCurrentStatus(auditResult, 'no_top_pages', { error: errorMsg });
+      await persistAuditStatus(dataAccess, audit.getId(), failed.auditResult, log, failed.isError);
+      return { auditResult: failed.auditResult };
+    }
+
+    // Filter out URLs without scrapes before sending to Mystique.
+    // Uses scrapeResultPaths (Map<url, s3Path>) from the SCRAPE_CLIENT step,
+    // which is the same data source mystique queries via scrape jobs API.
+    const { scrapeResultPaths } = context;
+    if (scrapeResultPaths) {
+      const urlsWithScrapes = pageUrls.filter((url) => scrapeResultPaths.has(url));
+      const missingCount = pageUrls.length - urlsWithScrapes.length;
+      if (urlsWithScrapes.length === 0) {
+        const errorMsg = `Cannot proceed: none of the ${pageUrls.length} URLs have scrape results. `
+          + 'Mystique will not be able to find content for these pages.';
+        log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
+        const { auditResult: failedResult, isError } = failCurrentStatus(auditResult, 'no_scrape_results', { error: errorMsg });
+        await persistAuditStatus(dataAccess, audit.getId(), failedResult, log, isError);
+        return { auditResult: failedResult };
+      }
+      if (missingCount > 0) {
+        log.warn(`[${AUDIT_TYPE}]: Excluding ${missingCount}/${pageUrls.length} URLs without scrapes`);
+      }
+      log.info(`[${AUDIT_TYPE}]: Sending ${urlsWithScrapes.length} of ${pageUrls.length} URLs with scrapes to Mystique`);
+      pageUrls.length = 0;
+      pageUrls.push(...urlsWithScrapes);
+    } else {
+      log.warn(`[${AUDIT_TYPE}]: No scrapeResultPaths in context, skipping scrape verification`);
     }
 
     const urlBatches = chunkArray(pageUrls, MYSTIQUE_BATCH_SIZE);
@@ -386,8 +525,16 @@ export async function processAltTextWithMystique(context) {
     );
 
     log.debug(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);
+
+    const statusMeta = { urlCount: pageUrls.length, batchCount: urlBatches.length };
+    auditResult = completeStatus(auditResult, statusMeta);
+    await persistAuditStatus(dataAccess, audit.getId(), auditResult, log);
+
+    return { auditResult };
   } catch (error) {
-    log.error(`[${AUDIT_TYPE}]: Failed to process with Mystique: ${error.message}`);
+    log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Failed to process with Mystique: ${error.message}`);
+    const failed = failCurrentStatus(auditResult, 'processing_failed', { error: error.message });
+    await persistAuditStatus(dataAccess, audit.getId(), failed.auditResult, log, failed.isError);
     throw error;
   }
 }

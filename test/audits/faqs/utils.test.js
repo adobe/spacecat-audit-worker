@@ -16,7 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
-import { getJsonFaqSuggestion } from '../../../src/faqs/utils.js';
+import { getJsonFaqSuggestion, buildColumnMap, getColumn } from '../../../src/faqs/utils.js';
 
 use(sinonChai);
 
@@ -648,6 +648,87 @@ describe('FAQ Utils', () => {
         },
         1,
       );
+    });
+  });
+
+  describe('buildColumnMap', () => {
+    it('should map header names to 1-based column indices', () => {
+      const worksheet = {
+        getRow: () => ({
+          values: [undefined, 'Category', 'Topics', 'Prompt', 'Region', 'URL'],
+        }),
+      };
+
+      const map = buildColumnMap(worksheet);
+
+      expect(map.category).to.equal(1);
+      expect(map.topics).to.equal(2);
+      expect(map.prompt).to.equal(3);
+      expect(map.region).to.equal(4);
+      expect(map.url).to.equal(5);
+    });
+
+    it('should handle null header values', () => {
+      const worksheet = {
+        getRow: () => ({ values: null }),
+      };
+
+      const map = buildColumnMap(worksheet);
+      expect(map).to.deep.equal({});
+    });
+
+    it('should handle undefined getRow result', () => {
+      const worksheet = {
+        getRow: () => undefined,
+      };
+
+      const map = buildColumnMap(worksheet);
+      expect(map).to.deep.equal({});
+    });
+
+    it('should skip empty/null header cells', () => {
+      const worksheet = {
+        getRow: () => ({
+          values: [undefined, 'Category', null, '', 'Prompt'],
+        }),
+      };
+
+      const map = buildColumnMap(worksheet);
+      expect(map.category).to.equal(1);
+      expect(map.prompt).to.equal(4);
+      expect(Object.keys(map)).to.have.lengthOf(2);
+    });
+
+    it('should be case-insensitive (stores lowercase keys)', () => {
+      const worksheet = {
+        getRow: () => ({
+          values: [undefined, 'Related URLs', 'PROMPT'],
+        }),
+      };
+
+      const map = buildColumnMap(worksheet);
+      expect(map['related urls']).to.equal(1);
+      expect(map.prompt).to.equal(2);
+    });
+  });
+
+  describe('getColumn', () => {
+    it('should return column index for matching header', () => {
+      const colMap = { topics: 2, prompt: 3, url: 7 };
+      expect(getColumn(colMap, 'Topics')).to.equal(2);
+      expect(getColumn(colMap, 'Prompt')).to.equal(3);
+      expect(getColumn(colMap, 'URL')).to.equal(7);
+    });
+
+    it('should return 0 for missing header', () => {
+      const colMap = { topics: 2 };
+      expect(getColumn(colMap, 'NonExistent')).to.equal(0);
+    });
+
+    it('should match case-insensitively', () => {
+      const colMap = { 'related urls': 22 };
+      expect(getColumn(colMap, 'Related URLs')).to.equal(22);
+      expect(getColumn(colMap, 'RELATED URLS')).to.equal(22);
     });
   });
 });

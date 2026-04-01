@@ -105,6 +105,10 @@ async function processDrsResult(resultLocation, jobId, siteId, context) {
   }
 }
 
+function resolveOnboardingMode(auditContext = {}) {
+  return auditContext.onboardingMode || auditContext.onboarding_mode || null;
+}
+
 /**
  * Handles DRS prompt generation job completion notifications.
  * When a prompt_generation_base_url job completes in the Data Retrieval Service,
@@ -129,6 +133,7 @@ export default async function drsPromptGenerationHandler(message, context) {
   const {
     drsEventType, drsJobId, resultLocation, source,
   } = auditContext;
+  const onboardingMode = resolveOnboardingMode(auditContext);
 
   if (!siteId) {
     log.error('DRS prompt generation notification missing site_id in metadata');
@@ -148,17 +153,25 @@ export default async function drsPromptGenerationHandler(message, context) {
 
   log.info(`DRS prompt generation completed for site ${siteId}, job ${drsJobId}, result: ${resultLocation}`);
 
-  // Download DRS result and write prompts to LLMO config (non-fatal)
-  const drsResult = await processDrsResult(resultLocation, drsJobId, siteId, context);
-  const { success, configVersion } = drsResult;
+  let configVersion;
+  const shouldWriteLegacyConfig = source !== 'onboarding' || onboardingMode !== 'v2';
 
-  if (!success) {
-    await alertPromptGenerationFailure(
-      context,
-      siteId,
-      drsJobId,
-      'Failed to download or write prompts to LLMO config',
-    );
+  if (shouldWriteLegacyConfig) {
+    // Download DRS result and write prompts to LLMO config (non-fatal)
+    const drsResult = await processDrsResult(resultLocation, drsJobId, siteId, context);
+    const { success } = drsResult;
+    configVersion = drsResult.configVersion;
+
+    if (!success) {
+      await alertPromptGenerationFailure(
+        context,
+        siteId,
+        drsJobId,
+        'Failed to download or write prompts to LLMO config',
+      );
+    }
+  } else {
+    log.info(`Skipping v1 LLMO config write for site ${siteId} because onboarding_mode is v2`);
   }
 
   if (source !== 'onboarding') {
@@ -176,6 +189,7 @@ export default async function drsPromptGenerationHandler(message, context) {
       drsJobId,
       resultLocation,
       ...(configVersion && { configVersion }),
+      ...(onboardingMode && { onboardingMode }),
     },
   });
 

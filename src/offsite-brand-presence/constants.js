@@ -19,12 +19,12 @@ export const PROVIDERS = Object.freeze([
   'chatgpt',
   'copilot',
   'gemini',
-  'google-ai-overview',
+  'google-ai-overviews',
   'perplexity',
 ]);
 
 export const PROVIDERS_SET = new Set(PROVIDERS);
-export const BRAND_PRESENCE_REGEX = /brandpresence-(.+?)-w(\d{1,2})-(\d{4})-.*\.json$/;
+export const BRAND_PRESENCE_REGEX = /brandpresence-(.+?)-w(\d{1,2})-(\d{4})(?:-.*)?\.json$/;
 
 export const URL_STORE_STATUS = Object.freeze({
   CREATED: 'created',
@@ -49,7 +49,7 @@ export const OFFSITE_DOMAINS = Object.freeze({
 export const DRS_URLS_LIMIT = 100;
 export const FETCH_PAGE_SIZE = 80000;
 export const FETCH_TIMEOUT_MS = 60000;
-export const INCLUDE_COLUMNS = ['Sources', 'Region', 'answer_contains_brandname', 'Mentions', 'Citations', 'Prompt', 'Topic', 'Category'].join(',');
+export const INCLUDE_COLUMNS = ['Sources', 'Region', 'answer_contains_brandname', 'Mentions', 'Citations', 'Prompt', 'Topics', 'Category'].join(',');
 export const REDDIT_COMMENTS_DAYS_BACK = 30;
 export const CITED_ANALYSIS_DRS_CONFIG = Object.freeze({
   auditType: Audit.AUDIT_TYPES.CITED_ANALYSIS,

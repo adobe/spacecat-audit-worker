@@ -49,11 +49,7 @@ import {
   pollJobStatus,
   fetchJobResults,
 } from './linkchecker-splunk.js';
-import BrightDataClient, {
-  buildLocaleSearchUrl,
-  extractLocaleFromUrl,
-  localesMatch,
-} from '../support/bright-data-client.js';
+import BrightDataClient, { buildLocaleSearchUrl } from '../support/bright-data-client.js';
 import { sleep } from '../support/utils.js';
 import {
   MAX_BROKEN_LINKS_REPORTED,
@@ -121,8 +117,6 @@ export const opportunityAndSuggestionsStep = createOpportunityAndSuggestionsStep
   filterBrokenSuggestedUrls,
   BrightDataClient,
   buildLocaleSearchUrl,
-  extractLocaleFromUrl,
-  localesMatch,
   sleep,
   updateAuditResult,
   isCanonicalOrHreflangLink,

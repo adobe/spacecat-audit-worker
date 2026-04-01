@@ -84,14 +84,29 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
  * do not support SQL DELETE.
  */
 async function clearS3Partition(s3Client, bucket, prefix, log) {
+  const isNoSuchBucket = (error) => error?.name === 'NoSuchBucket'
+    /* c8 ignore next 2 */
+    || error?.Code === 'NoSuchBucket'
+    || error?.code === 'NoSuchBucket';
+
   let continuationToken;
   do {
-    // eslint-disable-next-line no-await-in-loop
-    const response = await s3Client.send(new ListObjectsV2Command({
-      Bucket: bucket,
-      Prefix: prefix,
-      ContinuationToken: continuationToken,
-    }));
+    let response;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      response = await s3Client.send(new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      }));
+    } catch (error) {
+      if (isNoSuchBucket(error)) {
+        log.info(`Skipping partition cleanup for s3://${bucket}/${prefix} because bucket does not exist yet.`);
+        return;
+      }
+      /* c8 ignore next 2 */
+      throw error;
+    }
     /* c8 ignore next */
     const keys = (response.Contents || []).map((obj) => ({ Key: obj.Key }));
     if (keys.length > 0) {
