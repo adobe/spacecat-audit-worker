@@ -261,6 +261,10 @@ function normalizeDrsMessage(message) {
       resultLocation: message.result_location,
       providerId,
       source: metadata.source,
+      ...(metadata.onboarding_mode && {
+        onboardingMode: metadata.onboarding_mode,
+      }),
+      ...(metadata.imsOrgId && { imsOrgId: metadata.imsOrgId }),
       ...(metadata.brand_presence_batch_id && {
         brandPresenceBatchId: metadata.brand_presence_batch_id,
       }),
