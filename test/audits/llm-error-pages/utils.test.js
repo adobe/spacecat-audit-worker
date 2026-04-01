@@ -108,7 +108,7 @@ describe('LLM Error Pages Utils', () => {
       expect(providers).to.include('chatgpt');
       expect(providers).to.include('perplexity');
       expect(providers).to.include('claude');
-      expect(providers).to.include('gemini');
+      expect(providers).to.include('googleai');
       expect(providers).to.include('copilot');
     });
   });
@@ -127,7 +127,7 @@ describe('LLM Error Pages Utils', () => {
       expect(result).to.include('(ChatGPT|GPTBot|OAI-SearchBot)(?!.*(Tokowaka|Spacecat))');
       expect(result).to.include('Perplexity');
       expect(result).to.include('Claude(?!-web)');
-      expect(result).to.include('Gemini');
+      expect(result).to.include('Google-NotebookLM|GoogleAgent');
       expect(result).to.include('Copilot');
     });
 
