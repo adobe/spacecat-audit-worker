@@ -74,11 +74,11 @@ export async function checkLLMBlocked(context) {
   // Try to get top agentic URLs from Athena first
   let topPageUrls = await getTopAgenticUrlsFromAthena(site, context);
 
-  // Fallback to Ahrefs if Athena returns no data
+  // Fallback to SEO provider if Athena returns no data
   if (!topPageUrls || topPageUrls.length === 0) {
-    log.info('[LLM-BLOCKED] No agentic URLs from Athena, falling back to Ahrefs');
+    log.info('[LLM-BLOCKED] No agentic URLs from Athena, falling back to SEO top pages');
     const { SiteTopPage } = dataAccess;
-    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
     topPageUrls = topPages.map((page) => page.getUrl());
   }
 

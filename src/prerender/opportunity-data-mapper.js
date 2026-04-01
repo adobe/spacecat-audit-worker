@@ -40,7 +40,7 @@ export function createOpportunityData(auditData) {
     },
     tags: ['isElmo', 'tech-geo', 'edgeOptimize'],
     data: {
-      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
+      dataSources: [DATA_SOURCES.SEO, DATA_SOURCES.SITE],
       thresholds: {
         contentGainRatio: CONTENT_GAIN_THRESHOLD,
       },

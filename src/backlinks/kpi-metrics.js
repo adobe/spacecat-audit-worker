@@ -13,17 +13,21 @@
 import { getStoredMetrics, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 
 const CPC_DEFAULT_VALUE = 2.69;
-const TRAFFIC_BANDS = [
-  { threshold: 25000000, band: 0.03 },
-  { threshold: 10000000, band: 0.02 },
-  { threshold: 1000000, band: 0.01 },
-  { threshold: 500000, band: 0.0075 },
-  { threshold: 10000, band: 0.005 },
+// Authority score bands: the SEO data provider returns an authority score (0–100)
+// for the referring page instead of estimated traffic volume. The bands below are
+// calibrated so that higher-authority referring pages contribute a larger fraction
+// of the target page's traffic to the projected-traffic-lost estimate.
+const AUTHORITY_SCORE_BANDS = [
+  { threshold: 80, band: 0.03 },
+  { threshold: 60, band: 0.02 },
+  { threshold: 40, band: 0.01 },
+  { threshold: 20, band: 0.0075 },
+  { threshold: 10, band: 0.005 },
 ];
 
-const getTrafficBand = (traffic) => {
-  for (const { threshold, band } of TRAFFIC_BANDS) {
-    if (traffic > threshold) {
+const getAuthorityScoreBand = (authorityScore) => {
+  for (const { threshold, band } of AUTHORITY_SCORE_BANDS) {
+    if (authorityScore > threshold) {
       return band;
     }
   }
@@ -55,7 +59,7 @@ const calculateKpiMetrics = async (auditData, context, site) => {
   }
 
   const organicTrafficData = await getStoredMetrics(
-    { source: 'ahrefs', metric: 'organic-traffic', siteId },
+    { source: 'seo', metric: 'organic-traffic', siteId },
     storedMetricsConfig,
   );
 
@@ -74,8 +78,8 @@ const calculateKpiMetrics = async (auditData, context, site) => {
   }
 
   const projectedTrafficLost = auditData?.auditResult?.brokenBacklinks?.reduce((sum, backlink) => {
-    const { traffic_domain: referringTraffic, urlsSuggested } = backlink;
-    const trafficBand = getTrafficBand(referringTraffic);
+    const { authority_score: authorityScore, urlsSuggested } = backlink;
+    const trafficBand = getAuthorityScoreBand(authorityScore);
     const targetUrl = urlsSuggested?.[0];
     const targetTrafficData = rumTrafficData.find((data) => data.url === targetUrl);
     const proposedTargetTraffic = targetTrafficData?.earned ?? 0;

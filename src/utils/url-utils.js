@@ -165,7 +165,7 @@ export function isPdfUrl(url) {
 
 /**
  * File types that cannot be scraped by Puppeteer but may appear in search results.
- * These are file types that Google indexes and may appear in Ahrefs top pages.
+ * These are file types that Google indexes and may appear in SEO top pages.
  * @see https://github.com/adobe/spacecat-audit-worker/blob/main/src/structured-data/handler.js#L203-L205
  */
 const UNSCRAPE_ABLE_FILE_TYPES = [

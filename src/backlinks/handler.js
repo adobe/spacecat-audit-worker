@@ -235,7 +235,7 @@ export async function submitForScraping(context) {
   if (auditResult.success === false) {
     throw new Error('Audit failed, skipping scraping and suggestions generation');
   }
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
 
   // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
   const baseURL = site.getBaseURL();
@@ -245,7 +245,7 @@ export async function submitForScraping(context) {
 
   if (filteredTopPages.length === 0) {
     if (topPages.length === 0) {
-      throw new Error(`No top pages found in database for site ${site.getId()}. Ahrefs import required.`);
+      throw new Error(`No top pages found in database for site ${site.getId()}. SEO data import required.`);
     } else {
       throw new Error(`All ${topPages.length} top pages filtered out by audit scope. BaseURL: ${baseURL} requires subpath match but no pages match scope.`);
     }
@@ -327,12 +327,15 @@ export const generateSuggestionData = async (context) => {
     mapNewSuggestion: (backlink) => ({
       opportunityId: opportunity.getId(),
       type: 'REDIRECT_UPDATE',
-      rank: backlink.traffic_domain,
+      rank: backlink.authority_score,
       data: {
         title: backlink.title,
         url_from: backlink.url_from,
         url_to: backlink.url_to,
-        traffic_domain: backlink.traffic_domain,
+        // Authority score (0–100) from the SEO data provider, representing the
+        // referring page's quality. Previously this field was traffic_domain
+        // (estimated monthly traffic volume) from Ahrefs.
+        authority_score: backlink.authority_score,
       },
     }),
     // Use extracted functions for testability
@@ -454,7 +457,7 @@ export const generateSuggestionData = async (context) => {
   );
 
   // Get top pages and filter by audit scope
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
   const baseURL = site.getBaseURL();
   const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
 

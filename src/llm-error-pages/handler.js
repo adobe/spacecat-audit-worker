@@ -45,10 +45,10 @@ export async function importTopPagesAndScrape(context) {
     // Try to get top agentic URLs from Athena first
     let topPageUrls = await getTopAgenticUrlsFromAthena(site, context);
 
-    // Fallback to Ahrefs if Athena returns no data
+    // Fallback to SEO provider if Athena returns no data
     if (!topPageUrls || topPageUrls.length === 0) {
-      log.info('[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to Ahrefs');
-      const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+      log.info('[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to SEO top pages');
+      const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
       topPageUrls = topPages.map((page) => page.getUrl());
     }
 
@@ -106,7 +106,7 @@ export async function submitForScraping(context) {
     throw new Error('Audit failed, skipping scraping');
   }
 
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
 
   if (topPages.length === 0) {
     log.warn('[LLM-ERROR-PAGES] No top pages to submit for scraping');
@@ -247,9 +247,9 @@ export async function runAuditAndSendToMystique(context) {
             let alternativeUrls = await getTopAgenticUrlsFromAthena(site, context);
 
             if (!alternativeUrls || alternativeUrls.length === 0) {
-              log.info('[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to Ahrefs');
+              log.info('[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to SEO top pages');
               const { SiteTopPage } = dataAccess;
-              const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+              const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
               alternativeUrls = topPages.map((page) => page.getUrl());
             }
 

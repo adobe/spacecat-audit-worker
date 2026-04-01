@@ -20,9 +20,9 @@ import {
   calculateEstimatedCost,
   getCPCData,
   calculateProjectedTrafficValue,
-} from '../../../src/paid-cookie-consent/ahrefs-cpc.js';
+} from '../../../src/paid-cookie-consent/seo-cpc.js';
 
-describe('Ahrefs CPC', () => {
+describe('SEO CPC', () => {
   let context;
   let log;
 
@@ -62,7 +62,7 @@ describe('Ahrefs CPC', () => {
 
       expect(result.organicCPC).to.be.approximately(0.191, 0.001);
       expect(result.paidCPC).to.be.approximately(0.312, 0.001);
-      expect(result.source).to.equal('ahrefs');
+      expect(result.source).to.equal('seo');
     });
 
     it('should use default CPC when traffic is zero', async () => {
@@ -81,7 +81,7 @@ describe('Ahrefs CPC', () => {
 
       expect(result.organicCPC).to.equal(0.8);
       expect(result.paidCPC).to.equal(0.8);
-      expect(result.source).to.equal('ahrefs');
+      expect(result.source).to.equal('seo');
     });
 
     it('should return default CPC when S3 fetch fails', async () => {
@@ -147,7 +147,7 @@ describe('Ahrefs CPC', () => {
 
       expect(result.organicCPC).to.equal(0.5);
       expect(result.paidCPC).to.equal(0.5);
-      expect(result.source).to.equal('ahrefs');
+      expect(result.source).to.equal('seo');
       expect(log.info.called).to.be.true;
     });
   });

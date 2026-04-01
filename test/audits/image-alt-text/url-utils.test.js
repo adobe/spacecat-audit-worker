@@ -75,7 +75,7 @@ describe('url-utils', () => {
     sandbox.restore();
   });
 
-  it('returns Ahrefs URLs when Ahrefs has data', async () => {
+  it('returns SEO URLs when SEO has data', async () => {
     allBySiteIdAndSourceAndGeoStub.resolves([
       { getUrl: () => 'https://example.com/page1' },
       { getUrl: () => 'https://example.com/page2' },
@@ -90,10 +90,10 @@ describe('url-utils', () => {
       'https://example.com/page2',
     ]);
     expect(rumCreateFromStub).to.not.have.been.called;
-    expect(log.info).to.have.been.calledWith(sinon.match('Found 2 top pages from Ahrefs'));
+    expect(log.info).to.have.been.calledWith(sinon.match('Found 2 top pages from SEO provider'));
   });
 
-  it('falls back to RUM when Ahrefs is empty, sorted by earned desc', async () => {
+  it('falls back to RUM when SEO is empty, sorted by earned desc', async () => {
     allBySiteIdAndSourceAndGeoStub.resolves([]);
     rumQueryStub.resolves([
       { url: 'www.example.com/low', earned: 10 },
@@ -110,7 +110,7 @@ describe('url-utils', () => {
       'https://www.example.com/mid',
       'https://www.example.com/low',
     ]);
-    expect(log.info).to.have.been.calledWith(sinon.match('No Ahrefs top pages, falling back to RUM'));
+    expect(log.info).to.have.been.calledWith(sinon.match('No SEO top pages, falling back to RUM'));
     expect(log.info).to.have.been.calledWith(sinon.match('Found 3 URLs from RUM'));
   });
 
@@ -146,7 +146,7 @@ describe('url-utils', () => {
     ]);
   });
 
-  it('falls back to includedURLs when Ahrefs is empty and RUM returns empty', async () => {
+  it('falls back to includedURLs when SEO is empty and RUM returns empty', async () => {
     allBySiteIdAndSourceAndGeoStub.resolves([]);
     rumQueryStub.resolves([]);
 
@@ -164,7 +164,7 @@ describe('url-utils', () => {
     expect(log.info).to.have.been.calledWith(sinon.match('Found 2 included URLs from site config'));
   });
 
-  it('falls back to includedURLs when Ahrefs is empty and RUM throws error', async () => {
+  it('falls back to includedURLs when SEO is empty and RUM throws error', async () => {
     allBySiteIdAndSourceAndGeoStub.resolves([]);
     rumQueryStub.rejects(new Error('RUM API unavailable'));
 
@@ -178,7 +178,7 @@ describe('url-utils', () => {
     expect(log.warn).to.have.been.calledWith(sinon.match('RUM fallback failed: RUM API unavailable'));
   });
 
-  it('falls back to includedURLs when Ahrefs is empty and RUM returns null', async () => {
+  it('falls back to includedURLs when SEO is empty and RUM returns null', async () => {
     allBySiteIdAndSourceAndGeoStub.resolves([]);
     rumQueryStub.resolves(null);
 

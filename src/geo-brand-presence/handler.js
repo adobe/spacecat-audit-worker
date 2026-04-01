@@ -14,7 +14,7 @@
  * Geo Brand Presence Audit - workflow
  * ============================================
  * STEP 0: Import (runs in import-worker via keywordPromptsImportStep)
- *   - Fetches keyword data from Ahrefs API
+ *   - Fetches keyword data from SEO provider API
  *   - Returns import result for use in Step 1
  *
  * STEP 1: Unified Detection (loadPromptsAndSendDetection)
