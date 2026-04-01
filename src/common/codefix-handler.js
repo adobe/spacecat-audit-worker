@@ -129,32 +129,36 @@ function findMatchingSuggestions(
   const matched = [];
 
   for (const suggestion of suggestions) {
-    const suggestionData = suggestion.getData();
-    const suggestionUrl = suggestionData.url;
-    const suggestionSource = suggestionData.source;
+    try {
+      const suggestionData = suggestion.getData();
+      const suggestionUrl = suggestionData.url;
+      const suggestionSource = suggestionData.source;
 
-    let suggestionsMatch = false;
+      let suggestionsMatch = false;
 
-    if (useAggregationKey) {
-      const issueType = suggestionData.issues?.[0]?.type || '';
-      const targetSelector = suggestionData.issues?.[0]?.htmlWithIssues?.[0]?.target_selector || '';
-      const suggestionMatchKey = buildAggregationKey(
-        issueType,
-        suggestionUrl,
-        targetSelector,
-        suggestionSource,
-      );
-      suggestionsMatch = suggestionMatchKey === matchKey && !!reportData.diff;
-    } else {
-      const suggestionMatchKey = buildKey(suggestionUrl, suggestionSource);
-      const issueType = suggestionData.issues?.[0]?.type;
-      suggestionsMatch = suggestionMatchKey === buildKey(url, source)
-        && issueType === matchKey
-        && !!reportData.diff;
-    }
+      if (useAggregationKey) {
+        const issueType = suggestionData.issues?.[0]?.type || '';
+        const targetSelector = suggestionData.issues?.[0]?.htmlWithIssues?.[0]?.target_selector || '';
+        const suggestionMatchKey = buildAggregationKey(
+          issueType,
+          suggestionUrl,
+          targetSelector,
+          suggestionSource,
+        );
+        suggestionsMatch = suggestionMatchKey === matchKey && !!reportData.diff;
+      } else {
+        const suggestionMatchKey = buildKey(suggestionUrl, suggestionSource);
+        const issueType = suggestionData.issues?.[0]?.type;
+        suggestionsMatch = suggestionMatchKey === buildKey(url, source)
+          && issueType === matchKey
+          && !!reportData.diff;
+      }
 
-    if (suggestionsMatch) {
-      matched.push(suggestion);
+      if (suggestionsMatch) {
+        matched.push(suggestion);
+      }
+    } catch (error) {
+      log.warn(`Error matching suggestion ${suggestion?.getId?.()}: ${error.message}`);
     }
   }
 
@@ -225,10 +229,22 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
   // Default bucket name from environment
   const defaultBucketName = env.S3_MYSTIQUE_BUCKET_NAME;
 
+  // Fail early if any update requires the default bucket but it's not configured
+  const needsDefaultBucket = updates.some((update) => {
+    if (update.aggregation_key && update.code_fix_path && update.code_fix_bucket) return false;
+    if (!update.aggregation_key && !update.types) return false;
+    return true;
+  });
+  if (needsDefaultBucket && !defaultBucketName) {
+    log.error('[CodeFixProcessor] S3_MYSTIQUE_BUCKET_NAME environment variable not set');
+    throw new CodeFixConfigurationError('S3 bucket name not configured');
+  }
+
   const fixEntitiesToCreate = [];
 
   // Process each update (S3 reads run in parallel, fix entities batched at the end)
-  await Promise.all(updates.map(async (update) => {
+  // Use allSettled so a single update failure doesn't discard all other results
+  await Promise.allSettled(updates.map(async (update) => {
     const {
       url,
       source,
@@ -322,7 +338,7 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
     log.info(`[CodeFixProcessor] Processing update (old format) for URL: ${url}, source: ${source || 'N/A'}, types: ${types.join(', ')}`);
 
     // For each type in the update, try to read the code change report
-    await Promise.all(types.map(async (ruleId) => {
+    await Promise.allSettled(types.map(async (ruleId) => {
       const urlSourceHash = generateUrlSourceHash(url, source || '');
       const reportKey = `fixes/${siteId}/${urlSourceHash}/${ruleId}/report.json`;
 

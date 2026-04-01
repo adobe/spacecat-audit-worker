@@ -421,12 +421,12 @@ describe('AccessibilityCodeFixHandler', () => {
       );
     });
 
-    it('should handle errors in findMatchingSuggestions when getData throws', async () => {
+    it('should skip individual suggestions that throw errors during matching', async () => {
       const mockReportData = {
         diff: 'mock diff content',
       };
 
-      // Make getData throw to trigger an error during suggestion matching
+      // Make getData throw to trigger the per-suggestion catch in findMatchingSuggestions
       mockSuggestion.getData.throws(new Error('getData exploded'));
       getObjectFromKeyStub.resolves(mockReportData);
 
@@ -440,7 +440,12 @@ describe('AccessibilityCodeFixHandler', () => {
 
       const result = await handler.default(validMessage, context);
 
-      expect(result.status).to.equal(500);
+      // Should succeed — the bad suggestion is skipped, no fix entities created
+      expect(result.status).to.equal(200);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Error matching suggestion/),
+      );
+      expect(mockOpportunity.addFixEntities).not.to.have.been.called;
     });
 
     it('should handle processing errors gracefully', async () => {
