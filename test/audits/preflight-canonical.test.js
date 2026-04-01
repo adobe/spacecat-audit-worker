@@ -168,6 +168,30 @@ describe('Preflight Canonical Audit', () => {
       expect(checks).to.include('canonical-self-referenced');
     });
 
+    it('does not report canonical-self-referenced when pathname differs only by trailing slash', async () => {
+      const pageUrl = `${PREVIEW_BASE_URL}/page1/`;
+      const canonicalHref = `${PREVIEW_BASE_URL}/page1`;
+      const auditsResult = [{ pageUrl, step: 'identify', audits: [] }];
+      const audits = new Map([[pageUrl, auditsResult[0]]]);
+      const ctx = buildContext();
+      const auditCtx = {
+        previewUrls: [pageUrl],
+        previewBaseURL: PREVIEW_BASE_URL,
+        step: 'identify',
+        audits,
+        auditsResult,
+        scrapedObjects: [buildScrapedObject({
+          exists: true, count: 1, href: canonicalHref, inHead: true,
+        }, null, { finalUrl: pageUrl })],
+        timeExecutionBreakdown: [],
+      };
+
+      await canonicalHandler(ctx, auditCtx);
+
+      const checks = getCanonicalAudit(auditCtx.auditsResult).opportunities.map((o) => o.check);
+      expect(checks).to.not.include('canonical-self-referenced');
+    });
+
     it('reports canonical-url-absolute when href is a relative URL', async () => {
       const ctx = buildContext();
       const auditCtx = buildAuditContext([buildScrapedObject({

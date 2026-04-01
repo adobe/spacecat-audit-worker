@@ -26,6 +26,7 @@ import canonicalAudit, {
   submitForScraping,
   processScrapedContent,
   getPreviewAuthOptions,
+  isSelfReferencing,
 } from '../../src/canonical/handler.js';
 import { getTopPagesForSiteId } from '../../src/utils/data-access.js';
 import { CANONICAL_CHECKS } from '../../src/canonical/constants.js';
@@ -57,6 +58,30 @@ describe('Canonical URL Tests', () => {
   afterEach(() => {
     sinon.restore();
     nock.cleanAll();
+  });
+
+  describe('isSelfReferencing', () => {
+    it('treats pathnames as equal when they differ only by a trailing slash', () => {
+      expect(isSelfReferencing(
+        'https://www.example.com/products/widget',
+        'https://www.example.com/products/widget/',
+      )).to.be.true;
+    });
+
+    it('still treats root URL as self-referencing when canonical uses trailing slash', () => {
+      expect(isSelfReferencing('https://example.com/', 'https://example.com')).to.be.true;
+    });
+
+    it('does not collapse distinct paths that only share a prefix', () => {
+      expect(isSelfReferencing(
+        'https://example.com/foo',
+        'https://example.com/foo/bar',
+      )).to.be.false;
+    });
+
+    it('when URL parsing fails, compares lowercased strings with trailing slash stripped', () => {
+      expect(isSelfReferencing('not-a-valid-url/', 'NOT-A-VALID-URL')).to.be.true;
+    });
   });
 
   describe('getPreviewAuthOptions', () => {
