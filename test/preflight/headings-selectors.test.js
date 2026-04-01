@@ -531,6 +531,150 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['body > h3.skipped-level']);
     });
 
+    it('should disambiguate by text when structural selector matches the wrong element first', async () => {
+      const checkOrderAmbiguous = {
+        success: false,
+        check: 'heading-order-invalid',
+        checkTitle: 'Invalid Heading Order',
+        description: 'Heading order is invalid',
+        explanation: 'Invalid jump: h1 → h5',
+        transformRules: {
+          selector: 'li > div.cards-card-body > div > h5',
+          currValue: 'Second Card Title',
+          action: 'replaceWith',
+        },
+      };
+
+      mockHeadingsHandler.validatePageHeadingFromScrapeJson.resolves({
+        url: 'https://main--example--page.aem.page/page1',
+        checks: [checkOrderAmbiguous],
+      });
+
+      mockDomSelector.getDomElementSelector.returns('[data-aue-resource="urn:aem:/content/item2"] h5[data-aue-type="text"][data-aue-prop="title"]');
+      mockDomSelector.toElementTargets.returns({
+        elements: [{ selector: '[data-aue-resource="urn:aem:/content/item2"] h5[data-aue-type="text"][data-aue-prop="title"]' }],
+      });
+
+      const headingsModule = await esmock('../../src/preflight/headings.js', {
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
+        '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/metatags/seo-checks.js': {
+          default: class {
+            // eslint-disable-next-line class-methods-use-this
+            getFewHealthyTags() {
+              return { title: [], description: [], h1: [] };
+            }
+          },
+        },
+      });
+
+      const auditContext = {
+        previewUrls: ['https://main--example--page.aem.page/page1'],
+        step: 'identify',
+        audits: new Map([
+          ['https://main--example--page.aem.page/page1', {
+            audits: [],
+          }],
+        ]),
+        auditsResult: [{
+          pageUrl: 'https://main--example--page.aem.page/page1',
+          audits: [],
+        }],
+        scrapedObjects: [{
+          data: {
+            scrapeResult: {
+              rawBody: '<body><h1>Main Title</h1>'
+                + '<ul><li><div class="cards-card-body"><div><h5>First Card Title</h5></div></div></li>'
+                + '<li><div class="cards-card-body"><div><h5>Second Card Title</h5></div></div></li></ul>'
+                + '</body>',
+            },
+            finalUrl: 'https://main--example--page.aem.page/page1',
+          },
+        }],
+        timeExecutionBreakdown: [],
+      };
+
+      await headingsModule.default(context, auditContext);
+
+      // getDomElementSelector should receive the second h5 (the one with matching text),
+      // not the first h5 that the structural selector matched initially
+      const callArg = mockDomSelector.getDomElementSelector.getCall(0).args[0];
+      expect(callArg).to.exist;
+      // The element passed should have text "Second Card Title"
+      expect(callArg.children[0].data).to.equal('Second Card Title');
+    });
+
+    it('should fall back to first match when no element text matches currValue', async () => {
+      const checkOrderNoTextMatch = {
+        success: false,
+        check: 'heading-order-invalid',
+        checkTitle: 'Invalid Heading Order',
+        description: 'Heading order is invalid',
+        explanation: 'Invalid jump: h1 → h5',
+        transformRules: {
+          selector: 'li > div.cards-card-body > div > h5',
+          currValue: 'Non-existent Title',
+          action: 'replaceWith',
+        },
+      };
+
+      mockHeadingsHandler.validatePageHeadingFromScrapeJson.resolves({
+        url: 'https://main--example--page.aem.page/page1',
+        checks: [checkOrderNoTextMatch],
+      });
+
+      mockDomSelector.getDomElementSelector.returns('body > ul > li > div.cards-card-body > div > h5');
+      mockDomSelector.toElementTargets.returns({
+        elements: [{ selector: 'body > ul > li > div.cards-card-body > div > h5' }],
+      });
+
+      const headingsModule = await esmock('../../src/preflight/headings.js', {
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
+        '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/metatags/seo-checks.js': {
+          default: class {
+            // eslint-disable-next-line class-methods-use-this
+            getFewHealthyTags() {
+              return { title: [], description: [], h1: [] };
+            }
+          },
+        },
+      });
+
+      const auditContext = {
+        previewUrls: ['https://main--example--page.aem.page/page1'],
+        step: 'identify',
+        audits: new Map([
+          ['https://main--example--page.aem.page/page1', {
+            audits: [],
+          }],
+        ]),
+        auditsResult: [{
+          pageUrl: 'https://main--example--page.aem.page/page1',
+          audits: [],
+        }],
+        scrapedObjects: [{
+          data: {
+            scrapeResult: {
+              rawBody: '<body><h1>Main Title</h1>'
+                + '<ul><li><div class="cards-card-body"><div><h5>First Card</h5></div></div></li>'
+                + '<li><div class="cards-card-body"><div><h5>Second Card</h5></div></div></li></ul>'
+                + '</body>',
+            },
+            finalUrl: 'https://main--example--page.aem.page/page1',
+          },
+        }],
+        timeExecutionBreakdown: [],
+      };
+
+      await headingsModule.default(context, auditContext);
+
+      // No text matched, so it falls back to the first element from $(oldSelector).get(0)
+      const callArg = mockDomSelector.getDomElementSelector.getCall(0).args[0];
+      expect(callArg).to.exist;
+      expect(callArg.children[0].data).to.equal('First Card');
+    });
+
     it('should produce no selectors for unknown check types with selectors array', async () => {
       const checkWithSelectorsArray = {
         success: false,
