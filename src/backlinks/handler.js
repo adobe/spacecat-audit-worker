@@ -180,6 +180,10 @@ const MOCK_BACKLINKS = {
       ],
     },
     fullAuditRef: 'mock://local-dev-test/site-5810d40e',
+    alternativeUrls: [
+      'https://main--wknd-backlink-test--mimchome.aem.page/trips',
+      'https://main--wknd-backlink-test--mimchome.aem.page/',
+    ],
   },
   'eeda97b6-87fd-47a6-b66d-cd0f99a9b3d4': {
     result: {
@@ -193,6 +197,10 @@ const MOCK_BACKLINKS = {
       ],
     },
     fullAuditRef: 'mock://local-dev-test/site-eeda97b6',
+    alternativeUrls: [
+      'https://main--wknd-backlink-test-sharepoint--mimchome.aem.live/trips',
+      'https://main--wknd-backlink-test-sharepoint--mimchome.aem.live/',
+    ],
   },
 };
 
@@ -281,6 +289,19 @@ export async function submitForScraping(context) {
   if (auditResult.success === false) {
     throw new Error('Audit failed, skipping scraping and suggestions generation');
   }
+
+  /* c8 ignore start */
+  const siteId = site.getId();
+  if (MOCK_BACKLINKS[siteId]) {
+    log.info(`[MOCK] Skipping SiteTopPage query for mock site ${siteId}`);
+    return {
+      urls: MOCK_BACKLINKS[siteId].alternativeUrls.map((url) => ({ url })),
+      siteId,
+      type: 'broken-backlinks',
+    };
+  }
+  /* c8 ignore stop */
+
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
   // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
@@ -499,38 +520,47 @@ export const generateSuggestionData = async (context) => {
     (link) => !resolvedByBrightData.has(link.suggestionId),
   );
 
-  // Get top pages and filter by audit scope
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  const baseURL = site.getBaseURL();
-  const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
-
-  // Filter alternatives by locales/subpaths present in broken links
-  // This limits suggestions to relevant locales only
-  const allTopPageUrls = filteredTopPages.map((page) => page.getUrl());
-
-  // Extract unique locales/subpaths from broken links
-  const brokenLinkLocales = new Set();
-  brokenLinksForMystique.forEach((link) => {
-    const locale = extractPathPrefix(link.urlTo);
-    if (locale) {
-      brokenLinkLocales.add(locale);
-    }
-  });
-
-  // Filter alternatives to only include URLs matching broken links' locales
-  // If no locales found (no subpath), include all alternatives
-  // Always ensure alternativeUrls is an array (even if empty)
+  /* c8 ignore start */
   let alternativeUrls = [];
-  if (brokenLinkLocales.size > 0) {
-    alternativeUrls = allTopPageUrls.filter((url) => {
-      const urlLocale = extractPathPrefix(url);
-      // Include if URL matches one of the broken links' locales, or has no locale
-      return !urlLocale || brokenLinkLocales.has(urlLocale);
-    });
+  if (MOCK_BACKLINKS[site.getId()]) {
+    log.info(`[MOCK] Using hardcoded alternative URLs for site ${site.getId()}`);
+    alternativeUrls = MOCK_BACKLINKS[site.getId()].alternativeUrls;
   } else {
-    // No locale prefixes found, include all alternatives
-    alternativeUrls = allTopPageUrls;
+  /* c8 ignore stop */
+    // Get top pages and filter by audit scope
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+    const baseURL = site.getBaseURL();
+    const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
+
+    // Filter alternatives by locales/subpaths present in broken links
+    // This limits suggestions to relevant locales only
+    const allTopPageUrls = filteredTopPages.map((page) => page.getUrl());
+
+    // Extract unique locales/subpaths from broken links
+    const brokenLinkLocales = new Set();
+    brokenLinksForMystique.forEach((link) => {
+      const locale = extractPathPrefix(link.urlTo);
+      if (locale) {
+        brokenLinkLocales.add(locale);
+      }
+    });
+
+    // Filter alternatives to only include URLs matching broken links' locales
+    // If no locales found (no subpath), include all alternatives
+    // Always ensure alternativeUrls is an array (even if empty)
+    if (brokenLinkLocales.size > 0) {
+      alternativeUrls = allTopPageUrls.filter((url) => {
+        const urlLocale = extractPathPrefix(url);
+        // Include if URL matches one of the broken links' locales, or has no locale
+        return !urlLocale || brokenLinkLocales.has(urlLocale);
+      });
+    } else {
+      // No locale prefixes found, include all alternatives
+      alternativeUrls = allTopPageUrls;
+    }
+  /* c8 ignore start */
   }
+  /* c8 ignore stop */
 
   // Filter out unscrape-able file types before sending to Mystique
   const originalCount = alternativeUrls.length;
