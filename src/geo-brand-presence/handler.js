@@ -213,6 +213,7 @@ export async function loadPromptsAndSendDetection(
   }
 
   // For weekly cadence, validate calendarWeek; for daily, use dailyDateContext
+  // The import-worker step was removed; only detection remains here.
   const dateContext = isDaily ? dailyDateContext : providedCalendarWeek;
   if (!isNonEmptyObject(dateContext) || !dateContext.week || !dateContext.year) {
     log.error('GEO BRAND PRESENCE: Invalid date context for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
