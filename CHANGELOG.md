@@ -1,3 +1,10 @@
+# [1.389.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.388.3...v1.389.0) (2026-04-01)
+
+
+### Features
+
+* LLMO-3956 v2-aware brand presence schedule creation ([#2271](https://github.com/adobe/spacecat-audit-worker/issues/2271)) ([14f350c](https://github.com/adobe/spacecat-audit-worker/commit/14f350cd7be1cf09e1529758fa998a842f6f812b))
+
 ## [1.388.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.388.2...v1.388.3) (2026-04-01)
 
 
