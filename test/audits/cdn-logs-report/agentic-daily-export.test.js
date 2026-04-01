@@ -12,10 +12,12 @@
 
 /* eslint-env mocha */
 import { expect, use } from 'chai';
+import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 
+use(chaiAsPromised);
 use(sinonChai);
 
 describe('agentic daily export', () => {
@@ -224,5 +226,303 @@ describe('agentic daily export', () => {
       rowCount: 0,
       classificationCount: 0,
     });
+  });
+
+  it('fails before Athena or S3 work when the analytics queue is missing', async () => {
+    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
+      '../../../src/cdn-logs-report/utils/report-utils.js': {
+        loadSql: sandbox.stub().resolves('CREATE DATABASE'),
+      },
+      '../../../src/cdn-logs-report/utils/query-builder.js': {
+        weeklyBreakdownQueries: {
+          createAgenticDailyReportQuery: sandbox.stub().resolves('SELECT 1'),
+        },
+      },
+      '../../../src/cdn-logs-report/utils/agentic-traffic-mapper.js': {
+        mapToAgenticTrafficBundle: sandbox.stub().resolves({
+          trafficRows: [],
+          classificationRows: [],
+        }),
+      },
+    });
+
+    const athenaClient = {
+      execute: sandbox.stub().resolves(),
+      query: sandbox.stub().resolves([]),
+    };
+    const s3Client = {
+      send: sandbox.stub().resolves({}),
+    };
+
+    await expect(module.runDailyAgenticExport({
+      athenaClient,
+      s3Client,
+      s3Config: {
+        bucket: 'bucket',
+        databaseName: 'db',
+      },
+      site: {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getLlmoCdnlogsFilter: () => [],
+        }),
+      },
+      context: {
+        env: {},
+        log: {
+          info: sandbox.spy(),
+          warn: sandbox.spy(),
+        },
+        sqs: {
+          sendMessage: sandbox.stub().resolves(),
+        },
+      },
+      reportConfig: {
+        tableName: 'aggregated_logs_example_consolidated',
+      },
+      referenceDate: new Date('2026-04-01T10:00:00Z'),
+    })).to.be.rejectedWith('ANALYTICS_QUEUE_URL is required for agentic daily export dispatch');
+
+    expect(athenaClient.execute).to.not.have.been.called;
+    expect(athenaClient.query).to.not.have.been.called;
+    expect(s3Client.send).to.not.have.been.called;
+  });
+
+  it('cleans up uploaded files when analytics dispatch fails', async () => {
+    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
+      '../../../src/cdn-logs-report/utils/report-utils.js': {
+        loadSql: sandbox.stub().resolves('CREATE DATABASE'),
+      },
+      '../../../src/cdn-logs-report/utils/query-builder.js': {
+        weeklyBreakdownQueries: {
+          createAgenticDailyReportQuery: sandbox.stub().resolves('SELECT 1'),
+        },
+      },
+      '../../../src/cdn-logs-report/utils/agentic-traffic-mapper.js': {
+        mapToAgenticTrafficBundle: sandbox.stub().resolves({
+          trafficRows: [{
+            traffic_date: '2026-03-31',
+            host: 'docs.example.com',
+            platform: 'ChatGPT',
+            agent_type: 'Chatbots',
+            user_agent: 'ChatGPT-User',
+            http_status: 200,
+            url_path: '/docs/page',
+            hits: 12,
+            avg_ttfb_ms: 123.45,
+            dimensions: {},
+            metrics: {},
+            updated_by: 'audit-worker:agentic-daily-export',
+          }],
+          classificationRows: [{
+            host: 'docs.example.com',
+            url_path: '/docs/page',
+            region: 'US',
+            category_name: 'Docs',
+            page_type: 'Documentation',
+            content_type: 'html',
+            updated_by: 'audit-worker:agentic-daily-export',
+          }],
+        }),
+      },
+      uuid: {
+        v4: () => 'batch-123',
+      },
+    });
+
+    const s3Client = {
+      send: sandbox.stub().resolves({}),
+    };
+
+    await expect(module.runDailyAgenticExport({
+      athenaClient: {
+        execute: sandbox.stub().resolves(),
+        query: sandbox.stub().resolves([]),
+      },
+      s3Client,
+      s3Config: {
+        bucket: 'bucket',
+        databaseName: 'db',
+      },
+      site: {
+        getId: () => 'site-1',
+        getOrganizationId: () => 'org-1',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getLlmoCdnlogsFilter: () => [],
+        }),
+      },
+      context: {
+        env: {
+          ANALYTICS_QUEUE_URL: 'https://sqs.us-east-1.amazonaws.com/123/analytics-queue',
+        },
+        log: {
+          info: sandbox.spy(),
+          warn: sandbox.spy(),
+        },
+        sqs: {
+          sendMessage: sandbox.stub().rejects(new Error('SQS unavailable')),
+        },
+      },
+      reportConfig: {
+        tableName: 'aggregated_logs_example_consolidated',
+      },
+      referenceDate: new Date('2026-04-01T10:00:00Z'),
+    })).to.be.rejectedWith('SQS unavailable');
+
+    expect(s3Client.send).to.have.callCount(3);
+    expect(s3Client.send.lastCall.args[0].constructor.name).to.equal('DeleteObjectsCommand');
+  });
+
+  it('cleans up uploaded files when an S3 upload fails', async () => {
+    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
+      '../../../src/cdn-logs-report/utils/report-utils.js': {
+        loadSql: sandbox.stub().resolves('CREATE DATABASE'),
+      },
+      '../../../src/cdn-logs-report/utils/query-builder.js': {
+        weeklyBreakdownQueries: {
+          createAgenticDailyReportQuery: sandbox.stub().resolves('SELECT 1'),
+        },
+      },
+      '../../../src/cdn-logs-report/utils/agentic-traffic-mapper.js': {
+        mapToAgenticTrafficBundle: sandbox.stub().resolves({
+          trafficRows: [{
+            traffic_date: '2026-03-31',
+            host: 'docs.example.com',
+            platform: 'ChatGPT',
+            agent_type: 'Chatbots',
+            user_agent: 'ChatGPT-User',
+            http_status: 200,
+            url_path: '/docs/page',
+            hits: 12,
+            avg_ttfb_ms: 123.45,
+            dimensions: {},
+            metrics: {},
+            updated_by: 'audit-worker:agentic-daily-export',
+          }],
+          classificationRows: [{
+            host: 'docs.example.com',
+            url_path: '/docs/page',
+            region: 'US',
+            category_name: 'Docs',
+            page_type: 'Documentation',
+            content_type: 'html',
+            updated_by: 'audit-worker:agentic-daily-export',
+          }],
+        }),
+      },
+      uuid: {
+        v4: () => 'batch-123',
+      },
+    });
+
+    const s3Client = {
+      send: sandbox.stub(),
+    };
+    s3Client.send.onCall(0).rejects(new Error('S3 upload failed'));
+    s3Client.send.onCall(1).resolves({});
+    s3Client.send.onCall(2).resolves({});
+
+    await expect(module.runDailyAgenticExport({
+      athenaClient: {
+        execute: sandbox.stub().resolves(),
+        query: sandbox.stub().resolves([]),
+      },
+      s3Client,
+      s3Config: {
+        bucket: 'bucket',
+        databaseName: 'db',
+      },
+      site: {
+        getId: () => 'site-1',
+        getOrganizationId: () => 'org-1',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getLlmoCdnlogsFilter: () => [],
+        }),
+      },
+      context: {
+        env: {
+          ANALYTICS_QUEUE_URL: 'https://sqs.us-east-1.amazonaws.com/123/analytics-queue',
+        },
+        log: {
+          info: sandbox.spy(),
+          warn: sandbox.spy(),
+        },
+        sqs: {
+          sendMessage: sandbox.stub().resolves(),
+        },
+      },
+      reportConfig: {
+        tableName: 'aggregated_logs_example_consolidated',
+      },
+      referenceDate: new Date('2026-04-01T10:00:00Z'),
+    })).to.be.rejectedWith('S3 upload failed');
+
+    expect(s3Client.send).to.have.callCount(3);
+    expect(s3Client.send.lastCall.args[0].constructor.name).to.equal('DeleteObjectsCommand');
+  });
+
+  it('propagates Athena database setup failures without touching S3', async () => {
+    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js', {
+      '../../../src/cdn-logs-report/utils/report-utils.js': {
+        loadSql: sandbox.stub().resolves('CREATE DATABASE'),
+      },
+      '../../../src/cdn-logs-report/utils/query-builder.js': {
+        weeklyBreakdownQueries: {
+          createAgenticDailyReportQuery: sandbox.stub().resolves('SELECT 1'),
+        },
+      },
+      '../../../src/cdn-logs-report/utils/agentic-traffic-mapper.js': {
+        mapToAgenticTrafficBundle: sandbox.stub().resolves({
+          trafficRows: [],
+          classificationRows: [],
+        }),
+      },
+    });
+
+    const athenaClient = {
+      execute: sandbox.stub().rejects(new Error('Athena unavailable')),
+      query: sandbox.stub().resolves([]),
+    };
+    const s3Client = {
+      send: sandbox.stub().resolves({}),
+    };
+
+    await expect(module.runDailyAgenticExport({
+      athenaClient,
+      s3Client,
+      s3Config: {
+        bucket: 'bucket',
+        databaseName: 'db',
+      },
+      site: {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getLlmoCdnlogsFilter: () => [],
+        }),
+      },
+      context: {
+        env: {
+          ANALYTICS_QUEUE_URL: 'https://sqs.us-east-1.amazonaws.com/123/analytics-queue',
+        },
+        log: {
+          info: sandbox.spy(),
+          warn: sandbox.spy(),
+        },
+        sqs: {
+          sendMessage: sandbox.stub().resolves(),
+        },
+      },
+      reportConfig: {
+        tableName: 'aggregated_logs_example_consolidated',
+      },
+      referenceDate: new Date('2026-04-01T10:00:00Z'),
+    })).to.be.rejectedWith('Athena unavailable');
+
+    expect(athenaClient.query).to.not.have.been.called;
+    expect(s3Client.send).to.not.have.been.called;
   });
 });

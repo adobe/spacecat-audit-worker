@@ -119,7 +119,10 @@ describe('User Agent Patterns', () => {
       expect(inferProviderFromUserAgent('PerplexityBot')).to.equal('Perplexity');
       expect(inferProviderFromUserAgent('ClaudeBot')).to.equal('Claude');
       expect(inferProviderFromUserAgent('GoogleAgent-Chrome')).to.equal('Google');
+      expect(inferProviderFromUserAgent('CopilotBot')).to.equal('Copilot');
       expect(inferProviderFromUserAgent('BingBot')).to.equal('Bing');
+      expect(inferProviderFromUserAgent('MistralAI-Search')).to.equal('MistralAI');
+      expect(inferProviderFromUserAgent('Amazonbot/0.1')).to.equal('Amazon');
       expect(inferProviderFromUserAgent('something-unknown')).to.equal('Other');
     });
   });
