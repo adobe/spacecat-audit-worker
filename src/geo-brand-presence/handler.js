@@ -62,80 +62,6 @@ export const WEB_SEARCH_PROVIDERS = [
   'copilot',
 ];
 
-function parsePromptContext(context) {
-  const {
-    audit,
-    auditContext,
-    brandPresenceCadence,
-    data,
-    log,
-  } = context;
-
-  let endDate;
-  let aiPlatform;
-  let referenceDate;
-  let cadence = brandPresenceCadence;
-
-  if (isString(data) && data.length > 0) {
-    try {
-      const parsedData = JSON.parse(data);
-      if (isNonEmptyObject(parsedData)) {
-        if (parsedData.endDate && Date.parse(parsedData.endDate)) {
-          endDate = parsedData.endDate;
-        }
-        if (parsedData.referenceDate && Date.parse(parsedData.referenceDate)) {
-          referenceDate = parsedData.referenceDate;
-        }
-        aiPlatform = parsedData.aiPlatform;
-        cadence = parsedData.cadence || cadence;
-      }
-    } catch (e) {
-      if (Date.parse(data)) {
-        endDate = data;
-      } else {
-        log.warn('GEO BRAND PRESENCE: Could not parse data as JSON or date string: %s', data);
-      }
-    }
-  }
-
-  const existingAuditResult = audit?.getAuditResult?.();
-  if (!aiPlatform && existingAuditResult?.aiPlatform) {
-    aiPlatform = existingAuditResult.aiPlatform;
-  }
-  if (!referenceDate && existingAuditResult?.referenceDate) {
-    referenceDate = existingAuditResult.referenceDate;
-  }
-  if (!cadence && existingAuditResult?.cadence) {
-    cadence = existingAuditResult.cadence;
-  }
-
-  if (cadence === 'daily' && !referenceDate) {
-    referenceDate = new Date().toISOString();
-  }
-
-  const auditResult = {
-    keywordQuestions: [],
-    aiPlatform,
-  };
-
-  if (referenceDate) {
-    auditResult.referenceDate = referenceDate;
-  }
-
-  if (cadence) {
-    auditResult.cadence = cadence;
-  }
-
-  return {
-    endDate,
-    aiPlatform,
-    referenceDate,
-    cadence,
-    auditResult,
-    auditContext,
-  };
-}
-
 /**
  * Removes duplicate prompts from AI-generated prompts based on region, topic, and prompt text.
  * @param {Array<Object>} prompts - Array of prompt objects
@@ -249,18 +175,67 @@ export async function loadPromptsAndSendDetection(
 ) {
   /* c8 ignore start */
   const {
-    auditContext, log, sqs, env, site, audit, s3Client, finalUrl,
+    auditContext, brandPresenceCadence, data, log, sqs, env, site, audit, s3Client, finalUrl,
   } = context;
 
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
-  const {
-    endDate,
+
+  let endDate;
+  let aiPlatform;
+  let referenceDate;
+  let cadence = brandPresenceCadence;
+
+  if (isString(data) && data.length > 0) {
+    try {
+      const parsedData = JSON.parse(data);
+      if (isNonEmptyObject(parsedData)) {
+        if (parsedData.endDate && Date.parse(parsedData.endDate)) {
+          endDate = parsedData.endDate;
+        }
+        if (parsedData.referenceDate && Date.parse(parsedData.referenceDate)) {
+          referenceDate = parsedData.referenceDate;
+        }
+        aiPlatform = parsedData.aiPlatform;
+        cadence = parsedData.cadence || cadence;
+      }
+    } catch (e) {
+      if (Date.parse(data)) {
+        endDate = data;
+      } else {
+        log.warn('GEO BRAND PRESENCE: Could not parse data as JSON or date string: %s', data);
+      }
+    }
+  }
+
+  const existingAuditResult = audit?.getAuditResult?.();
+  if (!aiPlatform && existingAuditResult?.aiPlatform) {
+    aiPlatform = existingAuditResult.aiPlatform;
+  }
+  if (!referenceDate && existingAuditResult?.referenceDate) {
+    referenceDate = existingAuditResult.referenceDate;
+  }
+  if (!cadence && existingAuditResult?.cadence) {
+    cadence = existingAuditResult.cadence;
+  }
+
+  if (cadence === 'daily' && !referenceDate) {
+    referenceDate = new Date().toISOString();
+  }
+
+  const auditResult = {
+    keywordQuestions: [],
     aiPlatform,
-    referenceDate,
-    cadence,
-    auditResult,
-  } = parsePromptContext(context);
+  };
+
+  if (referenceDate) {
+    auditResult.referenceDate = referenceDate;
+  }
+
+  if (cadence) {
+    auditResult.cadence = cadence;
+  }
+
   const isDaily = cadence === 'daily';
 
   const { calendarWeek: providedCalendarWeek, success } = auditContext ?? /* c8 ignore next */ {};
