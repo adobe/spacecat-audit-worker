@@ -15,10 +15,34 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
 import { getPreviousWeekTriples } from '../utils/date-utils.js';
-import { SPREADSHEET_COLUMNS, validateContentAI } from './utils.js';
+import {
+  RELATED_URLS_COLUMN_HEADER, RELATED_URLS_DELIMITER,
+  buildColumnMap, getColumn, validateContentAI,
+} from './utils.js';
 
 const MAX_SUGGESTION_PROMPTS = 200;
 const WEEKS_TO_LOOK_BACK = 4;
+
+/**
+ * Resolves the best URL for a prompt row using a priority chain:
+ * 1. First related URL that also appears in includedURLs
+ * 2. Top (first) related URL
+ * 3. Original URL column value
+ * @param {string[]} relatedUrls - Related URLs from the brand presence sheet
+ * @param {Set<string>} includedURLsSet - Pre-built Set of site-config includedURLs
+ * @param {string} originalUrl - URL column value from the spreadsheet
+ * @returns {string}
+ */
+export function resolvePromptUrl(relatedUrls, includedURLsSet, originalUrl) {
+  if (relatedUrls.length > 0) {
+    if (includedURLsSet.size > 0) {
+      const overlap = relatedUrls.find((u) => includedURLsSet.has(u));
+      if (overlap) return overlap;
+    }
+    return relatedUrls[0];
+  }
+  return originalUrl;
+}
 
 /**
  * Groups prompts by URL and topic
@@ -68,21 +92,33 @@ async function readBrandPresenceSpreadsheet(filename, outputLocation, sharepoint
     }
 
     const prompts = [];
-    // Read all rows (excluding header row)
     const totalDataRows = worksheet.rowCount - 1;
     const rows = worksheet.getRows(2, totalDataRows) || [];
 
     log.info(`[FAQ] Reading all ${totalDataRows} rows from spreadsheet (total rows: ${worksheet.rowCount})`);
 
-    // Extract data using named column constants
+    const colMap = buildColumnMap(worksheet);
+    const topicsCol = getColumn(colMap, 'Topics');
+    const promptCol = getColumn(colMap, 'Prompt');
+    const urlCol = getColumn(colMap, 'URL');
+    const relatedUrlsCol = getColumn(colMap, RELATED_URLS_COLUMN_HEADER);
+
     rows.forEach((row) => {
-      const topic = row.getCell(SPREADSHEET_COLUMNS.TOPICS).value;
-      const prompt = row.getCell(SPREADSHEET_COLUMNS.PROMPT).value;
-      const url = row.getCell(SPREADSHEET_COLUMNS.URL).value || '';
+      const topic = topicsCol ? row.getCell(topicsCol).value : null;
+      const prompt = promptCol ? row.getCell(promptCol).value : null;
+      const url = urlCol ? row.getCell(urlCol).value || '' : '';
+      const relatedUrlsRaw = relatedUrlsCol
+        ? row.getCell(relatedUrlsCol).value
+        : null;
+      const relatedUrls = relatedUrlsRaw
+        ? relatedUrlsRaw.toString().split(RELATED_URLS_DELIMITER)
+          .map((u) => u.trim()).filter(Boolean)
+        : [];
 
       if (topic && prompt) {
         prompts.push({
           url: url.toString().trim(),
+          relatedUrls,
           topic: topic.toString().trim(),
           question: prompt.toString().trim(),
         });
@@ -238,8 +274,19 @@ async function runFaqsAudit(url, context, site) {
 
     log.info(`[FAQ] Using brand presence data from ${usedPeriodIdentifier}`);
 
+    const siteConfig = await site.getConfig?.();
+    const includedURLs = await siteConfig?.getIncludedURLs?.('faqs') || [];
+    const includedURLsSet = new Set(includedURLs);
+
+    const resolvedPrompts = topPrompts.map((p) => ({
+      ...p,
+      url: resolvePromptUrl(p.relatedUrls, includedURLsSet, p.url),
+    }));
+
+    log.info(`[FAQ] Resolved prompt URLs using ${includedURLs.length} includedURLs and related URLs from spreadsheet`);
+
     // Sort prompts: ones with URLs first, then ones without URLs
-    const sortedPrompts = sortPrompts(topPrompts);
+    const sortedPrompts = sortPrompts(resolvedPrompts);
 
     // Deduplicate prompts (keeps first occurrence, which prioritizes URLs due to sorting)
     const uniquePrompts = deduplicatePrompts(sortedPrompts);
