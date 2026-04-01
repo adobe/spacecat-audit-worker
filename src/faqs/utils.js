@@ -12,33 +12,38 @@
 
 import { ContentAIClient } from '../utils/content-ai.js';
 
+export const RELATED_URLS_COLUMN_HEADER = 'Related URLs';
+export const RELATED_URLS_DELIMITER = '; ';
+
 /**
- * Column indices for the brand presence spreadsheet.
- * Excel uses 1-based indexing for columns.
+ * Builds a column-name-to-index map by scanning the header row.
+ * Matching is case-insensitive so the spreadsheet layout can evolve
+ * without breaking consumers.
+ * @param {Object} worksheet - ExcelJS worksheet
+ * @returns {Object} Map of lowercase header text to 1-based column index
  */
-export const SPREADSHEET_COLUMNS = {
-  CATEGORY: 1,
-  TOPICS: 2,
-  PROMPT: 3,
-  ORIGIN: 4,
-  REGION: 5,
-  VOLUME: 6,
-  URL: 7,
-  ANSWER: 8,
-  SOURCES: 9,
-  CITATIONS: 10,
-  MENTIONS: 11,
-  SENTIMENT: 12,
-  BUSINESS_COMPETITORS: 13,
-  ORGANIC_COMPETITORS: 14,
-  CONTENT_AI_RESULT: 15,
-  IS_ANSWERED: 16,
-  SOURCE_TO_ANSWER: 17,
-  POSITION: 18,
-  VISIBILITY_SCORE: 19,
-  DETECTED_BRAND_MENTIONS: 20,
-  EXECUTION_DATE: 21,
-};
+export function buildColumnMap(worksheet) {
+  const headerRow = worksheet.getRow(1);
+  const headerValues = headerRow?.values || [];
+  const map = {};
+  for (let i = 1; i < headerValues.length; i += 1) {
+    const text = headerValues[i]?.toString?.().trim();
+    if (text) {
+      map[text.toLowerCase()] = i;
+    }
+  }
+  return map;
+}
+
+/**
+ * Gets the 1-based column index for a header name from the column map.
+ * @param {Object} columnMap - Map from buildColumnMap
+ * @param {string} headerName - Header text to look up (case-insensitive)
+ * @returns {number} 1-based column index, or 0 if not found
+ */
+export function getColumn(columnMap, headerName) {
+  return columnMap[headerName.toLowerCase()] || 0;
+}
 
 /**
  * Normalizes sources to an array of URL strings
