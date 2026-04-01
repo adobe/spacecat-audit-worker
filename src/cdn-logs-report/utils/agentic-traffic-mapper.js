@@ -107,7 +107,7 @@ export async function mapToAgenticTrafficBundle(rows, site, context, trafficDate
 
       const rawPath = row.url === '-' ? '/' : normalizeText(row.url, '/');
       const canonicalUrl = new URL(joinBaseAndPath(baseURL, rawPath || '/'));
-      const urlPath = canonicalUrl.pathname || '/';
+      const urlPath = canonicalUrl.pathname;
       const host = normalizeText(row.host, defaultHost) || defaultHost;
       const citability = citabilityMap[urlPath];
       const dimensions = {};
