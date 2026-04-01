@@ -369,8 +369,8 @@ export async function runAuditAndProcessResults(context) {
 
         const Product = scrapeData?.scrapeResult?.structuredData?.jsonld?.Product;
         if (Array.isArray(Product) && Product.length > 0) {
-          // Count products with SKU
-          skuCount = Product.filter((product) => product.sku).length;
+          const uniqueSkus = new Set(Product.filter((p) => p.sku).map((p) => p.sku));
+          skuCount = uniqueSkus.size;
           isProductPage = skuCount === 1;
           // Extract the actual SKU value
           if (isProductPage) {

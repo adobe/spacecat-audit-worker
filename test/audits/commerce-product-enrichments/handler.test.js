@@ -766,6 +766,71 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.auditResult.message).to.include('Found 1 product pages');
   });
 
+  it('runAuditAndProcessResults detects product page with duplicate JSON-LD Product entries (same SKU)', async () => {
+    site.getConfig.returns({
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({}),
+    });
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            url: 'https://example.com/product-1',
+            finalUrl: 'https://example.com/product-1',
+            scrapeResult: {
+              structuredData: {
+                jsonld: {
+                  Product: [
+                    {
+                      '@type': 'Product',
+                      name: 'Test Product',
+                      sku: 'TEST-SKU-123',
+                    },
+                    {
+                      '@type': 'Product',
+                      name: 'Test Product',
+                      sku: 'TEST-SKU-123',
+                      url: 'https://example.com/product-1',
+                    },
+                  ],
+                },
+              },
+            },
+          })),
+        },
+      }),
+    };
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
+    ]);
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-dup-sku' },
+      finalUrl: 'https://example.com',
+      log: {
+        ...log,
+        debug: sinon.spy(),
+      },
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      scrapeResultPaths,
+    };
+
+    const result = await runAuditAndProcessResults(context);
+
+    expect(result.auditResult.status).to.equal('OPPORTUNITIES_FOUND');
+    expect(result.auditResult.processedPages).to.equal(1);
+    expect(result.auditResult.productPages).to.equal(1);
+    expect(result.auditResult.message).to.include('Found 1 product pages');
+  });
+
   it('runAuditAndProcessResults filters out category pages with multiple products', async () => {
     site.getConfig.returns({
       getExcludedURLs: sinon.stub().returns([]),
