@@ -1518,6 +1518,152 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(mockFetch).to.not.have.been.called;
     });
 
+    it('should include brand_id in v2 BP schedule when brand is found', async () => {
+      const auditContext = {
+        onboardingMode: 'v2',
+        imsOrgId: 'org-123',
+      };
+
+      // Mock postgrestClient for brand lookup
+      const mockSelect = sandbox.stub().returns({
+        eq: sandbox.stub().returnsThis(),
+        then: sandbox.stub(),
+      });
+      const mockFrom = sandbox.stub().returns({ select: mockSelect });
+
+      // Chain the eq calls and resolve with matching brand
+      const brandsQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().resolves({
+              data: [{ id: 'brand-uuid-1', brand_sites: [{ site_id: 'site-123' }] }],
+            }),
+          }),
+        }),
+      };
+      context.dataAccess.services = {
+        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Verify schedule was created with brand_id
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      expect(createCall).to.exist;
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.equal('brand-uuid-1');
+      expect(body.spacecat_org_id).to.equal('org-123');
+    });
+
+    it('should create v2 BP schedule without brand_id when no brand matches site', async () => {
+      const auditContext = {
+        onboardingMode: 'v2',
+        imsOrgId: 'org-123',
+      };
+
+      const brandsQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().resolves({
+              data: [{ id: 'brand-other', brand_sites: [{ site_id: 'other-site' }] }],
+            }),
+          }),
+        }),
+      };
+      context.dataAccess.services = {
+        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+      };
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      expect(createCall).to.exist;
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.be.undefined;
+      expect(log.warn).to.have.been.calledWith(sinon.match(/No brand found matching site/));
+    });
+
+    it('should create v2 BP schedule without brand_id when brand lookup fails', async () => {
+      const auditContext = {
+        onboardingMode: 'v2',
+        imsOrgId: 'org-123',
+      };
+
+      // Mock postgrestClient that throws
+      const brandsQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().rejects(new Error('DB error')),
+          }),
+        }),
+      };
+      context.dataAccess.services = {
+        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Should still create schedule (without brand_id), not fail
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      expect(createCall).to.exist;
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.be.undefined;
+    });
+
+    it('should skip v1 config comparison for v2 onboarding', async () => {
+      const auditContext = {
+        onboardingMode: 'v2',
+      };
+
+      // No configVersion for v2 — should hit the early return
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(result.auditResult.status).to.equal('completed');
+      expect(result.auditResult.message).to.include('no config version provided');
+      // Should NOT have called llmoConfig.readConfig (v1 config comparison)
+      expect(mockLlmoConfig.readConfig).to.not.have.been.called;
+    });
+
   });
 
 });

@@ -129,8 +129,12 @@ async function checkOptelData(domain, context) {
  * @param {object} context - Universal context with env and log
  * @param {string} siteId - SpaceCat site ID
  * @param {string} domain - Site domain for the schedule description
+ * @param {object} [options]
+ * @param {string} [options.brandId] - Brand UUID for v2 schedules (required for v2 scheduler)
+ * @param {string} [options.organizationId] - SpaceCat org UUID for v2 schedules
  */
-export async function createAndTriggerBrandPresenceSchedule(context, siteId, domain) {
+export async function createAndTriggerBrandPresenceSchedule(context, siteId, domain, opts = {}) {
+  const { brandId, organizationId } = opts;
   const { env, log } = context;
   const { DRS_API_URL: drsApiUrl, DRS_API_KEY: drsApiKey } = env;
 
@@ -149,6 +153,8 @@ export async function createAndTriggerBrandPresenceSchedule(context, siteId, dom
 
   const schedulePayload = {
     site_id: siteId,
+    ...(brandId && { brand_id: brandId }),
+    ...(organizationId && { spacecat_org_id: organizationId }),
     frequency: 'weekly',
     cron_expression: 'auto',
     description: `Onboarding brand presence: ${domain} (${siteId})`,
@@ -320,8 +326,40 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   const triggeredSteps = [];
   const hasOptelData = await checkOptelData(domain, context);
-  const { configVersion, previousConfigVersion } = auditContext;
+  const { configVersion, previousConfigVersion, onboardingMode } = auditContext;
+  const isV2 = onboardingMode === 'v2';
   const isFirstTimeOnboarding = !previousConfigVersion;
+
+  // For v2 onboarding, resolve brand ID so the DRS scheduler can use v2 prompts
+  let brandId;
+  let organizationId;
+  if (isV2 && isFirstTimeOnboarding) {
+    try {
+      organizationId = site.getOrganizationId?.() || auditContext.imsOrgId;
+      if (organizationId) {
+        const { postgrestClient } = context.dataAccess?.services || {};
+        if (postgrestClient?.from) {
+          const { data: brands } = await postgrestClient
+            .from('brands')
+            .select('id, brand_sites(site_id)')
+            .eq('organization_id', organizationId)
+            .eq('status', 'active');
+
+          const match = (brands || []).find(
+            (b) => (b.brand_sites || []).some((bs) => bs.site_id === siteId),
+          );
+          if (match) {
+            brandId = match.id;
+            log.info(`Resolved brand ${brandId} for site ${siteId} (v2 onboarding)`);
+          } else {
+            log.warn(`No brand found matching site ${siteId} in org ${organizationId} for v2 BP schedule`);
+          }
+        }
+      }
+    } catch (error) {
+      log.warn(`Failed to resolve brand for v2 BP schedule: ${error.message}`);
+    }
+  }
 
   let bpScheduleId;
   if (isFirstTimeOnboarding) {
@@ -329,7 +367,8 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
     // Create and trigger brand presence schedule via DRS API (non-fatal)
     try {
-      bpScheduleId = await createAndTriggerBrandPresenceSchedule(context, siteId, domain);
+      const bpOpts = { brandId, organizationId };
+      bpScheduleId = await createAndTriggerBrandPresenceSchedule(context, siteId, domain, bpOpts);
       triggeredSteps.push('brand-presence-schedule');
     } catch (error) {
       log.error(`Failed to create/trigger brand presence schedule for site ${siteId}: ${error.message}`);
