@@ -48,6 +48,8 @@ import costs from './costs/handler.js';
 import structuredData from './structured-data/handler.js';
 import structuredDataGuidance from './structured-data/guidance-handler.js';
 import siteDetection from './site-detection/handler.js';
+import detectCdn from './detect-cdn/handler.js';
+import deliveryConfigWriter from './delivery-config-writer/handler.js';
 import highFormViewsLowConversionsGuidance from './forms-opportunities/guidance-handlers/guidance-high-form-views-low-conversions.js';
 import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-nav.js';
 import highPageViewsLowFormViewsGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-views.js';
@@ -84,6 +86,7 @@ import pageTypeDetection from './page-type/handler.js';
 import pageTypeGuidance from './page-type/guidance-handler.js';
 import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
+import llmoConfigDbSync from './llmo-config-db-sync/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import llmoOnboardingPublish from './llmo-onboarding-publish/handler.js';
 import headings from './headings/handler.js';
@@ -144,6 +147,8 @@ const HANDLERS = {
   'experimentation-opportunities': experimentationOpportunities,
   'meta-tags': metaTags,
   costs,
+  'detect-cdn': detectCdn,
+  'delivery-config-writer': deliveryConfigWriter,
   'structured-data': structuredData,
   'llm-blocked': llmBlocked,
   'forms-opportunities': formsOpportunities,
@@ -196,6 +201,7 @@ const HANDLERS = {
   'llm-error-pages': llmErrorPages,
   'guidance:llm-error-pages': llmErrorPagesGuidance,
   'optimization-report-callback': optimizationReportCallback,
+  'llmo-config-db-sync': llmoConfigDbSync,
   'llmo-customer-analysis': llmoCustomerAnalysis,
   'trigger:llmo-onboarding-publish': llmoOnboardingPublish,
   summarization,

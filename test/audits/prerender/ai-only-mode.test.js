@@ -412,6 +412,29 @@ describe('Prerender AI-Only Mode', () => {
       expect(result.auditResult.suggestionCount).to.equal(1); // Only 1 non-OUTDATED
     });
 
+    it('should skip SKIPPED suggestions', async () => {
+      mockSuggestions[0].getStatus.returns('SKIPPED');
+
+      const result = await importTopPages(context);
+
+      expect(result.auditResult.suggestionCount).to.equal(1); // Only 1 non-SKIPPED
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(1);
+      expect(message.data.suggestions[0].url).to.equal('https://example.com/page2');
+    });
+
+    it('should return 0 if all suggestions are SKIPPED', async () => {
+      mockSuggestions[0].getStatus.returns('SKIPPED');
+      mockSuggestions[1].getStatus.returns('SKIPPED');
+
+      const result = await importTopPages(context);
+
+      expect(result.auditResult.suggestionCount).to.equal(0);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/No eligible suggestions to send to Mystique/),
+      );
+    });
+
     it('should return 0 if all suggestions are filtered out', async () => {
       mockSuggestions[0].getStatus.returns('OUTDATED');
       mockSuggestions[1].getData.returns({ url: null });
