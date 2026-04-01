@@ -1,3 +1,10 @@
+## [1.389.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.389.1...v1.389.2) (2026-04-01)
+
+
+### Bug Fixes
+
+* allow local audits to discover the vault ([#2278](https://github.com/adobe/spacecat-audit-worker/issues/2278)) ([127d546](https://github.com/adobe/spacecat-audit-worker/commit/127d54692b35dbfada6d8bf6d66b95f753c6d326))
+
 ## [1.389.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.389.0...v1.389.1) (2026-04-01)
 
 
