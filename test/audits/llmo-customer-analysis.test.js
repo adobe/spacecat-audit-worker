@@ -1570,6 +1570,55 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(body.spacecat_org_id).to.equal('org-123');
     });
 
+    it('should fall back to imsOrgId when getOrganizationId returns null for v2', async () => {
+      const auditContext = { onboardingMode: 'v2', imsOrgId: 'fallback-org' };
+      site.getOrganizationId = sandbox.stub().returns(null);
+
+      const brandsQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().resolves({
+              data: [{ id: 'brand-fb', brand_sites: [{ site_id: 'site-123' }] }],
+            }),
+          }),
+        }),
+      };
+      context.dataAccess.services = {
+        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+      };
+
+      await mockHandler.runLlmoCustomerAnalysis('https://example.com', context, site, auditContext);
+
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.equal('brand-fb');
+      expect(body.spacecat_org_id).to.equal('fallback-org');
+    });
+
+    it('should handle null brands and missing brand_sites in v2', async () => {
+      const auditContext = { onboardingMode: 'v2', imsOrgId: 'org-123' };
+
+      // Return brands without brand_sites property to cover || [] fallback
+      const brandsQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().resolves({
+              data: [{ id: 'brand-no-sites' }],
+            }),
+          }),
+        }),
+      };
+      context.dataAccess.services = {
+        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+      };
+
+      await mockHandler.runLlmoCustomerAnalysis('https://example.com', context, site, auditContext);
+
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.be.undefined;
+    });
+
     it('should create v2 BP schedule without brand_id when no brand matches site', async () => {
       const auditContext = {
         onboardingMode: 'v2',
