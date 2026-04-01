@@ -17,7 +17,6 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import {
-  keywordPromptsImportStep,
   loadPromptsAndSendDetection,
   WEB_SEARCH_PROVIDERS,
 } from '../../src/geo-brand-presence/handler.js';
@@ -88,12 +87,11 @@ describe('Geo Brand Presence Handler', () => {
     sandbox.restore();
   });
 
-  it('should run the keywordPromptsImport step', async () => {
+  it('should build the initial audit result', async () => {
     const finalUrl = 'https://adobe.com';
     const ctx = { ...context, finalUrl };
-    const result = await keywordPromptsImportStep(ctx);
+    const result = await loadPromptsAndSendDetection(ctx, getPresignedUrl);
     expect(result).to.deep.equal({
-      type: 'llmo-prompts-ahrefs',
       siteId: site.getId(),
       endDate: undefined,
       auditResult: { keywordQuestions: [], aiPlatform: undefined },
@@ -104,9 +102,8 @@ describe('Geo Brand Presence Handler', () => {
   it('passes on a string date in ctx.data', async () => {
     const finalUrl = 'https://adobe.com';
     const ctx = { ...context, finalUrl, data: '2025-08-13' };
-    const result = await keywordPromptsImportStep(ctx);
+    const result = await loadPromptsAndSendDetection(ctx, getPresignedUrl);
     expect(result).to.deep.equal({
-      type: 'llmo-prompts-ahrefs',
       siteId: site.getId(),
       endDate: '2025-08-13',
       auditResult: { keywordQuestions: [], aiPlatform: undefined },
@@ -117,9 +114,8 @@ describe('Geo Brand Presence Handler', () => {
   it('ignores non-date values in in ctx.data', async () => {
     const finalUrl = 'https://adobe.com';
     const ctx = { ...context, finalUrl, data: 'not a parseable date' };
-    const result = await keywordPromptsImportStep(ctx);
+    const result = await loadPromptsAndSendDetection(ctx, getPresignedUrl);
     expect(result).to.deep.equal({
-      type: 'llmo-prompts-ahrefs',
       siteId: site.getId(),
       endDate: undefined,
       auditResult: { keywordQuestions: [], aiPlatform: undefined },
@@ -134,9 +130,8 @@ describe('Geo Brand Presence Handler', () => {
       aiPlatform: 'gemini',
     });
     const ctx = { ...context, finalUrl, data: jsonData };
-    const result = await keywordPromptsImportStep(ctx);
+    const result = await loadPromptsAndSendDetection(ctx, getPresignedUrl);
     expect(result).to.deep.equal({
-      type: 'llmo-prompts-ahrefs',
       siteId: site.getId(),
       endDate: '2025-09-15',
       auditResult: { keywordQuestions: [], aiPlatform: 'gemini' },
@@ -155,9 +150,8 @@ describe('Geo Brand Presence Handler', () => {
     const finalUrl = 'https://adobe.com';
     const invalidJson = '{ invalid json data';
     const ctx = { ...context, finalUrl, data: invalidJson };
-    const result = await keywordPromptsImportStep(ctx);
+    const result = await loadPromptsAndSendDetection(ctx, getPresignedUrl);
     expect(result).to.deep.equal({
-      type: 'llmo-prompts-ahrefs',
       siteId: site.getId(),
       endDate: undefined,
       auditResult: { keywordQuestions: [], aiPlatform: undefined },
@@ -972,4 +966,3 @@ function matchS3Cmd(name, input) {
     input: sinon.match(input),
   });
 }
-

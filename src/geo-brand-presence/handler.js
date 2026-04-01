@@ -13,18 +13,14 @@
  * ============================================
  * Geo Brand Presence Audit - workflow
  * ============================================
- * STEP 0: Import (runs in import-worker via keywordPromptsImportStep)
- *   - Fetches keyword data from Ahrefs API
- *   - Returns import result for use in Step 1
- *
- * STEP 1: Unified Detection (loadPromptsAndSendDetection)
+ * STEP 0: Unified Detection (loadPromptsAndSendDetection)
  *   - Loads AI prompts (aiTopics) and human prompts (topics) from LLMO config
  *   - Deduplicates all prompts
  *   - Uploads combined prompts as JSON with presigned URL (24h expiry)
  *   - Sends Detection messages directly to Mystique (one per web search provider)
  *   - Mystique conditionally categorizes AI prompts if needed (inline)
  *
- * STEP 2: Receive Categorization Status (receiveCategorization)
+ * STEP 1: Receive Categorization Status (receiveCategorization)
  *   - Receives categorization status message from Mystique via SQS
  *   - Downloads categorized prompts from presigned URL
  *   - Writes categorized prompts to aggregates parquet for analytics
@@ -32,7 +28,6 @@
  */
 /* eslint-disable no-use-before-define */
 
-import { Audit } from '@adobe/spacecat-shared-data-access';
 import {
   isString,
   isNonEmptyArray,
@@ -47,8 +42,6 @@ import { transformWebSearchProviderForMystique } from './util.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 
-const { AUDIT_STEP_DESTINATIONS } = Audit;
-export const LLMO_QUESTIONS_IMPORT_TYPE = 'llmo-prompts-ahrefs';
 export const GEO_BRAND_PRESENCE_OPPTY_TYPE = 'detect:geo-brand-presence';
 export const GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE = 'detect:geo-brand-presence-daily';
 export const GEO_BRAND_CATEGORIZATION_OPPTY_TYPE = 'category:geo-brand-presence';
@@ -68,6 +61,80 @@ export const WEB_SEARCH_PROVIDERS = [
   'perplexity',
   'copilot',
 ];
+
+function parsePromptContext(context) {
+  const {
+    audit,
+    auditContext,
+    brandPresenceCadence,
+    data,
+    log,
+  } = context;
+
+  let endDate;
+  let aiPlatform;
+  let referenceDate;
+  let cadence = brandPresenceCadence;
+
+  if (isString(data) && data.length > 0) {
+    try {
+      const parsedData = JSON.parse(data);
+      if (isNonEmptyObject(parsedData)) {
+        if (parsedData.endDate && Date.parse(parsedData.endDate)) {
+          endDate = parsedData.endDate;
+        }
+        if (parsedData.referenceDate && Date.parse(parsedData.referenceDate)) {
+          referenceDate = parsedData.referenceDate;
+        }
+        aiPlatform = parsedData.aiPlatform;
+        cadence = parsedData.cadence || cadence;
+      }
+    } catch (e) {
+      if (Date.parse(data)) {
+        endDate = data;
+      } else {
+        log.warn('GEO BRAND PRESENCE: Could not parse data as JSON or date string: %s', data);
+      }
+    }
+  }
+
+  const existingAuditResult = audit?.getAuditResult?.();
+  if (!aiPlatform && existingAuditResult?.aiPlatform) {
+    aiPlatform = existingAuditResult.aiPlatform;
+  }
+  if (!referenceDate && existingAuditResult?.referenceDate) {
+    referenceDate = existingAuditResult.referenceDate;
+  }
+  if (!cadence && existingAuditResult?.cadence) {
+    cadence = existingAuditResult.cadence;
+  }
+
+  if (cadence === 'daily' && !referenceDate) {
+    referenceDate = new Date().toISOString();
+  }
+
+  const auditResult = {
+    keywordQuestions: [],
+    aiPlatform,
+  };
+
+  if (referenceDate) {
+    auditResult.referenceDate = referenceDate;
+  }
+
+  if (cadence) {
+    auditResult.cadence = cadence;
+  }
+
+  return {
+    endDate,
+    aiPlatform,
+    referenceDate,
+    cadence,
+    auditResult,
+    auditContext,
+  };
+}
 
 /**
  * Removes duplicate prompts from AI-generated prompts based on region, topic, and prompt text.
@@ -174,7 +241,7 @@ function deduplicatePrompts(prompts, siteId, log) {
  * @param {Object} context - The execution context including audit, logging, site info, etc.
  * @param {Function} [getPresignedUrlOverride=getSignedUrl]
  * - (Optional) Override for generating presigned URLs.
- * @returns {Promise<void>}
+ * @returns {Promise<Object>} The audit result for the current step.
  */
 export async function loadPromptsAndSendDetection(
   context,
@@ -182,25 +249,25 @@ export async function loadPromptsAndSendDetection(
 ) {
   /* c8 ignore start */
   const {
-    auditContext, log, sqs, env, site, audit, s3Client, brandPresenceCadence,
+    auditContext, log, sqs, env, site, audit, s3Client, finalUrl,
   } = context;
 
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
-  const isDaily = brandPresenceCadence === 'daily';
+  const {
+    endDate,
+    aiPlatform,
+    referenceDate,
+    cadence,
+    auditResult,
+  } = parsePromptContext(context);
+  const isDaily = cadence === 'daily';
 
-  const { calendarWeek, success } = auditContext ?? /* c8 ignore next */ {};
-
-  const auditResult = audit?.getAuditResult();
-  const aiPlatform = auditResult?.aiPlatform;
+  const { calendarWeek: providedCalendarWeek, success } = auditContext ?? /* c8 ignore next */ {};
 
   let dailyDateContext;
   if (isDaily) {
-    const referenceDate = auditResult?.referenceDate
-      || context.data?.referenceDate
-      || auditContext?.referenceDate
-      || new Date();
-    const date = new Date(referenceDate);
+    const date = new Date(referenceDate ?? new Date());
     date.setUTCDate(date.getUTCDate() - 1);
 
     const { week, year } = isoCalendarWeek(date);
@@ -222,10 +289,29 @@ export async function loadPromptsAndSendDetection(
   }
 
   // For weekly cadence, validate calendarWeek; for daily, use dailyDateContext
-  const dateContext = isDaily ? dailyDateContext : calendarWeek;
+  let dateContext;
+  if (isDaily) {
+    dateContext = dailyDateContext;
+  } else if (isNonEmptyObject(providedCalendarWeek)
+    && providedCalendarWeek.week
+    && providedCalendarWeek.year) {
+    dateContext = providedCalendarWeek;
+  } else {
+    dateContext = isoCalendarWeek(new Date());
+  }
   if (!isNonEmptyObject(dateContext) || !dateContext.week || !dateContext.year) {
-    log.error('GEO BRAND PRESENCE: Invalid date context for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
-    return;
+    log.error(
+      'GEO BRAND PRESENCE: Invalid date context for site id %s (%s). Cannot send data to Mystique',
+      siteId,
+      baseURL,
+      auditContext,
+    );
+    return {
+      siteId,
+      endDate,
+      auditResult,
+      fullAuditRef: finalUrl,
+    };
   }
 
   log.debug('GEO BRAND PRESENCE: Loading prompts from LLMO config for site id %s (%s)', siteId, baseURL);
@@ -301,7 +387,12 @@ export async function loadPromptsAndSendDetection(
 
   if (allPrompts.length === 0) {
     log.warn('GEO BRAND PRESENCE: No prompts found for site id %s (%s), skipping detection', siteId, baseURL);
-    return;
+    return {
+      siteId,
+      endDate,
+      auditResult,
+      fullAuditRef: finalUrl,
+    };
   }
 
   const s3Context = isDaily
@@ -316,7 +407,12 @@ export async function loadPromptsAndSendDetection(
 
   if (!isNonEmptyArray(providersToUse)) {
     log.warn('GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping message to mystique', siteId, baseURL);
-    return;
+    return {
+      siteId,
+      endDate,
+      auditResult,
+      fullAuditRef: finalUrl,
+    };
   }
 
   const opptyTypes = isDaily
@@ -357,6 +453,12 @@ export async function loadPromptsAndSendDetection(
   const stepCompleteMsg = 'GEO BRAND PRESENCE%s: Unified step complete - detection '
     + 'messages sent directly to Mystique (categorization will happen internally if needed) for site id %s (%s)';
   log.info(stepCompleteMsg, cadenceLabel, siteId, baseURL);
+  return {
+    siteId,
+    endDate,
+    auditResult,
+    fullAuditRef: finalUrl,
+  };
   /* c8 ignore end */
 }
 
@@ -458,79 +560,7 @@ export function createMystiqueMessage({
   };
 }
 
-/**
- * Coordinates with import-worker to fetch and store keyword prompts.
- * Returns import job details that trigger the actual import in import-worker.
- *
- * @param {Object} context - The execution context.
- * @param {Object} context.site - The site object.
- * @param {string|Object} context.data
- * - The data string or object, may contain endDate, referenceDate, aiPlatform.
- * @param {string} context.finalUrl - The final URL for the audit.
- * @param {Object} context.log - The logger instance.
- * @param {string} context.brandPresenceCadence - The cadence of brand presence, e.g., 'daily'.
- * @returns {Object} The import job details to trigger import in import-worker.
- */
-export async function keywordPromptsImportStep(context) {
-  const {
-    site,
-    data,
-    finalUrl,
-    log,
-    brandPresenceCadence,
-  } = context;
-
-  let endDate;
-  let aiPlatform;
-  let referenceDate;
-
-  if (isString(data) && data.length > 0) {
-    try {
-      const parsedData = JSON.parse(data);
-      if (isNonEmptyObject(parsedData)) {
-        if (parsedData.endDate && Date.parse(parsedData.endDate)) {
-          endDate = parsedData.endDate;
-        }
-        if (parsedData.referenceDate && Date.parse(parsedData.referenceDate)) {
-          referenceDate = parsedData.referenceDate;
-        }
-        aiPlatform = parsedData.aiPlatform;
-      }
-    } catch (e) {
-      if (Date.parse(data)) {
-        endDate = data;
-      } else {
-        log.warn('GEO BRAND PRESENCE: Could not parse data as JSON or date string: %s', data);
-      }
-    }
-  }
-
-  if (brandPresenceCadence === 'daily' && !referenceDate) {
-    referenceDate = new Date().toISOString();
-  }
-
-  log.debug('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s, referenceDate: %s', finalUrl, endDate, aiPlatform, referenceDate);
-  const result = {
-    type: LLMO_QUESTIONS_IMPORT_TYPE,
-    endDate,
-    siteId: site.getId(),
-    auditResult: { keywordQuestions: [], aiPlatform },
-    fullAuditRef: finalUrl,
-  };
-
-  if (referenceDate) {
-    result.auditResult.referenceDate = referenceDate;
-  }
-
-  if (brandPresenceCadence) {
-    result.auditResult.cadence = brandPresenceCadence;
-  }
-
-  return result;
-}
-
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .addStep('keywordPromptsImportStep', keywordPromptsImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('loadPromptsAndSendDetectionStep', loadPromptsAndSendDetection)
   .build();
