@@ -611,6 +611,155 @@ describe('CDN Logs Report Handler', function test() {
       expect(context.log.error).to.have.been.calledWith('Failed to bulk publish reports:', sinon.match.instanceOf(Error));
     });
 
+    it('logs when daily agentic export is enabled but the agentic report config is missing', async () => {
+      const runWeeklyReportStub = sandbox.stub().resolves({ success: true, uploadResult: null });
+      const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
+        '../../../src/cdn-logs-report/agentic-daily-export.js': {
+          isAgenticDailyExportEnabled: sandbox.stub().returns(true),
+          runDailyAgenticExport: sandbox.stub().resolves(),
+        },
+        '../../../src/cdn-logs-report/utils/report-utils.js': {
+          loadSql: sandbox.stub().resolves('SELECT 1'),
+          generateReportingPeriods: sandbox.stub().returns({
+            weeks: [],
+            periodIdentifier: 'w12-2026',
+          }),
+          fetchRemotePatterns: sandbox.stub().resolves(null),
+          queryIndexHasPatternsFile: sandbox.stub().resolves(false),
+          getConfigCategories: sandbox.stub().resolves(['Category A']),
+        },
+        '../../../src/utils/cdn-utils.js': {
+          pathHasData: sandbox.stub().resolves(true),
+          getS3Config: sandbox.stub().returns({
+            bucket: 'test-bucket',
+            customerDomain: 'example_com',
+            customerName: 'example',
+            databaseName: 'cdn_logs_example_com',
+            getAthenaTempLocation: () => 's3://temp',
+          }),
+          getCdnAwsRuntime: sandbox.stub().returns({
+            s3Client: {},
+            createAthenaClient: sandbox.stub().returns({
+              execute: sandbox.stub().resolves(),
+            }),
+          }),
+        },
+        '../../../src/cdn-logs-report/utils/report-runner.js': {
+          runWeeklyReport: runWeeklyReportStub,
+        },
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
+          bulkPublishToAdminHlx: sandbox.stub().resolves(),
+        },
+        '../../../src/cdn-logs-report/constants/report-configs.js': {
+          getConfigs: sandbox.stub().returns([{
+            name: 'referral',
+            aggregatedLocation: 's3://bucket/aggregated/test-site/',
+            tableName: 'aggregated_logs_example_com_referral',
+            filePrefix: 'referraltraffic',
+            folderSuffix: 'referral-traffic',
+            workbookCreator: 'Referral Report',
+            queryFunction: sandbox.stub(),
+            sheetName: 'shared-all',
+          }]),
+        },
+        '../../../src/cdn-logs-report/patterns/patterns-uploader.js': {
+          generatePatternsWorkbook: sandbox.stub().resolves(true),
+        },
+      });
+
+      const result = await localHandler.runner(
+        'https://example.com',
+        context,
+        site,
+        createAuditContext(sandbox, { weekOffset: -1, categoriesUpdated: false }),
+      );
+
+      expect(context.log.debug).to.have.been.calledWith(
+        'Skipping daily agentic export for test-site: agentic report config not found',
+      );
+      expect(result.dailyAgenticExport).to.equal(undefined);
+      expect(runWeeklyReportStub).to.have.been.calledOnce;
+    });
+
+    it('captures daily agentic export failures without failing the whole handler', async () => {
+      const runDailyAgenticExportStub = sandbox.stub().rejects(new Error('daily export boom'));
+      const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
+        '../../../src/cdn-logs-report/agentic-daily-export.js': {
+          isAgenticDailyExportEnabled: sandbox.stub().returns(true),
+          runDailyAgenticExport: runDailyAgenticExportStub,
+        },
+      }, {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
+          saveExcelReport: saveExcelReportStub,
+          bulkPublishToAdminHlx: sandbox.stub().resolves(),
+        },
+      });
+
+      const result = await localHandler.runner(
+        'https://example.com',
+        context,
+        site,
+        createAuditContext(sandbox),
+      );
+
+      expect(runDailyAgenticExportStub).to.have.been.calledOnce;
+      expect(context.log.error).to.have.been.calledWith(
+        'Failed daily agentic export for site test-site: daily export boom',
+        sinon.match.instanceOf(Error),
+      );
+      expect(result.dailyAgenticExport).to.deep.equal({
+        enabled: true,
+        success: false,
+        siteId: 'test-site',
+        error: 'daily export boom',
+      });
+      expect(result.auditResult).to.be.an('array').that.is.not.empty;
+    });
+
+    it('includes successful daily agentic export results for allowlisted sites', async () => {
+      const runDailyAgenticExportStub = sandbox.stub().resolves({
+        enabled: true,
+        success: true,
+        siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+        rowCount: 12,
+      });
+      const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
+        '../../../src/cdn-logs-report/agentic-daily-export.js': {
+          isAgenticDailyExportEnabled: sandbox.stub().returns(true),
+          runDailyAgenticExport: runDailyAgenticExportStub,
+        },
+      }, {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
+          saveExcelReport: saveExcelReportStub,
+          bulkPublishToAdminHlx: sandbox.stub().resolves(),
+        },
+      });
+
+      const allowlistedSite = {
+        ...site,
+        getId: () => '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+        getSiteId: () => '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+      };
+
+      const result = await localHandler.runner(
+        'https://example.com',
+        context,
+        allowlistedSite,
+        createAuditContext(sandbox),
+      );
+
+      expect(runDailyAgenticExportStub).to.have.been.calledOnce;
+      expect(result.dailyAgenticExport).to.deep.equal({
+        enabled: true,
+        success: true,
+        siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+        rowCount: 12,
+      });
+    });
+
     describe('LLMO pattern fetch scenarios', () => {
       it('handles successful pattern fetch', async () => {
         const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')

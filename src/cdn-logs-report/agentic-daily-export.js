@@ -16,29 +16,13 @@ import { loadSql } from './utils/report-utils.js';
 import { weeklyBreakdownQueries } from './utils/query-builder.js';
 import { mapToAgenticTrafficBundle } from './utils/agentic-traffic-mapper.js';
 
-let cachedEnabledSiteIdsRaw = null;
-let cachedEnabledSiteIds = new Set();
+const ENABLED_AGENTIC_DAILY_EXPORT_SITE_IDS = new Set([
+  '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+  '12d54932-e963-4783-aac3-4b1edbc27cde',
+]);
 
-function parseEnabledSiteIds(context) {
-  const raw = context?.env?.AGENTIC_DAILY_EXPORT_SITE_IDS || process.env.AGENTIC_DAILY_EXPORT_SITE_IDS || '';
-  if (raw === cachedEnabledSiteIdsRaw) {
-    return cachedEnabledSiteIds;
-  }
-
-  cachedEnabledSiteIdsRaw = raw;
-  cachedEnabledSiteIds = new Set(
-    raw
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean),
-  );
-
-  return cachedEnabledSiteIds;
-}
-
-export function isAgenticDailyExportEnabled(site, context) {
-  const siteId = site?.getId?.();
-  return Boolean(siteId) && parseEnabledSiteIds(context).has(siteId);
+export function isAgenticDailyExportEnabled(site) {
+  return ENABLED_AGENTIC_DAILY_EXPORT_SITE_IDS.has(site?.getId?.());
 }
 
 export function getPreviousUtcDate(referenceDate = new Date()) {
@@ -196,6 +180,12 @@ async function dispatchAnalyticsEvent({
     pipelineId: message.pipeline_id,
   };
 }
+
+export const testHelpers = {
+  cleanupBundleFromS3,
+  dispatchAnalyticsEvent,
+  escapeCsvValue,
+};
 
 export async function runDailyAgenticExport({
   athenaClient,

@@ -93,7 +93,6 @@ describe('agentic daily export', () => {
     };
     const context = {
       env: {
-        AGENTIC_DAILY_EXPORT_SITE_IDS: 'site-1',
       },
       dataAccess: {
         Configuration: {
@@ -108,7 +107,7 @@ describe('agentic daily export', () => {
       },
     };
     const site = {
-      getId: () => 'site-1',
+      getId: () => '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
       getOrganizationId: () => 'org-1',
       getBaseURL: () => 'https://www.example.com',
       getConfig: () => ({
@@ -142,8 +141,8 @@ describe('agentic daily export', () => {
       '[Athena Query] agentic_daily_flat_data',
     );
     expect(s3Client.send).to.have.been.calledTwice;
-    expect(s3Client.send.firstCall.args[0].input.Key).to.equal('site-1/agentic-traffic/2026/03/31/batch-123/agentic_traffic.csv');
-    expect(s3Client.send.secondCall.args[0].input.Key).to.equal('site-1/agentic-traffic/2026/03/31/batch-123/agentic_url_classifications.csv');
+    expect(s3Client.send.firstCall.args[0].input.Key).to.equal('9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/31/batch-123/agentic_traffic.csv');
+    expect(s3Client.send.secondCall.args[0].input.Key).to.equal('9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/31/batch-123/agentic_url_classifications.csv');
     expect(s3Client.send.firstCall.args[0].input.Body).to.include('traffic_date,host,platform');
     expect(s3Client.send.secondCall.args[0].input.Body).to.include('host,url_path,region');
     expect(context.sqs.sendMessage).to.have.been.calledOnceWith(
@@ -152,8 +151,8 @@ describe('agentic daily export', () => {
         type: 'batch.completed',
         correlationId: 'batch-123',
         pipeline_id: 'agentic_traffic',
-        s3_uri: 's3://spacecat-dev-cdn-logs-aggregates-us-east-1/site-1/agentic-traffic/2026/03/31/batch-123/',
-        site_id: 'site-1',
+        s3_uri: 's3://spacecat-dev-cdn-logs-aggregates-us-east-1/9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/31/batch-123/',
+        site_id: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
         org_id: 'org-1',
         start_date: '2026-03-31',
         end_date: '2026-03-31',
@@ -164,12 +163,81 @@ describe('agentic daily export', () => {
       enabled: true,
       success: true,
       skipped: false,
-      siteId: 'site-1',
+      siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
       trafficDate: '2026-03-31',
       rowCount: 1,
       classificationCount: 1,
-      bundleUri: 's3://spacecat-dev-cdn-logs-aggregates-us-east-1/site-1/agentic-traffic/2026/03/31/batch-123/',
+      bundleUri: 's3://spacecat-dev-cdn-logs-aggregates-us-east-1/9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/31/batch-123/',
     });
+  });
+
+  it('enables daily export only for the temporary allowlisted site ids', async () => {
+    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js');
+
+    expect(module.isAgenticDailyExportEnabled({
+      getId: () => '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+    })).to.equal(true);
+    expect(module.isAgenticDailyExportEnabled({
+      getId: () => '12d54932-e963-4783-aac3-4b1edbc27cde',
+    })).to.equal(true);
+    expect(module.isAgenticDailyExportEnabled({
+      getId: () => 'site-1',
+    })).to.equal(false);
+    expect(module.isAgenticDailyExportEnabled({
+      getId: () => undefined,
+    })).to.equal(false);
+  });
+
+  it('logs a warning when cleanup after failure also fails', async () => {
+    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js');
+    const log = {
+      warn: sandbox.spy(),
+    };
+
+    const s3Client = {
+      send: sandbox.stub().rejects(new Error('cleanup failed')),
+    };
+
+    await module.testHelpers.cleanupBundleFromS3({
+      s3Client,
+      bucket: 'bucket',
+      uploadedFiles: {
+        trafficKey: 'site-1/agentic_traffic.csv',
+        classificationsKey: 'site-1/agentic_url_classifications.csv',
+      },
+      log,
+    });
+
+    expect(log.warn).to.have.been.calledOnceWith(
+      sinon.match('Failed to clean up agentic export bundle'),
+    );
+  });
+
+  it('guards against dispatch without a queue URL', async () => {
+    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js');
+
+    await expect(module.testHelpers.dispatchAnalyticsEvent({
+      context: {
+        sqs: {
+          sendMessage: sandbox.stub().resolves(),
+        },
+      },
+      queueUrl: '',
+      site: {
+        getId: () => 'site-1',
+      },
+      batchId: 'batch-123',
+      bundleUri: 's3://bucket/site-1/agentic-traffic/2026/03/31/batch-123/',
+      trafficDate: '2026-03-31',
+      rowCount: 1,
+    })).to.be.rejectedWith('analytics queue is not configured');
+  });
+
+  it('serializes null and undefined CSV values as empty strings', async () => {
+    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js');
+
+    expect(module.testHelpers.escapeCsvValue(null)).to.equal('');
+    expect(module.testHelpers.escapeCsvValue(undefined)).to.equal('');
   });
 
   it('skips upload and dispatch when there are no traffic rows', async () => {
