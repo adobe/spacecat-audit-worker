@@ -400,6 +400,34 @@ describe('Prerender Audit', () => {
         expect(context.log.info).to.have.been.calledWithMatch('csvUrls=4');
       });
 
+      it('rebases csvUrls (auditContext.urls) to getPreferredBaseUrl domain', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => [],
+            getPreferredBaseUrl: () => 'https://example.com',
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://example.com',
+          },
+          auditContext: {
+            urls: ['https://www.example.com/csv-page-1', 'https://www.example.com/csv-page-2'],
+          },
+          finalUrl: 'https://example.com',
+          log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+        const submittedUrls = result.urls.map((u) => u.url);
+        expect(submittedUrls).to.include('https://example.com/csv-page-1');
+        expect(submittedUrls).to.include('https://example.com/csv-page-2');
+        submittedUrls.forEach((u) => expect(u).to.not.include('www.'));
+      });
+
       it('should include includedURLs from site config', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-athena-client': {

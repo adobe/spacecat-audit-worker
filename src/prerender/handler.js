@@ -752,7 +752,9 @@ export async function submitForScraping(context) {
 
   const siteId = site.getId();
   if (Array.isArray(auditContext?.urls) && auditContext.urls.length > 0) {
-    const { urls: explicitUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(auditContext.urls);
+    const preferredBase = getPreferredBaseUrl(site, context);
+    const rebasedCsvUrls = auditContext.urls.map((url) => rebaseUrl(url, preferredBase));
+    const { urls: explicitUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(rebasedCsvUrls);
 
     log.info(`
     ${LOG_PREFIX} prerender_submit_scraping_metrics:
