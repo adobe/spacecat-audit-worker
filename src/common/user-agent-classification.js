@@ -115,3 +115,18 @@ export function buildAgentTypeClassificationSQL() {
           ELSE 'Other'
         END`;
 }
+
+export function inferProviderFromUserAgent(userAgent = '') {
+  const ua = String(userAgent).toLowerCase();
+
+  if (/(chatgpt|gptbot|oai-searchbot)/.test(ua)) return 'ChatGPT';
+  if (/perplexity/.test(ua)) return 'Perplexity';
+  if (/(claude|anthropic)/.test(ua)) return 'Claude';
+  if (/(gemini|google|googlebot|googleagent|notebooklm)/.test(ua)) return 'Google';
+  if (/copilot/.test(ua)) return 'Copilot';
+  if (/bing/.test(ua)) return 'Bing';
+  if (/mistral/.test(ua)) return 'MistralAI';
+  if (/(amzn|amazon)/.test(ua)) return 'Amazon';
+
+  return 'Other';
+}
