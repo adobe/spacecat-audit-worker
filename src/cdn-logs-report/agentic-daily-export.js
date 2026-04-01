@@ -10,20 +10,30 @@
  * governing permissions and limitations under the License.
  */
 
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { DeleteObjectsCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
 import { loadSql } from './utils/report-utils.js';
 import { weeklyBreakdownQueries } from './utils/query-builder.js';
 import { mapToAgenticTrafficBundle } from './utils/agentic-traffic-mapper.js';
 
+let cachedEnabledSiteIdsRaw = null;
+let cachedEnabledSiteIds = new Set();
+
 function parseEnabledSiteIds(context) {
   const raw = context?.env?.AGENTIC_DAILY_EXPORT_SITE_IDS || process.env.AGENTIC_DAILY_EXPORT_SITE_IDS || '';
-  return new Set(
+  if (raw === cachedEnabledSiteIdsRaw) {
+    return cachedEnabledSiteIds;
+  }
+
+  cachedEnabledSiteIdsRaw = raw;
+  cachedEnabledSiteIds = new Set(
     raw
       .split(',')
       .map((value) => value.trim())
       .filter(Boolean),
   );
+
+  return cachedEnabledSiteIds;
 }
 
 export function isAgenticDailyExportEnabled(site, context) {
@@ -59,7 +69,7 @@ function escapeCsvValue(value) {
 function serializeCsv(rows, columns) {
   const header = columns.join(',');
   const body = rows.map((row) => columns.map((column) => escapeCsvValue(row[column])).join(','));
-  return [header, ...body].join('\n');
+  return [header, ...body].join('\r\n');
 }
 
 function getAgenticBundleKeyPrefix(siteId, trafficDate, batchId) {
@@ -72,20 +82,24 @@ async function ensureAthenaDatabase(athenaClient, databaseName) {
   await athenaClient.execute(sqlDb, databaseName, `[Athena Query] Create database ${databaseName}`);
 }
 
+function buildBundleFileKeys(keyPrefix) {
+  return {
+    trafficKey: `${keyPrefix}agentic_traffic.csv`,
+    classificationsKey: `${keyPrefix}agentic_url_classifications.csv`,
+  };
+}
+
 async function uploadBundleToS3({
   s3Client,
   bucket,
-  keyPrefix,
+  uploadedFiles,
   trafficRows,
   classificationRows,
 }) {
-  const trafficKey = `${keyPrefix}agentic_traffic.csv`;
-  const classificationsKey = `${keyPrefix}agentic_url_classifications.csv`;
-
   await Promise.all([
     s3Client.send(new PutObjectCommand({
       Bucket: bucket,
-      Key: trafficKey,
+      Key: uploadedFiles.trafficKey,
       Body: serializeCsv(trafficRows, [
         'traffic_date',
         'host',
@@ -104,7 +118,7 @@ async function uploadBundleToS3({
     })),
     s3Client.send(new PutObjectCommand({
       Bucket: bucket,
-      Key: classificationsKey,
+      Key: uploadedFiles.classificationsKey,
       Body: serializeCsv(classificationRows, [
         'host',
         'url_path',
@@ -117,11 +131,27 @@ async function uploadBundleToS3({
       ContentType: 'text/csv',
     })),
   ]);
+}
 
-  return {
-    trafficKey,
-    classificationsKey,
-  };
+async function cleanupBundleFromS3({
+  s3Client,
+  bucket,
+  uploadedFiles,
+  log,
+}) {
+  try {
+    await s3Client.send(new DeleteObjectsCommand({
+      Bucket: bucket,
+      Delete: {
+        Objects: [
+          { Key: uploadedFiles.trafficKey },
+          { Key: uploadedFiles.classificationsKey },
+        ],
+      },
+    }));
+  } catch (error) {
+    log.warn(`[cdn-logs-report] Failed to clean up agentic export bundle for s3://${bucket}/${uploadedFiles.trafficKey}: ${error.message}`);
+  }
 }
 
 function getAnalyticsQueueUrl(context) {
@@ -130,14 +160,15 @@ function getAnalyticsQueueUrl(context) {
 
 async function dispatchAnalyticsEvent({
   context,
+  queueUrl,
   site,
   batchId,
   bundleUri,
   trafficDate,
   rowCount,
 }) {
-  const queueUrl = getAnalyticsQueueUrl(context);
   if (!queueUrl) {
+    // Defensive assertion: runDailyAgenticExport validates this before any work starts.
     throw new Error('ANALYTICS_QUEUE_URL is required for agentic daily export dispatch');
   }
 
@@ -177,6 +208,10 @@ export async function runDailyAgenticExport({
   const { log } = context;
   const trafficDateObj = getPreviousUtcDate(referenceDate);
   const trafficDate = trafficDateObj.toISOString().split('T')[0];
+  const queueUrl = getAnalyticsQueueUrl(context);
+  if (!queueUrl) {
+    throw new Error('ANALYTICS_QUEUE_URL is required for agentic daily export dispatch');
+  }
 
   await ensureAthenaDatabase(athenaClient, s3Config.databaseName);
 
@@ -216,21 +251,35 @@ export async function runDailyAgenticExport({
   const batchId = uuidv4();
   const keyPrefix = getAgenticBundleKeyPrefix(site.getId(), trafficDate, batchId);
   const bundleUri = `s3://${s3Config.bucket}/${keyPrefix}`;
-  const uploadedFiles = await uploadBundleToS3({
-    s3Client,
-    bucket: s3Config.bucket,
-    keyPrefix,
-    trafficRows,
-    classificationRows,
-  });
-  const dispatch = await dispatchAnalyticsEvent({
-    context,
-    site,
-    batchId,
-    bundleUri,
-    trafficDate,
-    rowCount: trafficRows.length,
-  });
+  const uploadedFiles = buildBundleFileKeys(keyPrefix);
+  let dispatch;
+
+  try {
+    await uploadBundleToS3({
+      s3Client,
+      bucket: s3Config.bucket,
+      uploadedFiles,
+      trafficRows,
+      classificationRows,
+    });
+    dispatch = await dispatchAnalyticsEvent({
+      context,
+      queueUrl,
+      site,
+      batchId,
+      bundleUri,
+      trafficDate,
+      rowCount: trafficRows.length,
+    });
+  } catch (error) {
+    await cleanupBundleFromS3({
+      s3Client,
+      bucket: s3Config.bucket,
+      uploadedFiles,
+      log,
+    });
+    throw error;
+  }
 
   log.info(`[cdn-logs-report] Daily agentic export dispatched for ${site.getId()} on ${trafficDate}. Rows: ${trafficRows.length}, classifications: ${classificationRows.length}`);
 

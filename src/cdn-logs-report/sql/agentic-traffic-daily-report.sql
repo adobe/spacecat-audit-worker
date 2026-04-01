@@ -27,6 +27,7 @@ SELECT
   product,
   category
 FROM classified_data
+WHERE agent_type != 'Other'
 GROUP BY
   agent_type,
   user_agent_display,

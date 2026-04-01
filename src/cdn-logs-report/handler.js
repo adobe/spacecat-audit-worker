@@ -149,7 +149,10 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   }
 
   let dailyAgenticExport;
-  if (agenticReportConfig && isAgenticDailyExportEnabled(site, context)) {
+  const isDailyAgenticExportEnabled = isAgenticDailyExportEnabled(site, context);
+  if (!agenticReportConfig && isDailyAgenticExportEnabled) {
+    log.debug(`Skipping daily agentic export for ${siteId}: agentic report config not found`);
+  } else if (agenticReportConfig && isDailyAgenticExportEnabled) {
     try {
       dailyAgenticExport = await runDailyAgenticExport({
         athenaClient,

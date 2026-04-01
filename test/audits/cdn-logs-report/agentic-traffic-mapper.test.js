@@ -11,9 +11,12 @@
  */
 
 /* eslint-env mocha */
-import { expect } from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
 import { mapToAgenticTrafficBundle } from '../../../src/cdn-logs-report/utils/agentic-traffic-mapper.js';
+
+use(sinonChai);
 
 describe('agentic traffic mapper', () => {
   it('maps Athena rows into traffic and classification bundle rows', async () => {
@@ -30,12 +33,20 @@ describe('agentic traffic mapper', () => {
       },
       dataAccess: {
         PageCitability: {
-          allBySiteId: sinon.stub().resolves([{
-            getUrl: () => 'https://www.example.com/docs/page',
-            getCitabilityScore: () => 82,
-            getIsDeployedAtEdge: () => true,
-            getUpdatedAt: () => '2026-03-31T00:00:00.000Z',
-          }]),
+          allBySiteId: sinon.stub().resolves([
+            {
+              getUrl: () => 'https://www.example.com/docs/page',
+              getCitabilityScore: () => 82,
+              getIsDeployedAtEdge: () => true,
+              getUpdatedAt: () => '2026-03-31T00:00:00.000Z',
+            },
+            {
+              getUrl: () => '/bad-url',
+              getCitabilityScore: () => 12,
+              getIsDeployedAtEdge: () => false,
+              getUpdatedAt: () => '2026-03-30T00:00:00.000Z',
+            },
+          ]),
         },
       },
     };
@@ -61,6 +72,18 @@ describe('agentic traffic mapper', () => {
         avg_ttfb_ms: 110,
         country_code: 'AA',
         url: '/docs/page',
+        host: 'docs.example.com',
+        product: 'Docs',
+        category: 'Documentation',
+      },
+      {
+        agent_type: 'Other',
+        user_agent_display: 'Mozilla/5.0',
+        status: 200,
+        number_of_hits: 8,
+        avg_ttfb_ms: 80,
+        country_code: 'DE',
+        url: '/skip-me',
         host: 'docs.example.com',
         product: 'Docs',
         category: 'Documentation',
@@ -101,12 +124,13 @@ describe('agentic traffic mapper', () => {
     expect(result.classificationRows[0]).to.deep.equal({
       host: 'docs.example.com',
       url_path: '/docs/page',
-      region: 'GLOBAL',
+      region: 'US',
       category_name: 'Docs',
       page_type: 'Documentation',
       content_type: 'html',
       updated_by: 'audit-worker:agentic-daily-export',
     });
+    expect(context.log.warn).to.have.been.calledOnce;
   });
 
   it('returns empty bundle arrays when required inputs are missing', async () => {

@@ -35,9 +35,15 @@ function inferContentType(urlPath = '') {
   return 'other';
 }
 
-function buildCitabilityMap(citabilityScores = []) {
-  return citabilityScores.reduce((acc, score) => {
-    const { pathname } = new URL(score.getUrl());
+function buildCitabilityMap(citabilityScores, log) {
+  return (citabilityScores || []).reduce((acc, score) => {
+    let pathname;
+    try {
+      ({ pathname } = new URL(score.getUrl()));
+    } catch (error) {
+      log?.warn?.(`Skipping malformed citability URL during agentic mapping: ${error.message}`);
+      return acc;
+    }
     const existingScore = acc[pathname];
 
     if (!existingScore || new Date(score.getUpdatedAt()) > new Date(existingScore.updatedAt)) {
@@ -76,12 +82,16 @@ export async function mapToAgenticTrafficBundle(rows, site, context, trafficDate
 
   const siteIgnoreList = site.getConfig?.()?.getLlmoCountryCodeIgnoreList?.() || [];
   const citabilityScores = await getCitabilityScores(site, context);
-  const citabilityMap = buildCitabilityMap(citabilityScores);
+  const citabilityMap = buildCitabilityMap(citabilityScores, context?.log);
   const baseURL = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL || site.getBaseURL();
   const defaultHost = new URL(baseURL).host;
   const classificationMap = new Map();
   const trafficRows = rows
     .map((row) => {
+      if (row.agent_type === 'Other') {
+        return null;
+      }
+
       const hits = Number(row.number_of_hits) || 0;
       if (hits <= 0) {
         return null;
@@ -102,16 +112,18 @@ export async function mapToAgenticTrafficBundle(rows, site, context, trafficDate
         dimensions.deployed_at_edge = citability.isDeployedAtEdge;
       }
 
-      const classification = {
-        host,
-        url_path: urlPath,
-        region: validateCountryCode(row.country_code, siteIgnoreList),
-        category_name: normalizeLabel(row.product),
-        page_type: normalizeText(row.category),
-        content_type: inferContentType(urlPath),
-        updated_by: 'audit-worker:agentic-daily-export',
-      };
-      classificationMap.set(`${host}|${urlPath}`, classification);
+      const classificationKey = `${host}|${urlPath}`;
+      if (!classificationMap.has(classificationKey)) {
+        classificationMap.set(classificationKey, {
+          host,
+          url_path: urlPath,
+          region: validateCountryCode(row.country_code, siteIgnoreList),
+          category_name: normalizeLabel(row.product),
+          page_type: normalizeText(row.category),
+          content_type: inferContentType(urlPath),
+          updated_by: 'audit-worker:agentic-daily-export',
+        });
+      }
 
       const avgTtfb = Number(row.avg_ttfb_ms);
 
