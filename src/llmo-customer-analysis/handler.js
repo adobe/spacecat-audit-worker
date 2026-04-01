@@ -345,8 +345,8 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
             .eq('organization_id', organizationId)
             .eq('status', 'active');
 
-          const match = (brands || []).find(
-            (b) => (b.brand_sites || []).some((bs) => bs.site_id === siteId),
+          const match = brands?.find(
+            (b) => b.brand_sites?.some((bs) => bs.site_id === siteId),
           );
           if (match) {
             brandId = match.id;
