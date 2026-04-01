@@ -16,17 +16,10 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
+import esmock from 'esmock';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import auditDataMock from '../fixtures/broken-backlinks/audit.json' with { type: 'json' };
 import rumTraffic from '../fixtures/broken-backlinks/all-traffic.json' with { type: 'json' };
-import {
-  brokenBacklinksAuditRunner, generateSuggestionData,
-  runAuditAndImportTopPages,
-  submitForScraping,
-  checkIfBacklinkFixedWithSuggestion,
-  buildBacklinkFixEntityPayload,
-  checkIfBacklinkResolvedOnProduction,
-} from '../../src/backlinks/handler.js';
 import { FixEntity as FixEntityModel } from '@adobe/spacecat-shared-data-access';
 import { MockContextBuilder } from '../shared.js';
 import {
@@ -37,7 +30,7 @@ import {
   site2,
   siteWithExcludedUrls,
 } from '../fixtures/broken-backlinks/sites.js';
-import { ahrefsMock, mockFixedBacklinks } from '../fixtures/broken-backlinks/ahrefs.js';
+import { mockFixedBacklinkUrls } from '../fixtures/broken-backlinks/seo-client.js';
 import {
   brokenBacklinksSuggestions,
   suggestions,
@@ -53,6 +46,14 @@ describe('Backlinks Tests', function () {
   this.timeout(10000);
   let message;
   let context;
+  let mockSeoClient;
+  let brokenBacklinksAuditRunner;
+  let generateSuggestionData;
+  let runAuditAndImportTopPages;
+  let submitForScraping;
+  let checkIfBacklinkFixedWithSuggestion;
+  let buildBacklinkFixEntityPayload;
+  let checkIfBacklinkResolvedOnProduction;
   const topPages = [
     { getUrl: () => 'https://example.com/blog/page1' },
     { getUrl: () => 'https://example.com/blog/page2' },
@@ -72,6 +73,30 @@ describe('Backlinks Tests', function () {
   let brokenBacklinksOpportunity;
   const sandbox = sinon.createSandbox();
 
+  before(async () => {
+    mockSeoClient = {
+      getBrokenBacklinks: sandbox.stub(),
+    };
+
+    const handler = await esmock('../../src/backlinks/handler.js', {
+      '@adobe/mysticat-shared-seo-client': {
+        default: {
+          createFrom: sandbox.stub().returns(mockSeoClient),
+        },
+      },
+    });
+
+    ({
+      brokenBacklinksAuditRunner,
+      generateSuggestionData,
+      runAuditAndImportTopPages,
+      submitForScraping,
+      checkIfBacklinkFixedWithSuggestion,
+      buildBacklinkFixEntityPayload,
+      checkIfBacklinkResolvedOnProduction,
+    } = handler);
+  });
+
   beforeEach(() => {
     message = {
       type: 'broken-backlinks',
@@ -82,8 +107,8 @@ describe('Backlinks Tests', function () {
       .withSandbox(sandbox)
       .withOverrides({
         env: {
-          AHREFS_API_BASE_URL: 'https://ahrefs.com',
-          AHREFS_API_KEY: 'ahrefs-api',
+          SEO_API_BASE_URL: 'https://seo-api.example.com',
+          SEO_API_KEY: 'test-seo-key',
           S3_SCRAPER_BUCKET_NAME: 'test-bucket',
           S3_IMPORTER_BUCKET_NAME: 'test-import-bucket',
           QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
@@ -146,7 +171,10 @@ describe('Backlinks Tests', function () {
     const { brokenBacklinks } = auditDataMock.auditResult;
     const withoutExcluded = brokenBacklinks.filter((backlink) => backlink.url_to !== excludedUrl);
 
-    ahrefsMock(siteWithExcludedUrls.getBaseURL(), { backlinks: brokenBacklinks });
+    mockSeoClient.getBrokenBacklinks.resolves({
+      result: { backlinks: brokenBacklinks },
+      fullAuditRef: auditDataMock.fullAuditRef,
+    });
 
     const auditData = await brokenBacklinksAuditRunner(auditUrl, context, siteWithExcludedUrls);
 
@@ -170,7 +198,10 @@ describe('Backlinks Tests', function () {
       (a) => a.url_to !== excludedUrl,
     );
     context.site = siteWithInvalidExcludedUrl;
-    ahrefsMock(siteWithInvalidExcludedUrl.getBaseURL(), { backlinks: brokenBacklinks });
+    mockSeoClient.getBrokenBacklinks.resolves({
+      result: { backlinks: brokenBacklinks },
+      fullAuditRef: auditDataMock.fullAuditRef,
+    });
 
     const result = await runAuditAndImportTopPages(context);
     // Should still filter valid excludedURL even with malformed URL present
@@ -191,7 +222,10 @@ describe('Backlinks Tests', function () {
       (a) => a.url_to !== excludedUrl,
     );
     context.site = siteWithExcludedUrls;
-    ahrefsMock(siteWithExcludedUrls.getBaseURL(), { backlinks: brokenBacklinks });
+    mockSeoClient.getBrokenBacklinks.resolves({
+      result: { backlinks: brokenBacklinks },
+      fullAuditRef: auditDataMock.fullAuditRef,
+    });
 
     const result = await runAuditAndImportTopPages(context);
     expect(result).to.deep.equal({
@@ -287,7 +321,11 @@ describe('Backlinks Tests', function () {
       .concat(fixedBacklinks)
       .concat(brokenBacklinkWithTimeout);
 
-    mockFixedBacklinks(allBacklinks);
+    mockSeoClient.getBrokenBacklinks.resolves({
+      result: { backlinks: allBacklinks },
+      fullAuditRef: auditUrl,
+    });
+    mockFixedBacklinkUrls();
 
     const auditData = await brokenBacklinksAuditRunner(auditUrl, context, site2);
     expect(auditData.auditResult.brokenBacklinks)
@@ -297,13 +335,7 @@ describe('Backlinks Tests', function () {
   });
 
   it('should handle audit api errors gracefully', async () => {
-    nock(site.getBaseURL())
-      .get(/.*/)
-      .reply(200);
-
-    nock('https://ahrefs.com')
-      .get(/.*/)
-      .reply(500);
+    mockSeoClient.getBrokenBacklinks.rejects(new Error('SEO API request failed with status: 500'));
 
     const auditData = await brokenBacklinksAuditRunner(auditUrl, context, site);
 
@@ -311,21 +343,15 @@ describe('Backlinks Tests', function () {
       fullAuditRef: auditUrl,
       auditResult: {
         finalUrl: auditUrl,
-        error: 'Broken Backlinks audit for site1 with url https://audit.url failed with error: Ahrefs API request failed with status: 500',
+        error: 'Broken Backlinks audit for site1 with url https://audit.url failed with error: SEO API request failed with status: 500',
         success: false,
       },
     });
   });
 
   it('should handle fetch errors gracefully', async () => {
-    context.dataAccess.Site.findById = sinon.stub().withArgs('site1').resolves(site);
-    const errorMessage = 'Broken Backlinks audit for site1 with url https://audit.url failed with error: Ahrefs API request failed with status: 404';
-    nock(site.getBaseURL())
-      .get(/.*/)
-      .replyWithError('connection refused');
-    nock('https://ahrefs.com')
-      .get(/.*/)
-      .reply(404);
+    const errorMessage = 'Broken Backlinks audit for site1 with url https://audit.url failed with error: SEO API request failed: network error';
+    mockSeoClient.getBrokenBacklinks.rejects(new Error('SEO API request failed: network error'));
 
     const auditResult = await brokenBacklinksAuditRunner(auditUrl, context, site);
 

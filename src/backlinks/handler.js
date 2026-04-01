@@ -11,7 +11,7 @@
  */
 
 import { tracingFetch as fetch, prependSchema, stripWWW } from '@adobe/spacecat-shared-utils';
-import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
+import SeoClient from '@adobe/mysticat-shared-seo-client';
 import {
   Audit,
   Suggestion as SuggestionModel,
@@ -164,11 +164,11 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
   const siteId = site.getId();
 
   try {
-    const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
+    const seoClient = SeoClient.createFrom(context);
     const {
       result,
       fullAuditRef,
-    } = await ahrefsAPIClient.getBrokenBacklinks(auditUrl);
+    } = await seoClient.getBrokenBacklinks(auditUrl);
     log.debug(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditUrl}`);
     const excludedURLs = site.getConfig().getExcludedURLs('broken-backlinks');
 
