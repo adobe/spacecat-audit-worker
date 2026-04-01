@@ -1,3 +1,10 @@
+## [1.387.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.387.1...v1.387.2) (2026-04-01)
+
+
+### Bug Fixes
+
+* [preflight] align UE selectors with UE editables format ([#2259](https://github.com/adobe/spacecat-audit-worker/issues/2259)) ([d24d14d](https://github.com/adobe/spacecat-audit-worker/commit/d24d14df12e64af2f3cfd2f47fdbb52191e800dc))
+
 ## [1.387.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.387.0...v1.387.1) (2026-04-01)
 
 

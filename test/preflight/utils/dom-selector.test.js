@@ -68,7 +68,7 @@ describe('dom-selector.js', () => {
       const $test = cheerioLoad(html);
       const element = $test('div').get(0);
       const selector = getDomElementSelector(element);
-      expect(selector).to.equal('div[data-aue-resource="urn:aemconnection:/content/test"]');
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/test"]');
     });
 
     it('should use data-aue-prop for property-level elements', () => {
@@ -154,23 +154,21 @@ describe('dom-selector.js', () => {
       const $test = cheerioLoad(html);
       const element = $test('p').get(0);
       const selector = getDomElementSelector(element);
-      expect(selector).to.include('div[data-aue-resource="urn:aemconnection:/content/test/section"]');
-      expect(selector).to.include('p.text');
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/test/section"] > div.content > p.text');
     });
 
     it('should work with nested Universal Editor components', () => {
       const html = `
         <section data-aue-resource="urn:aemconnection:/content/page/section">
           <div data-aue-resource="urn:aemconnection:/content/page/section/block">
-            <h2 data-aue-prop="title">Heading</h2>
+            <h2 data-aue-type="text" data-aue-prop="title">Heading</h2>
           </div>
         </section>
       `;
       const $test = cheerioLoad(html);
       const element = $test('h2').get(0);
       const selector = getDomElementSelector(element);
-      // Should use the data-aue-prop as it's most specific
-      expect(selector).to.equal('h2[data-aue-prop="title"]');
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/page/section/block"] h2[data-aue-type="text"][data-aue-prop="title"]');
     });
 
     it('should handle Universal Editor teaser component like in example', () => {
@@ -192,8 +190,59 @@ describe('dom-selector.js', () => {
       const $test = cheerioLoad(html);
       const h3Element = $test('h3').get(0);
       const selector = getDomElementSelector(h3Element);
-      // Should use data-aue-prop for the h3 element
-      expect(selector).to.equal('h3[data-aue-prop="title"]');
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/frescopa/en/index/jcr:content/root/section_0/block"] h3[data-aue-type="text"][data-aue-prop="title"]');
+    });
+
+    it('should produce Pattern B selector when element has both resource and prop', () => {
+      const html = `
+        <div data-aue-resource="urn:aemconnection:/content/page/jcr:content/root/section_0">
+          <h2 data-aue-resource="urn:aemconnection:/content/page/jcr:content/root/section_0/title"
+              data-aue-prop="jcr:title"
+              data-aue-type="text">Headline</h2>
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const element = $test('h2').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/page/jcr:content/root/section_0/title"][data-aue-prop="jcr:title"]');
+    });
+
+    it('should produce Pattern C selector with data-aue-type for descendant prop', () => {
+      const html = `
+        <div data-aue-resource="urn:aemconnection:/content/page/jcr:content/root/section/block">
+          <img data-aue-type="media" data-aue-prop="fileReference" src="/image.jpg">
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const element = $test('img').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/page/jcr:content/root/section/block"] img[data-aue-type="media"][data-aue-prop="fileReference"]');
+    });
+
+    it('should produce Pattern C selector for richtext prop', () => {
+      const html = `
+        <div data-aue-resource="urn:aemconnection:/content/page/jcr:content/root/section/block/item">
+          <div class="cards-card-body">
+            <div data-aue-type="richtext" data-aue-prop="text"><h5>House Blend</h5><p>$14.99</p></div>
+          </div>
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const element = $test('[data-aue-prop="text"]').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/page/jcr:content/root/section/block/item"] div[data-aue-type="richtext"][data-aue-prop="text"]');
+    });
+
+    it('should omit data-aue-type when not present on prop element', () => {
+      const html = `
+        <div data-aue-resource="urn:aemconnection:/content/page/block">
+          <a data-aue-prop="link" href="/page">Click</a>
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const element = $test('a').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/page/block"] a[data-aue-prop="link"]');
     });
 
     it('should handle Universal Editor body tag with data-aue-resource', () => {
@@ -205,9 +254,7 @@ describe('dom-selector.js', () => {
       const $test = cheerioLoad(html);
       const divElement = $test('div.content').get(0);
       const selector = getDomElementSelector(divElement);
-      // Should include the body with data-aue-resource in the path
-      expect(selector).to.include('body[data-aue-resource="urn:aemconnection:/content/frescopa/en/index/jcr:content"]');
-      expect(selector).to.include('div.content');
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/frescopa/en/index/jcr:content"] > main > div.content');
     });
   });
 
