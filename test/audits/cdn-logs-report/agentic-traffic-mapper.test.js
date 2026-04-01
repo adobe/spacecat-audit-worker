@@ -140,4 +140,60 @@ describe('agentic traffic mapper', () => {
       classificationRows: [],
     });
   });
+
+  it('classifies common image and icon asset content types', async () => {
+    const site = {
+      getId: () => 'site-1',
+      getBaseURL: () => 'https://www.example.com',
+      getConfig: () => ({
+        getLlmoCountryCodeIgnoreList: () => [],
+      }),
+    };
+
+    const result = await mapToAgenticTrafficBundle([
+      {
+        agent_type: 'Chatbots',
+        user_agent_display: 'ChatGPT-User',
+        status: 200,
+        number_of_hits: 12,
+        avg_ttfb_ms: 50,
+        country_code: 'US',
+        url: '/assets/hero.png',
+        host: 'www.example.com',
+        product: 'Docs',
+        category: 'Asset',
+      },
+      {
+        agent_type: 'Chatbots',
+        user_agent_display: 'ChatGPT-User',
+        status: 200,
+        number_of_hits: 6,
+        avg_ttfb_ms: 40,
+        country_code: 'US',
+        url: '/favicon.ico',
+        host: 'www.example.com',
+        product: 'Docs',
+        category: 'Asset',
+      },
+    ], site, { log: { warn: sinon.spy() } }, '2026-03-31');
+
+    expect(result.classificationRows).to.deep.include({
+      host: 'www.example.com',
+      url_path: '/assets/hero.png',
+      region: 'US',
+      category_name: 'Docs',
+      page_type: 'Asset',
+      content_type: 'png',
+      updated_by: 'audit-worker:agentic-daily-export',
+    });
+    expect(result.classificationRows).to.deep.include({
+      host: 'www.example.com',
+      url_path: '/favicon.ico',
+      region: 'US',
+      category_name: 'Docs',
+      page_type: 'Asset',
+      content_type: 'ico',
+      updated_by: 'audit-worker:agentic-daily-export',
+    });
+  });
 });
