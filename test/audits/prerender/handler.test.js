@@ -4072,7 +4072,7 @@ describe('Prerender Audit', () => {
           getId: () => 'site-1',
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
-            getIncludedURLs: () => ['https://www.example.com/included'],
+            getIncludedURLs: async () => ['https://www.example.com/included'],
           }),
         },
         audit: { getId: () => 'a' },

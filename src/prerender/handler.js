@@ -30,11 +30,12 @@ import {
   MODE_AI_ONLY,
 } from './utils/constants.js';
 
-function rebaseUrl(url, preferredBase) {
+function rebaseUrl(url, preferredBase, log) {
   try {
     const { pathname, search, hash } = new URL(url);
     return new URL(pathname + search + hash, preferredBase).toString();
-  } catch {
+  } catch (e) {
+    log?.warn?.(`rebaseUrl failed url=${url} base=${preferredBase}: ${e.message}`);
     return url;
   }
 }
@@ -753,7 +754,7 @@ export async function submitForScraping(context) {
   const siteId = site.getId();
   if (Array.isArray(auditContext?.urls) && auditContext.urls.length > 0) {
     const preferredBase = getPreferredBaseUrl(site, context);
-    const rebasedCsvUrls = auditContext.urls.map((url) => rebaseUrl(url, preferredBase));
+    const rebasedCsvUrls = auditContext.urls.map((url) => rebaseUrl(url, preferredBase, log));
     const { urls: explicitUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(rebasedCsvUrls);
 
     log.info(`
@@ -784,9 +785,9 @@ export async function submitForScraping(context) {
   const agenticUrls = await getTopAgenticUrls(site, context);
 
   const preferredBase = getPreferredBaseUrl(site, context);
-  const rebasedTopPagesUrls = topPagesUrls.map((url) => rebaseUrl(url, preferredBase));
-  const rebasedIncludedURLs = (await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [])
-    .map((url) => rebaseUrl(url, preferredBase));
+  const rebasedTopPagesUrls = topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log));
+  const rebasedIncludedURLs = ((await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [])
+    .map((url) => rebaseUrl(url, preferredBase, log));
 
   // Daily batching: filter URLs recently processed within the rolling recent window
   const recentPathnames = await getRecentlyProcessedPathnames(context, siteId);
@@ -1431,9 +1432,11 @@ export async function processContentAndGenerateOpportunities(context) {
       // Load top organic pages cache for fallback merging
       const topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
       const preferredBase = getPreferredBaseUrl(site, context);
-      const rebasedFallbackOrganicUrls = topPagesUrls.map((url) => rebaseUrl(url, preferredBase));
-      const rebasedFallbackIncludedURLs = (site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [])
-        .map((url) => rebaseUrl(url, preferredBase));
+      const rebasedFallbackOrganicUrls = topPagesUrls
+        .map((url) => rebaseUrl(url, preferredBase, log));
+      const fallbackIncludedURLs = (await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [];
+      const rebasedFallbackIncludedURLs = fallbackIncludedURLs
+        .map((url) => rebaseUrl(url, preferredBase, log));
       // Use the same normalization and filtering logic for consistency
       const { urls: filteredUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
         rebasedFallbackOrganicUrls,
