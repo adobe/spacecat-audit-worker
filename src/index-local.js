@@ -61,6 +61,7 @@ export const main = async () => {
       region: 'us-east-1',
     },
     func: {
+      name: 'audit-worker',
       version: 'latest',
     },
     invocation: {
