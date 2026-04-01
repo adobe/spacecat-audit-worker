@@ -11,6 +11,8 @@ Resources:
       Timeout: 900
       Environment:
         Variables:
+          VAULT_SECRETS_DISABLED: 'false'
+          AWS_XRAY_CONTEXT_MISSING: IGNORE_ERROR
           AWS_ACCESS_KEY_ID: !Ref AWS_ACCESS_KEY_ID
           AWS_SECRET_ACCESS_KEY: !Ref AWS_SECRET_ACCESS_KEY
           AWS_DEFAULT_REGION: !Ref AWS_DEFAULT_REGION
