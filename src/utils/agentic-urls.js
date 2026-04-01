@@ -20,11 +20,9 @@ import { weeklyBreakdownQueries } from '../cdn-logs-report/utils/query-builder.j
 const DEFAULT_TOP_AGENTIC_URLS_LIMIT = 200;
 
 function getPreferredBaseUrl(site, context) {
-  const overrideBaseUrl = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL;
-  return overrideBaseUrl
-    || (context.finalUrl && !/^https?:\/\//.test(context.finalUrl)
-      ? `https://${context.finalUrl}`
-      : context.finalUrl || site.getBaseURL());
+  return context.finalUrl && !/^https?:\/\//.test(context.finalUrl)
+    ? `https://${context.finalUrl}`
+    : context.finalUrl || site.getBaseURL();
 }
 
 // URL suffixes to exclude from agentic URL results

@@ -1,3 +1,31 @@
+## [1.385.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.385.1...v1.385.2) (2026-04-01)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2262](https://github.com/adobe/spacecat-audit-worker/issues/2262)) ([e1871d3](https://github.com/adobe/spacecat-audit-worker/commit/e1871d349aae1d507b432ea3e31fa1cbf8044794))
+
+## [1.385.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.385.0...v1.385.1) (2026-03-31)
+
+
+### Bug Fixes
+
+* stop re-enabling page citability ([#2261](https://github.com/adobe/spacecat-audit-worker/issues/2261)) ([4823620](https://github.com/adobe/spacecat-audit-worker/commit/48236208bbd4ac7f0fe8e8f9444e6ebbd2647ff6))
+
+# [1.385.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.384.1...v1.385.0) (2026-03-31)
+
+
+### Features
+
+* Writing the delivery config for the detected CDN ([#2172](https://github.com/adobe/spacecat-audit-worker/issues/2172)) ([7ffe9fa](https://github.com/adobe/spacecat-audit-worker/commit/7ffe9fa147b057bf11f0db7f0dbe390362633d97))
+
+## [1.384.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.384.0...v1.384.1) (2026-03-31)
+
+
+### Bug Fixes
+
+* ignore override base url for agentic urls ([#2260](https://github.com/adobe/spacecat-audit-worker/issues/2260)) ([0005544](https://github.com/adobe/spacecat-audit-worker/commit/0005544c1585ef82557e1d5c69e5de4b10f79818))
+
 # [1.384.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.383.1...v1.384.0) (2026-03-31)
 
 

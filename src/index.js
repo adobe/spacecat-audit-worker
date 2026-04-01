@@ -48,6 +48,8 @@ import costs from './costs/handler.js';
 import structuredData from './structured-data/handler.js';
 import structuredDataGuidance from './structured-data/guidance-handler.js';
 import siteDetection from './site-detection/handler.js';
+import detectCdn from './detect-cdn/handler.js';
+import deliveryConfigWriter from './delivery-config-writer/handler.js';
 import highFormViewsLowConversionsGuidance from './forms-opportunities/guidance-handlers/guidance-high-form-views-low-conversions.js';
 import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-nav.js';
 import highPageViewsLowFormViewsGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-views.js';
@@ -145,6 +147,8 @@ const HANDLERS = {
   'experimentation-opportunities': experimentationOpportunities,
   'meta-tags': metaTags,
   costs,
+  'detect-cdn': detectCdn,
+  'delivery-config-writer': deliveryConfigWriter,
   'structured-data': structuredData,
   'llm-blocked': llmBlocked,
   'forms-opportunities': formsOpportunities,
