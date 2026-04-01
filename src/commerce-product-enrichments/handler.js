@@ -24,6 +24,36 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 const MAX_EXCLUDED_URLS = 500;
 
+const REQUIRED_STORE_VIEW_FIELDS = ['environmentId', 'websiteCode', 'storeCode', 'storeViewCode'];
+
+/**
+ * Validates that the site has a commerceLlmoConfig with at least one store view
+ * containing all required fields.
+ *
+ * @param {object} site - The site object
+ * @param {object} log - Logger
+ * @returns {{ valid: boolean, reason?: string }}
+ */
+export function validateCommerceConfig(site, log) {
+  const commerceLlmoConfig = site?.getConfig?.()?.state?.commerceLlmoConfig;
+
+  if (!commerceLlmoConfig || Object.keys(commerceLlmoConfig).length === 0) {
+    log.warn(`${LOG_PREFIX} Missing commerceLlmoConfig for site ${site.getId()}`);
+    return { valid: false, reason: 'Missing commerceLlmoConfig' };
+  }
+
+  const hasValidStoreView = Object.values(commerceLlmoConfig).some(
+    (storeView) => REQUIRED_STORE_VIEW_FIELDS.every((field) => !!storeView[field]),
+  );
+
+  if (!hasValidStoreView) {
+    log.warn(`${LOG_PREFIX} No valid store views in commerceLlmoConfig for site ${site.getId()}`);
+    return { valid: false, reason: 'No valid store views in commerceLlmoConfig' };
+  }
+
+  return { valid: true };
+}
+
 /**
  * Step 1: Import Top Pages
  * Prepares the audit context and returns metadata for the import worker.
@@ -35,6 +65,11 @@ export async function importTopPages(context) {
   const {
     site, finalUrl, log, data,
   } = context;
+
+  const configValidation = validateCommerceConfig(site, log);
+  if (!configValidation.valid) {
+    return { auditResult: { status: 'SKIPPED', reason: configValidation.reason } };
+  }
 
   log.debug(`${LOG_PREFIX} Step 1: input:`, { siteId: site.getId(), finalUrl, data });
 
@@ -328,6 +363,7 @@ export async function runAuditAndProcessResults(context) {
 
   let remoteConfig = null;
   if (!hasManualConfig) {
+    log.warn(`${LOG_PREFIX} Step 3: getCommerceConfig remote fallback is deprecated for site ${site.getId()}`);
     try {
       remoteConfig = await getCommerceConfig(site, AUDIT_TYPE, finalUrl, log);
       const redactedHeaders = { ...remoteConfig.headers };
@@ -556,6 +592,11 @@ export async function runAuditAndProcessResults(context) {
  */
 export async function discoverSitemapUrlsAndSubmitForScraping(context) {
   const { site, log, data } = context;
+
+  const configValidation = validateCommerceConfig(site, log);
+  if (!configValidation.valid) {
+    return { auditResult: { status: 'SKIPPED', reason: configValidation.reason } };
+  }
 
   let parsedData = {};
   if (typeof data === 'string' && data.length > 0) {
