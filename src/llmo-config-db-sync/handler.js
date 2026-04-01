@@ -89,7 +89,7 @@ function diffRows(desiredRows, existingByKey, keyFn, compareFields) {
 function logDiffSummary(log, label, toInsert, toUpdate) {
   log.info(`[DIFF] ${label}: ${toInsert.length} to insert, ${toUpdate.length} to update`);
 
-  toUpdate.slice(0, 100).forEach((row) => {
+  toUpdate.slice(0, 5).forEach((row) => {
     const { _changedFields, _existing, ...data } = row;
     const keyFields = Object.entries(data)
       .filter(([k]) => k.endsWith('_id') && !_changedFields.includes(k))
@@ -105,7 +105,7 @@ function logDiffSummary(log, label, toInsert, toUpdate) {
     log.info(`[DIFF] ${label} UPDATE [${keyFields}]:\n${diff}`);
   });
 
-  toInsert.slice(0, 100).forEach((row) => {
+  toInsert.slice(0, 5).forEach((row) => {
     log.info(`[DIFF] ${label} INSERT: ${JSON.stringify(row)}`);
   });
 
@@ -297,9 +297,7 @@ async function upsertInBatches(postgrestClient, table, rows, onConflict, log) {
 
 export default async function llmoConfigDbSync(message, context) {
   const { log, env } = context;
-  const PROD_SITE_IDS = [PROD_SITE_ID];
-  const { siteId, dryRun: dryRunParam = true } = message;
-  const dryRun = PROD_SITE_IDS.includes(siteId) ? true : dryRunParam;
+  const { siteId, dryRun = false } = message;
   const tag = dryRun ? '[llmo-config-db-sync] [DRY RUN] ' : '[llmo-config-db-sync]';
 
   if (!isSyncEnabledForSite(siteId)) {
