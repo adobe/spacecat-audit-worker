@@ -1,3 +1,10 @@
+## [1.388.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.388.2...v1.388.3) (2026-04-01)
+
+
+### Bug Fixes
+
+* prevent false positive broken links for 405 and bot-protected URLs in preflight ([#2207](https://github.com/adobe/spacecat-audit-worker/issues/2207)) ([0b27fea](https://github.com/adobe/spacecat-audit-worker/commit/0b27fea156037be627e00dbcb6d7c8049820f3b5))
+
 ## [1.388.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.388.1...v1.388.2) (2026-04-01)
 
 
