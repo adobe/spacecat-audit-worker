@@ -17,7 +17,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
-import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
+import { getTopAgenticUrlsFromAthena, getPreferredBaseUrl } from '../utils/agentic-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
 import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
@@ -29,6 +29,15 @@ import {
   PRERENDER_RECENT_PROCESSING_TIME_DAYS,
   MODE_AI_ONLY,
 } from './utils/constants.js';
+
+function rebaseUrl(url, preferredBase) {
+  try {
+    const { pathname, search, hash } = new URL(url);
+    return new URL(pathname + search + hash, preferredBase).toString();
+  } catch {
+    return url;
+  }
+}
 
 const LOG_PREFIX = 'Prerender -';
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
@@ -772,13 +781,18 @@ export async function submitForScraping(context) {
   // getTopAgenticUrls internally handles errors and returns [] on failure
   const agenticUrls = await getTopAgenticUrls(site, context);
 
-  const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
+  const preferredBase = getPreferredBaseUrl(site, context);
+  const rebasedTopPagesUrls = topPagesUrls.map((url) => rebaseUrl(url, preferredBase));
+  const rebasedIncludedURLs = (await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [])
+    .map((url) => rebaseUrl(url, preferredBase));
 
   // Daily batching: filter URLs recently processed within the rolling recent window
   const recentPathnames = await getRecentlyProcessedPathnames(context, siteId);
 
-  const filteredOrganicUrls = topPagesUrls.filter((url) => isNotRecentUrl(url, recentPathnames));
-  const filteredIncludedURLs = includedURLs.filter((url) => isNotRecentUrl(url, recentPathnames));
+  const filteredOrganicUrls = rebasedTopPagesUrls
+    .filter((url) => isNotRecentUrl(url, recentPathnames));
+  const filteredIncludedURLs = rebasedIncludedURLs
+    .filter((url) => isNotRecentUrl(url, recentPathnames));
   const filteredAgenticUrls = agenticUrls.filter((url) => isNotRecentUrl(url, recentPathnames));
 
   const hasRecentOrganic = filteredOrganicUrls.length !== topPagesUrls.length;
@@ -814,7 +828,7 @@ export async function submitForScraping(context) {
     submittedUrls=${finalUrls.length},
     agenticUrls=${agenticUrls.length},
     topPagesUrls=${topPagesUrls.length},
-    includedURLs=${includedURLs.length},
+    includedURLs=${rebasedIncludedURLs.length},
     filteredOutUrls=${filteredCount},
     currentAgentic=${currentAgentic},
     currentOrganic=${currentOrganic},

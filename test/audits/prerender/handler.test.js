@@ -642,6 +642,44 @@ describe('Prerender Audit', () => {
         expect(result).to.be.an('object');
         expect(result.urls).to.be.an('array');
       });
+      it('rebases organic and included URLs to getPreferredBaseUrl domain', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => [],
+            getPreferredBaseUrl: () => 'https://example.com',
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({
+              getIncludedURLs: () => ['https://www.example.com/included-page'],
+            }),
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: async () => [
+                { getUrl: () => 'https://www.example.com/organic-1' },
+                { getUrl: () => 'https://www.example.com/organic-2' },
+              ],
+            },
+            PageCitability: { allByIndexKeys: async () => [] },
+          },
+          finalUrl: 'https://example.com',
+          log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+        const submittedUrls = result.urls.map((u) => u.url);
+        expect(submittedUrls).to.include('https://example.com/organic-1');
+        expect(submittedUrls).to.include('https://example.com/organic-2');
+        expect(submittedUrls).to.include('https://example.com/included-page');
+        submittedUrls.forEach((u) => expect(u).to.not.include('www.'));
+      });
+
       describe('daily batching', () => {
         const makeAgenticUrls = (n, base = 'https://example.com/agentic-') => Array.from({ length: n }, (_, i) => `${base}${i}`);
         const makeCitabilityRecord = (path) => ({
