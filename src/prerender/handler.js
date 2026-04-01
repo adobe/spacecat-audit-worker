@@ -1430,21 +1430,23 @@ export async function processContentAndGenerateOpportunities(context) {
 
       // Load top organic pages cache for fallback merging
       const topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
-
-      const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
+      const preferredBase = getPreferredBaseUrl(site, context);
+      const rebasedFallbackOrganicUrls = topPagesUrls.map((url) => rebaseUrl(url, preferredBase));
+      const rebasedFallbackIncludedURLs = (site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [])
+        .map((url) => rebaseUrl(url, preferredBase));
       // Use the same normalization and filtering logic for consistency
       const { urls: filteredUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
-        topPagesUrls,
+        rebasedFallbackOrganicUrls,
         agenticUrls,
-        includedURLs,
+        rebasedFallbackIncludedURLs,
       );
       urlsToCheck = filteredUrls;
 
       /* c8 ignore stop */
       const msg = `Fallback for baseUrl=${site.getBaseURL()}, siteId=${siteId}. `
         + `Using agenticURLs=${agenticUrls.length}, `
-        + `topPages=${topPagesUrls.length}, `
-        + `includedURLs=${includedURLs.length}, `
+        + `topPages=${rebasedFallbackOrganicUrls.length}, `
+        + `includedURLs=${rebasedFallbackIncludedURLs.length}, `
         + `filteredOutUrls=${filteredCount}, `
         + `total=${urlsToCheck.length}`;
       log.info(`${LOG_PREFIX} ${msg}`);

@@ -4047,6 +4047,59 @@ describe('Prerender Audit', () => {
       expect(loggedFallback).to.include('includedURLs=1');
     });
 
+    it('rebases organic and included URLs to preferredBase in fallback URL-list path', async () => {
+      const html = '<html><body><p>hello world content here</p></body></html>';
+      let capturedArgs = [];
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: async () => [],
+          getPreferredBaseUrl: () => 'https://example.com',
+        },
+        '../../../src/utils/s3-utils.js': {
+          getObjectFromKey: async () => html,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sinon.stub().resolves(false),
+          mergeAndGetUniqueHtmlUrls: (...args) => {
+            capturedArgs = args.flat();
+            return { urls: capturedArgs, filteredCount: 0 };
+          },
+        },
+      });
+
+      const ctx = {
+        site: {
+          getId: () => 'site-1',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getIncludedURLs: () => ['https://www.example.com/included'],
+          }),
+        },
+        audit: { getId: () => 'a' },
+        dataAccess: {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+              { getUrl: () => 'https://www.example.com/organic' },
+            ]),
+          },
+          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sinon.stub().resolves() },
+        },
+        log: {
+          info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub(),
+        },
+        s3Client: { send: sinon.stub().resolves({}) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        scrapeResultPaths: new Map(),
+        auditContext: { scrapeJobId: 'test-job-id' },
+      };
+
+      await mockHandler.processContentAndGenerateOpportunities(ctx);
+      expect(capturedArgs).to.include('https://example.com/organic');
+      expect(capturedArgs).to.include('https://example.com/included');
+      capturedArgs.forEach((u) => expect(u).to.not.include('www.'));
+    });
+
     it('should handle missing dataAccess when loading top pages', async () => {
       const html = '<html><body><p>x</p></body></html>';
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
