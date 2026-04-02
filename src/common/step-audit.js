@@ -18,7 +18,7 @@ import { BaseAudit } from './base-audit.js';
 import {
   isAuditEnabledForSite,
   loadExistingAudit,
-  preservePassthroughKeys,
+  preserveOnDemand,
   sendContinuationMessage,
 } from './audit-utils.js';
 import { handleAbort } from './bot-detection.js';
@@ -77,7 +77,7 @@ export class StepAudit extends BaseAudit {
       fullAuditRef: audit.getFullAuditRef(),
     };
 
-    const preserved = preservePassthroughKeys(context.auditContext);
+    const preserved = preserveOnDemand(context.auditContext);
 
     const auditContext = {
       ...preserved,

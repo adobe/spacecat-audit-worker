@@ -14,7 +14,7 @@ import { isNonEmptyObject, isValidUUID } from '@adobe/spacecat-shared-utils';
 import { AsyncJob, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { StepAudit } from './step-audit.js';
-import { sendContinuationMessage, isAuditEnabledForSite, preservePassthroughKeys } from './audit-utils.js';
+import { sendContinuationMessage, isAuditEnabledForSite, preserveOnDemand } from './audit-utils.js';
 
 const { AUDIT_STEP_DESTINATION_CONFIGS } = AuditModel;
 
@@ -42,7 +42,7 @@ export class AsyncJobRunner extends StepAudit {
     const destination = AUDIT_STEP_DESTINATION_CONFIGS[step.destination];
     const nextStepName = this.getNextStepName(step.name);
 
-    const preserved = preservePassthroughKeys(context.auditContext);
+    const preserved = preserveOnDemand(context.auditContext);
 
     const auditContext = {
       ...preserved,

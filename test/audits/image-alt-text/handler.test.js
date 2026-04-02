@@ -805,8 +805,8 @@ describe('Image Alt Text Handler', () => {
         },
       });
 
-      expect(context.log.info).to.have.been.calledWith(
-        '[alt-text]: Page limit set to 100 (summit-plg: false, onDemand: false)',
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Page limit set to 100 (summit-plg active: false, onDemand: false)',
       );
       expect(context.log.info).to.have.been.calledWith(
         '[alt-text]: Sending 3 URLs to scrape client (maxScrapeAge: 24h)',
@@ -818,8 +818,8 @@ describe('Image Alt Text Handler', () => {
 
       const result = await handlerModule.processScraping(context);
 
-      expect(context.log.info).to.have.been.calledWith(
-        '[alt-text]: Page limit set to 100 (summit-plg: false, onDemand: false)',
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Page limit set to 100 (summit-plg active: false, onDemand: false)',
       );
       expect(result.auditResult.status).to.equal('no_top_pages');
       expect(result.fullAuditRef).to.equal('scrapes/site-id/');
@@ -845,8 +845,8 @@ describe('Image Alt Text Handler', () => {
       expect(result.urls[19].url).to.equal('https://example.com/page20');
       expect(result.maxScrapeAge).to.equal(24);
       expect(result.options).to.deep.equal({ pageLoadTimeout: 45000 });
-      expect(context.log.info).to.have.been.calledWith(
-        '[alt-text]: Page limit set to 20 (summit-plg: true, onDemand: false)',
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Page limit set to 20 (summit-plg active: true, onDemand: false)',
       );
     });
 
@@ -859,8 +859,8 @@ describe('Image Alt Text Handler', () => {
       expect(result.urls).to.have.lengthOf(100);
       expect(result.maxScrapeAge).to.equal(24);
       expect(result.options).to.deep.equal({ pageLoadTimeout: 45000 });
-      expect(context.log.info).to.have.been.calledWith(
-        '[alt-text]: Page limit set to 100 (summit-plg: false, onDemand: false)',
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Page limit set to 100 (summit-plg active: false, onDemand: false)',
       );
     });
 
@@ -874,9 +874,40 @@ describe('Image Alt Text Handler', () => {
       const result = await handlerModule.processScraping(context);
 
       expect(result.urls).to.have.lengthOf(100);
-      expect(context.log.info).to.have.been.calledWith(
-        '[alt-text]: Page limit set to 100 (summit-plg: false, onDemand: true)',
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Page limit set to 100 (summit-plg active: false, onDemand: true)',
       );
+    });
+
+    it('should bypass summit-plg windowing when onDemand is string "true"', async () => {
+      configurationMock.isHandlerEnabledForSite.returns(true);
+      const pageUrls = Array.from({ length: 150 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
+
+      context.auditContext = { onDemand: 'true' };
+
+      const result = await handlerModule.processScraping(context);
+
+      expect(result.urls).to.have.lengthOf(100);
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Page limit set to 100 (summit-plg active: false, onDemand: true)',
+      );
+    });
+
+    it('should use default page limit when Configuration.findLatest throws error', async () => {
+      context.dataAccess.Configuration.findLatest.rejects(new Error('Configuration error'));
+      const pageUrls = Array.from({ length: 5 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
+
+      const result = await handlerModule.processScraping(context);
+
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match('[alt-text]: Failed to load configuration, defaulting to standard page limit: Configuration error'),
+      );
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Page limit set to 100 (summit-plg active: false, onDemand: false)',
+      );
+      expect(result.urls).to.have.lengthOf(5);
     });
   });
 
@@ -957,8 +988,8 @@ describe('Image Alt Text Handler', () => {
       expect(callArgs[6]).to.equal(true);
       expect(callArgs[7]).to.equal(true);
 
-      expect(context.log.info).to.have.been.calledWith(
-        '[alt-text]: Page limit set to 20 (summit-plg: true, onDemand: false)',
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Page limit set to 20 (summit-plg active: true, onDemand: false)',
       );
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Using pages 0-19 of 50 (limit: 20)',
@@ -981,8 +1012,8 @@ describe('Image Alt Text Handler', () => {
       expect(callArgs[6]).to.equal(false);
       expect(callArgs[7]).to.equal(true);
 
-      expect(context.log.info).to.have.been.calledWith(
-        '[alt-text]: Page limit set to 100 (summit-plg: false, onDemand: false)',
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Page limit set to 100 (summit-plg active: false, onDemand: false)',
       );
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Using pages 0-99 of 150 (limit: 100)',
@@ -1004,11 +1035,26 @@ describe('Image Alt Text Handler', () => {
       expect(sentUrls[99]).to.equal('https://example.com/page100');
       expect(callArgs[6]).to.equal(false);
       expect(callArgs[7]).to.equal(true);
-      expect(context.log.info).to.have.been.calledWith(
-        '[alt-text]: Page limit set to 100 (summit-plg: false, onDemand: true)',
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Page limit set to 100 (summit-plg active: false, onDemand: true)',
       );
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Using pages 0-99 of 150 (limit: 100)',
+      );
+    });
+
+    it('should bypass summit-plg windowing when onDemand is string "true"', async () => {
+      configurationMock.isHandlerEnabledForSite.returns(true);
+      const pageUrls = Array.from({ length: 150 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
+      context.auditContext = { onDemand: 'true' };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      const callArgs = sendAltTextOpportunityToMystiqueStub.getCall(0).args;
+      expect(callArgs[6]).to.equal(false); // isSummitPlg bypassed
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Page limit set to 100 (summit-plg active: false, onDemand: true)',
       );
     });
 
@@ -1031,19 +1077,26 @@ describe('Image Alt Text Handler', () => {
       expect(sentUrls).to.not.include('https://example.com/page21');
       expect(callArgs[6]).to.equal(true);
       expect(callArgs[7]).to.equal(true);
-      expect(context.log.info).to.have.been.calledWith(
-        '[alt-text]: Page limit set to 20 (summit-plg: true, onDemand: false)',
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Page limit set to 20 (summit-plg active: true, onDemand: false)',
       );
     });
 
-    it('should handle when Configuration.findLatest throws error', async () => {
-      context.dataAccess.Configuration.findLatest.rejects(new Error('Configuration error'));
+    it('should use default page limit when Configuration.findLatest throws error', async () => {
+      // Only the first call (getTopPagesLimit) rejects; isDecorativeAgentEnabled's call resolves
+      context.dataAccess.Configuration.findLatest
+        .onFirstCall().rejects(new Error('Configuration error'))
+        .resolves(configurationMock);
+      const pageUrls = Array.from({ length: 5 }, (_, i) => `https://example.com/page${i + 1}`);
+      getTopPageUrlsStub.resolves(pageUrls);
 
-      await expect(handlerModule.processAltTextWithMystique(context))
-        .to.be.rejectedWith('Configuration error');
+      await handlerModule.processAltTextWithMystique(context);
 
-      expect(context.log.error).to.have.been.calledWith(
-        '[alt-text][AltTextProcessingError] Failed to process with Mystique: Configuration error',
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match('[alt-text]: Failed to load configuration, defaulting to standard page limit: Configuration error'),
+      );
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: Page limit set to 100 (summit-plg active: false, onDemand: false)',
       );
     });
   });

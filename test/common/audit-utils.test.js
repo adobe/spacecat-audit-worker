@@ -24,7 +24,7 @@ import {
   sendContinuationMessage,
   checkProductCodeEntitlements,
   parseMessageDataForRunnerAudit,
-  preservePassthroughKeys,
+  preserveOnDemand,
 } from '../../src/common/audit-utils.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -332,26 +332,34 @@ describe('Audit Utils Tests', () => {
     });
   });
 
-  describe('preservePassthroughKeys', () => {
-    it('extracts onDemand from auditContext', () => {
-      const result = preservePassthroughKeys({ onDemand: true, extra: 'ignored' });
+  describe('preserveOnDemand', () => {
+    it('extracts onDemand when boolean true', () => {
+      const result = preserveOnDemand({ onDemand: true, extra: 'ignored' });
       expect(result).to.deep.equal({ onDemand: true });
     });
 
+    it('normalizes string "true" to boolean true', () => {
+      expect(preserveOnDemand({ onDemand: 'true' })).to.deep.equal({ onDemand: true });
+    });
+
     it('returns empty object when auditContext is undefined', () => {
-      expect(preservePassthroughKeys(undefined)).to.deep.equal({});
+      expect(preserveOnDemand(undefined)).to.deep.equal({});
     });
 
     it('returns empty object when auditContext is null', () => {
-      expect(preservePassthroughKeys(null)).to.deep.equal({});
+      expect(preserveOnDemand(null)).to.deep.equal({});
     });
 
     it('returns empty object when onDemand is not set', () => {
-      expect(preservePassthroughKeys({ extra: 'ignored' })).to.deep.equal({});
+      expect(preserveOnDemand({ extra: 'ignored' })).to.deep.equal({});
     });
 
-    it('preserves onDemand: false', () => {
-      expect(preservePassthroughKeys({ onDemand: false })).to.deep.equal({ onDemand: false });
+    it('returns empty object when onDemand is false', () => {
+      expect(preserveOnDemand({ onDemand: false })).to.deep.equal({});
+    });
+
+    it('returns empty object when onDemand is string "false"', () => {
+      expect(preserveOnDemand({ onDemand: 'false' })).to.deep.equal({});
     });
   });
 
