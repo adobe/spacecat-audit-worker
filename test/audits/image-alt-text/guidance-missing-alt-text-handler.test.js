@@ -592,6 +592,8 @@ describe('Missing Alt Text Guidance Handler', () => {
     await guidanceHandler(mockMessage, context);
 
     expect(mockOpportunity.setLastAuditedAt).to.not.have.been.called;
+  });
+
   it('should set success status on audit after processing Mystique response', async () => {
     const result = await guidanceHandler(mockMessage, context);
 
