@@ -159,12 +159,6 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
     };
   });
 
-  const totalBatches = Math.ceil(filteredSiteData.length / BATCH_SIZE);
-  const dataBatches = Array.from(
-    { length: totalBatches },
-    (_, i) => filteredSiteData.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE),
-  );
-
   // return early if site data is not found
   if (!isNonEmptyArray(filteredSiteData)) {
     log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No site data found, skipping suggestions generation`);
