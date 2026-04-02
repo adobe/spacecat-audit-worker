@@ -330,6 +330,7 @@ describe('CDN Config Handler', () => {
       expect(mockSite.save).to.have.been.called;
       expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('cdn-logs-analysis', mockSite);
       expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('cdn-logs-report', mockSite);
+      expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('llm-error-pages', mockSite);
       expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('page-citability', mockSite);
       expect(mockConfiguration.save).to.have.been.called;
       expect(context.log.warn).to.have.been.calledWith(
@@ -413,6 +414,7 @@ describe('CDN Config Handler', () => {
       expect(mockSite.save).to.have.been.called;
       expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('cdn-logs-analysis', mockSite);
       expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('cdn-logs-report', mockSite);
+      expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('llm-error-pages', mockSite);
       expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('page-citability', mockSite);
       expect(context.log.info).to.have.been.calledWith(
         'CDN_CONFIG_CHANGED: CDN bucket configuration updated',

@@ -1241,7 +1241,6 @@ describe('LLMO Customer Analysis Handler', () => {
         'scrape-top-pages',
         'headings',
         'llm-blocked',
-        'llm-error-pages',
         'summarization',
         'llmo-referral-traffic',
         'readability',
