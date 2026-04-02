@@ -22,6 +22,17 @@ import { getSitemapUrls } from '../sitemap/common.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
+const REQUIRED_COMMERCE_CONFIG_FIELDS = ['environmentId', 'websiteCode', 'storeCode', 'storeViewCode'];
+
+function hasValidCommerceLlmoConfig(site) {
+  const commerceLlmoConfig = site?.getConfig?.()?.state?.commerceLlmoConfig;
+  if (!commerceLlmoConfig || typeof commerceLlmoConfig !== 'object') return false;
+
+  return Object.values(commerceLlmoConfig).some(
+    (storeView) => REQUIRED_COMMERCE_CONFIG_FIELDS.every((field) => storeView?.[field]),
+  );
+}
+
 const MAX_EXCLUDED_URLS = 500;
 
 /**
@@ -53,6 +64,14 @@ export async function importTopPages(context) {
   const limit = parsedData.limit ? Number(parsedData.limit) : undefined;
 
   log.info(`${LOG_PREFIX} Step 1: importTopPages for site: ${site.getId()}, url: ${finalUrl}${limit ? `, limit: ${limit}` : ''}`);
+
+  if (!hasValidCommerceLlmoConfig(site)) {
+    log.warn(`${LOG_PREFIX} Step 1: No valid commerceLlmoConfig found for site ${site.getId()}, skipping audit`);
+    return {
+      auditResult: { status: 'SKIPPED', message: 'Missing or invalid commerceLlmoConfig' },
+      fullAuditRef: finalUrl,
+    };
+  }
 
   const s3BucketPath = `scrapes/${site.getId()}/`;
   const result = {
@@ -155,7 +174,7 @@ export async function submitForScraping(context) {
   log.info(`${LOG_PREFIX} Step 2: submitForScraping for site: ${site.getId()}${limit ? `, limit: ${limit}` : ''}`);
 
   const { SiteTopPage } = dataAccess;
-  const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
   const topPages = limit ? allTopPages.slice(0, limit) : allTopPages;
   const sourceUrls = topPages.map((page) => page.getUrl());
 
@@ -326,8 +345,12 @@ export async function runAuditAndProcessResults(context) {
   const commerceLlmoConfig = site?.getConfig?.()?.state?.commerceLlmoConfig;
   const hasManualConfig = !!commerceLlmoConfig && Object.keys(commerceLlmoConfig).length > 0;
 
+  // @deprecated — getCommerceConfig fallback is no longer used for commerce-product-enrichments.
+  // commerceLlmoConfig is now required (validated in Step 1). Keeping for backwards compatibility
+  // until all sites are migrated. To be removed in a future cleanup.
   let remoteConfig = null;
   if (!hasManualConfig) {
+    log.warn(`${LOG_PREFIX} Step 3: No commerceLlmoConfig found — remote config fallback is deprecated`);
     try {
       remoteConfig = await getCommerceConfig(site, AUDIT_TYPE, finalUrl, log);
       const redactedHeaders = { ...remoteConfig.headers };
@@ -369,8 +392,8 @@ export async function runAuditAndProcessResults(context) {
 
         const Product = scrapeData?.scrapeResult?.structuredData?.jsonld?.Product;
         if (Array.isArray(Product) && Product.length > 0) {
-          // Count products with SKU
-          skuCount = Product.filter((product) => product.sku).length;
+          const uniqueSkus = new Set(Product.filter((p) => p.sku).map((p) => p.sku));
+          skuCount = uniqueSkus.size;
           isProductPage = skuCount === 1;
           // Extract the actual SKU value
           if (isProductPage) {
@@ -572,6 +595,14 @@ export async function discoverSitemapUrlsAndSubmitForScraping(context) {
   const baseURL = site.getBaseURL();
 
   log.info(`${LOG_PREFIX} Step 1 (yearly): Discovering sitemap URLs for ${baseURL}${limit ? `, limit: ${limit}` : ''}`);
+
+  if (!hasValidCommerceLlmoConfig(site)) {
+    log.warn(`${LOG_PREFIX} Step 1 (yearly): No valid commerceLlmoConfig found for site ${site.getId()}, skipping audit`);
+    return {
+      auditResult: { status: 'SKIPPED', message: 'Missing or invalid commerceLlmoConfig' },
+      fullAuditRef: baseURL,
+    };
+  }
 
   const sitemapResult = await getSitemapUrls(baseURL, log);
 

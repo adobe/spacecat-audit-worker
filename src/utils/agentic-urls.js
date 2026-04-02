@@ -19,7 +19,7 @@ import { weeklyBreakdownQueries } from '../cdn-logs-report/utils/query-builder.j
 
 const DEFAULT_TOP_AGENTIC_URLS_LIMIT = 200;
 
-function getPreferredBaseUrl(site, context) {
+export function getPreferredBaseUrl(site, context) {
   return context.finalUrl && !/^https?:\/\//.test(context.finalUrl)
     ? `https://${context.finalUrl}`
     : context.finalUrl || site.getBaseURL();

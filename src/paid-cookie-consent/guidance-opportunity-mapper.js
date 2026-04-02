@@ -177,8 +177,8 @@ export function mapToPaidOpportunity(siteId, url, auditData, pageGuidance, audit
       appliedCPC: stats.appliedCPC,
       cpcSource: stats.cpcSource,
       defaultCPC: stats.defaultCPC,
-      ahrefsOrganicCPC: stats.ahrefsOrganicCPC,
-      ahrefsPaidCPC: stats.ahrefsPaidCPC,
+      seoOrganicCPC: stats.seoOrganicCPC,
+      seoPaidCPC: stats.seoPaidCPC,
     },
     status: 'NEW',
     tags: [

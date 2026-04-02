@@ -23,7 +23,7 @@ export function createOpportunityData() {
     },
     tags: ['Traffic acquisition', 'tech-seo'],
     data: {
-      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.GSC, DATA_SOURCES.SITE],
+      dataSources: [DATA_SOURCES.SEO, DATA_SOURCES.GSC, DATA_SOURCES.SITE],
     },
   };
 }

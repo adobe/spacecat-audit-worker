@@ -10,25 +10,16 @@
  * governing permissions and limitations under the License.
  */
 
-import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { keywordPromptsImportStep, loadPromptsAndSendDetection } from '../geo-brand-presence/handler.js';
-
-const { AUDIT_STEP_DESTINATIONS } = Audit;
+import { loadPromptsAndSendDetection } from '../geo-brand-presence/handler.js';
 
 // Daily geo-brand-presence audit flow:
-// STEP 0: Import keywords from external sources (if scheduled)
-// STEP 1: Load AI + human prompts, upload to S3, send unified detection message to Mystique
-// STEP 2: Receive categorization status (handled by message handler in index.js)
+// STEP 0: Load AI + human prompts, upload to S3, send unified detection message to Mystique
+// STEP 1: Receive categorization status (handled by message handler in index.js)
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .addStep(
-    'keywordPromptsImportStep',
-    (context) => keywordPromptsImportStep({ ...context, brandPresenceCadence: 'daily' }),
-    AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
-  )
   .addStep(
     'loadPromptsAndSendDetectionStep',
     (context) => loadPromptsAndSendDetection({ ...context, brandPresenceCadence: 'daily' }),

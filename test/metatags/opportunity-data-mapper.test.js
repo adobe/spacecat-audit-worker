@@ -44,7 +44,7 @@ describe('Meta Tags Opportunity Data Mapper', () => {
       const result = createOpportunityData();
 
       expect(result.data.dataSources).to.be.an('array');
-      expect(result.data.dataSources).to.include(DATA_SOURCES.AHREFS);
+      expect(result.data.dataSources).to.include(DATA_SOURCES.SEO);
       expect(result.data.dataSources).to.include(DATA_SOURCES.RUM);
       expect(result.data.dataSources).to.include(DATA_SOURCES.SITE);
     });

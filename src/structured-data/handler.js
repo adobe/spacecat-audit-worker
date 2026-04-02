@@ -165,7 +165,7 @@ export async function submitForScraping(context) {
     finalUrl,
   } = context;
   const { SiteTopPage } = dataAccess;
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
   if (topPages.length === 0) {
     throw new Error('No top pages found for site');
   }
@@ -192,7 +192,7 @@ export async function runAuditAndGenerateSuggestions(context) {
   const scrapeCache = new Map();
 
   try {
-    let topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    let topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'seo', 'global');
     if (!isNonEmptyArray(topPages)) {
       log.error(`SDA: No top pages for site ID ${siteId} found. Ensure that top pages were imported.`);
       throw new Error(`No top pages for site ID ${siteId} found.`);

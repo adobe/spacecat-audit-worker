@@ -17,7 +17,6 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import {
-  keywordPromptsImportStep,
   loadPromptsAndSendDetection,
   WEB_SEARCH_PROVIDERS,
 } from '../../src/geo-brand-presence/handler.js';
@@ -86,90 +85,6 @@ describe('Geo Brand Presence Daily Handler', () => {
 
   afterEach(() => {
     sandbox.restore();
-  });
-
-  it('should run the keywordPromptsImport step with cadence: daily', async () => {
-    const finalUrl = 'https://adobe.com';
-    const ctx = { ...context, finalUrl, brandPresenceCadence: 'daily' };
-    const result = await keywordPromptsImportStep(ctx);
-    expect(result.type).to.equal('llmo-prompts-ahrefs');
-    expect(result.siteId).to.equal(site.getId());
-    expect(result.endDate).to.be.undefined;
-    expect(result.fullAuditRef).to.equal(finalUrl);
-    expect(result.auditResult.keywordQuestions).to.deep.equal([]);
-    expect(result.auditResult.aiPlatform).to.be.undefined;
-    expect(result.auditResult.cadence).to.equal('daily');
-    expect(result.auditResult.referenceDate).to.be.a('string');
-    expect(new Date(result.auditResult.referenceDate).toString()).to.not.equal('Invalid Date');
-  });
-
-  it('passes on a string date in ctx.data', async () => {
-    const finalUrl = 'https://adobe.com';
-    const ctx = { ...context, finalUrl, data: '2025-10-01', brandPresenceCadence: 'daily' };
-    const result = await keywordPromptsImportStep(ctx);
-    expect(result.type).to.equal('llmo-prompts-ahrefs');
-    expect(result.siteId).to.equal(site.getId());
-    expect(result.endDate).to.equal('2025-10-01');
-    expect(result.fullAuditRef).to.equal(finalUrl);
-    expect(result.auditResult.keywordQuestions).to.deep.equal([]);
-    expect(result.auditResult.aiPlatform).to.be.undefined;
-    expect(result.auditResult.cadence).to.equal('daily');
-    expect(result.auditResult.referenceDate).to.be.a('string');
-    expect(new Date(result.auditResult.referenceDate).toString()).to.not.equal('Invalid Date');
-  });
-
-  it('ignores non-date values in ctx.data', async () => {
-    const finalUrl = 'https://adobe.com';
-    const ctx = { ...context, finalUrl, data: 'not a parseable date', brandPresenceCadence: 'daily' };
-    const result = await keywordPromptsImportStep(ctx);
-    expect(result.type).to.equal('llmo-prompts-ahrefs');
-    expect(result.siteId).to.equal(site.getId());
-    expect(result.endDate).to.be.undefined;
-    expect(result.fullAuditRef).to.equal(finalUrl);
-    expect(result.auditResult.keywordQuestions).to.deep.equal([]);
-    expect(result.auditResult.aiPlatform).to.be.undefined;
-    expect(result.auditResult.cadence).to.equal('daily');
-    expect(result.auditResult.referenceDate).to.be.a('string');
-    expect(new Date(result.auditResult.referenceDate).toString()).to.not.equal('Invalid Date');
-  });
-
-  it('parses JSON data with valid endDate and aiPlatform', async () => {
-    const finalUrl = 'https://adobe.com';
-    const jsonData = JSON.stringify({
-      endDate: '2025-10-01',
-      aiPlatform: 'gemini',
-    });
-    const ctx = { ...context, finalUrl, data: jsonData, brandPresenceCadence: 'daily' };
-    const result = await keywordPromptsImportStep(ctx);
-    expect(result.type).to.equal('llmo-prompts-ahrefs');
-    expect(result.siteId).to.equal(site.getId());
-    expect(result.endDate).to.equal('2025-10-01');
-    expect(result.fullAuditRef).to.equal(finalUrl);
-    expect(result.auditResult.keywordQuestions).to.deep.equal([]);
-    expect(result.auditResult.aiPlatform).to.equal('gemini');
-    expect(result.auditResult.cadence).to.equal('daily');
-    expect(result.auditResult.referenceDate).to.be.a('string');
-    expect(new Date(result.auditResult.referenceDate).toString()).to.not.equal('Invalid Date');
-  });
-
-  it('handles JSON parsing failure and falls back to legacy date parsing', async () => {
-    const finalUrl = 'https://adobe.com';
-    const invalidJson = '{ invalid json data';
-    const ctx = { ...context, finalUrl, data: invalidJson, brandPresenceCadence: 'daily' };
-    const result = await keywordPromptsImportStep(ctx);
-    expect(result.type).to.equal('llmo-prompts-ahrefs');
-    expect(result.siteId).to.equal(site.getId());
-    expect(result.endDate).to.be.undefined;
-    expect(result.fullAuditRef).to.equal(finalUrl);
-    expect(result.auditResult.keywordQuestions).to.deep.equal([]);
-    expect(result.auditResult.aiPlatform).to.be.undefined;
-    expect(result.auditResult.cadence).to.equal('daily');
-    expect(result.auditResult.referenceDate).to.be.a('string');
-    expect(new Date(result.auditResult.referenceDate).toString()).to.not.equal('Invalid Date');
-    expect(log.warn).to.have.been.calledWith(
-      'GEO BRAND PRESENCE: Could not parse data as JSON or date string: %s',
-      invalidJson,
-    );
   });
 
   it('should send daily detection message in step 1 with date field', async () => {

@@ -1,3 +1,116 @@
+# [1.390.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.389.4...v1.390.0) (2026-04-02)
+
+
+### Features
+
+* switch broken-backlinks audit to new SEO data provider client ([#2276](https://github.com/adobe/spacecat-audit-worker/issues/2276)) ([90091e9](https://github.com/adobe/spacecat-audit-worker/commit/90091e96076d96b3f8659b2550e4fb244d138a70))
+
+## [1.389.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.389.3...v1.389.4) (2026-04-02)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-drs-client to v1.4.1 ([#2282](https://github.com/adobe/spacecat-audit-worker/issues/2282)) ([ff9db4e](https://github.com/adobe/spacecat-audit-worker/commit/ff9db4e4bea0516c37b3e5aeb382b085966455fd))
+
+## [1.389.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.389.2...v1.389.3) (2026-04-01)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.41.0 ([#2279](https://github.com/adobe/spacecat-audit-worker/issues/2279)) ([8671f05](https://github.com/adobe/spacecat-audit-worker/commit/8671f057d711268382dee0162e5394b3cbce8ca5))
+
+## [1.389.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.389.1...v1.389.2) (2026-04-01)
+
+
+### Bug Fixes
+
+* allow local audits to discover the vault ([#2278](https://github.com/adobe/spacecat-audit-worker/issues/2278)) ([127d546](https://github.com/adobe/spacecat-audit-worker/commit/127d54692b35dbfada6d8bf6d66b95f753c6d326))
+
+## [1.389.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.389.0...v1.389.1) (2026-04-01)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2272](https://github.com/adobe/spacecat-audit-worker/issues/2272)) ([fca7fa1](https://github.com/adobe/spacecat-audit-worker/commit/fca7fa13144c58b90cf939aa86e3ab9c5a20aef8))
+
+# [1.389.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.388.3...v1.389.0) (2026-04-01)
+
+
+### Features
+
+* LLMO-3956 v2-aware brand presence schedule creation ([#2271](https://github.com/adobe/spacecat-audit-worker/issues/2271)) ([14f350c](https://github.com/adobe/spacecat-audit-worker/commit/14f350cd7be1cf09e1529758fa998a842f6f812b))
+
+## [1.388.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.388.2...v1.388.3) (2026-04-01)
+
+
+### Bug Fixes
+
+* prevent false positive broken links for 405 and bot-protected URLs in preflight ([#2207](https://github.com/adobe/spacecat-audit-worker/issues/2207)) ([0b27fea](https://github.com/adobe/spacecat-audit-worker/commit/0b27fea156037be627e00dbcb6d7c8049820f3b5))
+
+## [1.388.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.388.1...v1.388.2) (2026-04-01)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2270](https://github.com/adobe/spacecat-audit-worker/issues/2270)) ([7e13dcf](https://github.com/adobe/spacecat-audit-worker/commit/7e13dcf8d905477adf91798474aa6822b16f0514))
+
+## [1.388.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.388.0...v1.388.1) (2026-04-01)
+
+
+### Bug Fixes
+
+* adjust schedule to auto for bp schedules created ([#2160](https://github.com/adobe/spacecat-audit-worker/issues/2160)) ([706ed43](https://github.com/adobe/spacecat-audit-worker/commit/706ed43c206200ea0dee189dc528016eb7d3f020))
+
+# [1.388.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.387.3...v1.388.0) (2026-04-01)
+
+
+### Features
+
+* normalise all prerender URL sources to preferredBase domain ([#2266](https://github.com/adobe/spacecat-audit-worker/issues/2266)) ([894be47](https://github.com/adobe/spacecat-audit-worker/commit/894be47cb6e7662f2ca02f8f77382c41b17dfea1))
+
+## [1.387.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.387.2...v1.387.3) (2026-04-01)
+
+
+### Bug Fixes
+
+* require commerceLlmoConfig for commerce-product-enrichments audits ([#2267](https://github.com/adobe/spacecat-audit-worker/issues/2267)) ([53a78e1](https://github.com/adobe/spacecat-audit-worker/commit/53a78e12efe545cced86ffcf7bad1798b673e8b1))
+
+## [1.387.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.387.1...v1.387.2) (2026-04-01)
+
+
+### Bug Fixes
+
+* [preflight] align UE selectors with UE editables format ([#2259](https://github.com/adobe/spacecat-audit-worker/issues/2259)) ([d24d14d](https://github.com/adobe/spacecat-audit-worker/commit/d24d14df12e64af2f3cfd2f47fdbb52191e800dc))
+
+## [1.387.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.387.0...v1.387.1) (2026-04-01)
+
+
+### Bug Fixes
+
+* deduplicate JSON-LD Product SKUs in product page detection ([#2265](https://github.com/adobe/spacecat-audit-worker/issues/2265)) ([b0336f1](https://github.com/adobe/spacecat-audit-worker/commit/b0336f1734ff295b175b6644bc5ba045a8fae49d))
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.36.1 ([#2264](https://github.com/adobe/spacecat-audit-worker/issues/2264)) ([89e44c8](https://github.com/adobe/spacecat-audit-worker/commit/89e44c8a91c4c4b8e1144c821e8f8b0bd247c39a))
+
+# [1.387.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.386.0...v1.387.0) (2026-04-01)
+
+
+### Features
+
+* resolve FAQs prompt URL from related URLs and includedURLs config ([#2255](https://github.com/adobe/spacecat-audit-worker/issues/2255)) ([2913221](https://github.com/adobe/spacecat-audit-worker/commit/2913221d87c563bc12ab452f237d3028b3417984))
+
+# [1.386.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.385.2...v1.386.0) (2026-04-01)
+
+
+### Features
+
+* no forced dryRun for LLMO config sync | LLMO-3918 ([#2258](https://github.com/adobe/spacecat-audit-worker/issues/2258)) ([f5cc5bb](https://github.com/adobe/spacecat-audit-worker/commit/f5cc5bbc281fb8923eca43d249e3e1baca8575bd))
+
+## [1.385.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.385.1...v1.385.2) (2026-04-01)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2262](https://github.com/adobe/spacecat-audit-worker/issues/2262)) ([e1871d3](https://github.com/adobe/spacecat-audit-worker/commit/e1871d349aae1d507b432ea3e31fa1cbf8044794))
+
 ## [1.385.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.385.0...v1.385.1) (2026-03-31)
 
 

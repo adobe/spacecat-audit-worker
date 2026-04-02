@@ -384,7 +384,7 @@ const testData = {
     },
     tags: ['Traffic acquisition', 'isElmo', 'isASO', 'tech-seo'],
     data: {
-      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.RUM, DATA_SOURCES.SITE],
+      dataSources: [DATA_SOURCES.SEO, DATA_SOURCES.RUM, DATA_SOURCES.SITE],
       projectedTrafficLost: 100,
       projectedTrafficValue: 50,
     },

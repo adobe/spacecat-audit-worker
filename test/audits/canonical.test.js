@@ -766,7 +766,7 @@ describe('Canonical URL Tests', () => {
         status: 'success',
         message: 'No canonical issues detected',
       });
-      expect(getTopPagesForSiteStub).to.have.been.calledOnceWith('testSiteId', 'ahrefs', 'global');
+      expect(getTopPagesForSiteStub).to.have.been.calledOnceWith('testSiteId', 'seo', 'global');
       expect(log.info).to.have.been.called;
     });
 
@@ -2491,6 +2491,58 @@ describe('Canonical URL Tests', () => {
             message: 'No canonical issues detected',
           },
         });
+      });
+
+      it('should skip page when statusCode is 4xx (avoids false canonical-tag-missing on error responses)', async function () {
+        this.timeout(5000);
+        const scrapedContent = {
+          url: 'https://example.com/page1',
+          finalUrl: 'https://example.com/page1',
+          statusCode: 403,
+          isPreview: false,
+          scrapeResult: {
+            rawBody: createValidRawBody('<html><head><title>Forbidden</title></head><body><p>Error page body content padded for length.</p></body></html>'),
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/page1', 'scrapes/job-id/page1/scrape.json'],
+          ]),
+          audit: {
+            getId: () => 'test-audit-id',
+          },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': {
+              getObjectFromKey: mockGetObjectFromKey,
+            },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result).to.deep.equal({
+          fullAuditRef: 'https://example.com',
+          auditResult: {
+            status: 'success',
+            message: 'No canonical issues detected',
+          },
+        });
+        expect(context.log.info).to.have.been.calledWith(
+          '[canonical] Skipping page with HTTP 403 for scrapes/job-id/page1/scrape.json',
+        );
       });
 
       it('should handle scraped content with exactly one canonical tag (success path)', async () => {

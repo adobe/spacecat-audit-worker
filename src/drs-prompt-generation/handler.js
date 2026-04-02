@@ -190,6 +190,7 @@ export default async function drsPromptGenerationHandler(message, context) {
       resultLocation,
       ...(configVersion && { configVersion }),
       ...(onboardingMode && { onboardingMode }),
+      ...(auditContext.imsOrgId && { imsOrgId: auditContext.imsOrgId }),
     },
   });
 

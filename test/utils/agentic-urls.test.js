@@ -27,6 +27,7 @@ describe('agentic-urls', () => {
   let mockGenerateReportingPeriods;
   let mockWeeklyBreakdownQueries;
   let getTopAgenticUrlsFromAthena;
+  let getPreferredBaseUrl;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -77,6 +78,7 @@ describe('agentic-urls', () => {
     });
 
     getTopAgenticUrlsFromAthena = module.getTopAgenticUrlsFromAthena;
+    getPreferredBaseUrl = module.getPreferredBaseUrl;
   });
 
   afterEach(() => {
@@ -104,6 +106,30 @@ describe('agentic-urls', () => {
     },
     // finalUrl is a hostname (without protocol) as returned by wwwUrlResolver
     finalUrl: 'www.example.com',
+  });
+
+  describe('getPreferredBaseUrl', () => {
+    const site = { getBaseURL: () => 'https://site.example.com' };
+
+    it('returns context.finalUrl when it already has a protocol', () => {
+      const context = { finalUrl: 'https://cdn.example.com' };
+      expect(getPreferredBaseUrl(site, context)).to.equal('https://cdn.example.com');
+    });
+
+    it('prepends https:// when context.finalUrl lacks a protocol', () => {
+      const context = { finalUrl: 'cdn.example.com' };
+      expect(getPreferredBaseUrl(site, context)).to.equal('https://cdn.example.com');
+    });
+
+    it('falls back to site.getBaseURL() when context.finalUrl is null', () => {
+      const context = { finalUrl: null };
+      expect(getPreferredBaseUrl(site, context)).to.equal('https://site.example.com');
+    });
+
+    it('falls back to site.getBaseURL() when context has no finalUrl property', () => {
+      const context = {};
+      expect(getPreferredBaseUrl(site, context)).to.equal('https://site.example.com');
+    });
   });
 
   describe('getTopAgenticUrlsFromAthena', () => {
