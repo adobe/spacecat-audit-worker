@@ -135,9 +135,9 @@ function isMalformedPageUrl(url) {
   return /\/\.[a-z0-9]+(\?.*)?(?:#.*)?$/i.test(url);
 }
 
-function shouldInspectForSoft404(contentType, isAsset) {
+function shouldInspectForSoft404(contentType) {
   /* c8 ignore next - Defensive fallback for null/undefined contentType */
-  return !isAsset && /^text\/html\b|^application\/xhtml\+xml\b/i.test(contentType || '');
+  return /^text\/html\b|^application\/xhtml\+xml\b/i.test(contentType || '');
 }
 
 function isSoft404Text(bodyText) {
@@ -247,32 +247,24 @@ async function checkLinkWithHead(url, log) {
 /**
  * Checks a link using GET request
  * @param {string} url - The URL to check
- * @param {boolean} isAsset - Whether the URL is a static asset
  * @param {Object} log - Logger instance
  * @returns {Promise<Object>} Result object with metadata
  */
-async function checkLinkWithGet(url, isAsset, log) {
+async function checkLinkWithGet(url, log) {
   let getResponse;
   try {
-    const getHeaders = {
-      'User-Agent': getUserAgent(),
-    };
-
-    // For assets, request only 1 byte to avoid full download
-    if (isAsset) {
-      getHeaders.Range = 'bytes=0-0';
-    }
-
     getResponse = await fetch(url, {
       method: 'GET',
       timeout: LINK_TIMEOUT,
-      headers: getHeaders,
+      headers: {
+        'User-Agent': getUserAgent(),
+      },
     });
     const { status } = getResponse;
     const contentType = getResponse.headers.get('content-type') || null;
     const statusBucket = classifyStatusBucket(status);
 
-    if (statusBucket === null && status === 200 && shouldInspectForSoft404(contentType, isAsset)) {
+    if (statusBucket === null && status === 200 && shouldInspectForSoft404(contentType)) {
       const responseText = await getResponse.text();
       if (isSoft404Text(responseText)) {
         log.info(`✗ BROKEN LINK FOUND: ${url} (GET ${status}, bucket=${STATUS_BUCKETS.SOFT_404})`);
@@ -370,7 +362,7 @@ export async function isLinkInaccessible(url, baseLog, siteId, auditId = null) {
     return headResult;
   }
 
-  return checkLinkWithGet(url, false, log);
+  return checkLinkWithGet(url, log);
 }
 
 /**
