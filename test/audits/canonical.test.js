@@ -2006,6 +2006,9 @@ describe('Canonical URL Tests', () => {
       site = {
         getId: sinon.stub().returns('test-site-id'),
         getBaseURL: sinon.stub().returns('https://example.com'),
+        getConfig: sinon.stub().returns({
+          getAuditTargetURLs: sinon.stub().returns([]),
+        }),
       };
     });
 
@@ -2102,8 +2105,7 @@ describe('Canonical URL Tests', () => {
         expect(result.options).to.deep.equal({
           waitTimeoutForMetaTags: 5000,
         });
-        // Start log was removed, check for filtering log instead
-      expect(context.log.info).to.have.been.calledWith('[canonical] After filtering: 2 pages will be scraped - ["https://example.com/page1","https://example.com/page2"]');
+        expect(context.log.info).to.have.been.calledWith('[canonical] After filtering: 2 pages will be scraped');
       });
 
       it('should handle no top pages found', async () => {
@@ -2124,7 +2126,7 @@ describe('Canonical URL Tests', () => {
           },
           fullAuditRef: 'https://example.com',
         });
-        expect(context.log.info).to.have.been.calledWith('[canonical] No top pages found for site test-site-id, skipping scraping');
+        expect(context.log.info).to.have.been.calledWith('[canonical] No pages found for site test-site-id, skipping scraping');
       });
 
       it('should handle null top pages result', async () => {
@@ -2145,7 +2147,7 @@ describe('Canonical URL Tests', () => {
           },
           fullAuditRef: 'https://example.com',
         });
-        expect(context.log.info).to.have.been.calledWith('[canonical] No top pages found for site test-site-id, skipping scraping');
+        expect(context.log.info).to.have.been.calledWith('[canonical] No pages found for site test-site-id, skipping scraping');
       });
 
       it('should filter out auth/login pages', async () => {
@@ -2242,6 +2244,104 @@ describe('Canonical URL Tests', () => {
         expect(result.urls[1]).to.deep.equal({ url: 'not-a-valid-url' });
         expect(result.urls[2]).to.deep.equal({ url: 'another-invalid-url' });
         expect(result.urls[3]).to.deep.equal({ url: 'https://example.com/page2' });
+      });
+
+      it('should merge custom audit target URLs with SEO top pages', async () => {
+        context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+          { getUrl: () => 'https://example.com/page1' },
+          { getUrl: () => 'https://example.com/page2' },
+        ]);
+        site.getConfig.returns({
+          getAuditTargetURLs: sinon.stub().returns([
+            { url: 'https://example.com/custom1' },
+            { url: 'https://example.com/custom2' },
+          ]),
+        });
+
+        const testContext = {
+          ...context,
+          site,
+          finalUrl: 'https://example.com',
+        };
+
+        const result = await submitForScraping(testContext);
+
+        expect(result.urls).to.have.lengthOf(4);
+        expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/custom1' });
+        expect(result.urls[1]).to.deep.equal({ url: 'https://example.com/custom2' });
+        expect(result.urls[2]).to.deep.equal({ url: 'https://example.com/page1' });
+        expect(result.urls[3]).to.deep.equal({ url: 'https://example.com/page2' });
+        expect(context.log.info).to.have.been.calledWith(
+          '[canonical] Found 4 pages for scraping (2 from SEO, 2 custom)',
+        );
+      });
+
+      it('should deduplicate custom URLs that overlap with SEO top pages', async () => {
+        context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+          { getUrl: () => 'https://example.com/page1' },
+          { getUrl: () => 'https://example.com/page2' },
+        ]);
+        site.getConfig.returns({
+          getAuditTargetURLs: sinon.stub().returns([
+            { url: 'https://example.com/page1' },
+            { url: 'https://example.com/custom1' },
+          ]),
+        });
+
+        const testContext = {
+          ...context,
+          site,
+          finalUrl: 'https://example.com',
+        };
+
+        const result = await submitForScraping(testContext);
+
+        expect(result.urls).to.have.lengthOf(3);
+        expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/custom1' });
+        expect(result.urls[1]).to.deep.equal({ url: 'https://example.com/page1' });
+        expect(result.urls[2]).to.deep.equal({ url: 'https://example.com/page2' });
+      });
+
+      it('should proceed with only custom URLs when no SEO top pages exist', async () => {
+        context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+        site.getConfig.returns({
+          getAuditTargetURLs: sinon.stub().returns([
+            { url: 'https://example.com/custom1' },
+          ]),
+        });
+
+        const testContext = {
+          ...context,
+          site,
+          finalUrl: 'https://example.com',
+        };
+
+        const result = await submitForScraping(testContext);
+
+        expect(result).to.not.have.property('auditResult');
+        expect(result.urls).to.have.lengthOf(1);
+        expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/custom1' });
+      });
+
+      it('should handle site with no getConfig gracefully', async () => {
+        const siteWithoutConfig = {
+          getId: sinon.stub().returns('test-site-id'),
+          getBaseURL: sinon.stub().returns('https://example.com'),
+        };
+        context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+          { getUrl: () => 'https://example.com/page1' },
+        ]);
+
+        const testContext = {
+          ...context,
+          site: siteWithoutConfig,
+          finalUrl: 'https://example.com',
+        };
+
+        const result = await submitForScraping(testContext);
+
+        expect(result.urls).to.have.lengthOf(1);
+        expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page1' });
       });
     });
 
