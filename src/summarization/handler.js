@@ -35,7 +35,7 @@ async function getSummarizationInputUrls(context) {
     getTopPages: async () => {
       const topPages = await dataAccess?.SiteTopPage?.allBySiteIdAndSourceAndGeo?.(
         site.getId(),
-        'ahrefs',
+        'seo',
         'global',
       );
       return sortTopPagesByTraffic(topPages || []);
@@ -53,8 +53,8 @@ async function getSummarizationInputUrls(context) {
 }
 
 /**
- * Step 1: Import Ahrefs top pages metadata for reporting.
- * Downstream URL selection may still proceed with included or agentic URLs when Ahrefs is empty.
+ * Step 1: Import SEO top pages metadata for reporting.
+ * Downstream URL selection may still proceed with included or agentic URLs when SEO is empty.
  */
 /* c8 ignore next 1 - function declaration line often not attributed when called from tests */
 export async function importTopPages(context) {
@@ -64,10 +64,10 @@ export async function importTopPages(context) {
   const { SiteTopPage } = dataAccess;
 
   try {
-    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
 
     if (topPages.length === 0) {
-      log.info('[SUMMARIZATION] No Ahrefs top pages found for site; continuing with fallback URL sources');
+      log.info('[SUMMARIZATION] No SEO top pages found for site; continuing with fallback URL sources');
       return {
         type: 'top-pages',
         siteId: site.getId(),

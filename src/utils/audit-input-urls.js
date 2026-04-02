@@ -109,8 +109,8 @@ export function mergeAndGetUniqueHtmlUrls(...urlArrays) {
  * of loading them. Supports either page models with `getUrl()` or normalized objects with `url`.
  * @param {Function} [options.getTopPages] - Optional async function returning top pages. Useful
  * when top pages should be loaded lazily or in parallel with other inputs.
- * @param {number} [options.topOrganicLimit] - Optional cap for Ahrefs URLs
- * @param {Function} [options.topPagesToUrls] - Maps Ahrefs page records to URL strings
+ * @param {number} [options.topOrganicLimit] - Optional cap for SEO URLs
+ * @param {Function} [options.topPagesToUrls] - Maps SEO page records to URL strings
  * @returns {Promise<Object>}
  */
 export async function getMergedAuditInputUrls({
@@ -130,7 +130,7 @@ export async function getMergedAuditInputUrls({
   } else if (getTopPages) {
     topPagesPromise = Promise.resolve(getTopPages());
   } else if (SiteTopPage?.allBySiteIdAndSourceAndGeo) {
-    topPagesPromise = SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+    topPagesPromise = SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
   } else {
     topPagesPromise = Promise.resolve([]);
   }

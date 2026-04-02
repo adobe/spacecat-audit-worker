@@ -63,7 +63,7 @@ export function convertToOpportunityEntity(siteId, auditId, rawOppty = {}, guida
       trackedPageKPIValue,
       opportunityImpact,
       metrics,
-      dataSources: [DATA_SOURCES.SITE, DATA_SOURCES.RUM, DATA_SOURCES.AHREFS],
+      dataSources: [DATA_SOURCES.SITE, DATA_SOURCES.RUM, DATA_SOURCES.SEO],
     },
   };
 }

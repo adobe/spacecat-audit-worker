@@ -236,7 +236,7 @@ export async function processScraping(context) {
     // Get page limit based on summit-plg configuration
     const { pageLimit, isSummitPlg } = await getTopPagesLimit(site, context);
 
-    // Get top page URLs via fallback chain (Ahrefs -> RUM -> includedURLs)
+    // Get top page URLs via fallback chain (SEO -> RUM -> includedURLs)
     const allTopPageUrls = await getTopPageUrls({
       siteId, site, dataAccess, context, log,
     });
@@ -351,7 +351,7 @@ export async function processAltTextWithMystique(context) {
     // Get page limit based on summit-plg configuration
     const { pageLimit, isSummitPlg } = await getTopPagesLimit(site, context);
 
-    // Get top page URLs via fallback chain (Ahrefs -> RUM -> includedURLs)
+    // Get top page URLs via fallback chain (SEO -> RUM -> includedURLs)
     const allTopPageUrls = await getTopPageUrls({
       siteId, site, dataAccess, context, log,
     });
@@ -498,7 +498,7 @@ export async function processAltTextWithMystique(context) {
           dataSources: [
             DATA_SOURCES.RUM,
             DATA_SOURCES.SITE,
-            DATA_SOURCES.AHREFS,
+            DATA_SOURCES.SEO,
           ],
           mystiqueResponsesReceived: 0,
           mystiqueResponsesExpected: urlBatches.length,

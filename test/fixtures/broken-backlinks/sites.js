@@ -56,7 +56,7 @@ export const siteTopPage = {
   getSiteId: () => site.getId(),
   getUrl: () => `${site.getBaseURL()}/foo.html`,
   getTraffic: () => 1000,
-  getSource: () => 'ahrefs',
+  getSource: () => 'seo',
   getGeo: () => 'global',
   getImportedAt: () => new Date('2024-06-18').toISOString(),
   getTopKeyword: () => '404',
@@ -66,7 +66,7 @@ export const siteTopPage2 = {
   getSiteId: () => site.getId(),
   getUrl: () => `${site.getBaseURL()}/bar.html`,
   getTraffic: () => 500,
-  getSource: () => 'ahrefs',
+  getSource: () => 'seo',
   getGeo: () => 'global',
   getImportedAt: () => new Date('2024-06-18').toISOString(),
   getTopKeyword: () => '429',
@@ -93,13 +93,13 @@ export const fixedBacklinks = [
     title: 'fixed backlink',
     url_from: 'https://from.com/from-1',
     url_to: 'https://foo.com/fixed',
-    traffic_domain: 4500,
+    traffic_domain: 70,
   },
   {
     title: 'fixed backlink via redirect',
     url_from: 'https://from.com/from-2',
     url_to: 'https://foo.com/fixed-via-redirect',
-    traffic_domain: 1500,
+    traffic_domain: 45,
   },
 ];
 
@@ -107,7 +107,7 @@ export const brokenBacklinkWithTimeout = {
   title: 'backlink that times out',
   url_from: 'https://from.com/from-4',
   url_to: 'https://foo.com/times-out',
-  traffic_domain: 500,
+  traffic_domain: 25,
 };
 
 export const org = { getId: () => 'org4', getName: () => 'org4' };

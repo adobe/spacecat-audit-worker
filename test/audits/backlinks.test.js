@@ -292,7 +292,7 @@ describe('Backlinks Tests', function () {
     context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]); // Empty array
 
     await expect(submitForScraping(context))
-      .to.be.rejectedWith(`No top pages found in database for site ${contextSite.getId()}. Ahrefs import required.`);
+      .to.be.rejectedWith(`No top pages found in database for site ${contextSite.getId()}. SEO data import required.`);
   });
 
   it('should throw error when all top pages filtered out by audit scope', async () => {
@@ -1205,10 +1205,10 @@ describe('Backlinks Tests', function () {
     const auditData = {
       auditResult: {
         brokenBacklinks: [
-          { traffic_domain: 25000001, urlsSuggested: ['https://foo.com/bar/redirect'] },
-          { traffic_domain: 10000001, urlsSuggested: ['https://foo.com/bar/baz/redirect'] },
-          { traffic_domain: 10001, urlsSuggested: ['https://foo.com/qux/redirect'] },
-          { traffic_domain: 100, urlsSuggested: ['https://foo.com/bar/baz/qux/redirect'] },
+          { traffic_domain: 85, urlsSuggested: ['https://foo.com/bar/redirect'] },
+          { traffic_domain: 65, urlsSuggested: ['https://foo.com/bar/baz/redirect'] },
+          { traffic_domain: 25, urlsSuggested: ['https://foo.com/qux/redirect'] },
+          { traffic_domain: 5, urlsSuggested: ['https://foo.com/bar/baz/qux/redirect'] },
         ],
       },
     };
@@ -1227,8 +1227,8 @@ describe('Backlinks Tests', function () {
       });
 
       const result = await calculateKpiMetrics(auditData, context, site);
-      expect(result.projectedTrafficLost).to.equal(26788.645);
-      expect(result.projectedTrafficValue).to.equal(5342.87974025892);
+      expect(result.projectedTrafficLost).to.equal(28202.337499999998);
+      expect(result.projectedTrafficValue).to.equal(5624.834613945362);
     });
 
     it('skips URL if no RUM data is available for just individual URLs', async () => {
@@ -1246,7 +1246,7 @@ describe('Backlinks Tests', function () {
       });
 
       const result = await calculateKpiMetrics(auditData, context, site);
-      expect(result.projectedTrafficLost).to.equal(14545.045000000002);
+      expect(result.projectedTrafficLost).to.equal(15958.737500000001);
     });
 
     it('should cuse default CPC value if there is wrong organic traffic data', async () => {
@@ -1266,8 +1266,8 @@ describe('Backlinks Tests', function () {
         },
       });
       const result = await calculateKpiMetrics(auditData, context, site);
-      expect(result.projectedTrafficLost).to.equal(14545.045000000002);
-      expect(result.projectedTrafficValue).to.equal(39126.171050000004);
+      expect(result.projectedTrafficLost).to.equal(15958.737500000001);
+      expect(result.projectedTrafficValue).to.equal(42929.003875);
     });
 
     it('should return 0 if projectedTrafficValue is NaN', async () => {
@@ -1286,7 +1286,7 @@ describe('Backlinks Tests', function () {
         },
       });
       const result = await calculateKpiMetrics(auditData, context, site);
-      expect(result.projectedTrafficLost).to.equal(14545.045000000002);
+      expect(result.projectedTrafficLost).to.equal(15958.737500000001);
       expect(result.projectedTrafficValue).to.equal(0);
     });
 
@@ -1326,7 +1326,7 @@ describe('Backlinks Tests', function () {
             url_from: 'https://example.com/page1',
             url_to: 'https://example.com/broken',
             title: 'Test Page',
-            traffic_domain: 1000,
+            traffic_domain: 50,
           },
         ],
       };
@@ -1376,7 +1376,7 @@ describe('Backlinks Tests', function () {
         url_from: 'https://example.com/page1',
         url_to: 'https://example.com/broken',
         title: 'Old Title',
-        traffic_domain: 500,
+        traffic_domain: 35,
         urlEdited: 'https://example.com/user-fixed-url',
         isEdited: true,
       };
@@ -1385,7 +1385,7 @@ describe('Backlinks Tests', function () {
         url_from: 'https://example.com/page1',
         url_to: 'https://example.com/broken',
         title: 'New Title',
-        traffic_domain: 1000,
+        traffic_domain: 50,
       };
 
       const result = mergeDataFn(existingData, newData);
@@ -1393,7 +1393,7 @@ describe('Backlinks Tests', function () {
       expect(result.urlEdited).to.equal('https://example.com/user-fixed-url');
       expect(result.isEdited).to.equal(true);
       expect(result.title).to.equal('New Title');
-      expect(result.traffic_domain).to.equal(1000);
+      expect(result.traffic_domain).to.equal(50);
     });
 
     it('should preserve urlEdited when isEdited is false (AI selection)', async () => {
@@ -1419,7 +1419,7 @@ describe('Backlinks Tests', function () {
             url_from: 'https://example.com/page1',
             url_to: 'https://example.com/broken',
             title: 'Test Page',
-            traffic_domain: 1000,
+            traffic_domain: 50,
           },
         ],
       };
@@ -1507,7 +1507,7 @@ describe('Backlinks Tests', function () {
             url_from: 'https://example.com/page1',
             url_to: 'https://example.com/broken',
             title: 'Test Page',
-            traffic_domain: 1000,
+            traffic_domain: 50,
           },
         ],
       };
@@ -1592,7 +1592,7 @@ describe('Backlinks Tests', function () {
           url_from: 'https://example.com/page1',
           url_to: 'https://example.com/broken',
           title: 'Test',
-          traffic_domain: 1000,
+          traffic_domain: 50,
         }],
       };
 
@@ -1651,7 +1651,7 @@ describe('Backlinks Tests', function () {
           url_from: 'https://example.com/page1',
           url_to: 'https://example.com/broken',
           title: 'Test',
-          traffic_domain: 1000,
+          traffic_domain: 50,
         }],
       };
 
@@ -1711,7 +1711,7 @@ describe('Backlinks Tests', function () {
           url_from: 'https://example.com/page1',
           url_to: 'https://example.com/broken',
           title: 'Test',
-          traffic_domain: 1000,
+          traffic_domain: 50,
         }],
       };
 

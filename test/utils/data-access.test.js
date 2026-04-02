@@ -111,7 +111,7 @@ describe('data-access', () => {
       sinon.restore();
     });
 
-    it('returns mapped top-page urls when ahrefs pages are found', async () => {
+    it('returns mapped top-page urls when seo pages are found', async () => {
       mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
         { getUrl: sinon.stub().returns('https://example.com/one') },
         { getUrl: sinon.stub().returns('https://example.com/two') },
@@ -124,7 +124,7 @@ describe('data-access', () => {
         { url: 'https://example.com/two' },
       ]);
       expect(mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo)
-        .to.have.been.calledOnceWith('site-1', 'ahrefs', 'global');
+        .to.have.been.calledOnceWith('site-1', 'seo', 'global');
       expect(mockLog.info).to.have.been.calledWith('Received top pages response:', sinon.match.string);
       expect(mockLog.info).to.have.been.calledWith('Found 2 top pages');
     });

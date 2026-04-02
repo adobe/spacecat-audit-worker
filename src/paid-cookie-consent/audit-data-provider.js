@@ -14,7 +14,7 @@ import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { getWeekInfo, getTemporalCondition } from '@adobe/spacecat-shared-utils';
 import { getBounceGapMetricsTemplate, getTop3PagesWithTrafficLostTemplate } from './queries.js';
 import { calculateBounceGapLoss as calculateGenericBounceGapLoss } from './bounce-gap-calculator.js';
-import { getCPCData, calculateProjectedTrafficValue, DEFAULT_CPC } from './ahrefs-cpc.js';
+import { getCPCData, calculateProjectedTrafficValue, DEFAULT_CPC } from './seo-cpc.js';
 
 function getConfig(env) {
   const {
@@ -226,6 +226,6 @@ export async function getAuditData(context, siteId, baseURL) {
     appliedCPC: cpcData.paidCPC,
     cpcSource: cpcData.source,
     defaultCPC: DEFAULT_CPC,
-    ...(cpcData.source === 'ahrefs' && { ahrefsOrganicCPC: cpcData.organicCPC, ahrefsPaidCPC: cpcData.paidCPC }),
+    ...(cpcData.source === 'seo' && { seoOrganicCPC: cpcData.organicCPC, seoPaidCPC: cpcData.paidCPC }),
   };
 }

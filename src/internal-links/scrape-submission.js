@@ -45,11 +45,11 @@ export function createSubmitForScraping({
 
     let topPagesUrls = [];
     try {
-      const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+      const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
       topPagesUrls = topPages.map((page) => page.getUrl());
-      log.info(`Found ${topPagesUrls.length} top pages from Ahrefs`);
+      log.info(`Found ${topPagesUrls.length} top pages from SEO provider`);
     } catch (error) {
-      log.warn(`Failed to fetch Ahrefs top pages from database: ${error.message}`);
+      log.warn(`Failed to fetch SEO top pages from database: ${error.message}`);
       topPagesUrls = [];
     }
 
@@ -58,7 +58,7 @@ export function createSubmitForScraping({
     const maxUrlsToProcess = config.getMaxUrlsToProcess();
 
     let finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
-    log.info(`Merged URLs: ${topPagesUrls.length} (Ahrefs) + ${includedURLs.length} (manual) = ${finalUrls.length} unique`);
+    log.info(`Merged URLs: ${topPagesUrls.length} (SEO) + ${includedURLs.length} (manual) = ${finalUrls.length} unique`);
 
     const baseURL = site.getBaseURL();
     finalUrls = finalUrls.filter((url) => isWithinAuditScope(url, baseURL));

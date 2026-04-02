@@ -7,25 +7,25 @@
         "title": "backlink that redirects to www and throw connection error",
         "url_from": "https://from.com/from-2",
         "url_to": "https://foo.com/redirects-throws-error",
-        "traffic_domain": 2000
+        "traffic_domain": 45
       },
       {
         "title": "backlink that returns 429",
         "url_from": "https://from.com/from-3",
         "url_to": "https://foo.com/returns-429",
-        "traffic_domain": 1000
+        "traffic_domain": 30
       },
       {
         "title": "backlink that is not excluded",
         "url_from": "https://from.com/from-not-excluded",
         "url_to": "https://foo.com/not-excluded",
-        "traffic_domain": 5000
+        "traffic_domain": 75
       },
       {
         "title": "backlink that returns 404",
         "url_from": "https://from.com/from-1",
         "url_to": "https://foo.com/returns-404",
-        "traffic_domain": 4000
+        "traffic_domain": 60
       }
     ]
   },
