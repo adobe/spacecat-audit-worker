@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { pickUrlsFromSerpResults } from '../support/bright-data-serp-urls.js';
 import { createInternalLinksConfigResolver } from './config.js';
 import { createInternalLinksStepLogger } from './logging.js';
 import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
@@ -30,8 +31,6 @@ export function createOpportunityAndSuggestionsStep({
   filterBrokenSuggestedUrls,
   BrightDataClient,
   buildLocaleSearchUrl,
-  extractLocaleFromUrl,
-  localesMatch,
   sleep,
   updateAuditResult,
   isCanonicalOrHreflangLink,
@@ -228,18 +227,10 @@ export function createOpportunityAndSuggestionsStep({
           return;
         }
 
-        const brokenLinkLocale = extractLocaleFromUrl(brokenLink.urlTo);
-        const best = results.find((r) => {
-          if (!r?.link) return false;
-          const suggestedLocale = extractLocaleFromUrl(r.link);
-          return localesMatch(brokenLinkLocale, suggestedLocale);
-        }) || results[0];
-
-        if (!best?.link) {
+        let urlsSuggested = pickUrlsFromSerpResults(results, brokenLink.urlTo);
+        if (urlsSuggested.length === 0) {
           return;
         }
-
-        let urlsSuggested = [best.link];
         if (validateBrightDataUrls) {
           const validated = await filterBrokenSuggestedUrls(urlsSuggested, site.getBaseURL());
           if (validated.length === 0) {
@@ -257,7 +248,7 @@ export function createOpportunityAndSuggestionsStep({
         const updatedData = {
           ...suggestion.getData(),
           urlsSuggested,
-          aiRationale: `The suggested URL is chosen based on top search results for closely matching keywords from the broken URL. Keywords used: "${keywords}".`,
+          aiRationale: `Suggested URLs are chosen from top search results for closely matching keywords from the broken URL. Keywords used: "${keywords}".`,
         };
         warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
         suggestion.setData(updatedData);

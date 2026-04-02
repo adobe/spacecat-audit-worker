@@ -71,6 +71,80 @@ function shouldPreserveDomainWideSuggestion(suggestion) {
 }
 
 /**
+ * Checks if the domain-wide suggestion (isDomainWide=true) has edgeDeployed set.
+ * @param {Object} opportunity - The opportunity object
+ * @returns {Promise<boolean>}
+ */
+async function isAllDomainDeployedAtEdge(opportunity) {
+  if (!opportunity || typeof opportunity.getSuggestions !== 'function') return false;
+  const suggestions = await opportunity.getSuggestions();
+  const domainWide = suggestions.find((s) => {
+    const d = s.getData();
+    return s.getStatus() !== Suggestion.STATUSES.OUTDATED
+      && isDomainWideSuggestionData(d) && !!d?.edgeDeployed;
+  });
+  return !!domainWide;
+}
+
+/**
+ * Moves NEW suggestions to SKIPPED, restricted to URLs confirmed deployed at edge
+ * in the current audit run.
+ * @param {Object} opportunity - The opportunity object
+ * @param {Object} context - Audit context with dataAccess and log
+ * @param {Set<string>} deployedAtEdgeUrls - URLs confirmed deployed at edge in this audit
+ * @returns {Promise<void>}
+ */
+async function moveDeployedUrlSuggestionsToSkipped(opportunity, context, deployedAtEdgeUrls) {
+  const { dataAccess, log, site } = context;
+  const SuggestionDA = dataAccess?.Suggestion;
+
+  const baseUrl = site?.getBaseURL?.() || '';
+  const siteId = site?.getId?.() || '';
+
+  if (!SuggestionDA?.allByOpportunityIdAndStatus || !SuggestionDA?.bulkUpdateStatus) {
+    return;
+  }
+
+  const newSuggestions = await SuggestionDA.allByOpportunityIdAndStatus(
+    opportunity.getId(),
+    Suggestion.STATUSES.NEW,
+  );
+
+  if (newSuggestions.length === 0) {
+    log.info(`${LOG_PREFIX} moveDeployedUrlSuggestionsToSkipped: no NEW suggestions found. baseUrl=${baseUrl}, siteId=${siteId}`);
+    return;
+  }
+
+  const suggestionsToSkip = deployedAtEdgeUrls?.size > 0
+    ? newSuggestions.filter((s) => deployedAtEdgeUrls.has(s.getData()?.url))
+    : [];
+
+  if (suggestionsToSkip.length === 0) {
+    log.info(`${LOG_PREFIX} moveDeployedUrlSuggestionsToSkipped: no NEW suggestions matched deployed URLs. baseUrl=${baseUrl}, siteId=${siteId}`);
+    return;
+  }
+  log.info(`${LOG_PREFIX} All domain deployed: moving ${suggestionsToSkip.length} NEW suggestions to SKIPPED. baseUrl=${baseUrl}, siteId=${siteId}`);
+  await SuggestionDA.bulkUpdateStatus(suggestionsToSkip, Suggestion.STATUSES.SKIPPED);
+}
+
+/**
+ * Moves suggestions with status=NEW to SKIPPED when domain-wide suggestion has edgeDeployed,
+ * restricting to URLs confirmed deployed at edge in the current audit run.
+ * @param {Object|null} opportunity - The opportunity object (no-op if null)
+ * @param {Object} context - Audit context with dataAccess and log
+ * @param {Set<string>} deployedAtEdgeUrls - URLs confirmed deployed at edge in this audit
+ * @returns {Promise<void>}
+ */
+async function skipNewSuggestionsWhenAllDomainDeployed(opportunity, context, deployedAtEdgeUrls) {
+  const { log, site } = context;
+  const baseUrl = site?.getBaseURL?.() || '';
+  const isDeployed = await isAllDomainDeployedAtEdge(opportunity);
+  log.info(`${LOG_PREFIX} skipNewSuggestionsWhenAllDomainDeployed: isAllDomainDeployedAtEdge=${isDeployed}, baseUrl=${baseUrl}`);
+  if (!isDeployed) return;
+  await moveDeployedUrlSuggestionsToSkipped(opportunity, context, deployedAtEdgeUrls);
+}
+
+/**
  * Finds an existing domain-wide suggestion that should be preserved.
  * @param {Object} opportunity - The opportunity object.
  * @param {Object} log - Logger instance.
@@ -284,6 +358,7 @@ async function compareHtmlContent(url, context) {
       ...analysis,
       hasScrapeMetadata, // Track if scrape.json exists on S3
       scrapeForbidden, // Track if original scrape was forbidden (403)
+      isDeployedAtEdge: !!metadata?.isDeployedAtEdge, // From scrape.json (content-scraper PR #784)
       /* c8 ignore next */
       scrapeError: metadata?.error, // Include error details from scrape.json
     };
@@ -295,6 +370,7 @@ async function compareHtmlContent(url, context) {
       needsPrerender: false,
       hasScrapeMetadata,
       scrapeForbidden,
+      isDeployedAtEdge: !!metadata?.isDeployedAtEdge,
       scrapeError: metadata?.error,
     };
   }
@@ -416,7 +492,8 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
 
       // Skip OUTDATED suggestions (stale data from previous audit runs)
       const status = s.getStatus();
-      if (status === 'OUTDATED') {
+      const isDeployedOrFixed = status === Suggestion.STATUSES.FIXED || !!data?.edgeDeployed;
+      if (status === Suggestion.STATUSES.OUTDATED || isDeployedOrFixed) {
         return;
       }
 
@@ -926,7 +1003,9 @@ export async function processOpportunityAndSuggestions(
  * @returns {Promise<void>}
  */
 export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
-  const { log, s3Client, env } = context;
+  const {
+    log, s3Client, env, dataAccess,
+  } = context;
   const {
     auditResult,
     siteId,
@@ -938,6 +1017,48 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     if (!auditResult) {
       log.warn('Prerender - Missing auditResult, skipping status summary upload');
       return;
+    }
+
+    const pages = (auditResult.results ?? []).map((result) => ({
+      url: result.url,
+      scrapingStatus: result.error ? 'error' : 'success',
+      needsPrerender: result.needsPrerender || false,
+      isDeployedAtEdge: !!result.isDeployedAtEdge,
+      wordCountBefore: result.wordCountBefore || 0,
+      wordCountAfter: result.wordCountAfter || 0,
+      contentGainRatio: result.contentGainRatio || 0,
+      ...(result.scrapeError && { scrapeError: result.scrapeError }),
+    }));
+
+    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+
+    // Append URLs that were submitted to the scraper but produced no S3 result files.
+    // For each, try to read their scrape.json to surface the error stored during scraping.
+    if (scrapeJobId && dataAccess?.ScrapeUrl) {
+      try {
+        const allScrapeUrls = await dataAccess.ScrapeUrl.allByScrapeJobId(scrapeJobId);
+        const auditResultUrlSet = new Set(pages.map((p) => p.url));
+
+        const missingPages = await Promise.all(
+          allScrapeUrls
+            .filter((su) => !auditResultUrlSet.has(su.getUrl()))
+            .map(async (su) => {
+              const url = su.getUrl();
+              const scrapeJsonKey = getS3Path(url, scrapeJobId, 'scrape.json');
+              const metadata = await getObjectFromKey(s3Client, bucketName, scrapeJsonKey, log)
+                .catch(() => null);
+              return {
+                url,
+                scrapingStatus: 'failed',
+                needsPrerender: false,
+                ...(metadata?.error && { scrapeError: metadata.error }),
+              };
+            }),
+        );
+        pages.push(...missingPages);
+      } catch (e) {
+        log.warn(`${LOG_PREFIX} Failed to append missing scrape URLs to status.json for scrapeJobId=${scrapeJobId}: ${e.message}`);
+      }
     }
 
     // Extract status information for all pages
@@ -953,29 +1074,11 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       urlsScrapedSuccessfully: auditResult.urlsScrapedSuccessfully ?? null,
       scrapingErrorRate: auditResult.scrapingErrorRate ?? null,
       scrapeForbidden: auditResult.scrapeForbidden || false,
+      scrapeForbiddenCount: auditResult.scrapeForbiddenCount ?? 0,
       lastAuditSuccess: auditResult.lastAuditSuccess !== false,
-      pages: auditResult.results?.map((result) => {
-        const pageStatus = {
-          url: result.url,
-          scrapingStatus: result.error ? 'error' : 'success',
-          needsPrerender: result.needsPrerender || false,
-          wordCountBefore: result.wordCountBefore || 0,
-          wordCountAfter: result.wordCountAfter || 0,
-          contentGainRatio: result.contentGainRatio || 0,
-        };
-
-        // Include scrape error details if available
-        if (result.scrapeError) {
-          pageStatus.scrapeError = result.scrapeError;
-        }
-
-        return pageStatus;
-      }) || [],
+      pages,
     };
-
-    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
     const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
-
     await s3Client.send(new PutObjectCommand({
       Bucket: bucketName,
       Key: statusKey,
@@ -983,7 +1086,9 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       ContentType: 'application/json',
     }));
 
-    log.info(`Prerender - Successfully uploaded status summary to S3: ${statusKey}. baseUrl=${auditUrl}, siteId=${siteId}`);
+    const { pages: _, ...logSummary } = statusSummary;
+    const logFields = Object.entries(logSummary).map(([k, v]) => `${k}=${v}`).join(', ');
+    log.info(`${LOG_PREFIX} prerender_status_upload: statusKey=${statusKey}, pagesCount=${statusSummary.pages.length}, ${logFields}`);
   } catch (error) {
     log.error(`Prerender - Failed to upload status summary to S3: ${error.message}. baseUrl=${auditUrl}, siteId=${siteId}`, error);
     // Don't throw - this is a non-critical post-processing step
@@ -1096,10 +1201,11 @@ export async function processContentAndGenerateOpportunities(context) {
     // Check if all scrape.json files on S3 have statusCode=403
     const urlsWithScrapeJson = comparisonResults.filter((result) => result.hasScrapeMetadata);
     const urlsWithForbiddenScrape = urlsWithScrapeJson.filter((result) => result.scrapeForbidden);
+    const scrapeForbiddenCount = urlsWithForbiddenScrape.length;
     const scrapeForbidden = urlsWithScrapeJson.length > 0
-      && urlsWithForbiddenScrape.length === urlsWithScrapeJson.length;
+      && scrapeForbiddenCount === urlsWithScrapeJson.length;
 
-    log.info(`Prerender - Scrape analysis for baseUrl=${site.getBaseURL()}, siteId=${siteId}. scrapeForbidden=${scrapeForbidden}, totalUrlsChecked=${comparisonResults.length}, urlsWithScrapeJson=${urlsWithScrapeJson.length}, urlsWithForbiddenScrape=${urlsWithForbiddenScrape.length}, isPaidLLMOCustomer=${isPaid}`);
+    log.info(`Prerender - Scrape analysis for baseUrl=${site.getBaseURL()}, siteId=${siteId}. scrapeForbidden=${scrapeForbidden}, scrapeForbiddenCount=${scrapeForbiddenCount}, totalUrlsChecked=${comparisonResults.length}, urlsWithScrapeJson=${urlsWithScrapeJson.length}, isPaidLLMOCustomer=${isPaid}`);
 
     // Remove internal tracking fields from results before storing
     // eslint-disable-next-line
@@ -1121,7 +1227,14 @@ export async function processContentAndGenerateOpportunities(context) {
       ? Math.round((failedCount / urlsSubmittedForScraping) * 100)
       : 0;
 
-    const scrapedUrlsSet = new Set(successfulComparisons.map((r) => r.url));
+    // Exclude deployed URLs — don't mark their suggestions outdated regardless of needsPrerender.
+    // isDeployedAtEdge=true means prerender is already active at CDN level (via RCV, LLMO
+    // side-effect, or domain-wide deployment); no authoritative "resolved" judgment applies.
+    const scrapedUrlsSet = new Set(
+      successfulComparisons
+        .filter((r) => !r.isDeployedAtEdge)
+        .map((r) => r.url),
+    );
 
     const auditResult = {
       totalUrlsChecked: comparisonResults.length,
@@ -1132,16 +1245,17 @@ export async function processContentAndGenerateOpportunities(context) {
       scrapingErrorRate,
       results: cleanResults,
       scrapeForbidden,
+      scrapeForbiddenCount,
       lastAuditSuccess: true,
     };
 
-    log.info(`Prerender - Scraping metrics for baseUrl=${site.getBaseURL()}, siteId=${siteId}. urlsSubmittedForScraping=${urlsSubmittedForScraping}, urlsScrapedSuccessfully=${successfulComparisons.length}, scrapingErrorRate=${scrapingErrorRate}%`);
+    log.info(`Prerender - Scraping metrics for baseUrl=${site.getBaseURL()}, siteId=${siteId}. urlsSubmittedForScraping=${urlsSubmittedForScraping}, urlsScrapedSuccessfully=${successfulComparisons.length}, scrapeForbiddenCount=${scrapeForbiddenCount}, scrapingErrorRate=${scrapingErrorRate}%`);
 
-    let opportunityForGuidance = null;
+    let opportunityWithSuggestions = null;
 
     /* c8 ignore next 13 - Opportunity processing branch, covered by integration tests */
     if (urlsNeedingPrerender.length > 0) {
-      opportunityForGuidance = await processOpportunityAndSuggestions(
+      const opportunity = await processOpportunityAndSuggestions(
         site.getBaseURL(),
         {
           siteId,
@@ -1153,6 +1267,13 @@ export async function processContentAndGenerateOpportunities(context) {
         },
         context,
         isPaid,
+      );
+      opportunityWithSuggestions = opportunity;
+      await sendPrerenderGuidanceRequestToMystique(
+        site.getBaseURL(),
+        { siteId, auditId: audit.getId(), scrapeJobId },
+        opportunity,
+        context,
       );
       /* c8 ignore next 12 */
     } else if (scrapeForbidden) {
@@ -1166,7 +1287,7 @@ export async function processContentAndGenerateOpportunities(context) {
         scrapeJobId,
       }, context, isPaid);
     } else {
-      log.info(`Prerender - No opportunity found. baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbidden=${scrapeForbidden}, isPaidLLMOCustomer=${isPaid}`);
+      log.info(`Prerender - No opportunity found. baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbidden=${scrapeForbidden}, scrapeForbiddenCount=${scrapeForbiddenCount}, isPaidLLMOCustomer=${isPaid}`);
 
       const { Opportunity } = dataAccess;
       const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
@@ -1184,8 +1305,18 @@ export async function processContentAndGenerateOpportunities(context) {
           mapNewSuggestion: () => ({}),
           scrapedUrlsSet: scrapedUrlsForNoOppty,
         });
+        opportunityWithSuggestions = existingOpportunity;
       }
     }
+
+    // When domain-wide suggestion has edgeDeployed, move NEW suggestions to SKIPPED
+    // Only move suggestions for URLs confirmed deployed at edge in this audit run
+    const deployedAtEdgeUrls = new Set(
+      successfulComparisons
+        .filter((r) => r.isDeployedAtEdge)
+        .map((r) => r.url),
+    );
+    await skipNewSuggestionsWhenAllDomainDeployed(opportunityWithSuggestions, context, deployedAtEdgeUrls); // eslint-disable-line max-len
 
     const endTime = process.hrtime(startTime);
     const elapsedSeconds = (endTime[0] + endTime[1] / 1e9).toFixed(2);
@@ -1200,17 +1331,6 @@ export async function processContentAndGenerateOpportunities(context) {
       auditResult,
       scrapeJobId,
     };
-
-    // After syncing suggestions, send a minimal guidance request to Mystique.
-    /* c8 ignore next 8 - Mystique integration branch, covered by integration tests */
-    if (opportunityForGuidance) {
-      await sendPrerenderGuidanceRequestToMystique(
-        site.getBaseURL(),
-        auditData,
-        opportunityForGuidance,
-        context,
-      );
-    }
 
     // Upload status summary to S3 (post-processing)
     await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);

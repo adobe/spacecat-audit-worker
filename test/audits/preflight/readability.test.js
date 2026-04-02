@@ -108,7 +108,7 @@ describe('Preflight Readability Audit', () => {
       TierClient.createForSite.restore();
     }
     const mockTierClient = {
-      checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+      checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
     };
     sinon.stub(TierClient, 'createForSite').returns(mockTierClient);
   });

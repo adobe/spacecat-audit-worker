@@ -187,8 +187,8 @@ export default async function handler(message, context) {
 
       const updatedData = {
         ...currentData,
-        // Treat "Not available" (case-insensitive) as empty string for better UX
-        aiSummary: hasValidAiSummary ? aiSummary : '',
+        // Use new summary if valid; otherwise preserve existing (don't overwrite with empty)
+        aiSummary: hasValidAiSummary ? aiSummary : (currentData.aiSummary ?? ''),
         // Default to true if not provided, but respect explicit boolean from Mystique
         valuable: isValuable,
       };
@@ -201,8 +201,7 @@ export default async function handler(message, context) {
     // 9. Batch save all suggestions using DynamoDB batch write
     if (suggestionsToSave.length > 0) {
       try {
-        // eslint-disable-next-line no-underscore-dangle
-        await Suggestion._saveMany(suggestionsToSave);
+        await Suggestion.saveMany(suggestionsToSave);
 
         // Check if this is a paid LLMO customer for quality tracking
         const isPaid = await isPaidLLMOCustomer(context);

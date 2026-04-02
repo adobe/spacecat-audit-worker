@@ -107,7 +107,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
     };
 
     Suggestion = {
-      _saveMany: sinon.stub().resolves(),
+      saveMany: sinon.stub().resolves(),
       STATUSES: {
         NEW: 'NEW',
         PENDING_VALIDATION: 'PENDING_VALIDATION',
@@ -205,8 +205,8 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       expect(mockSuggestions[2].setData).to.not.have.been.called; // OUTDATED, skipped
 
       // Verify batch save was called
-      expect(Suggestion._saveMany).to.have.been.called;
-      const savedSuggestions = Suggestion._saveMany.getCall(0).args[0];
+      expect(Suggestion.saveMany).to.have.been.called;
+      const savedSuggestions = Suggestion.saveMany.getCall(0).args[0];
       expect(savedSuggestions).to.have.lengthOf(2); // Only 2 non-OUTDATED suggestions
     });
 
@@ -476,7 +476,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
     });
 
     it('should handle batch save errors gracefully', async () => {
-      Suggestion._saveMany.rejects(new Error('DynamoDB batch write failed'));
+      Suggestion.saveMany.rejects(new Error('DynamoDB batch write failed'));
       mockFetchSuccess({
         opportunityId: 'opportunity-123',
         suggestions: [
@@ -549,7 +549,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       await handler.default(message, context);
 
       // OUTDATED suggestion should be filtered out
-      expect(Suggestion._saveMany).to.not.have.been.called;
+      expect(Suggestion.saveMany).to.not.have.been.called;
       expect(log.warn).to.have.been.calledWith(sinon.match(/No valid suggestions to update/));
     });
 
@@ -599,7 +599,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       expect(log.info).to.have.been.calledWith(
         sinon.match(/No updateable suggestions found \(all are OUTDATED\)/),
       );
-      expect(Suggestion._saveMany).to.not.have.been.called;
+      expect(Suggestion.saveMany).to.not.have.been.called;
     });
 
     it('should update suggestions with various statuses except OUTDATED', async () => {
@@ -659,7 +659,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       // OUTDATED should NOT be updated
       expect(allStatusSuggestions[3].setData).to.not.have.been.called;
 
-      const savedSuggestions = Suggestion._saveMany.getCall(0).args[0];
+      const savedSuggestions = Suggestion.saveMany.getCall(0).args[0];
       expect(savedSuggestions).to.have.lengthOf(3);
     });
 
@@ -687,7 +687,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       await handler.default(message, context);
 
       expect(log.warn).to.have.been.calledWith(sinon.match(/Skipping Mystique suggestion without URL/));
-      expect(Suggestion._saveMany).to.not.have.been.called;
+      expect(Suggestion.saveMany).to.not.have.been.called;
     });
 
     it('should handle null elements in suggestions array gracefully', async () => {
@@ -716,8 +716,8 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         sinon.match(/Skipping Mystique suggestion without URL/),
       );
       // Should still update the valid suggestions
-      expect(Suggestion._saveMany).to.have.been.calledOnce;
-      const savedSuggestions = Suggestion._saveMany.getCall(0).args[0];
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      const savedSuggestions = Suggestion.saveMany.getCall(0).args[0];
       expect(savedSuggestions).to.have.lengthOf(2);
     });
 
@@ -742,8 +742,8 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       await handler.default(message, context);
 
       // Should update suggestions with empty string for aiSummary
-      expect(Suggestion._saveMany).to.have.been.calledOnce;
-      const savedSuggestions = Suggestion._saveMany.getCall(0).args[0];
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      const savedSuggestions = Suggestion.saveMany.getCall(0).args[0];
       expect(savedSuggestions).to.have.lengthOf(2);
       
       // Verify aiSummary is set to empty string
@@ -778,8 +778,8 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
 
       // Should treat "Not available" as empty string for better UX (case-insensitive)
       // Note: page3 is OUTDATED so will be skipped, only 2 suggestions will be saved
-      expect(Suggestion._saveMany).to.have.been.calledOnce;
-      const savedSuggestions = Suggestion._saveMany.getCall(0).args[0];
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      const savedSuggestions = Suggestion.saveMany.getCall(0).args[0];
       expect(savedSuggestions).to.have.lengthOf(2);
       
       // Verify all variations are converted to empty string
@@ -818,8 +818,8 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       expect(mockIsPaidLLMOCustomer).to.have.been.calledOnce;
 
       // Both suggestions should be saved
-      expect(Suggestion._saveMany).to.have.been.calledOnce;
-      const savedSuggestions = Suggestion._saveMany.getCall(0).args[0];
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      const savedSuggestions = Suggestion.saveMany.getCall(0).args[0];
       expect(savedSuggestions).to.have.lengthOf(2);
       
       // First suggestion should have valuable=true (defaulted)
@@ -929,7 +929,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         aiSummary: 'Summary 1',
         valuable: true,
       });
-      expect(Suggestion._saveMany).to.have.been.calledOnce;
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
     });
 
     it('should skip suggestions that do not match existing URLs', async () => {
@@ -956,7 +956,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       await handler.default(message, context);
 
       expect(log.warn).to.have.been.calledWith(sinon.match(/No existing suggestion found for URL/));
-      expect(Suggestion._saveMany).to.not.have.been.called;
+      expect(Suggestion.saveMany).to.not.have.been.called;
     });
   });
 

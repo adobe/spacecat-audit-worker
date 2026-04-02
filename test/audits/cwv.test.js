@@ -350,7 +350,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
       
       // Mock TierClient for entitlement checks
       const mockTierClient = {
-        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: {} }),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
