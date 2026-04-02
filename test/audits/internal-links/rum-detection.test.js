@@ -186,7 +186,7 @@ describe('internal-links rum-detection', () => {
       siteId: 'site-1',
     });
     expect(log.info).to.have.been.calledWith(
-      sinon.match('Triggering import worker to fetch Ahrefs top pages'),
+      sinon.match('Triggering import worker to fetch SEO top pages'),
     );
   });
 

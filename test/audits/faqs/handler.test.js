@@ -19,6 +19,11 @@ import esmock from 'esmock';
 
 use(sinonChai);
 
+const BRAND_PRESENCE_HEADERS = [
+  undefined, 'Category', 'Topics', 'Prompt', 'Origin', 'Region',
+  'Volume', 'URL',
+];
+
 describe('FAQs Handler', () => {
   let context;
   let sandbox;
@@ -86,6 +91,7 @@ describe('FAQs Handler', () => {
       getDeliveryType: () => 'aem',
       getConfig: () => ({
         getLlmoDataFolder: () => '/data/llmo',
+        getIncludedURLs: sandbox.stub().resolves([]),
       }),
     };
 
@@ -131,33 +137,33 @@ describe('FAQs Handler', () => {
 
   describe('runFaqsAudit', () => {
     it('should return audit result with grouped prompts when spreadsheet is read successfully', async () => {
-      // Mock Excel file structure
       const mockWorkbook = {
         worksheets: [
           {
             rowCount: 5,
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: (start, count) => [
               {
                 getCell: (col) => {
-                  if (col === 2) return { value: 'photoshop' }; // Topic
-                  if (col === 3) return { value: 'How to use Photoshop?' }; // Prompt
-                  if (col === 7) return { value: 'https://adobe.com/photoshop' }; // URL
+                  if (col === 2) return { value: 'photoshop' };
+                  if (col === 3) return { value: 'How to use Photoshop?' };
+                  if (col === 7) return { value: 'https://adobe.com/photoshop' };
                   return { value: '' };
                 },
               },
               {
                 getCell: (col) => {
-                  if (col === 2) return { value: 'illustrator' }; // Topic
-                  if (col === 3) return { value: 'What is Illustrator?' }; // Prompt
-                  if (col === 7) return { value: 'https://adobe.com/illustrator' }; // URL
+                  if (col === 2) return { value: 'illustrator' };
+                  if (col === 3) return { value: 'What is Illustrator?' };
+                  if (col === 7) return { value: 'https://adobe.com/illustrator' };
                   return { value: '' };
                 },
               },
               {
                 getCell: (col) => {
-                  if (col === 2) return { value: 'photoshop' }; // Topic
-                  if (col === 3) return { value: 'Photoshop tutorials?' }; // Prompt
-                  if (col === 7) return { value: 'https://adobe.com/photoshop' }; // URL
+                  if (col === 2) return { value: 'photoshop' };
+                  if (col === 3) return { value: 'Photoshop tutorials?' };
+                  if (col === 7) return { value: 'https://adobe.com/photoshop' };
                   return { value: '' };
                 },
               },
@@ -284,6 +290,7 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 1,
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: () => [],
           },
         ],
@@ -381,6 +388,7 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 2,
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: () => [
               {
                 getCell: (col) => {
@@ -447,6 +455,7 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 2,
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: () => [
               {
                 getCell: (col) => {
@@ -534,7 +543,8 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 5,
-            getRows: () => null, // getRows returns null
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
+            getRows: () => null,
           },
         ],
       };
@@ -601,6 +611,7 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 4,
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: () => [
               {
                 getCell: (col) => {
@@ -672,6 +683,7 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 3,
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: () => [
               {
                 getCell: (col) => {
@@ -738,6 +750,7 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 3,
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: () => [
               {
                 getCell: (col) => {
@@ -803,6 +816,7 @@ describe('FAQs Handler', () => {
         worksheets: [
           {
             rowCount: 3,
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: () => [
               {
                 getCell: (col) => {
@@ -863,11 +877,84 @@ describe('FAQs Handler', () => {
       );
     });
 
+    it('should keep prompt with URL column over generic row', async () => {
+      const mockWorkbook = {
+        worksheets: [
+          {
+            rowCount: 3,
+            getRow: () => ({
+              values: [
+                undefined, 'Category', 'Topics', 'Prompt', 'Origin', 'Region',
+                'Volume', 'URL', 'Answer', 'Sources', 'Citations', 'Mentions',
+                'Sentiment', 'Biz', 'Org', 'CAI', 'IsA', 'S2A', 'Pos', 'Vis',
+                'DBM', 'ExecDate', 'Related URLs',
+              ],
+            }),
+            getRows: () => [
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'GenericTopic' };
+                  if (col === 3) return { value: 'How do I export?' };
+                  if (col === 7) return { value: '' };
+                  if (col === 22) return { value: 'https://adobe.com/from-analysis' };
+                  return { value: '' };
+                },
+              },
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'UrlTopic' };
+                  if (col === 3) return { value: 'How do I export?' };
+                  if (col === 7) return { value: 'https://adobe.com/original' };
+                  if (col === 22) return { value: '' };
+                  return { value: '' };
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      readFromSharePointStub.resolves(Buffer.from('mock data'));
+
+      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: createLLMOSharepointClientStub,
+          readFromSharePoint: readFromSharePointStub,
+        },
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
+        },
+        exceljs: {
+          Workbook: class {
+            constructor() {}
+
+            get xlsx() {
+              const self = this;
+              return {
+                load: async () => {
+                  Object.assign(self, mockWorkbook);
+                },
+              };
+            }
+          },
+        },
+      });
+
+      const runner = excelJsMock.default.runner;
+      const result = await runner('https://adobe.com', context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.promptsByUrl).to.have.lengthOf(1);
+      expect(result.auditResult.promptsByUrl[0].topic).to.equal('UrlTopic');
+      expect(result.auditResult.promptsByUrl[0].url).to.equal('https://adobe.com/original');
+    });
+
     it('should sort prompts with URLs first', async () => {
       const mockWorkbook = {
         worksheets: [
           {
             rowCount: 6,
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
             getRows: () => [
               {
                 getCell: (col) => {
@@ -949,6 +1036,229 @@ describe('FAQs Handler', () => {
       expect(result.auditResult.promptsByUrl[2].topic).to.equal('Topic1');
       expect(result.auditResult.promptsByUrl[3].url).to.equal('');
       expect(result.auditResult.promptsByUrl[3].topic).to.equal('Topic3');
+    });
+    it('should keep the original URL column when related URLs exist', async () => {
+      site.getConfig = () => ({
+        getLlmoDataFolder: () => '/data/llmo',
+        getIncludedURLs: sandbox.stub().resolves(['https://adobe.com/included-page']),
+      });
+
+      const mockWorkbook = {
+        worksheets: [
+          {
+            rowCount: 2,
+            getRow: () => ({
+              values: [
+                undefined, 'Category', 'Topics', 'Prompt', 'Origin', 'Region',
+                'Volume', 'URL', 'Answer', 'Sources', 'Citations', 'Mentions',
+                'Sentiment', 'Biz', 'Org', 'CAI', 'IsA', 'S2A', 'Pos', 'Vis',
+                'DBM', 'ExecDate', 'Related URLs',
+              ],
+            }),
+            getRows: () => [
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'Topic1' };
+                  if (col === 3) return { value: 'What is Creative Cloud?' };
+                  if (col === 7) return { value: 'https://adobe.com/original' };
+                  if (col === 22) return { value: 'https://adobe.com/related1; https://adobe.com/included-page; https://adobe.com/related3' };
+                  return { value: '' };
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      readFromSharePointStub.resolves(Buffer.from('mock'));
+
+      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: createLLMOSharepointClientStub,
+          readFromSharePoint: readFromSharePointStub,
+        },
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
+        },
+        exceljs: {
+          Workbook: class {
+            constructor() {}
+
+            get xlsx() {
+              const self = this;
+              return {
+                load: async () => {
+                  Object.assign(self, mockWorkbook);
+                },
+              };
+            }
+          },
+        },
+      });
+
+      const runner = excelJsMock.default.runner;
+      const result = await runner('https://adobe.com', context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.promptsByUrl[0].url).to.equal('https://adobe.com/original');
+    });
+
+    it('should handle spreadsheet without Related URLs header column', async () => {
+      const mockWorkbook = {
+        worksheets: [
+          {
+            rowCount: 2,
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
+            getRows: () => [
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'Topic1' };
+                  if (col === 3) return { value: 'Some question?' };
+                  if (col === 7) return { value: 'https://adobe.com/fallback' };
+                  return { value: '' };
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      readFromSharePointStub.resolves(Buffer.from('mock'));
+
+      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: createLLMOSharepointClientStub,
+          readFromSharePoint: readFromSharePointStub,
+        },
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
+        },
+        exceljs: {
+          Workbook: class {
+            constructor() {}
+
+            get xlsx() {
+              const self = this;
+              return {
+                load: async () => {
+                  Object.assign(self, mockWorkbook);
+                },
+              };
+            }
+          },
+        },
+      });
+
+      const runner = excelJsMock.default.runner;
+      const result = await runner('https://adobe.com', context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.promptsByUrl[0].url).to.equal('https://adobe.com/fallback');
+    });
+
+    it('should handle header row with null values gracefully (no columns resolved)', async () => {
+      const mockWorkbook = {
+        worksheets: [
+          {
+            rowCount: 2,
+            getRow: () => ({ values: null }),
+            getRows: () => [
+              {
+                getCell: () => ({ value: 'ignored' }),
+              },
+            ],
+          },
+        ],
+      };
+
+      readFromSharePointStub.resolves(Buffer.from('mock'));
+
+      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: createLLMOSharepointClientStub,
+          readFromSharePoint: readFromSharePointStub,
+        },
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
+        },
+        exceljs: {
+          Workbook: class {
+            constructor() {}
+
+            get xlsx() {
+              const self = this;
+              return {
+                load: async () => {
+                  Object.assign(self, mockWorkbook);
+                },
+              };
+            }
+          },
+        },
+      });
+
+      const runner = excelJsMock.default.runner;
+      const result = await runner('https://adobe.com', context, site);
+
+      expect(result.auditResult.success).to.equal(false);
+      expect(result.auditResult.promptsByUrl).to.be.an('array').with.lengthOf(0);
+    });
+
+    it('should handle site config without getIncludedURLs method', async () => {
+      site.getConfig = () => ({
+        getLlmoDataFolder: () => '/data/llmo',
+      });
+
+      const mockWorkbook = {
+        worksheets: [
+          {
+            rowCount: 2,
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
+            getRows: () => [
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'Topic1' };
+                  if (col === 3) return { value: 'Some question?' };
+                  if (col === 7) return { value: 'https://adobe.com/fallback' };
+                  return { value: '' };
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      readFromSharePointStub.resolves(Buffer.from('mock'));
+
+      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: createLLMOSharepointClientStub,
+          readFromSharePoint: readFromSharePointStub,
+        },
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
+        },
+        exceljs: {
+          Workbook: class {
+            constructor() {}
+
+            get xlsx() {
+              const self = this;
+              return {
+                load: async () => {
+                  Object.assign(self, mockWorkbook);
+                },
+              };
+            }
+          },
+        },
+      });
+
+      const runner = excelJsMock.default.runner;
+      const result = await runner('https://adobe.com', context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.promptsByUrl[0].url).to.equal('https://adobe.com/fallback');
     });
   });
 

@@ -12,16 +12,18 @@
 
 import { isUnscrapeable } from '../utils/url-utils.js';
 import { extractLocaleFromUrl, localesMatch } from './bright-data-client.js';
+import { scoreSuggestion } from './suggestion-score.js';
 
 const DEFAULT_MAX_SUGGESTED_URLS = 5;
 
 /**
- * Pick multiple candidate URLs from Bright Data organic SERP results.
- * Skips unscrapeable file URLs (PDF, Office, etc.), dedupes, prefers URLs whose
- * locale matches the broken link (same order as Google within each tier).
+ * Pick and rank candidate URLs from Bright Data organic SERP results.
+ * Each URL is scored against the broken link (path overlap, section, slug, etc.).
+ * URLs with score 0 (wrong domain, homepage, unrelated) are discarded.
+ * Remaining URLs are sorted: locale-matching first, then by descending score.
  *
  * @param {Array<{ link?: string }>} results - Organic results from Bright Data
- * @param {string} brokenLinkUrl - Broken target URL (for locale preference)
+ * @param {string} brokenLinkUrl - Broken target URL (for scoring and locale preference)
  * @param {{ maxUrls?: number }} [options]
  * @returns {string[]}
  */
@@ -42,23 +44,25 @@ export function pickUrlsFromSerpResults(results, brokenLinkUrl, options = {}) {
 
   const brokenLinkLocale = extractLocaleFromUrl(brokenLinkUrl);
   const seen = new Set();
-  const pushUnique = (bucket, link) => {
-    const key = link.toLowerCase();
-    if (seen.has(key)) return;
-    seen.add(key);
-    bucket.push(link);
-  };
+  const scored = [];
 
-  const localeFirst = [];
-  const rest = [];
   for (const link of links) {
-    const suggestedLocale = extractLocaleFromUrl(link);
-    if (localesMatch(brokenLinkLocale, suggestedLocale)) {
-      pushUnique(localeFirst, link);
-    } else {
-      pushUnique(rest, link);
+    const key = link.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+
+      const { score } = scoreSuggestion(brokenLinkUrl, link);
+      if (score > 0) {
+        const localeMatch = localesMatch(brokenLinkLocale, extractLocaleFromUrl(link));
+        scored.push({ link, score, localeMatch });
+      }
     }
   }
 
-  return [...localeFirst, ...rest].slice(0, maxUrls);
+  scored.sort((a, b) => {
+    if (a.localeMatch !== b.localeMatch) return a.localeMatch ? -1 : 1;
+    return b.score - a.score;
+  });
+
+  return scored.map((s) => s.link).slice(0, maxUrls);
 }

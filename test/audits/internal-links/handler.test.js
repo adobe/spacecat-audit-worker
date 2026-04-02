@@ -571,11 +571,11 @@ describe('Broken internal links audit', () => {
   }).timeout(10000);
 
   it('submitForScraping should merge database top pages + includedURLs and submit', async () => {
-    // Mock database read for Ahrefs top pages
+    // Mock database read for SEO top pages
     const mockSiteTopPage = {
       allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-        { getUrl: () => 'https://example.com/ahrefs1' },
-        { getUrl: () => 'https://example.com/ahrefs2' },
+        { getUrl: () => 'https://example.com/seo1' },
+        { getUrl: () => 'https://example.com/seo2' },
       ]),
     };
 
@@ -609,10 +609,10 @@ describe('Broken internal links audit', () => {
 
     expect(result).to.have.property('urls');
     expect(result.urls).to.be.an('array');
-    // Should have Ahrefs (2) + includedURLs (1) = 3 unique URLs
+    // Should have SEO (2) + includedURLs (1) = 3 unique URLs
     expect(result.urls.length).to.equal(3);
-    expect(result.urls).to.deep.include({ url: 'https://example.com/ahrefs1' });
-    expect(result.urls).to.deep.include({ url: 'https://example.com/ahrefs2' });
+    expect(result.urls).to.deep.include({ url: 'https://example.com/seo1' });
+    expect(result.urls).to.deep.include({ url: 'https://example.com/seo2' });
     expect(result.urls).to.deep.include({ url: 'https://example.com/included1' });
     expect(result.siteId).to.equal(site.getId());
     expect(result.type).to.equal('broken-internal-links');
@@ -774,14 +774,14 @@ describe('Broken internal links audit', () => {
 
   it('submitForScraping should cap URLs at MAX_URLS_TO_PROCESS (100)', async () => {
     // Create >100 total URLs to test capping logic
-    const manyAhrefsPages = Array.from({ length: 80 }, (_, i) => ({
-      getUrl: () => `https://example.com/ahrefs-page-${i}`,
+    const manySeoPages = Array.from({ length: 80 }, (_, i) => ({
+      getUrl: () => `https://example.com/seo-page-${i}`,
     }));
 
     const manyIncludedUrls = Array.from({ length: 40 }, (_, i) => `https://example.com/manual-page-${i}`);
 
     const mockSiteTopPage = {
-      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(manyAhrefsPages),
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(manySeoPages),
     };
 
     const mockSite = {
@@ -2081,11 +2081,10 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
       context.env.BRIGHT_DATA_ZONE = 'test-zone';
 
-      // Mock Bright Data returning a result
       mockBrightDataClient.googleSearchWithFallback.resolves({
-        results: [{ link: 'https://example.com/suggested-page', title: 'Suggested Page' }],
-        query: 'site:example.com broken page',
-        keywords: 'broken page',
+        results: [{ link: 'https://example.com/blog/broken-page-updated', title: 'Updated Page' }],
+        query: 'site:example.com blog broken page',
+        keywords: 'blog broken page',
       });
 
       context.audit.getAuditResult.returns({
@@ -2097,7 +2096,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         getId: () => 'test-suggestion-1',
         getData: () => ({
           urlFrom: 'https://example.com/from',
-          urlTo: 'https://example.com/broken',
+          urlTo: 'https://example.com/blog/broken-page',
         }),
         setData: sinon.stub(),
         save: sinon.stub().resolves(),
@@ -2114,8 +2113,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       expect(mockSuggestion.save).to.have.been.calledOnce;
 
       const setDataCall = mockSuggestion.setData.getCall(0).args[0];
-      expect(setDataCall.urlsSuggested).to.deep.equal(['https://example.com/suggested-page']);
-      expect(setDataCall.aiRationale).to.include('broken page');
+      expect(setDataCall.urlsSuggested).to.deep.equal(['https://example.com/blog/broken-page-updated']);
+      expect(setDataCall.aiRationale).to.include('blog broken page');
     });
 
     it('should add locale to search URL when broken link has locale prefix', async () => {
@@ -2253,19 +2252,14 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       context.env.BRIGHT_DATA_ZONE = 'test-zone';
       context.env.BRIGHT_DATA_VALIDATE_URLS = 'true';
 
-      // Mock Bright Data returning a result
       mockBrightDataClient.googleSearchWithFallback.resolves({
-        results: [{ link: 'https://example.com/valid-page', title: 'Valid Page' }],
-        query: 'site:example.com broken page',
-        keywords: 'broken page',
+        results: [{ link: 'https://example.com/blog/broken-page-updated', title: 'Updated Page' }],
+        query: 'site:example.com blog broken page',
+        keywords: 'blog broken page',
       });
 
-      // Mock the URL validation - nock returns 200 for valid URLs
       nock('https://example.com')
-        .head('/valid-page')
-        .reply(200);
-      nock('https://example.com')
-        .get('/valid-page')
+        .get('/blog/broken-page-updated')
         .reply(200);
 
       context.audit.getAuditResult.returns({
@@ -2277,7 +2271,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         getId: () => 'test-suggestion-1',
         getData: () => ({
           urlFrom: 'https://example.com/from',
-          urlTo: 'https://example.com/broken',
+          urlTo: 'https://example.com/blog/broken-page',
         }),
         setData: sinon.stub(),
         save: sinon.stub().resolves(),
@@ -2290,8 +2284,9 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       await mockedHandler.opportunityAndSuggestionsStep(context);
 
-      // Suggestion should be updated since URL is valid
       expect(mockSuggestion.setData).to.have.been.calledOnce;
+      const savedData = mockSuggestion.setData.getCall(0).args[0];
+      expect(savedData.urlsSuggested).to.deep.equal(['https://example.com/blog/broken-page-updated']);
     });
 
     it('should skip suggestion when validated URL returns 404', async () => {
@@ -2341,11 +2336,10 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
       context.env.BRIGHT_DATA_ZONE = 'test-zone';
 
-      // Mock Bright Data returning a result
       mockBrightDataClient.googleSearchWithFallback.resolves({
-        results: [{ link: 'https://example.com/suggested-page', title: 'Suggested' }],
-        query: 'site:example.com broken page',
-        keywords: 'broken page',
+        results: [{ link: 'https://example.com/blog/broken-page-updated', title: 'Updated' }],
+        query: 'site:example.com blog broken page',
+        keywords: 'blog broken page',
       });
 
       context.audit.getAuditResult.returns({
@@ -2358,12 +2352,11 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
           getId: () => 'test-suggestion-1',
           getData: () => ({
             urlFrom: 'https://example.com/from',
-            urlTo: 'https://example.com/broken',
+            urlTo: 'https://example.com/blog/broken-page',
           }),
         },
       ];
       context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(testSuggestions);
-      // Return null for findById to simulate missing suggestion
       context.dataAccess.Suggestion.findById = sinon.stub().resolves(null);
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
@@ -2476,11 +2469,10 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
       context.env.BRIGHT_DATA_ZONE = 'test-zone';
 
-      // Mock Bright Data returning results for all links
       mockBrightDataClient.googleSearchWithFallback.resolves({
-        results: [{ link: 'https://example.com/suggested', title: 'Suggested' }],
-        query: 'site:example.com keywords',
-        keywords: 'keywords',
+        results: [{ link: 'https://example.com/blog/broken-page-updated', title: 'Updated' }],
+        query: 'site:example.com blog broken page',
+        keywords: 'blog broken page',
       });
 
       context.audit.getAuditResult.returns({
@@ -2492,7 +2484,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         getId: () => 'test-suggestion-1',
         getData: () => ({
           urlFrom: 'https://example.com/from',
-          urlTo: 'https://example.com/broken',
+          urlTo: 'https://example.com/blog/broken-page',
         }),
         setData: sinon.stub(),
         save: sinon.stub().resolves(),
@@ -2638,7 +2630,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     );
   }).timeout(10000);
 
-  it('should handle Ahrefs fetch error gracefully in opportunityAndSuggestionsStep', async () => {
+  it('should handle SEO fetch error gracefully in opportunityAndSuggestionsStep', async () => {
     context.dataAccess.Configuration = {
       findLatest: () => ({
         isHandlerEnabledForSite: () => true,
@@ -2675,16 +2667,16 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
       .callsFake(() => Promise.resolve(validSuggestions));
     
-    // Make Ahrefs fetch fail
+    // Make SEO fetch fail
     context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
-      .rejects(new Error('Ahrefs API error'));
+      .rejects(new Error('SEO API error'));
 
     // Should still complete without throwing
     const result = await handler.opportunityAndSuggestionsStep(context);
 
     expect(result.status).to.equal('complete');
     expect(context.log.warn).to.have.been.calledWith(
-      sinon.match(/Failed to fetch Ahrefs top pages/),
+      sinon.match(/Failed to fetch SEO top pages/),
     );
   }).timeout(10000);
 
@@ -2723,7 +2715,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       getId: () => 'suggestion-1',
     }];
 
-    // Create 80 Ahrefs pages + 40 includedURLs = 120 total (exceeds MAX_URLS_TO_PROCESS 100)
+    // Create 80 SEO pages + 40 includedURLs = 120 total (exceeds MAX_URLS_TO_PROCESS 100)
     const manyTopPages = Array.from({ length: 80 }, (_, i) => ({
       getUrl: () => `https://example.com/en/page${i}`,
     }));

@@ -199,27 +199,27 @@ describe('Paid Cookie Consent Audit', () => {
     expect(result.auditResult.top3Pages).to.be.an('array');
   });
 
-  it('should include Ahrefs CPC data when available from S3', async () => {
-    const ahrefsData = {
+  it('should include SEO CPC data when available from S3', async () => {
+    const seoData = {
       organicTraffic: 10000,
       organicCost: 1910,
       paidTraffic: 5000,
       paidCost: 1560,
     };
-    const contextWithAhrefs = {
+    const contextWithSEO = {
       ...context,
       s3Client: {
         send: sandbox.stub().resolves({
           Body: {
-            transformToString: () => JSON.stringify(ahrefsData),
+            transformToString: () => JSON.stringify(seoData),
           },
         }),
       },
     };
-    const result = await paidAuditRunner(auditUrl, contextWithAhrefs, site);
-    expect(result.auditResult).to.have.property('cpcSource', 'ahrefs');
-    expect(result.auditResult).to.have.property('ahrefsOrganicCPC', 0.191);
-    expect(result.auditResult).to.have.property('ahrefsPaidCPC', 0.312);
+    const result = await paidAuditRunner(auditUrl, contextWithSEO, site);
+    expect(result.auditResult).to.have.property('cpcSource', 'seo');
+    expect(result.auditResult).to.have.property('seoOrganicCPC', 0.191);
+    expect(result.auditResult).to.have.property('seoPaidCPC', 0.312);
     expect(result.auditResult).to.have.property('appliedCPC', 0.312);
     expect(result.auditResult).to.have.property('defaultCPC', 0.80);
   });

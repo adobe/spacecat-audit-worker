@@ -17,9 +17,21 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import { LOG_PREFIX, AUDIT_TYPE } from './constants.js';
 import { getCommerceConfig } from '../utils/saas.js';
+import { createMemoizedManualConfigResolver, configGroupKey } from '../utils/commerce-config-resolver.js';
 import { getSitemapUrls } from '../sitemap/common.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
+
+const REQUIRED_COMMERCE_CONFIG_FIELDS = ['environmentId', 'websiteCode', 'storeCode', 'storeViewCode'];
+
+function hasValidCommerceLlmoConfig(site) {
+  const commerceLlmoConfig = site?.getConfig?.()?.state?.commerceLlmoConfig;
+  if (!commerceLlmoConfig || typeof commerceLlmoConfig !== 'object') return false;
+
+  return Object.values(commerceLlmoConfig).some(
+    (storeView) => REQUIRED_COMMERCE_CONFIG_FIELDS.every((field) => storeView?.[field]),
+  );
+}
 
 const MAX_EXCLUDED_URLS = 500;
 
@@ -52,6 +64,14 @@ export async function importTopPages(context) {
   const limit = parsedData.limit ? Number(parsedData.limit) : undefined;
 
   log.info(`${LOG_PREFIX} Step 1: importTopPages for site: ${site.getId()}, url: ${finalUrl}${limit ? `, limit: ${limit}` : ''}`);
+
+  if (!hasValidCommerceLlmoConfig(site)) {
+    log.warn(`${LOG_PREFIX} Step 1: No valid commerceLlmoConfig found for site ${site.getId()}, skipping audit`);
+    return {
+      auditResult: { status: 'SKIPPED', message: 'Missing or invalid commerceLlmoConfig' },
+      fullAuditRef: finalUrl,
+    };
+  }
 
   const s3BucketPath = `scrapes/${site.getId()}/`;
   const result = {
@@ -154,7 +174,7 @@ export async function submitForScraping(context) {
   log.info(`${LOG_PREFIX} Step 2: submitForScraping for site: ${site.getId()}${limit ? `, limit: ${limit}` : ''}`);
 
   const { SiteTopPage } = dataAccess;
-  const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
   const topPages = limit ? allTopPages.slice(0, limit) : allTopPages;
   const sourceUrls = topPages.map((page) => page.getUrl());
 
@@ -216,10 +236,6 @@ async function sendEnrichment(productPages, commerceConfig, site, env, log, {
     ...categoryPageScrapes,
   ];
 
-  if (allScrapes.length === 0 || !commerceConfig) {
-    return null;
-  }
-
   const enrichmentEndpoint = env.CATALOG_ENRICHMENT_ENDPOINT;
   if (!enrichmentEndpoint) {
     log.warn(`${LOG_PREFIX} Step 3: CATALOG_ENRICHMENT_ENDPOINT not configured, skipping enrichment`);
@@ -228,6 +244,7 @@ async function sendEnrichment(productPages, commerceConfig, site, env, log, {
 
   const enrichmentPayload = {
     siteId: site.getId(),
+    storeViewUrl: commerceConfig.storeViewUrl,
     environmentId: commerceConfig.headers['Magento-Environment-Id'],
     websiteCode: commerceConfig.headers['Magento-Website-Code'],
     storeCode: commerceConfig.headers['Magento-Store-Code'],
@@ -235,8 +252,8 @@ async function sendEnrichment(productPages, commerceConfig, site, env, log, {
     scrapes: allScrapes,
   };
 
-  log.info(`${LOG_PREFIX} Step 3: Sending enrichment to ${enrichmentEndpoint} with ${enrichmentPayload.scrapes.length} scrapes`);
-  log.debug(`${LOG_PREFIX} Step 3: Enrichment payload:`, JSON.stringify(enrichmentPayload));
+  const { scrapes, ...payloadWithoutScrapes } = enrichmentPayload;
+  log.info(`${LOG_PREFIX} Step 3: Sending enrichment to ${enrichmentEndpoint}`, { ...payloadWithoutScrapes, scrapesCount: scrapes.length });
 
   const imsClient = ImsClient.createFrom({
     log,
@@ -324,16 +341,26 @@ export async function runAuditAndProcessResults(context) {
     return earlyResult;
   }
 
-  let commerceConfig = null;
-  try {
-    commerceConfig = await getCommerceConfig(site, AUDIT_TYPE, finalUrl, log);
-    const redactedHeaders = { ...commerceConfig.headers };
-    if (redactedHeaders['x-api-key']) {
-      redactedHeaders['x-api-key'] = '[REDACTED]';
+  const memoizedManualResolver = createMemoizedManualConfigResolver(site);
+  const commerceLlmoConfig = site?.getConfig?.()?.state?.commerceLlmoConfig;
+  const hasManualConfig = !!commerceLlmoConfig && Object.keys(commerceLlmoConfig).length > 0;
+
+  // @deprecated — getCommerceConfig fallback is no longer used for commerce-product-enrichments.
+  // commerceLlmoConfig is now required (validated in Step 1). Keeping for backwards compatibility
+  // until all sites are migrated. To be removed in a future cleanup.
+  let remoteConfig = null;
+  if (!hasManualConfig) {
+    log.warn(`${LOG_PREFIX} Step 3: No commerceLlmoConfig found — remote config fallback is deprecated`);
+    try {
+      remoteConfig = await getCommerceConfig(site, AUDIT_TYPE, finalUrl, log);
+      const redactedHeaders = { ...remoteConfig.headers };
+      if (redactedHeaders['x-api-key']) {
+        redactedHeaders['x-api-key'] = '[REDACTED]';
+      }
+      log.debug(`${LOG_PREFIX} Step 3: Commerce config:`, { url: remoteConfig.url, headers: redactedHeaders });
+    } catch (configError) {
+      log.warn(`${LOG_PREFIX} Step 3: Failed to extract commerce config: ${configError.message}`);
     }
-    log.debug(`${LOG_PREFIX} Step 3: Commerce config:`, { url: commerceConfig.url, headers: redactedHeaders });
-  } catch (configError) {
-    log.warn(`${LOG_PREFIX} Step 3: Failed to extract commerce config: ${configError.message}`);
   }
 
   const handlerConfig = site.getConfig()?.getHandlers()?.[AUDIT_TYPE];
@@ -365,8 +392,8 @@ export async function runAuditAndProcessResults(context) {
 
         const Product = scrapeData?.scrapeResult?.structuredData?.jsonld?.Product;
         if (Array.isArray(Product) && Product.length > 0) {
-          // Count products with SKU
-          skuCount = Product.filter((product) => product.sku).length;
+          const uniqueSkus = new Set(Product.filter((p) => p.sku).map((p) => p.sku));
+          skuCount = uniqueSkus.size;
           isProductPage = skuCount === 1;
           // Extract the actual SKU value
           if (isProductPage) {
@@ -416,14 +443,74 @@ export async function runAuditAndProcessResults(context) {
   // Build category page scrapes from handler config
   const categoryPageScrapes = buildCategoryPageScrapes(handlerConfig, scrapeResultPaths, log);
 
-  let enrichmentResponse = null;
-  try {
-    const opts = { categoryPageScrapes };
-    enrichmentResponse = await sendEnrichment(productPages, commerceConfig, site, env, log, opts);
-  } catch (enrichmentError) {
-    log.error(`${LOG_PREFIX} Step 3: Enrichment API call failed: ${enrichmentError.message}`);
-    enrichmentResponse = { error: enrichmentError.message };
-  }
+  // Resolve config per product URL: manual config takes precedence over remote
+  const resolvedProducts = productPages.map((page) => {
+    const manualConfig = memoizedManualResolver(page.url);
+    const resolvedConfig = manualConfig || remoteConfig;
+    return {
+      ...page,
+      resolvedConfig,
+      configKey: configGroupKey(resolvedConfig),
+    };
+  });
+
+  // Group products by storeViewCode
+  const groups = new Map();
+  resolvedProducts
+    .filter((product) => product.resolvedConfig)
+    .forEach((product) => {
+      const key = product.configKey;
+      if (!groups.has(key)) {
+        groups.set(key, { config: product.resolvedConfig, products: [] });
+      }
+      groups.get(key).products.push(product);
+    });
+
+  // Distribute category scrapes to matching groups
+  const resolvedCategoryScrapes = categoryPageScrapes.map((scrape) => {
+    const categoryUrl = [...scrapeResultPaths.entries()]
+      .find(([, path]) => path === scrape.key)?.[0];
+    const manualConfig = memoizedManualResolver(categoryUrl);
+    const resolvedConfig = manualConfig || remoteConfig;
+    return { ...scrape, configKey: configGroupKey(resolvedConfig), resolvedConfig };
+  });
+
+  // Add category scrapes to their matching groups (or create new groups)
+  resolvedCategoryScrapes
+    .filter((catScrape) => catScrape.resolvedConfig)
+    .forEach((catScrape) => {
+      const key = catScrape.configKey;
+      if (!groups.has(key)) {
+        groups.set(key, { config: catScrape.resolvedConfig, products: [] });
+      }
+    });
+
+  // Send separate enrichment requests per storeViewCode group
+  log.info(`${LOG_PREFIX} Step 3: Sending enrichment for ${groups.size} group(s): ${[...groups.entries()].map(([key, g]) => `${key}=${g.products.length} products`).join(', ')}`);
+  const enrichmentPromises = [...groups.entries()].map(([groupKey, group]) => {
+    const groupCategoryScrapes = resolvedCategoryScrapes
+      .filter((cs) => cs.configKey === groupKey)
+      .map((cs) => ({
+        sku: cs.sku,
+        key: cs.key,
+        ...(cs.preFetch && { preFetch: cs.preFetch }),
+      }));
+    return sendEnrichment(
+      group.products,
+      group.config,
+      site,
+      env,
+      log,
+      { categoryPageScrapes: groupCategoryScrapes },
+    );
+  });
+  const settledResults = await Promise.allSettled(enrichmentPromises);
+  const enrichmentResponses = settledResults.map((result) => {
+    if (result.status === 'fulfilled') return result.value;
+    log.error(`${LOG_PREFIX} Step 3: Enrichment API call failed: ${result.reason?.message}`);
+    return { error: result.reason?.message };
+  });
+  const enrichmentResponse = enrichmentResponses;
 
   // Persist non-product URLs as excluded for future runs,
   // but skip URLs that are configured as category pages
@@ -437,11 +524,16 @@ export async function runAuditAndProcessResults(context) {
   if (nonProductUrls.length > 0) {
     try {
       const siteConfig = site.getConfig();
+      const rawConfigState = siteConfig?.state;
       const existingExcluded = siteConfig.getExcludedURLs?.(AUDIT_TYPE) || [];
       const mergedExcluded = [...new Set([...existingExcluded, ...nonProductUrls])]
         .slice(0, MAX_EXCLUDED_URLS);
       siteConfig.updateExcludedURLs(AUDIT_TYPE, mergedExcluded);
-      site.setConfig(Config.toDynamoItem(siteConfig));
+      const dynamoItem = Config.toDynamoItem(siteConfig);
+      if (rawConfigState?.commerceLlmoConfig) {
+        dynamoItem.commerceLlmoConfig = rawConfigState.commerceLlmoConfig;
+      }
+      site.setConfig(dynamoItem);
       await site.save();
       log.info(`${LOG_PREFIX} Step 3: Updated excludedURLs with ${nonProductUrls.length} non-product URLs (total: ${mergedExcluded.length})`);
     } catch (e) {
@@ -503,6 +595,14 @@ export async function discoverSitemapUrlsAndSubmitForScraping(context) {
   const baseURL = site.getBaseURL();
 
   log.info(`${LOG_PREFIX} Step 1 (yearly): Discovering sitemap URLs for ${baseURL}${limit ? `, limit: ${limit}` : ''}`);
+
+  if (!hasValidCommerceLlmoConfig(site)) {
+    log.warn(`${LOG_PREFIX} Step 1 (yearly): No valid commerceLlmoConfig found for site ${site.getId()}, skipping audit`);
+    return {
+      auditResult: { status: 'SKIPPED', message: 'Missing or invalid commerceLlmoConfig' },
+      fullAuditRef: baseURL,
+    };
+  }
 
   const sitemapResult = await getSitemapUrls(baseURL, log);
 

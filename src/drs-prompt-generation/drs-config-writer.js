@@ -16,7 +16,7 @@ import { llmoConfig as sharedLlmoConfig } from '@adobe/spacecat-shared-utils';
 /**
  * Groups DRS prompts by category and topic, then writes them into
  * the LLMO config as aiTopics so they appear in the UI and are used
- * by the geo-brand-presence audit.
+ * by downstream brand-presence analysis flows.
  *
  * @param {object} params
  * @param {Array<object>} params.drsPrompts - Raw prompts from DRS

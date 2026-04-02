@@ -169,7 +169,7 @@ export class BaseAudit {
 
   async runPostProcessors(audit, result, params, context) {
     const {
-      type, site, finalUrl, auditData,
+      type, site, finalUrl, auditData, auditContext = {},
     } = params;
     const { auditResult, fullAuditRef } = result;
     const { log } = context;
@@ -190,7 +190,13 @@ export class BaseAudit {
       const updatedAuditData = await previousProcessor;
 
       try {
-        const processedResult = await postProcessor(finalUrl, updatedAuditData, context, site);
+        const processedResult = await postProcessor(
+          finalUrl,
+          updatedAuditData,
+          context,
+          site,
+          auditContext,
+        );
         return processedResult || updatedAuditData;
       } catch (e) {
         log.error(`Post processor ${postProcessor.name} failed for ${type} audit failed for site ${site.getId()}. Reason: ${e.message}.\nAudit data: ${JSON.stringify(updatedAuditData)}`);

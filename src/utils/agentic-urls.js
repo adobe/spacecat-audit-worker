@@ -19,6 +19,12 @@ import { weeklyBreakdownQueries } from '../cdn-logs-report/utils/query-builder.j
 
 const DEFAULT_TOP_AGENTIC_URLS_LIMIT = 200;
 
+export function getPreferredBaseUrl(site, context) {
+  return context.finalUrl && !/^https?:\/\//.test(context.finalUrl)
+    ? `https://${context.finalUrl}`
+    : context.finalUrl || site.getBaseURL();
+}
+
 // URL suffixes to exclude from agentic URL results
 export const EXCLUDED_URL_SUFFIXES = [
   '/sitemap.xml',
@@ -57,12 +63,19 @@ export async function getTopAgenticUrlsFromAthena(
   limit = DEFAULT_TOP_AGENTIC_URLS_LIMIT,
 ) {
   const { log } = context;
-  // Use finalUrl from context if available (it's a hostname, so add https://),
-  // otherwise fall back to site.getBaseURL() which already includes the protocol
-  const baseUrl = context.finalUrl && !/^https?:\/\//.test(context.finalUrl)
-    ? `https://${context.finalUrl}`
-    : context.finalUrl || site.getBaseURL();
+  const baseUrl = getPreferredBaseUrl(site, context);
+
   try {
+    const configuration = await context.dataAccess.Configuration.findLatest();
+    if (!configuration) {
+      log.warn(`Agentic URLs - Skipping Athena query because no configuration was found for site ${site.getId()}`);
+      return [];
+    }
+    if (!configuration.isHandlerEnabledForSite('cdn-logs-analysis', site)) {
+      log.info(`Agentic URLs - Skipping Athena query because cdn-logs-analysis is disabled for site ${site.getId()}`);
+      return [];
+    }
+
     const awsRuntime = getCdnAwsRuntime(site, context);
     const s3Config = getS3Config(site, context);
     const periods = generateReportingPeriods();

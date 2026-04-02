@@ -75,5 +75,8 @@ export async function syncOpportunitiesAndSuggestions(context) {
     }),
   });
 
+  opportunity.setLastAuditedAt(new Date().toISOString());
+  await opportunity.save();
+
   return opportunity;
 }
