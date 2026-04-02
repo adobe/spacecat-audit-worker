@@ -1205,10 +1205,10 @@ describe('Backlinks Tests', function () {
     const auditData = {
       auditResult: {
         brokenBacklinks: [
-          { authority_score: 85, urlsSuggested: ['https://foo.com/bar/redirect'] },
-          { authority_score: 65, urlsSuggested: ['https://foo.com/bar/baz/redirect'] },
-          { authority_score: 25, urlsSuggested: ['https://foo.com/qux/redirect'] },
-          { authority_score: 5, urlsSuggested: ['https://foo.com/bar/baz/qux/redirect'] },
+          { traffic_domain: 85, urlsSuggested: ['https://foo.com/bar/redirect'] },
+          { traffic_domain: 65, urlsSuggested: ['https://foo.com/bar/baz/redirect'] },
+          { traffic_domain: 25, urlsSuggested: ['https://foo.com/qux/redirect'] },
+          { traffic_domain: 5, urlsSuggested: ['https://foo.com/bar/baz/qux/redirect'] },
         ],
       },
     };
@@ -1326,7 +1326,7 @@ describe('Backlinks Tests', function () {
             url_from: 'https://example.com/page1',
             url_to: 'https://example.com/broken',
             title: 'Test Page',
-            authority_score: 50,
+            traffic_domain: 50,
           },
         ],
       };
@@ -1376,7 +1376,7 @@ describe('Backlinks Tests', function () {
         url_from: 'https://example.com/page1',
         url_to: 'https://example.com/broken',
         title: 'Old Title',
-        authority_score: 500,
+        traffic_domain: 35,
         urlEdited: 'https://example.com/user-fixed-url',
         isEdited: true,
       };
@@ -1385,7 +1385,7 @@ describe('Backlinks Tests', function () {
         url_from: 'https://example.com/page1',
         url_to: 'https://example.com/broken',
         title: 'New Title',
-        authority_score: 50,
+        traffic_domain: 50,
       };
 
       const result = mergeDataFn(existingData, newData);
@@ -1393,7 +1393,7 @@ describe('Backlinks Tests', function () {
       expect(result.urlEdited).to.equal('https://example.com/user-fixed-url');
       expect(result.isEdited).to.equal(true);
       expect(result.title).to.equal('New Title');
-      expect(result.authority_score).to.equal(50);
+      expect(result.traffic_domain).to.equal(50);
     });
 
     it('should preserve urlEdited when isEdited is false (AI selection)', async () => {
@@ -1419,7 +1419,7 @@ describe('Backlinks Tests', function () {
             url_from: 'https://example.com/page1',
             url_to: 'https://example.com/broken',
             title: 'Test Page',
-            authority_score: 50,
+            traffic_domain: 50,
           },
         ],
       };
@@ -1507,7 +1507,7 @@ describe('Backlinks Tests', function () {
             url_from: 'https://example.com/page1',
             url_to: 'https://example.com/broken',
             title: 'Test Page',
-            authority_score: 50,
+            traffic_domain: 50,
           },
         ],
       };
@@ -1592,7 +1592,7 @@ describe('Backlinks Tests', function () {
           url_from: 'https://example.com/page1',
           url_to: 'https://example.com/broken',
           title: 'Test',
-          authority_score: 50,
+          traffic_domain: 50,
         }],
       };
 
@@ -1651,7 +1651,7 @@ describe('Backlinks Tests', function () {
           url_from: 'https://example.com/page1',
           url_to: 'https://example.com/broken',
           title: 'Test',
-          authority_score: 50,
+          traffic_domain: 50,
         }],
       };
 
@@ -1711,7 +1711,7 @@ describe('Backlinks Tests', function () {
           url_from: 'https://example.com/page1',
           url_to: 'https://example.com/broken',
           title: 'Test',
-          authority_score: 50,
+          traffic_domain: 50,
         }],
       };
 

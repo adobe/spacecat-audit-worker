@@ -93,13 +93,13 @@ export const fixedBacklinks = [
     title: 'fixed backlink',
     url_from: 'https://from.com/from-1',
     url_to: 'https://foo.com/fixed',
-    authority_score: 70,
+    traffic_domain: 70,
   },
   {
     title: 'fixed backlink via redirect',
     url_from: 'https://from.com/from-2',
     url_to: 'https://foo.com/fixed-via-redirect',
-    authority_score: 45,
+    traffic_domain: 45,
   },
 ];
 
@@ -107,7 +107,7 @@ export const brokenBacklinkWithTimeout = {
   title: 'backlink that times out',
   url_from: 'https://from.com/from-4',
   url_to: 'https://foo.com/times-out',
-  authority_score: 25,
+  traffic_domain: 25,
 };
 
 export const org = { getId: () => 'org4', getName: () => 'org4' };

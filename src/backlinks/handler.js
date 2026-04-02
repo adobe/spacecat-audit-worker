@@ -327,15 +327,16 @@ export const generateSuggestionData = async (context) => {
     mapNewSuggestion: (backlink) => ({
       opportunityId: opportunity.getId(),
       type: 'REDIRECT_UPDATE',
-      rank: backlink.authority_score,
+      rank: backlink.traffic_domain,
       data: {
         title: backlink.title,
         url_from: backlink.url_from,
         url_to: backlink.url_to,
-        // Authority score (0–100) from the SEO data provider, representing the
-        // referring page's quality. Previously this field was traffic_domain
-        // (estimated monthly traffic volume) from Ahrefs.
-        authority_score: backlink.authority_score,
+        // traffic_domain is an authority score (0-100) from the SEO data provider,
+        // representing the referring page's quality. The field name is kept for
+        // backwards compatibility with downstream consumers (projector, api-service,
+        // shared schemas). A coordinated rename is tracked separately.
+        traffic_domain: backlink.traffic_domain,
       },
     }),
     // Use extracted functions for testability

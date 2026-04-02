@@ -9,10 +9,7 @@ or is reasonably equivalent to the previous Ahrefs data for production sites.
 3. Fetch updated data from SpaceCat API
 4. Compare results
 
-**Environment Variables** (already set):
-- `SPACECAT_PROD_API_KEY` / `SPACECAT_PROD_API`
-- `SPACECAT_DEV_API_KEY` / `SPACECAT_DEV_API`
-- `SEO_CLIENT_API_KEY`
+**Environment Variables**: Ensure SpaceCat API keys and SEO client credentials are configured per the deployment runbook.
 
 ---
 
@@ -43,23 +40,23 @@ or is reasonably equivalent to the previous Ahrefs data for production sites.
 
 | Item | Details |
 |------|---------|
-| **What changed** | `traffic_domain` → `authority_score` (0–100); source `'ahrefs'` → `'seo'` |
+| **What changed** | `traffic_domain` → `traffic_domain` (0–100); source `'ahrefs'` → `'seo'` |
 | **SpaceCat endpoint** | `GET /sites/{siteId}/audits/broken-backlinks` (latest audit result) |
 | **Baseline call** | `curl -H "x-api-key: $SPACECAT_PROD_API_KEY" "$SPACECAT_PROD_API/sites/{siteId}/audits/broken-backlinks"` |
-| **Key fields to compare** | `url_from`, `url_to`, `title`, `authority_score` (was `traffic_domain`) |
-| **Expected differences** | Field rename; authority_score is 0–100 (was traffic volume in thousands); different broken link detection |
-| **Pass criteria** | Backlinks returned with valid authority_score (0–100); reasonable overlap in detected broken links |
+| **Key fields to compare** | `url_from`, `url_to`, `title`, `traffic_domain` (was `traffic_domain`) |
+| **Expected differences** | Field rename; traffic_domain is 0–100 (was traffic volume in thousands); different broken link detection |
+| **Pass criteria** | Backlinks returned with valid traffic_domain (0–100); reasonable overlap in detected broken links |
 
 ### 3. Broken Backlinks Opportunities & Suggestions
 
 | Item | Details |
 |------|---------|
-| **What changed** | Suggestion rank uses `authority_score`; KPI bands recalibrated for 0–100 |
+| **What changed** | Suggestion rank uses `traffic_domain`; KPI bands recalibrated for 0–100 |
 | **SpaceCat endpoint** | `GET /sites/{siteId}/opportunities` (filter type=broken-backlinks) |
 | **Suggestions endpoint** | `GET /opportunities/{opportunityId}/suggestions` |
-| **Key fields to compare** | `rank`, `data.authority_score`, opportunity guidance (projectedTrafficLost, projectedTrafficValue) |
+| **Key fields to compare** | `rank`, `data.traffic_domain`, opportunity guidance (projectedTrafficLost, projectedTrafficValue) |
 | **Expected differences** | Rank values 0–100 (was 10K–25M); KPI projections will differ due to band recalibration |
-| **Pass criteria** | Suggestions have authority_score in data; KPI values are non-zero and reasonable |
+| **Pass criteria** | Suggestions have traffic_domain in data; KPI values are non-zero and reasonable |
 
 ### 4. Organic Traffic (S3 metrics)
 
@@ -109,7 +106,7 @@ or is reasonably equivalent to the previous Ahrefs data for production sites.
 | 1 | Top pages data fetched | [ ] | [ ] | [ ] | |
 | 2 | Broken backlinks audit result | [ ] | [ ] | [ ] | |
 | 3 | Broken backlinks opportunities | [ ] | [ ] | [ ] | |
-| 4 | Broken backlinks suggestions (rank, authority_score) | [ ] | [ ] | [ ] | |
+| 4 | Broken backlinks suggestions (rank, traffic_domain) | [ ] | [ ] | [ ] | |
 | 5 | Organic traffic metrics | [ ] | [ ] | [ ] | |
 | 6 | Aggregate metrics / CPC | [ ] | [ ] | [ ] | |
 | 7 | Paid pages data | [ ] | [ ] | [ ] | |
@@ -149,7 +146,7 @@ docs/migration-validation/
 
 Once we have both datasets, comparison will check:
 - **URL overlap**: % of URLs present in both baseline and post-migration
-- **Field presence**: All expected fields exist (especially `authority_score` replacing `traffic_domain`)
+- **Field presence**: All expected fields exist (especially `traffic_domain` replacing `traffic_domain`)
 - **Value reasonableness**: Numeric values are non-zero, within expected ranges
 - **Source field**: Changed from `'ahrefs'` to `'seo'` where applicable
 - **Structure**: JSON shape matches expected schema

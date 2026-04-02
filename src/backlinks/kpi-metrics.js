@@ -78,7 +78,7 @@ const calculateKpiMetrics = async (auditData, context, site) => {
   }
 
   const projectedTrafficLost = auditData?.auditResult?.brokenBacklinks?.reduce((sum, backlink) => {
-    const { authority_score: authorityScore, urlsSuggested } = backlink;
+    const { traffic_domain: authorityScore, urlsSuggested } = backlink;
     const trafficBand = getAuthorityScoreBand(authorityScore);
     const targetUrl = urlsSuggested?.[0];
     const targetTrafficData = rumTrafficData.find((data) => data.url === targetUrl);

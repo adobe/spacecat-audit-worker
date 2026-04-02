@@ -15,8 +15,10 @@
 
 ### Important
 - [x] **`traffic_domain` semantics changed** — `src/backlinks/handler.js:330,335`
-  - Now holds authority score (0–100) not traffic volume (thousands–millions)
-  - Fix: Rename to `authority_score` in suggestion data mapping, add code comment
+  - Now holds authority score (0-100) not traffic volume (thousands-millions)
+  - Fix: Keep `traffic_domain` field name for backwards compatibility with downstream consumers
+    (projector, api-service, shared schemas). Added code comment explaining the semantic change.
+    Field rename to `authority_score` deferred to coordinated cross-service PR.
 - [x] **Stale "Ahrefs" references in handler** — `src/backlinks/handler.js:238,248,457`
   - Error message says "Ahrefs import required", SiteTopPage queries use source `'ahrefs'`
   - Fix: Change source to `'seo'`, update error message

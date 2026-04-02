@@ -9,7 +9,7 @@
         "url_to": "https://foo.com/redirects-throws-error",
         "urlsSuggested": ["https://foo.com/redirects-throws-error-1", "https://foo.com/redirects-throws-error-2"],
         "aiRationale": "The suggested URLs are similar to the original URL and are likely to be the correct destination.",
-        "authority_score": 75
+        "traffic_domain": 75
       },
       {
         "title": "backlink that returns 429",
@@ -17,7 +17,7 @@
         "url_to": "https://foo.com/returns-429",
         "urlsSuggested": ["https://foo.com/returns-429-suggestion-1", "https://foo.com/returns-429-suggestion-2"],
         "aiRationale": "The suggested URLs are similar to the original URL and are likely to be the correct destination.",
-        "authority_score": 30
+        "traffic_domain": 30
       },
       {
         "title": "backlink that is not excluded",
@@ -25,13 +25,13 @@
         "url_to": "https://foo.com/not-excluded",
         "urlsSuggested": ["https://foo.com/not-excluded-suggestion-1", "https://foo.com/not-excluded-suggestion-2"],
         "aiRationale": "The suggested URLs are similar to the original URL and are likely to be the correct destination.",
-        "authority_score": 55
+        "traffic_domain": 55
       },
       {
         "title": "backlink that returns 404",
         "url_from": "https://from.com/from-1",
         "url_to": "https://foo.com/returns-404",
-        "authority_score": 90
+        "traffic_domain": 90
       }
     ]
   },
