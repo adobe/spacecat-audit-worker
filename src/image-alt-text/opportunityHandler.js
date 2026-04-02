@@ -16,7 +16,7 @@ import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { getRUMUrl, toggleWWW } from '../support/utils.js';
 import {
   CPC, PENALTY_PER_IMAGE, RUM_INTERVAL, ALT_TEXT_GUIDANCE_TYPE, ALT_TEXT_OBSERVATION,
-  MYSTIQUE_BATCH_SIZE,
+  MYSTIQUE_BATCH_SIZE, ALT_TEXT_PROCESSING_ERROR_TAG,
 } from './constants.js';
 import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
@@ -38,7 +38,7 @@ export const getProjectedMetrics = async ({
 
     results = await rumAPIClient.query('traffic-acquisition', options);
   } catch (err) {
-    log.error(`[${AUDIT_TYPE}]: Failed to get RUM results for ${auditUrl} with error: ${err.message}`);
+    log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Failed to get RUM results for ${auditUrl} with error: ${err.message}`);
     return {
       projectedTrafficLost: 0,
       projectedTrafficValue: 0,
@@ -149,7 +149,7 @@ export async function sendAltTextOpportunityToMystique(
 
     log.debug(`[${AUDIT_TYPE}]: All ${urlBatches.length} batches sent to Mystique successfully`);
   } catch (error) {
-    log.error(`[${AUDIT_TYPE}]: Failed to send alt-text opportunity to Mystique: ${error.message}`);
+    log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Failed to send alt-text opportunity to Mystique: ${error.message}`);
     throw error;
   }
 }
@@ -175,9 +175,9 @@ export async function addAltTextSuggestions({ opportunity, newSuggestionDTOs, lo
   const updateResult = await opportunity.addSuggestions(newSuggestionDTOs);
 
   if (isNonEmptyArray(updateResult.errorItems)) {
-    log.error(`[${AUDIT_TYPE}]: Suggestions for siteId ${opportunity.getSiteId()} contains ${updateResult.errorItems.length} items with errors`);
+    log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Suggestions for siteId ${opportunity.getSiteId()} contains ${updateResult.errorItems.length} items with errors`);
     updateResult.errorItems.forEach((errorItem) => {
-      log.error(`[${AUDIT_TYPE}]: Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
+      log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
     });
 
     if (!isNonEmptyArray(updateResult.createdItems)) {

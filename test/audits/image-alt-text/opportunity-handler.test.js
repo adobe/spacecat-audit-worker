@@ -140,10 +140,10 @@ describe('addAltTextSuggestions', () => {
     });
 
     expect(logStub.error).to.have.been.calledWith(
-      '[alt-text]: Suggestions for siteId site-id contains 1 items with errors',
+      '[alt-text][AltTextProcessingError] Suggestions for siteId site-id contains 1 items with errors',
     );
     expect(logStub.error).to.have.been.calledWith(
-      '[alt-text]: Item {"id":"suggestion-1"} failed with error: Invalid suggestion data',
+      '[alt-text][AltTextProcessingError] Item {"id":"suggestion-1"} failed with error: Invalid suggestion data',
     );
     expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: Added 1 new suggestions',
@@ -181,10 +181,10 @@ describe('addAltTextSuggestions', () => {
     })).to.be.rejectedWith('[alt-text]: Failed to create suggestions for siteId site-id');
 
     expect(logStub.error).to.have.been.calledWith(
-      '[alt-text]: Suggestions for siteId site-id contains 1 items with errors',
+      '[alt-text][AltTextProcessingError] Suggestions for siteId site-id contains 1 items with errors',
     );
     expect(logStub.error).to.have.been.calledWith(
-      '[alt-text]: Item {"id":"suggestion-1"} failed with error: Invalid suggestion data',
+      '[alt-text][AltTextProcessingError] Item {"id":"suggestion-1"} failed with error: Invalid suggestion data',
     );
   });
 });
@@ -328,7 +328,7 @@ describe('sendAltTextOpportunityToMystique', () => {
       .to.be.rejectedWith('SQS send failed');
 
     expect(logStub.error).to.have.been.calledWith(
-      '[alt-text]: Failed to send alt-text opportunity to Mystique: SQS send failed',
+      '[alt-text][AltTextProcessingError] Failed to send alt-text opportunity to Mystique: SQS send failed',
     );
   });
 
@@ -345,7 +345,7 @@ describe('sendAltTextOpportunityToMystique', () => {
       .to.be.rejectedWith('Site not found');
 
     expect(logStub.error).to.have.been.calledWith(
-      '[alt-text]: Failed to send alt-text opportunity to Mystique: Site not found',
+      '[alt-text][AltTextProcessingError] Failed to send alt-text opportunity to Mystique: Site not found',
     );
   });
 

@@ -16,7 +16,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
 import { getPreviousWeekTriples } from '../utils/date-utils.js';
-import { SPREADSHEET_COLUMNS } from '../faqs/utils.js';
+import { buildColumnMap, getColumn } from '../faqs/utils.js';
 
 const MAX_PROMPTS = 200;
 const WEEKS_TO_LOOK_BACK = 4;
@@ -36,10 +36,15 @@ async function readBrandPresenceSpreadsheet(filename, outputLocation, sharepoint
     const rows = worksheet.getRows(2, totalDataRows) || [];
     const prompts = [];
 
+    const colMap = buildColumnMap(worksheet);
+    const promptCol = getColumn(colMap, 'Prompt');
+    const regionCol = getColumn(colMap, 'Region');
+    const urlCol = getColumn(colMap, 'URL');
+
     rows.forEach((row) => {
-      const prompt = row.getCell(SPREADSHEET_COLUMNS.PROMPT).value;
-      const region = row.getCell(SPREADSHEET_COLUMNS.REGION).value;
-      const url = row.getCell(SPREADSHEET_COLUMNS.URL).value || '';
+      const prompt = promptCol ? row.getCell(promptCol).value : null;
+      const region = regionCol ? row.getCell(regionCol).value : null;
+      const url = urlCol ? row.getCell(urlCol).value || '' : '';
       if (prompt) {
         prompts.push({
           prompt: prompt.toString().trim(),

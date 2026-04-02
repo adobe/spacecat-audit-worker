@@ -83,14 +83,30 @@ export function getDomElementSelector(element) {
 
   // 1. Check for Universal Editor data attributes
   const aueResource = attribs?.['data-aue-resource'];
+  const aueProp = attribs?.['data-aue-prop'];
+
   if (aueResource) {
-    return `${tag}[data-aue-resource="${aueResource}"]`;
+    const resourcePart = `[data-aue-resource="${aueResource}"]`;
+    if (aueProp) {
+      return `${resourcePart}[data-aue-prop="${aueProp}"]`;
+    }
+    return resourcePart;
   }
 
-  const aueProp = attribs?.['data-aue-prop'];
   if (aueProp) {
     // If element has data-aue-prop, it's a specific property within a component
-    return `${tag}[data-aue-prop="${aueProp}"]`;
+    const aueType = attribs?.['data-aue-type'];
+    const typePart = aueType ? `[data-aue-type="${aueType}"]` : '';
+    const childSelector = `${tag}${typePart}[data-aue-prop="${aueProp}"]`;
+    let ancestor = parent;
+    while (ancestor && ancestor.name && ancestor.name.toLowerCase() !== 'html') {
+      const ancestorResource = ancestor.attribs?.['data-aue-resource'];
+      if (ancestorResource) {
+        return `[data-aue-resource="${ancestorResource}"] ${childSelector}`;
+      }
+      ancestor = ancestor.parent;
+    }
+    return childSelector;
   }
 
   // 2. Build element-level selector from ID or classes
@@ -131,9 +147,9 @@ export function getDomElementSelector(element) {
     let parentSelector = current.name.toLowerCase();
 
     // If parent has Universal Editor attribute, use it and stop
-    const parentAueResource = current.attribs?.['data-aue-resource'];
-    if (parentAueResource) {
-      pathParts.unshift(`${parentSelector}[data-aue-resource="${parentAueResource}"]`);
+    const parentResource = current.attribs?.['data-aue-resource'];
+    if (parentResource) {
+      pathParts.unshift(`[data-aue-resource="${parentResource}"]`);
       break;
     }
 
@@ -178,7 +194,7 @@ export function getDomElementSelector(element) {
  * Normalizes selector(s) into the payload expected by consumers.
  * Returns a unified format for spreading into opportunity objects
  * across all selector types (Universal Editor or standard CSS).
- * Universal Editor: { elements: [{ selector: "div[data-aue-resource=\"...\"]" }, ...] }
+ * Universal Editor: { elements: [{ selector: "[data-aue-resource=\"...\"]" }, ...] }
  * Standard CSS: { elements: [{ selector: "body > div.content > a[href=\"...\"]" }, ...] }
  *
  * @param {string|string[]} selectors

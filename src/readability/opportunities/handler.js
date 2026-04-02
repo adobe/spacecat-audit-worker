@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { Suggestion as SuggestionModel, Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../../common/audit-builder.js';
 import { convertToOpportunity } from '../../common/opportunity.js';
@@ -18,12 +17,58 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestions } from '../../utils/data-access.js';
 import { wwwUrlResolver } from '../../common/base-audit.js';
 import { analyzePageReadability, sendReadabilityToMystique } from '../shared/analysis-utils.js';
+import { getMergedAuditInputUrls, sortTopPagesByTraffic } from '../../utils/audit-input-urls.js';
 import {
   TOP_PAGES_LIMIT,
 } from '../shared/constants.js';
 import { getTopAgenticUrlsFromAthena } from '../../utils/agentic-urls.js';
 
 const { AUDIT_STEP_DESTINATIONS, AUDIT_TYPES } = Audit;
+const AUDIT_TYPE = 'readability';
+
+async function getReadabilityUrlsToScrape(context) {
+  const { site, dataAccess, log } = context;
+  const result = await getMergedAuditInputUrls({
+    site,
+    dataAccess,
+    auditType: AUDIT_TYPE,
+    getAgenticUrls: () => getTopAgenticUrlsFromAthena(site, context, TOP_PAGES_LIMIT),
+    getTopPages: async () => {
+      const topPages = await dataAccess?.SiteTopPage?.allBySiteIdAndSourceAndGeo?.(
+        site.getId(),
+        'seo',
+        'global',
+      );
+      return sortTopPagesByTraffic(topPages || [], (page) => ({
+        urlId: page.getId?.() ?? page.getUrl(),
+      }));
+    },
+  });
+
+  log.info(
+    `[ReadabilityAudit] URL inputs: topPages=${result.topPagesUrls.length}, `
+    + `agentic=${result.agenticUrls.length}, includedURLs=${result.includedURLs.length}, `
+    + `filteredOutUrls=${result.filteredCount}, finalUrls=${result.urls.length}`,
+  );
+
+  const topPagesByUrl = new Map(result.topPages.map((page) => [page.url, page]));
+
+  const urlsToScrape = result.urls
+    .slice(0, TOP_PAGES_LIMIT)
+    .map((url, index) => {
+      const topPage = topPagesByUrl.get(url);
+      return {
+        url,
+        traffic: topPage?.traffic ?? 0,
+        urlId: topPage?.urlId ?? `merged-${index}`,
+      };
+    });
+
+  return {
+    ...result,
+    urlsToScrape,
+  };
+}
 
 export async function processImportStep(context) {
   const { site, finalUrl } = context;
@@ -42,7 +87,7 @@ export async function processImportStep(context) {
 // First step: sends a message to the content scraper to get page content for readability analysis
 export async function scrapeReadabilityData(context) {
   const {
-    site, log, finalUrl, env, dataAccess,
+    site, log, finalUrl, env,
   } = context;
   const siteId = site.getId();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
@@ -58,38 +103,14 @@ export async function scrapeReadabilityData(context) {
 
   log.info(`[ReadabilityAudit] Step 1: Preparing content scrape for readability audit for ${site.getBaseURL()} with siteId ${siteId}`);
 
-  // Try to get top agentic URLs from Athena first
-  const topPageUrls = await getTopAgenticUrlsFromAthena(site, context);
-  let urlsToScrape;
+  const { urlsToScrape } = await getReadabilityUrlsToScrape(context);
 
-  // Fallback to Ahrefs if Athena returns no data
-  if (!topPageUrls || topPageUrls.length === 0) {
-    log.info('[ReadabilityAudit] No agentic URLs from Athena, falling back to Ahrefs');
-    const { SiteTopPage } = dataAccess;
-    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-
-    log.info(`[ReadabilityAudit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}`);
-
-    if (!isNonEmptyArray(topPages)) {
-      log.info(`[ReadabilityAudit] No top pages found for site ${siteId} (${site.getBaseURL()}), skipping audit`);
-      return {
-        status: 'NO_OPPORTUNITIES',
-        message: 'No top pages found, skipping audit',
-      };
-    }
-
-    // Take top pages by traffic, sorted descending
-    urlsToScrape = topPages
-      .map((page) => ({ url: page.getUrl(), traffic: page.getTraffic(), urlId: page.getId() }))
-      .sort((a, b) => b.traffic - a.traffic)
-      .slice(0, TOP_PAGES_LIMIT);
-  } else {
-    log.info(`[ReadabilityAudit] Found ${topPageUrls.length} agentic URLs from Athena for site ${site.getBaseURL()}`);
-
-    // Map Athena URLs to the expected format (no traffic data available from Athena)
-    urlsToScrape = topPageUrls
-      .slice(0, TOP_PAGES_LIMIT)
-      .map((url, index) => ({ url, traffic: 0, urlId: `athena-${index}` }));
+  if (urlsToScrape.length === 0) {
+    log.info(`[ReadabilityAudit] No URLs found for site ${siteId} (${site.getBaseURL()}), skipping audit`);
+    return {
+      status: 'NO_OPPORTUNITIES',
+      message: 'No URLs found, skipping audit',
+    };
   }
 
   log.info(`[ReadabilityAudit] Top ${TOP_PAGES_LIMIT} pages for site ${siteId} (${site.getBaseURL()}): ${JSON.stringify(urlsToScrape, null, 2)}`);

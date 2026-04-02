@@ -86,7 +86,7 @@ describe('CDN Config Handler', () => {
 
     it('should return null when API response is not ok', async () => {
       nock('https://main--project-elmo-ui-data--adobe.aem.live')
-        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=5000')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
         .reply(404);
 
       const result = await cdnConfigHandler.fetchCommerceFastlyService('https://example.com', context);
@@ -95,7 +95,7 @@ describe('CDN Config Handler', () => {
 
     it('should return null when response data is not an array', async () => {
       nock('https://main--project-elmo-ui-data--adobe.aem.live')
-        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=5000')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
         .reply(200, { data: 'not-an-array' });
 
       const result = await cdnConfigHandler.fetchCommerceFastlyService('https://example.com', context);
@@ -112,7 +112,7 @@ describe('CDN Config Handler', () => {
       ];
 
       nock('https://main--project-elmo-ui-data--adobe.aem.live')
-        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=5000')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
         .reply(200, { data: mockServices });
 
       const result = await cdnConfigHandler.fetchCommerceFastlyService('https://example.com', context);
@@ -134,7 +134,7 @@ describe('CDN Config Handler', () => {
       ];
 
       nock('https://main--project-elmo-ui-data--adobe.aem.live')
-        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=5000')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
         .reply(200, { data: mockServices });
 
       const result = await cdnConfigHandler.fetchCommerceFastlyService('https://example.com', context);
@@ -156,7 +156,7 @@ describe('CDN Config Handler', () => {
       ];
 
       nock('https://main--project-elmo-ui-data--adobe.aem.live')
-        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=5000')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
         .reply(200, { data: mockServices });
 
       const result = await cdnConfigHandler.fetchCommerceFastlyService('https://www.example.com', context);
@@ -178,7 +178,7 @@ describe('CDN Config Handler', () => {
       ];
 
       nock('https://main--project-elmo-ui-data--adobe.aem.live')
-        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=5000')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
         .reply(200, { data: mockServices });
 
       const result = await cdnConfigHandler.fetchCommerceFastlyService('https://example.com', context);
@@ -210,7 +210,7 @@ describe('CDN Config Handler', () => {
       ];
 
       nock('https://main--project-elmo-ui-data--adobe.aem.live')
-        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=5000')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
         .reply(200, { data: mockServices });
 
       const result = await cdnConfigHandler.fetchCommerceFastlyService('https://example.com', context);
@@ -232,7 +232,7 @@ describe('CDN Config Handler', () => {
       ];
 
       nock('https://main--project-elmo-ui-data--adobe.aem.live')
-        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=5000')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
         .reply(200, { data: mockServices });
 
       const result = await cdnConfigHandler.fetchCommerceFastlyService('https://example.com', context);
@@ -246,7 +246,7 @@ describe('CDN Config Handler', () => {
 
     it('should handle fetch errors gracefully', async () => {
       nock('https://main--project-elmo-ui-data--adobe.aem.live')
-        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=5000')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
         .replyWithError('Network error');
 
       const result = await cdnConfigHandler.fetchCommerceFastlyService('https://example.com', context);
@@ -257,7 +257,7 @@ describe('CDN Config Handler', () => {
 
     it('should make request with correct headers', async () => {
       const scope = nock('https://main--project-elmo-ui-data--adobe.aem.live')
-        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=5000')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
         .matchHeader('User-Agent', 'spacecat-audit-worker')
         .matchHeader('Authorization', 'token test-api-key')
         .reply(200, { data: [] });
@@ -329,6 +329,7 @@ describe('CDN Config Handler', () => {
       expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({});
       expect(mockSite.save).to.have.been.called;
       expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('cdn-logs-analysis', mockSite);
+      expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('cdn-logs-report', mockSite);
       expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('page-citability', mockSite);
       expect(mockConfiguration.save).to.have.been.called;
       expect(context.log.warn).to.have.been.calledWith(
@@ -352,7 +353,7 @@ describe('CDN Config Handler', () => {
 
     it('should handle commerce-fastly provider with service found', async () => {
       nock('https://main--project-elmo-ui-data--adobe.aem.live')
-        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=5000')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
         .reply(200, {
           data: [{
             ServiceName: 'commerce-org',
@@ -368,6 +369,41 @@ describe('CDN Config Handler', () => {
       expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ orgId: 'commerce-org' });
     });
 
+    it('should run Fastly analysis and reporting for commerce-fastly provider', async () => {
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({}), getFullAuditRef: () => '' });
+
+      nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
+        .reply(200, {
+          data: [{
+            ServiceName: 'commerce-org',
+            ServiceID: 'service-123',
+            domains: 'example.com,www.example.com',
+          }],
+        });
+
+      const data = { cdnProvider: 'commerce-fastly' };
+
+      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+      expect(context.sqs.sendMessage).to.have.been.called;
+      const cdnLogsAnalysisCalls = context.sqs.sendMessage.getCalls()
+        .filter((call) => call.args[1].type === 'cdn-logs-analysis');
+      expect(cdnLogsAnalysisCalls.length).to.be.greaterThan(0);
+      expect(context.sqs.sendMessage).to.have.been.calledWith(
+        sinon.match.any,
+        sinon.match({ type: 'cdn-logs-report' }),
+      );
+    });
+
+    it('should not run Fastly analysis for commerce-fastly provider when pathId is not resolved', async () => {
+      const data = { bucketName: 'test-bucket', cdnProvider: 'commerce-fastly' };
+
+      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
     it('should handle bucket configuration when bucketName provided', async () => {
       const data = { bucketName: 'test-bucket', cdnProvider: 'commerce-fastly' };
 
@@ -375,6 +411,9 @@ describe('CDN Config Handler', () => {
 
       expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ bucketName: 'test-bucket' });
       expect(mockSite.save).to.have.been.called;
+      expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('cdn-logs-analysis', mockSite);
+      expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('cdn-logs-report', mockSite);
+      expect(mockConfiguration.enableHandlerForSite).to.not.have.been.calledWith('page-citability', mockSite);
       expect(context.log.info).to.have.been.calledWith(
         'CDN_CONFIG_CHANGED: CDN bucket configuration updated',
         sinon.match({
@@ -475,6 +514,37 @@ describe('CDN Config Handler', () => {
       expect(context.dataAccess.LatestAudit.findBySiteIdAndAuditType).to.have.been.calledWith(
         'site-123',
         'cdn-logs-analysis'
+      );
+    });
+
+    it('should skip commerce-fastly processing when site already has cdn-logs-analysis with fullAuditRef', async () => {
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({
+        getAuditResult: () => ({ providers: ['fastly'] }),
+        getFullAuditRef: () => 'some-audit-ref',
+      });
+
+      nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
+        .reply(200, {
+          data: [{
+            ServiceName: 'commerce-org',
+            ServiceID: 'service-123',
+            domains: 'example.com,www.example.com',
+          }],
+        });
+
+      const data = { cdnProvider: 'commerce-fastly' };
+
+      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).to.have.been.calledWith(
+        sinon.match.any,
+        sinon.match({ type: 'cdn-logs-report' }),
+      );
+      expect(context.dataAccess.LatestAudit.findBySiteIdAndAuditType).to.have.been.calledWith(
+        'site-123',
+        'cdn-logs-analysis',
       );
     });
 

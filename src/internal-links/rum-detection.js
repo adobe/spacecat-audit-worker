@@ -226,7 +226,7 @@ export function createInternalLinksRumSteps({
     }
 
     log.info(`RUM detection complete. Found ${internalLinksAuditRunnerResult.auditResult.brokenInternalLinks?.length || 0} broken links`);
-    log.info('Triggering import worker to fetch Ahrefs top pages');
+    log.info('Triggering import worker to fetch SEO top pages');
     log.info('=====================================================');
 
     return {

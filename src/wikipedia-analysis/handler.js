@@ -10,10 +10,122 @@
  * governing permissions and limitations under the License.
  */
 
+import { isValidUrl } from '@adobe/spacecat-shared-utils';
+
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 
 const LOG_PREFIX = '[Wikipedia]';
+
+const REGION_SUFFIXES_RE = /(?:usa|us|uk|eu|de|fr|es|it|nl|be|at|ch|au|ca|jp|kr|cn|br|mx|in|za|global|international|worldwide)$/i;
+
+/**
+ * Slack mrkdwn wraps URLs as `<https://…>` or `<https://…|link label>`.
+ * Strips that wrapper so values from Slack commands match `isValidUrl`.
+ * Also strips a single outer layer of `"…"` or `\"…\"` (e.g. JSON/shell quoting).
+ *
+ * We peel wrappers from the outside in (slice / pipe split), not with global
+ * `.replace(/[<>"]/g, …)`: Slack links use `<url|label>` — the URL is only the
+ * part before `|`; dropping every `<`/`>` would leave `url|label` and break
+ * `isValidUrl`. Likewise we only strip matching outer quotes so a `"` or `\`
+ * inside the URL (e.g. query) is not removed.
+ *
+ * @param {string} raw
+ * @returns {string}
+ */
+function unwrapSlackMrkdwnLink(raw) {
+  let s = raw.trim();
+  const maxPasses = 6;
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    const before = s;
+
+    if (s.length >= 2 && s.startsWith('<') && s.endsWith('>')) {
+      s = s.slice(1, -1).trim();
+      const pipeIdx = s.indexOf('|');
+      if (pipeIdx !== -1) {
+        s = s.slice(0, pipeIdx).trim();
+      }
+    }
+
+    s = s.trim();
+    if (s.length >= 4 && s.startsWith('\\"') && s.endsWith('\\"')) {
+      s = s.slice(2, -2);
+    } else if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+      s = s.slice(1, -1);
+    }
+
+    s = s.trim();
+    if (s === before) {
+      break;
+    }
+  }
+  return s.trim();
+}
+
+/**
+ * Optional Wikipedia article URL from `message.data` (merged into RunnerAudit
+ * `auditContext.messageData`).
+ * `wikiUrl` wins over `wikipediaUrl` when both are set. Slack sends
+ * `<https://…>` / `<https://…|label>`; those are normalized here. Invalid /
+ * non-string values are ignored (see runner).
+ *
+ * @param {object} [auditContext]
+ * @param {{ debug?: Function, info?: Function }} [log]
+ * @returns {{ url: string }|{ invalid: true, value: string }|undefined}
+ */
+function resolveWikipediaUrlOverride(auditContext, log) {
+  const md = auditContext?.messageData;
+  if (!md) {
+    log?.info?.(
+      `${LOG_PREFIX} Wikipedia URL override: no messageData`,
+    );
+    return undefined;
+  }
+
+  const wikiVal = md.wikiUrl;
+  const wikipediaVal = md.wikipediaUrl;
+
+  log?.info?.(
+    `${LOG_PREFIX} Wikipedia URL override: messageData fields wikiUrl=${wikiVal} wikipediaUrl=${wikipediaVal}`,
+  );
+
+  const rawOverride = wikiVal || wikipediaVal;
+
+  if (rawOverride === undefined || rawOverride === null || rawOverride === '') {
+    log?.info?.(
+      `${LOG_PREFIX} Wikipedia URL override: neither wikiUrl nor wikipediaUrl is a usable value`,
+    );
+    return undefined;
+  }
+
+  if (typeof rawOverride !== 'string') {
+    log?.info?.(
+      `${LOG_PREFIX} Wikipedia URL override rejected: expected string from wikiUrl||wikipediaUrl, got ${typeof rawOverride}`,
+    );
+    return undefined;
+  }
+
+  const normalized = unwrapSlackMrkdwnLink(rawOverride);
+  if (!normalized) {
+    log?.info?.(
+      `${LOG_PREFIX} Wikipedia URL override rejected: empty or whitespace-only after Slack/mrkdwn normalization`,
+    );
+    return undefined;
+  }
+
+  if (!isValidUrl(normalized)) {
+    log?.info?.(
+      `${LOG_PREFIX} Wikipedia URL override rejected: isValidUrl=false for "${normalized}"`,
+    );
+    return { invalid: true, value: normalized };
+  }
+
+  log?.info?.(
+    `${LOG_PREFIX} Wikipedia URL override accepted: "${normalized}"`,
+  );
+
+  return { url: normalized };
+}
 
 /**
  * Wikipedia Analysis Audit Handler
@@ -28,6 +140,29 @@ const LOG_PREFIX = '[Wikipedia]';
  */
 
 /**
+ * Extracts a human-readable brand name from a site URL.
+ * Strips protocol, www prefix, TLD, and common regional/market suffixes
+ * so the result is suitable for Wikipedia search.
+ *
+ * @param {string} baseURL - The site's base URL or domain
+ * @returns {string} Cleaned brand name
+ */
+function extractBrandFromUrl(baseURL) {
+  try {
+    const urlStr = baseURL.startsWith('http') ? baseURL : `https://${baseURL}`;
+    const { hostname } = new URL(urlStr);
+
+    const name = hostname
+      .replace(/^www\./, '')
+      .split('.')[0];
+
+    return name.replace(REGION_SUFFIXES_RE, '') || name;
+  } catch {
+    return baseURL;
+  }
+}
+
+/**
  * Retrieves Wikipedia-related configuration from the site
  * @param {Object} site - The site object
  * @returns {Object} Wikipedia configuration
@@ -36,10 +171,8 @@ function getWikipediaConfig(site) {
   const config = site.getConfig();
   const baseURL = site.getBaseURL();
 
-  // Try to get Wikipedia configuration from site config
-  // If not configured, use baseURL directly
   return {
-    companyName: config?.getCompanyName?.() || baseURL,
+    companyName: config?.getCompanyName?.() || extractBrandFromUrl(baseURL),
     companyWebsite: baseURL,
     wikipediaUrl: config?.getWikipediaUrl?.() || '', // Empty = auto-detect
     competitors: config?.getCompetitors?.() || [], // Empty = auto-detect
@@ -52,15 +185,25 @@ function getWikipediaConfig(site) {
  * @param {string} url - The resolved URL for the audit
  * @param {Object} context - The audit context
  * @param {Object} site - The site being audited
+ * @param {Object} [auditContext] - RunnerAudit context; optional
+ *     `messageData.wikiUrl` / `messageData.wikipediaUrl` from `message.data`
  * @returns {Promise<Object>} Audit result
  */
-async function runWikipediaAnalysisAudit(url, context, site) {
+async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) {
   const { log } = context;
 
   log.info(`${LOG_PREFIX} Starting Wikipedia analysis audit for site: ${site.getId()}`);
 
   try {
     const wikipediaConfig = getWikipediaConfig(site);
+
+    const wikipediaUrlOverride = resolveWikipediaUrlOverride(auditContext, log);
+    if (wikipediaUrlOverride?.invalid) {
+      log.warn(`${LOG_PREFIX} Ignoring invalid wikipedia URL override: ${wikipediaUrlOverride.value}`);
+    } else if (wikipediaUrlOverride?.url) {
+      wikipediaConfig.wikipediaUrl = wikipediaUrlOverride.url;
+      log.info(`${LOG_PREFIX} Using Wikipedia URL override from audit message: ${wikipediaUrlOverride.url}`);
+    }
 
     // Validate that we have a company name
     if (!wikipediaConfig.companyName) {
@@ -74,7 +217,7 @@ async function runWikipediaAnalysisAudit(url, context, site) {
       };
     }
 
-    log.info(`${LOG_PREFIX} Wikipedia config: companyName=${wikipediaConfig.companyName}, website=${wikipediaConfig.companyWebsite}`);
+    log.info(`${LOG_PREFIX} Wikipedia config: companyName=${wikipediaConfig.companyName}, website=${wikipediaConfig.companyWebsite}, wikipediaUrl=${wikipediaConfig.wikipediaUrl}`);
 
     return {
       auditResult: {
@@ -148,7 +291,13 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     };
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`${LOG_PREFIX} Queued Wikipedia analysis request to Mystique for ${config.companyName}`);
+    const wikipediaUrlForLog = config.wikipediaUrl?.trim()
+      ? config.wikipediaUrl
+      : '(empty → auto-detect)';
+
+    log.info(
+      `${LOG_PREFIX} Queued Wikipedia analysis request to Mystique for companyName=${config.companyName} wikipediaUrl=${wikipediaUrlForLog}`,
+    );
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
     // Re-throw to fail the audit if we can't send to Mystique
@@ -157,6 +306,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
   return auditData;
 }
+
+export { extractBrandFromUrl };
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)

@@ -1,6 +1,8 @@
 #!/bin/bash
 
 # Define the secret name and region
+# AWS_SECRET_NAME="/mysticat/bootstrap/audit-worker"
+# At the Vault, find the key/value pairs for mysticat in the 'dev' environment
 SECRET_NAME="/helix-deploy/spacecat-services/audit-worker/latest"
 REGION="us-east-1"
 

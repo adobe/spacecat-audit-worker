@@ -341,6 +341,211 @@ describe('internal-links opportunity suggestions step', () => {
     });
   });
 
+  it('uses validated URLs when Bright Data URL validation is enabled and passes', async () => {
+    const suggestionMock = {
+      getData: sinon.stub().returns({
+        urlFrom: 'https://example.com/source',
+        urlTo: 'https://example.com/blog/seo-guide',
+      }),
+      setData: sinon.stub(),
+      save: sinon.stub().resolves(),
+    };
+
+    const brightDataClient = {
+      googleSearchWithFallback: sinon.stub().resolves({
+        results: [{ link: 'https://example.com/blog/seo-tips' }],
+        keywords: 'blog seo',
+      }),
+    };
+
+    const step = createOpportunityAndSuggestionsStep({
+      auditType: 'broken-internal-links',
+      opptyStatuses: { NEW: 'NEW', RESOLVED: 'RESOLVED' },
+      suggestionStatuses: { NEW: 'NEW', OUTDATED: 'OUTDATED' },
+      isNonEmptyArray: (value) => Array.isArray(value) && value.length > 0,
+      createContextLogger: (log) => log,
+      calculateKpiDeltasForAudit: sinon.stub().returns({}),
+      convertToOpportunity: sinon.stub().resolves({ getId: () => 'oppty-1' }),
+      createOpportunityData: sinon.stub(),
+      syncBrokenInternalLinksSuggestions: sinon.stub().resolves(),
+      filterByAuditScope: (pages) => pages,
+      extractPathPrefix: () => null,
+      isUnscrapeable: () => false,
+      filterBrokenSuggestedUrls: sinon.stub().resolves(['https://example.com/blog/seo-tips']),
+      BrightDataClient: { createFrom: sinon.stub().returns(brightDataClient) },
+      buildLocaleSearchUrl: sinon.stub().returns('https://example.com'),
+      sleep: sinon.stub().resolves(),
+      updateAuditResult: sinon.stub().resolves(),
+      isCanonicalOrHreflangLink: () => false,
+    });
+
+    const context = {
+      log: {
+        info: sinon.stub(), warn: sinon.stub(), error: sinon.stub(), debug: sinon.stub(),
+      },
+      site: {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://example.com',
+        getDeliveryType: () => 'aem_edge',
+        getConfig: () => ({
+          getHandlers: () => ({
+            'broken-internal-links': {
+              config: { mystiqueItemTypes: ['link'], validateBrightDataUrls: true },
+            },
+          }),
+          getIncludedURLs: () => [],
+        }),
+      },
+      finalUrl: 'https://example.com',
+      sqs: { sendMessage: sinon.stub().resolves() },
+      env: { BRIGHT_DATA_API_KEY: 'key', BRIGHT_DATA_ZONE: 'zone' },
+      dataAccess: {
+        Suggestion: {
+          allByOpportunityIdAndStatus: sinon.stub().resolves([{
+            getData: () => ({
+              urlFrom: 'https://example.com/source',
+              urlTo: 'https://example.com/blog/seo-guide',
+              itemType: 'link',
+            }),
+            getId: () => 'suggestion-1',
+          }]),
+          findById: sinon.stub().resolves(suggestionMock),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+            { getUrl: () => 'https://example.com/alt-1' },
+          ]),
+        },
+        Configuration: {
+          findLatest: sinon.stub().returns({
+            isHandlerEnabledForSite: sinon.stub().returns(true),
+          }),
+        },
+      },
+      audit: {
+        getId: () => 'audit-1',
+        getAuditResult: () => ({
+          brokenInternalLinks: [
+            { urlFrom: 'https://example.com/source', urlTo: 'https://example.com/blog/seo-guide', itemType: 'link' },
+          ],
+          success: true,
+        }),
+      },
+      updatedAuditResult: {
+        brokenInternalLinks: [
+          { urlFrom: 'https://example.com/source', urlTo: 'https://example.com/blog/seo-guide', itemType: 'link' },
+        ],
+        success: true,
+      },
+    };
+
+    const result = await step(context);
+
+    expect(result.status).to.equal('complete');
+    expect(suggestionMock.setData.calledOnce).to.equal(true);
+    const savedData = suggestionMock.setData.firstCall.args[0];
+    expect(savedData.urlsSuggested).to.deep.equal(['https://example.com/blog/seo-tips']);
+    expect(suggestionMock.save.calledOnce).to.equal(true);
+  });
+
+  it('logs warning and skips when Suggestion.findById returns null after Bright Data resolve', async () => {
+    const brightDataClient = {
+      googleSearchWithFallback: sinon.stub().resolves({
+        results: [{ link: 'https://example.com/blog/seo-tips' }],
+        keywords: 'blog seo',
+      }),
+    };
+
+    const step = createOpportunityAndSuggestionsStep({
+      auditType: 'broken-internal-links',
+      opptyStatuses: { NEW: 'NEW', RESOLVED: 'RESOLVED' },
+      suggestionStatuses: { NEW: 'NEW', OUTDATED: 'OUTDATED' },
+      isNonEmptyArray: (value) => Array.isArray(value) && value.length > 0,
+      createContextLogger: (log) => log,
+      calculateKpiDeltasForAudit: sinon.stub().returns({}),
+      convertToOpportunity: sinon.stub().resolves({ getId: () => 'oppty-1' }),
+      createOpportunityData: sinon.stub(),
+      syncBrokenInternalLinksSuggestions: sinon.stub().resolves(),
+      filterByAuditScope: (pages) => pages,
+      extractPathPrefix: () => null,
+      isUnscrapeable: () => false,
+      filterBrokenSuggestedUrls: sinon.stub().resolves([]),
+      BrightDataClient: { createFrom: sinon.stub().returns(brightDataClient) },
+      buildLocaleSearchUrl: sinon.stub().returns('https://example.com'),
+      sleep: sinon.stub().resolves(),
+      updateAuditResult: sinon.stub().resolves(),
+      isCanonicalOrHreflangLink: () => false,
+    });
+
+    const logStub = {
+      info: sinon.stub(), warn: sinon.stub(), error: sinon.stub(), debug: sinon.stub(),
+    };
+
+    const context = {
+      log: logStub,
+      site: {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://example.com',
+        getDeliveryType: () => 'aem_edge',
+        getConfig: () => ({
+          getHandlers: () => ({
+            'broken-internal-links': {
+              config: { mystiqueItemTypes: ['link'] },
+            },
+          }),
+          getIncludedURLs: () => [],
+        }),
+      },
+      finalUrl: 'https://example.com',
+      sqs: { sendMessage: sinon.stub().resolves() },
+      env: { BRIGHT_DATA_API_KEY: 'key', BRIGHT_DATA_ZONE: 'zone' },
+      dataAccess: {
+        Suggestion: {
+          allByOpportunityIdAndStatus: sinon.stub().resolves([{
+            getData: () => ({
+              urlFrom: 'https://example.com/source',
+              urlTo: 'https://example.com/blog/seo-guide',
+              itemType: 'link',
+            }),
+            getId: () => 'suggestion-1',
+          }]),
+          findById: sinon.stub().resolves(null),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+            { getUrl: () => 'https://example.com/alt-1' },
+          ]),
+        },
+        Configuration: {
+          findLatest: sinon.stub().returns({
+            isHandlerEnabledForSite: sinon.stub().returns(true),
+          }),
+        },
+      },
+      audit: {
+        getId: () => 'audit-1',
+        getAuditResult: () => ({
+          brokenInternalLinks: [
+            { urlFrom: 'https://example.com/source', urlTo: 'https://example.com/blog/seo-guide', itemType: 'link' },
+          ],
+          success: true,
+        }),
+      },
+      updatedAuditResult: {
+        brokenInternalLinks: [
+          { urlFrom: 'https://example.com/source', urlTo: 'https://example.com/blog/seo-guide', itemType: 'link' },
+        ],
+        success: true,
+      },
+    };
+
+    const result = await step(context);
+
+    expect(result.status).to.equal('complete');
+    const warnCalls = logStub.warn.getCalls().map((c) => c.args[0]);
+    expect(warnCalls.some((msg) => msg.includes('suggestion not found'))).to.equal(true);
+  });
+
   it('loads both NEW and PENDING_VALIDATION suggestions when the site requires validation', async () => {
     const suggestionLookup = sinon.stub();
     suggestionLookup.onFirstCall().resolves([]);

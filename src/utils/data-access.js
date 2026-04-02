@@ -134,7 +134,7 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
 export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
   try {
     const { SiteTopPage } = dataAccess;
-    const result = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    const result = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'seo', 'global');
     log.info('Received top pages response:', JSON.stringify(result, null, 2));
 
     const topPages = result || [];

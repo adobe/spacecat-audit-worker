@@ -139,12 +139,12 @@ export function createOpportunityAndSuggestionsStep({
       return { status: 'complete', reportedBrokenLinks: reportedLinks };
     }
 
-    let ahrefsTopPages = [];
+    let seoTopPages = [];
     try {
-      ahrefsTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-      log.info(`Found ${ahrefsTopPages.length} top pages from Ahrefs`);
+      seoTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
+      log.info(`Found ${seoTopPages.length} top pages from SEO provider`);
     } catch (error) {
-      log.warn(`Failed to fetch Ahrefs top pages: ${error.message}`);
+      log.warn(`Failed to fetch SEO top pages: ${error.message}`);
     }
 
     const includedURLs = site?.getConfig()?.getIncludedURLs?.('broken-internal-links') || [];
@@ -152,7 +152,7 @@ export function createOpportunityAndSuggestionsStep({
     const maxUrlsToProcess = config.getMaxUrlsToProcess();
 
     const includedTopPages = includedURLs.map((url) => ({ getUrl: () => url }));
-    let topPages = [...ahrefsTopPages, ...includedTopPages];
+    let topPages = [...seoTopPages, ...includedTopPages];
 
     if (topPages.length > maxUrlsToProcess) {
       log.warn(`Capping URLs from ${topPages.length} to ${maxUrlsToProcess}`);

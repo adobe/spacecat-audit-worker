@@ -494,7 +494,7 @@ export async function submitForScraping(context) {
 
   log.info(`[metatags] Start submitForScraping step for: ${site.getId()}`);
 
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
 
   const topPagesUrls = topPages.map((page) => page.getUrl());
   // Combine includedURLs and topPages URLs to scrape
