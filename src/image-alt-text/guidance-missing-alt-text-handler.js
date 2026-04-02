@@ -249,6 +249,13 @@ export default async function handler(message, context) {
     altTextOppty.setAuditId(auditId);
     altTextOppty.setData(updatedOpportunityData);
     altTextOppty.setUpdatedBy('system');
+
+    if (updatedOpportunityData.mystiqueResponsesReceived
+      >= updatedOpportunityData.mystiqueResponsesExpected) {
+      altTextOppty.setLastAuditedAt(new Date().toISOString());
+      log.info(`[${AUDIT_TYPE}]: All Mystique responses received. Setting lastAuditedAt.`);
+    }
+
     await altTextOppty.save();
 
     // Update audit status to success on each Mystique response
