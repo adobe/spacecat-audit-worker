@@ -23,6 +23,8 @@ import {
 import { createLLMOSharepointClient, readFromSharePoint } from '../../utils/report-uploader.js';
 import { downloadExistingCdnSheet } from '../../llm-error-pages/utils.js';
 
+const LOG_PREFIX = 'Prerender -';
+
 export { getS3Config };
 export { downloadExistingCdnSheet };
 // Re-export query builders used by prerender to avoid cross-audit imports in handler
@@ -38,12 +40,14 @@ export function generateReportingPeriods(referenceDate = new Date()) {
  */
 export async function loadLatestAgenticSheet(site, context) {
   const { log } = context;
+  const baseUrl = site.getBaseURL?.() || '';
   const s3Config = getS3Config(site, context);
   const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.customerName;
   const outputLocation = `${llmoFolder}/agentic-traffic`;
   const { weeks } = generateReportingPeriods();
   const latestWeek = weeks[0];
   const weekId = `w${String(latestWeek.weekNumber).padStart(2, '0')}-${latestWeek.year}`;
+  log.info(`${LOG_PREFIX} loadLatestAgenticSheet: baseUrl=${baseUrl}, llmoFolder=${llmoFolder}, outputLocation=${outputLocation}, weekId=${weekId}`);
   const sharepointClient = await createLLMOSharepointClient(context);
   const rows = await downloadExistingCdnSheet(
     weekId,
@@ -53,7 +57,7 @@ export async function loadLatestAgenticSheet(site, context) {
     readFromSharePoint,
     ExcelJS,
   );
-  const baseUrl = site.getBaseURL?.() || '';
+  log.info(`${LOG_PREFIX} loadLatestAgenticSheet: loaded ${rows?.length ?? 0} row(s) from sheet. baseUrl=${baseUrl}, weekId=${weekId}`);
   return {
     weekId,
     baseUrl,

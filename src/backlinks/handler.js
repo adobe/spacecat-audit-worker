@@ -427,6 +427,7 @@ export const generateSuggestionData = async (context) => {
         ...suggestion.getData(),
         urlsSuggested,
         aiRationale: `Suggested URLs are chosen from top search results for closely matching keywords from the broken URL. Keywords used: "${keywords}".`,
+        factId: `legacy:${opportunity.getId()}:${brokenLink.suggestionId}`,
       });
 
       await suggestion.save();

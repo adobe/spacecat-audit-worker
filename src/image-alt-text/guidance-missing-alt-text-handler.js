@@ -13,6 +13,8 @@
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionModel, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { addAltTextSuggestions, getProjectedMetrics } from './opportunityHandler.js';
+import { persistAuditStatusWithFreshRead } from './handler.js';
+import { ALT_TEXT_PROCESSING_ERROR_TAG } from './constants.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
@@ -157,14 +159,18 @@ export default async function handler(message, context) {
       (oppty) => oppty.getType() === AUDIT_TYPE,
     );
   } catch (e) {
-    log.error(`[${AUDIT_TYPE}]: Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
+    log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
+    const fetchError = `Failed to fetch opportunities: ${e.message}`;
+    await persistAuditStatusWithFreshRead(dataAccess, auditId, 'guidance_failed', { error: fetchError }, log, true);
     throw new Error(`[${AUDIT_TYPE}]: Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
   }
 
   if (!altTextOppty) {
-    const errorMsg = `[${AUDIT_TYPE}]: No existing opportunity found for siteId ${siteId}. Opportunity should be created by main handler before processing suggestions.`;
-    log.error(errorMsg);
-    throw new Error(errorMsg);
+    const errorMsg = `No existing opportunity found for siteId ${siteId}. `
+      + 'Opportunity should be created by main handler before processing suggestions.';
+    log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
+    await persistAuditStatusWithFreshRead(dataAccess, auditId, 'guidance_failed', { error: errorMsg }, log, true);
+    throw new Error(`[${AUDIT_TYPE}]: ${errorMsg}`);
   }
 
   const existingData = altTextOppty.getData() || {};
@@ -251,8 +257,14 @@ export default async function handler(message, context) {
     }
 
     await altTextOppty.save();
+
+    // Update audit status to success on each Mystique response
+    await persistAuditStatusWithFreshRead(dataAccess, auditId, 'success', {}, log);
   } else {
     log.info(`[${AUDIT_TYPE}]: No suggestions to process for siteId: ${siteId}`);
+
+    // Track empty Mystique response in status history for observability
+    await persistAuditStatusWithFreshRead(dataAccess, auditId, 'success', { empty: true }, log);
   }
   return ok();
 }
