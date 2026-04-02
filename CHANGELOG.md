@@ -1,3 +1,10 @@
+## [1.391.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.391.0...v1.391.1) (2026-04-02)
+
+
+### Bug Fixes
+
+* **faqs:** defer URL assignment until guidance callback ([#2290](https://github.com/adobe/spacecat-audit-worker/issues/2290)) ([2320417](https://github.com/adobe/spacecat-audit-worker/commit/2320417c1313ce80248504275f75cba9b0ea0376))
+
 # [1.391.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.390.5...v1.391.0) (2026-04-02)
 
 
