@@ -50,7 +50,7 @@ describe('LLMO Customer Analysis Handler', () => {
         audits: 'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
       }),
       enableHandlerForSite: sandbox.stub(),
-      isHandlerEnabledForSite: sandbox.stub().returns(false),
+      isHandlerEnabledForSite: sandbox.stub().callsFake((auditType) => auditType === 'cdn-logs-report'),
       getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
       save: sandbox.stub().resolves(),
       setConfig: sandbox.stub().resolves(),
@@ -256,6 +256,50 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
       expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
+    });
+
+    it('should skip cdn-logs-report when categories change but the handler is disabled for the site', async () => {
+      const auditContext = {
+        configVersion: 'v2',
+        previousConfigVersion: 'v1',
+      };
+
+      configuration.isHandlerEnabledForSite.callsFake(() => false);
+
+      mockLlmoConfig.readConfig.onFirstCall().resolves({
+        config: {
+          entities: {},
+          categories: { 'cat-1': { name: 'Category A' } },
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      mockLlmoConfig.readConfig.onSecondCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(sqs.sendMessage).to.not.have.been.called;
+      expect(log.info).to.have.been.calledWith(
+        'LLMO config changes detected in categories; skipping cdn-logs-report because it is disabled for this site',
+      );
+      expect(result.auditResult.status).to.equal('completed');
+      expect(result.auditResult.configChangesDetected).to.equal(false);
+      expect(result.auditResult.triggeredSteps || []).to.not.include('cdn-logs-report');
     });
 
     it('should trigger referral traffic imports on first-time onboarding with OpTel data', async () => {
@@ -1200,7 +1244,6 @@ describe('LLMO Customer Analysis Handler', () => {
         'llm-error-pages',
         'summarization',
         'llmo-referral-traffic',
-        'cdn-logs-report',
         'readability',
         'wikipedia-analysis',
         'geo-brand-presence',
@@ -1951,4 +1994,3 @@ describe('LLMO Customer Analysis Handler', () => {
   });
 
 });
-
