@@ -1,3 +1,10 @@
+# [1.391.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.390.5...v1.391.0) (2026-04-02)
+
+
+### Features
+
+* add lastAuditedAt field to opportunities ([#2228](https://github.com/adobe/spacecat-audit-worker/issues/2228)) ([e5abed5](https://github.com/adobe/spacecat-audit-worker/commit/e5abed56d9801ce9520beb6e9c7fdc4a84e559a3))
+
 ## [1.390.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.390.4...v1.390.5) (2026-04-02)
 
 
