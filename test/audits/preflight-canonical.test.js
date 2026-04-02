@@ -64,13 +64,13 @@ function buildAuditContext(scrapedObjects = [], overrides = {}) {
   };
 }
 
-function buildScrapedObject(canonicalMeta, rawBody = null) {
+function buildScrapedObject(canonicalMeta, rawBody = null, extraData = {}) {
   const scrapeResult = {};
   if (canonicalMeta !== undefined) scrapeResult.canonical = canonicalMeta;
   if (rawBody !== null) scrapeResult.rawBody = rawBody;
   return {
     Key: `scrapes/site-123/page1/scrape.json`,
-    data: { finalUrl: PAGE_URL, scrapeResult },
+    data: { finalUrl: PAGE_URL, scrapeResult, ...extraData },
   };
 }
 
@@ -275,6 +275,20 @@ describe('Preflight Canonical Audit', () => {
 
       expect(ctx.log.warn).to.have.been.calledWith(sinon.match('No scraped data found'));
       expect(getCanonicalAudit(auditCtx.auditsResult).opportunities).to.deep.equal([]);
+    });
+
+    it('skips canonical checks when HTTP status is 4xx (e.g. 403)', async () => {
+      const ctx = buildContext();
+      const auditCtx = buildAuditContext([buildScrapedObject({
+        exists: false, count: 0, href: null, inHead: false,
+      }, null, { statusCode: 403 })]);
+
+      await canonicalHandler(ctx, auditCtx);
+
+      expect(getCanonicalAudit(auditCtx.auditsResult).opportunities).to.deep.equal([]);
+      expect(ctx.log.info).to.have.been.calledWith(
+        sinon.match('[preflight-canonical] Skipping page with HTTP 403'),
+      );
     });
   });
 

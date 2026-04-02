@@ -352,7 +352,6 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   try {
     await enableImports(siteId, context, [
       { type: REFERRAL_TRAFFIC_IMPORT },
-      { type: 'llmo-prompts-ahrefs', options: { limit: 25 } },
       { type: 'top-pages' },
     ]);
   } catch (error) {
