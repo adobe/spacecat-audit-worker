@@ -169,6 +169,7 @@ export async function handleCdnBucketConfigChanges(context, data) {
     const configuration = await Configuration.findLatest();
     configuration.disableHandlerForSite('cdn-logs-analysis', site);
     configuration.disableHandlerForSite('cdn-logs-report', site);
+    configuration.disableHandlerForSite('llm-error-pages', site);
     configuration.disableHandlerForSite('page-citability', site);
     await configuration.save();
     throw new Error('CDN provider is required for CDN configuration');
@@ -218,6 +219,7 @@ export async function handleCdnBucketConfigChanges(context, data) {
   const configuration = await Configuration.findLatest();
   configuration.enableHandlerForSite('cdn-logs-analysis', site);
   configuration.enableHandlerForSite('cdn-logs-report', site);
+  configuration.enableHandlerForSite('llm-error-pages', site);
   configuration.enableHandlerForSite('page-citability', site);
   await configuration.save();
 
