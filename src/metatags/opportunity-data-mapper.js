@@ -29,7 +29,7 @@ export function createOpportunityData(props = {}) {
     tags: ['Traffic acquisition', 'isElmo', 'isASO', 'tech-seo'],
     data: {
       ...props,
-      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.RUM, DATA_SOURCES.SITE],
+      dataSources: [DATA_SOURCES.SEO, DATA_SOURCES.RUM, DATA_SOURCES.SITE],
     },
   };
 }

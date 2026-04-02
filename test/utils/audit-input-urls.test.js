@@ -128,7 +128,7 @@ describe('audit-input-urls', () => {
       ]);
     });
 
-    it('should handle null Ahrefs results when topOrganicLimit is provided', async () => {
+    it('should handle null SEO results when topOrganicLimit is provided', async () => {
       const site = {
         getId: () => 'site-123',
         getConfig: async () => null,
@@ -154,7 +154,7 @@ describe('audit-input-urls', () => {
       expect(result.filteredCount).to.equal(0);
     });
 
-    it('should handle null Ahrefs results when topOrganicLimit is not provided', async () => {
+    it('should handle null SEO results when topOrganicLimit is not provided', async () => {
       const site = {
         getId: () => 'site-123',
         getConfig: async () => null,

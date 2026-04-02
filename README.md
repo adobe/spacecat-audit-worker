@@ -109,7 +109,7 @@ DYNAMO_TABLE_NAME_DATA=spacecat-services-data
 S3_SCRAPER_BUCKET_NAME=spacecat-scraper-results
 
 # Add additional secrets as needed for specific audits
-# Example: AHREFS_API_KEY=your-key-here
+# Example: SEO_API_KEY=your-key-here
 # Example: SLACK_BOT_TOKEN=your-token-here
 ```
 

@@ -808,7 +808,7 @@ export async function submitForScraping(context) {
   log.info(`[PRODUCT-METATAGS] Step 2: submitForScraping started for site: ${site.getId()}`);
 
   const { SiteTopPage } = dataAccess;
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
   log.info(`[PRODUCT-METATAGS] Retrieved ${topPages.length} top pages from database`);
 
   const topPagesUrls = topPages.map((page) => page.getUrl());

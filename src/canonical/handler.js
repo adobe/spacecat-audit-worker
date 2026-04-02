@@ -82,7 +82,7 @@ export async function submitForScraping(context) {
 
   const { SiteTopPage } = dataAccess;
 
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
 
   log.info(`[canonical] Found ${topPages?.length || 0} top pages for scraping`);
 

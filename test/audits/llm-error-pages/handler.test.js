@@ -169,7 +169,7 @@ describe('LLM Error Pages Handler', function () {
       category: 'Test',
     })));
 
-    // Mock getTopAgenticUrlsFromAthena to return empty (fall back to Ahrefs)
+    // Mock getTopAgenticUrlsFromAthena to return empty (fall back to SEO top pages)
     mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
 
     // Mock ExcelJS
@@ -702,7 +702,7 @@ describe('LLM Error Pages Handler', function () {
   });
 });
 
-describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
+describe('LLM Error Pages Handler - Athena/SEO fallback', function () {
   this.timeout(10000);
   let sandbox;
   let mockGetTopAgenticUrlsFromAthena;
@@ -750,11 +750,11 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
       'https://example.com/athena-page1',
       'https://example.com/athena-page2',
     ]);
-    // Ahrefs should NOT be called when Athena returns data
+    // SEO should NOT be called when Athena returns data
     expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
   });
 
-  it('should fall back to Ahrefs in importTopPagesAndScrape when Athena returns empty', async () => {
+  it('should fall back to SEO top pages in importTopPagesAndScrape when Athena returns empty', async () => {
     mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
 
     const handler = await esmock('../../../src/llm-error-pages/handler.js', {
@@ -767,8 +767,8 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
     });
 
     const topPages = [
-      { getUrl: () => 'https://example.com/ahrefs-page1' },
-      { getUrl: () => 'https://example.com/ahrefs-page2' },
+      { getUrl: () => 'https://example.com/seo-page1' },
+      { getUrl: () => 'https://example.com/seo-page2' },
     ];
 
     const context = {
@@ -788,14 +788,14 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
 
     expect(result.auditResult.success).to.be.true;
     expect(result.auditResult.topPages).to.deep.equal([
-      'https://example.com/ahrefs-page1',
-      'https://example.com/ahrefs-page2',
+      'https://example.com/seo-page1',
+      'https://example.com/seo-page2',
     ]);
-    expect(context.log.info).to.have.been.calledWith('[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to Ahrefs');
-    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith('site-123', 'ahrefs', 'global');
+    expect(context.log.info).to.have.been.calledWith('[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to SEO top pages');
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith('site-123', 'seo', 'global');
   });
 
-  it('should return failure when both Athena and Ahrefs return empty in importTopPagesAndScrape', async () => {
+  it('should return failure when both Athena and SEO return empty in importTopPagesAndScrape', async () => {
     mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
 
     const handler = await esmock('../../../src/llm-error-pages/handler.js', {
@@ -827,14 +827,14 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
     expect(context.log.warn).to.have.been.calledWith('[LLM-ERROR-PAGES] No top pages found for site');
   });
 
-  it('should use Ahrefs URLs in submitForScraping', async () => {
+  it('should use SEO URLs in submitForScraping', async () => {
     const handler = await esmock('../../../src/llm-error-pages/handler.js', {
       '@adobe/spacecat-shared-data-access': {
         Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
       },
     });
 
-    const topPages = [{ getUrl: () => 'https://example.com/ahrefs-page1' }];
+    const topPages = [{ getUrl: () => 'https://example.com/seo-page1' }];
 
     const context = {
       log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
@@ -852,11 +852,11 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
 
     const result = await handler.submitForScraping(context);
 
-    expect(result.urls).to.deep.equal([{ url: 'https://example.com/ahrefs-page1' }]);
-    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith('site-123', 'ahrefs', 'global');
+    expect(result.urls).to.deep.equal([{ url: 'https://example.com/seo-page1' }]);
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith('site-123', 'seo', 'global');
   });
 
-  it('should throw error when no Ahrefs pages in submitForScraping', async () => {
+  it('should throw error when no SEO pages in submitForScraping', async () => {
     const handler = await esmock('../../../src/llm-error-pages/handler.js', {
       '@adobe/spacecat-shared-data-access': {
         Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
@@ -973,7 +973,7 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
     expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
   });
 
-  it('should fall back to Ahrefs for alternativeUrls in runAuditAndSendToMystique when Athena returns empty', async () => {
+  it('should fall back to SEO top pages for alternativeUrls in runAuditAndSendToMystique when Athena returns empty', async () => {
     mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
 
     const mockAthenaClient = { query: sandbox.stub().resolves([]) };
@@ -1026,7 +1026,7 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
       },
     });
 
-    const topPages = [{ getUrl: () => 'https://example.com/ahrefs-alt1' }];
+    const topPages = [{ getUrl: () => 'https://example.com/seo-alt1' }];
 
     const context = {
       log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
@@ -1048,9 +1048,9 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
 
     expect(result.auditResult[0].success).to.be.true;
     const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-      expect(sentMessage.data.alternativeUrls).to.deep.equal(['https://example.com/ahrefs-alt1']);
+      expect(sentMessage.data.alternativeUrls).to.deep.equal(['https://example.com/seo-alt1']);
       expect(context.log.info).to.have.been.calledWith(
-        '[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to Ahrefs',
+        '[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to SEO top pages',
       );
     });
 });
