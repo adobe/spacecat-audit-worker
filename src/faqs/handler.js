@@ -16,7 +16,6 @@ import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
 import { getPreviousWeekTriples } from '../utils/date-utils.js';
 import {
-  RELATED_URLS_COLUMN_HEADER, RELATED_URLS_DELIMITER,
   buildColumnMap, getColumn, validateContentAI,
 } from './utils.js';
 
@@ -24,38 +23,26 @@ const MAX_SUGGESTION_PROMPTS = 200;
 const WEEKS_TO_LOOK_BACK = 4;
 
 /**
- * Groups prompts by URL and topic
- * Each group retains the original URL column value and related-URL metadata,
- * but URL assignment is deferred until Mystique returns FAQ suggestions.
+ * Groups prompts by URL and topic.
  * @param {Array} prompts - Array of prompt objects with url, topic, question
- * @returns {Array} Grouped prompts [{ url, originalUrl, relatedUrls, topic, prompts: [] }]
+ * @returns {Array} Grouped prompts [{ url, topic, prompts: [] }]
  */
 function groupPromptsByUrlAndTopic(prompts) {
   const groupMap = new Map();
 
   prompts.forEach((prompt) => {
-    const {
-      url, topic, question, relatedUrls = [],
-    } = prompt;
+    const { url, topic, question } = prompt;
 
     const key = `${url || 'global'}|||${topic}`;
     if (!groupMap.has(key)) {
       groupMap.set(key, {
         url,
-        originalUrl: url,
-        relatedUrls: [],
         topic,
         prompts: [],
       });
     }
 
-    const group = groupMap.get(key);
-    group.prompts.push(question);
-    relatedUrls.forEach((relatedUrl) => {
-      if (relatedUrl && !group.relatedUrls.includes(relatedUrl)) {
-        group.relatedUrls.push(relatedUrl);
-      }
-    });
+    groupMap.get(key).prompts.push(question);
   });
 
   return Array.from(groupMap.values());
@@ -92,24 +79,14 @@ async function readBrandPresenceSpreadsheet(filename, outputLocation, sharepoint
     const topicsCol = getColumn(colMap, 'Topics');
     const promptCol = getColumn(colMap, 'Prompt');
     const urlCol = getColumn(colMap, 'URL');
-    const relatedUrlsCol = getColumn(colMap, RELATED_URLS_COLUMN_HEADER);
-
     rows.forEach((row) => {
       const topic = topicsCol ? row.getCell(topicsCol).value : null;
       const prompt = promptCol ? row.getCell(promptCol).value : null;
       const url = urlCol ? row.getCell(urlCol).value || '' : '';
-      const relatedUrlsRaw = relatedUrlsCol
-        ? row.getCell(relatedUrlsCol).value
-        : null;
-      const relatedUrls = relatedUrlsRaw
-        ? relatedUrlsRaw.toString().split(RELATED_URLS_DELIMITER)
-          .map((u) => u.trim()).filter(Boolean)
-        : [];
 
       if (topic && prompt) {
         prompts.push({
           url: url.toString().trim(),
-          relatedUrls,
           topic: topic.toString().trim(),
           question: prompt.toString().trim(),
         });
@@ -133,7 +110,6 @@ async function readBrandPresenceSpreadsheet(filename, outputLocation, sharepoint
 
 /**
  * Sorts prompts with URL-column rows first, then generic rows.
- * Related URLs are preserved as metadata only and do not affect Mystique grouping.
  * @param {Array} prompts - Array of prompt objects with url, topic, and question
  * @returns {Array} Sorted array of prompts
  */
@@ -266,8 +242,7 @@ async function runFaqsAudit(url, context, site) {
 
     log.info(`[FAQ] Using brand presence data from ${usedPeriodIdentifier}`);
 
-    // Sort prompts so rows enriched by prompt-to-URL analysis win during dedupe,
-    // while still passing the original URL column through to Mystique.
+    // Sort prompts so URL-specific rows win during dedupe over generic rows.
     const sortedPrompts = sortPrompts(topPrompts);
 
     // Deduplicate prompts (keeps first occurrence, which prioritizes URLs due to sorting)

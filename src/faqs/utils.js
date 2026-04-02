@@ -138,20 +138,22 @@ export function decorateFaqSuggestionUrl({
  * @param {Array} suggestions - Array of suggestions from Mystique
  * @param {Object} [options] - FAQ decoration options
  * @param {Set<string>} [options.includedURLsSet] - Site desired URLs
+ * @param {Function} [options.getRelatedUrls] - Returns related URLs for a suggestion
  * @returns {Array} Array of FAQ suggestion objects with transform rules
  */
 export function getJsonFaqSuggestion(suggestions, options = {}) {
   const suggestionValues = [];
   const includedURLsSet = options.includedURLsSet || new Set();
+  const getRelatedUrls = options.getRelatedUrls || ((suggestion) => suggestion.relatedUrls || []);
 
   suggestions.forEach((suggestion) => {
     const {
       url,
       originalUrl = url || '',
-      relatedUrls = [],
       topic,
       faqs,
     } = suggestion;
+    const relatedUrls = getRelatedUrls(suggestion);
 
     // Filter only suitable FAQs
     const suitableFaqs = (faqs || []).filter(
@@ -175,8 +177,6 @@ export function getJsonFaqSuggestion(suggestions, options = {}) {
         headingText: 'FAQs',
         shouldOptimize: true, // Default to true, will be updated based on analysis
         url: decoratedUrl,
-        originalUrl,
-        relatedUrls,
         topic: topic || '',
         transformRules: {
           selector: 'body',

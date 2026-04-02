@@ -15,12 +15,130 @@ import {
 } from '@adobe/spacecat-shared-http-utils';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { load as cheerioLoad } from 'cheerio';
+import ExcelJS from 'exceljs';
 
 import { syncSuggestions } from '../utils/data-access.js';
-import { getJsonFaqSuggestion } from './utils.js';
+import { getPreviousWeekTriples } from '../utils/date-utils.js';
+import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
+import {
+  RELATED_URLS_COLUMN_HEADER,
+  RELATED_URLS_DELIMITER,
+  buildColumnMap,
+  getColumn,
+  getJsonFaqSuggestion,
+} from './utils.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
+
+const WEEKS_TO_LOOK_BACK = 4;
+
+function getPromptGroupKey(url, topic) {
+  return `${url || 'global'}|||${topic || ''}`;
+}
+
+function getSheetCandidates() {
+  const weekTriples = getPreviousWeekTriples(new Date(), WEEKS_TO_LOOK_BACK);
+  const uniqueWeeks = new Map();
+  weekTriples.forEach(({ year, week }) => {
+    const key = `${year}-${week}`;
+    if (!uniqueWeeks.has(key)) {
+      uniqueWeeks.set(key, { weekNumber: week, year });
+    }
+  });
+  return Array.from(uniqueWeeks.values()).map(({ weekNumber, year }) => ({
+    periodIdentifier: `w${weekNumber}-${year}`,
+    filename: `brandpresence-all-w${weekNumber}-${year}.xlsx`,
+  }));
+}
+
+function buildRelatedUrlsByGroup(worksheet) {
+  const groupedRelatedUrls = new Map();
+  if (!worksheet) {
+    return groupedRelatedUrls;
+  }
+
+  const totalDataRows = worksheet.rowCount - 1;
+  const rows = worksheet.getRows(2, totalDataRows) || [];
+  const colMap = buildColumnMap(worksheet);
+  const topicsCol = getColumn(colMap, 'Topics');
+  const promptCol = getColumn(colMap, 'Prompt');
+  const urlCol = getColumn(colMap, 'URL');
+  const relatedUrlsCol = getColumn(colMap, RELATED_URLS_COLUMN_HEADER);
+
+  rows.forEach((row) => {
+    const topic = topicsCol ? row.getCell(topicsCol).value : null;
+    const prompt = promptCol ? row.getCell(promptCol).value : null;
+    const url = urlCol ? row.getCell(urlCol).value || '' : '';
+    const relatedUrlsRaw = relatedUrlsCol ? row.getCell(relatedUrlsCol).value : null;
+    const relatedUrls = relatedUrlsRaw
+      ? relatedUrlsRaw.toString().split(RELATED_URLS_DELIMITER)
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+      : [];
+
+    if (!topic || !prompt || relatedUrls.length === 0) {
+      return;
+    }
+
+    const key = getPromptGroupKey(url.toString().trim(), topic.toString().trim());
+    if (!groupedRelatedUrls.has(key)) {
+      groupedRelatedUrls.set(key, []);
+    }
+
+    const existing = groupedRelatedUrls.get(key);
+    relatedUrls.forEach((relatedUrl) => {
+      if (!existing.includes(relatedUrl)) {
+        existing.push(relatedUrl);
+      }
+    });
+  });
+
+  return groupedRelatedUrls;
+}
+
+async function loadLatestRelatedUrlsByGroup(site, context) {
+  const { log, getOutputLocation } = context;
+  const sharepointClient = await createLLMOSharepointClient(context);
+  const siteConfig = await site.getConfig?.();
+  let outputLocation = null;
+  if (getOutputLocation) {
+    outputLocation = getOutputLocation(site);
+  } else if (siteConfig?.getLlmoDataFolder?.()) {
+    outputLocation = `${siteConfig.getLlmoDataFolder()}/brand-presence`;
+  }
+  if (!outputLocation) {
+    return new Map();
+  }
+  const workbook = new ExcelJS.Workbook();
+
+  for (const candidate of getSheetCandidates()) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const buffer = await readFromSharePoint(
+        candidate.filename,
+        outputLocation,
+        sharepointClient,
+        log,
+      );
+      // eslint-disable-next-line no-await-in-loop
+      await workbook.xlsx.load(buffer);
+      const relatedUrlsByGroup = buildRelatedUrlsByGroup(workbook.worksheets[0]);
+      if (relatedUrlsByGroup.size > 0) {
+        return relatedUrlsByGroup;
+      }
+    } catch (error) {
+      if (error.message?.includes('resource could not be found')
+        || error.message?.includes('itemNotFound')) {
+        // keep trying older weekly workbooks
+      } else {
+        log.error(`[FAQ] Failed to load related URLs from ${candidate.filename}: ${error.message}`);
+      }
+    }
+  }
+
+  return new Map();
+}
 
 /**
  * Gets the S3 path for a scrape JSON file
@@ -144,6 +262,7 @@ async function addSuggestions(
   const { log, s3Client, env } = context;
   const { S3_SCRAPER_BUCKET_NAME } = env;
   const siteId = site.getId();
+  const relatedUrlsByGroup = await loadLatestRelatedUrlsByGroup(site, context);
 
   // Get all S3 keys for scrape data
   let allKeys = [];
@@ -156,7 +275,12 @@ async function addSuggestions(
   }
 
   // Get base JSON suggestions
-  const suggestionValues = getJsonFaqSuggestion(suggestions, { includedURLsSet });
+  const suggestionValues = getJsonFaqSuggestion(suggestions, {
+    includedURLsSet,
+    getRelatedUrls: (suggestion) => relatedUrlsByGroup.get(
+      getPromptGroupKey(suggestion.url, suggestion.topic),
+    ) || [],
+  });
 
   // Enhance each suggestion with scrape data analysis
   const enhancedSuggestions = await Promise.all(suggestionValues.map(async (suggestion) => {

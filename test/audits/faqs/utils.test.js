@@ -543,6 +543,36 @@ describe('FAQ Utils', () => {
       expect(suggestions[1].url).to.equal('https://www.adobe.com/original-only');
       expect(suggestions[2].url).to.equal('');
     });
+
+    it('should use getRelatedUrls callback and omit internal URL metadata from output', () => {
+      const faqs = [
+        {
+          url: 'https://www.adobe.com/original',
+          topic: 'test',
+          faqs: [
+            {
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
+              question: 'Question?',
+              answer: 'Answer.',
+              sources: [{ url: 'https://www.adobe.com/source-match' }],
+            },
+          ],
+        },
+      ];
+
+      const suggestions = getJsonFaqSuggestion(faqs, {
+        getRelatedUrls: () => [
+          'https://www.adobe.com/top-related',
+          'https://www.adobe.com/source-match',
+        ],
+      });
+
+      expect(suggestions).to.have.length(1);
+      expect(suggestions[0].url).to.equal('https://www.adobe.com/source-match');
+      expect(suggestions[0]).not.to.have.property('originalUrl');
+      expect(suggestions[0]).not.to.have.property('relatedUrls');
+    });
   });
 
   describe('decorateFaqSuggestionUrl', () => {

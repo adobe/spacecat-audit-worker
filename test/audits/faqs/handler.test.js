@@ -877,7 +877,7 @@ describe('FAQs Handler', () => {
       );
     });
 
-    it('should keep prompt with URL column over generic row that only has related URLs', async () => {
+    it('should keep prompt with URL column over generic row', async () => {
       const mockWorkbook = {
         worksheets: [
           {
@@ -947,7 +947,6 @@ describe('FAQs Handler', () => {
       expect(result.auditResult.promptsByUrl).to.have.lengthOf(1);
       expect(result.auditResult.promptsByUrl[0].topic).to.equal('UrlTopic');
       expect(result.auditResult.promptsByUrl[0].url).to.equal('https://adobe.com/original');
-      expect(result.auditResult.promptsByUrl[0].relatedUrls).to.deep.equal([]);
     });
 
     it('should sort prompts with URLs first', async () => {
@@ -1038,7 +1037,7 @@ describe('FAQs Handler', () => {
       expect(result.auditResult.promptsByUrl[3].url).to.equal('');
       expect(result.auditResult.promptsByUrl[3].topic).to.equal('Topic3');
     });
-    it('should keep the original URL column and pass related URLs to Mystique metadata', async () => {
+    it('should keep the original URL column when related URLs exist', async () => {
       site.getConfig = () => ({
         getLlmoDataFolder: () => '/data/llmo',
         getIncludedURLs: sandbox.stub().resolves(['https://adobe.com/included-page']),
@@ -1102,145 +1101,6 @@ describe('FAQs Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.promptsByUrl[0].url).to.equal('https://adobe.com/original');
-      expect(result.auditResult.promptsByUrl[0].originalUrl).to.equal('https://adobe.com/original');
-      expect(result.auditResult.promptsByUrl[0].relatedUrls).to.deep.equal([
-        'https://adobe.com/related1',
-        'https://adobe.com/included-page',
-        'https://adobe.com/related3',
-      ]);
-    });
-
-    it('should keep the original URL even when related URLs exist', async () => {
-      site.getConfig = () => ({
-        getLlmoDataFolder: () => '/data/llmo',
-        getIncludedURLs: sandbox.stub().resolves(['https://adobe.com/no-match']),
-      });
-
-      const mockWorkbook = {
-        worksheets: [
-          {
-            rowCount: 2,
-            getRow: () => ({
-              values: [
-                undefined, 'Category', 'Topics', 'Prompt', 'Origin', 'Region',
-                'Volume', 'URL', 'Answer', 'Sources', 'Citations', 'Mentions',
-                'Sentiment', 'Biz', 'Org', 'CAI', 'IsA', 'S2A', 'Pos', 'Vis',
-                'DBM', 'ExecDate', 'Related URLs',
-              ],
-            }),
-            getRows: () => [
-              {
-                getCell: (col) => {
-                  if (col === 2) return { value: 'Topic1' };
-                  if (col === 3) return { value: 'What is Creative Cloud?' };
-                  if (col === 7) return { value: 'https://adobe.com/original' };
-                  if (col === 22) return { value: 'https://adobe.com/top-related; https://adobe.com/second-related' };
-                  return { value: '' };
-                },
-              },
-            ],
-          },
-        ],
-      };
-
-      readFromSharePointStub.resolves(Buffer.from('mock'));
-
-      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
-        '../../../src/utils/report-uploader.js': {
-          createLLMOSharepointClient: createLLMOSharepointClientStub,
-          readFromSharePoint: readFromSharePointStub,
-        },
-        '../../../src/faqs/utils.js': {
-          validateContentAI: validateContentAIStub,
-        },
-        exceljs: {
-          Workbook: class {
-            constructor() {}
-
-            get xlsx() {
-              const self = this;
-              return {
-                load: async () => {
-                  Object.assign(self, mockWorkbook);
-                },
-              };
-            }
-          },
-        },
-      });
-
-      const runner = excelJsMock.default.runner;
-      const result = await runner('https://adobe.com', context, site);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.promptsByUrl[0].url).to.equal('https://adobe.com/original');
-      expect(result.auditResult.promptsByUrl[0].relatedUrls).to.deep.equal([
-        'https://adobe.com/top-related',
-        'https://adobe.com/second-related',
-      ]);
-    });
-
-    it('should fall back to URL column when no related URLs exist', async () => {
-      const mockWorkbook = {
-        worksheets: [
-          {
-            rowCount: 2,
-            getRow: () => ({
-              values: [
-                undefined, 'Category', 'Topics', 'Prompt', 'Origin', 'Region',
-                'Volume', 'URL', 'Answer', 'Sources', 'Citations', 'Mentions',
-                'Sentiment', 'Biz', 'Org', 'CAI', 'IsA', 'S2A', 'Pos', 'Vis',
-                'DBM', 'ExecDate', 'Related URLs',
-              ],
-            }),
-            getRows: () => [
-              {
-                getCell: (col) => {
-                  if (col === 2) return { value: 'Topic1' };
-                  if (col === 3) return { value: 'What is Creative Cloud?' };
-                  if (col === 7) return { value: 'https://adobe.com/original' };
-                  if (col === 22) return { value: '' };
-                  return { value: '' };
-                },
-              },
-            ],
-          },
-        ],
-      };
-
-      readFromSharePointStub.resolves(Buffer.from('mock'));
-
-      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
-        '../../../src/utils/report-uploader.js': {
-          createLLMOSharepointClient: createLLMOSharepointClientStub,
-          readFromSharePoint: readFromSharePointStub,
-        },
-        '../../../src/faqs/utils.js': {
-          validateContentAI: validateContentAIStub,
-        },
-        exceljs: {
-          Workbook: class {
-            constructor() {}
-
-            get xlsx() {
-              const self = this;
-              return {
-                load: async () => {
-                  Object.assign(self, mockWorkbook);
-                },
-              };
-            }
-          },
-        },
-      });
-
-      const runner = excelJsMock.default.runner;
-      const result = await runner('https://adobe.com', context, site);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.promptsByUrl[0].url).to.equal('https://adobe.com/original');
-      expect(result.auditResult.promptsByUrl[0].originalUrl).to.equal('https://adobe.com/original');
-      expect(result.auditResult.promptsByUrl[0].relatedUrls).to.deep.equal([]);
     });
 
     it('should handle spreadsheet without Related URLs header column', async () => {
@@ -1294,7 +1154,6 @@ describe('FAQs Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.promptsByUrl[0].url).to.equal('https://adobe.com/fallback');
-      expect(result.auditResult.promptsByUrl[0].relatedUrls).to.deep.equal([]);
     });
 
     it('should handle header row with null values gracefully (no columns resolved)', async () => {
@@ -1400,7 +1259,6 @@ describe('FAQs Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.promptsByUrl[0].url).to.equal('https://adobe.com/fallback');
-      expect(result.auditResult.promptsByUrl[0].relatedUrls).to.deep.equal([]);
     });
   });
 
