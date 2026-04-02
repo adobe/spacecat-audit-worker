@@ -180,13 +180,13 @@ async function findPreservableDomainWideSuggestion(opportunity, log) {
   return preservable || null;
 }
 
-async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIMIT) {
+async function getTopOrganicUrlsFromSeo(context, limit = TOP_ORGANIC_URLS_LIMIT) {
   const { dataAccess, log, site } = context;
   let topPagesUrls = [];
   try {
     const { SiteTopPage } = dataAccess || {};
     if (SiteTopPage?.allBySiteIdAndSourceAndGeo) {
-      const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+      const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
       topPagesUrls = (topPages || []).map((p) => p.getUrl()).slice(0, limit);
     }
   } catch (error) {
@@ -780,7 +780,7 @@ export async function submitForScraping(context) {
     };
   }
 
-  const topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
+  const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
   // getTopAgenticUrls internally handles errors and returns [] on failure
   const agenticUrls = await getTopAgenticUrls(site, context);
 
@@ -1430,7 +1430,7 @@ export async function processContentAndGenerateOpportunities(context) {
       }
 
       // Load top organic pages cache for fallback merging
-      const topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
+      const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
       const preferredBase = getPreferredBaseUrl(site, context);
       const rebasedFallbackOrganicUrls = topPagesUrls
         .map((url) => rebaseUrl(url, preferredBase, log));

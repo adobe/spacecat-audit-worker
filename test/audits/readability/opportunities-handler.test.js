@@ -238,7 +238,7 @@ describe('Readability Opportunities Handler', () => {
 
       expect(mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith(
         'site-123',
-        'ahrefs',
+        'seo',
         'global',
       );
     });
@@ -290,13 +290,13 @@ describe('Readability Opportunities Handler', () => {
       ]);
     });
 
-    it('should prioritize included URLs, then Athena, then Ahrefs sorted by traffic', async () => {
+    it('should prioritize included URLs, then Athena, then SEO sorted by traffic', async () => {
       mockGetTopAgenticUrlsFromAthena.resolves([
         'https://example.com/agentic-page1',
       ]);
       mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
-        { getUrl: () => 'https://example.com/ahrefs-page1', getTraffic: () => 100, getId: () => 'page-1' },
-        { getUrl: () => 'https://example.com/ahrefs-page2', getTraffic: () => 500, getId: () => 'page-2' },
+        { getUrl: () => 'https://example.com/seo-page1', getTraffic: () => 100, getId: () => 'page-1' },
+        { getUrl: () => 'https://example.com/seo-page2', getTraffic: () => 500, getId: () => 'page-2' },
       ]);
       mockSite.getConfig.returns({
         getIncludedURLs: sinon.stub().returns(['https://example.com/included-page']),
@@ -324,12 +324,12 @@ describe('Readability Opportunities Handler', () => {
           urlId: 'merged-1',
         },
         {
-          url: 'https://example.com/ahrefs-page2',
+          url: 'https://example.com/seo-page2',
           traffic: 500,
           urlId: 'page-2',
         },
         {
-          url: 'https://example.com/ahrefs-page1',
+          url: 'https://example.com/seo-page1',
           traffic: 100,
           urlId: 'page-1',
         },
@@ -1110,7 +1110,7 @@ describe('Readability Opportunities Handler', () => {
     });
   });
 
-  describe('scrapeReadabilityData - Athena/Ahrefs fallback', () => {
+  describe('scrapeReadabilityData - Athena/SEO fallback', () => {
     it('should include Athena URLs when available', async () => {
       mockGetTopAgenticUrlsFromAthena.resolves([
         'https://example.com/athena-page1',
@@ -1134,11 +1134,11 @@ describe('Readability Opportunities Handler', () => {
       expect(mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledOnce;
     });
 
-    it('should use Ahrefs URLs when Athena returns empty array', async () => {
+    it('should use SEO URLs when Athena returns empty array', async () => {
       mockGetTopAgenticUrlsFromAthena.resolves([]);
 
       const topPages = [
-        { getUrl: () => 'https://example.com/ahrefs-page1', getTraffic: () => 100, getId: () => 'page-1' },
+        { getUrl: () => 'https://example.com/seo-page1', getTraffic: () => 100, getId: () => 'page-1' },
       ];
       mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
 
@@ -1153,14 +1153,14 @@ describe('Readability Opportunities Handler', () => {
       const result = await scrapeReadabilityData(context);
 
       expect(result.auditResult.status).to.equal('SCRAPING_REQUESTED');
-      expect(result.urls[0].url).to.equal('https://example.com/ahrefs-page1');
+      expect(result.urls[0].url).to.equal('https://example.com/seo-page1');
     });
 
-    it('should use Ahrefs URLs when Athena returns null', async () => {
+    it('should use SEO URLs when Athena returns null', async () => {
       mockGetTopAgenticUrlsFromAthena.resolves(null);
 
       const topPages = [
-        { getUrl: () => 'https://example.com/ahrefs-page1', getTraffic: () => 100, getId: () => 'page-1' },
+        { getUrl: () => 'https://example.com/seo-page1', getTraffic: () => 100, getId: () => 'page-1' },
       ];
       mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
 
@@ -1175,7 +1175,7 @@ describe('Readability Opportunities Handler', () => {
       const result = await scrapeReadabilityData(context);
 
       expect(result.auditResult.status).to.equal('SCRAPING_REQUESTED');
-      expect(result.urls[0].url).to.equal('https://example.com/ahrefs-page1');
+      expect(result.urls[0].url).to.equal('https://example.com/seo-page1');
     });
 
     it('should map agentic-only URLs with merged IDs and zero traffic', async () => {
@@ -1206,7 +1206,7 @@ describe('Readability Opportunities Handler', () => {
       });
     });
 
-    it('should proceed when agentic and Ahrefs URLs fully overlap', async () => {
+    it('should proceed when agentic and SEO URLs fully overlap', async () => {
       mockGetTopAgenticUrlsFromAthena.resolves([
         'https://example.com/shared-page',
       ]);

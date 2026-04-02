@@ -20,7 +20,7 @@ const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 /**
  * Normalizes a URL by ensuring it has an https:// scheme.
  * RUM returns URLs like 'www.example.com/page' without a scheme,
- * while Ahrefs returns full URLs like 'https://example.com/page'.
+ * while SEO provider returns full URLs like 'https://example.com/page'.
  * @param {string} url - URL to normalize
  * @returns {string} URL with https:// scheme
  */
@@ -32,7 +32,7 @@ function normalizeUrl(url) {
 }
 
 /**
- * Fetches top page URLs using a fallback chain: Ahrefs → RUM → includedURLs.
+ * Fetches top page URLs using a fallback chain: SEO → RUM → includedURLs.
  * @param {Object} params
  * @param {string} params.siteId - Site ID
  * @param {Object} params.site - Site object
@@ -46,15 +46,15 @@ export async function getTopPageUrls({
 }) {
   const { SiteTopPage } = dataAccess;
 
-  // 1. Try Ahrefs top pages
-  const ahrefsPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
-  if (ahrefsPages.length > 0) {
-    log.info(`[${AUDIT_TYPE}]: Found ${ahrefsPages.length} top pages from Ahrefs`);
-    return ahrefsPages.map((page) => page.getUrl());
+  // 1. Try SEO top pages
+  const seoPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'seo', 'global');
+  if (seoPages.length > 0) {
+    log.info(`[${AUDIT_TYPE}]: Found ${seoPages.length} top pages from SEO provider`);
+    return seoPages.map((page) => page.getUrl());
   }
 
   // 2. Fallback to RUM traffic-acquisition
-  log.info(`[${AUDIT_TYPE}]: No Ahrefs top pages, falling back to RUM`);
+  log.info(`[${AUDIT_TYPE}]: No SEO top pages, falling back to RUM`);
   try {
     const finalUrl = await getRUMUrl(site.getBaseURL());
     const rumAPIClient = RUMAPIClient.createFrom(context);
@@ -82,6 +82,6 @@ export async function getTopPageUrls({
     return includedURLs;
   }
 
-  log.warn(`[${AUDIT_TYPE}]: No URLs found from any source (Ahrefs, RUM, includedURLs)`);
+  log.warn(`[${AUDIT_TYPE}]: No URLs found from any source (SEO, RUM, includedURLs)`);
   return [];
 }

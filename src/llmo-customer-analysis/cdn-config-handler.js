@@ -165,9 +165,10 @@ export async function handleCdnBucketConfigChanges(context, data) {
     });
     // if no cdn provider is provided, remove the bucket configuration
     await handleBucketConfiguration(siteId, null, null, null, context);
-    // disable cdn-logs-analysis and page-citability audits
+    // disable CDN-derived audits when the CDN configuration is removed
     const configuration = await Configuration.findLatest();
     configuration.disableHandlerForSite('cdn-logs-analysis', site);
+    configuration.disableHandlerForSite('cdn-logs-report', site);
     configuration.disableHandlerForSite('page-citability', site);
     await configuration.save();
     throw new Error('CDN provider is required for CDN configuration');
@@ -213,10 +214,10 @@ export async function handleCdnBucketConfigChanges(context, data) {
     },
   });
 
-  // enable cdn-logs-analysis audit
+  // enable CDN-derived audits once the site has a valid CDN configuration
   const configuration = await Configuration.findLatest();
   configuration.enableHandlerForSite('cdn-logs-analysis', site);
-  configuration.enableHandlerForSite('page-citability', site);
+  configuration.enableHandlerForSite('cdn-logs-report', site);
   await configuration.save();
 
   // Run analysis and reporting for Adobe-managed Fastly customers

@@ -646,7 +646,7 @@ describe('Prerender Audit', () => {
         });
 
         const mockSiteTopPage = {
-          // Return undefined to exercise `(topPages || [])` fallback in getTopOrganicUrlsFromAhrefs
+          // Return undefined to exercise `(topPages || [])` fallback in getTopOrganicUrlsFromSeo
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(undefined),
         };
 
@@ -3935,7 +3935,7 @@ describe('Prerender Audit', () => {
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({ getIncludedURLs: () => [] }),
         },
-        // Intentionally omit SiteTopPage to exercise the "no top pages" branch in getTopOrganicUrlsFromAhrefs
+        // Intentionally omit SiteTopPage to exercise the "no top pages" branch in getTopOrganicUrlsFromSeo
         dataAccess: {},
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
       };
@@ -4142,7 +4142,7 @@ describe('Prerender Audit', () => {
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({ getIncludedURLs: () => [] }),
         },
-        // Intentionally omit dataAccess to exercise `dataAccess || {}` branch in getTopOrganicUrlsFromAhrefs
+        // Intentionally omit dataAccess to exercise `dataAccess || {}` branch in getTopOrganicUrlsFromSeo
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
         s3Client: { send: sinon.stub().resolves({}) },
         env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
@@ -5300,7 +5300,7 @@ describe('Prerender Audit', () => {
           getId: () => 'existing-opp-id',
           getType: () => 'prerender',
           getData: () => ({
-            dataSources: ['ahrefs'],
+            dataSources: ['seo'],
             oldField: 'should-be-preserved',
             scrapeForbidden: true, // Old value
           }),
@@ -5337,7 +5337,7 @@ describe('Prerender Audit', () => {
 
         const createOpportunityDataFn = (auditData) => ({
           data: {
-            dataSources: ['ahrefs', 'site'],
+            dataSources: ['seo', 'site'],
             scrapeForbidden: auditData?.auditResult?.scrapeForbidden === true,
             newField: 'new-value',
           },

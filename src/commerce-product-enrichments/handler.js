@@ -174,7 +174,7 @@ export async function submitForScraping(context) {
   log.info(`${LOG_PREFIX} Step 2: submitForScraping for site: ${site.getId()}${limit ? `, limit: ${limit}` : ''}`);
 
   const { SiteTopPage } = dataAccess;
-  const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
   const topPages = limit ? allTopPages.slice(0, limit) : allTopPages;
   const sourceUrls = topPages.map((page) => page.getUrl());
 

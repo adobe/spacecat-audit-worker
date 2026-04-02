@@ -4181,8 +4181,8 @@ describe('Headings Audit', () => {
     });
   });
 
-  describe('Athena/Ahrefs fallback in headingsAuditRunner', () => {
-    it('should use Athena URLs when available and skip Ahrefs', async () => {
+  describe('Athena/SEO fallback in headingsAuditRunner', () => {
+    it('should use Athena URLs when available and skip SEO', async () => {
       const baseURL = 'https://example.com';
       const url = 'https://example.com/athena-page';
 
@@ -4249,7 +4249,7 @@ describe('Headings Audit', () => {
 
       // Verify Athena was called
       expect(mockGetTopAgenticUrlsFromAthena).to.have.been.calledOnce;
-      // Verify Ahrefs was NOT called since Athena returned data
+      // Verify SEO was NOT called since Athena returned data
       expect(mockSiteTopPage).to.not.have.been.called;
       // Verify result
       expect(result.fullAuditRef).to.equal(baseURL);

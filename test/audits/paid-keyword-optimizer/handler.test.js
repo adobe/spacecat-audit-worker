@@ -158,8 +158,8 @@ describe('Paid Keyword Optimizer Audit', () => {
       ]),
     };
 
-    // Default Ahrefs S3 data
-    const ahrefsData = [
+    // Default SEO S3 data
+    const seoData = [
       {
         url: 'https://example.com/page1',
         topKeyword: 'keyword1',
@@ -189,7 +189,7 @@ describe('Paid Keyword Optimizer Audit', () => {
       },
       site,
       log: logStub,
-      s3Client: createMockS3Client(sandbox, ahrefsData),
+      s3Client: createMockS3Client(sandbox, seoData),
       sqs: {
         sendMessage: sandbox.stub().resolves(),
       },
@@ -360,8 +360,8 @@ describe('Paid Keyword Optimizer Audit', () => {
   });
 
   describe('fetchPaidPagesFromS3', () => {
-    it('should fetch and parse Ahrefs data from S3', async () => {
-      const ahrefsPages = [
+    it('should fetch and parse SEO data from S3', async () => {
+      const seoPages = [
         {
           url: 'https://example.com/page1',
           topKeyword: 'kw1',
@@ -377,7 +377,7 @@ describe('Paid Keyword Optimizer Audit', () => {
           topKeywordBestPositionTitle: 'Title 2',
         },
       ];
-      const mockS3 = createMockS3Client(sandbox, ahrefsPages);
+      const mockS3 = createMockS3Client(sandbox, seoPages);
       const ctx = {
         s3Client: mockS3,
         env: { S3_IMPORTER_BUCKET_NAME: 'test-bucket' },
@@ -403,14 +403,14 @@ describe('Paid Keyword Optimizer Audit', () => {
     });
 
     it('should default cpc to 0 and sumTraffic to 0 when missing', async () => {
-      const ahrefsPages = [
+      const seoPages = [
         {
           url: 'https://example.com/page1',
           topKeyword: 'kw1',
           topKeywordBestPositionTitle: 'Title',
         },
       ];
-      const mockS3 = createMockS3Client(sandbox, ahrefsPages);
+      const mockS3 = createMockS3Client(sandbox, seoPages);
       const ctx = {
         s3Client: mockS3,
         env: { S3_IMPORTER_BUCKET_NAME: 'test-bucket' },
@@ -483,22 +483,22 @@ describe('Paid Keyword Optimizer Audit', () => {
   describe('computePriorityScore', () => {
     it('should compute WSIS score correctly', () => {
       const page = { pageViews: 1000, bounceRate: 0.6, engagedScrollRate: 0.2 };
-      const ahrefsData = { cpc: 2.0 };
+      const seoData = { cpc: 2.0 };
       // wastedSpend = 2.0 * 1000 * 0.6 = 1200
       // alignmentSignal = max(0.1, 1 - 0.2) = 0.8
       // score = (1200 / 1000) * 0.8 = 0.96
-      const score = computePriorityScore(page, ahrefsData);
+      const score = computePriorityScore(page, seoData);
       expect(score).to.be.closeTo(0.96, 0.001);
     });
 
     it('should handle zero CPC (score is 0)', () => {
       const page = { pageViews: 1000, bounceRate: 0.6, engagedScrollRate: 0.2 };
-      const ahrefsData = { cpc: 0 };
-      const score = computePriorityScore(page, ahrefsData);
+      const seoData = { cpc: 0 };
+      const score = computePriorityScore(page, seoData);
       expect(score).to.equal(0);
     });
 
-    it('should handle null ahrefsData (cpc defaults to 0)', () => {
+    it('should handle null seoData (cpc defaults to 0)', () => {
       const page = { pageViews: 1000, bounceRate: 0.6, engagedScrollRate: 0.2 };
       const score = computePriorityScore(page, null);
       expect(score).to.equal(0);
@@ -506,49 +506,49 @@ describe('Paid Keyword Optimizer Audit', () => {
 
     it('should handle null engagedScrollRate (defaults to 0.5 neutral)', () => {
       const page = { pageViews: 1000, bounceRate: 0.6, engagedScrollRate: null };
-      const ahrefsData = { cpc: 2.0 };
+      const seoData = { cpc: 2.0 };
       // wastedSpend = 2.0 * 1000 * 0.6 = 1200
       // alignmentSignal = max(0.1, 1 - 0.5) = 0.5
       // score = (1200 / 1000) * 0.5 = 0.6
-      const score = computePriorityScore(page, ahrefsData);
+      const score = computePriorityScore(page, seoData);
       expect(score).to.be.closeTo(0.6, 0.001);
     });
 
     it('should handle undefined engagedScrollRate (defaults to 0.5 neutral)', () => {
       const page = { pageViews: 1000, bounceRate: 0.6 };
-      const ahrefsData = { cpc: 2.0 };
-      const score = computePriorityScore(page, ahrefsData);
+      const seoData = { cpc: 2.0 };
+      const score = computePriorityScore(page, seoData);
       // alignmentSignal = max(0.1, 1 - 0.5) = 0.5
       expect(score).to.be.closeTo(0.6, 0.001);
     });
 
     it('should handle engagedScrollRate=0 (alignmentSignal is 1.0)', () => {
       const page = { pageViews: 1000, bounceRate: 0.6, engagedScrollRate: 0 };
-      const ahrefsData = { cpc: 2.0 };
+      const seoData = { cpc: 2.0 };
       // wastedSpend = 1200
       // alignmentSignal = max(0.1, 1 - 0) = 1.0
       // score = 1.2 * 1.0 = 1.2
-      const score = computePriorityScore(page, ahrefsData);
+      const score = computePriorityScore(page, seoData);
       expect(score).to.be.closeTo(1.2, 0.001);
     });
 
     it('should clamp engagedScrollRate=1.0 (alignmentSignal is 0.1)', () => {
       const page = { pageViews: 1000, bounceRate: 0.6, engagedScrollRate: 1.0 };
-      const ahrefsData = { cpc: 2.0 };
+      const seoData = { cpc: 2.0 };
       // wastedSpend = 1200
       // alignmentSignal = max(0.1, 1 - 1.0) = max(0.1, 0) = 0.1
       // score = 1.2 * 0.1 = 0.12
-      const score = computePriorityScore(page, ahrefsData);
+      const score = computePriorityScore(page, seoData);
       expect(score).to.be.closeTo(0.12, 0.001);
     });
 
     it('should handle high engagement scenario', () => {
       const page = { pageViews: 500, bounceRate: 0.8, engagedScrollRate: 0.9 };
-      const ahrefsData = { cpc: 5.0 };
+      const seoData = { cpc: 5.0 };
       // wastedSpend = 5.0 * 500 * 0.8 = 2000
       // alignmentSignal = max(0.1, 1 - 0.9) = max(0.1, 0.1) = 0.1
       // score = (2000 / 1000) * 0.1 = 0.2
-      const score = computePriorityScore(page, ahrefsData);
+      const score = computePriorityScore(page, seoData);
       expect(score).to.be.closeTo(0.2, 0.001);
     });
   });
@@ -959,24 +959,24 @@ describe('Paid Keyword Optimizer Audit', () => {
       }
     });
 
-    it('should return empty when Ahrefs S3 fetch fails', async () => {
+    it('should return empty when SEO S3 fetch fails', async () => {
       context.s3Client.send.rejects(new Error('S3 not found'));
 
       const result = await runPaidKeywordAnalysisStep(stepContext);
 
       expect(result).to.deep.equal({});
       expect(context.sqs.sendMessage).to.not.have.been.called;
-      expect(logStub.error).to.have.been.calledWithMatch(/Ahrefs S3 fetch failed/);
+      expect(logStub.error).to.have.been.calledWithMatch(/SEO S3 fetch failed/);
     });
 
-    it('should return empty when Ahrefs data is empty (null return)', async () => {
+    it('should return empty when SEO data is empty (null return)', async () => {
       stepContext.s3Client = createMockS3Client(sandbox, []);
 
       const result = await runPaidKeywordAnalysisStep(stepContext);
 
       expect(result).to.deep.equal({});
       expect(context.sqs.sendMessage).to.not.have.been.called;
-      expect(logStub.info).to.have.been.calledWithMatch(/No Ahrefs paid-pages data/);
+      expect(logStub.info).to.have.been.calledWithMatch(/No SEO paid-pages data/);
     });
 
     it('should not send to mystique when no predominantly paid pages found', async () => {
@@ -1012,7 +1012,7 @@ describe('Paid Keyword Optimizer Audit', () => {
         },
       ]);
 
-      const ahrefsPages = [
+      const seoPages = [
         {
           url: 'https://example.com/help/article',
           topKeyword: 'kw1',
@@ -1028,7 +1028,7 @@ describe('Paid Keyword Optimizer Audit', () => {
           topKeywordBestPositionTitle: 'Title',
         },
       ];
-      stepContext.s3Client = createMockS3Client(sandbox, ahrefsPages);
+      stepContext.s3Client = createMockS3Client(sandbox, seoPages);
 
       await runPaidKeywordAnalysisStep(stepContext);
 
@@ -1060,7 +1060,7 @@ describe('Paid Keyword Optimizer Audit', () => {
         },
       ]);
 
-      const ahrefsPages = [
+      const seoPages = [
         {
           url: 'https://example.com/page-high-bounce',
           topKeyword: 'kw1',
@@ -1076,7 +1076,7 @@ describe('Paid Keyword Optimizer Audit', () => {
           topKeywordBestPositionTitle: 'Title',
         },
       ];
-      stepContext.s3Client = createMockS3Client(sandbox, ahrefsPages);
+      stepContext.s3Client = createMockS3Client(sandbox, seoPages);
 
       await runPaidKeywordAnalysisStep(stepContext);
 
@@ -1089,7 +1089,7 @@ describe('Paid Keyword Optimizer Audit', () => {
     it('should cap pages to AD_INTENT_MAX_PAGES constant (10)', async () => {
       // Create 15 paid pages — should be capped to 10
       const athenaRows = [];
-      const ahrefsPages = [];
+      const seoPages = [];
       for (let i = 0; i < 15; i += 1) {
         athenaRows.push({
           path: `/page${i}`,
@@ -1100,7 +1100,7 @@ describe('Paid Keyword Optimizer Audit', () => {
           traffic_loss: '700',
           engaged_scroll_rate: '0.1',
         });
-        ahrefsPages.push({
+        seoPages.push({
           url: `https://example.com/page${i}`,
           topKeyword: `kw${i}`,
           cpc: 2.0 + i * 0.1,
@@ -1109,7 +1109,7 @@ describe('Paid Keyword Optimizer Audit', () => {
         });
       }
       context.athenaClient.query.resolves(athenaRows);
-      stepContext.s3Client = createMockS3Client(sandbox, ahrefsPages);
+      stepContext.s3Client = createMockS3Client(sandbox, seoPages);
 
       await runPaidKeywordAnalysisStep(stepContext);
 
@@ -1137,7 +1137,7 @@ describe('Paid Keyword Optimizer Audit', () => {
       ]);
 
       // Very low CPC to get a very low score
-      const ahrefsPages = [
+      const seoPages = [
         {
           url: 'https://example.com/low-score-page',
           topKeyword: 'kw',
@@ -1146,7 +1146,7 @@ describe('Paid Keyword Optimizer Audit', () => {
           topKeywordBestPositionTitle: 'Title',
         },
       ];
-      context.s3Client = createMockS3Client(sandbox, ahrefsPages);
+      context.s3Client = createMockS3Client(sandbox, seoPages);
 
       await runPaidKeywordAnalysisStep(stepContext);
 
@@ -1177,7 +1177,7 @@ describe('Paid Keyword Optimizer Audit', () => {
         },
       ]);
 
-      const ahrefsPages = [
+      const seoPages = [
         {
           url: 'https://example.com/low-cpc',
           topKeyword: 'kw1',
@@ -1193,7 +1193,7 @@ describe('Paid Keyword Optimizer Audit', () => {
           topKeywordBestPositionTitle: 'High CPC',
         },
       ];
-      stepContext.s3Client = createMockS3Client(sandbox, ahrefsPages);
+      stepContext.s3Client = createMockS3Client(sandbox, seoPages);
 
       await runPaidKeywordAnalysisStep(stepContext);
 
@@ -1205,7 +1205,7 @@ describe('Paid Keyword Optimizer Audit', () => {
       expect(msg2.url).to.equal('https://example.com/low-cpc');
     });
 
-    it('should enrich pages with Ahrefs data defaults when URL not in Ahrefs map', async () => {
+    it('should enrich pages with SEO data defaults when URL not in SEO map', async () => {
       context.athenaClient.query.resolves([
         {
           path: '/unknown-page',
@@ -1218,8 +1218,8 @@ describe('Paid Keyword Optimizer Audit', () => {
         },
       ]);
 
-      // Ahrefs has data for a different URL
-      const ahrefsPages = [
+      // SEO has data for a different URL
+      const seoPages = [
         {
           url: 'https://example.com/other-page',
           topKeyword: 'kw',
@@ -1228,16 +1228,16 @@ describe('Paid Keyword Optimizer Audit', () => {
           topKeywordBestPositionTitle: 'Title',
         },
       ];
-      context.s3Client = createMockS3Client(sandbox, ahrefsPages);
+      context.s3Client = createMockS3Client(sandbox, seoPages);
 
       await runPaidKeywordAnalysisStep(stepContext);
 
-      // Page with no ahrefs data has cpc=0, so priorityScore=0 and gets filtered out
+      // Page with no seo data has cpc=0, so priorityScore=0 and gets filtered out
       expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
-    it('should handle full pipeline integration: Ahrefs fetch -> URL filter -> bounce -> score -> cap', async () => {
-      // 5 pages: 1 excluded URL, 1 low bounce, 1 no ahrefs match, 2 good
+    it('should handle full pipeline integration: SEO fetch -> URL filter -> bounce -> score -> cap', async () => {
+      // 5 pages: 1 excluded URL, 1 low bounce, 1 no seo match, 2 good
       context.athenaClient.query.resolves([
         {
           path: '/help/article', trf_type: 'paid', trf_channel: 'search', pageviews: '1000', bounce_rate: '0.8', traffic_loss: '800', engaged_scroll_rate: '0.1',
@@ -1246,7 +1246,7 @@ describe('Paid Keyword Optimizer Audit', () => {
           path: '/low-bounce', trf_type: 'paid', trf_channel: 'search', pageviews: '1000', bounce_rate: '0.2', traffic_loss: '200', engaged_scroll_rate: '0.1',
         },
         {
-          path: '/no-ahrefs', trf_type: 'paid', trf_channel: 'search', pageviews: '1000', bounce_rate: '0.8', traffic_loss: '800', engaged_scroll_rate: '0.1',
+          path: '/no-seo', trf_type: 'paid', trf_channel: 'search', pageviews: '1000', bounce_rate: '0.8', traffic_loss: '800', engaged_scroll_rate: '0.1',
         },
         {
           path: '/good-page1', trf_type: 'paid', trf_channel: 'search', pageviews: '2000', bounce_rate: '0.7', traffic_loss: '1400', engaged_scroll_rate: '0.2',
@@ -1256,14 +1256,14 @@ describe('Paid Keyword Optimizer Audit', () => {
         },
       ]);
 
-      const ahrefsPages = [
+      const seoPages = [
         { url: 'https://example.com/help/article', topKeyword: 'kw', cpc: 3.0, sum_traffic: 2000, topKeywordBestPositionTitle: 'T' },
         { url: 'https://example.com/low-bounce', topKeyword: 'kw', cpc: 2.0, sum_traffic: 1000, topKeywordBestPositionTitle: 'T' },
-        // /no-ahrefs is not in this list
+        // /no-seo is not in this list
         { url: 'https://example.com/good-page1', topKeyword: 'kw1', cpc: 5.0, sum_traffic: 5000, topKeywordBestPositionTitle: 'Good 1' },
         { url: 'https://example.com/good-page2', topKeyword: 'kw2', cpc: 3.0, sum_traffic: 3000, topKeywordBestPositionTitle: 'Good 2' },
       ];
-      stepContext.s3Client = createMockS3Client(sandbox, ahrefsPages);
+      stepContext.s3Client = createMockS3Client(sandbox, seoPages);
 
       await runPaidKeywordAnalysisStep(stepContext);
 
