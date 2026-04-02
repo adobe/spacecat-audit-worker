@@ -1,3 +1,10 @@
+## [1.390.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.390.1...v1.390.2) (2026-04-02)
+
+
+### Bug Fixes
+
+* **ci:** skip S3 artifact upload ([#2284](https://github.com/adobe/spacecat-audit-worker/issues/2284)) ([682d861](https://github.com/adobe/spacecat-audit-worker/commit/682d8619a22baf4365c2197a1ede514adf5363d3))
+
 ## [1.390.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.390.0...v1.390.1) (2026-04-02)
 
 
