@@ -218,7 +218,6 @@ export async function handleCdnBucketConfigChanges(context, data) {
   const configuration = await Configuration.findLatest();
   configuration.enableHandlerForSite('cdn-logs-analysis', site);
   configuration.enableHandlerForSite('cdn-logs-report', site);
-  configuration.enableHandlerForSite('page-citability', site);
   await configuration.save();
 
   // Run analysis and reporting for Adobe-managed Fastly customers
