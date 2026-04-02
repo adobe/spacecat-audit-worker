@@ -1353,6 +1353,94 @@ describe('generateSuggestionData', async function test() {
     expect(result).to.have.lengthOf(2);
     expect(context.log.error).to.have.been.calledWithMatch(/Final suggestion error for/);
   });
+
+  it('should exclude urlFrom from siteData candidates passed to AI', async () => {
+    // When siteData contains only the referring page (urlFrom), it must be filtered out
+    // so the AI never receives it as a replacement candidate.
+    const urlFrom = 'https://example.com/referring-page';
+    const urlTo = 'https://example.com/broken-page';
+
+    const { filterByAuditScope, extractPathPrefix, isWithinAuditScope } = await import('../../../src/internal-links/subpath-filter.js');
+    const mockedModule = await esmock('../../../src/internal-links/suggestions-generator.js', {
+      '../../../src/support/utils.js': {
+        getScrapedDataForSiteId: sandbox.stub().resolves({
+          siteData: [{ url: urlFrom }], // Only candidate is the referring page itself
+          headerLinks: [],
+        }),
+        limitConcurrency: (fns) => Promise.all(fns.map((fn) => fn())),
+      },
+      '../../../src/internal-links/subpath-filter.js': {
+        filterByAuditScope, extractPathPrefix, isWithinAuditScope,
+      },
+    });
+
+    const capturedAlternativeUrls = [];
+    azureOpenAIClient.fetchChatCompletion.callsFake(async (requestBody) => {
+      try {
+        const body = typeof requestBody === 'string' ? JSON.parse(requestBody) : requestBody;
+        if (Array.isArray(body?.alternative_urls)) {
+          capturedAlternativeUrls.push(...body.alternative_urls);
+        }
+      } catch { /* prompt may not be JSON */ }
+      return {
+        choices: [{ message: { content: JSON.stringify({ suggested_urls: ['https://example.com'], aiRationale: 'fallback' }) }, finish_reason: 'stop' }],
+      };
+    });
+
+    const result = await mockedModule.generateSuggestionData(
+      'https://example.com',
+      [{ urlTo, urlFrom }],
+      context,
+      site,
+    );
+
+    expect(result).to.be.an('array').with.lengthOf(1);
+    // urlFrom must never appear in any alternative_urls list sent to AI
+    expect(capturedAlternativeUrls).to.not.include(urlFrom);
+  });
+
+  it('should exclude urlFrom from headerLinks candidates passed to AI', async () => {
+    // The referring page must not appear in header link suggestions either.
+    const urlFrom = 'https://example.com/referring-page';
+    const urlTo = 'https://example.com/broken-page';
+
+    const { filterByAuditScope, extractPathPrefix, isWithinAuditScope } = await import('../../../src/internal-links/subpath-filter.js');
+    const mockedModule = await esmock('../../../src/internal-links/suggestions-generator.js', {
+      '../../../src/support/utils.js': {
+        getScrapedDataForSiteId: sandbox.stub().resolves({
+          siteData: [{ url: 'https://example.com/other-page' }],
+          headerLinks: [{ url: urlFrom }], // Header links contain the referring page
+        }),
+        limitConcurrency: (fns) => Promise.all(fns.map((fn) => fn())),
+      },
+      '../../../src/internal-links/subpath-filter.js': {
+        filterByAuditScope, extractPathPrefix, isWithinAuditScope,
+      },
+    });
+
+    const capturedAlternativeUrls = [];
+    azureOpenAIClient.fetchChatCompletion.callsFake(async (requestBody) => {
+      try {
+        const body = typeof requestBody === 'string' ? JSON.parse(requestBody) : requestBody;
+        if (Array.isArray(body?.alternative_urls)) {
+          capturedAlternativeUrls.push(...body.alternative_urls);
+        }
+      } catch { /* prompt may not be JSON */ }
+      return {
+        choices: [{ message: { content: JSON.stringify({ suggested_urls: ['https://example.com/other-page'], aiRationale: 'good' }) }, finish_reason: 'stop' }],
+      };
+    });
+
+    const result = await mockedModule.generateSuggestionData(
+      'https://example.com',
+      [{ urlTo, urlFrom }],
+      context,
+      site,
+    );
+
+    expect(result).to.be.an('array').with.lengthOf(1);
+    expect(capturedAlternativeUrls).to.not.include(urlFrom);
+  });
 });
 
 describe('syncBrokenInternalLinksSuggestions', () => {

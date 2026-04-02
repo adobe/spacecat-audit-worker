@@ -233,13 +233,14 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
    * @returns {Promise<Object>} Updated link object with suggested URLs and AI rationale
    */
   const processLink = async (link, headerSuggestions) => {
-    // Use link-specific filtered data for this broken link
-    const linkBatches = link.filteredSiteData
-      ? Array.from(
-        { length: Math.ceil(link.filteredSiteData.length / BATCH_SIZE) },
-        (_, i) => link.filteredSiteData.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE),
-      )
-      : dataBatches;
+    // Use link-specific filtered data, excluding the referring page (urlFrom) —
+    // it is the source of the broken link and must not be suggested as a replacement.
+    const sourceData = (link.filteredSiteData || filteredSiteData)
+      .filter((item) => (typeof item === 'string' ? item : item?.url) !== link.urlFrom);
+    const linkBatches = Array.from(
+      { length: Math.ceil(sourceData.length / BATCH_SIZE) },
+      (_, i) => sourceData.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE),
+    );
 
     const linkTotalBatches = linkBatches.length;
     const suggestions = await processBatches(linkBatches, link.urlTo);
@@ -281,10 +282,11 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
   const headerSuggestionsResults = [];
   for (const link of brokenLinksWithFilteredData) {
     try {
-      // Use link-specific filtered header links
+      // Use link-specific filtered header links, excluding the referring page (urlFrom)
       const linkHeaderLinks = link.filteredHeaderLinks || filteredHeaderLinks;
-      // Extract only URLs from header links (items can be strings or objects with url property)
-      const headerUrls = linkHeaderLinks.map((item) => (typeof item === 'string' ? item : item.url));
+      const headerUrls = linkHeaderLinks
+        .map((item) => (typeof item === 'string' ? item : item.url))
+        .filter((url) => url !== link.urlFrom);
       // eslint-disable-next-line no-await-in-loop
       const requestBody = await getPrompt({ alternative_urls: headerUrls, broken_url: link.urlTo }, 'broken-backlinks', log);
       // eslint-disable-next-line no-await-in-loop
