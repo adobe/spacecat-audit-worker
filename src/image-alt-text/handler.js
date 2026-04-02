@@ -47,15 +47,10 @@ async function getTopPagesLimit(site, context) {
   const { log, dataAccess } = context;
   const rawOnDemand = context.auditContext?.onDemand;
   const onDemand = rawOnDemand === true || rawOnDemand === 'true';
-  let isSummitPlgEnabled = false;
-  try {
-    const { Configuration } = dataAccess;
-    const configuration = await Configuration.findLatest();
-    const summitPlgFromConfig = configuration.isHandlerEnabledForSite('summit-plg', site);
-    isSummitPlgEnabled = !onDemand && summitPlgFromConfig;
-  } catch (error) {
-    log.warn(`[${AUDIT_TYPE}]: Failed to load configuration, defaulting to standard page limit: ${error.message}`);
-  }
+  const { Configuration } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  const summitPlgFromConfig = configuration.isHandlerEnabledForSite('summit-plg', site);
+  const isSummitPlgEnabled = !onDemand && summitPlgFromConfig;
   const pageLimit = isSummitPlgEnabled ? SUMMIT_PLG_PAGE_LIMIT : DEFAULT_PAGE_LIMIT;
   log.debug(`[${AUDIT_TYPE}]: Page limit set to ${pageLimit} (summit-plg active: ${isSummitPlgEnabled}, onDemand: ${onDemand})`);
   return { pageLimit, isSummitPlg: isSummitPlgEnabled };

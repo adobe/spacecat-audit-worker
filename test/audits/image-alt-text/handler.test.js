@@ -894,21 +894,6 @@ describe('Image Alt Text Handler', () => {
       );
     });
 
-    it('should use default page limit when Configuration.findLatest throws error', async () => {
-      context.dataAccess.Configuration.findLatest.rejects(new Error('Configuration error'));
-      const pageUrls = Array.from({ length: 5 }, (_, i) => `https://example.com/page${i + 1}`);
-      getTopPageUrlsStub.resolves(pageUrls);
-
-      const result = await handlerModule.processScraping(context);
-
-      expect(context.log.warn).to.have.been.calledWith(
-        sinon.match('[alt-text]: Failed to load configuration, defaulting to standard page limit: Configuration error'),
-      );
-      expect(context.log.debug).to.have.been.calledWith(
-        '[alt-text]: Page limit set to 100 (summit-plg active: false, onDemand: false)',
-      );
-      expect(result.urls).to.have.lengthOf(5);
-    });
   });
 
   describe('processAltTextWithMystique with page limits', () => {
@@ -1082,23 +1067,6 @@ describe('Image Alt Text Handler', () => {
       );
     });
 
-    it('should use default page limit when Configuration.findLatest throws error', async () => {
-      // Only the first call (getTopPagesLimit) rejects; isDecorativeAgentEnabled's call resolves
-      context.dataAccess.Configuration.findLatest
-        .onFirstCall().rejects(new Error('Configuration error'))
-        .resolves(configurationMock);
-      const pageUrls = Array.from({ length: 5 }, (_, i) => `https://example.com/page${i + 1}`);
-      getTopPageUrlsStub.resolves(pageUrls);
-
-      await handlerModule.processAltTextWithMystique(context);
-
-      expect(context.log.warn).to.have.been.calledWith(
-        sinon.match('[alt-text]: Failed to load configuration, defaulting to standard page limit: Configuration error'),
-      );
-      expect(context.log.debug).to.have.been.calledWith(
-        '[alt-text]: Page limit set to 100 (summit-plg active: false, onDemand: false)',
-      );
-    });
   });
 
   describe('processAltTextWithMystique reads stored offset', () => {
