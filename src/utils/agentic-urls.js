@@ -67,7 +67,11 @@ export async function getTopAgenticUrlsFromAthena(
 
   try {
     const configuration = await context.dataAccess.Configuration.findLatest();
-    if (configuration && !configuration.isHandlerEnabledForSite('cdn-logs-analysis', site)) {
+    if (!configuration) {
+      log.warn(`Agentic URLs - Skipping Athena query because no configuration was found for site ${site.getId()}`);
+      return [];
+    }
+    if (!configuration.isHandlerEnabledForSite('cdn-logs-analysis', site)) {
       log.info(`Agentic URLs - Skipping Athena query because cdn-logs-analysis is disabled for site ${site.getId()}`);
       return [];
     }

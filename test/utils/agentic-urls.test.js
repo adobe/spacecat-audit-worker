@@ -190,21 +190,21 @@ describe('agentic-urls', () => {
       expect(mockAthenaClient.query).to.not.have.been.called;
     });
 
-    it('should continue to Athena when Configuration.findLatest returns null', async () => {
+    it('should return empty array early when Configuration.findLatest returns null', async () => {
       const site = createMockSite();
       const context = createMockContext();
       context.dataAccess.Configuration.findLatest.resolves(null);
 
-      mockAthenaClient.query.resolves([
-        { url: '/page1' },
-      ]);
-
       const result = await getTopAgenticUrlsFromAthena(site, context);
 
-      expect(result).to.deep.equal(['https://www.example.com/page1']);
-      expect(mockGetCdnAwsRuntime).to.have.been.calledOnce;
-      expect(mockGetS3Config).to.have.been.calledOnce;
-      expect(mockAthenaClient.query).to.have.been.calledOnce;
+      expect(result).to.deep.equal([]);
+      expect(context.log.warn).to.have.been.calledWith(
+        'Agentic URLs - Skipping Athena query because no configuration was found for site site-123',
+      );
+      expect(mockGetCdnAwsRuntime).to.not.have.been.called;
+      expect(mockGetS3Config).to.not.have.been.called;
+      expect(mockWeeklyBreakdownQueries.createTopUrlsQueryWithLimit).to.not.have.been.called;
+      expect(mockAthenaClient.query).to.not.have.been.called;
     });
 
     it('should return empty array when Athena returns no results', async () => {
