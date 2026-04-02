@@ -1,3 +1,10 @@
+# [1.392.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.391.3...v1.392.0) (2026-04-02)
+
+
+### Features
+
+* CWV Suggestions for PLG customers should be auto-validated ([#2216](https://github.com/adobe/spacecat-audit-worker/issues/2216)) ([55a3bc2](https://github.com/adobe/spacecat-audit-worker/commit/55a3bc2429dc6b52fedcf2e2fa293e88f1709ebc))
+
 ## [1.391.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.391.2...v1.391.3) (2026-04-02)
 
 
