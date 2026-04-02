@@ -126,11 +126,16 @@ export default async function handler(message, context) {
       aiRationale = existingSuggestedUrls.length > 0 ? existingData.aiRationale || '' : '';
     }
 
+    // Preserve factId from Mystique enrichment (autofix bridge)
     const updatedData = {
       ...existingData,
       urlsSuggested: nextSuggestedUrls,
       aiRationale,
     };
+    // Add factId if provided by Mystique
+    if (brokenLink.factId) {
+      updatedData.factId = brokenLink.factId;
+    }
     warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
     suggestion.setData(updatedData);
     toSave.push(suggestion);
