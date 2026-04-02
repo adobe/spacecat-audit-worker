@@ -309,13 +309,13 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   const {
     env, log, s3Client,
   } = context;
+  const { Configuration } = context.dataAccess;
 
   const siteId = site.getSiteId();
   const domain = finalUrl;
 
   // Ensure relevant audits and imports are enabled
   try {
-    const { Configuration } = context.dataAccess;
     const configuration = await Configuration.findLatest();
 
     const auditsToEnable = [
@@ -325,7 +325,6 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       'llm-error-pages',
       'summarization',
       REFERRAL_TRAFFIC_AUDIT,
-      'cdn-logs-report',
       'readability',
       'wikipedia-analysis',
     ];
@@ -501,9 +500,16 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   }
 
   if (hasCdnLogsChanges) {
-    log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
-    await triggerCdnLogsReport(context, site);
-    triggeredSteps.push('cdn-logs-report');
+    const configuration = await Configuration.findLatest();
+    const isCdnLogsReportEnabled = await configuration.isHandlerEnabledForSite('cdn-logs-report', site);
+
+    if (isCdnLogsReportEnabled) {
+      log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
+      await triggerCdnLogsReport(context, site);
+      triggeredSteps.push('cdn-logs-report');
+    } else {
+      log.info('LLMO config changes detected in categories; skipping cdn-logs-report because it is disabled for this site');
+    }
   }
 
   const hasBrandPresenceChanges = changes.topics || changes.categories || changes.entities;
