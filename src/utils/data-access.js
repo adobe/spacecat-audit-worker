@@ -280,7 +280,8 @@ export const defaultMergeStatusFunction = (existing, newDataItem, context) => {
   if (currentStatus === SuggestionDataAccess.STATUSES.OUTDATED) {
     log.warn('Outdated suggestion found in audit. Possible regression.');
     const requiresValidation = Boolean(site?.requiresValidation);
-    return requiresValidation
+    const { isSummitPlg = false } = context;
+    return (requiresValidation && !isSummitPlg)
       ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
       : SuggestionDataAccess.STATUSES.NEW;
   }
@@ -351,6 +352,22 @@ export async function syncSuggestions({
 
   log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
+  // Prepare new suggestions - O(N) with Set lookup
+  const { site, dataAccess } = context;
+  const requiresValidation = Boolean(site?.requiresValidation);
+
+  // PLG/Freemium sites bypass manual validation — suggestions go directly to NEW status
+  // Compute isSummitPlg before the update loop so it can be used in mergeStatusFunction too
+  let isSummitPlg = false;
+  if (bypassValidationForPlg && requiresValidation && site) {
+    const { Configuration } = dataAccess;
+    const configuration = await Configuration.findLatest();
+    isSummitPlg = configuration.isHandlerEnabledForSite('summit-plg', site);
+    if (isSummitPlg) {
+      log.info(`[syncSuggestions] PLG site ${site.getId()} - skipping manual validation for suggestions`);
+    }
+  }
+
   // Update existing suggestions - O(N) with Map lookup
   const { Suggestion } = context.dataAccess;
   const toUpdate = existingSuggestions
@@ -365,7 +382,8 @@ export async function syncSuggestions({
     existing.setData(mergeDataFunction(existing.getData(), newDataItem));
 
     // Use the merge status function to determine if status should change
-    const newStatus = mergeStatusFunction(existing, newDataItem, context);
+    // Pass isSummitPlg in context so mergeStatusFunction can apply the PLG bypass
+    const newStatus = mergeStatusFunction(existing, newDataItem, { ...context, isSummitPlg });
     // null indicates to keep existing status
     if (newStatus !== null) {
       existing.setStatus(newStatus);
@@ -377,21 +395,6 @@ export async function syncSuggestions({
     await Suggestion.saveMany(toUpdate);
   }
   log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
-
-  // Prepare new suggestions - O(N) with Set lookup
-  const { site, dataAccess } = context;
-  const requiresValidation = Boolean(site?.requiresValidation);
-
-  // PLG/Freemium sites bypass manual validation — suggestions go directly to NEW status
-  let isSummitPlg = false;
-  if (bypassValidationForPlg && requiresValidation && site) {
-    const { Configuration } = dataAccess;
-    const configuration = await Configuration.findLatest();
-    isSummitPlg = configuration.isHandlerEnabledForSite('summit-plg', site);
-    if (isSummitPlg) {
-      log.info(`[syncSuggestions] PLG site ${site.getId()} - skipping manual validation for suggestions`);
-    }
-  }
 
   const newSuggestions = newData
     .filter((data) => !existingSuggestionKeys.has(buildKey(data)))
