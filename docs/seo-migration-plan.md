@@ -74,7 +74,7 @@ already writes `seo/agg-metrics.json` with the same structure. This is a rename 
 - [x] Update `guidance-opportunity-mapper.js:180-181` — field names
 
 ### Import type constants (keep as-is for now)
-- `'llmo-prompts-ahrefs'` in geo-brand-presence and llmo-customer-analysis — these are import
+- `'llmo-prompts-ahrefs'` in llmo-customer-analysis — these are import
   type identifiers shared across services. Renaming requires coordinated change across
   import-worker, data-access, and all consumers. **Deferred to a separate PR.**
 
