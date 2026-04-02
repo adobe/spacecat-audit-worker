@@ -105,25 +105,61 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
 }
 
 /**
- * Retrieves the top pages for a given site.
+ * Extracts custom audit target URL strings from a site's configuration.
+ *
+ * @param {Object} site - The site object.
+ * @param {Object} log - The logging object.
+ * @returns {string[]} - Array of URL strings from config.auditTargetURLs.
+ */
+export function getAuditTargetUrls(site, log) {
+  try {
+    const config = site.getConfig?.();
+    const entries = config?.getAuditTargetURLs?.() || [];
+    const urls = entries.map(({ url }) => url).filter(Boolean);
+    if (urls.length > 0) {
+      log?.info(`Found ${urls.length} custom audit target URLs from site config`);
+    }
+    return urls;
+  } catch (e) {
+    log?.warn(`Failed to read audit target URLs: ${e.message}`);
+    return [];
+  }
+}
+
+/**
+ * Retrieves the top pages for a given site, optionally merged with custom
+ * audit target URLs from the site's configuration.
  *
  * @param {Object} dataAccess - The data access object for database operations.
  * @param {string} siteId - The site ID to retrieve the top pages for.
  * @param {Object} context - The context object containing necessary information.
  * @param {Object} log - The logging object.
+ * @param {Object} [site] - Optional site object; when provided, custom audit
+ *   target URLs from config.auditTargetURLs are prepended (highest priority).
  * @returns {Promise<Array<Object>>} - A promise that resolves to an array of top pages.
  */
-export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
+export async function getTopPagesForSiteId(dataAccess, siteId, context, log, site) {
   try {
     const { SiteTopPage } = dataAccess;
     const result = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'seo', 'global');
     log.info('Received top pages response:', JSON.stringify(result, null, 2));
 
     const topPages = result || [];
-    if (topPages.length > 0) {
-      const topPagesUrls = topPages.map((page) => ({ url: page.getUrl() }));
-      log.info(`Found ${topPagesUrls.length} top pages`);
-      return topPagesUrls;
+    const topPagesUrls = topPages.map((page) => ({ url: page.getUrl() }));
+
+    const customUrls = site ? getAuditTargetUrls(site, log) : [];
+    const customUrlObjs = customUrls.map((url) => ({ url }));
+
+    const seen = new Set();
+    const merged = [...customUrlObjs, ...topPagesUrls].filter(({ url }) => {
+      if (seen.has(url)) return false;
+      seen.add(url);
+      return true;
+    });
+
+    if (merged.length > 0) {
+      log.info(`Found ${merged.length} top pages (${topPagesUrls.length} from SEO, ${customUrls.length} custom)`);
+      return merged;
     }
     log.info('No top pages found');
     return [];

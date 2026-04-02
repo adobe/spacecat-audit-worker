@@ -294,8 +294,8 @@ export async function tocAuditRunner(baseURL, context, site) {
   const { S3_SCRAPER_BUCKET_NAME } = context.env;
 
   try {
-    // Get top 200 pages
-    const topPages = await getTopPages(dataAccess, siteId, context, log, 200);
+    // Get top 200 pages (site merges custom auditTargetURLs via getTopPagesForSiteId)
+    const topPages = await getTopPages(dataAccess, siteId, context, log, site, 200);
 
     if (topPages.length === 0) {
       log.warn('[TOC Audit] No top pages found, ending audit.');
