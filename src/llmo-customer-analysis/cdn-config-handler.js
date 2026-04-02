@@ -25,7 +25,7 @@ export async function fetchCommerceFastlyService(domain, { log }) {
   if (!domain || !process.env.LLMO_HLX_API_KEY) return null;
 
   try {
-    const res = await fetch('https://main--project-elmo-ui-data--adobe.aem.live/adobe-managed-domains/commerce-fastly-domains.json?limit=5000', {
+    const res = await fetch('https://main--project-elmo-ui-data--adobe.aem.live/adobe-managed-domains/commerce-fastly-domains.json?limit=10000', {
       headers: { 'User-Agent': 'spacecat-audit-worker', Authorization: `token ${process.env.LLMO_HLX_API_KEY}` },
     });
 
