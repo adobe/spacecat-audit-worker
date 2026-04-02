@@ -41,47 +41,6 @@ export async function fetchRobotsTxt(siteUrl, log) {
     const parsed = robotsParser(finalRobotsUrl, content);
     parsed.robotsUrl = finalRobotsUrl;
 
-    /* c8 ignore start — TEMP logging for manual testing; remove block when deleting TEMP log */
-    // TEMP: Disallow lines only in groups with User-agent: * (matches isAllowed(url, '*')).
-    const tempDisallowPathsForWildcardUserAgent = (raw) => {
-      const lines = raw.split(/\r?\n/);
-      const groups = [];
-      let g = { agents: [], disallows: [] };
-      const flush = () => {
-        if (g.agents.length > 0 || g.disallows.length > 0) {
-          groups.push(g);
-        }
-        g = { agents: [], disallows: [] };
-      };
-      for (const line of lines) {
-        const t = line.trim();
-        if (!t) {
-          flush();
-        } else if (!t.startsWith('#')) {
-          const uaMatch = t.match(/^user-agent:\s*(.+)$/i);
-          const disMatch = t.match(/^disallow:\s*(.*)$/i);
-          if (uaMatch) {
-            g.agents.push(uaMatch[1].trim());
-          } else if (disMatch) {
-            g.disallows.push(disMatch[1].trim() || '(empty)');
-          }
-        }
-      }
-      flush();
-      const patterns = [];
-      for (const gr of groups) {
-        if (gr.agents.includes('*')) {
-          patterns.push(...gr.disallows);
-        }
-      }
-      return patterns;
-    };
-    const disallowPatterns = tempDisallowPathsForWildcardUserAgent(content);
-    log.info(
-      `[robots-utils] TEMP ${finalRobotsUrl} Disallow (User-agent * only): ${JSON.stringify(disallowPatterns)}`,
-    );
-    /* c8 ignore stop */
-
     return parsed;
   } catch (error) {
     log.warn(`[robots-utils] Failed to fetch/parse robots.txt for ${siteUrl}: ${error.message}`);
