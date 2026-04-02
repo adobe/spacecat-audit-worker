@@ -511,7 +511,7 @@ describe('LLMO Customer Analysis Handler', () => {
 
       expect(sqs.sendMessage).to.not.have.been.called;
       expect(log.info).to.have.been.calledWith(
-        'LLMO config changes detected affecting brand presence; geo-brand-presence audits will pick up changes on next scheduled run',
+        'LLMO config changes detected affecting brand presence; data collection will pick up changes on the next scheduled run',
       );
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(false);
@@ -552,7 +552,7 @@ describe('LLMO Customer Analysis Handler', () => {
 
       expect(sqs.sendMessage).to.not.have.been.called;
       expect(log.info).to.have.been.calledWith(
-        'LLMO config changes detected affecting brand presence; geo-brand-presence audits will pick up changes on next scheduled run',
+        'LLMO config changes detected affecting brand presence; data collection will pick up changes on the next scheduled run',
       );
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(false);
@@ -656,7 +656,7 @@ describe('LLMO Customer Analysis Handler', () => {
 
       expect(sqs.sendMessage).to.not.have.been.called;
       expect(log.info).to.have.been.calledWith(
-        'LLMO config changes detected affecting brand presence; geo-brand-presence audits will pick up changes on next scheduled run',
+        'LLMO config changes detected affecting brand presence; data collection will pick up changes on the next scheduled run',
       );
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(false);
@@ -697,7 +697,7 @@ describe('LLMO Customer Analysis Handler', () => {
 
       expect(sqs.sendMessage).to.not.have.been.called;
       expect(log.info).to.have.been.calledWith(
-        'LLMO config changes detected affecting brand presence; geo-brand-presence audits will pick up changes on next scheduled run',
+        'LLMO config changes detected affecting brand presence; data collection will pick up changes on the next scheduled run',
       );
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(false);
@@ -969,7 +969,7 @@ describe('LLMO Customer Analysis Handler', () => {
       );
 
       expect(log.info).to.have.been.calledWith(
-        'LLMO config changes detected affecting brand presence; geo-brand-presence audits will pick up changes on next scheduled run',
+        'LLMO config changes detected affecting brand presence; data collection will pick up changes on the next scheduled run',
       );
       expect(result.auditResult.status).to.equal('completed');
       // Only brand presence changes, no CDN or other triggered steps
@@ -1246,8 +1246,6 @@ describe('LLMO Customer Analysis Handler', () => {
         'llmo-referral-traffic',
         'readability',
         'wikipedia-analysis',
-        'geo-brand-presence',
-        'geo-brand-presence-free-1',
       ];
 
       for (const audit of expectedAudits) {
