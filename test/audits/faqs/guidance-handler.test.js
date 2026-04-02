@@ -384,6 +384,23 @@ describe('FAQs guidance handler', () => {
     expect(guidanceObj.guidance[0].type).to.equal('CONTENT_UPDATE');
   });
 
+  it('should handle site config without getIncludedURLs method', async () => {
+    dummySite.getConfig = sinon.stub().returns({});
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(200);
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
+  });
+
   it('should decorate FAQ URLs using desired URL overlap first', async () => {
     dummySite.getConfig = sinon.stub().returns({
       getIncludedURLs: sinon.stub().resolves(['https://www.adobe.com/desired-page']),

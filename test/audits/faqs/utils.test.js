@@ -582,6 +582,31 @@ describe('FAQ Utils', () => {
         sources: [],
       })).to.equal('');
     });
+
+    it('should handle empty and invalid URLs while matching overlaps', () => {
+      expect(decorateFaqSuggestionUrl({
+        relatedUrls: ['not-a-valid-url'],
+        includedURLsSet: new Set(['not-a-valid-url']),
+        originalUrl: 'https://example.com/original',
+        sources: [],
+      })).to.equal('not-a-valid-url');
+
+      expect(decorateFaqSuggestionUrl({
+        relatedUrls: ['https://example.com/a'],
+        includedURLsSet: new Set(['']),
+        originalUrl: '',
+        sources: [''],
+      })).to.equal('https://example.com/a');
+    });
+
+    it('should normalize root URLs when matching overlaps', () => {
+      expect(decorateFaqSuggestionUrl({
+        relatedUrls: ['https://example.com/'],
+        includedURLsSet: new Set(['https://example.com']),
+        originalUrl: '',
+        sources: [],
+      })).to.equal('https://example.com/');
+    });
   });
 
   describe('validateContentAI', () => {
