@@ -32,10 +32,14 @@ export async function fetchRobotsTxt(siteUrl, log) {
 
     log.debug(`[robots-utils] Fetching ${robotsUrl}`);
     const response = await fetch(robotsUrl);
+    // Use the final URL after redirects so robots-parser matches the correct origin.
+    // Without this, apex→www redirects cause isAllowed() to return undefined for all
+    // www URLs (origin mismatch), which is treated as "allowed" — bypassing all rules.
+    const finalRobotsUrl = response.url || robotsUrl;
     const content = await response.text();
 
-    const parsed = robotsParser(robotsUrl, content);
-    parsed.robotsUrl = robotsUrl;
+    const parsed = robotsParser(finalRobotsUrl, content);
+    parsed.robotsUrl = finalRobotsUrl;
 
     /* c8 ignore start — TEMP logging for manual testing; remove block when deleting TEMP log */
     // TEMP: Disallow lines only in groups with User-agent: * (matches isAllowed(url, '*')).
@@ -74,7 +78,7 @@ export async function fetchRobotsTxt(siteUrl, log) {
     };
     const disallowPatterns = tempDisallowPathsForWildcardUserAgent(content);
     log.info(
-      `[robots-utils] TEMP ${robotsUrl} Disallow (User-agent * only): ${JSON.stringify(disallowPatterns)}`,
+      `[robots-utils] TEMP ${finalRobotsUrl} Disallow (User-agent * only): ${JSON.stringify(disallowPatterns)}`,
     );
     /* c8 ignore stop */
 

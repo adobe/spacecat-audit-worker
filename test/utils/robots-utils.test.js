@@ -140,6 +140,35 @@ describe('robots-utils', () => {
       expect(robots.isAllowed('https://example.com/search/other', '*')).to.be.true;
       expect(robots.isAllowed('https://example.com/products', '*')).to.be.true;
     });
+
+    it('should use response.url (post-redirect) as the robots.txt origin', async () => {
+      // Simulates apex→www redirect: siteUrl is apex, but fetch response.url is www.
+      // Without this fix, robotsParser gets the apex origin and returns undefined
+      // for all www URLs — bypassing every Disallow rule.
+      const robotsContent = 'User-agent: *\nDisallow: /my-account/*\nDisallow: /guestpay/bill-pay\nAllow: /';
+      const mockFetch = sinon.stub().resolves({
+        url: 'https://www.example.com/robots.txt', // final URL after redirect
+        text: sinon.stub().resolves(robotsContent),
+      });
+
+      const { fetchRobotsTxt: fetchRobotsTxtMocked } = await esmock(
+        '../../src/utils/robots-utils.js',
+        {
+          '@adobe/spacecat-shared-utils': { tracingFetch: mockFetch },
+        },
+      );
+
+      // siteUrl is the apex (as stored in SpaceCat), fetch redirects to www
+      const robots = await fetchRobotsTxtMocked('https://example.com', log);
+
+      expect(robots.robotsUrl).to.equal('https://www.example.com/robots.txt');
+      // Rules must apply to www URLs
+      expect(robots.isAllowed('https://www.example.com/my-account/settings', '*')).to.be.false;
+      expect(robots.isAllowed('https://www.example.com/guestpay/bill-pay', '*')).to.be.false;
+      expect(robots.isAllowed('https://www.example.com/products', '*')).to.be.true;
+      // apex URLs should not match (different origin from post-redirect robots.txt)
+      expect(robots.isAllowed('https://example.com/my-account/settings', '*')).to.be.undefined;
+    });
   });
 
   // ---------------------------------------------------------------------------
