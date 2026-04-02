@@ -24,47 +24,38 @@ const MAX_SUGGESTION_PROMPTS = 200;
 const WEEKS_TO_LOOK_BACK = 4;
 
 /**
- * Resolves the best URL for a prompt row using a priority chain:
- * 1. First related URL that also appears in includedURLs
- * 2. Top (first) related URL
- * 3. Original URL column value
- * @param {string[]} relatedUrls - Related URLs from the brand presence sheet
- * @param {Set<string>} includedURLsSet - Pre-built Set of site-config includedURLs
- * @param {string} originalUrl - URL column value from the spreadsheet
- * @returns {string}
- */
-export function resolvePromptUrl(relatedUrls, includedURLsSet, originalUrl) {
-  if (relatedUrls.length > 0) {
-    if (includedURLsSet.size > 0) {
-      const overlap = relatedUrls.find((u) => includedURLsSet.has(u));
-      if (overlap) return overlap;
-    }
-    return relatedUrls[0];
-  }
-  return originalUrl;
-}
-
-/**
  * Groups prompts by URL and topic
+ * Each group retains the original URL column value and related-URL metadata,
+ * but URL assignment is deferred until Mystique returns FAQ suggestions.
  * @param {Array} prompts - Array of prompt objects with url, topic, question
- * @returns {Array} Grouped prompts [{ url, topic, prompts: [] }]
+ * @returns {Array} Grouped prompts [{ url, originalUrl, relatedUrls, topic, prompts: [] }]
  */
 function groupPromptsByUrlAndTopic(prompts) {
   const groupMap = new Map();
 
   prompts.forEach((prompt) => {
-    const { url, topic, question } = prompt;
+    const {
+      url, topic, question, relatedUrls = [],
+    } = prompt;
 
     const key = `${url || 'global'}|||${topic}`;
     if (!groupMap.has(key)) {
       groupMap.set(key, {
         url,
+        originalUrl: url,
+        relatedUrls: [],
         topic,
         prompts: [],
       });
     }
 
-    groupMap.get(key).prompts.push(question);
+    const group = groupMap.get(key);
+    group.prompts.push(question);
+    relatedUrls.forEach((relatedUrl) => {
+      if (relatedUrl && !group.relatedUrls.includes(relatedUrl)) {
+        group.relatedUrls.push(relatedUrl);
+      }
+    });
   });
 
   return Array.from(groupMap.values());
@@ -141,7 +132,8 @@ async function readBrandPresenceSpreadsheet(filename, outputLocation, sharepoint
 }
 
 /**
- * Sorts prompts with URLs first, then prompts without URLs
+ * Sorts prompts with URL-column rows first, then generic rows.
+ * Related URLs are preserved as metadata only and do not affect Mystique grouping.
  * @param {Array} prompts - Array of prompt objects with url, topic, and question
  * @returns {Array} Sorted array of prompts
  */
@@ -274,19 +266,9 @@ async function runFaqsAudit(url, context, site) {
 
     log.info(`[FAQ] Using brand presence data from ${usedPeriodIdentifier}`);
 
-    const siteConfig = await site.getConfig?.();
-    const includedURLs = await siteConfig?.getIncludedURLs?.('faqs') || [];
-    const includedURLsSet = new Set(includedURLs);
-
-    const resolvedPrompts = topPrompts.map((p) => ({
-      ...p,
-      url: resolvePromptUrl(p.relatedUrls, includedURLsSet, p.url),
-    }));
-
-    log.info(`[FAQ] Resolved prompt URLs using ${includedURLs.length} includedURLs and related URLs from spreadsheet`);
-
-    // Sort prompts: ones with URLs first, then ones without URLs
-    const sortedPrompts = sortPrompts(resolvedPrompts);
+    // Sort prompts so rows enriched by prompt-to-URL analysis win during dedupe,
+    // while still passing the original URL column through to Mystique.
+    const sortedPrompts = sortPrompts(topPrompts);
 
     // Deduplicate prompts (keeps first occurrence, which prioritizes URLs due to sorting)
     const uniquePrompts = deduplicatePrompts(sortedPrompts);

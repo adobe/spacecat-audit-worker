@@ -111,6 +111,9 @@ describe('FAQs guidance handler', () => {
     dummySite = {
       getBaseURL: () => 'https://adobe.com',
       getId: () => 'site-123',
+      getConfig: sinon.stub().returns({
+        getIncludedURLs: sinon.stub().resolves([]),
+      }),
     };
     Site.findById.resolves(dummySite);
 
@@ -379,6 +382,165 @@ describe('FAQs guidance handler', () => {
     expect(guidanceObj.guidance).to.be.an('array');
     expect(guidanceObj.guidance[0].insight).to.include('2 relevant FAQs identified');
     expect(guidanceObj.guidance[0].type).to.equal('CONTENT_UPDATE');
+  });
+
+  it('should decorate FAQ URLs using desired URL overlap first', async () => {
+    dummySite.getConfig = sinon.stub().returns({
+      getIncludedURLs: sinon.stub().resolves(['https://www.adobe.com/desired-page']),
+    });
+
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().resolves({
+        suggestions: [
+          {
+            url: 'https://www.adobe.com/original',
+            originalUrl: 'https://www.adobe.com/original',
+            relatedUrls: [
+              'https://www.adobe.com/related-page',
+              'https://www.adobe.com/desired-page',
+            ],
+            topic: 'photoshop',
+            faqs: [
+              {
+                isAnswerSuitable: true,
+                isQuestionRelevant: true,
+                question: 'How to use Photoshop?',
+                answer: 'Answer.',
+                sources: [
+                  { url: 'https://www.adobe.com/related-page' },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    await handler({
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    }, context);
+
+    const newData = syncSuggestionsStub.getCall(0).args[0].newData;
+    expect(newData[0].url).to.equal('https://www.adobe.com/desired-page');
+    expect(newData[0].shouldOptimize).to.equal(false);
+  });
+
+  it('should decorate FAQ URLs using related URL overlap with sources before top related URL', async () => {
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().resolves({
+        suggestions: [
+          {
+            url: 'https://www.adobe.com/original',
+            originalUrl: 'https://www.adobe.com/original',
+            relatedUrls: [
+              'https://www.adobe.com/top-related',
+              'https://www.adobe.com/source-match',
+            ],
+            topic: 'photoshop',
+            faqs: [
+              {
+                isAnswerSuitable: true,
+                isQuestionRelevant: true,
+                question: 'How to use Photoshop?',
+                answer: 'Answer.',
+                sources: [
+                  { url: 'https://www.adobe.com/source-match' },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    await handler({
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    }, context);
+
+    const newData = syncSuggestionsStub.getCall(0).args[0].newData;
+    expect(newData[0].url).to.equal('https://www.adobe.com/source-match');
+    expect(newData[0].shouldOptimize).to.equal(true);
+  });
+
+  it('should fall back to top related URL, then original URL, then generic FAQ URL', async () => {
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().resolves({
+        suggestions: [
+          {
+            url: 'https://www.adobe.com/original-a',
+            originalUrl: 'https://www.adobe.com/original-a',
+            relatedUrls: ['https://www.adobe.com/top-related'],
+            topic: 'related',
+            faqs: [
+              {
+                isAnswerSuitable: true,
+                isQuestionRelevant: true,
+                question: 'Related question?',
+                answer: 'Answer.',
+                sources: [{ url: 'https://www.adobe.com/other-source' }],
+              },
+            ],
+          },
+          {
+            url: 'https://www.adobe.com/original-b',
+            originalUrl: 'https://www.adobe.com/original-b',
+            relatedUrls: [],
+            topic: 'original',
+            faqs: [
+              {
+                isAnswerSuitable: true,
+                isQuestionRelevant: true,
+                question: 'Original question?',
+                answer: 'Answer.',
+                sources: [{ url: 'https://www.adobe.com/other-source' }],
+              },
+            ],
+          },
+          {
+            url: '',
+            originalUrl: '',
+            relatedUrls: [],
+            topic: 'generic',
+            faqs: [
+              {
+                isAnswerSuitable: true,
+                isQuestionRelevant: true,
+                question: 'Generic question?',
+                answer: 'Answer.',
+                sources: [],
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    await handler({
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    }, context);
+
+    const newData = syncSuggestionsStub.getCall(0).args[0].newData;
+    expect(newData[0].url).to.equal('https://www.adobe.com/top-related');
+    expect(newData[0].shouldOptimize).to.equal(false);
+    expect(newData[1].url).to.equal('https://www.adobe.com/original-b');
+    expect(newData[1].shouldOptimize).to.equal(false);
+    expect(newData[2].url).to.equal('');
+    expect(newData[2].shouldOptimize).to.equal(false);
   });
 
   it('should handle error when fetching FAQ data fails', async () => {

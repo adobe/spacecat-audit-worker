@@ -16,7 +16,12 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
-import { getJsonFaqSuggestion, buildColumnMap, getColumn } from '../../../src/faqs/utils.js';
+import {
+  getJsonFaqSuggestion,
+  decorateFaqSuggestionUrl,
+  buildColumnMap,
+  getColumn,
+} from '../../../src/faqs/utils.js';
 
 use(sinonChai);
 
@@ -430,6 +435,152 @@ describe('FAQ Utils', () => {
       // Timestamp should be between before and after
       expect(suggestions[0].item.scrapedAt >= beforeTime).to.be.true;
       expect(suggestions[0].item.scrapedAt <= afterTime).to.be.true;
+    });
+
+    it('should decorate FAQ URL using customer desired URL overlap first', () => {
+      const faqs = [
+        {
+          url: 'https://www.adobe.com/original',
+          originalUrl: 'https://www.adobe.com/original',
+          relatedUrls: [
+            'https://www.adobe.com/related-a',
+            'https://www.adobe.com/desired-page',
+          ],
+          topic: 'test',
+          faqs: [
+            {
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
+              question: 'Question?',
+              answer: 'Answer.',
+              sources: [{ url: 'https://www.adobe.com/source-match' }],
+            },
+          ],
+        },
+      ];
+
+      const suggestions = getJsonFaqSuggestion(faqs, {
+        includedURLsSet: new Set(['https://www.adobe.com/desired-page']),
+      });
+
+      expect(suggestions).to.have.length(1);
+      expect(suggestions[0].url).to.equal('https://www.adobe.com/desired-page');
+    });
+
+    it('should decorate FAQ URL using source overlap before top related URL', () => {
+      const faqs = [
+        {
+          url: 'https://www.adobe.com/original',
+          originalUrl: 'https://www.adobe.com/original',
+          relatedUrls: [
+            'https://www.adobe.com/top-related',
+            'https://www.adobe.com/source-match',
+          ],
+          topic: 'test',
+          faqs: [
+            {
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
+              question: 'Question?',
+              answer: 'Answer.',
+              sources: [{ url: 'https://www.adobe.com/source-match' }],
+            },
+          ],
+        },
+      ];
+
+      const suggestions = getJsonFaqSuggestion(faqs);
+
+      expect(suggestions).to.have.length(1);
+      expect(suggestions[0].url).to.equal('https://www.adobe.com/source-match');
+    });
+
+    it('should fall back to top related URL, then original URL, then empty URL', () => {
+      const suggestions = getJsonFaqSuggestion([
+        {
+          url: 'https://www.adobe.com/original',
+          originalUrl: 'https://www.adobe.com/original',
+          relatedUrls: ['https://www.adobe.com/top-related'],
+          topic: 'related',
+          faqs: [{
+            isAnswerSuitable: true,
+            isQuestionRelevant: true,
+            question: 'Related?',
+            answer: 'Answer.',
+            sources: [],
+          }],
+        },
+        {
+          url: 'https://www.adobe.com/original-only',
+          originalUrl: 'https://www.adobe.com/original-only',
+          relatedUrls: [],
+          topic: 'original',
+          faqs: [{
+            isAnswerSuitable: true,
+            isQuestionRelevant: true,
+            question: 'Original?',
+            answer: 'Answer.',
+            sources: [],
+          }],
+        },
+        {
+          url: '',
+          originalUrl: '',
+          relatedUrls: [],
+          topic: 'generic',
+          faqs: [{
+            isAnswerSuitable: true,
+            isQuestionRelevant: true,
+            question: 'Generic?',
+            answer: 'Answer.',
+            sources: [],
+          }],
+        },
+      ]);
+
+      expect(suggestions).to.have.length(3);
+      expect(suggestions[0].url).to.equal('https://www.adobe.com/top-related');
+      expect(suggestions[1].url).to.equal('https://www.adobe.com/original-only');
+      expect(suggestions[2].url).to.equal('');
+    });
+  });
+
+  describe('decorateFaqSuggestionUrl', () => {
+    it('should follow the full FAQ URL priority order', () => {
+      expect(decorateFaqSuggestionUrl({
+        relatedUrls: ['https://example.com/a', 'https://example.com/b'],
+        includedURLsSet: new Set(['https://example.com/b']),
+        originalUrl: 'https://example.com/original',
+        sources: ['https://example.com/a'],
+      })).to.equal('https://example.com/b');
+
+      expect(decorateFaqSuggestionUrl({
+        relatedUrls: ['https://example.com/a', 'https://example.com/b'],
+        includedURLsSet: new Set(['https://example.com/c']),
+        originalUrl: 'https://example.com/original',
+        sources: ['https://example.com/b'],
+      })).to.equal('https://example.com/b');
+
+      expect(decorateFaqSuggestionUrl({
+        relatedUrls: ['https://example.com/a', 'https://example.com/b'],
+        includedURLsSet: new Set(['https://example.com/c']),
+        originalUrl: 'https://example.com/original',
+        sources: ['https://example.com/z'],
+      })).to.equal('https://example.com/a');
+
+      expect(decorateFaqSuggestionUrl({
+        relatedUrls: [],
+        includedURLsSet: new Set(['https://example.com/c']),
+        originalUrl: 'https://example.com/original',
+        sources: ['https://example.com/z'],
+      })).to.equal('https://example.com/original');
+
+      expect(decorateFaqSuggestionUrl({
+        relatedUrls: [],
+        includedURLsSet: new Set(),
+        originalUrl: '',
+        sources: [],
+      })).to.equal('');
     });
   });
 

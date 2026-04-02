@@ -46,6 +46,26 @@ export function getColumn(columnMap, headerName) {
 }
 
 /**
+ * Normalizes URLs for overlap comparisons.
+ * @param {string} url - URL to normalize
+ * @returns {string} Normalized URL or empty string
+ */
+function normalizeUrlForComparison(url) {
+  if (!url) {
+    return '';
+  }
+
+  try {
+    const parsed = new URL(url);
+    parsed.hash = '';
+    const normalizedPath = parsed.pathname.replace(/\/$/, '') || '/';
+    return `${parsed.origin}${normalizedPath}${parsed.search}`;
+  } catch {
+    return url.toString().trim().replace(/\/$/, '');
+  }
+}
+
+/**
  * Normalizes sources to an array of URL strings
  * Sources can be strings, objects with 'url' key, or objects with 'link' key
  * @param {Array} sources - Array of source objects or strings
@@ -70,16 +90,68 @@ function normalizeSources(sources) {
 }
 
 /**
+ * Selects the final target URL for an FAQ suggestion.
+ * Priority:
+ * 1. Top related URL overlapping with customer desired URLs
+ * 2. Top related URL overlapping with FAQ sources
+ * 3. Top related URL from prompt-to-URL analysis
+ * 4. Original URL column
+ * 5. Empty URL for generic FAQs
+ * @param {Object} options - URL selection inputs
+ * @param {string[]} [options.relatedUrls] - Related URLs from prompt-to-URL analysis
+ * @param {Set<string>} [options.includedURLsSet] - Site desired URLs
+ * @param {string} [options.originalUrl] - Original spreadsheet URL column value
+ * @param {Array} [options.sources] - FAQ sources from Mystique
+ * @returns {string} Final URL for the FAQ suggestion
+ */
+export function decorateFaqSuggestionUrl({
+  relatedUrls = [],
+  includedURLsSet = new Set(),
+  originalUrl = '',
+  sources = [],
+} = {}) {
+  const normalizedIncludedUrls = new Set(
+    [...includedURLsSet]
+      .map((url) => normalizeUrlForComparison(url))
+      .filter(Boolean),
+  );
+  const normalizedSources = new Set(
+    normalizeSources(sources)
+      .map((url) => normalizeUrlForComparison(url))
+      .filter(Boolean),
+  );
+
+  const relatedUrlOverlap = (candidateSet) => relatedUrls.find(
+    (url) => candidateSet.has(normalizeUrlForComparison(url)),
+  );
+
+  return relatedUrlOverlap(normalizedIncludedUrls)
+    || relatedUrlOverlap(normalizedSources)
+    || relatedUrls[0]
+    || originalUrl
+    || '';
+}
+
+/**
  * Generates JSON FAQ suggestions with transform rules for code changes
  * Each suggestion has nested FAQs array
  * @param {Array} suggestions - Array of suggestions from Mystique
+ * @param {Object} [options] - FAQ decoration options
+ * @param {Set<string>} [options.includedURLsSet] - Site desired URLs
  * @returns {Array} Array of FAQ suggestion objects with transform rules
  */
-export function getJsonFaqSuggestion(suggestions) {
+export function getJsonFaqSuggestion(suggestions, options = {}) {
   const suggestionValues = [];
+  const includedURLsSet = options.includedURLsSet || new Set();
 
   suggestions.forEach((suggestion) => {
-    const { url, topic, faqs } = suggestion;
+    const {
+      url,
+      originalUrl = url || '',
+      relatedUrls = [],
+      topic,
+      faqs,
+    } = suggestion;
 
     // Filter only suitable FAQs
     const suitableFaqs = (faqs || []).filter(
@@ -92,10 +164,19 @@ export function getJsonFaqSuggestion(suggestions) {
 
     // Create one suggestion per FAQ question
     suitableFaqs.forEach((faq) => {
+      const decoratedUrl = decorateFaqSuggestionUrl({
+        relatedUrls,
+        includedURLsSet,
+        originalUrl,
+        sources: faq.sources,
+      });
+
       suggestionValues.push({
         headingText: 'FAQs',
         shouldOptimize: true, // Default to true, will be updated based on analysis
-        url: url || '',
+        url: decoratedUrl,
+        originalUrl,
+        relatedUrls,
         topic: topic || '',
         transformRules: {
           selector: 'body',

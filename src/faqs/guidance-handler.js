@@ -139,6 +139,7 @@ async function addSuggestions(
   suggestions,
   context,
   site,
+  includedURLsSet,
 ) {
   const { log, s3Client, env } = context;
   const { S3_SCRAPER_BUCKET_NAME } = env;
@@ -155,7 +156,7 @@ async function addSuggestions(
   }
 
   // Get base JSON suggestions
-  const suggestionValues = getJsonFaqSuggestion(suggestions);
+  const suggestionValues = getJsonFaqSuggestion(suggestions, { includedURLsSet });
 
   // Enhance each suggestion with scrape data analysis
   const enhancedSuggestions = await Promise.all(suggestionValues.map(async (suggestion) => {
@@ -241,6 +242,9 @@ export default async function handler(message, context) {
   }
 
   const baseUrl = site.getBaseURL();
+  const siteConfig = await site.getConfig?.();
+  const includedURLs = await siteConfig?.getIncludedURLs?.('faqs') || [];
+  const includedURLsSet = new Set(includedURLs);
 
   try {
     // Fetch FAQ data from presigned URL
@@ -293,7 +297,7 @@ export default async function handler(message, context) {
     );
 
     try {
-      await addSuggestions(opportunity, suggestions, context, site);
+      await addSuggestions(opportunity, suggestions, context, site, includedURLsSet);
     } catch (e) {
       log.error(`[FAQ] Failed to save FAQ opportunity on Mystique callback: ${e.message}`);
       return badRequest('Failed to persist FAQ opportunity');
