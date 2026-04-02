@@ -132,13 +132,7 @@ function isStaticAsset(url) {
  * @returns {boolean} True if the URL path ends with a bare extension segment
  */
 function isMalformedPageUrl(url) {
-  try {
-    const { pathname } = new URL(url);
-    const lastSegment = pathname.split('/').pop();
-    return /^\.[a-z0-9]+$/i.test(lastSegment);
-  } catch {
-    return false;
-  }
+  return /\/\.[a-z0-9]+(\?.*)?(?:#.*)?$/i.test(url);
 }
 
 function shouldInspectForSoft404(contentType, isAsset) {
