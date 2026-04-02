@@ -1,3 +1,10 @@
+## [1.390.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.390.4...v1.390.5) (2026-04-02)
+
+
+### Bug Fixes
+
+* **agentic-urls:** skip Athena when CDN analysis is disabled ([#2287](https://github.com/adobe/spacecat-audit-worker/issues/2287)) ([28038c2](https://github.com/adobe/spacecat-audit-worker/commit/28038c2546aca8f623c579dd8ab6418b870337b1))
+
 ## [1.390.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.390.3...v1.390.4) (2026-04-02)
 
 
