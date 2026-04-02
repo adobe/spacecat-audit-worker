@@ -113,8 +113,8 @@ export function createAuditLogger(log, auditType, siteId, auditId = null) {
  *
  * @example
  * const log = createSiteLogger(context.log, 'broken-internal-links', site.getId());
- * log.info('Found 200 Ahrefs pages');
- * // Logs: "[auditType=broken-internal-links] [siteId=xxx] Found 200 Ahrefs pages"
+ * log.info('Found 200 SEO pages');
+ * // Logs: "[auditType=broken-internal-links] [siteId=xxx] Found 200 SEO pages"
  */
 export function createSiteLogger(log, auditType, siteId) {
   return createAuditLogger(log, auditType, siteId);

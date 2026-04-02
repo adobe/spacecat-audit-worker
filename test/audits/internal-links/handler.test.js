@@ -571,11 +571,11 @@ describe('Broken internal links audit', () => {
   }).timeout(10000);
 
   it('submitForScraping should merge database top pages + includedURLs and submit', async () => {
-    // Mock database read for Ahrefs top pages
+    // Mock database read for SEO top pages
     const mockSiteTopPage = {
       allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-        { getUrl: () => 'https://example.com/ahrefs1' },
-        { getUrl: () => 'https://example.com/ahrefs2' },
+        { getUrl: () => 'https://example.com/seo1' },
+        { getUrl: () => 'https://example.com/seo2' },
       ]),
     };
 
@@ -609,10 +609,10 @@ describe('Broken internal links audit', () => {
 
     expect(result).to.have.property('urls');
     expect(result.urls).to.be.an('array');
-    // Should have Ahrefs (2) + includedURLs (1) = 3 unique URLs
+    // Should have SEO (2) + includedURLs (1) = 3 unique URLs
     expect(result.urls.length).to.equal(3);
-    expect(result.urls).to.deep.include({ url: 'https://example.com/ahrefs1' });
-    expect(result.urls).to.deep.include({ url: 'https://example.com/ahrefs2' });
+    expect(result.urls).to.deep.include({ url: 'https://example.com/seo1' });
+    expect(result.urls).to.deep.include({ url: 'https://example.com/seo2' });
     expect(result.urls).to.deep.include({ url: 'https://example.com/included1' });
     expect(result.siteId).to.equal(site.getId());
     expect(result.type).to.equal('broken-internal-links');
@@ -774,14 +774,14 @@ describe('Broken internal links audit', () => {
 
   it('submitForScraping should cap URLs at MAX_URLS_TO_PROCESS (100)', async () => {
     // Create >100 total URLs to test capping logic
-    const manyAhrefsPages = Array.from({ length: 80 }, (_, i) => ({
-      getUrl: () => `https://example.com/ahrefs-page-${i}`,
+    const manySeoPages = Array.from({ length: 80 }, (_, i) => ({
+      getUrl: () => `https://example.com/seo-page-${i}`,
     }));
 
     const manyIncludedUrls = Array.from({ length: 40 }, (_, i) => `https://example.com/manual-page-${i}`);
 
     const mockSiteTopPage = {
-      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(manyAhrefsPages),
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(manySeoPages),
     };
 
     const mockSite = {
@@ -2630,7 +2630,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     );
   }).timeout(10000);
 
-  it('should handle Ahrefs fetch error gracefully in opportunityAndSuggestionsStep', async () => {
+  it('should handle SEO fetch error gracefully in opportunityAndSuggestionsStep', async () => {
     context.dataAccess.Configuration = {
       findLatest: () => ({
         isHandlerEnabledForSite: () => true,
@@ -2667,16 +2667,16 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
       .callsFake(() => Promise.resolve(validSuggestions));
     
-    // Make Ahrefs fetch fail
+    // Make SEO fetch fail
     context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
-      .rejects(new Error('Ahrefs API error'));
+      .rejects(new Error('SEO API error'));
 
     // Should still complete without throwing
     const result = await handler.opportunityAndSuggestionsStep(context);
 
     expect(result.status).to.equal('complete');
     expect(context.log.warn).to.have.been.calledWith(
-      sinon.match(/Failed to fetch Ahrefs top pages/),
+      sinon.match(/Failed to fetch SEO top pages/),
     );
   }).timeout(10000);
 
@@ -2715,7 +2715,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       getId: () => 'suggestion-1',
     }];
 
-    // Create 80 Ahrefs pages + 40 includedURLs = 120 total (exceeds MAX_URLS_TO_PROCESS 100)
+    // Create 80 SEO pages + 40 includedURLs = 120 total (exceeds MAX_URLS_TO_PROCESS 100)
     const manyTopPages = Array.from({ length: 80 }, (_, i) => ({
       getUrl: () => `https://example.com/en/page${i}`,
     }));

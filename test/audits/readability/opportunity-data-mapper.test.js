@@ -46,7 +46,7 @@ describe('Readability Opportunities - Opportunity Data Mapper', () => {
 
       // Lines 32-34
       expect(result.data).to.be.an('object');
-      expect(result.data.dataSources).to.deep.equal([DATA_SOURCES.AHREFS, DATA_SOURCES.SITE]);
+      expect(result.data.dataSources).to.deep.equal([DATA_SOURCES.SEO, DATA_SOURCES.SITE]);
     });
 
     it('should include all six guidance steps with correct content', () => {
@@ -64,7 +64,7 @@ describe('Readability Opportunities - Opportunity Data Mapper', () => {
     it('should use correct DATA_SOURCES constants', () => {
       const result = createOpportunityData();
 
-      expect(result.data.dataSources).to.include(DATA_SOURCES.AHREFS);
+      expect(result.data.dataSources).to.include(DATA_SOURCES.SEO);
       expect(result.data.dataSources).to.include(DATA_SOURCES.SITE);
     });
   });

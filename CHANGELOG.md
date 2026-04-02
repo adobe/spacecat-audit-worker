@@ -1,3 +1,80 @@
+## [1.391.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.391.2...v1.391.3) (2026-04-02)
+
+
+### Bug Fixes
+
+* **audit-worker:** remove geo-brand-presence handlers and wiring ([#2292](https://github.com/adobe/spacecat-audit-worker/issues/2292)) ([d6487d8](https://github.com/adobe/spacecat-audit-worker/commit/d6487d82f5f2aafdd1c3ffc853cc90c742ef64a6))
+
+## [1.391.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.391.1...v1.391.2) (2026-04-02)
+
+
+### Bug Fixes
+
+* **llmo-customer-analysis:** increase commerce fastly limit ([#2291](https://github.com/adobe/spacecat-audit-worker/issues/2291)) ([07599d3](https://github.com/adobe/spacecat-audit-worker/commit/07599d3f4e93110a6eb06ed062e4452d74dbb1bc))
+
+## [1.391.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.391.0...v1.391.1) (2026-04-02)
+
+
+### Bug Fixes
+
+* **faqs:** defer URL assignment until guidance callback ([#2290](https://github.com/adobe/spacecat-audit-worker/issues/2290)) ([2320417](https://github.com/adobe/spacecat-audit-worker/commit/2320417c1313ce80248504275f75cba9b0ea0376))
+
+# [1.391.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.390.5...v1.391.0) (2026-04-02)
+
+
+### Features
+
+* add lastAuditedAt field to opportunities ([#2228](https://github.com/adobe/spacecat-audit-worker/issues/2228)) ([e5abed5](https://github.com/adobe/spacecat-audit-worker/commit/e5abed56d9801ce9520beb6e9c7fdc4a84e559a3))
+
+## [1.390.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.390.4...v1.390.5) (2026-04-02)
+
+
+### Bug Fixes
+
+* **agentic-urls:** skip Athena when CDN analysis is disabled ([#2287](https://github.com/adobe/spacecat-audit-worker/issues/2287)) ([28038c2](https://github.com/adobe/spacecat-audit-worker/commit/28038c2546aca8f623c579dd8ab6418b870337b1))
+
+## [1.390.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.390.3...v1.390.4) (2026-04-02)
+
+
+### Bug Fixes
+
+* **llmo-customer-analysis:** gate CDN logs report by site config ([#2286](https://github.com/adobe/spacecat-audit-worker/issues/2286)) ([e93b10e](https://github.com/adobe/spacecat-audit-worker/commit/e93b10e9c39c6a114c34df61b53ec41dc7aeaafa))
+
+## [1.390.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.390.2...v1.390.3) (2026-04-02)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2285](https://github.com/adobe/spacecat-audit-worker/issues/2285)) ([af9819a](https://github.com/adobe/spacecat-audit-worker/commit/af9819a6c9ee6a813b52f0c89530f5941ea8f815))
+
+## [1.390.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.390.1...v1.390.2) (2026-04-02)
+
+
+### Bug Fixes
+
+* **ci:** skip S3 artifact upload ([#2284](https://github.com/adobe/spacecat-audit-worker/issues/2284)) ([682d861](https://github.com/adobe/spacecat-audit-worker/commit/682d8619a22baf4365c2197a1ede514adf5363d3))
+
+## [1.390.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.390.0...v1.390.1) (2026-04-02)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-tier-client to v1.4.1 ([#2283](https://github.com/adobe/spacecat-audit-worker/issues/2283)) ([bc7ba9d](https://github.com/adobe/spacecat-audit-worker/commit/bc7ba9dd186497fb3f2de711ede0c2280ede5189))
+
+# [1.390.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.389.4...v1.390.0) (2026-04-02)
+
+
+### Features
+
+* switch broken-backlinks audit to new SEO data provider client ([#2276](https://github.com/adobe/spacecat-audit-worker/issues/2276)) ([90091e9](https://github.com/adobe/spacecat-audit-worker/commit/90091e96076d96b3f8659b2550e4fb244d138a70))
+
+## [1.389.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.389.3...v1.389.4) (2026-04-02)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-drs-client to v1.4.1 ([#2282](https://github.com/adobe/spacecat-audit-worker/issues/2282)) ([ff9db4e](https://github.com/adobe/spacecat-audit-worker/commit/ff9db4e4bea0516c37b3e5aeb382b085966455fd))
+
 ## [1.389.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.389.2...v1.389.3) (2026-04-01)
 
 

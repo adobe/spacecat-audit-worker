@@ -36,7 +36,7 @@ async function getReadabilityUrlsToScrape(context) {
     getTopPages: async () => {
       const topPages = await dataAccess?.SiteTopPage?.allBySiteIdAndSourceAndGeo?.(
         site.getId(),
-        'ahrefs',
+        'seo',
         'global',
       );
       return sortTopPagesByTraffic(topPages || [], (page) => ({
