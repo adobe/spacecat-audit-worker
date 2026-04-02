@@ -783,8 +783,8 @@ describe('generateSuggestionData', async function test() {
     expect(result.length).to.equal(1);
   });
 
-  it('should use dataBatches when link.filteredSiteData is not available', async () => {
-    // Test when link.filteredSiteData is falsy, so we use dataBatches instead
+  it('should use filteredSiteData when link.filteredSiteData is not available', async () => {
+    // Test when link.filteredSiteData is falsy — falls back to filteredSiteData
     // This happens when linkPathPrefix is falsy
     const siteNoSubpath = {
       ...site,
@@ -817,8 +817,7 @@ describe('generateSuggestionData', async function test() {
     };
     context.s3Client.send.resolves(mockFileResponseNoBatch);
 
-    // Broken link with no prefix - linkPathPrefix will be empty
-    // link.filteredSiteData won't be set
+    // Broken link with no prefix - linkPathPrefix will be empty, link.filteredSiteData won't be set
     const brokenLinks = [
       { urlTo: 'https://bulk.com/broken1', urlFrom: 'https://bulk.com/page1' },
     ];
