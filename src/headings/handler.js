@@ -379,7 +379,7 @@ export async function headingsAuditRunner(baseURL, context, site) {
   const { S3_SCRAPER_BUCKET_NAME } = context.env;
 
   try {
-    // Get top 200 pages - try Athena first, fall back to Ahrefs
+    // Get top 200 pages - try Athena first, fall back to SEO provider
     log.debug(`[Headings Audit] Fetching top pages for site: ${siteId}`);
 
     let topPages = [];
@@ -389,8 +389,8 @@ export async function headingsAuditRunner(baseURL, context, site) {
     if (athenaUrls && athenaUrls.length > 0) {
       topPages = athenaUrls.slice(0, 200).map((url) => ({ url }));
     } else {
-      // Fallback to Ahrefs if Athena returns no data
-      log.info('[Headings Audit] No agentic URLs from Athena, falling back to Ahrefs');
+      // Fallback to SEO provider if Athena returns no data
+      log.info('[Headings Audit] No agentic URLs from Athena, falling back to SEO top pages');
       topPages = await getTopPages(dataAccess, siteId, context, log, 200);
     }
 

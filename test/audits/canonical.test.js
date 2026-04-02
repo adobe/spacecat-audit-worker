@@ -766,7 +766,7 @@ describe('Canonical URL Tests', () => {
         status: 'success',
         message: 'No canonical issues detected',
       });
-      expect(getTopPagesForSiteStub).to.have.been.calledOnceWith('testSiteId', 'ahrefs', 'global');
+      expect(getTopPagesForSiteStub).to.have.been.calledOnceWith('testSiteId', 'seo', 'global');
       expect(log.info).to.have.been.called;
     });
 

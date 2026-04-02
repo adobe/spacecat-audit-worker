@@ -52,7 +52,7 @@ describe('FAQ Opportunity Data Mapper', () => {
       const result = createOpportunityData('site-1', 'audit-1', []);
 
       expect(result.data.dataSources).to.be.an('array').with.lengthOf(3);
-      expect(result.data.dataSources).to.include(DATA_SOURCES.AHREFS);
+      expect(result.data.dataSources).to.include(DATA_SOURCES.SEO);
       expect(result.data.dataSources).to.include(DATA_SOURCES.PAGE);
       expect(result.data.dataSources).to.include(DATA_SOURCES.SITE);
     });
