@@ -19,7 +19,7 @@ import { weeklyBreakdownQueries } from '../cdn-logs-report/utils/query-builder.j
 
 const DEFAULT_TOP_AGENTIC_URLS_LIMIT = 200;
 
-function getPreferredBaseUrl(site, context) {
+export function getPreferredBaseUrl(site, context) {
   return context.finalUrl && !/^https?:\/\//.test(context.finalUrl)
     ? `https://${context.finalUrl}`
     : context.finalUrl || site.getBaseURL();
@@ -66,6 +66,16 @@ export async function getTopAgenticUrlsFromAthena(
   const baseUrl = getPreferredBaseUrl(site, context);
 
   try {
+    const configuration = await context.dataAccess.Configuration.findLatest();
+    if (!configuration) {
+      log.warn(`Agentic URLs - Skipping Athena query because no configuration was found for site ${site.getId()}`);
+      return [];
+    }
+    if (!configuration.isHandlerEnabledForSite('cdn-logs-analysis', site)) {
+      log.info(`Agentic URLs - Skipping Athena query because cdn-logs-analysis is disabled for site ${site.getId()}`);
+      return [];
+    }
+
     const awsRuntime = getCdnAwsRuntime(site, context);
     const s3Config = getS3Config(site, context);
     const periods = generateReportingPeriods();

@@ -378,7 +378,7 @@ export async function calculateCPCValue(context, siteId) {
   }
   const { s3Client, log } = context;
   const bucketName = context.env.S3_IMPORTER_BUCKET_NAME;
-  const key = `metrics/${siteId}/ahrefs/organic-traffic.json`;
+  const key = `metrics/${siteId}/seo/organic-traffic.json`;
   try {
     const organicTrafficData = await getObjectFromKey(s3Client, bucketName, key, log);
     if (!Array.isArray(organicTrafficData) || organicTrafficData.length === 0) {

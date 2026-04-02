@@ -50,7 +50,7 @@ describe('LLMO Customer Analysis Handler', () => {
         audits: 'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
       }),
       enableHandlerForSite: sandbox.stub(),
-      isHandlerEnabledForSite: sandbox.stub().returns(false),
+      isHandlerEnabledForSite: sandbox.stub().callsFake((auditType) => auditType === 'cdn-logs-report'),
       getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
       save: sandbox.stub().resolves(),
       setConfig: sandbox.stub().resolves(),
@@ -256,6 +256,50 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
       expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
+    });
+
+    it('should skip cdn-logs-report when categories change but the handler is disabled for the site', async () => {
+      const auditContext = {
+        configVersion: 'v2',
+        previousConfigVersion: 'v1',
+      };
+
+      configuration.isHandlerEnabledForSite.callsFake(() => false);
+
+      mockLlmoConfig.readConfig.onFirstCall().resolves({
+        config: {
+          entities: {},
+          categories: { 'cat-1': { name: 'Category A' } },
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      mockLlmoConfig.readConfig.onSecondCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(sqs.sendMessage).to.not.have.been.called;
+      expect(log.info).to.have.been.calledWith(
+        'LLMO config changes detected in categories; skipping cdn-logs-report because it is disabled for this site',
+      );
+      expect(result.auditResult.status).to.equal('completed');
+      expect(result.auditResult.configChangesDetected).to.equal(false);
+      expect(result.auditResult.triggeredSteps || []).to.not.include('cdn-logs-report');
     });
 
     it('should trigger referral traffic imports on first-time onboarding with OpTel data', async () => {
@@ -1200,7 +1244,6 @@ describe('LLMO Customer Analysis Handler', () => {
         'llm-error-pages',
         'summarization',
         'llmo-referral-traffic',
-        'cdn-logs-report',
         'readability',
         'wikipedia-analysis',
         'geo-brand-presence',
@@ -1518,7 +1561,436 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(mockFetch).to.not.have.been.called;
     });
 
+    it('should include brand_id in BP schedule when brandalf is enabled and brand is found', async () => {
+      const auditContext = {};
+
+      // Enable brandalf check via SpaceCat API
+      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
+      context.env.SPACECAT_API_KEY = 'test-api-key';
+
+      // Reset mockFetch and set up call ordering:
+      // 1st call: feature-flags API (brandalf enabled)
+      // 2nd call: DRS schedule creation
+      // 3rd call: DRS schedule trigger
+      mockFetch.reset();
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => [{ flagName: 'brandalf', flagValue: true }],
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      mockFetch.onThirdCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      // Chain the eq calls and resolve with matching brand
+      const brandsQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().resolves({
+              data: [{ id: 'brand-uuid-1', brand_sites: [{ site_id: 'site-123' }] }],
+            }),
+          }),
+        }),
+      };
+      context.dataAccess.services = {
+        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Verify feature-flags was called
+      expect(mockFetch).to.have.been.calledWith(
+        sinon.match(/\/organizations\/org-123\/feature-flags/),
+        sinon.match.any,
+      );
+
+      // Verify schedule was created with brand_id
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      expect(createCall).to.exist;
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.equal('brand-uuid-1');
+      expect(body.spacecat_org_id).to.equal('org-123');
+    });
+
+    it('should fall back to imsOrgId when getOrganizationId returns null', async () => {
+      const auditContext = { imsOrgId: 'fallback-org' };
+      site.getOrganizationId = sandbox.stub().returns(null);
+
+      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
+      context.env.SPACECAT_API_KEY = 'test-api-key';
+
+      mockFetch.reset();
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => [{ flagName: 'brandalf', flagValue: true }],
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      mockFetch.onThirdCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      const brandsQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().resolves({
+              data: [{ id: 'brand-fb', brand_sites: [{ site_id: 'site-123' }] }],
+            }),
+          }),
+        }),
+      };
+      context.dataAccess.services = {
+        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+      };
+
+      await mockHandler.runLlmoCustomerAnalysis('https://example.com', context, site, auditContext);
+
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.equal('brand-fb');
+      expect(body.spacecat_org_id).to.equal('fallback-org');
+    });
+
+    it('should handle null brands and missing brand_sites when brandalf is enabled', async () => {
+      const auditContext = {};
+
+      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
+      context.env.SPACECAT_API_KEY = 'test-api-key';
+
+      mockFetch.reset();
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => [{ flagName: 'brandalf', flagValue: true }],
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      mockFetch.onThirdCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      // Return brands without brand_sites property
+      const brandsQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().resolves({
+              data: [{ id: 'brand-no-sites' }],
+            }),
+          }),
+        }),
+      };
+      context.dataAccess.services = {
+        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+      };
+
+      await mockHandler.runLlmoCustomerAnalysis('https://example.com', context, site, auditContext);
+
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.be.undefined;
+    });
+
+    it('should create BP schedule without brand_id when no brand matches site', async () => {
+      const auditContext = {};
+
+      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
+      context.env.SPACECAT_API_KEY = 'test-api-key';
+
+      mockFetch.reset();
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => [{ flagName: 'brandalf', flagValue: true }],
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      mockFetch.onThirdCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      const brandsQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().resolves({
+              data: [{ id: 'brand-other', brand_sites: [{ site_id: 'other-site' }] }],
+            }),
+          }),
+        }),
+      };
+      context.dataAccess.services = {
+        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+      };
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      expect(createCall).to.exist;
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.be.undefined;
+      expect(log.warn).to.have.been.calledWith(sinon.match(/No brand found matching site/));
+    });
+
+    it('should create BP schedule without brand_id when brand lookup fails', async () => {
+      const auditContext = {};
+
+      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
+      context.env.SPACECAT_API_KEY = 'test-api-key';
+
+      mockFetch.reset();
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => [{ flagName: 'brandalf', flagValue: true }],
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      mockFetch.onThirdCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      // Mock postgrestClient that throws
+      const brandsQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().rejects(new Error('DB error')),
+          }),
+        }),
+      };
+      context.dataAccess.services = {
+        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Should still create schedule (without brand_id), not fail
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      expect(createCall).to.exist;
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.be.undefined;
+    });
+
+    it('should skip brand resolution when brandalf is not enabled', async () => {
+      const auditContext = {};
+
+      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
+      context.env.SPACECAT_API_KEY = 'test-api-key';
+
+      mockFetch.reset();
+      // Feature-flags returns no brandalf flag
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => [],
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      mockFetch.onThirdCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Should create schedule without brand_id (v1 path)
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      expect(createCall).to.exist;
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.be.undefined;
+      expect(body.spacecat_org_id).to.be.undefined;
+    });
+
+    it('should skip brand resolution when feature-flags API fails', async () => {
+      const auditContext = {};
+
+      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
+      context.env.SPACECAT_API_KEY = 'test-api-key';
+
+      mockFetch.reset();
+      // Feature-flags API returns error
+      mockFetch.onFirstCall().resolves({
+        ok: false,
+        status: 500,
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      mockFetch.onThirdCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(log.warn).to.have.been.calledWith(sinon.match(/Failed to fetch feature flags/));
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      expect(createCall).to.exist;
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.be.undefined;
+    });
+
+    it('should warn when postgrestClient is not available for brandalf-enabled org', async () => {
+      const auditContext = {};
+
+      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
+      context.env.SPACECAT_API_KEY = 'test-api-key';
+
+      mockFetch.reset();
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => [{ flagName: 'brandalf', flagValue: true }],
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      mockFetch.onThirdCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      // No postgrestClient available
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(log.warn).to.have.been.calledWith(sinon.match(/postgrestClient not available/));
+    });
+
+    it('should handle network error when checking brandalf flag', async () => {
+      const auditContext = {};
+
+      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
+      context.env.SPACECAT_API_KEY = 'test-api-key';
+
+      mockFetch.reset();
+      // Feature-flags fetch throws network error
+      mockFetch.onFirstCall().rejects(new Error('ECONNREFUSED'));
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      mockFetch.onThirdCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(log.warn).to.have.been.calledWith(sinon.match(/Error checking brandalf flag/));
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      expect(createCall).to.exist;
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.be.undefined;
+    });
+
   });
 
 });
-

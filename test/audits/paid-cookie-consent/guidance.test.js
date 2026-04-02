@@ -300,7 +300,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     expect(data.temporalCondition).to.include('year=');
     expect(data.temporalCondition).to.include('week');
 
-    // CPC fields - DEFAULT_CPC is 0.80 in ahrefs-cpc.js
+    // CPC fields - DEFAULT_CPC is 0.80 in seo-cpc.js
     expect(data.appliedCPC).to.equal(0.8);
     expect(data.cpcSource).to.equal('default');
     expect(data.defaultCPC).to.equal(0.8);
@@ -389,16 +389,16 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     // The opportunity is created, meaning the ternary branches for 0 pageviews were exercised
   });
 
-  it('should include ahrefs CPC fields when cpcSource is ahrefs (line 229 branch)', async () => {
-    // Configure S3 to return valid ahrefs CPC data
-    const ahrefsCPCData = {
+  it('should include seo CPC fields when cpcSource is seo (line 229 branch)', async () => {
+    // Configure S3 to return valid seo CPC data
+    const seoCPCData = {
       organicTraffic: 10000,
       organicCost: 9500, // organicCPC = 9500/10000 = 0.95
       paidTraffic: 5000,
       paidCost: 6250, // paidCPC = 6250/5000 = 1.25
     };
     s3ClientMock.send.resolves({
-      Body: { transformToString: () => JSON.stringify(ahrefsCPCData) },
+      Body: { transformToString: () => JSON.stringify(seoCPCData) },
     });
 
     Opportunity.allBySiteId.resolves([]);
@@ -413,10 +413,10 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
     expect(Opportunity.create).to.have.been.called;
     const opportunityData = Opportunity.create.getCall(0).args[0];
-    // Verify ahrefs-specific fields are included (line 229 conditional spread)
-    expect(opportunityData.data.cpcSource).to.equal('ahrefs');
-    expect(opportunityData.data.ahrefsOrganicCPC).to.equal(0.95);
-    expect(opportunityData.data.ahrefsPaidCPC).to.equal(1.25);
+    // Verify seo-specific fields are included (line 229 conditional spread)
+    expect(opportunityData.data.cpcSource).to.equal('seo');
+    expect(opportunityData.data.seoOrganicCPC).to.equal(0.95);
+    expect(opportunityData.data.seoPaidCPC).to.equal(1.25);
     expect(opportunityData.data.appliedCPC).to.equal(1.25);
   });
 

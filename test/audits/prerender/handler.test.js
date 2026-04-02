@@ -400,6 +400,34 @@ describe('Prerender Audit', () => {
         expect(context.log.info).to.have.been.calledWithMatch('csvUrls=4');
       });
 
+      it('rebases csvUrls (auditContext.urls) to getPreferredBaseUrl domain', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => [],
+            getPreferredBaseUrl: () => 'https://example.com',
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://example.com',
+          },
+          auditContext: {
+            urls: ['https://www.example.com/csv-page-1', 'https://www.example.com/csv-page-2'],
+          },
+          finalUrl: 'https://example.com',
+          log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+        const submittedUrls = result.urls.map((u) => u.url);
+        expect(submittedUrls).to.include('https://example.com/csv-page-1');
+        expect(submittedUrls).to.include('https://example.com/csv-page-2');
+        submittedUrls.forEach((u) => expect(u).to.not.include('www.'));
+      });
+
       it('should include includedURLs from site config', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-athena-client': {
@@ -618,7 +646,7 @@ describe('Prerender Audit', () => {
         });
 
         const mockSiteTopPage = {
-          // Return undefined to exercise `(topPages || [])` fallback in getTopOrganicUrlsFromAhrefs
+          // Return undefined to exercise `(topPages || [])` fallback in getTopOrganicUrlsFromSeo
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(undefined),
         };
 
@@ -642,6 +670,44 @@ describe('Prerender Audit', () => {
         expect(result).to.be.an('object');
         expect(result.urls).to.be.an('array');
       });
+      it('rebases organic and included URLs to getPreferredBaseUrl domain', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => [],
+            getPreferredBaseUrl: () => 'https://example.com',
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({
+              getIncludedURLs: () => ['https://www.example.com/included-page'],
+            }),
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: async () => [
+                { getUrl: () => 'https://www.example.com/organic-1' },
+                { getUrl: () => 'https://www.example.com/organic-2' },
+              ],
+            },
+            PageCitability: { allByIndexKeys: async () => [] },
+          },
+          finalUrl: 'https://example.com',
+          log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+        const submittedUrls = result.urls.map((u) => u.url);
+        expect(submittedUrls).to.include('https://example.com/organic-1');
+        expect(submittedUrls).to.include('https://example.com/organic-2');
+        expect(submittedUrls).to.include('https://example.com/included-page');
+        submittedUrls.forEach((u) => expect(u).to.not.include('www.'));
+      });
+
       describe('daily batching', () => {
         const makeAgenticUrls = (n, base = 'https://example.com/agentic-') => Array.from({ length: n }, (_, i) => `${base}${i}`);
         const makeCitabilityRecord = (path) => ({
@@ -3869,7 +3935,7 @@ describe('Prerender Audit', () => {
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({ getIncludedURLs: () => [] }),
         },
-        // Intentionally omit SiteTopPage to exercise the "no top pages" branch in getTopOrganicUrlsFromAhrefs
+        // Intentionally omit SiteTopPage to exercise the "no top pages" branch in getTopOrganicUrlsFromSeo
         dataAccess: {},
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
       };
@@ -3981,6 +4047,59 @@ describe('Prerender Audit', () => {
       expect(loggedFallback).to.include('includedURLs=1');
     });
 
+    it('rebases organic and included URLs to preferredBase in fallback URL-list path', async () => {
+      const html = '<html><body><p>hello world content here</p></body></html>';
+      let capturedArgs = [];
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: async () => [],
+          getPreferredBaseUrl: () => 'https://example.com',
+        },
+        '../../../src/utils/s3-utils.js': {
+          getObjectFromKey: async () => html,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sinon.stub().resolves(false),
+          mergeAndGetUniqueHtmlUrls: (...args) => {
+            capturedArgs = args.flat();
+            return { urls: capturedArgs, filteredCount: 0 };
+          },
+        },
+      });
+
+      const ctx = {
+        site: {
+          getId: () => 'site-1',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getIncludedURLs: async () => ['https://www.example.com/included'],
+          }),
+        },
+        audit: { getId: () => 'a' },
+        dataAccess: {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+              { getUrl: () => 'https://www.example.com/organic' },
+            ]),
+          },
+          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sinon.stub().resolves() },
+        },
+        log: {
+          info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub(),
+        },
+        s3Client: { send: sinon.stub().resolves({}) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        scrapeResultPaths: new Map(),
+        auditContext: { scrapeJobId: 'test-job-id' },
+      };
+
+      await mockHandler.processContentAndGenerateOpportunities(ctx);
+      expect(capturedArgs).to.include('https://example.com/organic');
+      expect(capturedArgs).to.include('https://example.com/included');
+      capturedArgs.forEach((u) => expect(u).to.not.include('www.'));
+    });
+
     it('should handle missing dataAccess when loading top pages', async () => {
       const html = '<html><body><p>x</p></body></html>';
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
@@ -4023,7 +4142,7 @@ describe('Prerender Audit', () => {
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({ getIncludedURLs: () => [] }),
         },
-        // Intentionally omit dataAccess to exercise `dataAccess || {}` branch in getTopOrganicUrlsFromAhrefs
+        // Intentionally omit dataAccess to exercise `dataAccess || {}` branch in getTopOrganicUrlsFromSeo
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
         s3Client: { send: sinon.stub().resolves({}) },
         env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
@@ -5181,7 +5300,7 @@ describe('Prerender Audit', () => {
           getId: () => 'existing-opp-id',
           getType: () => 'prerender',
           getData: () => ({
-            dataSources: ['ahrefs'],
+            dataSources: ['seo'],
             oldField: 'should-be-preserved',
             scrapeForbidden: true, // Old value
           }),
@@ -5218,7 +5337,7 @@ describe('Prerender Audit', () => {
 
         const createOpportunityDataFn = (auditData) => ({
           data: {
-            dataSources: ['ahrefs', 'site'],
+            dataSources: ['seo', 'site'],
             scrapeForbidden: auditData?.auditResult?.scrapeForbidden === true,
             newField: 'new-value',
           },

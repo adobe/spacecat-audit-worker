@@ -44,7 +44,6 @@ import essExperimentationAll from './experimentation-ess/all.js';
 import experimentationOpportunities from './experimentation-opportunities/handler.js';
 import formsOpportunities from './forms-opportunities/handler.js';
 import metaTags from './metatags/handler.js';
-import costs from './costs/handler.js';
 import structuredData from './structured-data/handler.js';
 import structuredDataGuidance from './structured-data/guidance-handler.js';
 import siteDetection from './site-detection/handler.js';
@@ -146,7 +145,6 @@ const HANDLERS = {
   'experimentation-ess-all': essExperimentationAll,
   'experimentation-opportunities': experimentationOpportunities,
   'meta-tags': metaTags,
-  costs,
   'detect-cdn': detectCdn,
   'delivery-config-writer': deliveryConfigWriter,
   'structured-data': structuredData,
@@ -261,6 +259,10 @@ function normalizeDrsMessage(message) {
       resultLocation: message.result_location,
       providerId,
       source: metadata.source,
+      ...(metadata.onboarding_mode && {
+        onboardingMode: metadata.onboarding_mode,
+      }),
+      ...(metadata.imsOrgId && { imsOrgId: metadata.imsOrgId }),
       ...(metadata.brand_presence_batch_id && {
         brandPresenceBatchId: metadata.brand_presence_batch_id,
       }),
