@@ -59,11 +59,6 @@ import paidTrafficAnalysisGuidance from './paid-traffic-analysis/guidance-handle
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
 import llmBlocked from './llm-blocked/handler.js';
-import geoBrandPresence from './geo-brand-presence/handler.js';
-import detectGeoBrandPresence from './geo-brand-presence/detect-geo-brand-presence-handler.js';
-import { handleCategorizationResponseHandler } from './geo-brand-presence/categorization-response-handler.js';
-import geoBrandPresenceDaily from './geo-brand-presence-daily/handler.js';
-import detectGeoBrandPresenceDaily from './geo-brand-presence-daily/detect-geo-brand-presence-handler.js';
 import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
 import detectFormDetails from './forms-opportunities/form-details-handler/detect-form-details.js';
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
@@ -96,7 +91,6 @@ import prerender from './prerender/handler.js';
 import prerenderGuidance from './prerender/guidance-handler.js';
 import productMetatags from './product-metatags/handler.js';
 import { commerceProductEnrichments, commerceProductEnrichmentsYearly } from './commerce-product-enrichments/handler.js';
-import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import summarization from './summarization/handler.js';
 import summarizationGuidance from './summarization/guidance-handler.js';
 import accessibilityCodeFixHandler from './accessibility/auto-optimization-handlers/codefix-handler.js';
@@ -159,20 +153,6 @@ const HANDLERS = {
     highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
-  'geo-brand-presence': geoBrandPresence,
-  'geo-brand-presence-free': geoBrandPresence,
-  'geo-brand-presence-paid': geoBrandPresence,
-  // Splits of geo-brand-presence-free for staggered execution (max 40 sites each)
-  ...Object.fromEntries(
-    Array.from({ length: 23 }, (_, i) => [`geo-brand-presence-free-${i + 1}`, geoBrandPresence]),
-  ),
-  'category:geo-brand-presence': handleCategorizationResponseHandler,
-  'detect:geo-brand-presence': detectGeoBrandPresence,
-  'refresh:geo-brand-presence': detectGeoBrandPresence,
-  'geo-brand-presence-daily': geoBrandPresenceDaily,
-  'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,
-  'detect:geo-brand-presence-daily': detectGeoBrandPresenceDaily,
-  'refresh:geo-brand-presence-daily': detectGeoBrandPresenceDaily,
   'guidance:forms-a11y': formAccessibilityGuidance,
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,

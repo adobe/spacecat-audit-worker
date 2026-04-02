@@ -1,3 +1,17 @@
+# [1.392.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.391.3...v1.392.0) (2026-04-02)
+
+
+### Features
+
+* CWV Suggestions for PLG customers should be auto-validated ([#2216](https://github.com/adobe/spacecat-audit-worker/issues/2216)) ([55a3bc2](https://github.com/adobe/spacecat-audit-worker/commit/55a3bc2429dc6b52fedcf2e2fa293e88f1709ebc))
+
+## [1.391.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.391.2...v1.391.3) (2026-04-02)
+
+
+### Bug Fixes
+
+* **audit-worker:** remove geo-brand-presence handlers and wiring ([#2292](https://github.com/adobe/spacecat-audit-worker/issues/2292)) ([d6487d8](https://github.com/adobe/spacecat-audit-worker/commit/d6487d82f5f2aafdd1c3ffc853cc90c742ef64a6))
+
 ## [1.391.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.391.1...v1.391.2) (2026-04-02)
 
 
