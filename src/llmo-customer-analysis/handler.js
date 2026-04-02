@@ -309,13 +309,13 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   const {
     env, log, s3Client,
   } = context;
+  const { Configuration } = context.dataAccess;
 
   const siteId = site.getSiteId();
   const domain = finalUrl;
 
   // Ensure relevant audits and imports are enabled
   try {
-    const { Configuration } = context.dataAccess;
     const configuration = await Configuration.findLatest();
 
     const auditsToEnable = [
@@ -500,7 +500,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   }
 
   if (hasCdnLogsChanges) {
-    const configuration = await context.dataAccess.Configuration.findLatest();
+    const configuration = await Configuration.findLatest();
     const isCdnLogsReportEnabled = await configuration.isHandlerEnabledForSite('cdn-logs-report', site);
 
     if (isCdnLogsReportEnabled) {
