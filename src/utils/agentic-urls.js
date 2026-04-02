@@ -66,6 +66,12 @@ export async function getTopAgenticUrlsFromAthena(
   const baseUrl = getPreferredBaseUrl(site, context);
 
   try {
+    const configuration = await context.dataAccess?.Configuration?.findLatest?.();
+    if (configuration && !configuration.isHandlerEnabledForSite('cdn-logs-analysis', site)) {
+      log.info(`Agentic URLs - Skipping Athena query because cdn-logs-analysis is disabled for site ${site.getId()}`);
+      return [];
+    }
+
     const awsRuntime = getCdnAwsRuntime(site, context);
     const s3Config = getS3Config(site, context);
     const periods = generateReportingPeriods();

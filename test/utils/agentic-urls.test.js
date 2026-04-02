@@ -162,6 +162,31 @@ describe('agentic-urls', () => {
       );
     });
 
+    it('should return empty array early when cdn-logs-analysis is disabled for the site', async () => {
+      const site = createMockSite();
+      const context = {
+        ...createMockContext(),
+        dataAccess: {
+          Configuration: {
+            findLatest: sandbox.stub().resolves({
+              isHandlerEnabledForSite: sandbox.stub().returns(false),
+            }),
+          },
+        },
+      };
+
+      const result = await getTopAgenticUrlsFromAthena(site, context);
+
+      expect(result).to.deep.equal([]);
+      expect(context.log.info).to.have.been.calledWith(
+        'Agentic URLs - Skipping Athena query because cdn-logs-analysis is disabled for site site-123',
+      );
+      expect(mockGetCdnAwsRuntime).to.not.have.been.called;
+      expect(mockGetS3Config).to.not.have.been.called;
+      expect(mockWeeklyBreakdownQueries.createTopUrlsQueryWithLimit).to.not.have.been.called;
+      expect(mockAthenaClient.query).to.not.have.been.called;
+    });
+
     it('should return empty array when Athena returns no results', async () => {
       const site = createMockSite();
       const context = createMockContext();
