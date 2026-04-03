@@ -355,10 +355,19 @@ export const generateSuggestionData = async (context) => {
       log,
     ),
   });
-  const suggestions = await Suggestion.allByOpportunityIdAndStatus(
-    opportunity.getId(),
-    SuggestionModel.STATUSES.NEW,
-  );
+  const suggestionStatusesToProcess = [SuggestionModel.STATUSES.NEW];
+  if (site?.requiresValidation && SuggestionModel.STATUSES.PENDING_VALIDATION) {
+    suggestionStatusesToProcess.push(SuggestionModel.STATUSES.PENDING_VALIDATION);
+  }
+
+  const suggestions = (
+    await Promise.all(
+      suggestionStatusesToProcess.map((status) => Suggestion.allByOpportunityIdAndStatus(
+        opportunity.getId(),
+        status,
+      )),
+    )
+  ).flat();
 
   // Build broken links array
   const brokenLinks = suggestions
