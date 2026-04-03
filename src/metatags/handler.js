@@ -26,7 +26,7 @@ import {
   PROJECTED_VALUE_THRESHOLD,
   TITLE,
 } from './constants.js';
-import { syncSuggestions } from '../utils/data-access.js';
+import { syncSuggestions, getAuditTargetUrls } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { validateDetectedIssues } from './ssr-meta-validator.js';
 
@@ -497,11 +497,12 @@ export async function submitForScraping(context) {
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
 
   const topPagesUrls = topPages.map((page) => page.getUrl());
-  // Combine includedURLs and topPages URLs to scrape
+  // Combine includedURLs, custom audit target URLs, and topPages URLs to scrape
   const includedURLs = await site?.getConfig()?.getIncludedURLs('meta-tags') || [];
+  const customUrls = getAuditTargetUrls(site, log);
 
-  const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
-  log.debug(`Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
+  const finalUrls = [...new Set([...topPagesUrls, ...includedURLs, ...customUrls])];
+  log.debug(`Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Custom URLs: ${customUrls.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
 
   if (finalUrls.length === 0) {
     throw new Error(`No URLs found for site neither top pages nor included URLs for ${site.getId()}`);

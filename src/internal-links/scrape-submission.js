@@ -12,6 +12,7 @@
 
 import { createInternalLinksConfigResolver } from './config.js';
 import { createInternalLinksStepLogger } from './logging.js';
+import { getAuditTargetUrls } from '../utils/data-access.js';
 
 export function createSubmitForScraping({
   auditType,
@@ -55,10 +56,11 @@ export function createSubmitForScraping({
 
     const includedURLs = site?.getConfig()?.getIncludedURLs?.('broken-internal-links') || [];
     log.info(`Found ${includedURLs.length} includedURLs from siteConfig`);
+    const customUrls = getAuditTargetUrls(site, log);
     const maxUrlsToProcess = config.getMaxUrlsToProcess();
 
-    let finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
-    log.info(`Merged URLs: ${topPagesUrls.length} (SEO) + ${includedURLs.length} (manual) = ${finalUrls.length} unique`);
+    let finalUrls = [...new Set([...topPagesUrls, ...includedURLs, ...customUrls])];
+    log.info(`Merged URLs: ${topPagesUrls.length} (SEO) + ${includedURLs.length} (manual) + ${customUrls.length} (custom) = ${finalUrls.length} unique`);
 
     const baseURL = site.getBaseURL();
     finalUrls = finalUrls.filter((url) => isWithinAuditScope(url, baseURL));
