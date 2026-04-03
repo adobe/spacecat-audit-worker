@@ -25,7 +25,7 @@ export async function fetchCommerceFastlyService(domain, { log }) {
   if (!domain || !process.env.LLMO_HLX_API_KEY) return null;
 
   try {
-    const res = await fetch('https://main--project-elmo-ui-data--adobe.aem.live/adobe-managed-domains/commerce-fastly-domains.json?limit=5000', {
+    const res = await fetch('https://main--project-elmo-ui-data--adobe.aem.live/adobe-managed-domains/commerce-fastly-domains.json?limit=10000', {
       headers: { 'User-Agent': 'spacecat-audit-worker', Authorization: `token ${process.env.LLMO_HLX_API_KEY}` },
     });
 
@@ -218,7 +218,6 @@ export async function handleCdnBucketConfigChanges(context, data) {
   const configuration = await Configuration.findLatest();
   configuration.enableHandlerForSite('cdn-logs-analysis', site);
   configuration.enableHandlerForSite('cdn-logs-report', site);
-  configuration.enableHandlerForSite('page-citability', site);
   await configuration.save();
 
   // Run analysis and reporting for Adobe-managed Fastly customers

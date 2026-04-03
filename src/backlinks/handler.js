@@ -372,6 +372,8 @@ export const generateSuggestionData = async (context) => {
   // Check if all suggestions were filtered out as invalid
   if (brokenLinks.length === 0 && suggestions.length > 0) {
     log.warn('No valid broken links to send to Mystique. Skipping message.');
+    opportunity.setLastAuditedAt(new Date().toISOString());
+    await opportunity.save();
     return {
       status: 'complete',
     };
@@ -500,6 +502,8 @@ export const generateSuggestionData = async (context) => {
   // Validate before sending to Mystique
   if (brokenLinksForMystique.length === 0) {
     log.info('All broken links resolved via Bright Data. Skipping Mystique.');
+    opportunity.setLastAuditedAt(new Date().toISOString());
+    await opportunity.save();
     return {
       status: 'complete',
     };
@@ -507,6 +511,8 @@ export const generateSuggestionData = async (context) => {
 
   if (alternativeUrls.length === 0) {
     log.warn('No alternative URLs available. Cannot generate suggestions. Skipping message to Mystique.');
+    opportunity.setLastAuditedAt(new Date().toISOString());
+    await opportunity.save();
     return {
       status: 'complete',
     };
@@ -526,6 +532,8 @@ export const generateSuggestionData = async (context) => {
   };
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
   log.debug(`Message sent to Mystique: ${JSON.stringify(message)}`);
+  opportunity.setLastAuditedAt(new Date().toISOString());
+  await opportunity.save();
   return {
     status: 'complete',
   };

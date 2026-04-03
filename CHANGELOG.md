@@ -1,3 +1,38 @@
+# [1.392.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.391.3...v1.392.0) (2026-04-02)
+
+
+### Features
+
+* CWV Suggestions for PLG customers should be auto-validated ([#2216](https://github.com/adobe/spacecat-audit-worker/issues/2216)) ([55a3bc2](https://github.com/adobe/spacecat-audit-worker/commit/55a3bc2429dc6b52fedcf2e2fa293e88f1709ebc))
+
+## [1.391.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.391.2...v1.391.3) (2026-04-02)
+
+
+### Bug Fixes
+
+* **audit-worker:** remove geo-brand-presence handlers and wiring ([#2292](https://github.com/adobe/spacecat-audit-worker/issues/2292)) ([d6487d8](https://github.com/adobe/spacecat-audit-worker/commit/d6487d82f5f2aafdd1c3ffc853cc90c742ef64a6))
+
+## [1.391.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.391.1...v1.391.2) (2026-04-02)
+
+
+### Bug Fixes
+
+* **llmo-customer-analysis:** increase commerce fastly limit ([#2291](https://github.com/adobe/spacecat-audit-worker/issues/2291)) ([07599d3](https://github.com/adobe/spacecat-audit-worker/commit/07599d3f4e93110a6eb06ed062e4452d74dbb1bc))
+
+## [1.391.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.391.0...v1.391.1) (2026-04-02)
+
+
+### Bug Fixes
+
+* **faqs:** defer URL assignment until guidance callback ([#2290](https://github.com/adobe/spacecat-audit-worker/issues/2290)) ([2320417](https://github.com/adobe/spacecat-audit-worker/commit/2320417c1313ce80248504275f75cba9b0ea0376))
+
+# [1.391.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.390.5...v1.391.0) (2026-04-02)
+
+
+### Features
+
+* add lastAuditedAt field to opportunities ([#2228](https://github.com/adobe/spacecat-audit-worker/issues/2228)) ([e5abed5](https://github.com/adobe/spacecat-audit-worker/commit/e5abed56d9801ce9520beb6e9c7fdc4a84e559a3))
+
 ## [1.390.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.390.4...v1.390.5) (2026-04-02)
 
 

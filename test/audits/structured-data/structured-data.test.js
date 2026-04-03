@@ -60,7 +60,7 @@ describe('Structured Data Audit', () => {
 
   beforeEach(() => {
     mockConfiguration = {
-      isHandlerEnabledForSite: sinon.stub().returns(true),
+      isHandlerEnabledForSite: sinon.stub().callsFake((handler) => handler !== 'summit-plg'),
     };
     s3ClientStub = {
       send: sinon.mock(),

@@ -52,6 +52,11 @@ describe('Suggestion Validation Tests', () => {
           bulkUpdateStatus: sandbox.stub().resolves(),
           saveMany: sandbox.stub().resolves(),
         },
+        Configuration: {
+          findLatest: sinon.stub().resolves({
+            isHandlerEnabledForSite: sinon.stub().returns(false),
+          }),
+        },
       },
     };
 
