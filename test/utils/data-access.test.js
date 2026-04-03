@@ -176,6 +176,27 @@ describe('data-access', () => {
     it('exports INCLUDE_CUSTOM_URLS constant set to true', () => {
       expect(INCLUDE_CUSTOM_URLS).to.equal(true);
     });
+
+    it('returns empty array when custom URLs are disabled via SPACECAT_DISABLE_CUSTOM_AUDIT_TARGET_URLS', () => {
+      const prev = process.env.SPACECAT_DISABLE_CUSTOM_AUDIT_TARGET_URLS;
+      process.env.SPACECAT_DISABLE_CUSTOM_AUDIT_TARGET_URLS = 'true';
+      try {
+        const site = {
+          getConfig: () => ({
+            getAuditTargetURLs: () => [{ url: 'https://example.com/page1' }],
+          }),
+        };
+        const result = getAuditTargetUrls(site, mockLog);
+        expect(result).to.deep.equal([]);
+        expect(mockLog.info).to.not.have.been.called;
+      } finally {
+        if (prev === undefined) {
+          delete process.env.SPACECAT_DISABLE_CUSTOM_AUDIT_TARGET_URLS;
+        } else {
+          process.env.SPACECAT_DISABLE_CUSTOM_AUDIT_TARGET_URLS = prev;
+        }
+      }
+    });
   });
 
   describe('getTopPagesForSiteId', () => {
