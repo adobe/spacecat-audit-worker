@@ -45,6 +45,8 @@ export default async function metatagsAutoSuggest(allTags, context, site, option
     });
   }
   log.debug('Generated presigned URLs');
+
+  log.info('[debug] meta-tags-auto-suggest tagsData ', JSON.stringify(tagsData, null, 2));
   const requestBody = {
     healthyTags,
     detectedTags: tagsData,
