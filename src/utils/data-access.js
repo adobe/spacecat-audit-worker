@@ -106,13 +106,15 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
 
 /**
  * Global toggle for custom audit target URL inclusion (default: on).
- * Set env `SPACECAT_DISABLE_CUSTOM_AUDIT_TARGET_URLS=true` to disable merging
- * across all audits (kill switch).
+ * Disable with `SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS=0` or `=false`.
+ * Enable explicitly with `1` or `true` (optional when unset).
  */
 export const INCLUDE_CUSTOM_URLS = true;
 
 function customAuditTargetUrlsEnabled() {
-  return process.env.SPACECAT_DISABLE_CUSTOM_AUDIT_TARGET_URLS !== 'true';
+  const v = process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS;
+  if (v === '0' || v === 'false') return false;
+  return true;
 }
 
 /**
