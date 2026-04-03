@@ -1,3 +1,10 @@
+## [1.392.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.392.1...v1.392.2) (2026-04-03)
+
+
+### Bug Fixes
+
+* Read <head><title> instead of just <title> ([#2297](https://github.com/adobe/spacecat-audit-worker/issues/2297)) ([66bcc73](https://github.com/adobe/spacecat-audit-worker/commit/66bcc73d04f5d0e08dabd742a7b2e5a8749d6f7b))
+
 ## [1.392.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.392.0...v1.392.1) (2026-04-03)
 
 
