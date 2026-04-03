@@ -43,6 +43,7 @@ async function getReadabilityUrlsToScrape(context) {
         urlId: page.getId?.() ?? page.getUrl(),
       }));
     },
+    log,
   });
 
   log.info(

@@ -22,6 +22,7 @@ import { isPreviewPage, isPdfUrl } from '../utils/url-utils.js';
 import {
   syncSuggestions,
   keepLatestMergeDataFunction,
+  getAuditTargetUrls,
 } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
@@ -84,10 +85,16 @@ export async function submitForScraping(context) {
 
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
 
-  log.info(`[canonical] Found ${topPages?.length || 0} top pages for scraping`);
+  const customUrls = getAuditTargetUrls(site, log);
+  const seoUrls = (topPages || []).map((page) => page.getUrl());
+  const seoUrlSet = new Set(seoUrls);
+  const uniqueCustomUrls = customUrls.filter((url) => !seoUrlSet.has(url));
+  const allUrls = [...uniqueCustomUrls, ...seoUrls];
 
-  if (!topPages || topPages.length === 0) {
-    log.info(`[canonical] No top pages found for site ${site.getId()}, skipping scraping`);
+  log.info(`[canonical] Found ${allUrls.length} pages for scraping (${seoUrls.length} from SEO, ${customUrls.length} custom)`);
+
+  if (allUrls.length === 0) {
+    log.info(`[canonical] No pages found for site ${site.getId()}, skipping scraping`);
     return {
       auditResult: {
         status: 'NO_OPPORTUNITIES',
@@ -97,7 +104,7 @@ export async function submitForScraping(context) {
     };
   }
 
-  const topPagesUrls = topPages.map((page) => page.getUrl());
+  const topPagesUrls = allUrls;
 
   // Filter out auth pages and PDFs before scraping
   const filteredUrls = topPagesUrls.filter((url) => {
@@ -110,7 +117,7 @@ export async function submitForScraping(context) {
     return true;
   });
 
-  log.info(`[canonical] After filtering: ${filteredUrls.length} pages will be scraped - ${JSON.stringify(filteredUrls)}`);
+  log.info(`[canonical] After filtering: ${filteredUrls.length} pages will be scraped`);
 
   // Note: Do NOT return auditResult/fullAuditRef for steps with SCRAPE_CLIENT destination
   // These are intermediate steps; the scraper will trigger the next step when complete

@@ -223,17 +223,18 @@ export async function getBrandGuidelines(healthyTagsObject, log, context, site =
 }
 
 /**
- * Get top pages for a site with validation
+ * Get top pages for a site (SEO). Pass `site` to merge config `auditTargetURLs`.
  * @param {Object} dataAccess - Data access object
  * @param {string} siteId - Site ID
  * @param {Object} context - Audit context
  * @param {Object} log - Logger instance
- * @param {number} limit - Maximum number of pages to return
+ * @param {Object} [site] - Optional site model for merging audit target URLs
+ * @param {number} [limit=200] - Maximum number of pages to return
  * @returns {Promise<Array>} Array of top pages
  */
-export async function getTopPages(dataAccess, siteId, context, log, limit = 200) {
+export async function getTopPages(dataAccess, siteId, context, log, site, limit = 200) {
   log.debug(`Fetching top pages for site: ${siteId}`);
-  const allTopPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
+  const allTopPages = await getTopPagesForSiteId(dataAccess, siteId, context, log, site);
   const topPages = allTopPages.slice(0, limit);
 
   log.debug(`Processing ${topPages.length} top pages (limited to ${limit})`);

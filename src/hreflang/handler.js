@@ -167,7 +167,7 @@ export async function hreflangAuditRunner(baseURL, context, site) {
 
   try {
     // Get top 200 pages
-    const allTopPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
+    const allTopPages = await getTopPagesForSiteId(dataAccess, siteId, context, log, site);
     const topPages = allTopPages.slice(0, 200);
 
     log.debug(`Processing ${topPages.length} top pages for hreflang audit (limited to 200)`);

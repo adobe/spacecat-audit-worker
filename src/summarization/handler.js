@@ -41,6 +41,7 @@ async function getSummarizationInputUrls(context) {
       return sortTopPagesByTraffic(topPages || []);
     },
     topOrganicLimit: MAX_TOP_PAGES,
+    log,
   });
 
   log.info(

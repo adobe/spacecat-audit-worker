@@ -391,7 +391,7 @@ export async function headingsAuditRunner(baseURL, context, site) {
     } else {
       // Fallback to SEO provider if Athena returns no data
       log.info('[Headings Audit] No agentic URLs from Athena, falling back to SEO top pages');
-      topPages = await getTopPages(dataAccess, siteId, context, log, 200);
+      topPages = await getTopPages(dataAccess, siteId, context, log, site, 200);
     }
 
     log.debug(`[Headings Audit] Processing ${topPages.length} top pages for headings audit (limited to 200)`);

@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { getAuditTargetUrls } from './data-access.js';
+
 /**
  * Common non-HTML file extensions that should be filtered out from scrape inputs.
  */
@@ -98,8 +100,8 @@ export function mergeAndGetUniqueHtmlUrls(...urlArrays) {
 }
 
 /**
- * Loads manually included, agentic, and top organic URLs for an audit and applies
- * merge/deduping/filtering rules.
+ * Loads manually included, agentic, custom audit target, and top organic URLs
+ * for an audit and applies merge/deduping/filtering rules.
  * @param {Object} options
  * @param {Object} options.site - Site model
  * @param {Object} options.dataAccess - Data access container
@@ -111,6 +113,7 @@ export function mergeAndGetUniqueHtmlUrls(...urlArrays) {
  * when top pages should be loaded lazily or in parallel with other inputs.
  * @param {number} [options.topOrganicLimit] - Optional cap for SEO URLs
  * @param {Function} [options.topPagesToUrls] - Maps SEO page records to URL strings
+ * @param {Object} [options.log] - Optional logger instance
  * @returns {Promise<Object>}
  */
 export async function getMergedAuditInputUrls({
@@ -122,6 +125,7 @@ export async function getMergedAuditInputUrls({
   getTopPages,
   topOrganicLimit,
   topPagesToUrls = defaultTopPagesToUrls,
+  log,
 }) {
   const { SiteTopPage } = dataAccess || {};
   let topPagesPromise;
@@ -146,7 +150,9 @@ export async function getMergedAuditInputUrls({
     : normalizedTopPages;
   const topPagesUrls = topPagesToUrls(limitedTopPages);
   const includedURLs = await siteConfig?.getIncludedURLs?.(auditType) || [];
+  const auditTargetUrls = getAuditTargetUrls(site, log);
   const { urls, filteredCount } = mergeAndGetUniqueHtmlUrls(
+    auditTargetUrls,
     includedURLs,
     agenticUrls || [],
     topPagesUrls,
@@ -157,6 +163,7 @@ export async function getMergedAuditInputUrls({
     topPagesUrls,
     agenticUrls: agenticUrls || [],
     includedURLs,
+    auditTargetUrls,
     urls,
     filteredCount,
   };
