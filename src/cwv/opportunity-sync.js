@@ -43,20 +43,11 @@ export async function syncOpportunitiesAndSuggestions(context) {
   const auditResult = audit.getAuditResult();
   const groupedURLs = site.getConfig().getGroupedURLs(Audit.AUDIT_TYPES.CWV);
 
-  // Detect PLG sites (summit-plg handler enabled) to apply filtered suggestions.
-  // PLG sites only receive suggestions for pages where at least one CWV metric is failing,
-  // sorted by page views descending (already ordered from step 1).
-  const { Configuration } = context.dataAccess;
-  const configuration = await Configuration.findLatest();
-  const isSummitPlgSite = configuration.isHandlerEnabledForSite('summit-plg', site);
-
-  const cwvData = isSummitPlgSite
-    ? auditResult.cwv.filter(hasFailingMetrics)
-    : auditResult.cwv;
-
-  if (isSummitPlgSite) {
-    log.info(`[syncOpportunitiesAndSuggestions] PLG site ${site.getId()} - ${cwvData.length} of ${auditResult.cwv.length} CWV entries have failing metrics`);
-  }
+  // Only sync suggestions for pages where at least one CWV metric is failing.
+  // Pages where all metrics pass are not actionable. Data is already sorted by
+  // page views descending from step 1.
+  const cwvData = auditResult.cwv.filter(hasFailingMetrics);
+  log.info(`[syncOpportunitiesAndSuggestions] site ${site.getId()} - ${cwvData.length} of ${auditResult.cwv.length} CWV entries have failing metrics`);
 
   // Build minimal audit data object for opportunity creation
   const auditData = {
