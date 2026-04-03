@@ -92,7 +92,7 @@ describe('Money pages audit', () => {
       expect(messageArg).to.have.property('type', 'detect:money-pages');
       expect(messageArg).to.have.property('siteId', 'site-id-1');
       expect(messageArg).to.have.property('auditId', 'audit-id-1');
-      expect(messageArg).to.have.property('deliveryType', 'aem_edge');
+      expect(messageArg).to.not.have.property('deliveryType');
       expect(messageArg.data).to.have.property('site_url', 'www.example.com');
       expect(messageArg.data).to.not.have.property('top_pages');
     });
