@@ -105,6 +105,12 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
 }
 
 /**
+ * Global toggle for custom audit target URL inclusion.
+ * Set to false to disable custom URL merging across all audits.
+ */
+export const INCLUDE_CUSTOM_URLS = true;
+
+/**
  * Extracts custom audit target URL strings from a site's configuration.
  *
  * @param {Object} site - The site object.
@@ -112,6 +118,7 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
  * @returns {string[]} - Array of URL strings from config.auditTargetURLs.
  */
 export function getAuditTargetUrls(site, log) {
+  if (!INCLUDE_CUSTOM_URLS) return [];
   try {
     const config = site.getConfig?.();
     const entries = config?.getAuditTargetURLs?.() || [];
