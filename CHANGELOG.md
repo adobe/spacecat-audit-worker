@@ -1,3 +1,10 @@
+# [1.393.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.392.2...v1.393.0) (2026-04-03)
+
+
+### Features
+
+* add money pages audit ([#2280](https://github.com/adobe/spacecat-audit-worker/issues/2280)) ([1b63930](https://github.com/adobe/spacecat-audit-worker/commit/1b6393054f266dbbfc0191a82e3555d3bd20c926)), closes [hi#value-pages](https://github.com/hi/issues/value-pages)
+
 ## [1.392.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.392.1...v1.392.2) (2026-04-03)
 
 
