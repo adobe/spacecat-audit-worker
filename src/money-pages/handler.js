@@ -30,7 +30,6 @@ export async function sendToMystiqueForGeneration(context) {
       type: 'detect:money-pages',
       siteId: site.getId(),
       auditId: audit.getId(),
-      deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
       data: {
         site_url: finalUrl,
