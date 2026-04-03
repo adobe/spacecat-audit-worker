@@ -16,17 +16,10 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
+import esmock from 'esmock';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import auditDataMock from '../fixtures/broken-backlinks/audit.json' with { type: 'json' };
 import rumTraffic from '../fixtures/broken-backlinks/all-traffic.json' with { type: 'json' };
-import {
-  brokenBacklinksAuditRunner, generateSuggestionData,
-  runAuditAndImportTopPages,
-  submitForScraping,
-  checkIfBacklinkFixedWithSuggestion,
-  buildBacklinkFixEntityPayload,
-  checkIfBacklinkResolvedOnProduction,
-} from '../../src/backlinks/handler.js';
 import { FixEntity as FixEntityModel } from '@adobe/spacecat-shared-data-access';
 import { MockContextBuilder } from '../shared.js';
 import {
@@ -37,7 +30,7 @@ import {
   site2,
   siteWithExcludedUrls,
 } from '../fixtures/broken-backlinks/sites.js';
-import { ahrefsMock, mockFixedBacklinks } from '../fixtures/broken-backlinks/ahrefs.js';
+import { mockFixedBacklinkUrls } from '../fixtures/broken-backlinks/seo-client.js';
 import {
   brokenBacklinksSuggestions,
   suggestions,
@@ -53,6 +46,14 @@ describe('Backlinks Tests', function () {
   this.timeout(10000);
   let message;
   let context;
+  let mockSeoClient;
+  let brokenBacklinksAuditRunner;
+  let generateSuggestionData;
+  let runAuditAndImportTopPages;
+  let submitForScraping;
+  let checkIfBacklinkFixedWithSuggestion;
+  let buildBacklinkFixEntityPayload;
+  let checkIfBacklinkResolvedOnProduction;
   const topPages = [
     { getUrl: () => 'https://example.com/blog/page1' },
     { getUrl: () => 'https://example.com/blog/page2' },
@@ -72,6 +73,30 @@ describe('Backlinks Tests', function () {
   let brokenBacklinksOpportunity;
   const sandbox = sinon.createSandbox();
 
+  before(async () => {
+    mockSeoClient = {
+      getBrokenBacklinks: sandbox.stub(),
+    };
+
+    const handler = await esmock('../../src/backlinks/handler.js', {
+      '@adobe/mysticat-shared-seo-client': {
+        default: {
+          createFrom: sandbox.stub().returns(mockSeoClient),
+        },
+      },
+    });
+
+    ({
+      brokenBacklinksAuditRunner,
+      generateSuggestionData,
+      runAuditAndImportTopPages,
+      submitForScraping,
+      checkIfBacklinkFixedWithSuggestion,
+      buildBacklinkFixEntityPayload,
+      checkIfBacklinkResolvedOnProduction,
+    } = handler);
+  });
+
   beforeEach(() => {
     message = {
       type: 'broken-backlinks',
@@ -82,8 +107,8 @@ describe('Backlinks Tests', function () {
       .withSandbox(sandbox)
       .withOverrides({
         env: {
-          AHREFS_API_BASE_URL: 'https://ahrefs.com',
-          AHREFS_API_KEY: 'ahrefs-api',
+          SEO_API_BASE_URL: 'https://seo-api.example.com',
+          SEO_API_KEY: 'test-seo-key',
           S3_SCRAPER_BUCKET_NAME: 'test-bucket',
           S3_IMPORTER_BUCKET_NAME: 'test-import-bucket',
           QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
@@ -114,6 +139,7 @@ describe('Backlinks Tests', function () {
       setData: () => { },
       getData: () => { },
       setUpdatedBy: sinon.stub().returnsThis(),
+      setLastAuditedAt: sinon.stub(),
     };
 
     nock('https://foo.com')
@@ -146,7 +172,10 @@ describe('Backlinks Tests', function () {
     const { brokenBacklinks } = auditDataMock.auditResult;
     const withoutExcluded = brokenBacklinks.filter((backlink) => backlink.url_to !== excludedUrl);
 
-    ahrefsMock(siteWithExcludedUrls.getBaseURL(), { backlinks: brokenBacklinks });
+    mockSeoClient.getBrokenBacklinks.resolves({
+      result: { backlinks: brokenBacklinks },
+      fullAuditRef: auditDataMock.fullAuditRef,
+    });
 
     const auditData = await brokenBacklinksAuditRunner(auditUrl, context, siteWithExcludedUrls);
 
@@ -170,7 +199,10 @@ describe('Backlinks Tests', function () {
       (a) => a.url_to !== excludedUrl,
     );
     context.site = siteWithInvalidExcludedUrl;
-    ahrefsMock(siteWithInvalidExcludedUrl.getBaseURL(), { backlinks: brokenBacklinks });
+    mockSeoClient.getBrokenBacklinks.resolves({
+      result: { backlinks: brokenBacklinks },
+      fullAuditRef: auditDataMock.fullAuditRef,
+    });
 
     const result = await runAuditAndImportTopPages(context);
     // Should still filter valid excludedURL even with malformed URL present
@@ -191,7 +223,10 @@ describe('Backlinks Tests', function () {
       (a) => a.url_to !== excludedUrl,
     );
     context.site = siteWithExcludedUrls;
-    ahrefsMock(siteWithExcludedUrls.getBaseURL(), { backlinks: brokenBacklinks });
+    mockSeoClient.getBrokenBacklinks.resolves({
+      result: { backlinks: brokenBacklinks },
+      fullAuditRef: auditDataMock.fullAuditRef,
+    });
 
     const result = await runAuditAndImportTopPages(context);
     expect(result).to.deep.equal({
@@ -258,7 +293,7 @@ describe('Backlinks Tests', function () {
     context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]); // Empty array
 
     await expect(submitForScraping(context))
-      .to.be.rejectedWith(`No top pages found in database for site ${contextSite.getId()}. Ahrefs import required.`);
+      .to.be.rejectedWith(`No top pages found in database for site ${contextSite.getId()}. SEO data import required.`);
   });
 
   it('should throw error when all top pages filtered out by audit scope', async () => {
@@ -287,7 +322,11 @@ describe('Backlinks Tests', function () {
       .concat(fixedBacklinks)
       .concat(brokenBacklinkWithTimeout);
 
-    mockFixedBacklinks(allBacklinks);
+    mockSeoClient.getBrokenBacklinks.resolves({
+      result: { backlinks: allBacklinks },
+      fullAuditRef: auditUrl,
+    });
+    mockFixedBacklinkUrls();
 
     const auditData = await brokenBacklinksAuditRunner(auditUrl, context, site2);
     expect(auditData.auditResult.brokenBacklinks)
@@ -297,13 +336,7 @@ describe('Backlinks Tests', function () {
   });
 
   it('should handle audit api errors gracefully', async () => {
-    nock(site.getBaseURL())
-      .get(/.*/)
-      .reply(200);
-
-    nock('https://ahrefs.com')
-      .get(/.*/)
-      .reply(500);
+    mockSeoClient.getBrokenBacklinks.rejects(new Error('SEO API request failed with status: 500'));
 
     const auditData = await brokenBacklinksAuditRunner(auditUrl, context, site);
 
@@ -311,21 +344,15 @@ describe('Backlinks Tests', function () {
       fullAuditRef: auditUrl,
       auditResult: {
         finalUrl: auditUrl,
-        error: 'Broken Backlinks audit for site1 with url https://audit.url failed with error: Ahrefs API request failed with status: 500',
+        error: 'Broken Backlinks audit for site1 with url https://audit.url failed with error: SEO API request failed with status: 500',
         success: false,
       },
     });
   });
 
   it('should handle fetch errors gracefully', async () => {
-    context.dataAccess.Site.findById = sinon.stub().withArgs('site1').resolves(site);
-    const errorMessage = 'Broken Backlinks audit for site1 with url https://audit.url failed with error: Ahrefs API request failed with status: 404';
-    nock(site.getBaseURL())
-      .get(/.*/)
-      .replyWithError('connection refused');
-    nock('https://ahrefs.com')
-      .get(/.*/)
-      .reply(404);
+    const errorMessage = 'Broken Backlinks audit for site1 with url https://audit.url failed with error: SEO API request failed: network error';
+    mockSeoClient.getBrokenBacklinks.rejects(new Error('SEO API request failed: network error'));
 
     const auditResult = await brokenBacklinksAuditRunner(auditUrl, context, site);
 
@@ -811,6 +838,7 @@ describe('Backlinks Tests', function () {
         setData: () => {},
         getData: () => {},
         setUpdatedBy: sinon.stub().returnsThis(),
+        setLastAuditedAt: sinon.stub(),
       };
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
 
@@ -886,6 +914,7 @@ describe('Backlinks Tests', function () {
         setData: () => {},
         getData: () => {},
         setUpdatedBy: sinon.stub().returnsThis(),
+        setLastAuditedAt: sinon.stub(),
       };
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
 
@@ -946,19 +975,16 @@ describe('Backlinks Tests', function () {
       context.env.BRIGHT_DATA_ZONE = 'test-zone';
       context.env.BRIGHT_DATA_VALIDATE_URLS = 'true';
 
-      // Mock Bright Data returning a result
+      // SERP result must score > 0 against broken URL (same section + keyword overlap)
       mockBrightDataClient.googleSearchWithFallback.resolves({
-        results: [{ link: 'https://example.com/valid-page', title: 'Valid Page' }],
-        query: 'site:example.com broken page',
-        keywords: 'broken page',
+        results: [{ link: 'https://example.com/blog/broken-page-updated', title: 'Updated Page' }],
+        query: 'site:example.com blog broken page',
+        keywords: 'blog broken page',
       });
 
-      // Mock the URL validation - nock returns 200 for valid URLs (both HEAD and GET)
+      // Mock the URL validation - nock returns 200 for valid URLs
       nock('https://example.com')
-        .head('/valid-page')
-        .reply(200);
-      nock('https://example.com')
-        .get('/valid-page')
+        .get('/blog/broken-page-updated')
         .reply(200);
 
       context.audit.getAuditResult.returns({
@@ -966,7 +992,6 @@ describe('Backlinks Tests', function () {
         brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
       });
 
-      // Setup opportunity properly for the mocked handler
       const mockOpportunity = {
         getId: () => 'opportunity-id',
         setAuditId: sinon.stub(),
@@ -977,10 +1002,10 @@ describe('Backlinks Tests', function () {
         setData: () => {},
         getData: () => {},
         setUpdatedBy: sinon.stub().returnsThis(),
+        setLastAuditedAt: sinon.stub(),
       };
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
 
-      // Use /blog/ prefix to match topPages paths
       const mockSuggestion = {
         getId: () => 'test-suggestion-1',
         getData: () => ({
@@ -990,14 +1015,15 @@ describe('Backlinks Tests', function () {
         setData: sinon.stub(),
         save: sinon.stub().resolves(),
       };
-      const testSuggestions = [mockSuggestion];
-      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(testSuggestions);
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves([mockSuggestion]);
       context.dataAccess.Suggestion.findById = sinon.stub().resolves(mockSuggestion);
 
       await mockedGenerateSuggestionData(context);
 
-      // Suggestion should be updated since URL is valid
+      // Suggestion should be updated with validated URL
       expect(mockSuggestion.setData).to.have.been.calledOnce;
+      const savedData = mockSuggestion.setData.getCall(0).args[0];
+      expect(savedData.urlsSuggested).to.deep.equal(['https://example.com/blog/broken-page-updated']);
     });
 
     it('should skip suggestion when validated URL returns 404', async () => {
@@ -1183,10 +1209,10 @@ describe('Backlinks Tests', function () {
     const auditData = {
       auditResult: {
         brokenBacklinks: [
-          { traffic_domain: 25000001, urlsSuggested: ['https://foo.com/bar/redirect'] },
-          { traffic_domain: 10000001, urlsSuggested: ['https://foo.com/bar/baz/redirect'] },
-          { traffic_domain: 10001, urlsSuggested: ['https://foo.com/qux/redirect'] },
-          { traffic_domain: 100, urlsSuggested: ['https://foo.com/bar/baz/qux/redirect'] },
+          { traffic_domain: 85, urlsSuggested: ['https://foo.com/bar/redirect'] },
+          { traffic_domain: 65, urlsSuggested: ['https://foo.com/bar/baz/redirect'] },
+          { traffic_domain: 25, urlsSuggested: ['https://foo.com/qux/redirect'] },
+          { traffic_domain: 5, urlsSuggested: ['https://foo.com/bar/baz/qux/redirect'] },
         ],
       },
     };
@@ -1205,8 +1231,8 @@ describe('Backlinks Tests', function () {
       });
 
       const result = await calculateKpiMetrics(auditData, context, site);
-      expect(result.projectedTrafficLost).to.equal(26788.645);
-      expect(result.projectedTrafficValue).to.equal(5342.87974025892);
+      expect(result.projectedTrafficLost).to.equal(28202.337499999998);
+      expect(result.projectedTrafficValue).to.equal(5624.834613945362);
     });
 
     it('skips URL if no RUM data is available for just individual URLs', async () => {
@@ -1224,7 +1250,7 @@ describe('Backlinks Tests', function () {
       });
 
       const result = await calculateKpiMetrics(auditData, context, site);
-      expect(result.projectedTrafficLost).to.equal(14545.045000000002);
+      expect(result.projectedTrafficLost).to.equal(15958.737500000001);
     });
 
     it('should cuse default CPC value if there is wrong organic traffic data', async () => {
@@ -1244,8 +1270,8 @@ describe('Backlinks Tests', function () {
         },
       });
       const result = await calculateKpiMetrics(auditData, context, site);
-      expect(result.projectedTrafficLost).to.equal(14545.045000000002);
-      expect(result.projectedTrafficValue).to.equal(39126.171050000004);
+      expect(result.projectedTrafficLost).to.equal(15958.737500000001);
+      expect(result.projectedTrafficValue).to.equal(42929.003875);
     });
 
     it('should return 0 if projectedTrafficValue is NaN', async () => {
@@ -1264,7 +1290,7 @@ describe('Backlinks Tests', function () {
         },
       });
       const result = await calculateKpiMetrics(auditData, context, site);
-      expect(result.projectedTrafficLost).to.equal(14545.045000000002);
+      expect(result.projectedTrafficLost).to.equal(15958.737500000001);
       expect(result.projectedTrafficValue).to.equal(0);
     });
 
@@ -1284,6 +1310,8 @@ describe('Backlinks Tests', function () {
       const mockSyncSuggestions = sinon.stub().resolves();
       const mockConvertToOpportunity = sinon.stub().resolves({
         getId: () => 'opportunity-id',
+        setLastAuditedAt: sinon.stub(),
+        save: sinon.stub(),
       });
 
       // Use dynamic import to get esmock
@@ -1304,7 +1332,7 @@ describe('Backlinks Tests', function () {
             url_from: 'https://example.com/page1',
             url_to: 'https://example.com/broken',
             title: 'Test Page',
-            traffic_domain: 1000,
+            traffic_domain: 50,
           },
         ],
       };
@@ -1354,7 +1382,7 @@ describe('Backlinks Tests', function () {
         url_from: 'https://example.com/page1',
         url_to: 'https://example.com/broken',
         title: 'Old Title',
-        traffic_domain: 500,
+        traffic_domain: 35,
         urlEdited: 'https://example.com/user-fixed-url',
         isEdited: true,
       };
@@ -1363,7 +1391,7 @@ describe('Backlinks Tests', function () {
         url_from: 'https://example.com/page1',
         url_to: 'https://example.com/broken',
         title: 'New Title',
-        traffic_domain: 1000,
+        traffic_domain: 50,
       };
 
       const result = mergeDataFn(existingData, newData);
@@ -1371,13 +1399,15 @@ describe('Backlinks Tests', function () {
       expect(result.urlEdited).to.equal('https://example.com/user-fixed-url');
       expect(result.isEdited).to.equal(true);
       expect(result.title).to.equal('New Title');
-      expect(result.traffic_domain).to.equal(1000);
+      expect(result.traffic_domain).to.equal(50);
     });
 
     it('should preserve urlEdited when isEdited is false (AI selection)', async () => {
       const mockSyncSuggestions = sinon.stub().resolves();
       const mockConvertToOpportunity = sinon.stub().resolves({
         getId: () => 'opportunity-id',
+        setLastAuditedAt: sinon.stub(),
+        save: sinon.stub(),
       });
 
       const esmock = (await import('esmock')).default;
@@ -1397,7 +1427,7 @@ describe('Backlinks Tests', function () {
             url_from: 'https://example.com/page1',
             url_to: 'https://example.com/broken',
             title: 'Test Page',
-            traffic_domain: 1000,
+            traffic_domain: 50,
           },
         ],
       };
@@ -1466,6 +1496,8 @@ describe('Backlinks Tests', function () {
       const mockSyncSuggestions = sinon.stub().resolves();
       const mockConvertToOpportunity = sinon.stub().resolves({
         getId: () => 'opportunity-id',
+        setLastAuditedAt: sinon.stub(),
+        save: sinon.stub(),
       });
 
       const esmock = (await import('esmock')).default;
@@ -1485,7 +1517,7 @@ describe('Backlinks Tests', function () {
             url_from: 'https://example.com/page1',
             url_to: 'https://example.com/broken',
             title: 'Test Page',
-            traffic_domain: 1000,
+            traffic_domain: 50,
           },
         ],
       };
@@ -1552,6 +1584,8 @@ describe('Backlinks Tests', function () {
       const mockSyncSuggestions = sinon.stub().resolves();
       const mockConvertToOpportunity = sinon.stub().resolves({
         getId: () => 'opportunity-id',
+        setLastAuditedAt: sinon.stub(),
+        save: sinon.stub(),
       });
 
       const esmock = (await import('esmock')).default;
@@ -1570,7 +1604,7 @@ describe('Backlinks Tests', function () {
           url_from: 'https://example.com/page1',
           url_to: 'https://example.com/broken',
           title: 'Test',
-          traffic_domain: 1000,
+          traffic_domain: 50,
         }],
       };
 
@@ -1611,6 +1645,8 @@ describe('Backlinks Tests', function () {
       const mockSyncSuggestions = sinon.stub().resolves();
       const mockConvertToOpportunity = sinon.stub().resolves({
         getId: () => 'opportunity-id',
+        setLastAuditedAt: sinon.stub(),
+        save: sinon.stub(),
       });
 
       const esmock = (await import('esmock')).default;
@@ -1629,7 +1665,7 @@ describe('Backlinks Tests', function () {
           url_from: 'https://example.com/page1',
           url_to: 'https://example.com/broken',
           title: 'Test',
-          traffic_domain: 1000,
+          traffic_domain: 50,
         }],
       };
 
@@ -1671,6 +1707,8 @@ describe('Backlinks Tests', function () {
       const mockSyncSuggestions = sinon.stub().resolves();
       const mockConvertToOpportunity = sinon.stub().resolves({
         getId: () => 'opportunity-id',
+        setLastAuditedAt: sinon.stub(),
+        save: sinon.stub(),
       });
 
       const esmock = (await import('esmock')).default;
@@ -1689,7 +1727,7 @@ describe('Backlinks Tests', function () {
           url_from: 'https://example.com/page1',
           url_to: 'https://example.com/broken',
           title: 'Test',
-          traffic_domain: 1000,
+          traffic_domain: 50,
         }],
       };
 

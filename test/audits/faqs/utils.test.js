@@ -16,7 +16,12 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
-import { getJsonFaqSuggestion } from '../../../src/faqs/utils.js';
+import {
+  getJsonFaqSuggestion,
+  decorateFaqSuggestionUrl,
+  buildColumnMap,
+  getColumn,
+} from '../../../src/faqs/utils.js';
 
 use(sinonChai);
 
@@ -431,6 +436,207 @@ describe('FAQ Utils', () => {
       expect(suggestions[0].item.scrapedAt >= beforeTime).to.be.true;
       expect(suggestions[0].item.scrapedAt <= afterTime).to.be.true;
     });
+
+    it('should decorate FAQ URL using customer desired URL overlap first', () => {
+      const faqs = [
+        {
+          url: 'https://www.adobe.com/original',
+          originalUrl: 'https://www.adobe.com/original',
+          relatedUrls: [
+            'https://www.adobe.com/related-a',
+            'https://www.adobe.com/desired-page',
+          ],
+          topic: 'test',
+          faqs: [
+            {
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
+              question: 'Question?',
+              answer: 'Answer.',
+              sources: [{ url: 'https://www.adobe.com/source-match' }],
+            },
+          ],
+        },
+      ];
+
+      const suggestions = getJsonFaqSuggestion(faqs, {
+        includedURLsSet: new Set(['https://www.adobe.com/desired-page']),
+      });
+
+      expect(suggestions).to.have.length(1);
+      expect(suggestions[0].url).to.equal('https://www.adobe.com/desired-page');
+    });
+
+    it('should decorate FAQ URL using source overlap before top related URL', () => {
+      const faqs = [
+        {
+          url: 'https://www.adobe.com/original',
+          originalUrl: 'https://www.adobe.com/original',
+          relatedUrls: [
+            'https://www.adobe.com/top-related',
+            'https://www.adobe.com/source-match',
+          ],
+          topic: 'test',
+          faqs: [
+            {
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
+              question: 'Question?',
+              answer: 'Answer.',
+              sources: [{ url: 'https://www.adobe.com/source-match' }],
+            },
+          ],
+        },
+      ];
+
+      const suggestions = getJsonFaqSuggestion(faqs);
+
+      expect(suggestions).to.have.length(1);
+      expect(suggestions[0].url).to.equal('https://www.adobe.com/source-match');
+    });
+
+    it('should fall back to top related URL, then original URL, then empty URL', () => {
+      const suggestions = getJsonFaqSuggestion([
+        {
+          url: 'https://www.adobe.com/original',
+          originalUrl: 'https://www.adobe.com/original',
+          relatedUrls: ['https://www.adobe.com/top-related'],
+          topic: 'related',
+          faqs: [{
+            isAnswerSuitable: true,
+            isQuestionRelevant: true,
+            question: 'Related?',
+            answer: 'Answer.',
+            sources: [],
+          }],
+        },
+        {
+          url: 'https://www.adobe.com/original-only',
+          originalUrl: 'https://www.adobe.com/original-only',
+          relatedUrls: [],
+          topic: 'original',
+          faqs: [{
+            isAnswerSuitable: true,
+            isQuestionRelevant: true,
+            question: 'Original?',
+            answer: 'Answer.',
+            sources: [],
+          }],
+        },
+        {
+          url: '',
+          originalUrl: '',
+          relatedUrls: [],
+          topic: 'generic',
+          faqs: [{
+            isAnswerSuitable: true,
+            isQuestionRelevant: true,
+            question: 'Generic?',
+            answer: 'Answer.',
+            sources: [],
+          }],
+        },
+      ]);
+
+      expect(suggestions).to.have.length(3);
+      expect(suggestions[0].url).to.equal('https://www.adobe.com/top-related');
+      expect(suggestions[1].url).to.equal('https://www.adobe.com/original-only');
+      expect(suggestions[2].url).to.equal('');
+    });
+
+    it('should use getRelatedUrls callback and omit internal URL metadata from output', () => {
+      const faqs = [
+        {
+          url: 'https://www.adobe.com/original',
+          topic: 'test',
+          faqs: [
+            {
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
+              question: 'Question?',
+              answer: 'Answer.',
+              sources: [{ url: 'https://www.adobe.com/source-match' }],
+            },
+          ],
+        },
+      ];
+
+      const suggestions = getJsonFaqSuggestion(faqs, {
+        getRelatedUrls: () => [
+          'https://www.adobe.com/top-related',
+          'https://www.adobe.com/source-match',
+        ],
+      });
+
+      expect(suggestions).to.have.length(1);
+      expect(suggestions[0].url).to.equal('https://www.adobe.com/source-match');
+      expect(suggestions[0]).not.to.have.property('originalUrl');
+      expect(suggestions[0]).not.to.have.property('relatedUrls');
+    });
+  });
+
+  describe('decorateFaqSuggestionUrl', () => {
+    it('should follow the full FAQ URL priority order', () => {
+      expect(decorateFaqSuggestionUrl({
+        relatedUrls: ['https://example.com/a', 'https://example.com/b'],
+        includedURLsSet: new Set(['https://example.com/b']),
+        originalUrl: 'https://example.com/original',
+        sources: ['https://example.com/a'],
+      })).to.equal('https://example.com/b');
+
+      expect(decorateFaqSuggestionUrl({
+        relatedUrls: ['https://example.com/a', 'https://example.com/b'],
+        includedURLsSet: new Set(['https://example.com/c']),
+        originalUrl: 'https://example.com/original',
+        sources: ['https://example.com/b'],
+      })).to.equal('https://example.com/b');
+
+      expect(decorateFaqSuggestionUrl({
+        relatedUrls: ['https://example.com/a', 'https://example.com/b'],
+        includedURLsSet: new Set(['https://example.com/c']),
+        originalUrl: 'https://example.com/original',
+        sources: ['https://example.com/z'],
+      })).to.equal('https://example.com/a');
+
+      expect(decorateFaqSuggestionUrl({
+        relatedUrls: [],
+        includedURLsSet: new Set(['https://example.com/c']),
+        originalUrl: 'https://example.com/original',
+        sources: ['https://example.com/z'],
+      })).to.equal('https://example.com/original');
+
+      expect(decorateFaqSuggestionUrl({
+        relatedUrls: [],
+        includedURLsSet: new Set(),
+        originalUrl: '',
+        sources: [],
+      })).to.equal('');
+    });
+
+    it('should handle empty and invalid URLs while matching overlaps', () => {
+      expect(decorateFaqSuggestionUrl({
+        relatedUrls: ['not-a-valid-url'],
+        includedURLsSet: new Set(['not-a-valid-url']),
+        originalUrl: 'https://example.com/original',
+        sources: [],
+      })).to.equal('not-a-valid-url');
+
+      expect(decorateFaqSuggestionUrl({
+        relatedUrls: ['https://example.com/a'],
+        includedURLsSet: new Set(['']),
+        originalUrl: '',
+        sources: [''],
+      })).to.equal('https://example.com/a');
+    });
+
+    it('should normalize root URLs when matching overlaps', () => {
+      expect(decorateFaqSuggestionUrl({
+        relatedUrls: ['https://example.com/'],
+        includedURLsSet: new Set(['https://example.com']),
+        originalUrl: '',
+        sources: [],
+      })).to.equal('https://example.com/');
+    });
   });
 
   describe('validateContentAI', () => {
@@ -648,6 +854,87 @@ describe('FAQ Utils', () => {
         },
         1,
       );
+    });
+  });
+
+  describe('buildColumnMap', () => {
+    it('should map header names to 1-based column indices', () => {
+      const worksheet = {
+        getRow: () => ({
+          values: [undefined, 'Category', 'Topics', 'Prompt', 'Region', 'URL'],
+        }),
+      };
+
+      const map = buildColumnMap(worksheet);
+
+      expect(map.category).to.equal(1);
+      expect(map.topics).to.equal(2);
+      expect(map.prompt).to.equal(3);
+      expect(map.region).to.equal(4);
+      expect(map.url).to.equal(5);
+    });
+
+    it('should handle null header values', () => {
+      const worksheet = {
+        getRow: () => ({ values: null }),
+      };
+
+      const map = buildColumnMap(worksheet);
+      expect(map).to.deep.equal({});
+    });
+
+    it('should handle undefined getRow result', () => {
+      const worksheet = {
+        getRow: () => undefined,
+      };
+
+      const map = buildColumnMap(worksheet);
+      expect(map).to.deep.equal({});
+    });
+
+    it('should skip empty/null header cells', () => {
+      const worksheet = {
+        getRow: () => ({
+          values: [undefined, 'Category', null, '', 'Prompt'],
+        }),
+      };
+
+      const map = buildColumnMap(worksheet);
+      expect(map.category).to.equal(1);
+      expect(map.prompt).to.equal(4);
+      expect(Object.keys(map)).to.have.lengthOf(2);
+    });
+
+    it('should be case-insensitive (stores lowercase keys)', () => {
+      const worksheet = {
+        getRow: () => ({
+          values: [undefined, 'Related URLs', 'PROMPT'],
+        }),
+      };
+
+      const map = buildColumnMap(worksheet);
+      expect(map['related urls']).to.equal(1);
+      expect(map.prompt).to.equal(2);
+    });
+  });
+
+  describe('getColumn', () => {
+    it('should return column index for matching header', () => {
+      const colMap = { topics: 2, prompt: 3, url: 7 };
+      expect(getColumn(colMap, 'Topics')).to.equal(2);
+      expect(getColumn(colMap, 'Prompt')).to.equal(3);
+      expect(getColumn(colMap, 'URL')).to.equal(7);
+    });
+
+    it('should return 0 for missing header', () => {
+      const colMap = { topics: 2 };
+      expect(getColumn(colMap, 'NonExistent')).to.equal(0);
+    });
+
+    it('should match case-insensitively', () => {
+      const colMap = { 'related urls': 22 };
+      expect(getColumn(colMap, 'Related URLs')).to.equal(22);
+      expect(getColumn(colMap, 'RELATED URLS')).to.equal(22);
     });
   });
 });

@@ -16,12 +16,25 @@ import { Entitlement } from '@adobe/spacecat-shared-data-access';
 const ASO_PRODUCT_CODE = Entitlement.PRODUCT_CODES.ASO;
 
 /**
+ * Audit types (SQS message `type`) for LLMO flows that skip PAID-tier suggestion validation
+ * gating — suggestions sync as if requiresValidation were false for these audits.
+ */
+export const IS_LLMO_OPPTY = [
+  'prerender',
+];
+
+/**
  * Checks if a site requires suggestion validation before showing in UI
  * @param {Object} site - The site object
- * @returns {boolean} - True if site requires validation, false otherwise
+ * @param {Object} context - Lambda context
+ * @param {string} [auditType] - Audit `type` from the job message (e.g. prerender)
+ * @returns {Promise<boolean>} - True if site requires validation, false otherwise
  */
-export async function checkSiteRequiresValidation(site, context) {
+export async function checkSiteRequiresValidation(site, context, auditType) {
   if (!site) {
+    return false;
+  }
+  if (auditType && IS_LLMO_OPPTY.includes(auditType)) {
     return false;
   }
   // LA customers override via env

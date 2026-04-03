@@ -33,6 +33,9 @@ describe('FAQs guidance handler', () => {
   let s3Client;
   let getObjectKeysUsingPrefixStub;
   let getObjectFromKeyStub;
+  let createLLMOSharepointClientStub;
+  let readFromSharePointStub;
+  let mockWorkbook;
 
   const mockFaqData = {
     opportunity_id: 'oppty-123',
@@ -85,6 +88,17 @@ describe('FAQs guidance handler', () => {
     });
     getObjectKeysUsingPrefixStub = sinon.stub();
     getObjectFromKeyStub = sinon.stub();
+    createLLMOSharepointClientStub = sinon.stub().resolves({ client: 'mock' });
+    readFromSharePointStub = sinon.stub().resolves(Buffer.from('mock'));
+    mockWorkbook = {
+      worksheets: [
+        {
+          rowCount: 1,
+          getRow: () => ({ values: [] }),
+          getRows: () => [],
+        },
+      ],
+    };
 
     // Mock the handler with stubbed dependencies
     const mockedHandler = await esmock('../../../src/faqs/guidance-handler.js', {
@@ -98,8 +112,26 @@ describe('FAQs guidance handler', () => {
         getObjectKeysUsingPrefix: getObjectKeysUsingPrefixStub,
         getObjectFromKey: getObjectFromKeyStub,
       },
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: createLLMOSharepointClientStub,
+        readFromSharePoint: readFromSharePointStub,
+      },
       '@adobe/spacecat-shared-utils': {
         tracingFetch: fetchStub,
+      },
+      exceljs: {
+        Workbook: class {
+          constructor() {}
+
+          get xlsx() {
+            const self = this;
+            return {
+              load: async () => {
+                Object.assign(self, mockWorkbook);
+              },
+            };
+          }
+        },
       },
     });
 
@@ -111,6 +143,9 @@ describe('FAQs guidance handler', () => {
     dummySite = {
       getBaseURL: () => 'https://adobe.com',
       getId: () => 'site-123',
+      getConfig: sinon.stub().returns({
+        getIncludedURLs: sinon.stub().resolves([]),
+      }),
     };
     Site.findById.resolves(dummySite);
 
@@ -135,6 +170,7 @@ describe('FAQs guidance handler', () => {
     context = {
       log,
       auditId: 'audit-123',
+      getOutputLocation: sinon.stub().returns('/data/llmo/brand-presence'),
       dataAccess: {
         Site,
         Opportunity,
@@ -379,6 +415,530 @@ describe('FAQs guidance handler', () => {
     expect(guidanceObj.guidance).to.be.an('array');
     expect(guidanceObj.guidance[0].insight).to.include('2 relevant FAQs identified');
     expect(guidanceObj.guidance[0].type).to.equal('CONTENT_UPDATE');
+  });
+
+  it('should handle site config without getIncludedURLs method', async () => {
+    dummySite.getConfig = sinon.stub().returns({});
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(200);
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
+  });
+
+  it('should load related URLs using llmo data folder when custom output location is absent', async () => {
+    context.getOutputLocation = undefined;
+    dummySite.getConfig = sinon.stub().returns({
+      getIncludedURLs: sinon.stub().resolves(['https://www.adobe.com/desired-page']),
+      getLlmoDataFolder: sinon.stub().returns('/llmo-folder'),
+    });
+    mockWorkbook = {
+      worksheets: [
+        {
+          rowCount: 2,
+          getRow: () => ({
+            values: [
+              undefined, 'Category', 'Topics', 'Prompt', 'Origin', 'Region',
+              'Volume', 'URL', 'Answer', 'Sources', 'Citations', 'Mentions',
+              'Sentiment', 'Biz', 'Org', 'CAI', 'IsA', 'S2A', 'Pos', 'Vis',
+              'DBM', 'ExecDate', 'Related URLs',
+            ],
+          }),
+          getRows: () => [
+            {
+              getCell: (col) => {
+                if (col === 2) return { value: 'photoshop' };
+                if (col === 3) return { value: 'How to use Photoshop?' };
+                if (col === 7) return { value: 'https://www.adobe.com/original' };
+                if (col === 22) return { value: 'https://www.adobe.com/desired-page' };
+                return { value: '' };
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = await handler({
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    }, context);
+
+    expect(result.status).to.equal(200);
+    expect(readFromSharePointStub).to.have.been.calledWith(
+      sinon.match.string,
+      '/llmo-folder/brand-presence',
+      sinon.match.object,
+      log,
+    );
+  });
+
+  it('should skip workbook lookup when no output location can be resolved', async () => {
+    context.getOutputLocation = undefined;
+    dummySite.getConfig = sinon.stub().returns({
+      getIncludedURLs: sinon.stub().resolves([]),
+    });
+
+    const result = await handler({
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    }, context);
+
+    expect(result.status).to.equal(200);
+    expect(readFromSharePointStub).not.to.have.been.called;
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
+  });
+
+  it('should handle workbook with no worksheet when loading related URLs', async () => {
+    mockWorkbook = {
+      worksheets: [],
+    };
+
+    const result = await handler({
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    }, context);
+
+    expect(result.status).to.equal(200);
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
+  });
+
+  it('should handle related URL workbook when worksheet.getRows returns null', async () => {
+    mockWorkbook = {
+      worksheets: [
+        {
+          rowCount: 2,
+          getRow: () => ({
+            values: [
+              undefined, 'Category', 'Topics', 'Prompt', 'Origin', 'Region',
+              'Volume', 'URL', 'Answer', 'Sources', 'Citations', 'Mentions',
+              'Sentiment', 'Biz', 'Org', 'CAI', 'IsA', 'S2A', 'Pos', 'Vis',
+              'DBM', 'ExecDate', 'Related URLs',
+            ],
+          }),
+          getRows: () => null,
+        },
+      ],
+    };
+
+    const result = await handler({
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    }, context);
+
+    expect(result.status).to.equal(200);
+    const newData = syncSuggestionsStub.getCall(0).args[0].newData;
+    expect(newData[0].url).to.equal('https://www.adobe.com/products/photoshop');
+  });
+
+  it('should ignore related URL lookup when workbook headers are missing', async () => {
+    mockWorkbook = {
+      worksheets: [
+        {
+          rowCount: 2,
+          getRow: () => ({ values: [undefined] }),
+          getRows: () => [
+            {
+              getCell: () => ({ value: 'ignored' }),
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = await handler({
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    }, context);
+
+    expect(result.status).to.equal(200);
+    const newData = syncSuggestionsStub.getCall(0).args[0].newData;
+    expect(newData[0].url).to.equal('https://www.adobe.com/products/photoshop');
+  });
+
+  it('should continue trying older workbooks after related URL file-not-found errors', async () => {
+    readFromSharePointStub.onFirstCall().rejects(new Error('resource could not be found'));
+    readFromSharePointStub.onSecondCall().resolves(Buffer.from('mock'));
+    mockWorkbook = {
+      worksheets: [
+        {
+          rowCount: 2,
+          getRow: () => ({
+            values: [
+              undefined, 'Category', 'Topics', 'Prompt', 'Origin', 'Region',
+              'Volume', 'URL', 'Answer', 'Sources', 'Citations', 'Mentions',
+              'Sentiment', 'Biz', 'Org', 'CAI', 'IsA', 'S2A', 'Pos', 'Vis',
+              'DBM', 'ExecDate', 'Related URLs',
+            ],
+          }),
+          getRows: () => [
+            {
+              getCell: (col) => {
+                if (col === 2) return { value: 'photoshop' };
+                if (col === 3) return { value: 'How to use Photoshop?' };
+                if (col === 7) return { value: 'https://www.adobe.com/products/photoshop' };
+                if (col === 22) return { value: 'https://www.adobe.com/products/photoshop' };
+                return { value: '' };
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = await handler({
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    }, context);
+
+    expect(result.status).to.equal(200);
+    expect(readFromSharePointStub.callCount).to.be.greaterThan(1);
+  });
+
+  it('should log and continue when loading related URLs fails unexpectedly', async () => {
+    readFromSharePointStub.onFirstCall().rejects(new Error('boom'));
+    readFromSharePointStub.onSecondCall().resolves(Buffer.from('mock'));
+    mockWorkbook = {
+      worksheets: [
+        {
+          rowCount: 2,
+          getRow: () => ({
+            values: [
+              undefined, 'Category', 'Topics', 'Prompt', 'Origin', 'Region',
+              'Volume', 'URL', 'Answer', 'Sources', 'Citations', 'Mentions',
+              'Sentiment', 'Biz', 'Org', 'CAI', 'IsA', 'S2A', 'Pos', 'Vis',
+              'DBM', 'ExecDate', 'Related URLs',
+            ],
+          }),
+          getRows: () => [
+            {
+              getCell: (col) => {
+                if (col === 2) return { value: 'photoshop' };
+                if (col === 3) return { value: 'How to use Photoshop?' };
+                if (col === 7) return { value: 'https://www.adobe.com/products/photoshop' };
+                if (col === 22) return { value: 'https://www.adobe.com/products/photoshop' };
+                return { value: '' };
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = await handler({
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    }, context);
+
+    expect(result.status).to.equal(200);
+    expect(log.error).to.have.been.calledWith(
+      sinon.match(/\[FAQ\] Failed to load related URLs from .*: boom/),
+    );
+  });
+
+  it('should handle generic suggestions with missing URL and topic', async () => {
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().resolves({
+        suggestions: [
+          {
+            faqs: [
+              {
+                isAnswerSuitable: true,
+                isQuestionRelevant: true,
+                question: 'Generic question?',
+                answer: 'Answer.',
+                sources: [],
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const result = await handler({
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    }, context);
+
+    expect(result.status).to.equal(200);
+    const newData = syncSuggestionsStub.getCall(0).args[0].newData;
+    expect(newData[0].url).to.equal('');
+    expect(newData[0].topic).to.equal('');
+    expect(newData[0].shouldOptimize).to.equal(false);
+  });
+
+  it('should decorate FAQ URLs using desired URL overlap first', async () => {
+    dummySite.getConfig = sinon.stub().returns({
+      getIncludedURLs: sinon.stub().resolves(['https://www.adobe.com/desired-page']),
+    });
+    mockWorkbook = {
+      worksheets: [
+        {
+          rowCount: 2,
+          getRow: () => ({
+            values: [
+              undefined, 'Category', 'Topics', 'Prompt', 'Origin', 'Region',
+              'Volume', 'URL', 'Answer', 'Sources', 'Citations', 'Mentions',
+              'Sentiment', 'Biz', 'Org', 'CAI', 'IsA', 'S2A', 'Pos', 'Vis',
+              'DBM', 'ExecDate', 'Related URLs',
+            ],
+          }),
+          getRows: () => [
+            {
+              getCell: (col) => {
+                if (col === 2) return { value: 'photoshop' };
+                if (col === 3) return { value: 'How to use Photoshop?' };
+                if (col === 7) return { value: 'https://www.adobe.com/original' };
+                if (col === 22) return { value: 'https://www.adobe.com/related-page; https://www.adobe.com/desired-page' };
+                return { value: '' };
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().resolves({
+        suggestions: [
+          {
+            url: 'https://www.adobe.com/original',
+            topic: 'photoshop',
+            faqs: [
+              {
+                isAnswerSuitable: true,
+                isQuestionRelevant: true,
+                question: 'How to use Photoshop?',
+                answer: 'Answer.',
+                sources: [
+                  { url: 'https://www.adobe.com/related-page' },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    await handler({
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    }, context);
+
+    const newData = syncSuggestionsStub.getCall(0).args[0].newData;
+    expect(newData[0].url).to.equal('https://www.adobe.com/desired-page');
+    expect(newData[0].shouldOptimize).to.equal(false);
+  });
+
+  it('should decorate FAQ URLs using related URL overlap with sources before top related URL', async () => {
+    mockWorkbook = {
+      worksheets: [
+        {
+          rowCount: 2,
+          getRow: () => ({
+            values: [
+              undefined, 'Category', 'Topics', 'Prompt', 'Origin', 'Region',
+              'Volume', 'URL', 'Answer', 'Sources', 'Citations', 'Mentions',
+              'Sentiment', 'Biz', 'Org', 'CAI', 'IsA', 'S2A', 'Pos', 'Vis',
+              'DBM', 'ExecDate', 'Related URLs',
+            ],
+          }),
+          getRows: () => [
+            {
+              getCell: (col) => {
+                if (col === 2) return { value: 'photoshop' };
+                if (col === 3) return { value: 'How to use Photoshop?' };
+                if (col === 7) return { value: 'https://www.adobe.com/original' };
+                if (col === 22) return { value: 'https://www.adobe.com/top-related; https://www.adobe.com/source-match' };
+                return { value: '' };
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().resolves({
+        suggestions: [
+          {
+            url: 'https://www.adobe.com/original',
+            topic: 'photoshop',
+            faqs: [
+              {
+                isAnswerSuitable: true,
+                isQuestionRelevant: true,
+                question: 'How to use Photoshop?',
+                answer: 'Answer.',
+                sources: [
+                  { url: 'https://www.adobe.com/source-match' },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    await handler({
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    }, context);
+
+    const newData = syncSuggestionsStub.getCall(0).args[0].newData;
+    expect(newData[0].url).to.equal('https://www.adobe.com/source-match');
+    expect(newData[0].shouldOptimize).to.equal(true);
+  });
+
+  it('should fall back to top related URL, then original URL, then generic FAQ URL', async () => {
+    mockWorkbook = {
+      worksheets: [
+        {
+          rowCount: 4,
+          getRow: () => ({
+            values: [
+              undefined, 'Category', 'Topics', 'Prompt', 'Origin', 'Region',
+              'Volume', 'URL', 'Answer', 'Sources', 'Citations', 'Mentions',
+              'Sentiment', 'Biz', 'Org', 'CAI', 'IsA', 'S2A', 'Pos', 'Vis',
+              'DBM', 'ExecDate', 'Related URLs',
+            ],
+          }),
+          getRows: () => [
+            {
+              getCell: (col) => {
+                if (col === 2) return { value: 'related' };
+                if (col === 3) return { value: 'Related question?' };
+                if (col === 7) return { value: 'https://www.adobe.com/original-a' };
+                if (col === 22) return { value: 'https://www.adobe.com/top-related' };
+                return { value: '' };
+              },
+            },
+            {
+              getCell: (col) => {
+                if (col === 2) return { value: 'original' };
+                if (col === 3) return { value: 'Original question?' };
+                if (col === 7) return { value: 'https://www.adobe.com/original-b' };
+                if (col === 22) return { value: '' };
+                return { value: '' };
+              },
+            },
+            {
+              getCell: (col) => {
+                if (col === 2) return { value: 'generic' };
+                if (col === 3) return { value: 'Generic question?' };
+                if (col === 7) return { value: '' };
+                if (col === 22) return { value: '' };
+                return { value: '' };
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().resolves({
+        suggestions: [
+          {
+            url: 'https://www.adobe.com/original-a',
+            topic: 'related',
+            faqs: [
+              {
+                isAnswerSuitable: true,
+                isQuestionRelevant: true,
+                question: 'Related question?',
+                answer: 'Answer.',
+                sources: [{ url: 'https://www.adobe.com/other-source' }],
+              },
+            ],
+          },
+          {
+            url: 'https://www.adobe.com/original-b',
+            topic: 'original',
+            faqs: [
+              {
+                isAnswerSuitable: true,
+                isQuestionRelevant: true,
+                question: 'Original question?',
+                answer: 'Answer.',
+                sources: [{ url: 'https://www.adobe.com/other-source' }],
+              },
+            ],
+          },
+          {
+            url: '',
+            topic: 'generic',
+            faqs: [
+              {
+                isAnswerSuitable: true,
+                isQuestionRelevant: true,
+                question: 'Generic question?',
+                answer: 'Answer.',
+                sources: [],
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    await handler({
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    }, context);
+
+    const newData = syncSuggestionsStub.getCall(0).args[0].newData;
+    expect(newData[0].url).to.equal('https://www.adobe.com/top-related');
+    expect(newData[0].shouldOptimize).to.equal(false);
+    expect(newData[1].url).to.equal('https://www.adobe.com/original-b');
+    expect(newData[1].shouldOptimize).to.equal(false);
+    expect(newData[2].url).to.equal('');
+    expect(newData[2].shouldOptimize).to.equal(false);
   });
 
   it('should handle error when fetching FAQ data fails', async () => {
@@ -1045,6 +1605,32 @@ describe('FAQs guidance handler', () => {
         // item property is missing
       },
     ]);
+    mockWorkbook = {
+      worksheets: [
+        {
+          rowCount: 2,
+          getRow: () => ({
+            values: [
+              undefined, 'Category', 'Topics', 'Prompt', 'Origin', 'Region',
+              'Volume', 'URL', 'Answer', 'Sources', 'Citations', 'Mentions',
+              'Sentiment', 'Biz', 'Org', 'CAI', 'IsA', 'S2A', 'Pos', 'Vis',
+              'DBM', 'ExecDate', 'Related URLs',
+            ],
+          }),
+          getRows: () => [
+            {
+              getCell: (col) => {
+                if (col === 2) return { value: 'photoshop' };
+                if (col === 3) return { value: 'Test?' };
+                if (col === 7) return { value: 'https://www.adobe.com/products/photoshop' };
+                if (col === 22) return { value: '' };
+                return { value: '' };
+              },
+            },
+          ],
+        },
+      ],
+    };
 
     const mockedHandlerWithStub = await esmock('../../../src/faqs/guidance-handler.js', {
       '../../../src/utils/data-access.js': {
@@ -1057,11 +1643,29 @@ describe('FAQs guidance handler', () => {
         getObjectKeysUsingPrefix: getObjectKeysUsingPrefixStub,
         getObjectFromKey: getObjectFromKeyStub,
       },
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: createLLMOSharepointClientStub,
+        readFromSharePoint: readFromSharePointStub,
+      },
       '@adobe/spacecat-shared-utils': {
         tracingFetch: fetchStub,
       },
       '../../../src/faqs/utils.js': {
         getJsonFaqSuggestion: getJsonFaqSuggestionStub,
+      },
+      exceljs: {
+        Workbook: class {
+          constructor() {}
+
+          get xlsx() {
+            const self = this;
+            return {
+              load: async () => {
+                Object.assign(self, mockWorkbook);
+              },
+            };
+          }
+        },
       },
     });
 

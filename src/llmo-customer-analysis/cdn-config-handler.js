@@ -25,7 +25,7 @@ export async function fetchCommerceFastlyService(domain, { log }) {
   if (!domain || !process.env.LLMO_HLX_API_KEY) return null;
 
   try {
-    const res = await fetch('https://main--project-elmo-ui-data--adobe.aem.live/adobe-managed-domains/commerce-fastly-domains.json?limit=5000', {
+    const res = await fetch('https://main--project-elmo-ui-data--adobe.aem.live/adobe-managed-domains/commerce-fastly-domains.json?limit=10000', {
       headers: { 'User-Agent': 'spacecat-audit-worker', Authorization: `token ${process.env.LLMO_HLX_API_KEY}` },
     });
 
@@ -165,9 +165,10 @@ export async function handleCdnBucketConfigChanges(context, data) {
     });
     // if no cdn provider is provided, remove the bucket configuration
     await handleBucketConfiguration(siteId, null, null, null, context);
-    // disable cdn-logs-analysis and page-citability audits
+    // disable CDN-derived audits when the CDN configuration is removed
     const configuration = await Configuration.findLatest();
     configuration.disableHandlerForSite('cdn-logs-analysis', site);
+    configuration.disableHandlerForSite('cdn-logs-report', site);
     configuration.disableHandlerForSite('page-citability', site);
     await configuration.save();
     throw new Error('CDN provider is required for CDN configuration');
@@ -213,14 +214,17 @@ export async function handleCdnBucketConfigChanges(context, data) {
     },
   });
 
-  // enable cdn-logs-analysis audit
+  // enable CDN-derived audits once the site has a valid CDN configuration
   const configuration = await Configuration.findLatest();
   configuration.enableHandlerForSite('cdn-logs-analysis', site);
-  configuration.enableHandlerForSite('page-citability', site);
+  configuration.enableHandlerForSite('cdn-logs-report', site);
   await configuration.save();
 
-  // Run analysis and reporting for CS fastly customers
-  if (cdnProvider === SERVICE_PROVIDER_TYPES.AEM_CS_FASTLY) {
+  // Run analysis and reporting for Adobe-managed Fastly customers
+  if (
+    cdnProvider === SERVICE_PROVIDER_TYPES.AEM_CS_FASTLY
+    || (cdnProvider === SERVICE_PROVIDER_TYPES.COMMERCE_FASTLY && pathId)
+  ) {
     await handleAdobeFastly(siteId, context);
   }
 }

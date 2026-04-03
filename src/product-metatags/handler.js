@@ -18,6 +18,7 @@ import { getObjectFromKey } from '../utils/s3-utils.js';
 import ProductSeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
+import { createMemoizedManualConfigResolver } from '../utils/commerce-config-resolver.js';
 import productMetatagsAutoSuggest from './product-metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { getIssueRanking, trimTagValue, normalizeTagValue } from '../utils/seo-utils.js';
@@ -164,6 +165,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   let customConfig = null;
   let productUrlTemplate = null;
   let memoizedGetCommerceConfig = null;
+  let memoizedManualResolver = null;
 
   try {
     const siteId = opportunity.getSiteId();
@@ -174,8 +176,12 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
     customConfig = site?.getConfig?.()?.getHandlers?.()?.[auditType];
     productUrlTemplate = customConfig?.product_url_template;
 
-    // Initialize memoized commerce config function
-    memoizedGetCommerceConfig = createMemoizedCommerceConfig(getCommerceConfig);
+    // Initialize memoized manual config resolver (reads commerceLlmoConfig once)
+    memoizedManualResolver = createMemoizedManualConfigResolver(site);
+    // Only initialize remote config fetcher if no manual config is set
+    if (!site?.getConfig?.()?.state?.commerceLlmoConfig) {
+      memoizedGetCommerceConfig = createMemoizedCommerceConfig(getCommerceConfig);
+    }
 
     log.debug('[PRODUCT-METATAGS] Site configuration loaded:', {
       hasCustomConfig: !!customConfig,
@@ -194,10 +200,13 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
     const baseUrl = getBaseUrl(auditData.auditResult.finalUrl, useHostnameOnly);
     const fullUrl = baseUrl + endpoint;
 
-    // Fetch commerce configuration once per endpoint (with locale extraction and memoization)
+    // Waterfall: manual config first (cached), then remote config (also cached)
     // eslint-disable-next-line no-await-in-loop
     let endpointConfig = {};
-    if (site && memoizedGetCommerceConfig) {
+    if (memoizedManualResolver) {
+      endpointConfig = memoizedManualResolver(fullUrl);
+    }
+    if (!endpointConfig && site && memoizedGetCommerceConfig) {
       try {
         const locale = extractLocaleFromUrl(fullUrl, productUrlTemplate, log);
         // eslint-disable-next-line no-await-in-loop
@@ -221,8 +230,10 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
         log.debug(`[PRODUCT-METATAGS] Failed to fetch config for ${fullUrl}: ${configError.message}`);
         endpointConfig = {};
       }
+    } else if (endpointConfig) {
+      log.debug(`[PRODUCT-METATAGS] Using manual commerce config for ${fullUrl}`);
     } else {
-      log.debug(`[PRODUCT-METATAGS] No site or memoized config function available for ${fullUrl}`);
+      log.debug(`[PRODUCT-METATAGS] No site or config function available for ${fullUrl}`);
     }
 
     for (const tag of [TITLE, DESCRIPTION, H1]) {
@@ -797,7 +808,7 @@ export async function submitForScraping(context) {
   log.info(`[PRODUCT-METATAGS] Step 2: submitForScraping started for site: ${site.getId()}`);
 
   const { SiteTopPage } = dataAccess;
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
   log.info(`[PRODUCT-METATAGS] Retrieved ${topPages.length} top pages from database`);
 
   const topPagesUrls = topPages.map((page) => page.getUrl());

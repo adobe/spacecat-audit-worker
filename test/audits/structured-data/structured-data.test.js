@@ -60,7 +60,7 @@ describe('Structured Data Audit', () => {
 
   beforeEach(() => {
     mockConfiguration = {
-      isHandlerEnabledForSite: sinon.stub().returns(true),
+      isHandlerEnabledForSite: sinon.stub().callsFake((handler) => handler !== 'summit-plg'),
     };
     s3ClientStub = {
       send: sinon.mock(),
@@ -331,7 +331,7 @@ describe('Structured Data Audit', () => {
         setAuditId: () => {},
         getSuggestions: () => [],
         getType: () => 'structured-data',
-        getData: () => ({ dataSources: ['Ahrefs', 'Site'] }),
+        getData: () => ({ dataSources: ['SEO', 'Site'] }),
         setData: () => {},
         setUpdatedBy: () => {},
         save: () => {},

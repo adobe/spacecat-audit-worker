@@ -116,7 +116,7 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
 export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
   try {
     const { SiteTopPage } = dataAccess;
-    const result = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    const result = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'seo', 'global');
     log.info('Received top pages response:', JSON.stringify(result, null, 2));
 
     const topPages = result || [];
@@ -198,7 +198,6 @@ export const handleOutdatedSuggestions = async ({
       SuggestionDataAccess.STATUSES.REJECTED,
       SuggestionDataAccess.STATUSES.APPROVED,
       SuggestionDataAccess.STATUSES.IN_PROGRESS,
-      SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
     ].includes(existing.getStatus()))
     .filter((existing) => {
       // Preserve suggestions that have been deployed (tokowakaDeployed or edgeDeployed)
@@ -281,7 +280,8 @@ export const defaultMergeStatusFunction = (existing, newDataItem, context) => {
   if (currentStatus === SuggestionDataAccess.STATUSES.OUTDATED) {
     log.warn('Outdated suggestion found in audit. Possible regression.');
     const requiresValidation = Boolean(site?.requiresValidation);
-    return requiresValidation
+    const { isSummitPlg = false } = context;
+    return (requiresValidation && !isSummitPlg)
       ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
       : SuggestionDataAccess.STATUSES.NEW;
   }
@@ -325,6 +325,7 @@ export async function syncSuggestions({
   scrapedUrlsSet = null,
   existingSuggestions: prefetchedSuggestions = null,
   newSuggestionStatus = null,
+  bypassValidationForPlg = false,
 }) {
   if (!context) {
     return;
@@ -360,6 +361,22 @@ export async function syncSuggestions({
 
   log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
+  // Prepare new suggestions - O(N) with Set lookup
+  const { site, dataAccess } = context;
+  const requiresValidation = Boolean(site?.requiresValidation);
+
+  // PLG/Freemium sites bypass manual validation — suggestions go directly to NEW status
+  // Compute isSummitPlg before the update loop so it can be used in mergeStatusFunction too
+  let isSummitPlg = false;
+  if (bypassValidationForPlg && requiresValidation && site) {
+    const { Configuration } = dataAccess;
+    const configuration = await Configuration.findLatest();
+    isSummitPlg = configuration.isHandlerEnabledForSite('summit-plg', site);
+    if (isSummitPlg) {
+      log.info(`[syncSuggestions] PLG site ${site.getId()} - skipping manual validation for suggestions`);
+    }
+  }
+
   // Update existing suggestions - O(N) with Map lookup
   const { Suggestion } = context.dataAccess;
   const toUpdate = existingSuggestions
@@ -374,7 +391,8 @@ export async function syncSuggestions({
     existing.setData(mergeDataFunction(existing.getData(), newDataItem));
 
     // Use the merge status function to determine if status should change
-    const newStatus = mergeStatusFunction(existing, newDataItem, context);
+    // Pass isSummitPlg in context so mergeStatusFunction can apply the PLG bypass
+    const newStatus = mergeStatusFunction(existing, newDataItem, { ...context, isSummitPlg });
     // null indicates to keep existing status
     if (newStatus !== null) {
       existing.setStatus(newStatus);
@@ -387,18 +405,15 @@ export async function syncSuggestions({
   }
   log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
-  // Prepare new suggestions - O(N) with Set lookup
-  const { site } = context;
-  const requiresValidation = Boolean(site?.requiresValidation);
   const newSuggestions = newData
     .filter((data) => !existingSuggestionKeys.has(buildKey(data)))
     .map((data) => {
       const suggestion = mapNewSuggestion(data);
       return {
         ...suggestion,
-        status: newSuggestionStatus
-          || (requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
-            : SuggestionDataAccess.STATUSES.NEW),
+        status: newSuggestionStatus || ((requiresValidation && !isSummitPlg)
+          ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+          : SuggestionDataAccess.STATUSES.NEW),
       };
     });
 

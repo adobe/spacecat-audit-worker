@@ -146,6 +146,14 @@ export default async function canonical(context, auditContext) {
       return;
     }
 
+    // Skip 4xx pages when statusCode is present (new scrapes); old scrapes have no statusCode
+    if (scrapedData.statusCode != null
+      && scrapedData.statusCode >= 400
+      && scrapedData.statusCode < 500) {
+      log.info(`[preflight-canonical] Skipping page with HTTP ${scrapedData.statusCode} for ${url}`);
+      return;
+    }
+
     const { scrapeResult } = scrapedData;
 
     // Prefer metadata injected by the scraper; fall back to HTML parsing when absent

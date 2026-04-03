@@ -26,6 +26,7 @@ import canonicalAudit, {
   submitForScraping,
   processScrapedContent,
   getPreviewAuthOptions,
+  isSelfReferencing,
 } from '../../src/canonical/handler.js';
 import { getTopPagesForSiteId } from '../../src/utils/data-access.js';
 import { CANONICAL_CHECKS } from '../../src/canonical/constants.js';
@@ -57,6 +58,30 @@ describe('Canonical URL Tests', () => {
   afterEach(() => {
     sinon.restore();
     nock.cleanAll();
+  });
+
+  describe('isSelfReferencing', () => {
+    it('treats pathnames as equal when they differ only by a trailing slash', () => {
+      expect(isSelfReferencing(
+        'https://www.example.com/products/widget',
+        'https://www.example.com/products/widget/',
+      )).to.be.true;
+    });
+
+    it('still treats root URL as self-referencing when canonical uses trailing slash', () => {
+      expect(isSelfReferencing('https://example.com/', 'https://example.com')).to.be.true;
+    });
+
+    it('does not collapse distinct paths that only share a prefix', () => {
+      expect(isSelfReferencing(
+        'https://example.com/foo',
+        'https://example.com/foo/bar',
+      )).to.be.false;
+    });
+
+    it('when URL parsing fails, compares lowercased strings with trailing slash stripped', () => {
+      expect(isSelfReferencing('not-a-valid-url/', 'NOT-A-VALID-URL')).to.be.true;
+    });
   });
 
   describe('getPreviewAuthOptions', () => {
@@ -766,7 +791,7 @@ describe('Canonical URL Tests', () => {
         status: 'success',
         message: 'No canonical issues detected',
       });
-      expect(getTopPagesForSiteStub).to.have.been.calledOnceWith('testSiteId', 'ahrefs', 'global');
+      expect(getTopPagesForSiteStub).to.have.been.calledOnceWith('testSiteId', 'seo', 'global');
       expect(log.info).to.have.been.called;
     });
 
@@ -2491,6 +2516,58 @@ describe('Canonical URL Tests', () => {
             message: 'No canonical issues detected',
           },
         });
+      });
+
+      it('should skip page when statusCode is 4xx (avoids false canonical-tag-missing on error responses)', async function () {
+        this.timeout(5000);
+        const scrapedContent = {
+          url: 'https://example.com/page1',
+          finalUrl: 'https://example.com/page1',
+          statusCode: 403,
+          isPreview: false,
+          scrapeResult: {
+            rawBody: createValidRawBody('<html><head><title>Forbidden</title></head><body><p>Error page body content padded for length.</p></body></html>'),
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/page1', 'scrapes/job-id/page1/scrape.json'],
+          ]),
+          audit: {
+            getId: () => 'test-audit-id',
+          },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': {
+              getObjectFromKey: mockGetObjectFromKey,
+            },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result).to.deep.equal({
+          fullAuditRef: 'https://example.com',
+          auditResult: {
+            status: 'success',
+            message: 'No canonical issues detected',
+          },
+        });
+        expect(context.log.info).to.have.been.calledWith(
+          '[canonical] Skipping page with HTTP 403 for scrapes/job-id/page1/scrape.json',
+        );
       });
 
       it('should handle scraped content with exactly one canonical tag (success path)', async () => {

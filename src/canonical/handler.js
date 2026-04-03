@@ -82,7 +82,7 @@ export async function submitForScraping(context) {
 
   const { SiteTopPage } = dataAccess;
 
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
 
   log.info(`[canonical] Found ${topPages?.length || 0} top pages for scraping`);
 
@@ -334,6 +334,7 @@ export async function validateCanonicalRecursively(
 
 /**
  * Checks whether two URLs are self-referencing by comparing their normalized pathnames.
+ * Trailing slashes are ignored except for the root path (`/`), so `/foo/` and `/foo` match.
  *
  * @param {string} url1 - First URL to compare.
  * @param {string} url2 - Second URL to compare.
@@ -342,9 +343,17 @@ export async function validateCanonicalRecursively(
 export function isSelfReferencing(url1, url2) {
   const normalizePath = (u) => {
     try {
-      return new URL(u).pathname.toLowerCase();
+      let pathname = new URL(u).pathname.toLowerCase();
+      if (pathname.length > 1 && pathname.endsWith('/')) {
+        pathname = pathname.slice(0, -1);
+      }
+      return pathname;
     } catch {
-      return u.toLowerCase();
+      let s = u.toLowerCase();
+      if (s.length > 1 && s.endsWith('/')) {
+        s = s.slice(0, -1);
+      }
+      return s;
     }
   };
   return normalizePath(url1) === normalizePath(url2);
@@ -409,6 +418,14 @@ export async function processScrapedContent(context) {
   const auditPromises = scrapeKeys.map(async (key) => {
     try {
       const scrapedObject = await getObjectFromKey(s3Client, bucketName, key, log);
+
+      // Skip 4xx pages when statusCode is present (new scrapes); old scrapes have no statusCode
+      if (scrapedObject?.statusCode != null
+        && scrapedObject.statusCode >= 400
+        && scrapedObject.statusCode < 500) {
+        log.info(`[canonical] Skipping page with HTTP ${scrapedObject.statusCode} for ${key}`);
+        return null;
+      }
 
       // If the scrape result is empty, skip the page for canonical audit
       if (scrapedObject?.scrapeResult?.rawBody?.length < 300) {

@@ -58,6 +58,7 @@ export async function syncOpportunitiesAndSuggestions(context) {
     newData: auditResult.cwv,
     context,
     buildKey,
+    bypassValidationForPlg: true,
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
       type: 'CODE_CHANGE',
@@ -73,6 +74,9 @@ export async function syncOpportunitiesAndSuggestions(context) {
       },
     }),
   });
+
+  opportunity.setLastAuditedAt(new Date().toISOString());
+  await opportunity.save();
 
   return opportunity;
 }
