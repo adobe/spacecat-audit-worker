@@ -1,3 +1,10 @@
+## [1.392.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.392.0...v1.392.1) (2026-04-03)
+
+
+### Bug Fixes
+
+* **prerender:** persist scrapeJobId per suggestion to fix Mystique S3 key mismatch ([#2300](https://github.com/adobe/spacecat-audit-worker/issues/2300)) ([9343534](https://github.com/adobe/spacecat-audit-worker/commit/934353416e8d41823b12012593e94b6d7c655fc7))
+
 # [1.392.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.391.3...v1.392.0) (2026-04-02)
 
 
