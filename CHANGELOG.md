@@ -1,3 +1,10 @@
+## [1.393.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.393.0...v1.393.1) (2026-04-03)
+
+
+### Bug Fixes
+
+* (broken-backlinks) include PENDING_VALIDATION suggestions in enrichment ([#2302](https://github.com/adobe/spacecat-audit-worker/issues/2302)) ([f52fd7c](https://github.com/adobe/spacecat-audit-worker/commit/f52fd7c62f440de5267227b684695796c508be35)), closes [#2106](https://github.com/adobe/spacecat-audit-worker/issues/2106)
+
 # [1.393.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.392.2...v1.393.0) (2026-04-03)
 
 
