@@ -12,12 +12,12 @@
 
 import resolveCpcValue from './cpc-value-resolver.js';
 
-const METRICS = ['lcp', 'cls', 'inp'];
+export const METRICS = ['lcp', 'cls', 'inp'];
 
 /**
  * Thresholds for "green" metrics
  */
-const THRESHOLDS = {
+export const THRESHOLDS = {
   lcp: 2500,
   cls: 0.1,
   inp: 200,

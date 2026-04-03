@@ -14,7 +14,20 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import calculateKpiDeltasForAudit from './kpi-metrics.js';
+import calculateKpiDeltasForAudit, { THRESHOLDS, METRICS } from './kpi-metrics.js';
+
+/**
+ * Returns true if the CWV entry has at least one metric that exceeds the "good" threshold
+ * on any device type. Null/undefined metric values are treated as passing (no data = not failing).
+ * @param {Object} entry - CWV audit entry ({ metrics: [{lcp, cls, inp, ...}] })
+ * @returns {boolean}
+ */
+function hasFailingMetrics(entry) {
+  return entry.metrics.some((deviceMetrics) => METRICS.some((metric) => {
+    const value = deviceMetrics[metric];
+    return value !== null && value !== undefined && value > THRESHOLDS[metric];
+  }));
+}
 
 /**
  * Synchronizes opportunities and suggestions for a CWV audit
@@ -24,11 +37,26 @@ import calculateKpiDeltasForAudit from './kpi-metrics.js';
  */
 export async function syncOpportunitiesAndSuggestions(context) {
   const {
-    site, audit, finalUrl,
+    site, audit, finalUrl, log,
   } = context;
 
   const auditResult = audit.getAuditResult();
   const groupedURLs = site.getConfig().getGroupedURLs(Audit.AUDIT_TYPES.CWV);
+
+  // Detect PLG sites (summit-plg handler enabled) to apply filtered suggestions.
+  // PLG sites only receive suggestions for pages where at least one CWV metric is failing,
+  // sorted by page views descending (already ordered from step 1).
+  const { Configuration } = context.dataAccess;
+  const configuration = await Configuration.findLatest();
+  const isSummitPlgSite = configuration.isHandlerEnabledForSite('summit-plg', site);
+
+  const cwvData = isSummitPlgSite
+    ? auditResult.cwv.filter(hasFailingMetrics)
+    : auditResult.cwv;
+
+  if (isSummitPlgSite) {
+    log.info(`[syncOpportunitiesAndSuggestions] PLG site ${site.getId()} - ${cwvData.length} of ${auditResult.cwv.length} CWV entries have failing metrics`);
+  }
 
   // Build minimal audit data object for opportunity creation
   const auditData = {
@@ -50,12 +78,13 @@ export async function syncOpportunitiesAndSuggestions(context) {
   // Sync suggestions
   const buildKey = (data) => (data.type === 'url' ? data.url : data.pattern);
   const maxOrganicForUrls = Math.max(
-    ...auditResult.cwv.filter((entry) => entry.type === 'url').map((entry) => entry.pageviews),
+    0,
+    ...cwvData.filter((entry) => entry.type === 'url').map((entry) => entry.pageviews),
   );
 
   await syncSuggestions({
     opportunity,
-    newData: auditResult.cwv,
+    newData: cwvData,
     context,
     buildKey,
     bypassValidationForPlg: true,

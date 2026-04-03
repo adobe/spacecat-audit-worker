@@ -68,7 +68,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
               productCodes: ['aem-sites'],
             },
           }),
-          isHandlerEnabledForSite: () => true,
+          isHandlerEnabledForSite: (handler) => handler !== 'summit-plg',
         }),
       },
     },
@@ -328,6 +328,17 @@ describe('collectCWVDataAndImportCode Tests', () => {
         info: sandbox.stub(),
         error: sandbox.stub(),
         warn: sandbox.stub(),
+      };
+
+      context.dataAccess.Configuration = {
+        findLatest: sandbox.stub().resolves({
+          getHandlers: () => ({
+            'cwv-auto-suggest': {
+              productCodes: ['aem-sites'],
+            },
+          }),
+          isHandlerEnabledForSite: (handler) => handler !== 'summit-plg',
+        }),
       };
 
       context.dataAccess.Opportunity = {
@@ -608,6 +619,86 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
       // Verify that SQS sendMessage was NOT called
       expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('filters CWV suggestions to only failing-metric pages for PLG sites', async () => {
+      context.dataAccess.Configuration = {
+        findLatest: sandbox.stub().resolves({
+          getHandlers: () => ({ 'cwv-auto-suggest': { productCodes: ['aem-sites'] } }),
+          isHandlerEnabledForSite: (handler) => handler === 'summit-plg',
+        }),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      // Of the 4 CWV entries (pageviews >= 7000):
+      //   - Group: mobile cls=0.27 > 0.1  → FAILS
+      //   - /developer/block-collection:   → PASSES (all below threshold)
+      //   - /docs/: mobile lcp=26276 > 2500 → FAILS
+      //   - /tools/rum/explorer.html:      → PASSES (all below threshold)
+      // PLG filter should yield 2 suggestions
+      expect(oppty.addSuggestions).to.have.been.calledOnce;
+      const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(2);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/PLG site.*2 of 4 CWV entries have failing metrics/),
+      );
+    });
+
+    it('stores no suggestions for PLG sites when all pages have passing metrics', async () => {
+      const allPassingCwvData = [
+        {
+          type: 'url',
+          url: 'https://www.aem.live/docs/',
+          pageviews: 9000,
+          organic: 500,
+          metrics: [{
+            deviceType: 'desktop',
+            pageviews: 9000,
+            organic: 500,
+            lcp: 1200,
+            cls: 0.05,
+            inp: 150,
+          }],
+        },
+      ];
+
+      context.dataAccess.Configuration = {
+        findLatest: sandbox.stub().resolves({
+          getHandlers: () => ({ 'cwv-auto-suggest': { productCodes: ['aem-sites'] } }),
+          isHandlerEnabledForSite: (handler) => handler === 'summit-plg',
+        }),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      const plgAudit = {
+        ...mockAudit,
+        getAuditResult: () => ({ cwv: allPassingCwvData, auditContext: { interval: 7 } }),
+      };
+      const stepContext = { ...context, site, audit: plgAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      expect(oppty.addSuggestions).to.not.have.been.called;
+    });
+
+    it('stores all pages for non-PLG sites regardless of metric pass/fail', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      // Non-PLG: all 4 entries stored, same as before
+      expect(oppty.addSuggestions).to.have.been.calledOnce;
+      const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
     });
 
     it('calls processAutoSuggest when some suggestions have guidance and some do not', async () => {
