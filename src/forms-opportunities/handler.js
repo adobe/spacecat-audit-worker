@@ -29,10 +29,6 @@ import { createAccessibilityOpportunity } from './oppty-handlers/accessibility-h
 import { FORM_OPPORTUNITY_TYPES, OPPTY_OPTIONS_SKIP_AUDIT } from './constants.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-const FORMS_OPPTY_QUERIES = [
-  'cwv',
-  'form-vitals',
-];
 
 export async function formsAuditRunner(auditUrl, context) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
@@ -42,9 +38,9 @@ export async function formsAuditRunner(auditUrl, context) {
     granularity: 'hourly',
   };
 
-  const queryResults = await rumAPIClient.queryMulti(FORMS_OPPTY_QUERIES, options);
+  const queryResults = await rumAPIClient.query('form-vitals', options);
   const auditResult = {
-    formVitals: queryResults['form-vitals'],
+    formVitals: queryResults,
     auditContext: {
       interval: FORMS_AUDIT_INTERVAL,
     },

@@ -48,7 +48,7 @@ describe('Forms Vitals audit', () => {
       runtime: { name: 'aws-lambda', region: 'us-east-1' },
       func: { package: 'spacecat-services', version: 'ci', name: 'test' },
       rumApiClient: {
-        queryMulti: sinon.stub().resolves(formVitalsData),
+        query: sinon.stub().resolves(formVitalsData),
       },
     })
     .build();
@@ -59,16 +59,12 @@ describe('Forms Vitals audit', () => {
   });
 
   it('form vitals audit runs rum api client formVitals query', async () => {
-    const FORMS_OPPTY_QUERIES = [
-      'cwv',
-      'form-vitals',
-    ];
     const result = await formsAuditRunner(
       'www.example.com',
       context,
       site,
     );
-    expect(context.rumApiClient.queryMulti).calledWith(FORMS_OPPTY_QUERIES, {
+    expect(context.rumApiClient.query).calledWith('form-vitals', {
       domain: 'www.example.com',
       interval: 15,
       granularity: 'hourly',
@@ -88,7 +84,7 @@ describe('audit and send scraping step', () => {
       runtime: { name: 'aws-lambda', region: 'us-east-1' },
       func: { package: 'spacecat-services', version: 'ci', name: 'test' },
       rumApiClient: {
-        queryMulti: sinon.stub().resolves(formVitalsData),
+        query: sinon.stub().resolves(formVitalsData),
       },
       site: {
         getId: sinon.stub().returns(siteId),
@@ -121,12 +117,8 @@ describe('audit and send scraping step', () => {
   });
 
   it('run audit and send urls for scraping step', async () => {
-    const FORMS_OPPTY_QUERIES = [
-      'cwv',
-      'form-vitals',
-    ];
     const result = await runAuditAndSendUrlsForScrapingStep(context);
-    expect(context.rumApiClient.queryMulti).calledWith(FORMS_OPPTY_QUERIES, {
+    expect(context.rumApiClient.query).calledWith('form-vitals', {
       domain: 'www.example.com',
       interval: 15,
       granularity: 'hourly',
@@ -135,8 +127,7 @@ describe('audit and send scraping step', () => {
   });
 
   it('send alteast 10 urls for scraping step if possible', async () => {
-    const formVitals = {
-      'form-vitals': [
+    const formVitals = [
         {
           url: 'https://example.com/form1',
           formsubmit: {},
@@ -183,16 +174,14 @@ describe('audit and send scraping step', () => {
         {
           url: 'https://example.com/form14', formsubmit: {}, formview: {}, formengagement: {}, pageview: {},
         },
-      ],
-    };
-    context.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
+      ];
+    context.rumApiClient.query = sinon.stub().resolves(formVitals);
     const result = await runAuditAndSendUrlsForScrapingStep(context);
     expect(result.urls.length).to.equal(10);
   });
 
   it('should trim audit data when not safe for dynamo', async () => {
-    const formVitals = {
-      'form-vitals': [
+    const formVitals = [
         {
           url: 'https://example.com/form1',
           formsource: 'form.contact',
@@ -304,10 +293,9 @@ describe('audit and send scraping step', () => {
           formengagement: {},
           pageview: { desktop: 23000, mobile: 22000 },
         },
-      ],
-    };
+      ];
 
-    context.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
+    context.rumApiClient.query = sinon.stub().resolves(formVitals);
     context.dataAccess.SiteTopForm.allBySiteId = sinon.stub().resolves([]);
 
     // Mock the checkDynamoItem call
@@ -326,8 +314,7 @@ describe('audit and send scraping step', () => {
   });
 
   it('should include top forms without form source and sort by pageviews when less than 10 urls', async () => {
-    const formVitals = {
-      'form-vitals': [
+    const formVitals = [
         {
           url: 'https://example.com/form1',
           formsource: 'form.contact',
@@ -351,8 +338,7 @@ describe('audit and send scraping step', () => {
           formengagement: {},
           pageview: { 'desktop:windows': 500 },
         },
-      ],
-    };
+      ];
 
     // Create mock top forms - some with and without form sources
     const mockTopForms = [
@@ -370,7 +356,7 @@ describe('audit and send scraping step', () => {
       },
     ];
 
-    context.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
+    context.rumApiClient.query = sinon.stub().resolves(formVitals);
     context.dataAccess.SiteTopForm.allBySiteId = sinon.stub().resolves(mockTopForms);
 
     const result = await runAuditAndSendUrlsForScrapingStep(context);
@@ -400,9 +386,7 @@ describe('audit and send scraping step', () => {
   });
 
   it('should handle empty form vitals and only use top forms without form source', async () => {
-    const formVitals = {
-      'form-vitals': [],
-    };
+    const formVitals = [];
 
     const mockTopForms = [
       {
@@ -415,7 +399,7 @@ describe('audit and send scraping step', () => {
       },
     ];
 
-    context.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
+    context.rumApiClient.query = sinon.stub().resolves(formVitals);
     context.dataAccess.SiteTopForm.allBySiteId = sinon.stub().resolves(mockTopForms);
 
     const result = await runAuditAndSendUrlsForScrapingStep(context);
@@ -434,8 +418,7 @@ describe('audit and send scraping step', () => {
   });
 
   it('should properly handle form sources filtering from formVitals', async () => {
-    const formVitals = {
-      'form-vitals': [
+    const formVitals = [
         {
           url: 'https://example.com/form1',
           formsource: 'form.contact',
@@ -468,10 +451,9 @@ describe('audit and send scraping step', () => {
           formengagement: {},
           pageview: { 'desktop:windows': 300 },
         },
-      ],
-    };
+      ];
 
-    context.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
+    context.rumApiClient.query = sinon.stub().resolves(formVitals);
     context.dataAccess.SiteTopForm.allBySiteId = sinon.stub().resolves([]);
 
     const result = await runAuditAndSendUrlsForScrapingStep(context);
@@ -830,7 +812,7 @@ describe('send a11y urls for scraping step', () => {
         getBaseURL: sinon.stub().returns('https://example.com'),
         getLatestAuditByAuditType: sinon.stub().resolves({
           auditResult: {
-            formVitals: formVitalsData['form-vitals'],
+            formVitals: formVitalsData,
             auditContext: {
               interval: 15,
             },
@@ -838,7 +820,7 @@ describe('send a11y urls for scraping step', () => {
           fullAuditRef: 'www.example.com',
           siteId: 'test-site-id',
           getAuditResult: sinon.stub().returns({
-            formVitals: formVitalsData['form-vitals'],
+            formVitals: formVitalsData,
           }),
         }),
       },
