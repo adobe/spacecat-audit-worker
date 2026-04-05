@@ -386,6 +386,110 @@ describe('Content AI Utils', () => {
       });
     });
 
+    describe('createConfiguration with brand profile', () => {
+      let ContentAIClientWithBrandProfile;
+      let mockGetBrandGuidelines;
+
+      it('should include brand guidelines in system prompt when available', async () => {
+        // Mock getBrandGuidelinesFromSite to return brand guidelines
+        mockGetBrandGuidelines = sandbox.stub().returns(
+          '## Brand Guidelines\n### TONE\n  ✓ MUST USE: friendly, professional\n  ✗ MUST AVOID: aggressive',
+        );
+
+        // Create ContentAIClient with mocked brand-profile module
+        const contentAiModuleWithBrand = await esmock('../../src/utils/content-ai.js', {
+          '@adobe/spacecat-shared-ims-client': {
+            ImsClient: {
+              createFrom: sandbox.stub().returns(mockImsClient),
+            },
+          },
+          '../../src/utils/brand-profile.js': {
+            getBrandGuidelinesFromSite: mockGetBrandGuidelines,
+          },
+        });
+        ContentAIClientWithBrandProfile = contentAiModuleWithBrand.ContentAIClient;
+
+        // Mock configurations endpoint - no existing config
+        mockFetch.onFirstCall().resolves({
+          ok: true,
+          json: sandbox.stub().resolves({ items: [] }),
+        });
+
+        // Mock create configuration endpoint
+        mockFetch.onSecondCall().resolves({
+          ok: true,
+        });
+
+        const client = new ContentAIClientWithBrandProfile(context);
+        await client.initialize();
+        await client.createConfiguration(site);
+
+        // Verify getBrandGuidelinesFromSite was called
+        expect(mockGetBrandGuidelines).to.have.been.calledOnce;
+
+        // Verify log message for brand guidelines found
+        // expect(context.log.info).to.have.been.calledWith(
+        //   '[ContentAI] Brand guidelines found for site https://example.com',
+        // );
+
+        // Verify the system prompt includes brand guidelines
+        const requestBody = JSON.parse(mockFetch.secondCall.args[1].body);
+        const systemPrompt = requestBody.steps[2].prompts.system;
+
+        expect(systemPrompt).to.include('**Brand Guidelines**:');
+        expect(systemPrompt).to.include('MUST USE: friendly, professional');
+        expect(systemPrompt).to.include('MUST AVOID: aggressive');
+        expect(systemPrompt).to.include('When generating responses, follow the brand guidelines');
+      });
+
+      it('should not include brand guidelines in system prompt when not available', async () => {
+        // Mock getBrandGuidelinesFromSite to return empty string
+        mockGetBrandGuidelines = sandbox.stub().returns('');
+
+        // Create ContentAIClient with mocked brand-profile module
+        const contentAiModuleNoBrand = await esmock('../../src/utils/content-ai.js', {
+          '@adobe/spacecat-shared-ims-client': {
+            ImsClient: {
+              createFrom: sandbox.stub().returns(mockImsClient),
+            },
+          },
+          '../../src/utils/brand-profile.js': {
+            getBrandGuidelinesFromSite: mockGetBrandGuidelines,
+          },
+        });
+        const ContentAIClientNoBrand = contentAiModuleNoBrand.ContentAIClient;
+
+        // Mock configurations endpoint - no existing config
+        mockFetch.onFirstCall().resolves({
+          ok: true,
+          json: sandbox.stub().resolves({ items: [] }),
+        });
+
+        // Mock create configuration endpoint
+        mockFetch.onSecondCall().resolves({
+          ok: true,
+        });
+
+        const client = new ContentAIClientNoBrand(context);
+        await client.initialize();
+        await client.createConfiguration(site);
+
+        // Verify log message for no brand guidelines
+        expect(context.log.info).to.have.been.calledWith(
+          '[ContentAI] No brand guidelines found for site https://example.com',
+        );
+
+        // Verify the system prompt does NOT include brand guidelines
+        const requestBody = JSON.parse(mockFetch.secondCall.args[1].body);
+        const systemPrompt = requestBody.steps[2].prompts.system;
+
+        expect(systemPrompt).to.not.include('**Brand Guidelines**:');
+        expect(systemPrompt).to.not.include('When generating responses, follow the brand guidelines');
+        expect(systemPrompt).to.include('You are a helpful AI Assistant');
+        expect(systemPrompt).to.include('Context: {context}');
+      });
+    });
+
     describe('getConfigurationForSite', () => {
       it('should find and return existing configuration for site', async () => {
         mockFetch.onFirstCall().resolves({
