@@ -2272,9 +2272,133 @@ describe('Redirect Chains Audit', () => {
 
         // Verify logging
         expect(context.log.info).to.have.been.calledWith(sinon.match(/Generating suggestions for URL.*which has 2 affected entries/));
-        expect(context.log.debug).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Skipping suggestion for network error case: /network-error-page -> /destination-page`);
+        expect(context.log.debug).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Skipping suggestion for blocked/inaccessible source: /network-error-page -> /destination-page`);
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Skipped 1 entries due to exclusion criteria.`);
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generated 1 suggested fixes.`);
+      });
+
+      it('should skip suggestions with 4xx status and zero redirects (WAF/bot-protection block)', async () => {
+        const baseUrl = 'https://www.example.com';
+        const auditUrl = `${baseUrl}/redirects.json`;
+
+        nock(baseUrl)
+          .get('/redirects.json')
+          .reply(200);
+
+        const auditData = {
+          auditResult: {
+            details: {
+              issues: [
+                {
+                  referencedBy: auditUrl,
+                  origSrc: '/about/leadership/board-of-directors',
+                  fullSrc: `${baseUrl}/about/leadership/board-of-directors`,
+                  origDest: '/about/leadership/board-of-directors-new',
+                  fullDest: `${baseUrl}/about/leadership/board-of-directors-new`,
+                  fullFinal: `${baseUrl}/about/leadership/board-of-directors`,
+                  redirectCount: 0,
+                  status: 403, // Cloudflare WAF block — no redirect occurred
+                  error: 'HTTP error 403 for https://www.example.com/about/leadership/board-of-directors',
+                  isDuplicateSrc: false,
+                  tooQualified: false,
+                  hasSameSrcDest: false,
+                  fullFinalMatchesDestUrl: false,
+                },
+              ],
+            },
+          },
+        };
+
+        const result = generateSuggestedFixes(auditUrl, auditData, context);
+
+        expect(result.suggestions).to.be.an('array').with.lengthOf(0);
+        expect(context.log.debug).to.have.been.calledWith(
+          `${AUDIT_LOGGING_NAME} - Skipping suggestion for blocked/inaccessible source: /about/leadership/board-of-directors -> /about/leadership/board-of-directors-new`,
+        );
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Skipped 1 entries due to exclusion criteria.`);
+      });
+
+      it('should skip 4xx with zero redirects regardless of status code (401, 403, 404, 429)', async () => {
+        const baseUrl = 'https://www.example.com';
+        const auditUrl = `${baseUrl}/redirects.json`;
+
+        nock(baseUrl)
+          .get('/redirects.json')
+          .reply(200);
+
+        const makeIssue = (origSrc, status) => ({
+          referencedBy: auditUrl,
+          origSrc,
+          fullSrc: `${baseUrl}${origSrc}`,
+          origDest: '/destination',
+          fullDest: `${baseUrl}/destination`,
+          fullFinal: `${baseUrl}${origSrc}`,
+          redirectCount: 0,
+          status,
+          error: `HTTP error ${status}`,
+          isDuplicateSrc: false,
+          tooQualified: false,
+          hasSameSrcDest: false,
+          fullFinalMatchesDestUrl: false,
+        });
+
+        const auditData = {
+          auditResult: {
+            details: {
+              issues: [
+                makeIssue('/page-401', 401),
+                makeIssue('/page-403', 403),
+                makeIssue('/page-404', 404),
+                makeIssue('/page-429', 429),
+              ],
+            },
+          },
+        };
+
+        const result = generateSuggestedFixes(auditUrl, auditData, context);
+
+        expect(result.suggestions).to.be.an('array').with.lengthOf(0);
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Skipped 4 entries due to exclusion criteria.`);
+      });
+
+      it('should NOT skip 4xx when redirectCount > 0 (redirect chain ends in error — real issue)', async () => {
+        const baseUrl = 'https://www.example.com';
+        const auditUrl = `${baseUrl}/redirects.json`;
+
+        nock(baseUrl)
+          .get('/redirects.json')
+          .reply(200);
+
+        const auditData = {
+          auditResult: {
+            details: {
+              issues: [
+                {
+                  referencedBy: auditUrl,
+                  origSrc: '/old-page',
+                  fullSrc: `${baseUrl}/old-page`,
+                  origDest: '/new-page',
+                  fullDest: `${baseUrl}/new-page`,
+                  fullFinal: `${baseUrl}/challenge-page`,
+                  redirectCount: 1, // There WAS a redirect, it just ended in 403
+                  status: 403,
+                  error: 'HTTP error 403',
+                  isDuplicateSrc: false,
+                  tooQualified: false,
+                  hasSameSrcDest: false,
+                  fullFinalMatchesDestUrl: false,
+                },
+              ],
+            },
+          },
+        };
+
+        const result = generateSuggestedFixes(auditUrl, auditData, context);
+
+        // redirectCount > 0 means a real redirect occurred and ended in error — keep it
+        expect(result.suggestions).to.be.an('array').with.lengthOf(1);
+        expect(result.suggestions[0]).to.have.property('sourceUrl', '/old-page');
+        expect(result.suggestions[0]).to.have.property('fixType', 'manual-check');
       });
 
       it('should not skip suggestions when only some conditions are met', async () => {
@@ -2312,7 +2436,7 @@ describe('Redirect Chains Audit', () => {
                   origDest: '/destination',
                   fullDest: `${baseUrl}/destination`,
                   fullFinal: `${baseUrl}/different-final`, // Different from fullSrc
-                  redirectCount: 0,
+                  redirectCount: 1, // Has a redirect, so new WAF skip condition (redirectCount===0) doesn't apply
                   status: 418, // Has 418 status
                   error: 'unexpected end of file', // Has the error message
                   isDuplicateSrc: false,
@@ -2327,7 +2451,7 @@ describe('Redirect Chains Audit', () => {
                   origDest: '/destination',
                   fullDest: `${baseUrl}/destination`,
                   fullFinal: `${baseUrl}/partial-match-3`, // Same as fullSrc
-                  redirectCount: 0,
+                  redirectCount: 1, // Has a redirect, so new WAF skip condition (redirectCount===0) doesn't apply
                   status: 418, // Has 418 status
                   error: 'different error message', // Different error message
                   isDuplicateSrc: false,
