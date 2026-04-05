@@ -80,6 +80,7 @@ describe('Prerender AI-Only Mode', () => {
 
     context = {
       log: {
+        debug: sandbox.stub(),
         info: sandbox.stub(),
         warn: sandbox.stub(),
         error: sandbox.stub(),
@@ -366,7 +367,7 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.auditResult.suggestionCount).to.equal(0);
-      expect(context.log.warn).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         sinon.match(/No existing suggestions found/),
       );
     });
@@ -499,7 +500,7 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
-      expect(context.log.warn).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         sinon.match(/missing a per-suggestion scrapeJobId/),
       );
       const message = mockSqs.sendMessage.getCall(0).args[1];

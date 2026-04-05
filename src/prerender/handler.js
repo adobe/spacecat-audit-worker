@@ -484,7 +484,7 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
     const existingSuggestions = await opportunity.getSuggestions();
 
     if (!existingSuggestions || existingSuggestions.length === 0) {
-      log.warn(`${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, skipping Mystique message. baseUrl=${baseUrl}, siteId=${siteId}`);
+      log.debug(`${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, skipping Mystique message. baseUrl=${baseUrl}, siteId=${siteId}`);
       return 0;
     }
 
@@ -518,7 +518,7 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
       // persisted.
       const effectiveScrapeJobId = data.scrapeJobId || scrapeJobId;
       if (!data.scrapeJobId) {
-        log.warn(`${LOG_PREFIX} Suggestion ${suggestionId} is missing a per-suggestion scrapeJobId; `
+        log.debug(`${LOG_PREFIX} Suggestion ${suggestionId} is missing a per-suggestion scrapeJobId; `
           + `falling back to audit-level scrapeJobId=${scrapeJobId}. `
           + `baseUrl=${baseUrl}, siteId=${siteId}`);
       }
