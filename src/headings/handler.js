@@ -31,6 +31,7 @@ import {
   getBrandGuidelines,
   getTopPages,
   initializeAuditContext,
+  analyzeHeadingContext,
 } from './shared-utils.js';
 
 const auditType = Audit.AUDIT_TYPES.HEADINGS;
@@ -262,42 +263,113 @@ export async function validatePageHeadingFromScrapeJson(
     // Filter out nulls and add to checks array
     checks.push(...headingChecksResults.filter(Boolean));
 
+    // Track headings that have already been processed for invalid order checks
+    // to avoid duplicate suggestions when grouping accordion/list items
+    const processedInvalidOrderHeadings = new Set();
+
+    /**
+     * Helper to create an invalid order check object for a heading
+     * @param {Element} headingElement - The heading element with invalid order
+     * @param {number} expectedLevel - The expected heading level (e.g., prevLevel + 1)
+     * @param {number} actualPrevLevel - The actual previous heading level for explanation
+     * @param {number} actualCurLevel - The actual current heading level for explanation
+     * @param {string|null} groupType - Type of group (accordion, list, section-group) or null
+     * @returns {Object} Check object
+     */
+    const createInvalidOrderCheck = (
+      headingElement,
+      expectedLevel,
+      actualPrevLevel,
+      actualCurLevel,
+      groupType = null,
+    ) => {
+      const selector = getHeadingSelector(headingElement);
+      const groupInfo = groupType ? ` (part of ${groupType})` : '';
+      return {
+        check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
+        checkTitle: HEADINGS_CHECKS.HEADING_ORDER_INVALID.title,
+        description: HEADINGS_CHECKS.HEADING_ORDER_INVALID.description,
+        success: false,
+        explanation: `${HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation} Invalid jump: h${actualPrevLevel} → h${actualCurLevel}${groupInfo}`,
+        suggestion: HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion,
+        transformRules: {
+          action: 'replaceWith',
+          selector,
+          currValue: getTextContent(headingElement, $),
+          scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
+          valueFormat: 'hast',
+          value: {
+            type: 'root',
+            children: [
+              {
+                type: 'element',
+                tagName: `h${expectedLevel}`,
+                properties: {},
+                children: [{ type: 'text', value: getTextContent(headingElement, $) }],
+              },
+            ],
+          },
+        },
+      };
+    };
+
     if (headings.length > 1) {
       for (let i = 1; i < headings.length; i += 1) {
         const prev = headings[i - 1];
         const cur = headings[i];
         const prevLevel = getHeadingLevel(prev.tagName);
         const curLevel = getHeadingLevel(cur.tagName);
-        if (curLevel - prevLevel > 1) {
+        const curSelector = getHeadingSelector(cur);
+
+        // Only process if this heading was not already processed as part of a group
+        // and there is an invalid level jump
+        const isNotProcessed = !processedInvalidOrderHeadings.has(curSelector);
+        const hasInvalidJump = curLevel - prevLevel > 1;
+
+        if (isNotProcessed && hasInvalidJump) {
           log.debug(`Heading level jump detected at ${url}: h${prevLevel} → h${curLevel}`);
-          const curSelector = getHeadingSelector(cur);
-          // Create a separate check for each invalid jump
-          checks.push({
-            check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
-            checkTitle: HEADINGS_CHECKS.HEADING_ORDER_INVALID.title,
-            description: HEADINGS_CHECKS.HEADING_ORDER_INVALID.description,
-            success: false,
-            explanation: `${HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation} Invalid jump: h${prevLevel} → h${curLevel}`,
-            suggestion: HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion,
-            transformRules: {
-              action: 'replaceWith',
-              selector: curSelector,
-              currValue: getTextContent(cur, $),
-              scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
-              valueFormat: 'hast',
-              value: {
-                type: 'root',
-                children: [
-                  {
-                    type: 'element',
-                    tagName: `h${prevLevel + 1}`,
-                    properties: {},
-                    children: [{ type: 'text', value: getTextContent(cur, $) }],
-                  },
-                ],
-              },
-            },
-          });
+
+          // Analyze if this heading is part of an accordion, list, or repeated section
+          // Pass the previous heading as boundary - only search between prev (h2) and cur (h5)
+          const contextAnalysis = analyzeHeadingContext(cur, $, prev);
+
+          if (contextAnalysis.isGrouped && contextAnalysis.peers.length > 0) {
+            // This heading is part of a group (accordion, list, etc.)
+            // Create suggestions for all headings in the group (current + peers)
+            log.debug(`Heading is part of ${contextAnalysis.type} with ${contextAnalysis.peers.length} peers at ${url}`);
+
+            // Add check for the current heading
+            checks.push(createInvalidOrderCheck(
+              cur,
+              prevLevel + 1,
+              prevLevel,
+              curLevel,
+              contextAnalysis.type,
+            ));
+            processedInvalidOrderHeadings.add(curSelector);
+
+            // Add checks for all peer headings in the same group
+            contextAnalysis.peers.forEach((peerHeading) => {
+              const peerSelector = getHeadingSelector(peerHeading);
+              const peerLevel = getHeadingLevel(peerHeading.name);
+
+              // Only add if not already processed and has the same invalid level
+              if (!processedInvalidOrderHeadings.has(peerSelector) && peerLevel === curLevel) {
+                checks.push(createInvalidOrderCheck(
+                  peerHeading,
+                  prevLevel + 1,
+                  prevLevel,
+                  peerLevel,
+                  contextAnalysis.type,
+                ));
+                processedInvalidOrderHeadings.add(peerSelector);
+              }
+            });
+          } else {
+            // Standalone heading - create single check as before
+            checks.push(createInvalidOrderCheck(cur, prevLevel + 1, prevLevel, curLevel));
+            processedInvalidOrderHeadings.add(curSelector);
+          }
         }
       }
     }
@@ -469,7 +541,10 @@ export async function headingsAuditRunner(baseURL, context, site) {
             }
 
             // Add URL if not already present
-            if (!aggregatedResults[checkType].urls.includes(url)) {
+            const isDuplicate = aggregatedResults[checkType].urls.some(
+              (item) => item.url === url,
+            );
+            if (!isDuplicate) {
               const urlObject = { url };
               urlObject.explanation = check.explanation;
               urlObject.suggestion = aiSuggestion || check.suggestion;
@@ -593,7 +668,12 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     return mergedSuggestion;
   };
 
-  const buildKey = (suggestion) => `${suggestion.checkType}|${suggestion.url}`;
+  const buildKey = (suggestion) => {
+    const selector = suggestion.transformRules?.selector;
+    return selector
+      ? `${suggestion.checkType}|${suggestion.url}|${selector}`
+      : `${suggestion.checkType}|${suggestion.url}`;
+  };
 
   await syncSuggestions({
     opportunity,
