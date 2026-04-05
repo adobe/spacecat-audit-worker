@@ -2327,8 +2327,9 @@ describe('Prerender Audit', () => {
         };
 
         const logStub = {
-          info: sandbox.stub(),
           debug: sandbox.stub(),
+          info: sandbox.stub(),
+          warn: sandbox.stub(),
         };
 
         const context = {
@@ -2358,7 +2359,7 @@ describe('Prerender Audit', () => {
 
         if (domainWideSuggestionLog) {
           expect(domainWideSuggestionLog).to.include('entire domain');
-          expect(domainWideSuggestionLog).to.include('regex');
+          expect(domainWideSuggestionLog).to.include('Regex');
         }
       });
 
@@ -5331,6 +5332,7 @@ describe('Prerender Audit', () => {
             Opportunity: mockOpportunity,
           },
           log: {
+            debug: sinon.stub(),
             info: sinon.stub(),
             warn: sinon.stub(),
             error: sinon.stub(),

@@ -130,7 +130,7 @@ describe('Job-based Step-Audit Tests', () => {
     const result = await runner.run(message, context);
 
     expect(result.status).to.equal(200);
-    expect(context.log.warn).to.have.been.calledWith('content-audit audits disabled for site 42322ae6-b8b1-4a61-9c88-25205fa65b07, skipping...');
+    expect(context.log.debug).to.have.been.calledWith('content-audit audits disabled for site 42322ae6-b8b1-4a61-9c88-25205fa65b07, skipping...');
     expect(job.setStatus).to.have.been.calledWith('CANCELLED');
     expect(job.setMetadata).to.have.been.calledWith({
       payload: {

@@ -98,6 +98,7 @@ import permissions from './permissions/handler.js';
 import permissionsRedundant from './permissions/handler.redundant.js';
 import faqs from './faqs/handler.js';
 import faqsGuidance from './faqs/guidance-handler.js';
+import moneyPages from './money-pages/handler.js';
 import relatedUrls from './related-urls/handler.js';
 import relatedUrlsGuidance from './related-urls/guidance-handler.js';
 import pageCitability from './page-citability/handler.js';
@@ -199,6 +200,7 @@ const HANDLERS = {
   'security-permissions-redundant': permissionsRedundant,
   faqs,
   'guidance:faqs': faqsGuidance,
+  'money-pages': moneyPages,
   'related-urls': relatedUrls,
   'guidance:related-urls': relatedUrlsGuidance,
   'page-citability': pageCitability,
@@ -300,7 +302,9 @@ async function run(message, context) {
         context.site = site;
       }
     } catch (e) {
-      log.warn(`Failed to fetch site ${siteId}: ${e.message}`);
+      if (!siteId.startsWith('warmup-site-')) {
+        log.warn(`Failed to fetch site ${siteId}: ${e.message}`);
+      }
     }
   }
 

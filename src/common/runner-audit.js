@@ -49,7 +49,7 @@ export class RunnerAudit extends BaseAudit {
       const site = await this.siteProvider(siteId, context);
 
       if (!(await isAuditEnabledForSite(type, site, context))) {
-        log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
+        log.debug(`${type} audits disabled for site ${siteId}, skipping...`);
         return ok();
       }
 

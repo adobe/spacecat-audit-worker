@@ -87,7 +87,7 @@ export class AsyncJobRunner extends StepAudit {
       const site = await this.siteProvider(siteId, context);
 
       if (!(await isAuditEnabledForSite(type, site, context))) {
-        log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
+        log.debug(`${type} audits disabled for site ${siteId}, skipping...`);
         job.setStatus(AsyncJob.Status.CANCELLED);
         job.setMetadata({
           payload: {

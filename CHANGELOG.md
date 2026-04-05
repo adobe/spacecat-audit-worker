@@ -1,3 +1,52 @@
+## [1.393.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.393.4...v1.393.5) (2026-04-05)
+
+
+### Bug Fixes
+
+* downgrade prerender-disabled skip message to debug ([#2306](https://github.com/adobe/spacecat-audit-worker/issues/2306)) ([e7b1ab0](https://github.com/adobe/spacecat-audit-worker/commit/e7b1ab0bb99f424f5e5589d3f9f101d8d1f399fd))
+
+## [1.393.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.393.3...v1.393.4) (2026-04-05)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2289](https://github.com/adobe/spacecat-audit-worker/issues/2289)) ([e6da3c6](https://github.com/adobe/spacecat-audit-worker/commit/e6da3c6d9627bcd26956fb02c2735eb62f4cb940))
+
+## [1.393.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.393.2...v1.393.3) (2026-04-05)
+
+
+### Bug Fixes
+
+* downgrade non-actionable audit warnings to debug ([#2305](https://github.com/adobe/spacecat-audit-worker/issues/2305)) ([52f8b8f](https://github.com/adobe/spacecat-audit-worker/commit/52f8b8fcc2cfbc9028d96910b89bb9165c252d89))
+
+## [1.393.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.393.1...v1.393.2) (2026-04-04)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2304](https://github.com/adobe/spacecat-audit-worker/issues/2304)) ([9df8712](https://github.com/adobe/spacecat-audit-worker/commit/9df8712494b82db8574f01d93051231d39a432bf))
+
+## [1.393.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.393.0...v1.393.1) (2026-04-03)
+
+
+### Bug Fixes
+
+* (broken-backlinks) include PENDING_VALIDATION suggestions in enrichment ([#2302](https://github.com/adobe/spacecat-audit-worker/issues/2302)) ([f52fd7c](https://github.com/adobe/spacecat-audit-worker/commit/f52fd7c62f440de5267227b684695796c508be35)), closes [#2106](https://github.com/adobe/spacecat-audit-worker/issues/2106)
+
+# [1.393.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.392.2...v1.393.0) (2026-04-03)
+
+
+### Features
+
+* add money pages audit ([#2280](https://github.com/adobe/spacecat-audit-worker/issues/2280)) ([1b63930](https://github.com/adobe/spacecat-audit-worker/commit/1b6393054f266dbbfc0191a82e3555d3bd20c926)), closes [hi#value-pages](https://github.com/hi/issues/value-pages)
+
+## [1.392.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.392.1...v1.392.2) (2026-04-03)
+
+
+### Bug Fixes
+
+* Read <head><title> instead of just <title> ([#2297](https://github.com/adobe/spacecat-audit-worker/issues/2297)) ([66bcc73](https://github.com/adobe/spacecat-audit-worker/commit/66bcc73d04f5d0e08dabd742a7b2e5a8749d6f7b))
+
 ## [1.392.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.392.0...v1.392.1) (2026-04-03)
 
 
