@@ -336,7 +336,8 @@
           ]
         }
       ],
-      "formsource": "#container-1 form.newsletter"
+      "formsource": "#container-1 form.newsletter",
+      "formCTAWithinPage": [ "#teaser-related02 .cmp-teaser__action-link"]
     }
   ]
 }

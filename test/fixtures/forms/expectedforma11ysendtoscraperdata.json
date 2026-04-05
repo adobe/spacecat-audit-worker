@@ -4,7 +4,7 @@
         {
           "url": "https://business.adobe.com/se/resources/main.html",
           "formsubmit": {
-  
+
           },
           "formview": {
             "desktop:windows": 7898
@@ -19,13 +19,13 @@
         {
           "url": "https://business.adobe.com/jp/products/magento/magento-commerce.html",
           "formsubmit": {
-  
+
           },
           "formview": {
             "desktop:mac": 100
           },
           "formengagement": {
-  
+
           },
           "pageview": {
             "desktop:mac": 100,
@@ -36,7 +36,7 @@
         {
           "url": "https://business.adobe.com/",
           "formsubmit": {
-  
+
           },
           "formview": {
             "desktop:mac": 6789,
@@ -72,7 +72,7 @@
         {
           "url": "https://www.business.adobe.com/newsletter",
           "formsubmit": {
-  
+
           },
           "formview": {
             "mobile:ios": 300
@@ -142,7 +142,8 @@
               ]
             }
           ],
-          "formsource": "#container-1 form.newsletter"
+          "formsource": "#container-1 form.newsletter",
+          "formCTAWithinPage": [ "#teaser-related02 .cmp-teaser__action-link"]
         }
       ],
     "auditContext": {
@@ -159,4 +160,4 @@
     }
   ],
   "siteId": "test-site-id"
-} 
+}
