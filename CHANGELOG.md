@@ -1,3 +1,10 @@
+## [1.393.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.393.2...v1.393.3) (2026-04-05)
+
+
+### Bug Fixes
+
+* downgrade non-actionable audit warnings to debug ([#2305](https://github.com/adobe/spacecat-audit-worker/issues/2305)) ([52f8b8f](https://github.com/adobe/spacecat-audit-worker/commit/52f8b8fcc2cfbc9028d96910b89bb9165c252d89))
+
 ## [1.393.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.393.1...v1.393.2) (2026-04-04)
 
 
