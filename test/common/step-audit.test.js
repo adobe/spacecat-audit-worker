@@ -164,7 +164,7 @@ describe('Step-based Audit Tests', () => {
       expect(result.status).to.equal(200);
       expect(context.dataAccess.Audit.create).not.to.have.been.called;
       expect(context.sqs.sendMessage).not.to.have.been.called;
-      expect(context.log.warn).to.have.been.calledWith('content-audit audits disabled for site 42322ae6-b8b1-4a61-9c88-25205fa65b07, skipping...');
+      expect(context.log.debug).to.have.been.calledWith('content-audit audits disabled for site 42322ae6-b8b1-4a61-9c88-25205fa65b07, skipping...');
     });
 
     it('executes first step and creates audit record', async () => {
