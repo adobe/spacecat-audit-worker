@@ -269,6 +269,62 @@ describe('data-access', () => {
       expect(mockLogger.error).to.not.have.been.called;
     });
 
+    it('should use newSuggestionStatus override when provided', async () => {
+      const newData = [{ key: '3' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+      context.site = { requiresValidation: true };
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+        newSuggestionStatus: 'NEW',
+      });
+
+      const actualArgs = mockOpportunity.addSuggestions.getCall(0).args[0];
+      expect(actualArgs[0].status).to.equal('NEW');
+    });
+
+    it('should default to PENDING_VALIDATION when newSuggestionStatus is null and site requires validation', async () => {
+      const newData = [{ key: '3' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+      context.site = { requiresValidation: true };
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+        newSuggestionStatus: null,
+      });
+
+      const actualArgs = mockOpportunity.addSuggestions.getCall(0).args[0];
+      expect(actualArgs[0].status).to.equal('PENDING_VALIDATION');
+    });
+
+    it('should throw error when newSuggestionStatus is invalid', async () => {
+      const newData = [{ key: '3' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      context.site = { requiresValidation: true };
+
+      await expect(syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+        newSuggestionStatus: 'INVALID_STATUS',
+      })).to.be.rejectedWith('Invalid newSuggestionStatus: INVALID_STATUS');
+    });
+
     it('should use NEW status for PLG sites when bypassValidationForPlg is true', async () => {
       const newData = [{ key: '1' }, { key: '2' }];
 
