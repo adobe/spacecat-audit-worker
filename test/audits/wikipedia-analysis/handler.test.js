@@ -178,6 +178,21 @@ describe('Wikipedia Analysis Handler', () => {
       expect(result.auditResult.config.companyName).to.equal('test-company');
     });
 
+    it('should extract brand from subdomain URL when company name is not configured', async () => {
+      mockSite.getConfig.returns({
+        getCompanyName: sandbox.stub().returns(null),
+        getWikipediaUrl: sandbox.stub().returns(''),
+        getCompetitors: sandbox.stub().returns([]),
+        getCompetitorRegion: sandbox.stub().returns(null),
+      });
+      mockSite.getBaseURL.returns('https://corporate.walmart.com');
+
+      const result = await wikipediaAnalysisHandler.runner('https://corporate.walmart.com', context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.config.companyName).to.equal('walmart');
+    });
+
     it('should handle errors during execution', async () => {
       mockSite.getConfig.throws(new Error('Config error'));
 
@@ -631,6 +646,32 @@ describe('Wikipedia Analysis Handler', () => {
     it('should be case-insensitive for region suffixes', () => {
       expect(extractBrandFromUrl('https://www.brandUSA.com')).to.equal('brand');
       expect(extractBrandFromUrl('https://www.brandGlobal.com')).to.equal('brand');
+    });
+
+    it('should extract brand from subdomain URLs instead of subdomain name', () => {
+      expect(extractBrandFromUrl('https://corporate.walmart.com')).to.equal('walmart');
+      expect(extractBrandFromUrl('https://blog.google.com')).to.equal('google');
+      expect(extractBrandFromUrl('https://investor.apple.com')).to.equal('apple');
+      expect(extractBrandFromUrl('https://ir.company.com')).to.equal('company');
+      expect(extractBrandFromUrl('https://news.example.com')).to.equal('example');
+      expect(extractBrandFromUrl('https://shop.nespresso.com')).to.equal('nespresso');
+      expect(extractBrandFromUrl('https://press.bmw.de')).to.equal('bmw');
+    });
+
+    it('should extract brand from subdomain URLs with regional suffixes', () => {
+      expect(extractBrandFromUrl('https://corporate.landroverusa.com')).to.equal('landrover');
+      expect(extractBrandFromUrl('https://news.toyotaglobal.com')).to.equal('toyota');
+    });
+
+    it('should extract brand from subdomain URLs with multi-part TLDs', () => {
+      expect(extractBrandFromUrl('https://shop.brand.co.uk')).to.equal('brand');
+      expect(extractBrandFromUrl('https://investor.company.com.au')).to.equal('company');
+      expect(extractBrandFromUrl('https://news.brand.co.jp')).to.equal('brand');
+    });
+
+    it('should handle deeply nested subdomains by extracting the SLD', () => {
+      expect(extractBrandFromUrl('https://a.b.walmart.com')).to.equal('walmart');
+      expect(extractBrandFromUrl('https://dev.blog.google.com')).to.equal('google');
     });
   });
 });
