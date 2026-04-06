@@ -945,7 +945,6 @@ describe('Prerender Audit', () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticUrlsFromAthena: athenaStub,
-            getPreferredBaseUrl: () => 'https://example.com',
           },
         });
 
@@ -983,7 +982,6 @@ describe('Prerender Audit', () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticUrlsFromAthena: athenaStub,
-            getPreferredBaseUrl: () => 'https://example.com',
           },
         });
 
