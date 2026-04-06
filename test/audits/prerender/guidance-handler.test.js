@@ -51,6 +51,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
 
   beforeEach(async () => {
     log = {
+      debug: sinon.stub(),
       info: sinon.stub(),
       warn: sinon.stub(),
       error: sinon.stub(),
@@ -471,7 +472,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(200);
-      expect(log.warn).to.have.been.calledWith(sinon.match(/No existing suggestions found/));
+      expect(log.debug).to.have.been.calledWith(sinon.match(/No existing suggestions found/));
     });
 
     it('should handle batch save errors gracefully', async () => {

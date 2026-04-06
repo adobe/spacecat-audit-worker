@@ -302,7 +302,9 @@ async function run(message, context) {
         context.site = site;
       }
     } catch (e) {
-      log.warn(`Failed to fetch site ${siteId}: ${e.message}`);
+      if (!siteId.startsWith('warmup-site-')) {
+        log.warn(`Failed to fetch site ${siteId}: ${e.message}`);
+      }
     }
   }
 
