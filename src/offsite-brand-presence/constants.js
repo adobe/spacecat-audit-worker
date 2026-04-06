@@ -55,3 +55,4 @@ export const CITED_ANALYSIS_DRS_CONFIG = Object.freeze({
   auditType: Audit.AUDIT_TYPES.CITED_ANALYSIS,
   datasetIds: [SCRAPE_DATASET_IDS.TOP_CITED],
 });
+export const YOUTUBE_URL_REGEX = /^(?:https?:\/\/)?(?:www\.)?(?:m\.)?(?:youtube(?:-nocookie)?\.com|youtu\.be)(?:[/?#]|$)/;
