@@ -940,17 +940,12 @@ describe('Prerender Audit', () => {
 
       });
 
-      it('should include organic URLs even when all are in the recency window', async () => {
+      it('should include organic URLs even when all are in the recency window when triggered from Slack', async () => {
         const athenaStub = sandbox.stub().resolves([]);
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticUrlsFromAthena: athenaStub,
           },
-        });
-
-        // PageCitability returns both organic URLs as recently processed
-        const recentRecord = (pathname) => ({
-          getUrl: () => `https://example.com${pathname}`,
         });
 
         const context = {
@@ -959,18 +954,12 @@ describe('Prerender Audit', () => {
             getBaseURL: () => 'https://example.com',
             getConfig: () => ({ getIncludedURLs: () => [] }),
           },
-          data: '{"mode":"organic"}',
+          auditContext: { slackContext: { channelId: 'C123', threadTs: '1.0' } },
           dataAccess: {
             SiteTopPage: {
               allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
                 { getUrl: () => 'https://example.com/organic-page-1' },
                 { getUrl: () => 'https://example.com/organic-page-2' },
-              ]),
-            },
-            PageCitability: {
-              allByIndexKeys: sandbox.stub().resolves([
-                recentRecord('/organic-page-1'),
-                recentRecord('/organic-page-2'),
               ]),
             },
           },
@@ -980,14 +969,14 @@ describe('Prerender Audit', () => {
 
         const result = await mockHandler.submitForScraping(context);
 
-        // Both URLs must be present even though they are "recent"
+        // Both URLs must be present even though they would be "recent" in a scheduled run
         expect(result.urls).to.deep.equal([
           { url: 'https://example.com/organic-page-1' },
           { url: 'https://example.com/organic-page-2' },
         ]);
       });
 
-      it('should not fetch agentic URLs when mode is organic', async () => {
+      it('should not fetch agentic URLs when triggered from Slack', async () => {
         const athenaStub = sandbox.stub().resolves(['https://example.com/agentic-1']);
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
@@ -1001,7 +990,7 @@ describe('Prerender Audit', () => {
             getBaseURL: () => 'https://example.com',
             getConfig: () => ({ getIncludedURLs: () => [] }),
           },
-          data: '{"mode":"organic"}',
+          auditContext: { slackContext: { channelId: 'C123', threadTs: '1.0' } },
           dataAccess: {
             SiteTopPage: {
               allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
@@ -1009,7 +998,6 @@ describe('Prerender Audit', () => {
                 { getUrl: () => 'https://example.com/organic-page-2' },
               ]),
             },
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
           },
           log: { info: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub() },
           env: {},
@@ -1024,7 +1012,7 @@ describe('Prerender Audit', () => {
         ]);
       });
 
-      it('should still fetch agentic URLs when no mode is set', async () => {
+      it('should still fetch agentic URLs for scheduled (non-Slack) runs', async () => {
         const athenaStub = sandbox.stub().resolves(['https://example.com/agentic-1']);
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
@@ -1038,7 +1026,6 @@ describe('Prerender Audit', () => {
             getBaseURL: () => 'https://example.com',
             getConfig: () => ({ getIncludedURLs: () => [] }),
           },
-          data: null,
           dataAccess: {
             SiteTopPage: {
               allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
