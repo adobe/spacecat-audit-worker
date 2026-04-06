@@ -365,7 +365,7 @@ describe('internal-links opportunity suggestions step', () => {
       isNonEmptyArray: (value) => Array.isArray(value) && value.length > 0,
       createContextLogger: (log) => log,
       calculateKpiDeltasForAudit: sinon.stub().returns({}),
-      convertToOpportunity: sinon.stub().resolves({ getId: () => 'oppty-1' }),
+      convertToOpportunity: sinon.stub().resolves({ getId: () => 'oppty-1', getType: () => 'broken-internal-links' }),
       createOpportunityData: sinon.stub(),
       syncBrokenInternalLinksSuggestions: sinon.stub().resolves(),
       filterByAuditScope: (pages) => pages,
