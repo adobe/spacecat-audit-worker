@@ -1,3 +1,10 @@
+## [1.395.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.395.0...v1.395.1) (2026-04-06)
+
+
+### Bug Fixes
+
+* set default origin to 'AUTOMATION' in opportunity data mapper ([#2308](https://github.com/adobe/spacecat-audit-worker/issues/2308)) ([05fdc41](https://github.com/adobe/spacecat-audit-worker/commit/05fdc4189ce400b8d86210b167214ccefa684e42))
+
 # [1.395.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.394.0...v1.395.0) (2026-04-06)
 
 
