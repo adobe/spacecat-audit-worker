@@ -940,6 +940,74 @@ describe('Prerender Audit', () => {
 
       });
 
+      it('should not fetch agentic URLs when mode is organic', async () => {
+        const athenaStub = sandbox.stub().resolves(['https://example.com/agentic-1']);
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: athenaStub,
+            getPreferredBaseUrl: () => 'https://example.com',
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          data: '{"mode":"organic"}',
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                { getUrl: () => 'https://example.com/organic-page-1' },
+                { getUrl: () => 'https://example.com/organic-page-2' },
+              ]),
+            },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+          },
+          log: { info: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+
+        expect(athenaStub).to.not.have.been.called;
+        expect(result.urls).to.deep.equal([
+          { url: 'https://example.com/organic-page-1' },
+          { url: 'https://example.com/organic-page-2' },
+        ]);
+      });
+
+      it('should still fetch agentic URLs when no mode is set', async () => {
+        const athenaStub = sandbox.stub().resolves(['https://example.com/agentic-1']);
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: athenaStub,
+            getPreferredBaseUrl: () => 'https://example.com',
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          data: null,
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+            },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+          },
+          log: { info: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub() },
+          env: {},
+        };
+
+        await mockHandler.submitForScraping(context);
+
+        expect(athenaStub).to.have.been.called;
+      });
 
     });
 

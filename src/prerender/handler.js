@@ -28,6 +28,7 @@ import {
   TOP_ORGANIC_URLS_LIMIT,
   PRERENDER_RECENT_PROCESSING_TIME_DAYS,
   MODE_AI_ONLY,
+  MODE_ORGANIC,
 } from './utils/constants.js';
 
 function rebaseUrl(url, preferredBase, log) {
@@ -794,7 +795,7 @@ export async function submitForScraping(context) {
 
   const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
   // getTopAgenticUrls internally handles errors and returns [] on failure
-  const agenticUrls = await getTopAgenticUrls(site, context);
+  const agenticUrls = mode === MODE_ORGANIC ? [] : await getTopAgenticUrls(site, context);
 
   const preferredBase = getPreferredBaseUrl(site, context);
   const rebasedTopPagesUrls = topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log));
@@ -1438,11 +1439,13 @@ export async function processContentAndGenerateOpportunities(context) {
       log.info(`${LOG_PREFIX} Found ${urlsToCheck.length} URLs from scrape results`);
     } else {
       /* c8 ignore start */
-      // Fetch agentic URLs only for URL list fallback
-      try {
-        agenticUrls = await getTopAgenticUrls(site, context);
-      } catch (e) {
-        log.warn(`${LOG_PREFIX} Failed to fetch agentic URLs for fallback: ${e.message}. baseUrl=${site.getBaseURL()}`);
+      // Fetch agentic URLs only for URL list fallback (skipped in organic mode)
+      if (mode !== MODE_ORGANIC) {
+        try {
+          agenticUrls = await getTopAgenticUrls(site, context);
+        } catch (e) {
+          log.warn(`${LOG_PREFIX} Failed to fetch agentic URLs for fallback: ${e.message}. baseUrl=${site.getBaseURL()}`);
+        }
       }
 
       // Load top organic pages cache for fallback merging
