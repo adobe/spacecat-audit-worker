@@ -1422,7 +1422,7 @@ export async function getScrapeJobStats(
  */
 export async function processContentAndGenerateOpportunities(context) {
   const {
-    site, audit, log, scrapeResultPaths, data, dataAccess,
+    site, audit, log, scrapeResultPaths, data, dataAccess, auditContext,
   } = context;
 
   // Check for AI-only mode - skip processing step (step 1 already triggered Mystique)
@@ -1434,6 +1434,7 @@ export async function processContentAndGenerateOpportunities(context) {
 
   const siteId = site.getId();
   const startTime = process.hrtime();
+  const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
 
   // Check if this is a paid LLMO customer early so we can use it in all logs
   const isPaid = await isPaidLLMOCustomer(context);
@@ -1451,11 +1452,13 @@ export async function processContentAndGenerateOpportunities(context) {
       log.info(`${LOG_PREFIX} Found ${urlsToCheck.length} URLs from scrape results`);
     } else {
       /* c8 ignore start */
-      // Fetch agentic URLs for URL list fallback
-      try {
-        agenticUrls = await getTopAgenticUrls(site, context);
-      } catch (e) {
-        log.warn(`${LOG_PREFIX} Failed to fetch agentic URLs for fallback: ${e.message}. baseUrl=${site.getBaseURL()}`);
+      // Fetch agentic URLs for URL list fallback (skipped for Slack-triggered runs)
+      if (!isSlackTriggered) {
+        try {
+          agenticUrls = await getTopAgenticUrls(site, context);
+        } catch (e) {
+          log.warn(`${LOG_PREFIX} Failed to fetch agentic URLs for fallback: ${e.message}. baseUrl=${site.getBaseURL()}`);
+        }
       }
 
       // Load top organic pages cache for fallback merging
@@ -1503,7 +1506,6 @@ export async function processContentAndGenerateOpportunities(context) {
 
     log.info(`${LOG_PREFIX} Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender from total ${urlsToCheck.length} URLs scraped. isPaidLLMOCustomer=${isPaid}`);
 
-    const { auditContext } = context;
     const { scrapeJobId } = auditContext || {};
     // getScrapeJobStats combines 403s from COMPLETE-status URLs (already in comparisonResults)
     // and FAILED-status URLs (absent from comparisonResults, fetched from ScrapeUrl table).
@@ -1651,7 +1653,6 @@ export async function processContentAndGenerateOpportunities(context) {
     };
 
     // Upload status.json on error so UI can show audit status via S3 fallback
-    const { auditContext } = context;
     await uploadStatusSummaryToS3(site.getBaseURL(), {
       siteId,
       auditId: audit.getId(),

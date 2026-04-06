@@ -1249,6 +1249,51 @@ describe('Prerender Audit', () => {
         expect(context.log.info).to.have.been.calledWith('Prerender - No URLs found for comparison. baseUrl=https://example.com, siteId=test-site-id');
       });
 
+      it('should not fetch agentic URLs in fallback path when triggered from Slack', async () => {
+        const athenaStub = sandbox.stub().resolves(['https://example.com/agentic-1']);
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: athenaStub,
+            getPreferredBaseUrl: () => 'https://example.com',
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                { getUrl: () => 'https://example.com/organic-1', getTraffic: () => 100 },
+              ]),
+            },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+          scrapeResultPaths: new Map(), // No scrape results → triggers fallback path
+          s3Client: { send: sandbox.stub().rejects(new Error('No S3 data')) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: {
+            scrapeJobId: 'test-job-id',
+            slackContext: { channelId: 'C123', threadTs: '1.0' },
+          },
+        };
+
+        await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(athenaStub).to.not.have.been.called;
+      });
+
       it('should trigger opportunity processing path when prerender is detected', async () => {
         // This test covers line 341 by ensuring the full opportunity processing flow executes
         const mockOpportunity = {
