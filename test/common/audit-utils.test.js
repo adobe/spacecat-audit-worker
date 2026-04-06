@@ -24,6 +24,7 @@ import {
   sendContinuationMessage,
   checkProductCodeEntitlements,
   parseMessageDataForRunnerAudit,
+  preserveOnDemand,
 } from '../../src/common/audit-utils.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -328,6 +329,37 @@ describe('Audit Utils Tests', () => {
 
       await expect(loadExistingAudit(validAuditId, context))
         .to.be.rejectedWith('DB error');
+    });
+  });
+
+  describe('preserveOnDemand', () => {
+    it('extracts onDemand when boolean true', () => {
+      const result = preserveOnDemand({ onDemand: true, extra: 'ignored' });
+      expect(result).to.deep.equal({ onDemand: true });
+    });
+
+    it('normalizes string "true" to boolean true', () => {
+      expect(preserveOnDemand({ onDemand: 'true' })).to.deep.equal({ onDemand: true });
+    });
+
+    it('returns empty object when auditContext is undefined', () => {
+      expect(preserveOnDemand(undefined)).to.deep.equal({});
+    });
+
+    it('returns empty object when auditContext is null', () => {
+      expect(preserveOnDemand(null)).to.deep.equal({});
+    });
+
+    it('returns empty object when onDemand is not set', () => {
+      expect(preserveOnDemand({ extra: 'ignored' })).to.deep.equal({});
+    });
+
+    it('returns empty object when onDemand is false', () => {
+      expect(preserveOnDemand({ onDemand: false })).to.deep.equal({});
+    });
+
+    it('returns empty object when onDemand is string "false"', () => {
+      expect(preserveOnDemand({ onDemand: 'false' })).to.deep.equal({});
     });
   });
 

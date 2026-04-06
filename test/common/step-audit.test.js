@@ -255,6 +255,33 @@ describe('Step-based Audit Tests', () => {
       });
     });
 
+    it('preserves passthrough keys from incoming auditContext', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      const messageWithPassthrough = {
+        type: 'content-audit',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        auditContext: {
+          onDemand: true,
+        },
+      };
+
+      await audit.run(messageWithPassthrough, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, payload] = context.sqs.sendMessage.firstCall.args;
+      expect(payload.auditContext).to.include({ onDemand: true });
+    });
+
     it('continues execution from specified step', async () => {
       nock('https://space.cat')
         .get('/')
@@ -381,6 +408,34 @@ describe('Step-based Audit Tests', () => {
 
       await expect(audit.chainStep(step, {}, context))
         .to.be.rejectedWith('Invalid destination configuration for step test');
+    });
+
+    it('handles chainStep when context.auditContext is undefined', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      const stepContext = { ...context, audit: createdAudit };
+      // Explicitly remove auditContext to exercise the || {} fallback
+      delete stepContext.auditContext;
+
+      const step = {
+        name: 'prepare',
+        destination: AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+      };
+
+      await audit.chainStep(step, {}, stepContext);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, payload] = context.sqs.sendMessage.firstCall.args;
+      expect(payload.auditContext).to.not.have.property('onDemand');
     });
 
     it('handles SCRAPE_CLIENT destination by creating scrape job', async () => {
