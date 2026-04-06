@@ -35,6 +35,7 @@ describe('Prerender Utils', () => {
     log = {
       debug: sandbox.stub(),
       warn: sandbox.stub(),
+      error: sandbox.stub(),
     };
 
     mockSite = {
@@ -131,27 +132,55 @@ describe('Prerender Utils', () => {
       );
     });
 
-    it('should return false and log warning when TierClient.createForSite fails', async () => {
-      TierClientStub.createForSite.rejects(new Error('TierClient creation failed'));
+    it('should return false and log warning when permanent error occurs in createForSite', async () => {
+      const permanentError = new Error('Not Found');
+      permanentError.statusCode = 404;
+      TierClientStub.createForSite.rejects(permanentError);
 
       const context = { site: mockSite, log };
       const result = await utils.isPaidLLMOCustomer(context);
 
       expect(result).to.be.false;
       expect(log.warn).to.have.been.calledWith(
-        sinon.match(/Failed to check paid LLMO customer status.*siteId=test-site-id.*TierClient creation failed/),
+        sinon.match(/Failed to check paid LLMO customer status.*siteId=test-site-id.*Not Found/),
       );
     });
 
-    it('should return false and log warning when checkValidEntitlement fails', async () => {
-      mockTierClient.checkValidEntitlement.rejects(new Error('Entitlement check failed'));
+    it('should throw when transient PGRST003 error occurs in createForSite', async () => {
+      const dbError = new Error('Timed out acquiring connection from connection pool');
+      dbError.code = 'PGRST003';
+      TierClientStub.createForSite.rejects(dbError);
+
+      const context = { site: mockSite, log };
+
+      await expect(utils.isPaidLLMOCustomer(context))
+        .to.be.rejectedWith('Transient entitlement check error');
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Transient error checking paid LLMO status.*siteId=test-site-id/),
+      );
+    });
+
+    it('should throw when transient network error occurs', async () => {
+      const networkError = new Error('Network error occurred');
+      TierClientStub.createForSite.rejects(networkError);
+
+      const context = { site: mockSite, log };
+
+      await expect(utils.isPaidLLMOCustomer(context))
+        .to.be.rejectedWith('Transient entitlement check error');
+      expect(log.error).to.have.been.called;
+    });
+
+    it('should return false and log warning when permanent error occurs in checkValidEntitlement', async () => {
+      const permanentError = new Error('No entitlement found');
+      mockTierClient.checkValidEntitlement.rejects(permanentError);
 
       const context = { site: mockSite, log };
       const result = await utils.isPaidLLMOCustomer(context);
 
       expect(result).to.be.false;
       expect(log.warn).to.have.been.calledWith(
-        sinon.match(/Failed to check paid LLMO customer status.*siteId=test-site-id.*Entitlement check failed/),
+        sinon.match(/Failed to check paid LLMO customer status.*siteId=test-site-id.*No entitlement found/),
       );
     });
 

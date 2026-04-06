@@ -86,6 +86,8 @@ export class AsyncJobRunner extends StepAudit {
 
       const site = await this.siteProvider(siteId, context);
 
+      // Note: CANCELLED status is for sites explicitly not entitled or with audits disabled.
+      // Transient errors (database timeouts, network issues) will throw and trigger Lambda retry.
       if (!(await isAuditEnabledForSite(type, site, context))) {
         log.debug(`${type} audits disabled for site ${siteId}, skipping...`);
         job.setStatus(AsyncJob.Status.CANCELLED);

@@ -114,14 +114,39 @@ describe('utils/site-validation', () => {
     expect(result).to.equal(true);
   });
 
-  it('returns false and logs warn when entitlement check throws', async () => {
+  it('returns false and logs warn when permanent error occurs', async () => {
     const site = { getId: sandbox.stub().returns('site-err') };
-    sandbox.stub(TierClient, 'createForSite').rejects(new Error('boom'));
+    const permanentError = new Error('Not Found');
+    permanentError.statusCode = 404;
+    sandbox.stub(TierClient, 'createForSite').rejects(permanentError);
 
     const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
 
     expect(result).to.equal(false);
     expect(context.log.warn).to.have.been.called;
+  });
+
+  it('throws when transient PGRST003 error occurs', async () => {
+    const site = { getId: sandbox.stub().returns('site-transient') };
+    const dbError = new Error('Timed out acquiring connection from connection pool');
+    dbError.code = 'PGRST003';
+    context.log.error = sandbox.spy();
+    sandbox.stub(TierClient, 'createForSite').rejects(dbError);
+
+    await expect(checkSiteRequiresValidation(site, context))
+      .to.be.rejectedWith('Transient entitlement check error');
+    expect(context.log.error).to.have.been.called;
+  });
+
+  it('throws when transient network error occurs', async () => {
+    const site = { getId: sandbox.stub().returns('site-network-err') };
+    const networkError = new Error('Network error occurred');
+    context.log.error = sandbox.spy();
+    sandbox.stub(TierClient, 'createForSite').rejects(networkError);
+
+    await expect(checkSiteRequiresValidation(site, context))
+      .to.be.rejectedWith('Transient entitlement check error');
+    expect(context.log.error).to.have.been.called;
   });
 
   // Removed legacy fallback tests since validation is entitlement-driven only
@@ -137,9 +162,10 @@ describe('utils/site-validation', () => {
     expect(result).to.equal(false);
   });
 
-  it('logs warn when entitlement check throws', async () => {
+  it('logs warn when permanent error throws', async () => {
     const site = { getId: sandbox.stub().returns('site-warn-info') };
-    sandbox.stub(TierClient, 'createForSite').rejects(new Error('boom'));
+    const permanentError = new Error('No entitlement found');
+    sandbox.stub(TierClient, 'createForSite').rejects(permanentError);
     context.log.debug = sandbox.spy();
 
     const result = await Promise.resolve(checkSiteRequiresValidation(site, context));

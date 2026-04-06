@@ -12,6 +12,7 @@
 
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { Entitlement } from '@adobe/spacecat-shared-data-access';
+import { isTransientTierClientError } from '../common/tier-client-error-classifier.js';
 
 const ASO_PRODUCT_CODE = Entitlement.PRODUCT_CODES.ASO;
 
@@ -61,6 +62,10 @@ export async function checkSiteRequiresValidation(site, context, auditType) {
       return true;
     }
   } catch (e) {
+    if (isTransientTierClientError(e)) {
+      context?.log?.error?.(`Transient error checking validation requirement for site ${site.getId?.()}: ${e.message}`);
+      throw new Error(`Transient entitlement check error: ${e.message}`, { cause: e });
+    }
     context?.log?.warn?.(`Entitlement check failed for site ${site.getId?.()}: ${e.message}`);
   }
 
