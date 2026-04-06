@@ -1,3 +1,10 @@
+# [1.398.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.397.1...v1.398.0) (2026-04-06)
+
+
+### Features
+
+* canonical - robots txt exclude paths ([#2127](https://github.com/adobe/spacecat-audit-worker/issues/2127)) ([01a7fff](https://github.com/adobe/spacecat-audit-worker/commit/01a7fffa930f1c113048d3d338a82c0f4e93ed12))
+
 ## [1.397.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.397.0...v1.397.1) (2026-04-06)
 
 
