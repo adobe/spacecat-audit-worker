@@ -288,7 +288,7 @@ async function run(message, context) {
   const handler = HANDLERS[type];
   if (!handler) {
     const msg = `no such audit type: ${type}`;
-    log.error(msg);
+    log.warn(msg);
     return notFound();
   }
 
