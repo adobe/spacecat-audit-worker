@@ -113,25 +113,31 @@ export default async function handler(message, context) {
         : [effectiveBaseURL];
     }
 
-    // Handle AI rationale - clear it if all URLs were filtered out
-    // This prevents showing rationale for URLs that don't exist
-    let aiRationale = brokenLink.aiRationale || '';
+    // Handle AI rationale - omit it if all URLs were filtered out or none were provided
+    // This prevents storing an empty string which fails schema validation
+    let aiRationale = brokenLink.aiRationale || undefined;
     if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length > 0) {
-      // All URLs were filtered out (likely invalid/broken), clear rationale
+      // All URLs were filtered out (likely invalid/broken), preserve existing rationale if any
       log.info('All the suggested URLs were filtered out');
-      aiRationale = existingSuggestedUrls.length > 0 ? existingData.aiRationale || '' : '';
+      aiRationale = existingSuggestedUrls.length > 0
+        ? existingData.aiRationale || undefined : undefined;
     } else if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length === 0) {
-      // No URLs were provided by Mystique, clear rationale
+      // No URLs were provided by Mystique, preserve existing rationale if any
       log.info('No suggested URLs provided by Mystique');
-      aiRationale = existingSuggestedUrls.length > 0 ? existingData.aiRationale || '' : '';
+      aiRationale = existingSuggestedUrls.length > 0
+        ? existingData.aiRationale || undefined : undefined;
     }
 
     // Preserve factId from Mystique enrichment (autofix bridge)
     const updatedData = {
       ...existingData,
       urlsSuggested: nextSuggestedUrls,
-      aiRationale,
     };
+    if (aiRationale) {
+      updatedData.aiRationale = aiRationale;
+    } else {
+      delete updatedData.aiRationale;
+    }
     // Add factId if provided by Mystique
     if (brokenLink.factId) {
       updatedData.factId = brokenLink.factId;
