@@ -708,6 +708,20 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(0);
     });
+
+    it('should discard YouTube URLs with non-standard subdomains', async () => {
+      const sources = 'https://music.youtube.com/watch?v=abc;https://studio.youtube.com/channel/123;https://www.youtube.com/watch?v=valid';
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([sources]);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
+    });
   });
 
   describe('URL Normalization', () => {
@@ -1073,7 +1087,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(mockSubmitScrapeJob).to.have.been.calledWith(sinon.match({
         datasetId: SCRAPE_DATASET_IDS.TOP_CITED,
         siteId: SITE_ID,
-        urls: ['https://example.com/page1', 'https://other.com/page2'],
+        urls: [{ url: 'https://example.com/page1' }, { url: 'https://other.com/page2' }],
       }));
     });
 

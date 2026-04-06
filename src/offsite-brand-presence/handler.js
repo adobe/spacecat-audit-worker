@@ -24,6 +24,7 @@ import {
   OFFSITE_DOMAINS,
   PROVIDERS_SET,
   CITED_ANALYSIS_DRS_CONFIG,
+  YOUTUBE_URL_REGEX,
 } from './constants.js';
 
 const LOG_PREFIX = '[OffsiteBrandPresence]';
@@ -251,6 +252,9 @@ function classifyAndNormalize(rawUrl) {
   const { hostname } = parsed;
   for (const domain of Object.keys(OFFSITE_DOMAINS)) {
     if (hostname === domain || hostname.endsWith(`.${domain}`)) {
+      if (domain === 'youtube.com' && !YOUTUBE_URL_REGEX.test(rawUrl)) {
+        return null;
+      }
       return { url: normalizeUrl(parsed, domain), domain };
     }
   }
@@ -530,7 +534,10 @@ async function triggerDrsScraping(urlsByDomain, siteId, context) {
     const { datasetIds } = OFFSITE_DOMAINS[domain] || CITED_ANALYSIS_DRS_CONFIG;
 
     for (const datasetId of datasetIds) {
-      const params = { datasetId, siteId, urls: urlList };
+      const scrapeUrls = datasetId === SCRAPE_DATASET_IDS.TOP_CITED
+        ? urlList.map((url) => ({ url }))
+        : urlList;
+      const params = { datasetId, siteId, urls: scrapeUrls };
       if (datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS) {
         params.daysBack = REDDIT_COMMENTS_DAYS_BACK;
       }
