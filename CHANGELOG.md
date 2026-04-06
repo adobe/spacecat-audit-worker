@@ -1,3 +1,10 @@
+# [1.397.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.396.1...v1.397.0) (2026-04-06)
+
+
+### Features
+
+* added rejectRedirects param to content-scraper message ([#2311](https://github.com/adobe/spacecat-audit-worker/issues/2311)) ([934d921](https://github.com/adobe/spacecat-audit-worker/commit/934d9214330c0a8cf6dfcb1465b70ca0497b50f1))
+
 ## [1.396.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.396.0...v1.396.1) (2026-04-06)
 
 
