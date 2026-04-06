@@ -848,7 +848,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(createArg.audits).to.deep.equal(['youtube-analysis']);
     });
 
-    it('should skip create and still include URL when it already exists in the store', async () => {
+    it('should still send URL to DRS when it already exists in the URL store', async () => {
       dataAccess.AuditUrl.batchGetByKeys.resolves({
         data: [{ getUrl: () => 'https://youtu.be/test' }],
       });
