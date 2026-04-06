@@ -117,12 +117,14 @@ export default async function handler(message, context) {
     // This prevents storing an empty string which fails schema validation
     let aiRationale = brokenLink.aiRationale || undefined;
     if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length > 0) {
-      // All URLs were filtered out (likely invalid/broken), preserve existing rationale if any
+      // All URLs were filtered out (likely invalid/broken):
+      // fall back to base URL with no rationale, unless a previous run already stored valid URLs
       log.info('All the suggested URLs were filtered out');
       aiRationale = existingSuggestedUrls.length > 0
         ? existingData.aiRationale || undefined : undefined;
     } else if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length === 0) {
-      // No URLs were provided by Mystique, preserve existing rationale if any
+      // No URLs provided by Mystique (LLM/Bright Data found nothing):
+      // fall back to base URL with no rationale, unless a previous run already stored valid URLs
       log.info('No suggested URLs provided by Mystique');
       aiRationale = existingSuggestedUrls.length > 0
         ? existingData.aiRationale || undefined : undefined;
