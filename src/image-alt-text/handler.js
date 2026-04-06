@@ -328,6 +328,7 @@ export async function processScraping(context) {
       maxScrapeAge: SCRAPE_MAX_AGE_HOURS,
       options: {
         pageLoadTimeout: SCRAPE_PAGE_LOAD_TIMEOUT,
+        rejectRedirects: false,
       },
     };
   } catch (error) {
