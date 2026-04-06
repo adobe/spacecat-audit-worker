@@ -28,6 +28,7 @@ describe('Suggestion Validation Tests', () => {
 
     opportunity = {
       getId: sandbox.stub().returns('opportunity-id'),
+      getType: sandbox.stub().returns('test-type'),
       getSiteId: sandbox.stub().returns('site-id'),
       getSuggestions: sandbox.stub().resolves([]),
       addSuggestions: sandbox.stub().resolves({

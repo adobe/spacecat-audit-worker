@@ -14,6 +14,7 @@ import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { convertToOpportunityEntity } from './opportunity-data-mapper.js';
 import { HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE } from './handler.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 const MAX_HIGH_ORGANIC_LOW_CTR_OPPORTUNITIES = 3;
 
@@ -175,6 +176,7 @@ export default async function handler(message, context) {
     },
   };
 
+  warnOnInvalidSuggestionData(suggestionData.data, opportunity.getType(), log);
   await Suggestion.create(suggestionData);
 
   return ok();

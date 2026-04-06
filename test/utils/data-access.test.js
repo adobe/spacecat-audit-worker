@@ -30,6 +30,7 @@ import {
   reconcileDisappearedSuggestions,
   publishDeployedFixEntities,
   AUTHOR_ONLY_OPPORTUNITY_TYPES,
+  warnOnInvalidSuggestionData,
 } from '../../src/utils/data-access.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -169,6 +170,7 @@ describe('data-access', () => {
         getSuggestions: sandbox.stub(),
         addSuggestions: sandbox.stub(),
         getSiteId: () => 'site-id',
+        getType: () => 'test-type',
       };
 
       mockLogger = {
@@ -265,6 +267,62 @@ describe('data-access', () => {
       expect(actualArgs[1].status).to.equal('PENDING_VALIDATION');
       expect(actualArgs[1].data).to.deep.equal({ key: '4' });
       expect(mockLogger.error).to.not.have.been.called;
+    });
+
+    it('should use newSuggestionStatus override when provided', async () => {
+      const newData = [{ key: '3' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+      context.site = { requiresValidation: true };
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+        newSuggestionStatus: 'NEW',
+      });
+
+      const actualArgs = mockOpportunity.addSuggestions.getCall(0).args[0];
+      expect(actualArgs[0].status).to.equal('NEW');
+    });
+
+    it('should default to PENDING_VALIDATION when newSuggestionStatus is null and site requires validation', async () => {
+      const newData = [{ key: '3' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+      context.site = { requiresValidation: true };
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+        newSuggestionStatus: null,
+      });
+
+      const actualArgs = mockOpportunity.addSuggestions.getCall(0).args[0];
+      expect(actualArgs[0].status).to.equal('PENDING_VALIDATION');
+    });
+
+    it('should throw error when newSuggestionStatus is invalid', async () => {
+      const newData = [{ key: '3' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      context.site = { requiresValidation: true };
+
+      await expect(syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+        newSuggestionStatus: 'INVALID_STATUS',
+      })).to.be.rejectedWith('Invalid newSuggestionStatus: INVALID_STATUS');
     });
 
     it('should use NEW status for PLG sites when bypassValidationForPlg is true', async () => {
@@ -373,6 +431,7 @@ describe('data-access', () => {
       const opportunityWithoutSiteId = {
         getSuggestions: sandbox.stub().resolves([]),
         addSuggestions: sandbox.stub().resolves(suggestionsResult),
+        getType: () => 'test-type',
       };
 
       await syncSuggestions({
@@ -1802,6 +1861,123 @@ describe('data-access', () => {
       expect(context.dataAccess.Suggestion.saveMany).to.have.been
         .calledOnceWith(prefetchedSuggestions);
     });
+
+    describe('warnOnInvalidSuggestionData integration', () => {
+      it('should warn on update path when merged data is invalid for schema type', async () => {
+        const structuredDataOpportunity = {
+          ...mockOpportunity,
+          getType: () => 'structured-data',
+        };
+
+        const existingSuggestions = [{
+          id: '1',
+          data: { key: '1', url: 'not-a-valid-uri' },
+          getData: sinon.stub().returns({ key: '1', url: 'not-a-valid-uri' }),
+          setData: sinon.stub(),
+          save: sinon.stub(),
+          getStatus: sinon.stub().returns('NEW'),
+          setUpdatedBy: sinon.stub().returnsThis(),
+        }];
+        const newData = [{ key: '1', url: 'still-not-valid' }];
+
+        structuredDataOpportunity.getSuggestions.resolves(existingSuggestions);
+
+        await syncSuggestions({
+          opportunity: structuredDataOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion: (data) => ({
+            opportunityId: '123', type: 'TYPE', rank: 1, data,
+          }),
+        });
+
+        // Verify warnOnInvalidSuggestionData logged a warning with correct opportunity type
+        expect(mockLogger.warn).to.have.been.calledWith(
+          sinon.match(/Suggestion data validation warning \[structured-data\]/),
+        );
+      });
+
+      it('should warn on create path when new suggestion data is invalid for schema type', async () => {
+        const structuredDataOpportunity = {
+          ...mockOpportunity,
+          getType: () => 'structured-data',
+        };
+
+        structuredDataOpportunity.getSuggestions.resolves([]);
+        structuredDataOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [] });
+
+        const newData = [{ key: '1', url: 'invalid-uri' }];
+
+        await syncSuggestions({
+          opportunity: structuredDataOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion: (data) => ({
+            opportunityId: '123', type: 'TYPE', rank: 1, data,
+          }),
+        });
+
+        expect(mockLogger.warn).to.have.been.calledWith(
+          sinon.match(/Suggestion data validation warning \[structured-data\]/),
+        );
+      });
+
+      it('should not warn on create path when result.data is null', async () => {
+        const structuredDataOpportunity = {
+          ...mockOpportunity,
+          getType: () => 'structured-data',
+        };
+
+        structuredDataOpportunity.getSuggestions.resolves([]);
+        structuredDataOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [] });
+
+        const newData = [{ key: '1' }];
+
+        await syncSuggestions({
+          opportunity: structuredDataOpportunity,
+          newData,
+          context,
+          buildKey,
+          // mapNewSuggestion returns object without data property
+          mapNewSuggestion: () => ({
+            opportunityId: '123', type: 'TYPE', rank: 1,
+          }),
+        });
+
+        // Should not warn since result.data is undefined (null guard)
+        expect(mockLogger.warn).to.not.have.been.calledWith(
+          sinon.match(/Suggestion data validation warning/),
+        );
+      });
+
+      it('should not warn when data is valid for a known schema type', async () => {
+        const structuredDataOpportunity = {
+          ...mockOpportunity,
+          getType: () => 'structured-data',
+        };
+
+        structuredDataOpportunity.getSuggestions.resolves([]);
+        structuredDataOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [] });
+
+        const newData = [{ key: '1', url: 'https://example.com' }];
+
+        await syncSuggestions({
+          opportunity: structuredDataOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion: (data) => ({
+            opportunityId: '123', type: 'TYPE', rank: 1, data,
+          }),
+        });
+
+        expect(mockLogger.warn).to.not.have.been.calledWith(
+          sinon.match(/Suggestion data validation warning/),
+        );
+      });
+    });
   });
 
   describe('getImsOrgId', () => {
@@ -2607,6 +2783,80 @@ describe('data-access', () => {
       // Verify getSuggestions is only called ONCE, not twice
       // (once in wrapper, passed to syncSuggestions to avoid double query)
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
+    });
+  });
+
+  describe('warnOnInvalidSuggestionData', () => {
+    let mockLog;
+
+    beforeEach(() => {
+      mockLog = {
+        warn: sinon.stub(),
+        info: sinon.stub(),
+        debug: sinon.stub(),
+        error: sinon.stub(),
+      };
+    });
+
+    it('passes silently when data is valid for a real schema type', () => {
+      // Use a real opportunity type with a registered schema to confirm valid data passes
+      warnOnInvalidSuggestionData({ url: 'https://example.com', type: 'Product', errors: [] }, 'structured-data', mockLog);
+      expect(mockLog.warn).to.not.have.been.called;
+    });
+
+    it('passes silently when opportunity type has no schema', () => {
+      warnOnInvalidSuggestionData({ key: 'value' }, 'unknown-type', mockLog);
+      expect(mockLog.warn).to.not.have.been.called;
+    });
+
+    it('logs a warning when validation fails', () => {
+      // Use a real opportunity type with a schema so null data triggers validation
+      warnOnInvalidSuggestionData(null, 'structured-data', mockLog);
+      expect(mockLog.warn).to.have.been.calledOnce;
+      expect(mockLog.warn.firstCall.args[0]).to.include('Suggestion data validation warning');
+    });
+
+    it('includes suggestion identifier in warning message', () => {
+      const validData = { url: 'https://example.com' };
+      warnOnInvalidSuggestionData(validData, 'structured-data', mockLog);
+      // structured-data requires url (valid uri) which passes,
+      // so use invalid data with identifier
+      const invalidData = { aggregationKey: 'my-key' };
+      warnOnInvalidSuggestionData(invalidData, 'structured-data', mockLog);
+      expect(mockLog.warn).to.have.been.calledOnce;
+      expect(mockLog.warn.firstCall.args[0]).to.include('[my-key]');
+    });
+
+    it('uses url as identifier fallback when aggregationKey is absent', () => {
+      warnOnInvalidSuggestionData({ url: 'not-a-valid-uri' }, 'structured-data', mockLog);
+      expect(mockLog.warn).to.have.been.calledOnce;
+      expect(mockLog.warn.firstCall.args[0]).to.include('[not-a-valid-uri]');
+    });
+
+    it('uses "unknown" as identifier when no identifying fields exist', () => {
+      warnOnInvalidSuggestionData(null, 'structured-data', mockLog);
+      expect(mockLog.warn).to.have.been.calledOnce;
+      expect(mockLog.warn.firstCall.args[0]).to.include('[unknown]');
+    });
+
+    it('truncates long error messages to 500 characters', () => {
+      // Stub validateData to throw an error with a message > 500 chars
+      const longMessage = 'x'.repeat(600);
+      const validateStub = sinon.stub(SuggestionDataAccess, 'validateData').throws(new Error(longMessage));
+      try {
+        warnOnInvalidSuggestionData({ url: 'test' }, 'structured-data', mockLog);
+        expect(mockLog.warn).to.have.been.calledOnce;
+        const warnMsg = mockLog.warn.firstCall.args[0];
+        expect(warnMsg).to.include('...[truncated]');
+        // Verify the truncated portion is max 500 chars of the original message
+        expect(warnMsg).to.not.include(longMessage);
+      } finally {
+        validateStub.restore();
+      }
+    });
+
+    it('does not throw even when validation fails', () => {
+      expect(() => warnOnInvalidSuggestionData(null, 'structured-data', mockLog)).to.not.throw();
     });
   });
 });

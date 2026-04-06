@@ -1,3 +1,24 @@
+# [1.396.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.395.1...v1.396.0) (2026-04-06)
+
+
+### Features
+
+* cwv-trends-audit ([#2130](https://github.com/adobe/spacecat-audit-worker/issues/2130)) ([093f79c](https://github.com/adobe/spacecat-audit-worker/commit/093f79cda742a444c466df5e224293fda5fd15e5))
+
+## [1.395.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.395.0...v1.395.1) (2026-04-06)
+
+
+### Bug Fixes
+
+* set default origin to 'AUTOMATION' in opportunity data mapper ([#2308](https://github.com/adobe/spacecat-audit-worker/issues/2308)) ([05fdc41](https://github.com/adobe/spacecat-audit-worker/commit/05fdc4189ce400b8d86210b167214ccefa684e42))
+
+# [1.395.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.394.0...v1.395.0) (2026-04-06)
+
+
+### Features
+
+* add suggestion data validation using shared Joi schemas ([#2190](https://github.com/adobe/spacecat-audit-worker/issues/2190)) ([e556923](https://github.com/adobe/spacecat-audit-worker/commit/e556923c329c436935653e69ffd0f78c0e0329e3))
+
 # [1.394.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.393.5...v1.394.0) (2026-04-06)
 
 
