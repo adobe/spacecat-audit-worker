@@ -1,3 +1,10 @@
+## [1.398.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.1...v1.398.2) (2026-04-06)
+
+
+### Bug Fixes
+
+* check if URL exists before adding to URL store ([#2316](https://github.com/adobe/spacecat-audit-worker/issues/2316)) ([94fcbcf](https://github.com/adobe/spacecat-audit-worker/commit/94fcbcfb147b6753130df75ac116e387c9c0d926))
+
 ## [1.398.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.0...v1.398.1) (2026-04-06)
 
 
