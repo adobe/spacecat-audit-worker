@@ -1,3 +1,10 @@
+# [1.395.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.394.0...v1.395.0) (2026-04-06)
+
+
+### Features
+
+* add suggestion data validation using shared Joi schemas ([#2190](https://github.com/adobe/spacecat-audit-worker/issues/2190)) ([e556923](https://github.com/adobe/spacecat-audit-worker/commit/e556923c329c436935653e69ffd0f78c0e0329e3))
+
 # [1.394.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.393.5...v1.394.0) (2026-04-06)
 
 
