@@ -22,7 +22,7 @@ import { DATA_SOURCES } from '../common/constants.js';
 export function createOpportunityData({ opportunityData } = {}) {
   return {
     runbook: opportunityData?.runbook || '',
-    origin: opportunityData?.origin || 'AUTOMATION',
+    origin: 'AUTOMATION',
     type: opportunityData?.type || Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS,
     title: opportunityData?.title || 'Youtube presence: Improve brand sentiment and visibility',
     description: opportunityData?.description || 'Enhance your company\'s Youtube presence to improve brand sentiment and visibility. '
