@@ -794,8 +794,37 @@ export async function submitForScraping(context) {
   }
 
   const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
+
+  // Organic mode: submit all SEO top pages immediately, bypassing recency filtering and
+  // daily batching (same pattern as the explicit CSV URL flow above).
+  if (mode === MODE_ORGANIC) {
+    const preferredBase = getPreferredBaseUrl(site, context);
+    const rebasedOrganicUrls = topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log));
+    const { urls: organicUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(rebasedOrganicUrls);
+
+    log.info(`${LOG_PREFIX} prerender_submit_scraping_metrics:
+    submittedUrls=${organicUrls.length},
+    agenticUrls=0,
+    topPagesUrls=${topPagesUrls.length},
+    filteredOutUrls=${filteredCount},
+    baseUrl=${site.getBaseURL()},
+    siteId=${siteId},
+    mode=organic`);
+
+    return {
+      urls: organicUrls.map((url) => ({ url })),
+      siteId,
+      processingType: AUDIT_TYPE,
+      maxScrapeAge: 0,
+      options: {
+        pageLoadTimeout: 20000,
+        storagePrefix: AUDIT_TYPE,
+      },
+    };
+  }
+
   // getTopAgenticUrls internally handles errors and returns [] on failure
-  const agenticUrls = mode === MODE_ORGANIC ? [] : await getTopAgenticUrls(site, context);
+  const agenticUrls = await getTopAgenticUrls(site, context);
 
   const preferredBase = getPreferredBaseUrl(site, context);
   const rebasedTopPagesUrls = topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log));

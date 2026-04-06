@@ -940,6 +940,53 @@ describe('Prerender Audit', () => {
 
       });
 
+      it('should include organic URLs even when all are in the recency window', async () => {
+        const athenaStub = sandbox.stub().resolves([]);
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: athenaStub,
+          },
+        });
+
+        // PageCitability returns both organic URLs as recently processed
+        const recentRecord = (pathname) => ({
+          getUrl: () => `https://example.com${pathname}`,
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          data: '{"mode":"organic"}',
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                { getUrl: () => 'https://example.com/organic-page-1' },
+                { getUrl: () => 'https://example.com/organic-page-2' },
+              ]),
+            },
+            PageCitability: {
+              allByIndexKeys: sandbox.stub().resolves([
+                recentRecord('/organic-page-1'),
+                recentRecord('/organic-page-2'),
+              ]),
+            },
+          },
+          log: { info: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+
+        // Both URLs must be present even though they are "recent"
+        expect(result.urls).to.deep.equal([
+          { url: 'https://example.com/organic-page-1' },
+          { url: 'https://example.com/organic-page-2' },
+        ]);
+      });
+
       it('should not fetch agentic URLs when mode is organic', async () => {
         const athenaStub = sandbox.stub().resolves(['https://example.com/agentic-1']);
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
