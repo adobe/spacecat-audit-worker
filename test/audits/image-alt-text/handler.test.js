@@ -802,6 +802,7 @@ describe('Image Alt Text Handler', () => {
         maxScrapeAge: 24,
         options: {
           pageLoadTimeout: 45000,
+          rejectRedirects: false,
         },
       });
 
@@ -844,7 +845,7 @@ describe('Image Alt Text Handler', () => {
       expect(result.urls[0].url).to.equal('https://example.com/page1');
       expect(result.urls[19].url).to.equal('https://example.com/page20');
       expect(result.maxScrapeAge).to.equal(24);
-      expect(result.options).to.deep.equal({ pageLoadTimeout: 45000 });
+      expect(result.options).to.deep.equal({ pageLoadTimeout: 45000, rejectRedirects: false });
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Page limit set to 20 (summit-plg active: true, onDemand: false)',
       );
@@ -858,7 +859,7 @@ describe('Image Alt Text Handler', () => {
 
       expect(result.urls).to.have.lengthOf(100);
       expect(result.maxScrapeAge).to.equal(24);
-      expect(result.options).to.deep.equal({ pageLoadTimeout: 45000 });
+      expect(result.options).to.deep.equal({ pageLoadTimeout: 45000, rejectRedirects: false });
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Page limit set to 100 (summit-plg active: false, onDemand: false)',
       );
@@ -1382,7 +1383,7 @@ describe('Image Alt Text Handler', () => {
       expect(result.urls[0].url).to.equal('https://example.com/page21');
       expect(result.urls[19].url).to.equal('https://example.com/page40');
       expect(result.maxScrapeAge).to.equal(24);
-      expect(result.options).to.deep.equal({ pageLoadTimeout: 45000 });
+      expect(result.options).to.deep.equal({ pageLoadTimeout: 45000, rejectRedirects: false });
 
       expect(mockOpportunity.setData).to.have.been.calledWith(
         sinon.match({ topPagesOffset: 20 }),
