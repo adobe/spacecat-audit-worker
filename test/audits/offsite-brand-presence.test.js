@@ -104,6 +104,7 @@ describe('Offsite Brand Presence Handler', () => {
     dataAccess = {
       AuditUrl: {
         create: sandbox.stub().resolves({}),
+        batchGetByKeys: sandbox.stub().resolves({ data: [] }),
       },
       SentimentTopic: {
         allBySiteId: sandbox.stub().resolves({ data: [] }),
@@ -847,6 +848,46 @@ describe('Offsite Brand Presence Handler', () => {
       expect(createArg.audits).to.deep.equal(['youtube-analysis']);
     });
 
+    it('should still send URL to DRS when it already exists in the URL store', async () => {
+      dataAccess.AuditUrl.batchGetByKeys.resolves({
+        data: [{ getUrl: () => 'https://youtu.be/test' }],
+      });
+
+      const providerResponses = setupWithYoutubeUrl();
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(dataAccess.AuditUrl.create).to.not.have.been.called;
+      expect(result.auditResult.success).to.be.true;
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/0 created, 1 already existed, 0 failed/),
+      );
+
+      const videosCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === 'youtube_videos',
+      );
+      expect(videosCall.args[0].urls).to.include('https://youtu.be/test');
+    });
+
+    it('should return empty storedByDomain when batchGetByKeys fails', async () => {
+      dataAccess.AuditUrl.batchGetByKeys.rejects(new Error('DB connection lost'));
+
+      const providerResponses = setupWithYoutubeUrl();
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(dataAccess.AuditUrl.create).to.not.have.been.called;
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Failed to check existing URLs/),
+      );
+    });
+
     it('should handle URL store create failure gracefully and skip DRS for failed URLs', async () => {
       dataAccess.AuditUrl.create.rejects(new Error('DynamoDB error'));
 
@@ -865,7 +906,7 @@ describe('Offsite Brand Presence Handler', () => {
         sinon.match(/Failed to add URL to store/),
       );
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/0 created, 1 failed/),
+        sinon.match(/0 created, 0 already existed, 1 failed/),
       );
     });
 
@@ -884,7 +925,7 @@ describe('Offsite Brand Presence Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/2 created, 1 failed/),
+        sinon.match(/2 created, 0 already existed, 1 failed/),
       );
 
       const videosCall = mockSubmitScrapeJob.getCalls().find(
