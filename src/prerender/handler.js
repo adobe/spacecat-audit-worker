@@ -953,9 +953,21 @@ export async function processOpportunityAndSuggestions(
     ),
   });
 
+  // If the domain-wide suggestion already has edgeDeployed, skip creating individual
+  // suggestions for URLs already deployed at edge — their existing SKIPPED status is
+  // preserved because scrapedUrlsSet excludes isDeployedAtEdge URLs from OUTDATED detection.
+  const isFullyDeployed = await isAllDomainDeployedAtEdge(opportunity);
+  const individualSuggestions = isFullyDeployed
+    ? preRenderSuggestions.filter((s) => !s.isDeployedAtEdge)
+    : preRenderSuggestions;
+
+  if (isFullyDeployed) {
+    log.info(`${LOG_PREFIX} Domain fully deployed — skipping suggestion creation for ${preRenderSuggestions.length - individualSuggestions.length} deployed-at-edge URLs. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
+  }
+
   const allSuggestions = domainWideSuggestion
-    ? [...preRenderSuggestions, domainWideSuggestion]
-    : [...preRenderSuggestions];
+    ? [...individualSuggestions, domainWideSuggestion]
+    : [...individualSuggestions];
 
   await syncSuggestions({
     opportunity,
