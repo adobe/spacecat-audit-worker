@@ -1,3 +1,10 @@
+## [1.397.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.397.0...v1.397.1) (2026-04-06)
+
+
+### Bug Fixes
+
+* topcited request params for DRS ([#2313](https://github.com/adobe/spacecat-audit-worker/issues/2313)) ([99b1560](https://github.com/adobe/spacecat-audit-worker/commit/99b1560ce3cf7e3fc013dc00eb0c59d5e060cbef))
+
 # [1.397.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.396.1...v1.397.0) (2026-04-06)
 
 
