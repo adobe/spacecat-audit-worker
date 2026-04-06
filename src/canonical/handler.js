@@ -447,16 +447,10 @@ export async function processScrapedContent(context) {
         return null;
       }
 
-      if (!scrapedObject?.scrapeResult?.canonical) {
-        log.warn(`[canonical] No canonical metadata in S3 object: ${key}`);
-        return {
-          url: finalUrl,
-          checks: [{
-            check: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
-            success: false,
-            explanation: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.explanation,
-          }],
-        };
+      const canonicalMetadata = scrapedObject?.scrapeResult?.canonical;
+      if (!canonicalMetadata || typeof canonicalMetadata !== 'object' || Object.keys(canonicalMetadata).length === 0) {
+        log.warn(`[canonical] No canonical metadata in S3 object: ${key}, skipping page`);
+        return null;
       }
 
       // Filter out scraped pages that redirected to auth/login pages or PDFs
@@ -477,7 +471,6 @@ export async function processScrapedContent(context) {
       }
 
       // Use canonical metadata already extracted by the scraper (Puppeteer)
-      const canonicalMetadata = scrapedObject.scrapeResult.canonical;
       const canonicalUrl = canonicalMetadata.href || null;
       const canonicalTagChecks = [];
 
