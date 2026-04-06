@@ -1,3 +1,45 @@
+## [1.398.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.1...v1.398.2) (2026-04-06)
+
+
+### Bug Fixes
+
+* check if URL exists before adding to URL store ([#2316](https://github.com/adobe/spacecat-audit-worker/issues/2316)) ([94fcbcf](https://github.com/adobe/spacecat-audit-worker/commit/94fcbcfb147b6753130df75ac116e387c9c0d926))
+
+## [1.398.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.0...v1.398.1) (2026-04-06)
+
+
+### Bug Fixes
+
+* **logging:** downgrade expected conditions from error to debug/warn ([#2314](https://github.com/adobe/spacecat-audit-worker/issues/2314)) ([fcd0e26](https://github.com/adobe/spacecat-audit-worker/commit/fcd0e26d155031ee60ff5ba2a2085abcfac82245))
+
+# [1.398.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.397.1...v1.398.0) (2026-04-06)
+
+
+### Features
+
+* canonical - robots txt exclude paths ([#2127](https://github.com/adobe/spacecat-audit-worker/issues/2127)) ([01a7fff](https://github.com/adobe/spacecat-audit-worker/commit/01a7fffa930f1c113048d3d338a82c0f4e93ed12))
+
+## [1.397.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.397.0...v1.397.1) (2026-04-06)
+
+
+### Bug Fixes
+
+* topcited request params for DRS ([#2313](https://github.com/adobe/spacecat-audit-worker/issues/2313)) ([99b1560](https://github.com/adobe/spacecat-audit-worker/commit/99b1560ce3cf7e3fc013dc00eb0c59d5e060cbef))
+
+# [1.397.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.396.1...v1.397.0) (2026-04-06)
+
+
+### Features
+
+* added rejectRedirects param to content-scraper message ([#2311](https://github.com/adobe/spacecat-audit-worker/issues/2311)) ([934d921](https://github.com/adobe/spacecat-audit-worker/commit/934d9214330c0a8cf6dfcb1465b70ca0497b50f1))
+
+## [1.396.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.396.0...v1.396.1) (2026-04-06)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2312](https://github.com/adobe/spacecat-audit-worker/issues/2312)) ([baabf2d](https://github.com/adobe/spacecat-audit-worker/commit/baabf2d0b84d13017d7ffc85e2f9898c32873e13))
+
 # [1.396.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.395.1...v1.396.0) (2026-04-06)
 
 

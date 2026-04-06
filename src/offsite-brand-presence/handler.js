@@ -24,6 +24,7 @@ import {
   OFFSITE_DOMAINS,
   PROVIDERS_SET,
   CITED_ANALYSIS_DRS_CONFIG,
+  YOUTUBE_URL_REGEX,
 } from './constants.js';
 
 const LOG_PREFIX = '[OffsiteBrandPresence]';
@@ -251,6 +252,9 @@ function classifyAndNormalize(rawUrl) {
   const { hostname } = parsed;
   for (const domain of Object.keys(OFFSITE_DOMAINS)) {
     if (hostname === domain || hostname.endsWith(`.${domain}`)) {
+      if (domain === 'youtube.com' && !YOUTUBE_URL_REGEX.test(rawUrl)) {
+        return null;
+      }
       return { url: normalizeUrl(parsed, domain), domain };
     }
   }
@@ -375,8 +379,21 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
   log.info(`${LOG_PREFIX} Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${DRS_URLS_LIMIT})`);
   log.info(`${LOG_PREFIX} Adding ${entries.length} URLs to URL store`);
 
+  let existingUrlSet;
+  try {
+    const keys = entries.map((e) => ({ siteId, url: e.url }));
+    const { data: existingUrls } = await AuditUrl.batchGetByKeys(keys);
+    existingUrlSet = new Set(existingUrls.map((u) => u.getUrl()));
+  } catch (error) {
+    log.error(`${LOG_PREFIX} Failed to check existing URLs: ${error.message}`);
+    return {};
+  }
+
   const results = await Promise.all(
     entries.map(async (entry) => {
+      if (existingUrlSet.has(entry.url)) {
+        return entry.url;
+      }
       try {
         await AuditUrl.create({
           siteId,
@@ -387,17 +404,19 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
           updatedBy: 'system',
         });
         return entry.url;
-      } catch (error) {
-        log.warn(`${LOG_PREFIX} Failed to add URL to store: ${entry.url} - ${error.message}`);
+      } catch (createError) {
+        log.warn(`${LOG_PREFIX} Failed to add URL to store: ${entry.url} - ${createError.message}`);
         return null;
       }
     }),
   );
 
   const storedUrls = new Set(results.filter(Boolean));
-  const failCount = results.length - storedUrls.size;
+  const existingCount = existingUrlSet.size;
+  const createdCount = storedUrls.size - existingCount;
+  const failCount = entries.length - storedUrls.size;
 
-  log.info(`${LOG_PREFIX} URL store complete: ${storedUrls.size} created, ${failCount} failed`);
+  log.info(`${LOG_PREFIX} URL store complete: ${createdCount} created, ${existingCount} already existed, ${failCount} failed`);
 
   const storedByDomain = {};
   for (const domain of Object.keys(OFFSITE_DOMAINS)) {
@@ -530,7 +549,10 @@ async function triggerDrsScraping(urlsByDomain, siteId, context) {
     const { datasetIds } = OFFSITE_DOMAINS[domain] || CITED_ANALYSIS_DRS_CONFIG;
 
     for (const datasetId of datasetIds) {
-      const params = { datasetId, siteId, urls: urlList };
+      const scrapeUrls = datasetId === SCRAPE_DATASET_IDS.TOP_CITED
+        ? urlList.map((url) => ({ url }))
+        : urlList;
+      const params = { datasetId, siteId, urls: scrapeUrls };
       if (datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS) {
         params.daysBack = REDDIT_COMMENTS_DAYS_BACK;
       }

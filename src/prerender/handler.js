@@ -386,7 +386,7 @@ async function compareHtmlContent(url, context) {
       scrapeError: metadata?.error, // Include error details from scrape.json
     };
   } catch (error) {
-    log.error(`${LOG_PREFIX} HTML analysis failed for ${url}: ${error.message}`);
+    log.debug(`${LOG_PREFIX} HTML analysis failed for ${url}: ${error.message}`);
     return {
       url,
       error: true,
