@@ -484,7 +484,7 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
     const existingSuggestions = await opportunity.getSuggestions();
 
     if (!existingSuggestions || existingSuggestions.length === 0) {
-      log.warn(`${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, skipping Mystique message. baseUrl=${baseUrl}, siteId=${siteId}`);
+      log.debug(`${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, skipping Mystique message. baseUrl=${baseUrl}, siteId=${siteId}`);
       return 0;
     }
 
@@ -511,15 +511,27 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
 
       const suggestionId = s.getId();
 
+      // Prefer the scrapeJobId stored on the suggestion itself (set at suggestion-creation time).
+      // This ensures we always reference the S3 artifacts from the exact scrape run that
+      // produced this suggestion, even when re-queued via ai-only mode with a different job id.
+      // Fall back to the audit-level scrapeJobId for suggestions created before this field was
+      // persisted.
+      const effectiveScrapeJobId = data.scrapeJobId || scrapeJobId;
+      if (!data.scrapeJobId) {
+        log.debug(`${LOG_PREFIX} Suggestion ${suggestionId} is missing a per-suggestion scrapeJobId; `
+          + `falling back to audit-level scrapeJobId=${scrapeJobId}. `
+          + `baseUrl=${baseUrl}, siteId=${siteId}`);
+      }
+
       // Build markdown-based S3 keys for Mystique to consume
       const originalHtmlMarkdownKey = getS3Path(
         data.url,
-        scrapeJobId,
+        effectiveScrapeJobId,
         'server-side-html.md',
       );
       const markdownDiffKey = getS3Path(
         data.url,
-        scrapeJobId,
+        effectiveScrapeJobId,
         'markdown-diff.md',
       );
 
@@ -1036,6 +1048,10 @@ export async function processOpportunityAndSuggestions(
     wordCountBefore: suggestion.wordCountBefore,
     wordCountAfter: suggestion.wordCountAfter,
     citabilityScore: suggestion.citabilityScore ?? null,
+    // Persist the scrapeJobId so that downstream callers (e.g. Mystique key construction)
+    // always use the job that produced the actual S3 artifacts for this suggestion,
+    // even when the suggestion is re-queued in ai-only mode with a different job id.
+    scrapeJobId: auditData.scrapeJobId,
     // S3 references to stored HTML content for comparison
     originalHtmlKey: getS3Path(
       suggestion.url,

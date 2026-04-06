@@ -36,18 +36,23 @@ export async function isDecorativeAgentEnabled(context) {
 }
 
 /**
- * Determines the page limit for alt-text audit based on summit-plg configuration
+ * Determines the page limit for alt-text audit based on summit-plg configuration.
+ * When onDemand is set in auditContext, summit-plg windowing is bypassed
+ * so the full DEFAULT_PAGE_LIMIT is used for one-shot on-demand runs.
  * @param {Object} site - Site object
  * @param {Object} context - Lambda context with log and dataAccess
  * @returns {Promise<number>} - Page limit (20 for summit-plg enabled, 100 otherwise)
  */
 async function getTopPagesLimit(site, context) {
   const { log, dataAccess } = context;
+  const rawOnDemand = context.auditContext?.onDemand;
+  const onDemand = rawOnDemand === true || rawOnDemand === 'true';
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
-  const isSummitPlgEnabled = configuration.isHandlerEnabledForSite('summit-plg', site);
+  const summitPlgFromConfig = configuration.isHandlerEnabledForSite('summit-plg', site);
+  const isSummitPlgEnabled = !onDemand && summitPlgFromConfig;
   const pageLimit = isSummitPlgEnabled ? SUMMIT_PLG_PAGE_LIMIT : DEFAULT_PAGE_LIMIT;
-  log.debug(`[${AUDIT_TYPE}]: Page limit set to ${pageLimit} (summit-plg enabled: ${isSummitPlgEnabled})`);
+  log.debug(`[${AUDIT_TYPE}]: Page limit set to ${pageLimit} (summit-plg active: ${isSummitPlgEnabled}, onDemand: ${onDemand})`);
   return { pageLimit, isSummitPlg: isSummitPlgEnabled };
 }
 

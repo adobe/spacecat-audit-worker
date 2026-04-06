@@ -2327,8 +2327,9 @@ describe('Prerender Audit', () => {
         };
 
         const logStub = {
-          info: sandbox.stub(),
           debug: sandbox.stub(),
+          info: sandbox.stub(),
+          warn: sandbox.stub(),
         };
 
         const context = {
@@ -2358,7 +2359,7 @@ describe('Prerender Audit', () => {
 
         if (domainWideSuggestionLog) {
           expect(domainWideSuggestionLog).to.include('entire domain');
-          expect(domainWideSuggestionLog).to.include('regex');
+          expect(domainWideSuggestionLog).to.include('Regex');
         }
       });
 
@@ -5292,6 +5293,8 @@ describe('Prerender Audit', () => {
 
         expect(mappedSuggestion.data.originalHtmlKey).to.include('prerender/scrapes/scrape-job-123');
         expect(mappedSuggestion.data.prerenderedHtmlKey).to.include('prerender/scrapes/scrape-job-123');
+        // scrapeJobId must be persisted so downstream callers always use the correct job's artifacts
+        expect(mappedSuggestion.data.scrapeJobId).to.equal('scrape-job-123');
       });
 
       it('should update existing PRERENDER opportunity with all data fields', async () => {
@@ -5329,6 +5332,7 @@ describe('Prerender Audit', () => {
             Opportunity: mockOpportunity,
           },
           log: {
+            debug: sinon.stub(),
             info: sinon.stub(),
             warn: sinon.stub(),
             error: sinon.stub(),

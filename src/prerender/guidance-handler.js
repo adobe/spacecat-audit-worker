@@ -106,7 +106,7 @@ export default async function handler(message, context) {
     // Load existing suggestions for this opportunity
     const existingSuggestions = await opportunity.getSuggestions();
     if (!existingSuggestions || existingSuggestions.length === 0) {
-      log.warn(`${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, siteId=${siteId}`);
+      log.debug(`${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, siteId=${siteId}`);
       return ok();
     }
 
