@@ -1,3 +1,10 @@
+# [1.394.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.393.5...v1.394.0) (2026-04-06)
+
+
+### Features
+
+* preserve onDemand across multi-step audit chains ([#2231](https://github.com/adobe/spacecat-audit-worker/issues/2231)) ([3c3fb4b](https://github.com/adobe/spacecat-audit-worker/commit/3c3fb4bbd160bfe4c77f4ca44cf62f89a9dfa3d1))
+
 ## [1.393.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.393.4...v1.393.5) (2026-04-05)
 
 
