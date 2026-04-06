@@ -1,3 +1,10 @@
+## [1.398.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.3...v1.398.4) (2026-04-06)
+
+
+### Bug Fixes
+
+* (broken-links-guidance): omit aiRationale instead of empty string to pass schema validation ([#2317](https://github.com/adobe/spacecat-audit-worker/issues/2317)) ([c0ca85c](https://github.com/adobe/spacecat-audit-worker/commit/c0ca85c96b7684ed4c1528d9a83f238f46292756))
+
 ## [1.398.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.2...v1.398.3) (2026-04-06)
 
 
