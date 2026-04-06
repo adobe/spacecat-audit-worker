@@ -13,6 +13,7 @@
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { getObjectFromKey } from '../utils/s3-utils.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_VULNERABILITIES;
 
@@ -137,11 +138,13 @@ export default async function handler(message, context) {
       if (!suggestion) {
         log.warn(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Suggestion not found for ID: ${suggestionId}. Skipping.`);
       } else {
-        suggestion.setData({
+        const updatedData = {
           ...suggestion.getData(),
           patchContent: diff,
           isCodeChangeAvailable: true,
-        });
+        };
+        warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
+        suggestion.setData(updatedData);
         toSave.push(suggestion);
       }
     }
