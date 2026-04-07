@@ -1,3 +1,10 @@
+## [1.398.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.5...v1.398.6) (2026-04-07)
+
+
+### Bug Fixes
+
+* allow trafficAcquisition data in low-view opportunity metrics ([#2177](https://github.com/adobe/spacecat-audit-worker/issues/2177)) ([204558f](https://github.com/adobe/spacecat-audit-worker/commit/204558feb1b6261d4664a2eb061dbe5a468e7259))
+
 ## [1.398.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.4...v1.398.5) (2026-04-06)
 
 
