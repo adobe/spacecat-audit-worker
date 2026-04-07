@@ -1,3 +1,17 @@
+# [1.399.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.8...v1.399.0) (2026-04-07)
+
+
+### Features
+
+* align Claude UA pattern and remove query row limit ([#2249](https://github.com/adobe/spacecat-audit-worker/issues/2249)) ([bbcefcb](https://github.com/adobe/spacecat-audit-worker/commit/bbcefcbebbaecfdb221464e833aa30b7bb8a7bf4))
+
+## [1.398.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.7...v1.398.8) (2026-04-07)
+
+
+### Bug Fixes
+
+* extract brand from subdomain URLs for Wikipedia search ([#2321](https://github.com/adobe/spacecat-audit-worker/issues/2321)) ([2ea80ad](https://github.com/adobe/spacecat-audit-worker/commit/2ea80ad86b6ccfa24caf2e5cdfc142524aa7dbbd))
+
 ## [1.398.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.6...v1.398.7) (2026-04-07)
 
 
