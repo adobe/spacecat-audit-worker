@@ -137,6 +137,24 @@ describe('agentic-urls', () => {
       const context = {};
       expect(getPreferredBaseUrl(site, context)).to.equal('https://site.example.com');
     });
+
+    it('returns overrideBaseURL from site config when it has a protocol', () => {
+      const siteWithOverride = {
+        getBaseURL: () => 'https://site.example.com',
+        getConfig: () => ({ getFetchConfig: () => ({ overrideBaseURL: 'https://override.example.com' }) }),
+      };
+      const context = { finalUrl: 'https://cdn.example.com' };
+      expect(getPreferredBaseUrl(siteWithOverride, context)).to.equal('https://override.example.com');
+    });
+
+    it('ignores overrideBaseURL from site config when it lacks a protocol', () => {
+      const siteWithOverride = {
+        getBaseURL: () => 'https://site.example.com',
+        getConfig: () => ({ getFetchConfig: () => ({ overrideBaseURL: 'override.example.com' }) }),
+      };
+      const context = { finalUrl: 'https://cdn.example.com' };
+      expect(getPreferredBaseUrl(siteWithOverride, context)).to.equal('https://cdn.example.com');
+    });
   });
 
   describe('getTopAgenticUrlsFromAthena', () => {
@@ -500,7 +518,7 @@ describe('agentic-urls', () => {
       );
     });
 
-    it('should keep using finalUrl even when overrideBaseURL exists in site config', async () => {
+    it('should use overrideBaseURL from site config when present', async () => {
       const site = {
         ...createMockSite(),
         getBaseURL: () => 'https://example.com',
@@ -520,9 +538,9 @@ describe('agentic-urls', () => {
 
       const result = await getTopAgenticUrlsFromAthena(site, context);
 
-      expect(result).to.deep.equal(['https://www.example.com/page1']);
+      expect(result).to.deep.equal(['https://override.example.com/page1']);
       expect(context.log.info).to.have.been.calledWith(
-        'Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=https://www.example.com',
+        'Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=https://override.example.com',
       );
     });
 
