@@ -1,3 +1,10 @@
+## [1.399.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.399.2...v1.399.3) (2026-04-07)
+
+
+### Bug Fixes
+
+* **prerender:** use overrideBaseURL as preferred domain for URL rebasing ([#2328](https://github.com/adobe/spacecat-audit-worker/issues/2328)) ([889559f](https://github.com/adobe/spacecat-audit-worker/commit/889559fdba24b73c75cb6fd93989e5a3846c4582))
+
 ## [1.399.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.399.1...v1.399.2) (2026-04-07)
 
 
