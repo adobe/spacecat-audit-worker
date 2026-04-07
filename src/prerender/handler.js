@@ -367,6 +367,7 @@ async function compareHtmlContent(url, context) {
       hasScrapeMetadata, // Track if scrape.json exists on S3
       scrapeForbidden, // Track if original scrape was forbidden (403)
       isDeployedAtEdge: !!metadata?.isDeployedAtEdge, // From scrape.json (content-scraper PR #784)
+      usedEarlyClientSideHtml: !!metadata?.usedEarlyClientSideHtml, // From scrape.json
       /* c8 ignore next */
       scrapeError: metadata?.error, // Include error details from scrape.json
     };
@@ -379,6 +380,7 @@ async function compareHtmlContent(url, context) {
       hasScrapeMetadata,
       scrapeForbidden,
       isDeployedAtEdge: !!metadata?.isDeployedAtEdge,
+      usedEarlyClientSideHtml: !!metadata?.usedEarlyClientSideHtml,
       scrapeError: metadata?.error,
     };
   }
@@ -1241,6 +1243,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
         scrapingStatus: result.error ? 'error' : 'success',
         needsPrerender: result.needsPrerender || false,
         isDeployedAtEdge: !!result.isDeployedAtEdge,
+        usedEarlyClientSideHtml: !!result.usedEarlyClientSideHtml,
         wordCountBefore: result.wordCountBefore || 0,
         wordCountAfter: result.wordCountAfter || 0,
         contentGainRatio: result.contentGainRatio || 0,
