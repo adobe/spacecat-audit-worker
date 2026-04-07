@@ -19,6 +19,10 @@ const LOG_PREFIX = '[Wikipedia]';
 
 const REGION_SUFFIXES_RE = /(?:usa|us|uk|eu|de|fr|es|it|nl|be|at|ch|au|ca|jp|kr|cn|br|mx|in|za|global|international|worldwide)$/i;
 
+const MULTI_PART_TLD_PREFIXES = new Set([
+  'co', 'com', 'org', 'net', 'ac', 'gov', 'edu', 'mil',
+]);
+
 /**
  * Slack mrkdwn wraps URLs as `<https://…>` or `<https://…|link label>`.
  * Strips that wrapper so values from Slack commands match `isValidUrl`.
@@ -144,6 +148,9 @@ function resolveWikipediaUrlOverride(auditContext, log) {
  * Strips protocol, www prefix, TLD, and common regional/market suffixes
  * so the result is suitable for Wikipedia search.
  *
+ * Handles subdomain URLs (e.g. corporate.walmart.com → walmart) by
+ * extracting the second-level domain rather than the first hostname segment.
+ *
  * @param {string} baseURL - The site's base URL or domain
  * @returns {string} Cleaned brand name
  */
@@ -152,9 +159,17 @@ function extractBrandFromUrl(baseURL) {
     const urlStr = baseURL.startsWith('http') ? baseURL : `https://${baseURL}`;
     const { hostname } = new URL(urlStr);
 
-    const name = hostname
+    const parts = hostname
       .replace(/^www\./, '')
-      .split('.')[0];
+      .split('.');
+
+    let tldLength = 1;
+    if (parts.length >= 3 && MULTI_PART_TLD_PREFIXES.has(parts[parts.length - 2])) {
+      tldLength = 2;
+    }
+
+    const brandIndex = parts.length - tldLength - 1;
+    const name = brandIndex >= 0 ? parts[brandIndex] : parts[0];
 
     return name.replace(REGION_SUFFIXES_RE, '') || name;
   } catch {
