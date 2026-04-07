@@ -1,3 +1,25 @@
+## [1.398.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.6...v1.398.7) (2026-04-07)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.46.0 ([#2324](https://github.com/adobe/spacecat-audit-worker/issues/2324)) ([a9b57cb](https://github.com/adobe/spacecat-audit-worker/commit/a9b57cb9800fc4c04c8505d55617166568a1e77c))
+
+## [1.398.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.5...v1.398.6) (2026-04-07)
+
+
+### Bug Fixes
+
+* allow trafficAcquisition data in low-view opportunity metrics ([#2177](https://github.com/adobe/spacecat-audit-worker/issues/2177)) ([204558f](https://github.com/adobe/spacecat-audit-worker/commit/204558feb1b6261d4664a2eb061dbe5a468e7259))
+
+## [1.398.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.4...v1.398.5) (2026-04-06)
+
+
+### Bug Fixes
+
+* **broken-backlinks:** follow redirects when validating broken backlink URLs ([#2296](https://github.com/adobe/spacecat-audit-worker/issues/2296)) ([f76b25d](https://github.com/adobe/spacecat-audit-worker/commit/f76b25d4b2b8729a8416a41dc5b385daaa4289af))
+* **broken-internal-links:** exclude static assets and malformed URLs from link detection ([#2294](https://github.com/adobe/spacecat-audit-worker/issues/2294)) ([d124451](https://github.com/adobe/spacecat-audit-worker/commit/d1244512a18b3ecf8347d00acf6e052c2dfdc174))
+
 ## [1.398.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.3...v1.398.4) (2026-04-06)
 
 

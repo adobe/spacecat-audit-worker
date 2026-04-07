@@ -163,6 +163,18 @@ describe('createLowFormViewsOpportunities handler method', () => {
               page: 0,
             },
           },
+          {
+            device: '*',
+            type: 'trafficAcquisitionSource',
+            value: {
+              page: [
+                { type: 'paid:search:google', views: 2000 },
+                { type: 'paid:display:google', views: 690 },
+                { type: 'earned:organic:google', views: 2000 },
+                { type: 'owned:direct', views: 2000 },
+              ],
+            },
+          },
         ],
       },
       guidance: {
