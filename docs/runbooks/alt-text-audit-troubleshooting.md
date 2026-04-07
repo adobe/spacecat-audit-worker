@@ -111,6 +111,31 @@ Key fields:
 
 ---
 
+## Scrape Result Status Reference
+
+When the scrape client finishes processing a URL, it returns a result with a `status` and `reason` field. These appear in the scrape completion messages in Coralogix. Different statuses indicate different root causes:
+
+| Scrape Status | Error Signature | Root Cause | Retryable? |
+|---------------|----------------|------------|------------|
+| `REDIRECT` | `Redirected to ... from ...` | Server redirects to a different URL; scraper does not follow | No -- fix the site URL (e.g. trailing slash, www vs non-www) |
+| `FAILED` | `net::ERR_CONNECTION_TIMED_OUT` | Server is unreachable, not accepting connections | Maybe -- site may be temporarily down |
+| `FAILED` | `Navigation timeout of 45000 ms exceeded` | Page connected but too slow to finish loading within 45s | Unlikely -- page is too heavy for the scraper |
+| `FAILED` | `net::ERR_CERT_AUTHORITY_INVALID` | SSL certificate is invalid, expired, or self-signed | No -- site has SSL misconfiguration |
+| `FAILED` | `Runtime.callFunctionOn timed out` | Page loaded but JS engine became unresponsive (heavy client-side JS) | No -- page JS is too heavy for the scraper |
+
+To see scrape-level results for a specific site, query the scrape completion messages:
+
+```
+source logs
+| filter $l.subsystemname == 'spacecat-services-prod'
+  && $d.message ~ 'Default handler completion message'
+  && $d.message ~ '<SITE_ID>'
+```
+
+> **Note:** In scrape completion messages, the outer `siteId` field is often set to the `jobId`, not the actual site ID. The real `siteId` is inside `jobMetadata.auditData.siteId`. Use the `auditData.siteId` value when correlating with audit records.
+
+---
+
 ## Step 2: Search Coralogix Logs
 
 ### Find all alt-text errors
@@ -188,15 +213,73 @@ source logs
 **Actions:**
 1. Check if the site has Ahrefs data: query `SiteTopPage` for this site
 2. Check if the site has RUM data: verify the site is sending RUM beacons
-3. As a workaround, add URLs to the site's `includedURLs` config
+3. If neither data source has URLs, manually provide them via `includedURLs` (see below)
+
+#### Workaround: Manually adding `includedURLs`
+
+When Ahrefs and RUM have no data, you can manually provide URLs for the audit to process by adding them to the site's `config.handlers.alt-text.includedURLs` array.
+
+**Step 1: Find URLs to include**
+
+Use one of these methods:
+
+- **From the site's sitemap:** Check `https://<domain>/sitemap.xml` for a list of page URLs.
+- **From Optel Explorer:** Go to `https://aemcs-workspace.adobe.com/customer/generate-optel-domain-key`, enter the site domain, click **Generate**, then click **Optel Explorer**. Copy URLs from the **URL** section.
+
+**Step 2: Get the current site config**
+
+```bash
+SITE_ID="<site-id>"
+
+curl -s "https://spacecat.experiencecloud.live/api/v1/sites/${SITE_ID}" \
+  -H "x-api-key: ${SPACECAT_API_KEY}" | jq '.config'
+```
+
+**Step 3: Update the config with `includedURLs`**
+
+Add the URLs to `config.handlers.alt-text.includedURLs` and PATCH the site:
+
+```bash
+curl -s -X PATCH "https://spacecat.experiencecloud.live/api/v1/sites/${SITE_ID}" \
+  -H "x-api-key: ${SPACECAT_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "config": {
+      "handlers": {
+        "alt-text": {
+          "includedURLs": [
+            "https://example.com/page-1",
+            "https://example.com/page-2",
+            "https://example.com/page-3"
+          ]
+        }
+      }
+    }
+  }'
+```
+
+**Step 4: Re-trigger the audit**
+
+```
+run audit audit:alt-text <base-url>
+```
+
+The audit will now use the `includedURLs` instead of relying on Ahrefs/RUM data.
 
 ### `no_scrape_results`
 
 **Root causes:**
-- Scrape client failed to scrape any of the URLs (site down, bot-blocked, timeouts)
+- Scrape client failed to scrape any of the URLs -- check the scrape result `reason` field to distinguish:
+  - **Infrastructure issues** (connection timeout, protocol timeout) -- retry may help if the issue is transient
+  - **Site issues** (invalid SSL certificate, site permanently down) -- retry will not help
+  - **Scraper limitations** (redirect not followed, navigation timeout on heavy pages) -- may need site URL or config changes
 - Scrape results expired (older than `SCRAPE_MAX_AGE_HOURS` = 24h)
 
+See the [Scrape Result Status Reference](#scrape-result-status-reference) above for a breakdown of specific failure types and whether they are retryable.
+
 **Diagnosis:**
+
+Check the audit-worker logs for the "Cannot proceed" message:
 ```
 source logs
 | filter $l.subsystemname == 'spacecat-services-prod'
@@ -204,10 +287,20 @@ source logs
   && $d.message ~ 'Cannot proceed'
 ```
 
+Then check the scrape completion messages to see the per-URL failure reasons:
+```
+source logs
+| filter $l.subsystemname == 'spacecat-services-prod'
+  && $d.message ~ 'Default handler completion message'
+  && $d.message ~ '<SITE_ID>'
+```
+
 **Actions:**
-1. Check scrape client health and queue depth
-2. Verify the site is accessible (not returning 403/503)
-3. Re-trigger the audit -- scrape client will re-scrape: `run audit audit:alt-text <base-url>`
+1. Check the scrape result statuses and reasons (see reference table) to determine if the failures are retryable
+2. Check scrape client health and queue depth
+3. Verify the site is accessible (not returning 403/503, valid SSL, not redirecting)
+4. If the issue is transient, re-trigger the audit: `run audit audit:alt-text <base-url>`
+5. If the issue is persistent (invalid SSL, site down, heavy JS), consider removing the site from alt-text audits or updating its base URL
 
 ### `scraping_failed`
 

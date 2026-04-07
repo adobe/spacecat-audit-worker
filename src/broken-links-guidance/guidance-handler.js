@@ -13,6 +13,7 @@
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { isValidUrl } from '@adobe/spacecat-shared-utils';
 import { filterBrokenSuggestedUrls } from '../utils/url-utils.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
@@ -112,29 +113,38 @@ export default async function handler(message, context) {
         : [effectiveBaseURL];
     }
 
-    // Handle AI rationale - clear it if all URLs were filtered out
-    // This prevents showing rationale for URLs that don't exist
-    let aiRationale = brokenLink.aiRationale || '';
+    // Handle AI rationale - omit it if all URLs were filtered out or none were provided
+    // This prevents storing an empty string which fails schema validation
+    let aiRationale = brokenLink.aiRationale || undefined;
     if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length > 0) {
-      // All URLs were filtered out (likely invalid/broken), clear rationale
+      // All URLs were filtered out (likely invalid/broken):
+      // fall back to base URL with no rationale, unless a previous run already stored valid URLs
       log.info('All the suggested URLs were filtered out');
-      aiRationale = existingSuggestedUrls.length > 0 ? existingData.aiRationale || '' : '';
+      aiRationale = existingSuggestedUrls.length > 0
+        ? existingData.aiRationale || undefined : undefined;
     } else if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length === 0) {
-      // No URLs were provided by Mystique, clear rationale
+      // No URLs provided by Mystique (LLM/Bright Data found nothing):
+      // fall back to base URL with no rationale, unless a previous run already stored valid URLs
       log.info('No suggested URLs provided by Mystique');
-      aiRationale = existingSuggestedUrls.length > 0 ? existingData.aiRationale || '' : '';
+      aiRationale = existingSuggestedUrls.length > 0
+        ? existingData.aiRationale || undefined : undefined;
     }
 
     // Preserve factId from Mystique enrichment (autofix bridge)
     const updatedData = {
       ...existingData,
       urlsSuggested: nextSuggestedUrls,
-      aiRationale,
     };
+    if (aiRationale) {
+      updatedData.aiRationale = aiRationale;
+    } else {
+      delete updatedData.aiRationale;
+    }
     // Add factId if provided by Mystique
     if (brokenLink.factId) {
       updatedData.factId = brokenLink.factId;
     }
+    warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
     suggestion.setData(updatedData);
     toSave.push(suggestion);
   }));

@@ -367,11 +367,12 @@ async function compareHtmlContent(url, context) {
       hasScrapeMetadata, // Track if scrape.json exists on S3
       scrapeForbidden, // Track if original scrape was forbidden (403)
       isDeployedAtEdge: !!metadata?.isDeployedAtEdge, // From scrape.json (content-scraper PR #784)
+      usedEarlyClientSideHtml: !!metadata?.usedEarlyClientSideHtml, // From scrape.json
       /* c8 ignore next */
       scrapeError: metadata?.error, // Include error details from scrape.json
     };
   } catch (error) {
-    log.error(`${LOG_PREFIX} HTML analysis failed for ${url}: ${error.message}`);
+    log.debug(`${LOG_PREFIX} HTML analysis failed for ${url}: ${error.message}`);
     return {
       url,
       error: true,
@@ -379,6 +380,7 @@ async function compareHtmlContent(url, context) {
       hasScrapeMetadata,
       scrapeForbidden,
       isDeployedAtEdge: !!metadata?.isDeployedAtEdge,
+      usedEarlyClientSideHtml: !!metadata?.usedEarlyClientSideHtml,
       scrapeError: metadata?.error,
     };
   }
@@ -484,7 +486,7 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
     const existingSuggestions = await opportunity.getSuggestions();
 
     if (!existingSuggestions || existingSuggestions.length === 0) {
-      log.warn(`${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, skipping Mystique message. baseUrl=${baseUrl}, siteId=${siteId}`);
+      log.debug(`${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, skipping Mystique message. baseUrl=${baseUrl}, siteId=${siteId}`);
       return 0;
     }
 
@@ -511,15 +513,27 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
 
       const suggestionId = s.getId();
 
+      // Prefer the scrapeJobId stored on the suggestion itself (set at suggestion-creation time).
+      // This ensures we always reference the S3 artifacts from the exact scrape run that
+      // produced this suggestion, even when re-queued via ai-only mode with a different job id.
+      // Fall back to the audit-level scrapeJobId for suggestions created before this field was
+      // persisted.
+      const effectiveScrapeJobId = data.scrapeJobId || scrapeJobId;
+      if (!data.scrapeJobId) {
+        log.debug(`${LOG_PREFIX} Suggestion ${suggestionId} is missing a per-suggestion scrapeJobId; `
+          + `falling back to audit-level scrapeJobId=${scrapeJobId}. `
+          + `baseUrl=${baseUrl}, siteId=${siteId}`);
+      }
+
       // Build markdown-based S3 keys for Mystique to consume
       const originalHtmlMarkdownKey = getS3Path(
         data.url,
-        scrapeJobId,
+        effectiveScrapeJobId,
         'server-side-html.md',
       );
       const markdownDiffKey = getS3Path(
         data.url,
-        scrapeJobId,
+        effectiveScrapeJobId,
         'markdown-diff.md',
       );
 
@@ -843,7 +857,7 @@ export async function submitForScraping(context) {
 
   if (finalUrls.length === 0) {
     // Fallback to base URL if no URLs found
-    const baseURL = site.getBaseURL();
+    const baseURL = getPreferredBaseUrl(site, context);
     log.info(`${LOG_PREFIX} No URLs found, falling back to baseUrl=${baseURL}, siteId=${site.getId()}`);
     finalUrls.push(baseURL);
   }
@@ -1036,6 +1050,10 @@ export async function processOpportunityAndSuggestions(
     wordCountBefore: suggestion.wordCountBefore,
     wordCountAfter: suggestion.wordCountAfter,
     citabilityScore: suggestion.citabilityScore ?? null,
+    // Persist the scrapeJobId so that downstream callers (e.g. Mystique key construction)
+    // always use the job that produced the actual S3 artifacts for this suggestion,
+    // even when the suggestion is re-queued in ai-only mode with a different job id.
+    scrapeJobId: auditData.scrapeJobId,
     // S3 references to stored HTML content for comparison
     originalHtmlKey: getS3Path(
       suggestion.url,
@@ -1184,6 +1202,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     siteId,
     auditedAt,
     scrapeJobId,
+    submittedUrlSet,
   } = auditData;
 
   try {
@@ -1196,31 +1215,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     const bucketName = env.S3_SCRAPER_BUCKET_NAME;
     const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
 
-    const currentPages = (auditResult.results ?? []).map((result) => ({
-      url: result.url,
-      scrapingStatus: result.error ? 'error' : 'success',
-      needsPrerender: result.needsPrerender || false,
-      isDeployedAtEdge: !!result.isDeployedAtEdge,
-      wordCountBefore: result.wordCountBefore || 0,
-      wordCountAfter: result.wordCountAfter || 0,
-      contentGainRatio: result.contentGainRatio || 0,
-      scrapedAt,
-      scrapeJobId: scrapeJobId || null,
-      ...(result.scrapeError && { scrapeError: result.scrapeError }),
-    }));
-
-    // missingPages should be precomputed by getScrapeJobStats and passed via auditResult.
-    if (Array.isArray(auditResult.missingPages)) {
-      currentPages.push(
-        ...auditResult.missingPages.map((page) => ({
-          ...page,
-          scrapedAt: page.scrapedAt || scrapedAt,
-          scrapeJobId: page.scrapeJobId || scrapeJobId || null,
-        })),
-      );
-    }
-
-    // Read existing status.json and merge pages so previous runs are not lost.
+    // Read existing status.json before building currentPages so we can look up prior scrapeJobIds.
     // Pages from the current run overwrite any prior entry for the same URL.
     let existingStatus = {};
     let existingPages = [];
@@ -1235,6 +1230,40 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       if (e.name !== 'NoSuchKey') {
         log.warn(`${LOG_PREFIX} Could not read existing status.json for merge, starting fresh: ${e.message}`);
       }
+    }
+
+    const existingPageMap = new Map(existingPages.map((p) => [normalizePathname(p.url), p]));
+
+    const currentPages = (auditResult.results ?? []).map((result) => {
+      // Only stamp the current scrapeJobId for URLs actually submitted to this job.
+      // For fallback URLs that weren't submitted, preserve the existing scrapeJobId.
+      const wasSubmitted = !submittedUrlSet || submittedUrlSet.has(result.url);
+      return {
+        url: result.url,
+        scrapingStatus: result.error ? 'error' : 'success',
+        needsPrerender: result.needsPrerender || false,
+        isDeployedAtEdge: !!result.isDeployedAtEdge,
+        usedEarlyClientSideHtml: !!result.usedEarlyClientSideHtml,
+        wordCountBefore: result.wordCountBefore || 0,
+        wordCountAfter: result.wordCountAfter || 0,
+        contentGainRatio: result.contentGainRatio || 0,
+        scrapedAt,
+        scrapeJobId: wasSubmitted
+          ? (scrapeJobId || null)
+          : (existingPageMap.get(normalizePathname(result.url))?.scrapeJobId ?? null),
+        ...(result.scrapeError && { scrapeError: result.scrapeError }),
+      };
+    });
+
+    // missingPages should be precomputed by getScrapeJobStats and passed via auditResult.
+    if (Array.isArray(auditResult.missingPages)) {
+      currentPages.push(
+        ...auditResult.missingPages.map((page) => ({
+          ...page,
+          scrapedAt: page.scrapedAt || scrapedAt,
+          scrapeJobId: page.scrapeJobId || scrapeJobId || null,
+        })),
+      );
     }
 
     const currentUrlSet = new Set(currentPages.map((p) => normalizePathname(p.url)));
@@ -1323,6 +1352,7 @@ export async function getScrapeJobStats(
       scrapeForbidden: totalUrlsWithScrapeInfo > 0
         && completeForbiddenCount === totalUrlsWithScrapeInfo,
       missingPages: [],
+      submittedUrlSet: null,
     };
   }
 
@@ -1371,6 +1401,7 @@ export async function getScrapeJobStats(
       scrapeForbiddenCount,
       scrapeForbidden,
       missingPages,
+      submittedUrlSet: new Set(allScrapeUrls.map((su) => su.getUrl())),
     };
   } catch (e) {
     log.warn(`${LOG_PREFIX} Failed to fetch ScrapeUrl stats for scrapeJobId=${scrapeJobId}, using fallback: ${e.message}`);
@@ -1381,6 +1412,7 @@ export async function getScrapeJobStats(
       scrapeForbidden: totalUrlsWithScrapeInfo > 0
         && completeForbiddenCount === totalUrlsWithScrapeInfo,
       missingPages: [],
+      submittedUrlSet: null,
     };
   }
 }
@@ -1458,8 +1490,8 @@ export async function processContentAndGenerateOpportunities(context) {
     /* c8 ignore next 5 - Edge case: empty URLs fallback, difficult to reach in tests */
     if (urlsToCheck.length === 0) {
       // Final fallback to base URL
-      urlsToCheck = [site.getBaseURL()];
-      log.info(`${LOG_PREFIX} No URLs found for comparison. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
+      urlsToCheck = [getPreferredBaseUrl(site, context)];
+      log.info(`${LOG_PREFIX} No URLs found for comparison. baseUrl=${getPreferredBaseUrl(site, context)}, siteId=${siteId}`);
     }
 
     const comparisonResults = await Promise.all(
@@ -1484,6 +1516,7 @@ export async function processContentAndGenerateOpportunities(context) {
       scrapeForbiddenCount,
       scrapeForbidden,
       missingPages,
+      submittedUrlSet,
     } = await getScrapeJobStats(scrapeJobId, comparisonResults, urlsToCheck.length, context);
 
     log.info(`${LOG_PREFIX} Scrape analysis for baseUrl=${site.getBaseURL()}, siteId=${siteId}. scrapeForbidden=${scrapeForbidden}, scrapeForbiddenCount=${scrapeForbiddenCount}, totalUrlsChecked=${comparisonResults.length}, isPaidLLMOCustomer=${isPaid}`);
@@ -1603,6 +1636,7 @@ export async function processContentAndGenerateOpportunities(context) {
       auditType: AUDIT_TYPE,
       auditResult,
       scrapeJobId,
+      submittedUrlSet,
     };
 
     // Upload status summary to S3 (post-processing)

@@ -63,6 +63,7 @@ describe('guidance-broken-links-remediation handler', () => {
     mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
       getSiteId: () => mockMessage.siteId,
       getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
     });
     const mockSetData = sandbox.stub();
     const mockSaveMany = sandbox.stub().resolves();
@@ -122,6 +123,7 @@ describe('guidance-broken-links-remediation handler', () => {
     mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
       getSiteId: () => mockMessage.siteId,
       getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
     });
     const mockSetData = sandbox.stub();
     const mockSaveMany = sandbox.stub().resolves();
@@ -303,7 +305,6 @@ describe('guidance-broken-links-remediation handler', () => {
       url_to: 'https://foo.com/redirects-throws-error',
       url_from: 'https://foo.com/redirects-throws-error',
       urlsSuggested: ['https://foo.com'],
-      aiRationale: '', // Should be cleared
     });
     expect(mockContext.log.info).to.have.been.calledWith(
       sinon.match(/All .* suggested URLs were filtered out/),
@@ -366,7 +367,7 @@ describe('guidance-broken-links-remediation handler', () => {
     });
   });
 
-  it('should preserve existing urlsSuggested and fallback to empty rationale when filtered URLs are empty and existing rationale is missing', async () => {
+  it('should preserve existing urlsSuggested and omit rationale when filtered URLs are empty and existing rationale is missing', async () => {
     const messageWithFilteredUrls = {
       ...mockMessage,
       data: {
@@ -418,11 +419,10 @@ describe('guidance-broken-links-remediation handler', () => {
       url_to: 'https://foo.com/redirects-throws-error',
       url_from: 'https://foo.com/redirects-throws-error',
       urlsSuggested: ['https://foo.com/existing-target'],
-      aiRationale: '',
     });
   });
 
-  it('should fallback to empty rationale when existing suggestion data is missing', async () => {
+  it('should omit rationale when existing suggestion data is missing', async () => {
     const messageWithFilteredUrls = {
       ...mockMessage,
       data: {
@@ -467,11 +467,10 @@ describe('guidance-broken-links-remediation handler', () => {
     expect(response.status).to.equal(200);
     expect(mockSetData).to.have.been.calledWith({
       urlsSuggested: ['https://foo.com'],
-      aiRationale: '',
     });
   });
 
-  it('should clear AI rationale when no URLs are provided', async () => {
+  it('should omit AI rationale when no URLs are provided', async () => {
     const messageWithNoUrls = {
       ...mockMessage,
       data: {
@@ -518,7 +517,6 @@ describe('guidance-broken-links-remediation handler', () => {
       url_to: 'https://foo.com/redirects-throws-error',
       url_from: 'https://foo.com/redirects-throws-error',
       urlsSuggested: ['https://foo.com'],
-      aiRationale: '', // Should be cleared
     });
     expect(mockContext.log.info).to.have.been.calledWith(
       sinon.match(/No suggested URLs provided by Mystique/),
@@ -577,7 +575,7 @@ describe('guidance-broken-links-remediation handler', () => {
     });
   });
 
-  it('should preserve existing urlsSuggested and fallback to empty rationale when existing rationale is missing', async () => {
+  it('should preserve existing urlsSuggested and omit rationale when existing rationale is missing', async () => {
     const messageWithNoUrls = {
       ...mockMessage,
       data: {
@@ -625,7 +623,6 @@ describe('guidance-broken-links-remediation handler', () => {
       url_to: 'https://foo.com/redirects-throws-error',
       url_from: 'https://foo.com/redirects-throws-error',
       urlsSuggested: ['https://foo.com/existing-target'],
-      aiRationale: '',
     });
   });
 
@@ -753,7 +750,6 @@ describe('guidance-broken-links-remediation handler', () => {
       url_to: 'https://foo.com/redirects-throws-error',
       url_from: 'https://foo.com/redirects-throws-error',
       urlsSuggested: ['https://foo.com'],
-      aiRationale: '', // Rationale cleared because no valid URLs provided
     });
   });
 
@@ -804,7 +800,6 @@ describe('guidance-broken-links-remediation handler', () => {
       url_to: 'https://foo.com/redirects-throws-error',
       url_from: 'https://foo.com/redirects-throws-error',
       urlsSuggested: ['https://foo.com'],
-      aiRationale: '', // Rationale cleared because no URLs provided
     });
   });
 
@@ -857,7 +852,6 @@ describe('guidance-broken-links-remediation handler', () => {
       url_to: 'https://foo.com/redirects-throws-error',
       url_from: 'https://foo.com/redirects-throws-error',
       urlsSuggested: ['https://foo.com/redirects-throws-error-1'],
-      aiRationale: '', // Empty string when neither field exists
     });
   });
 

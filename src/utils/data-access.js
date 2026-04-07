@@ -32,6 +32,24 @@ export const AUTHOR_ONLY_OPPORTUNITY_TYPES = [
 ];
 
 /**
+ * Validates suggestion data against the Joi schema for the given opportunity type.
+ * Logs a warning if validation fails but does not block the operation.
+ *
+ * @param {Object} data - Suggestion data to validate.
+ * @param {string} opportunityType - The opportunity type from OPPORTUNITY_TYPES enum.
+ * @param {Object} log - Logger object.
+ */
+export function warnOnInvalidSuggestionData(data, opportunityType, log) {
+  try {
+    SuggestionDataAccess.validateData(data, opportunityType);
+  } catch (error) {
+    const msg = error.message.length > 500 ? `${error.message.slice(0, 500)}...[truncated]` : error.message;
+    const identifier = data?.aggregationKey || data?.url || data?.path || 'unknown';
+    log.warn(`Suggestion data validation warning [${opportunityType}] [${identifier}]: ${msg}`);
+  }
+}
+
+/**
  * Safely stringify an object for logging, truncating large arrays to prevent
  * exceeding JavaScript's maximum string length.
  *
@@ -374,12 +392,21 @@ export async function syncSuggestions({
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
   existingSuggestions: prefetchedSuggestions = null,
+  newSuggestionStatus = null,
   bypassValidationForPlg = false,
 }) {
   if (!context) {
     return;
   }
   const { log } = context;
+
+  // Validate newSuggestionStatus if provided
+  if (newSuggestionStatus !== null) {
+    const validStatuses = Object.values(SuggestionDataAccess.STATUSES);
+    if (!validStatuses.includes(newSuggestionStatus)) {
+      throw new Error(`Invalid newSuggestionStatus: ${newSuggestionStatus}. Must be one of: ${validStatuses.join(', ')}`);
+    }
+  }
   const newDataKeys = new Set(newData.map(buildKey));
   // Use pre-fetched suggestions if provided, otherwise fetch from DB
   const existingSuggestions = prefetchedSuggestions ?? await opportunity.getSuggestions();
@@ -401,6 +428,8 @@ export async function syncSuggestions({
   });
 
   log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
+
+  const opportunityType = opportunity.getType();
 
   // Prepare new suggestions - O(N) with Set lookup
   const { site, dataAccess } = context;
@@ -429,7 +458,9 @@ export async function syncSuggestions({
   toUpdate.forEach((existing) => {
     const existingKey = buildKey(existing.getData());
     const newDataItem = newDataByKey.get(existingKey);
-    existing.setData(mergeDataFunction(existing.getData(), newDataItem));
+    const mergedData = mergeDataFunction(existing.getData(), newDataItem);
+    warnOnInvalidSuggestionData(mergedData, opportunityType, log);
+    existing.setData(mergedData);
 
     // Use the merge status function to determine if status should change
     // Pass isSummitPlg in context so mergeStatusFunction can apply the PLG bypass
@@ -450,12 +481,16 @@ export async function syncSuggestions({
     .filter((data) => !existingSuggestionKeys.has(buildKey(data)))
     .map((data) => {
       const suggestion = mapNewSuggestion(data);
-      return {
+      const result = {
         ...suggestion,
-        status: (requiresValidation && !isSummitPlg)
+        status: newSuggestionStatus || ((requiresValidation && !isSummitPlg)
           ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
-          : SuggestionDataAccess.STATUSES.NEW,
+          : SuggestionDataAccess.STATUSES.NEW),
       };
+      if (result.data != null) {
+        warnOnInvalidSuggestionData(result.data, opportunityType, log);
+      }
+      return result;
     });
 
   // Add new suggestions if any
@@ -750,8 +785,8 @@ export async function syncSuggestionsWithPublishDetection({
   }
   const { log } = context;
 
-  // Determine if this is an author-only opportunity type
-  const opportunityType = opportunity.getType?.();
+  // opportunity is always a valid DB entity passed by callers; getType() is guaranteed to exist.
+  const opportunityType = opportunity.getType();
   const isAuthorOnly = AUTHOR_ONLY_OPPORTUNITY_TYPES.includes(opportunityType);
 
   // Compute disappeared suggestions for reconcile step

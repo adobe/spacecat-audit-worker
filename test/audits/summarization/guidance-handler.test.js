@@ -125,6 +125,7 @@ describe('summarization guidance handler', () => {
       TYPES: SuggestionDataAccess.TYPES,
     };
     log = {
+      debug: sinon.stub(),
       info: sinon.stub(),
       warn: sinon.stub(),
       error: sinon.stub(),
