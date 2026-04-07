@@ -25,6 +25,7 @@ import {
   PROVIDERS_SET,
   CITED_ANALYSIS_DRS_CONFIG,
   YOUTUBE_URL_REGEX,
+  REDDIT_URL_REGEX,
 } from './constants.js';
 
 const LOG_PREFIX = '[OffsiteBrandPresence]';
@@ -255,6 +256,9 @@ function classifyAndNormalize(rawUrl) {
       if (domain === 'youtube.com' && !YOUTUBE_URL_REGEX.test(rawUrl)) {
         return null;
       }
+      if (domain === 'reddit.com' && !REDDIT_URL_REGEX.test(rawUrl)) {
+        return null;
+      }
       return { url: normalizeUrl(parsed, domain), domain };
     }
   }
@@ -379,8 +383,21 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
   log.info(`${LOG_PREFIX} Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${DRS_URLS_LIMIT})`);
   log.info(`${LOG_PREFIX} Adding ${entries.length} URLs to URL store`);
 
+  let existingUrlSet;
+  try {
+    const keys = entries.map((e) => ({ siteId, url: e.url }));
+    const { data: existingUrls } = await AuditUrl.batchGetByKeys(keys);
+    existingUrlSet = new Set(existingUrls.map((u) => u.getUrl()));
+  } catch (error) {
+    log.error(`${LOG_PREFIX} Failed to check existing URLs: ${error.message}`);
+    return {};
+  }
+
   const results = await Promise.all(
     entries.map(async (entry) => {
+      if (existingUrlSet.has(entry.url)) {
+        return entry.url;
+      }
       try {
         await AuditUrl.create({
           siteId,
@@ -391,17 +408,19 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
           updatedBy: 'system',
         });
         return entry.url;
-      } catch (error) {
-        log.warn(`${LOG_PREFIX} Failed to add URL to store: ${entry.url} - ${error.message}`);
+      } catch (createError) {
+        log.warn(`${LOG_PREFIX} Failed to add URL to store: ${entry.url} - ${createError.message}`);
         return null;
       }
     }),
   );
 
   const storedUrls = new Set(results.filter(Boolean));
-  const failCount = results.length - storedUrls.size;
+  const existingCount = existingUrlSet.size;
+  const createdCount = storedUrls.size - existingCount;
+  const failCount = entries.length - storedUrls.size;
 
-  log.info(`${LOG_PREFIX} URL store complete: ${storedUrls.size} created, ${failCount} failed`);
+  log.info(`${LOG_PREFIX} URL store complete: ${createdCount} created, ${existingCount} already existed, ${failCount} failed`);
 
   const storedByDomain = {};
   for (const domain of Object.keys(OFFSITE_DOMAINS)) {

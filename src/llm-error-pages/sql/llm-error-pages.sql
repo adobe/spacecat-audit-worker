@@ -32,25 +32,22 @@ aggregated_data AS (
     country_code,
     product,
     category
+),
+ranked AS (
+  SELECT
+    agent_type,
+    user_agent_display AS user_agent,
+    status,
+    number_of_hits AS total_requests,
+    avg_ttfb_ms,
+    country_code,
+    url,
+    product,
+    category,
+    ROW_NUMBER() OVER (PARTITION BY status ORDER BY number_of_hits DESC) AS rn
+  FROM aggregated_data
 )
-SELECT 
-  agent_type,
-  user_agent_display as user_agent,
-  status,
-  SUM(number_of_hits) as total_requests,
-  ROUND(SUM(avg_ttfb_ms * number_of_hits) / NULLIF(SUM(number_of_hits), 0), 2) as avg_ttfb_ms,
-  country_code,
-  url,
-  product,
-  category
-FROM aggregated_data
-GROUP BY 
-  agent_type,
-  user_agent_display,
-  status,
-  url,
-  country_code,
-  product,
-  category
+SELECT agent_type, user_agent, status, total_requests, avg_ttfb_ms, country_code, url, product, category
+FROM ranked
+WHERE rn <= {{rowsPerStatus}}
 ORDER BY total_requests DESC
-LIMIT 500

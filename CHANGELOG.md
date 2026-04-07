@@ -1,3 +1,88 @@
+## [1.399.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.399.1...v1.399.2) (2026-04-07)
+
+
+### Bug Fixes
+
+* add REDDIT_URL_REGEX to filter out invalid urls ([#2325](https://github.com/adobe/spacecat-audit-worker/issues/2325)) ([a9553c8](https://github.com/adobe/spacecat-audit-worker/commit/a9553c8c92f9a7e1299de24243f829244612a26a))
+
+## [1.399.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.399.0...v1.399.1) (2026-04-07)
+
+
+### Bug Fixes
+
+* **prerender:** preserve scrapeJobId for URLs not submitted to current scrape job ([#2320](https://github.com/adobe/spacecat-audit-worker/issues/2320)) ([872baa4](https://github.com/adobe/spacecat-audit-worker/commit/872baa497e1c7964e98c50abe61cbd0f3da3b178))
+
+# [1.399.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.8...v1.399.0) (2026-04-07)
+
+
+### Features
+
+* align Claude UA pattern and remove query row limit ([#2249](https://github.com/adobe/spacecat-audit-worker/issues/2249)) ([bbcefcb](https://github.com/adobe/spacecat-audit-worker/commit/bbcefcbebbaecfdb221464e833aa30b7bb8a7bf4))
+
+## [1.398.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.7...v1.398.8) (2026-04-07)
+
+
+### Bug Fixes
+
+* extract brand from subdomain URLs for Wikipedia search ([#2321](https://github.com/adobe/spacecat-audit-worker/issues/2321)) ([2ea80ad](https://github.com/adobe/spacecat-audit-worker/commit/2ea80ad86b6ccfa24caf2e5cdfc142524aa7dbbd))
+
+## [1.398.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.6...v1.398.7) (2026-04-07)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.46.0 ([#2324](https://github.com/adobe/spacecat-audit-worker/issues/2324)) ([a9b57cb](https://github.com/adobe/spacecat-audit-worker/commit/a9b57cb9800fc4c04c8505d55617166568a1e77c))
+
+## [1.398.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.5...v1.398.6) (2026-04-07)
+
+
+### Bug Fixes
+
+* allow trafficAcquisition data in low-view opportunity metrics ([#2177](https://github.com/adobe/spacecat-audit-worker/issues/2177)) ([204558f](https://github.com/adobe/spacecat-audit-worker/commit/204558feb1b6261d4664a2eb061dbe5a468e7259))
+
+## [1.398.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.4...v1.398.5) (2026-04-06)
+
+
+### Bug Fixes
+
+* **broken-backlinks:** follow redirects when validating broken backlink URLs ([#2296](https://github.com/adobe/spacecat-audit-worker/issues/2296)) ([f76b25d](https://github.com/adobe/spacecat-audit-worker/commit/f76b25d4b2b8729a8416a41dc5b385daaa4289af))
+* **broken-internal-links:** exclude static assets and malformed URLs from link detection ([#2294](https://github.com/adobe/spacecat-audit-worker/issues/2294)) ([d124451](https://github.com/adobe/spacecat-audit-worker/commit/d1244512a18b3ecf8347d00acf6e052c2dfdc174))
+
+## [1.398.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.3...v1.398.4) (2026-04-06)
+
+
+### Bug Fixes
+
+* (broken-links-guidance): omit aiRationale instead of empty string to pass schema validation ([#2317](https://github.com/adobe/spacecat-audit-worker/issues/2317)) ([c0ca85c](https://github.com/adobe/spacecat-audit-worker/commit/c0ca85c96b7684ed4c1528d9a83f238f46292756))
+
+## [1.398.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.2...v1.398.3) (2026-04-06)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/mysticat-shared-seo-client to v1.1.2 ([#2315](https://github.com/adobe/spacecat-audit-worker/issues/2315)) ([c5e540d](https://github.com/adobe/spacecat-audit-worker/commit/c5e540d3eb7e6ecc2e84b6a491bf014ed0bab26f))
+
+## [1.398.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.1...v1.398.2) (2026-04-06)
+
+
+### Bug Fixes
+
+* check if URL exists before adding to URL store ([#2316](https://github.com/adobe/spacecat-audit-worker/issues/2316)) ([94fcbcf](https://github.com/adobe/spacecat-audit-worker/commit/94fcbcfb147b6753130df75ac116e387c9c0d926))
+
+## [1.398.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.0...v1.398.1) (2026-04-06)
+
+
+### Bug Fixes
+
+* **logging:** downgrade expected conditions from error to debug/warn ([#2314](https://github.com/adobe/spacecat-audit-worker/issues/2314)) ([fcd0e26](https://github.com/adobe/spacecat-audit-worker/commit/fcd0e26d155031ee60ff5ba2a2085abcfac82245))
+
+# [1.398.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.397.1...v1.398.0) (2026-04-06)
+
+
+### Features
+
+* canonical - robots txt exclude paths ([#2127](https://github.com/adobe/spacecat-audit-worker/issues/2127)) ([01a7fff](https://github.com/adobe/spacecat-audit-worker/commit/01a7fffa930f1c113048d3d338a82c0f4e93ed12))
+
 ## [1.397.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.397.0...v1.397.1) (2026-04-06)
 
 
