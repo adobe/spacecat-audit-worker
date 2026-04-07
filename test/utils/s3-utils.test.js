@@ -171,6 +171,7 @@ describe('S3 Utility Functions', () => {
         },
       };
       const logMock2 = {
+        debug: () => {},
         error: (msg, err) => {
           expect(msg).to.equal(`Error while fetching S3 object from bucket ${bucketName} using key ${key}`);
           expect(err.message).to.equal('S3 getObject error');
@@ -179,6 +180,35 @@ describe('S3 Utility Functions', () => {
 
       const result = await getObjectFromKey(s3ClientMock, bucketName, key, logMock2);
       expect(result).to.be.null;
+    });
+
+    it('should log at debug level and return null for NoSuchKey errors', async () => {
+      const bucketName = 'test-bucket';
+      const key = 'test-key';
+
+      const noSuchKeyError = new Error('The specified key does not exist.');
+      noSuchKeyError.name = 'NoSuchKey';
+
+      const s3ClientMock = {
+        send: () => {
+          throw noSuchKeyError;
+        },
+      };
+      let debugCalled = false;
+      const logMock3 = {
+        debug: (msg, err) => {
+          expect(msg).to.equal(`Error while fetching S3 object from bucket ${bucketName} using key ${key}`);
+          expect(err.name).to.equal('NoSuchKey');
+          debugCalled = true;
+        },
+        error: () => {
+          throw new Error('error should not be called for NoSuchKey');
+        },
+      };
+
+      const result = await getObjectFromKey(s3ClientMock, bucketName, key, logMock3);
+      expect(result).to.be.null;
+      expect(debugCalled).to.be.true;
     });
   });
 });

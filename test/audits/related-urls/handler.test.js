@@ -19,6 +19,11 @@ import esmock from 'esmock';
 
 use(sinonChai);
 
+const BRAND_PRESENCE_HEADERS = [
+  undefined, 'Category', 'Topics', 'Prompt', 'Origin', 'Region',
+  'Volume', 'URL',
+];
+
 describe('Related URLs Handler', () => {
   let sandbox;
   let site;
@@ -105,6 +110,7 @@ describe('Related URLs Handler', () => {
           get worksheets() {
             return [{
               rowCount: rows.length + 1,
+              getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
               getRows: () => rows,
             }];
           }
@@ -311,6 +317,7 @@ describe('Related URLs Handler', () => {
           get worksheets() {
             return [{
               rowCount: rows.length + 1,
+              getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
               getRows: () => rows,
             }];
           }
@@ -360,6 +367,7 @@ describe('Related URLs Handler', () => {
           get worksheets() {
             return [{
               rowCount: rows.length + 1,
+              getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
               getRows: () => rows,
             }];
           }
@@ -460,6 +468,7 @@ describe('Related URLs Handler', () => {
           get worksheets() {
             return [{
               rowCount: rows.length + 1,
+              getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
               getRows: () => rows,
             }];
           }
@@ -500,6 +509,7 @@ describe('Related URLs Handler', () => {
           get worksheets() {
             return [{
               rowCount: rows.length + 1,
+              getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
               getRows: () => rows,
             }];
           }
@@ -515,6 +525,39 @@ describe('Related URLs Handler', () => {
     expect(result.auditResult.promptRegions[0].region).to.equal('GLOBAL');
   });
 
+  it('handles missing column headers gracefully', async () => {
+    const rows = [{
+      getCell: () => ({ value: 'ignored' }),
+    }];
+    readFromSharePointStub.resolves(Buffer.from('mock-buffer'));
+
+    const mockedModule = await esmock('../../../src/related-urls/handler.js', {
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: createLLMOSharepointClientStub,
+        readFromSharePoint: readFromSharePointStub,
+      },
+      exceljs: {
+        Workbook: class {
+          get worksheets() {
+            return [{
+              rowCount: rows.length + 1,
+              getRow: () => ({ values: [undefined, 'SomeOtherHeader'] }),
+              getRows: () => rows,
+            }];
+          }
+
+          get xlsx() {
+            return { load: async () => {} };
+          }
+        },
+      },
+    });
+
+    const result = await mockedModule.default.runner('https://example.com', context, site);
+    expect(result.auditResult.success).to.equal(false);
+    expect(result.auditResult.promptRegions).to.deep.equal([]);
+  });
+
   it('handles worksheet rows fallback when getRows returns undefined', async () => {
     readFromSharePointStub.resolves(Buffer.from('mock-buffer'));
 
@@ -528,6 +571,7 @@ describe('Related URLs Handler', () => {
           get worksheets() {
             return [{
               rowCount: 2,
+              getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
               getRows: () => undefined,
             }];
           }
@@ -596,6 +640,7 @@ describe('Related URLs Handler', () => {
           get worksheets() {
             return [{
               rowCount: rows.length + 1,
+              getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
               getRows: () => rows,
             }];
           }

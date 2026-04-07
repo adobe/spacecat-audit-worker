@@ -81,6 +81,19 @@ export async function loadExistingAudit(auditId, context) {
   return audit;
 }
 
+/**
+ * Extracts onDemand from an incoming auditContext so it survives
+ * multi-step chains (e.g. audit → import-worker → audit continuation).
+ * Only forwards onDemand when it is explicitly truthy (boolean true or string "true"),
+ * so that `'onDemand' in auditContext` reliably indicates an active on-demand run.
+ * @param {Object} auditContext - The incoming auditContext (may be undefined)
+ * @returns {Object} `{ onDemand: true }` when active, empty object otherwise
+ */
+export function preserveOnDemand(auditContext) {
+  const { onDemand } = auditContext || {};
+  return (onDemand === true || onDemand === 'true') ? { onDemand: true } : {};
+}
+
 export async function sendContinuationMessage(message, context) {
   const { log } = context;
   const { queueUrl, payload } = message;
@@ -93,4 +106,33 @@ export async function sendContinuationMessage(message, context) {
     log.error(`Failed to send message to queue ${queueUrl}`, e);
     throw e;
   }
+}
+
+/**
+ * Normalizes SQS `message.data` (JSON string or object) for RunnerAudit.
+ * Returns a plain object, or `undefined` if missing, empty, invalid JSON, or not a plain object
+ * (arrays excluded).
+ * @param {unknown} data - `message.data` from the audit job payload
+ * @returns {object|undefined}
+ */
+export function parseMessageDataForRunnerAudit(data) {
+  if (data === undefined || data === null) {
+    return undefined;
+  }
+  let parsed = data;
+  if (typeof data === 'string') {
+    const trimmed = data.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      return undefined;
+    }
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return undefined;
+  }
+  return parsed;
 }

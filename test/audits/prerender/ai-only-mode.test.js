@@ -80,6 +80,7 @@ describe('Prerender AI-Only Mode', () => {
 
     context = {
       log: {
+        debug: sandbox.stub(),
         info: sandbox.stub(),
         warn: sandbox.stub(),
         error: sandbox.stub(),
@@ -366,7 +367,7 @@ describe('Prerender AI-Only Mode', () => {
       const result = await importTopPages(context);
 
       expect(result.auditResult.suggestionCount).to.equal(0);
-      expect(context.log.warn).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         sinon.match(/No existing suggestions found/),
       );
     });
@@ -412,6 +413,29 @@ describe('Prerender AI-Only Mode', () => {
       expect(result.auditResult.suggestionCount).to.equal(1); // Only 1 non-OUTDATED
     });
 
+    it('should skip SKIPPED suggestions', async () => {
+      mockSuggestions[0].getStatus.returns('SKIPPED');
+
+      const result = await importTopPages(context);
+
+      expect(result.auditResult.suggestionCount).to.equal(1); // Only 1 non-SKIPPED
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(1);
+      expect(message.data.suggestions[0].url).to.equal('https://example.com/page2');
+    });
+
+    it('should return 0 if all suggestions are SKIPPED', async () => {
+      mockSuggestions[0].getStatus.returns('SKIPPED');
+      mockSuggestions[1].getStatus.returns('SKIPPED');
+
+      const result = await importTopPages(context);
+
+      expect(result.auditResult.suggestionCount).to.equal(0);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/No eligible suggestions to send to Mystique/),
+      );
+    });
+
     it('should return 0 if all suggestions are filtered out', async () => {
       mockSuggestions[0].getStatus.returns('OUTDATED');
       mockSuggestions[1].getData.returns({ url: null });
@@ -442,6 +466,48 @@ describe('Prerender AI-Only Mode', () => {
 
       // Should still process suggestion
       expect(result.status).to.equal('complete');
+    });
+
+    it('should use per-suggestion scrapeJobId when building Mystique S3 keys', async () => {
+      // Suggestions with their own scrapeJobId must use that id for key construction,
+      // not the audit-level scrapeJobId passed in via ai-only data.
+      const perSuggestionJobId = 'per-suggestion-job-id';
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        scrapeJobId: perSuggestionJobId,
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      const suggestion = message.data.suggestions.find((s) => s.url === 'https://example.com/page1');
+      expect(suggestion).to.exist;
+      expect(suggestion.markdownDiffKey).to.include(`prerender/scrapes/${perSuggestionJobId}`);
+      expect(suggestion.originalHtmlMarkdownKey).to.include(`prerender/scrapes/${perSuggestionJobId}`);
+    });
+
+    it('should fall back to audit-level scrapeJobId when suggestion lacks its own', async () => {
+      // Old suggestions without a persisted scrapeJobId fall back to the audit-level job id.
+      const auditLevelJobId = 'test-scrape-job'; // matches context.data.scrapeJobId
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        // scrapeJobId intentionally omitted to simulate pre-fix suggestion data
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(context.log.debug).to.have.been.calledWith(
+        sinon.match(/missing a per-suggestion scrapeJobId/),
+      );
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      const suggestion = message.data.suggestions.find((s) => s.url === 'https://example.com/page1');
+      expect(suggestion).to.exist;
+      expect(suggestion.markdownDiffKey).to.include(`prerender/scrapes/${auditLevelJobId}`);
+      expect(suggestion.originalHtmlMarkdownKey).to.include(`prerender/scrapes/${auditLevelJobId}`);
     });
   });
 

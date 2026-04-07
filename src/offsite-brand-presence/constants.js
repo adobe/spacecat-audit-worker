@@ -19,12 +19,12 @@ export const PROVIDERS = Object.freeze([
   'chatgpt',
   'copilot',
   'gemini',
-  'google-ai-overview',
+  'google-ai-overviews',
   'perplexity',
 ]);
 
 export const PROVIDERS_SET = new Set(PROVIDERS);
-export const BRAND_PRESENCE_REGEX = /brandpresence-(.+?)-w(\d{1,2})-(\d{4})-.*\.json$/;
+export const BRAND_PRESENCE_REGEX = /brandpresence-(.+?)-w(\d{1,2})-(\d{4})(?:-.*)?\.json$/;
 
 export const URL_STORE_STATUS = Object.freeze({
   CREATED: 'created',
@@ -55,3 +55,4 @@ export const CITED_ANALYSIS_DRS_CONFIG = Object.freeze({
   auditType: Audit.AUDIT_TYPES.CITED_ANALYSIS,
   datasetIds: [SCRAPE_DATASET_IDS.TOP_CITED],
 });
+export const YOUTUBE_URL_REGEX = /^(?:https?:\/\/)?(?:www\.)?(?:m\.)?(?:youtube(?:-nocookie)?\.com|youtu\.be)(?:[/?#]|$)/;

@@ -53,7 +53,7 @@ const EXCLUDE_URL_PATTERNS = [
 /**
  * Normalizes a URL by stripping the www. prefix from the hostname.
  * This ensures consistent URL matching between different data sources
- * (e.g., RUM uses casio.com while Ahrefs uses www.casio.com).
+ * (e.g., RUM uses casio.com while SEO provider uses www.casio.com).
  * @param {string} url - URL to normalize
  * @returns {string} URL with www. stripped from hostname
  */
@@ -77,17 +77,17 @@ function isExcludedPageType(url) {
 }
 
 /**
- * Fetches Ahrefs paid-pages data from S3 and returns a Map keyed by URL.
+ * Fetches SEO paid-pages data from S3 and returns a Map keyed by URL.
  * Returns null if the data file exists but is empty.
  * Throws on actual failures (S3 access errors, JSON parse errors).
  * @param {Object} context - Execution context with s3Client, env, and log
  * @param {string} siteId - Site ID
- * @returns {Promise<Map|null>} Map of URL to Ahrefs data, or null if empty
+ * @returns {Promise<Map|null>} Map of URL to SEO data, or null if empty
  */
 async function fetchPaidPagesFromS3(context, siteId) {
   const { s3Client, env } = context;
   const bucketName = env.S3_IMPORTER_BUCKET_NAME;
-  const key = `metrics/${siteId}/ahrefs/paid-pages.json`;
+  const key = `metrics/${siteId}/seo/paid-pages.json`;
 
   const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
   const response = await s3Client.send(command);
@@ -118,11 +118,11 @@ async function fetchPaidPagesFromS3(context, siteId) {
 /**
  * Computes a Wasted-Spend Intent Score (WSIS) for a page
  * @param {Object} page - Page data with pageViews, bounceRate, engagedScrollRate
- * @param {Object} ahrefsData - Ahrefs data with cpc
+ * @param {Object} seoData - SEO data with cpc
  * @returns {number} Priority score
  */
-function computePriorityScore(page, ahrefsData) {
-  const cpc = ahrefsData?.cpc || 0;
+function computePriorityScore(page, seoData) {
+  const cpc = seoData?.cpc || 0;
   const wastedSpend = cpc * page.pageViews * page.bounceRate;
   const alignmentSignal = Math.max(0.1, 1 - (page.engagedScrollRate ?? 0.5));
   // Normalize to ~$-thousands so scores stay in a human-readable range;
@@ -536,7 +536,7 @@ export async function triggerPaidPagesImportStep(context) {
  * 1. Disables the import if it was enabled in step 1
  * 2. Runs Athena analysis
  * 3. Updates the audit with results
- * 4. Fetches Ahrefs data from S3 (mandatory)
+ * 4. Fetches SEO data from S3 (mandatory)
  * 5. Applies URL pattern exclusion
  * 6. Applies bounce rate filter
  * 7. Computes WSIS priority score
@@ -587,19 +587,19 @@ export async function runPaidKeywordAnalysisStep(context) {
   /* c8 ignore next */
   const searchPages = auditResult.predominantlyPaidPages || [];
 
-  // Fetch Ahrefs data (mandatory — terminate if unavailable or empty)
-  let ahrefsMap;
+  // Fetch SEO data (mandatory — terminate if unavailable or empty)
+  let seoDataMap;
   try {
-    ahrefsMap = await fetchPaidPagesFromS3(context, siteId);
+    seoDataMap = await fetchPaidPagesFromS3(context, siteId);
   } catch (error) {
     // Intentionally treating all S3 errors the same (NoSuchKey, AccessDenied, etc.)
-    // — in both cases the audit cannot proceed without Ahrefs data.
-    log.error(`[ad-intent-mismatch] [Site: ${finalUrl}] Ahrefs S3 fetch failed for site ${siteId}: ${error.message}`);
+    // — in both cases the audit cannot proceed without SEO data.
+    log.error(`[ad-intent-mismatch] [Site: ${finalUrl}] SEO S3 fetch failed for site ${siteId}: ${error.message}`);
     return {};
   }
 
-  if (!ahrefsMap) {
-    log.info(`[ad-intent-mismatch] [Site: ${finalUrl}] No Ahrefs paid-pages data for site ${siteId}; skipping mystique`);
+  if (!seoDataMap) {
+    log.info(`[ad-intent-mismatch] [Site: ${finalUrl}] No SEO paid-pages data for site ${siteId}; skipping mystique`);
     return {};
   }
 
@@ -617,17 +617,17 @@ export async function runPaidKeywordAnalysisStep(context) {
     (page) => page.bounceRate >= CUT_OFF_BOUNCE_RATE,
   );
 
-  // Enrich with Ahrefs data and compute priority score
+  // Enrich with SEO data and compute priority score
   const rankedPages = bounceFilteredPages
     .map((page) => {
-      const ahrefs = ahrefsMap.get(normalizeUrl(page.url)) || {};
+      const seoData = seoDataMap.get(normalizeUrl(page.url)) || {};
       return {
         ...page,
-        cpc: ahrefs.cpc || 0,
-        sumTraffic: ahrefs.sumTraffic || 0,
-        topKeyword: ahrefs.topKeyword || '',
-        serpTitle: ahrefs.serpTitle || '',
-        priorityScore: computePriorityScore(page, ahrefs),
+        cpc: seoData.cpc || 0,
+        sumTraffic: seoData.sumTraffic || 0,
+        topKeyword: seoData.topKeyword || '',
+        serpTitle: seoData.serpTitle || '',
+        priorityScore: computePriorityScore(page, seoData),
       };
     })
     .filter((page) => page.priorityScore > 0.01)

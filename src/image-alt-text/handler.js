@@ -36,18 +36,23 @@ export async function isDecorativeAgentEnabled(context) {
 }
 
 /**
- * Determines the page limit for alt-text audit based on summit-plg configuration
+ * Determines the page limit for alt-text audit based on summit-plg configuration.
+ * When onDemand is set in auditContext, summit-plg windowing is bypassed
+ * so the full DEFAULT_PAGE_LIMIT is used for one-shot on-demand runs.
  * @param {Object} site - Site object
  * @param {Object} context - Lambda context with log and dataAccess
  * @returns {Promise<number>} - Page limit (20 for summit-plg enabled, 100 otherwise)
  */
 async function getTopPagesLimit(site, context) {
   const { log, dataAccess } = context;
+  const rawOnDemand = context.auditContext?.onDemand;
+  const onDemand = rawOnDemand === true || rawOnDemand === 'true';
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
-  const isSummitPlgEnabled = configuration.isHandlerEnabledForSite('summit-plg', site);
+  const summitPlgFromConfig = configuration.isHandlerEnabledForSite('summit-plg', site);
+  const isSummitPlgEnabled = !onDemand && summitPlgFromConfig;
   const pageLimit = isSummitPlgEnabled ? SUMMIT_PLG_PAGE_LIMIT : DEFAULT_PAGE_LIMIT;
-  log.debug(`[${AUDIT_TYPE}]: Page limit set to ${pageLimit} (summit-plg enabled: ${isSummitPlgEnabled})`);
+  log.debug(`[${AUDIT_TYPE}]: Page limit set to ${pageLimit} (summit-plg active: ${isSummitPlgEnabled}, onDemand: ${onDemand})`);
   return { pageLimit, isSummitPlg: isSummitPlgEnabled };
 }
 
@@ -74,12 +79,13 @@ function getTopPagesWindow(allTopPages, pageLimit, topPagesOffset, isSummitPlg, 
 }
 
 /**
- * Appends a new status entry to the audit's statusHistory and marks the step as started.
+ * Appends a new status entry to the statusHistory and marks the step as started.
+ * Stateless helper — takes and returns a plain auditResult object.
  * Computes queueDurationMs from the previous entry's completedAt.
  */
-export function startStatus(audit, status, metadata = {}) {
-  const existing = audit.getAuditResult() || {};
-  const history = existing.statusHistory || [];
+export function startStatus(auditResult, status, metadata = {}) {
+  const existing = auditResult || {};
+  const history = [...(existing.statusHistory || [])];
   const previousEntry = history[history.length - 1];
 
   const now = new Date().toISOString();
@@ -92,15 +98,16 @@ export function startStatus(audit, status, metadata = {}) {
   }
 
   history.push(entry);
-  audit.setAuditResult({ ...existing, status, statusHistory: history });
+  return { ...existing, status, statusHistory: history };
 }
 
 /**
  * Completes the current (last) status entry with completedAt and stepDurationMs.
+ * Stateless helper — takes and returns a plain auditResult object.
  */
-export function completeStatus(audit, metadata = {}) {
-  const existing = audit.getAuditResult() || {};
-  const history = existing.statusHistory || [];
+export function completeStatus(auditResult, metadata = {}) {
+  const existing = auditResult || {};
+  const history = [...(existing.statusHistory || [])];
   const last = history[history.length - 1];
   if (last) {
     const now = new Date().toISOString();
@@ -108,39 +115,82 @@ export function completeStatus(audit, metadata = {}) {
     last.stepDurationMs = new Date(now) - new Date(last.startedAt);
     Object.assign(last, metadata);
   }
-  audit.setAuditResult({ ...existing, statusHistory: history });
+  return { ...existing, statusHistory: history };
 }
 
 /**
  * Marks the current in-progress step as failed, or appends a new failed entry
  * if no step is in progress.
+ * Stateless helper — takes a plain auditResult object.
+ * @returns {{ auditResult: Object, isError: boolean }} — callers can destructure
+ *   and forward both fields to persistAuditStatus.
  */
-export function failCurrentStatus(audit, failedStatus, metadata = {}) {
-  const existing = audit.getAuditResult() || {};
-  const history = existing.statusHistory || [];
+export function failCurrentStatus(auditResult, failedStatus, metadata = {}) {
+  const existing = auditResult || {};
+  const history = [...(existing.statusHistory || [])];
   const last = history[history.length - 1];
   if (last && !last.completedAt) {
     last.status = failedStatus;
     last.completedAt = new Date().toISOString();
     last.stepDurationMs = new Date(last.completedAt) - new Date(last.startedAt);
     Object.assign(last, metadata);
-    audit.setAuditResult({ ...existing, status: failedStatus, statusHistory: history });
-  } else {
-    startStatus(audit, failedStatus, metadata);
-    completeStatus(audit);
+    return {
+      auditResult: { ...existing, status: failedStatus, statusHistory: history },
+      isError: true,
+    };
   }
-  audit.setIsError(true);
+  let result = startStatus(existing, failedStatus, metadata);
+  result = completeStatus(result);
+  return { auditResult: result, isError: true };
 }
 
 /**
- * Safely persists the current audit status. Status tracking should never
- * crash the audit — if the save fails, we log a warning and continue.
+ * Persists the audit status via Audit.updateByKeys (bypasses allowUpdates(false)).
+ * Used by Steps 2/3 where the audit object is loaded once and tracked in a local variable.
  */
-async function saveStatus(audit, log) {
+async function persistAuditStatus(dataAccess, auditId, auditResult, log, isError = false) {
   try {
-    await audit.save();
-  } catch (saveError) {
-    log.warn(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Failed to save audit status: ${saveError.message}`);
+    const { Audit } = dataAccess;
+    const updates = { auditResult };
+    if (isError) {
+      updates.isError = true;
+    }
+    await Audit.updateByKeys({ auditId }, updates);
+  } catch (error) {
+    log.warn(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Failed to save audit status: ${error.message}`);
+  }
+}
+
+/**
+ * Persists the audit status with a fresh DB read to get the latest statusHistory.
+ * Used by the guidance handler where concurrent Mystique batch responses can race.
+ * The fresh read narrows the lost-update window to milliseconds.
+ *
+ * Always appends a new entry via startStatus + completeStatus (never failCurrentStatus).
+ * This is safe because the guidance handler only runs after Step 3 has completed its
+ * status entry — there should never be a dangling in-progress entry at this point.
+ */
+export async function persistAuditStatusWithFreshRead(
+  dataAccess,
+  auditId,
+  status,
+  metadata,
+  log,
+  isError = false,
+) {
+  try {
+    const { Audit } = dataAccess;
+    const freshAudit = await Audit.findById(auditId);
+    const existing = freshAudit?.getAuditResult() || {};
+    let auditResult = startStatus(existing, status);
+    auditResult = completeStatus(auditResult, metadata);
+    const updates = { auditResult };
+    if (isError) {
+      updates.isError = true;
+    }
+    await Audit.updateByKeys({ auditId }, updates);
+  } catch (error) {
+    log.warn(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Failed to save audit status: ${error.message}`);
   }
 }
 
@@ -181,8 +231,9 @@ export async function processScraping(context) {
   const { Opportunity } = dataAccess;
   const siteId = site.getId();
 
-  startStatus(audit, 'scraping');
-  await saveStatus(audit, log);
+  let auditResult = audit.getAuditResult();
+  auditResult = startStatus(auditResult, 'scraping');
+  await persistAuditStatus(dataAccess, audit.getId(), auditResult, log);
 
   try {
     log.debug(`[${AUDIT_TYPE}]: Processing scraping step for site ${siteId}`);
@@ -190,7 +241,7 @@ export async function processScraping(context) {
     // Get page limit based on summit-plg configuration
     const { pageLimit, isSummitPlg } = await getTopPagesLimit(site, context);
 
-    // Get top page URLs via fallback chain (Ahrefs -> RUM -> includedURLs)
+    // Get top page URLs via fallback chain (SEO -> RUM -> includedURLs)
     const allTopPageUrls = await getTopPageUrls({
       siteId, site, dataAccess, context, log,
     });
@@ -198,9 +249,9 @@ export async function processScraping(context) {
     if (allTopPageUrls.length === 0) {
       const errorMsg = `No top pages found for site ${siteId}`;
       log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
-      failCurrentStatus(audit, 'no_top_pages', { error: errorMsg });
-      await saveStatus(audit, log);
-      return { auditResult: audit.getAuditResult(), fullAuditRef: audit.getFullAuditRef() };
+      const failed = failCurrentStatus(auditResult, 'no_top_pages', { error: errorMsg });
+      await persistAuditStatus(dataAccess, audit.getId(), failed.auditResult, log, failed.isError);
+      return { auditResult: failed.auditResult, fullAuditRef: audit.getFullAuditRef() };
     }
 
     // Read stored offset and check suggestions for advancement (fail-safe: default 0)
@@ -267,8 +318,8 @@ export async function processScraping(context) {
     // consumers (e.g., mystique) through the scrape jobs API.
     log.info(`[${AUDIT_TYPE}]: Sending ${topPages.length} URLs to scrape client (maxScrapeAge: ${SCRAPE_MAX_AGE_HOURS}h)`);
 
-    completeStatus(audit, { urlCount: topPages.length });
-    await saveStatus(audit, log);
+    auditResult = completeStatus(auditResult, { urlCount: topPages.length });
+    await persistAuditStatus(dataAccess, audit.getId(), auditResult, log);
 
     return {
       urls: topPages.map((url) => ({ url })),
@@ -277,12 +328,13 @@ export async function processScraping(context) {
       maxScrapeAge: SCRAPE_MAX_AGE_HOURS,
       options: {
         pageLoadTimeout: SCRAPE_PAGE_LOAD_TIMEOUT,
+        rejectRedirects: false,
       },
     };
   } catch (error) {
     log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] processScraping failed: ${error.message}`);
-    failCurrentStatus(audit, 'scraping_failed', { error: error.message });
-    await saveStatus(audit, log);
+    const failed = failCurrentStatus(auditResult, 'scraping_failed', { error: error.message });
+    await persistAuditStatus(dataAccess, audit.getId(), failed.auditResult, log, failed.isError);
     throw error;
   }
 }
@@ -294,8 +346,9 @@ export async function processAltTextWithMystique(context) {
 
   log.debug(`[${AUDIT_TYPE}]: Processing alt-text with Mystique for site ${site.getId()}`);
 
-  startStatus(audit, 'processing');
-  await saveStatus(audit, log);
+  let auditResult = audit.getAuditResult();
+  auditResult = startStatus(auditResult, 'processing');
+  await persistAuditStatus(dataAccess, audit.getId(), auditResult, log);
 
   try {
     const { Opportunity, Suggestion } = dataAccess;
@@ -304,7 +357,7 @@ export async function processAltTextWithMystique(context) {
     // Get page limit based on summit-plg configuration
     const { pageLimit, isSummitPlg } = await getTopPagesLimit(site, context);
 
-    // Get top page URLs via fallback chain (Ahrefs -> RUM -> includedURLs)
+    // Get top page URLs via fallback chain (SEO -> RUM -> includedURLs)
     const allTopPageUrls = await getTopPageUrls({
       siteId, site, dataAccess, context, log,
     });
@@ -326,9 +379,9 @@ export async function processAltTextWithMystique(context) {
     if (pageUrls.length === 0) {
       const errorMsg = `No top pages found for site ${site.getId()}`;
       log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
-      failCurrentStatus(audit, 'no_top_pages', { error: errorMsg });
-      await saveStatus(audit, log);
-      return { auditResult: audit.getAuditResult() };
+      const failed = failCurrentStatus(auditResult, 'no_top_pages', { error: errorMsg });
+      await persistAuditStatus(dataAccess, audit.getId(), failed.auditResult, log, failed.isError);
+      return { auditResult: failed.auditResult };
     }
 
     // Filter out URLs without scrapes before sending to Mystique.
@@ -342,9 +395,9 @@ export async function processAltTextWithMystique(context) {
         const errorMsg = `Cannot proceed: none of the ${pageUrls.length} URLs have scrape results. `
           + 'Mystique will not be able to find content for these pages.';
         log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] ${errorMsg}`);
-        failCurrentStatus(audit, 'no_scrape_results', { error: errorMsg });
-        await saveStatus(audit, log);
-        return { auditResult: audit.getAuditResult() };
+        const { auditResult: failedResult, isError } = failCurrentStatus(auditResult, 'no_scrape_results', { error: errorMsg });
+        await persistAuditStatus(dataAccess, audit.getId(), failedResult, log, isError);
+        return { auditResult: failedResult };
       }
       if (missingCount > 0) {
         log.warn(`[${AUDIT_TYPE}]: Excluding ${missingCount}/${pageUrls.length} URLs without scrapes`);
@@ -451,7 +504,7 @@ export async function processAltTextWithMystique(context) {
           dataSources: [
             DATA_SOURCES.RUM,
             DATA_SOURCES.SITE,
-            DATA_SOURCES.AHREFS,
+            DATA_SOURCES.SEO,
           ],
           mystiqueResponsesReceived: 0,
           mystiqueResponsesExpected: urlBatches.length,
@@ -479,14 +532,15 @@ export async function processAltTextWithMystique(context) {
 
     log.debug(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);
 
-    completeStatus(audit, { urlCount: pageUrls.length, batchCount: urlBatches.length });
-    await saveStatus(audit, log);
+    const statusMeta = { urlCount: pageUrls.length, batchCount: urlBatches.length };
+    auditResult = completeStatus(auditResult, statusMeta);
+    await persistAuditStatus(dataAccess, audit.getId(), auditResult, log);
 
-    return { auditResult: audit.getAuditResult() };
+    return { auditResult };
   } catch (error) {
     log.error(`[${AUDIT_TYPE}][${ALT_TEXT_PROCESSING_ERROR_TAG}] Failed to process with Mystique: ${error.message}`);
-    failCurrentStatus(audit, 'processing_failed', { error: error.message });
-    await saveStatus(audit, log);
+    const failed = failCurrentStatus(auditResult, 'processing_failed', { error: error.message });
+    await persistAuditStatus(dataAccess, audit.getId(), failed.auditResult, log, failed.isError);
     throw error;
   }
 }

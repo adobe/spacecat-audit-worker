@@ -496,8 +496,8 @@ describe('calculateProjectedConversionValue', () => {
   beforeEach(() => {
     context = {
       env: {
-        AHREFS_API_BASE_URL: 'https://ahrefs.com',
-        AHREFS_API_KEY: 'ahrefs-api',
+        SEO_API_BASE_URL: 'https://seo-api.example.com',
+        SEO_API_KEY: 'test-seo-key',
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
         S3_IMPORTER_BUCKET_NAME: 'test-import-bucket',
       },

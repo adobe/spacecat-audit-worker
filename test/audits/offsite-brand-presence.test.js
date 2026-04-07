@@ -31,6 +31,7 @@ const {
 use(sinonChai);
 
 const DEFAULT_WEEK = 7;
+const DEFAULT_WEEK_2 = 6;
 const DEFAULT_YEAR = 2026;
 
 describe('Offsite Brand Presence Handler', () => {
@@ -57,7 +58,9 @@ describe('Offsite Brand Presence Handler', () => {
     sandbox = sinon.createSandbox();
 
     mockFetch = sandbox.stub();
-    mockIsoCalendarWeek = sandbox.stub().returns({ week: DEFAULT_WEEK, year: DEFAULT_YEAR });
+    mockIsoCalendarWeek = sandbox.stub();
+    mockIsoCalendarWeek.onFirstCall().returns({ week: DEFAULT_WEEK, year: DEFAULT_YEAR });
+    mockIsoCalendarWeek.onSecondCall().returns({ week: DEFAULT_WEEK_2, year: DEFAULT_YEAR });
     mockSubmitScrapeJob = sandbox.stub().resolves({ job_id: 'mock-job' });
     mockDrsIsConfigured = sandbox.stub().returns(true);
 
@@ -101,6 +104,7 @@ describe('Offsite Brand Presence Handler', () => {
     dataAccess = {
       AuditUrl: {
         create: sandbox.stub().resolves({}),
+        batchGetByKeys: sandbox.stub().resolves({ data: [] }),
       },
       SentimentTopic: {
         allBySiteId: sandbox.stub().resolves({ data: [] }),
@@ -316,11 +320,32 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result[0]).to.include('chatgpt');
     });
 
-    it('should handle provider IDs with hyphens (google-ai-overview)', () => {
-      const qi = { data: [{ path: '/adobe/brand-presence/w7/brandpresence-google-ai-overview-w7-2026-010126.json' }] };
+    it('should handle provider IDs with hyphens (google-ai-overviews)', () => {
+      const qi = { data: [
+        { path: '/adobe/brand-presence/w7/brandpresence-google-ai-overviews-w7-2026-010126.json' },
+        { path: '/site/brand-presence/brandpresence-google-ai-overviews-w7-2026.json' },
+      ] };
       const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(result).to.have.lengthOf(1);
-      expect(result[0]).to.include('google-ai-overview');
+      expect(result).to.have.lengthOf(2);
+      result.forEach((r) => expect(r).to.include('google-ai-overviews'));
+    });
+
+    it('should match filenames without a trailing date suffix', () => {
+      const qi = { data: [
+        { path: '/site/brand-presence/brandpresence-chatgpt-w7-2026.json' },
+        { path: '/site/brand-presence/brandpresence-perplexity-w7-2026.json' },
+      ] };
+      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
+      expect(result).to.have.lengthOf(2);
+    });
+
+    it('should match filenames with and without trailing date suffix in the same index', () => {
+      const qi = { data: [
+        { path: '/site/brand-presence/brandpresence-gemini-w7-2026-010126.json' },
+        { path: '/site/brand-presence/brandpresence-copilot-w7-2026.json' },
+      ] };
+      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
+      expect(result).to.have.lengthOf(2);
     });
 
     it('should reject entries that do not match the brand-presence filename pattern', () => {
@@ -684,6 +709,20 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(0);
     });
+
+    it('should discard YouTube URLs with non-standard subdomains', async () => {
+      const sources = 'https://music.youtube.com/watch?v=abc;https://studio.youtube.com/channel/123;https://www.youtube.com/watch?v=valid';
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([sources]);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
+    });
   });
 
   describe('URL Normalization', () => {
@@ -809,6 +848,46 @@ describe('Offsite Brand Presence Handler', () => {
       expect(createArg.audits).to.deep.equal(['youtube-analysis']);
     });
 
+    it('should still send URL to DRS when it already exists in the URL store', async () => {
+      dataAccess.AuditUrl.batchGetByKeys.resolves({
+        data: [{ getUrl: () => 'https://youtu.be/test' }],
+      });
+
+      const providerResponses = setupWithYoutubeUrl();
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(dataAccess.AuditUrl.create).to.not.have.been.called;
+      expect(result.auditResult.success).to.be.true;
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/0 created, 1 already existed, 0 failed/),
+      );
+
+      const videosCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === 'youtube_videos',
+      );
+      expect(videosCall.args[0].urls).to.include('https://youtu.be/test');
+    });
+
+    it('should return empty storedByDomain when batchGetByKeys fails', async () => {
+      dataAccess.AuditUrl.batchGetByKeys.rejects(new Error('DB connection lost'));
+
+      const providerResponses = setupWithYoutubeUrl();
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(dataAccess.AuditUrl.create).to.not.have.been.called;
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Failed to check existing URLs/),
+      );
+    });
+
     it('should handle URL store create failure gracefully and skip DRS for failed URLs', async () => {
       dataAccess.AuditUrl.create.rejects(new Error('DynamoDB error'));
 
@@ -827,7 +906,7 @@ describe('Offsite Brand Presence Handler', () => {
         sinon.match(/Failed to add URL to store/),
       );
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/0 created, 1 failed/),
+        sinon.match(/0 created, 0 already existed, 1 failed/),
       );
     });
 
@@ -846,7 +925,7 @@ describe('Offsite Brand Presence Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/2 created, 1 failed/),
+        sinon.match(/2 created, 0 already existed, 1 failed/),
       );
 
       const videosCall = mockSubmitScrapeJob.getCalls().find(
@@ -1049,7 +1128,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(mockSubmitScrapeJob).to.have.been.calledWith(sinon.match({
         datasetId: SCRAPE_DATASET_IDS.TOP_CITED,
         siteId: SITE_ID,
-        urls: ['https://example.com/page1', 'https://other.com/page2'],
+        urls: [{ url: 'https://example.com/page1' }, { url: 'https://other.com/page2' }],
       }));
     });
 
@@ -1565,15 +1644,43 @@ describe('Offsite Brand Presence Handler', () => {
       });
     });
 
-    it('should include week (zero-padded) and year in the audit result', async () => {
-      mockIsoCalendarWeek.returns({ week: 5, year: DEFAULT_YEAR });
+    it('should include both previous weeks in the audit result', async () => {
+      mockIsoCalendarWeek.onFirstCall().returns({ week: 5, year: DEFAULT_YEAR });
+      mockIsoCalendarWeek.onSecondCall().returns({ week: 4, year: DEFAULT_YEAR });
       const responses = buildHappyResponses({ week: 5 });
       stubFetchSequence(responses);
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      expect(result.auditResult.week).to.equal('05');
-      expect(result.auditResult.year).to.equal(DEFAULT_YEAR);
+      expect(result.auditResult.weeks).to.deep.equal([
+        { week: 5, year: DEFAULT_YEAR },
+        { week: 4, year: DEFAULT_YEAR },
+      ]);
+    });
+
+    it('should handle year boundary when previous weeks span two years', async () => {
+      mockIsoCalendarWeek.onFirstCall().returns({ week: 1, year: 2026 });
+      mockIsoCalendarWeek.onSecondCall().returns({ week: 52, year: 2025 });
+
+      const qi = {
+        data: [
+          { path: '/adobe/brand-presence/w1/brandpresence-chatgpt-w1-2026-010126.json' },
+          { path: '/adobe/brand-presence/w52/brandpresence-chatgpt-w52-2025-221225.json' },
+        ],
+      };
+      const responses = buildHappyResponses({
+        queryIndex: qi,
+        providerResponses: [okJsonResponse({}), okJsonResponse({})],
+      });
+      stubFetchSequence(responses);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.weeks).to.deep.equal([
+        { week: 1, year: 2026 },
+        { week: 52, year: 2025 },
+      ]);
     });
   });
 });

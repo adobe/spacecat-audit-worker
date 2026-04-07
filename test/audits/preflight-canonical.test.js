@@ -64,13 +64,13 @@ function buildAuditContext(scrapedObjects = [], overrides = {}) {
   };
 }
 
-function buildScrapedObject(canonicalMeta, rawBody = null) {
+function buildScrapedObject(canonicalMeta, rawBody = null, extraData = {}) {
   const scrapeResult = {};
   if (canonicalMeta !== undefined) scrapeResult.canonical = canonicalMeta;
   if (rawBody !== null) scrapeResult.rawBody = rawBody;
   return {
     Key: `scrapes/site-123/page1/scrape.json`,
-    data: { finalUrl: PAGE_URL, scrapeResult },
+    data: { finalUrl: PAGE_URL, scrapeResult, ...extraData },
   };
 }
 
@@ -166,6 +166,30 @@ describe('Preflight Canonical Audit', () => {
 
       const checks = getCanonicalAudit(auditCtx.auditsResult).opportunities.map((o) => o.check);
       expect(checks).to.include('canonical-self-referenced');
+    });
+
+    it('does not report canonical-self-referenced when pathname differs only by trailing slash', async () => {
+      const pageUrl = `${PREVIEW_BASE_URL}/page1/`;
+      const canonicalHref = `${PREVIEW_BASE_URL}/page1`;
+      const auditsResult = [{ pageUrl, step: 'identify', audits: [] }];
+      const audits = new Map([[pageUrl, auditsResult[0]]]);
+      const ctx = buildContext();
+      const auditCtx = {
+        previewUrls: [pageUrl],
+        previewBaseURL: PREVIEW_BASE_URL,
+        step: 'identify',
+        audits,
+        auditsResult,
+        scrapedObjects: [buildScrapedObject({
+          exists: true, count: 1, href: canonicalHref, inHead: true,
+        }, null, { finalUrl: pageUrl })],
+        timeExecutionBreakdown: [],
+      };
+
+      await canonicalHandler(ctx, auditCtx);
+
+      const checks = getCanonicalAudit(auditCtx.auditsResult).opportunities.map((o) => o.check);
+      expect(checks).to.not.include('canonical-self-referenced');
     });
 
     it('reports canonical-url-absolute when href is a relative URL', async () => {
@@ -275,6 +299,20 @@ describe('Preflight Canonical Audit', () => {
 
       expect(ctx.log.warn).to.have.been.calledWith(sinon.match('No scraped data found'));
       expect(getCanonicalAudit(auditCtx.auditsResult).opportunities).to.deep.equal([]);
+    });
+
+    it('skips canonical checks when HTTP status is 4xx (e.g. 403)', async () => {
+      const ctx = buildContext();
+      const auditCtx = buildAuditContext([buildScrapedObject({
+        exists: false, count: 0, href: null, inHead: false,
+      }, null, { statusCode: 403 })]);
+
+      await canonicalHandler(ctx, auditCtx);
+
+      expect(getCanonicalAudit(auditCtx.auditsResult).opportunities).to.deep.equal([]);
+      expect(ctx.log.info).to.have.been.calledWith(
+        sinon.match('[preflight-canonical] Skipping page with HTTP 403'),
+      );
     });
   });
 

@@ -23,7 +23,7 @@ const LINK_TIMEOUT = 5000;
 export const CPC_DEFAULT_VALUE = 1;
 export const TRAFFIC_MULTIPLIER = 0.01; // 1%
 export const MAX_LINKS_TO_CONSIDER = 10;
-const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Spacecat/1.0';
+export const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Spacecat/1.0';
 export const STATUS_BUCKETS = {
   NOT_FOUND_404: 'not_found_404',
   GONE_410: 'gone_410',
@@ -124,9 +124,20 @@ function isStaticAsset(url) {
   return /\.(svg|png|jpe?g|gif|webp|avif|css|js|ico|woff2?|ttf|otf|eot|pdf|mp4|webm|mp3|ogg)(\?.*)?$/i.test(url);
 }
 
-function shouldInspectForSoft404(contentType, isAsset) {
+/**
+ * Checks if a URL has a malformed path segment — e.g. "/.html" where the
+ * filename is just an extension with no base name. These are CMS artifacts
+ * (empty slug + extension) and are not real pages to audit.
+ * @param {string} url - The URL to check
+ * @returns {boolean} True if the URL path ends with a bare extension segment
+ */
+function isMalformedPageUrl(url) {
+  return /\/\.[a-z0-9]+(\?.*)?(?:#.*)?$/i.test(url);
+}
+
+function shouldInspectForSoft404(contentType) {
   /* c8 ignore next - Defensive fallback for null/undefined contentType */
-  return !isAsset && /^text\/html\b|^application\/xhtml\+xml\b/i.test(contentType || '');
+  return /^text\/html\b|^application\/xhtml\+xml\b/i.test(contentType || '');
 }
 
 function isSoft404Text(bodyText) {
@@ -236,32 +247,24 @@ async function checkLinkWithHead(url, log) {
 /**
  * Checks a link using GET request
  * @param {string} url - The URL to check
- * @param {boolean} isAsset - Whether the URL is a static asset
  * @param {Object} log - Logger instance
  * @returns {Promise<Object>} Result object with metadata
  */
-async function checkLinkWithGet(url, isAsset, log) {
+async function checkLinkWithGet(url, log) {
   let getResponse;
   try {
-    const getHeaders = {
-      'User-Agent': getUserAgent(),
-    };
-
-    // For assets, request only 1 byte to avoid full download
-    if (isAsset) {
-      getHeaders.Range = 'bytes=0-0';
-    }
-
     getResponse = await fetch(url, {
       method: 'GET',
       timeout: LINK_TIMEOUT,
-      headers: getHeaders,
+      headers: {
+        'User-Agent': getUserAgent(),
+      },
     });
     const { status } = getResponse;
     const contentType = getResponse.headers.get('content-type') || null;
     const statusBucket = classifyStatusBucket(status);
 
-    if (statusBucket === null && status === 200 && shouldInspectForSoft404(contentType, isAsset)) {
+    if (statusBucket === null && status === 200 && shouldInspectForSoft404(contentType)) {
       const responseText = await getResponse.text();
       if (isSoft404Text(responseText)) {
         log.info(`✗ BROKEN LINK FOUND: ${url} (GET ${status}, bucket=${STATUS_BUCKETS.SOFT_404})`);
@@ -322,7 +325,7 @@ async function checkLinkWithGet(url, isAsset, log) {
  * Transport failures are treated as inconclusive so they do not get reported as broken.
  *
  * Strategy: HEAD first (faster), fallback to GET if inconclusive.
- * Static assets skip HEAD (often fail) and use GET with Range header.
+ * Static assets are excluded from broken-link detection (not SEO page targets).
  *
  * @param {string} url - The URL to validate
  * @param {Object} baseLog - Base logger object
@@ -339,15 +342,27 @@ export async function isLinkInaccessible(url, baseLog, siteId, auditId = null) {
   // Rewriting %20→hyphen would hide broken canonicals that point to the wrong URL.
   const isAsset = isStaticAsset(url);
 
-  // Static assets often fail HEAD, so skip to GET with Range header
-  if (!isAsset) {
-    const headResult = await checkLinkWithHead(url, log);
-    if (headResult !== null) {
-      return headResult;
-    }
+  // Static assets (images, fonts, CSS, JS, etc.) are excluded from broken link detection.
+  if (isAsset) {
+    return {
+      isBroken: false, inconclusive: false, httpStatus: null, statusBucket: null, contentType: null,
+    };
   }
 
-  return checkLinkWithGet(url, isAsset, log);
+  // Malformed URLs (e.g. "/.html" — bare extension, no page name) are CMS artifacts and not
+  // real pages. Skip them to avoid false positives.
+  if (isMalformedPageUrl(url)) {
+    return {
+      isBroken: false, inconclusive: false, httpStatus: null, statusBucket: null, contentType: null,
+    };
+  }
+
+  const headResult = await checkLinkWithHead(url, log);
+  if (headResult !== null) {
+    return headResult;
+  }
+
+  return checkLinkWithGet(url, log);
 }
 
 /**

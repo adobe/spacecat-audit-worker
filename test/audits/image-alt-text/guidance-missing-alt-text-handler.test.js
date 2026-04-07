@@ -11,10 +11,15 @@
  */
 
 /* eslint-env mocha */
-import { expect } from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import esmock from 'esmock';
+
+use(sinonChai);
+use(chaiAsPromised);
 
 describe('Missing Alt Text Guidance Handler', () => {
   let sandbox;
@@ -40,11 +45,26 @@ describe('Missing Alt Text Guidance Handler', () => {
       getType: () => AuditModel.AUDIT_TYPES.ALT_TEXT,
       getSiteId: () => 'site-id',
       setUpdatedBy: sandbox.stub(),
+      setLastAuditedAt: sandbox.stub(),
     };
 
     mockSite = {
       getId: () => 'test-site-id',
       getBaseURL: () => 'https://example.com',
+    };
+
+    const auditResult = {
+      status: 'processing',
+      statusHistory: [
+        { status: 'preparing', startedAt: '2026-03-30T10:00:00Z', completedAt: '2026-03-30T10:00:00Z', stepDurationMs: 0, queueDurationMs: null },
+        { status: 'scraping', startedAt: '2026-03-30T10:00:05Z', completedAt: '2026-03-30T10:00:06Z', stepDurationMs: 1000, queueDurationMs: 5000 },
+        { status: 'processing', startedAt: '2026-03-30T10:01:00Z', completedAt: '2026-03-30T10:01:03Z', stepDurationMs: 3000, queueDurationMs: 54000 },
+      ],
+    };
+
+    const mockAuditRecord = {
+      getId: () => 'test-audit-id',
+      getAuditResult: sandbox.stub().callsFake(() => auditResult),
     };
 
     context = {
@@ -62,29 +82,11 @@ describe('Missing Alt Text Guidance Handler', () => {
         Site: {
           findById: sandbox.stub().resolves(mockSite),
         },
-        Audit: (() => {
-          let auditResult = {
-            status: 'processing',
-            statusHistory: [
-              { status: 'preparing', startedAt: '2026-03-30T10:00:00Z', completedAt: '2026-03-30T10:00:00Z', stepDurationMs: 0, queueDurationMs: null },
-              { status: 'scraping', startedAt: '2026-03-30T10:00:05Z', completedAt: '2026-03-30T10:00:06Z', stepDurationMs: 1000, queueDurationMs: 5000 },
-              { status: 'processing', startedAt: '2026-03-30T10:01:00Z', completedAt: '2026-03-30T10:01:03Z', stepDurationMs: 3000, queueDurationMs: 54000 },
-            ],
-          };
-          let isError = false;
-          const mockAuditRecord = {
-            getId: () => 'test-audit-id',
-            getAuditResult: sandbox.stub().callsFake(() => auditResult),
-            setAuditResult: sandbox.stub().callsFake((val) => { auditResult = val; }),
-            getIsError: sandbox.stub().callsFake(() => isError),
-            setIsError: sandbox.stub().callsFake((val) => { isError = val; }),
-            save: sandbox.stub().resolves(),
-          };
-          return {
-            findById: sandbox.stub().resolves(mockAuditRecord),
-            _mockRecord: mockAuditRecord,
-          };
-        })(),
+        Audit: {
+          findById: sandbox.stub().resolves(mockAuditRecord),
+          updateByKeys: sandbox.stub().resolves(),
+          _mockRecord: mockAuditRecord,
+        },
         Suggestion: {
           bulkUpdateStatus: sandbox.stub().resolves(),
           STATUSES: {
@@ -214,16 +216,27 @@ describe('Missing Alt Text Guidance Handler', () => {
     expect(result.status).to.equal(200);
     expect(context.log.info).to.have.been.called;
 
-    // Verify success status with empty: true was tracked
-    const auditResult = context.dataAccess.Audit._mockRecord.getAuditResult();
-    expect(auditResult.status).to.equal('success');
+    // Verify persistAuditStatusWithFreshRead was called with success + empty: true
+    expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledWith(
+      { auditId: 'test-audit-id' },
+      sinon.match({
+        auditResult: sinon.match({
+          status: 'success',
+          statusHistory: sinon.match.array,
+        }),
+      }),
+    );
+
+    // Verify the last statusHistory entry has empty: true
+    const updateCall = context.dataAccess.Audit.updateByKeys.lastCall;
+    const { auditResult } = updateCall.args[1];
     const lastEntry = auditResult.statusHistory[auditResult.statusHistory.length - 1];
     expect(lastEntry.status).to.equal('success');
     expect(lastEntry.empty).to.equal(true);
   });
 
   it('should not fail when audit status save throws on empty response path', async () => {
-    context.dataAccess.Audit._mockRecord.save = sandbox.stub().rejects(new Error('Save failed'));
+    context.dataAccess.Audit.updateByKeys = sandbox.stub().rejects(new Error('Save failed'));
 
     const invalidMessage = {
       type: 'guidance:missing-alt-text',
@@ -236,7 +249,7 @@ describe('Missing Alt Text Guidance Handler', () => {
 
     expect(result.status).to.equal(200);
     expect(context.log.warn).to.have.been.calledWith(
-      sinon.match(/Failed to update audit status: Save failed/),
+      sinon.match(/Failed to save audit status: Save failed/),
     );
   });
 
@@ -557,6 +570,30 @@ describe('Missing Alt Text Guidance Handler', () => {
     expect(getProjectedMetricsStub).to.have.been.called;
   });
 
+  it('should set lastAuditedAt when all Mystique responses have been received', async () => {
+    mockOpportunity.getData.returns({
+      mystiqueResponsesReceived: 0,
+      mystiqueResponsesExpected: 1,
+    });
+
+    await guidanceHandler(mockMessage, context);
+
+    expect(mockOpportunity.setLastAuditedAt).to.have.been.calledOnce;
+    const isoArg = mockOpportunity.setLastAuditedAt.firstCall.args[0];
+    expect(new Date(isoArg).toISOString()).to.equal(isoArg);
+  });
+
+  it('should not set lastAuditedAt when Mystique responses are still pending', async () => {
+    mockOpportunity.getData.returns({
+      mystiqueResponsesReceived: 0,
+      mystiqueResponsesExpected: 2,
+    });
+
+    await guidanceHandler(mockMessage, context);
+
+    expect(mockOpportunity.setLastAuditedAt).to.not.have.been.called;
+  });
+
   it('should set success status on audit after processing Mystique response', async () => {
     const result = await guidanceHandler(mockMessage, context);
 
@@ -564,12 +601,25 @@ describe('Missing Alt Text Guidance Handler', () => {
 
     // Verify Audit.findById was called to load audit for status update
     expect(context.dataAccess.Audit.findById).to.have.been.calledWith('test-audit-id');
+
+    // Verify updateByKeys was called with success status
+    expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledWith(
+      { auditId: 'test-audit-id' },
+      sinon.match({
+        auditResult: sinon.match({
+          status: 'success',
+        }),
+      }),
+    );
   });
 
   it('should append success to existing statusHistory', async () => {
     await guidanceHandler(mockMessage, context);
 
-    const auditResult = context.dataAccess.Audit._mockRecord.getAuditResult();
+    // Verify updateByKeys was called with correct auditResult
+    expect(context.dataAccess.Audit.updateByKeys).to.have.been.called;
+    const updateCall = context.dataAccess.Audit.updateByKeys.lastCall;
+    const { auditResult } = updateCall.args[1];
     expect(auditResult.status).to.equal('success');
     expect(auditResult.statusHistory).to.be.an('array');
     const lastEntry = auditResult.statusHistory[auditResult.statusHistory.length - 1];
@@ -581,34 +631,23 @@ describe('Missing Alt Text Guidance Handler', () => {
   });
 
   it('should not fail if audit status save throws', async () => {
-    // Make the audit save fail
-    context.dataAccess.Audit.findById = sandbox.stub().callsFake(() => Promise.resolve({
-      getId: () => 'test-audit-id',
-      getAuditResult: sandbox.stub().returns({ status: 'processing', statusHistory: [] }),
-      setAuditResult: sandbox.stub(),
-      save: sandbox.stub().rejects(new Error('Save failed')),
-    }));
-
-    // Re-mock the handler to pick up the new Audit mock
-    guidanceHandler = await esmock('../../../src/image-alt-text/guidance-missing-alt-text-handler.js', {
-      '../../../src/image-alt-text/opportunityHandler.js': {
-        addAltTextSuggestions: addAltTextSuggestionsStub,
-        getProjectedMetrics: getProjectedMetricsStub,
-      },
-    });
+    // Make updateByKeys fail for the persistAuditStatusWithFreshRead call
+    context.dataAccess.Audit.updateByKeys = sandbox.stub().rejects(new Error('Save failed'));
 
     const result = await guidanceHandler(mockMessage, context);
     expect(result.status).to.equal(200);
     expect(context.log.warn).to.have.been.calledWith(
-      sinon.match(/Failed to update audit status to success/),
+      sinon.match(/Failed to save audit status: Save failed/),
     );
   });
 
   it('should not fail if audit record not found for status update', async () => {
-    // Audit.findById returns null on second call (used for status update)
+    // Audit.findById returns a valid audit on first call (handler validation),
+    // then null on second call (persistAuditStatusWithFreshRead fresh read)
     context.dataAccess.Audit.findById = sandbox.stub()
       .onFirstCall().resolves({ getId: () => 'test-audit-id' })
       .onSecondCall().resolves(null);
+    context.dataAccess.Audit.updateByKeys = sandbox.stub().resolves();
 
     guidanceHandler = await esmock('../../../src/image-alt-text/guidance-missing-alt-text-handler.js', {
       '../../../src/image-alt-text/opportunityHandler.js': {
@@ -627,8 +666,19 @@ describe('Missing Alt Text Guidance Handler', () => {
     await expect(guidanceHandler(mockMessage, context))
       .to.be.rejectedWith('[alt-text]: Failed to fetch opportunities');
 
-    const auditResult = context.dataAccess.Audit._mockRecord.getAuditResult();
-    expect(auditResult.status).to.equal('guidance_failed');
+    // Verify updateByKeys was called with guidance_failed status and isError
+    expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledWith(
+      { auditId: 'test-audit-id' },
+      sinon.match({
+        auditResult: sinon.match({
+          status: 'guidance_failed',
+        }),
+        isError: true,
+      }),
+    );
+
+    const updateCall = context.dataAccess.Audit.updateByKeys.lastCall;
+    const { auditResult } = updateCall.args[1];
     const lastEntry = auditResult.statusHistory[auditResult.statusHistory.length - 1];
     expect(lastEntry.status).to.equal('guidance_failed');
     expect(lastEntry.startedAt).to.be.a('string');
@@ -636,7 +686,6 @@ describe('Missing Alt Text Guidance Handler', () => {
     expect(lastEntry.stepDurationMs).to.be.a('number');
     expect(lastEntry.queueDurationMs).to.be.a('number');
     expect(lastEntry.error).to.include('Failed to fetch opportunities');
-    expect(context.dataAccess.Audit._mockRecord.getIsError()).to.be.true;
   });
 
   it('should set guidance_failed status when no opportunity found', async () => {
@@ -645,8 +694,19 @@ describe('Missing Alt Text Guidance Handler', () => {
     await expect(guidanceHandler(mockMessage, context))
       .to.be.rejectedWith('[alt-text]: No existing opportunity found');
 
-    const auditResult = context.dataAccess.Audit._mockRecord.getAuditResult();
-    expect(auditResult.status).to.equal('guidance_failed');
+    // Verify updateByKeys was called with guidance_failed status and isError
+    expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledWith(
+      { auditId: 'test-audit-id' },
+      sinon.match({
+        auditResult: sinon.match({
+          status: 'guidance_failed',
+        }),
+        isError: true,
+      }),
+    );
+
+    const updateCall = context.dataAccess.Audit.updateByKeys.lastCall;
+    const { auditResult } = updateCall.args[1];
     const lastEntry = auditResult.statusHistory[auditResult.statusHistory.length - 1];
     expect(lastEntry.status).to.equal('guidance_failed');
     expect(lastEntry.startedAt).to.be.a('string');
@@ -654,32 +714,31 @@ describe('Missing Alt Text Guidance Handler', () => {
     expect(lastEntry.stepDurationMs).to.be.a('number');
     expect(lastEntry.queueDurationMs).to.be.a('number');
     expect(lastEntry.error).to.include('No existing opportunity found');
-    expect(context.dataAccess.Audit._mockRecord.getIsError()).to.be.true;
   });
 
   it('should not fail when audit status save throws during guidance_failed (opportunity fetch)', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('DB Error'));
-    // Make audit save fail
-    context.dataAccess.Audit._mockRecord.save = sandbox.stub().rejects(new Error('Save failed'));
+    // Make updateByKeys fail
+    context.dataAccess.Audit.updateByKeys = sandbox.stub().rejects(new Error('Save failed'));
 
     await expect(guidanceHandler(mockMessage, context))
       .to.be.rejectedWith('[alt-text]: Failed to fetch opportunities');
 
     expect(context.log.warn).to.have.been.calledWith(
-      sinon.match(/Failed to save error status: Save failed/),
+      sinon.match(/Failed to save audit status: Save failed/),
     );
   });
 
   it('should not fail when audit status save throws during guidance_failed (no opportunity)', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-    // Make audit save fail
-    context.dataAccess.Audit._mockRecord.save = sandbox.stub().rejects(new Error('Save failed'));
+    // Make updateByKeys fail
+    context.dataAccess.Audit.updateByKeys = sandbox.stub().rejects(new Error('Save failed'));
 
     await expect(guidanceHandler(mockMessage, context))
       .to.be.rejectedWith('[alt-text]: No existing opportunity found');
 
     expect(context.log.warn).to.have.been.calledWith(
-      sinon.match(/Failed to save error status: Save failed/),
+      sinon.match(/Failed to save audit status: Save failed/),
     );
   });
 

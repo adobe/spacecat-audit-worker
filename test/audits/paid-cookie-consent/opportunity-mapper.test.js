@@ -378,12 +378,12 @@ describe('Paid Cookie Consent opportunity mapper', () => {
         averageTrafficLostTop3: 1000,
         averageBounceRateMobileTop3: 0.35,
         temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-        // CPC information with Ahrefs data
+        // CPC information with SEO data
         appliedCPC: 0.312,
-        cpcSource: 'ahrefs',
+        cpcSource: 'seo',
         defaultCPC: 0.80,
-        ahrefsOrganicCPC: 0.191,
-        ahrefsPaidCPC: 0.312,
+        seoOrganicCPC: 0.191,
+        seoPaidCPC: 0.312,
       };
       const result = mapToPaidOpportunity(siteId, url, auditData, guidance, 'aid');
       expect(result.data.pageViews).to.equal(5000);
@@ -394,10 +394,10 @@ describe('Paid Cookie Consent opportunity mapper', () => {
       expect(result.data.temporalCondition).to.equal('(year=2025 AND week IN (1,2,3,4))');
       // CPC information should be included
       expect(result.data.appliedCPC).to.equal(0.312);
-      expect(result.data.cpcSource).to.equal('ahrefs');
+      expect(result.data.cpcSource).to.equal('seo');
       expect(result.data.defaultCPC).to.equal(0.80);
-      expect(result.data.ahrefsOrganicCPC).to.equal(0.191);
-      expect(result.data.ahrefsPaidCPC).to.equal(0.312);
+      expect(result.data.seoOrganicCPC).to.equal(0.191);
+      expect(result.data.seoPaidCPC).to.equal(0.312);
     });
 
     it('sets correct opportunity type and title', () => {

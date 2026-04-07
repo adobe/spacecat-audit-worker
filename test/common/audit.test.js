@@ -239,7 +239,7 @@ describe('Audit tests', () => {
       const resp = await audit.run(message, context);
 
       expect(resp.status).to.equal(200);
-      expect(context.log.warn).to.have.been.calledWith('dummy audits disabled for site site-id, skipping...');
+      expect(context.log.debug).to.have.been.calledWith('dummy audits disabled for site site-id, skipping...');
     });
 
     it('audit runs as expected with post processors', async () => {

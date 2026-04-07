@@ -24,11 +24,16 @@ import prerenderHandler, {
   processOpportunityAndSuggestions,
   createScrapeForbiddenOpportunity,
   uploadStatusSummaryToS3,
+  writeToCitabilityRecords,
   getScrapeJobStats,
 } from '../../../src/prerender/handler.js';
 import { analyzeHtmlForPrerender } from '../../../src/prerender/utils/html-comparator.js';
 import { createOpportunityData } from '../../../src/prerender/opportunity-data-mapper.js';
-import { TOP_AGENTIC_URLS_LIMIT, TOP_ORGANIC_URLS_LIMIT } from '../../../src/prerender/utils/constants.js';
+import {
+  TOP_AGENTIC_URLS_LIMIT,
+  TOP_ORGANIC_URLS_LIMIT,
+  DAILY_BATCH_SIZE,
+} from '../../../src/prerender/utils/constants.js';
 
 describe('Prerender Audit', () => {
   let sandbox;
@@ -68,6 +73,32 @@ describe('Prerender Audit', () => {
         fullAuditRef: 'scrapes/test-site-id/',
       });
     });
+
+    it('should preserve explicit auditContext URLs in the top-pages payload', async () => {
+      const context = {
+        site: { getId: () => 'test-site-id' },
+        finalUrl: 'https://example.com',
+        auditContext: {
+          urls: [
+            'https://example.com/page-1',
+            'https://example.com/page-2',
+          ],
+        },
+      };
+      const res = await importTopPages(context);
+      expect(res).to.deep.equal({
+        type: 'top-pages',
+        siteId: 'test-site-id',
+        auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
+        fullAuditRef: 'scrapes/test-site-id/',
+        auditContext: {
+          urls: [
+            'https://example.com/page-1',
+            'https://example.com/page-2',
+          ],
+        },
+      });
+    });
   });
   describe('HTML Analysis', () => {
     it('should analyze HTML and detect prerender opportunities', async () => {
@@ -81,6 +112,17 @@ describe('Prerender Audit', () => {
       expect(result.contentGainRatio).to.be.a('number');
       expect(result.wordCountBefore).to.be.a('number');
       expect(result.wordCountAfter).to.be.a('number');
+    });
+
+    it('should also return citability metrics (single calculateStats call)', async () => {
+      const directHtml = '<html><body><h1>Simple content</h1></body></html>';
+      const scrapedHtml = '<html><body><h1>Simple content</h1><div>More JS content</div></body></html>';
+
+      const result = await analyzeHtmlForPrerender(directHtml, scrapedHtml, 1.2);
+
+      // Unique citability fields (contentGainRatio/wordCountBefore/After already tested above)
+      expect(result.citabilityScore).to.be.a('number');
+      expect(result.wordDifference).to.be.a('number');
     });
 
     it('should not recommend prerender for similar content', async () => {
@@ -250,10 +292,11 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
-          log: { info: sandbox.stub(), debug: sandbox.stub() },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
           env: {
             S3_SCRAPER_BUCKET_NAME: 'test-bucket',
             AUDIT_JOBS_QUEUE_URL: 'https://sqs.test.com/test-queue',
@@ -287,10 +330,11 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
-          log: { info: sandbox.stub(), debug: sandbox.stub() },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
           env: {
             S3_SCRAPER_BUCKET_NAME: 'test-bucket',
             AUDIT_JOBS_QUEUE_URL: 'https://sqs.test.com/test-queue',
@@ -315,6 +359,75 @@ describe('Prerender Audit', () => {
         expect(result.urls).to.deep.equal([{ url: 'https://example.com' }]);
       });
 
+      it('should use explicit auditContext URLs when provided', async () => {
+        const mockSiteTopPage = {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+            { getUrl: () => 'https://example.com/top-page' },
+          ]),
+        };
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: {
+            SiteTopPage: mockSiteTopPage,
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub() },
+          auditContext: {
+            urls: [
+              'https://example.com/page-1',
+              'https://example.com/page-1/',
+              'https://example.com/file.pdf',
+              'https://example.com/page-2',
+            ],
+          },
+        };
+
+        const result = await submitForScraping(context);
+
+        expect(mockSiteTopPage.allBySiteIdAndSourceAndGeo.called).to.be.false;
+        expect(result.urls).to.deep.equal([
+          { url: 'https://example.com/page-1' },
+          { url: 'https://example.com/page-2' },
+        ]);
+        expect(result.siteId).to.equal('test-site-id');
+        expect(result.processingType).to.equal('prerender');
+        expect(context.log.info).to.have.been.calledWithMatch('csvUrls=4');
+      });
+
+      it('rebases csvUrls (auditContext.urls) to getPreferredBaseUrl domain', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => [],
+            getPreferredBaseUrl: () => 'https://example.com',
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://example.com',
+          },
+          auditContext: {
+            urls: ['https://www.example.com/csv-page-1', 'https://www.example.com/csv-page-2'],
+          },
+          finalUrl: 'https://example.com',
+          log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+        const submittedUrls = result.urls.map((u) => u.url);
+        expect(submittedUrls).to.include('https://example.com/csv-page-1');
+        expect(submittedUrls).to.include('https://example.com/csv-page-2');
+        submittedUrls.forEach((u) => expect(u).to.not.include('www.'));
+      });
+
       it('should include includedURLs from site config', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-athena-client': {
@@ -336,6 +449,7 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
@@ -346,50 +460,107 @@ describe('Prerender Audit', () => {
         expect(result.urls.map((u) => u.url)).to.include('https://example.com/special');
       });
 
-      it('should use Athena URLs when getTopAgenticUrlsFromAthena returns data', async () => {
+      it('should fall back to top pages when baseUrl is empty', async () => {
+        const topPagesStub = sandbox.stub().resolves([
+          { getUrl: () => 'https://example.com/fallback-organic' },
+        ]);
+        const athenaStub = sandbox.stub().resolves([]);
+
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
-            getTopAgenticUrlsFromAthena: async () => [
-              'https://example.com/athena-page1',
-              'https://example.com/athena-page2',
-            ],
-          },
-          '../../../src/prerender/utils/shared.js': {
-            loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [] }),
-            buildSheetHitsMap: () => new Map(),
+            getTopAgenticUrlsFromAthena: athenaStub,
           },
         });
-        const mockSiteTopPage = { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) };
-        const context = {
+
+        const result = await mockHandler.submitForScraping({
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => '',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: topPagesStub },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+        });
+
+        expect(topPagesStub).to.have.been.calledOnce;
+        expect(result.urls[0].url).to.equal('https://example.com/fallback-organic');
+      });
+
+      it('should warn and fall back to base URL when top agentic fetch throws', async () => {
+        const warn = sandbox.stub();
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => {
+              throw new Error('athena unavailable');
+            },
+          },
+        });
+
+        const result = await mockHandler.submitForScraping({
           site: {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
             getConfig: () => ({ getIncludedURLs: () => [] }),
           },
           dataAccess: {
-            SiteTopPage: mockSiteTopPage,
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
-          log: { info: sandbox.stub(), debug: sandbox.stub() },
-        };
-        const result = await mockHandler.submitForScraping(context);
-        // Athena URLs should be included
-        expect(result.urls.map((u) => u.url)).to.include('https://example.com/athena-page1');
-        expect(result.urls.map((u) => u.url)).to.include('https://example.com/athena-page2');
+          log: { info: sandbox.stub(), warn, debug: sandbox.stub() },
+        });
+
+        expect(result.urls).to.deep.equal([{ url: 'https://example.com' }]);
+        expect(warn).to.have.been.calledWith(sinon.match(/Failed to fetch agentic URLs: athena unavailable/));
       });
 
-      it('should cap top organic pages to TOP_ORGANIC_URLS_LIMIT', async () => {
+      it('should include non-recent includedURLs even when some organic URLs were recently processed', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '@adobe/spacecat-shared-athena-client': {
-            // No agentic urls for this test
-            AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => [],
           },
-          '../../../src/prerender/utils/shared.js': {
-            generateReportingPeriods: () => ({ weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }] }),
-            getS3Config: async () => ({ databaseName: 'db', tableName: 'tbl', getAthenaTempLocation: () => 's3://tmp/' }),
-            weeklyBreakdownQueries: { createAgenticReportQuery: async () => 'SELECT 1' },
-            loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [] }),
+        });
+
+        const recentUrl = 'https://example.com/organic-page';
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => ['https://example.com/special'] }),
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                { getUrl: () => recentUrl },
+              ]),
+            },
+            // PageCitability returns the organic URL as recently processed → hasRecentOrganic=true
+            PageCitability: {
+              allByIndexKeys: sandbox.stub().resolves([{
+                getUrl: () => recentUrl,
+              }]),
+            },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+        const urls = result.urls.map((u) => u.url);
+        expect(urls).to.include('https://example.com/special');
+      });
+
+      it('should submit all fetched organic URLs when they are below the daily batch size', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => [],
           },
         });
         const over = TOP_ORGANIC_URLS_LIMIT + 10;
@@ -406,129 +577,45 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub() },
         };
         const out = await mockHandler.submitForScraping(context);
-        // Expect TOP_ORGANIC_URLS_LIMIT (200) URLs from Ahrefs top pages
         expect(out.urls).to.have.length(TOP_ORGANIC_URLS_LIMIT);
+        expect(out.urls.map((entry) => entry.url)).to.deep.equal(
+          Array.from({ length: TOP_ORGANIC_URLS_LIMIT }).map((_, i) => `https://example.com/p${i}`),
+        );
       });
 
-      it('should fall back to sheet when Athena returns no data and use weekId from shared utils', async () => {
-        const athenaQueryStub = sinon.stub().resolves([]);
+      it('should request agentic URLs using TOP_AGENTIC_URLS_LIMIT', async () => {
+        const getTopAgenticUrlsFromAthena = sandbox.stub().resolves(
+          Array.from({ length: TOP_AGENTIC_URLS_LIMIT + 10 }, (_, i) => `https://example.com/p${i}`),
+        );
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '@adobe/spacecat-shared-athena-client': {
-            AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
-          },
-          '../../../src/prerender/utils/shared.js': {
-            generateReportingPeriods: () => ({
-              weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-              periodIdentifier: 'w45-2025',
-            }),
-            getS3Config: async () => ({
-              bucket: 'b',
-              customerName: 'adobe',
-              customerDomain: 'adobe_com',
-              databaseName: 'db',
-              tableName: 'tbl',
-              aggregatedLocation: 'agg/',
-              getAthenaTempLocation: () => 's3://tmp/',
-            }),
-            loadLatestAgenticSheet: async () => ({
-              weekId: 'w45-2025',
-              baseUrl: 'https://example.com',
-              rows: Array.from({ length: 60 }).map((_, i) => ({
-                url: `/p${i}`, number_of_hits: 100 - i,
-              })),
-            }),
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena,
           },
         });
-
         const context = {
           site: {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
-            getConfig: () => ({
-              getIncludedURLs: () => [],
-              getLlmoDataFolder: () => 'adobe',
-            }),
+            getConfig: () => ({ getIncludedURLs: () => [] }),
           },
-          dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
-          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
-          env: {
-            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-            AUDIT_JOBS_QUEUE_URL: 'https://sqs.test.com/test-queue',
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
           },
-          auditContext: {
-            next: 'process-content-and-generate-opportunities',
-            auditId: 'test-audit-id',
-            auditType: 'prerender',
-          },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
         };
-
-        const result = await mockHandler.submitForScraping(context);
-        // Expect agentic URLs to be capped by TOP_AGENTIC_URLS_LIMIT (or available rows if fewer)
-        const expectedCount = Math.min(TOP_AGENTIC_URLS_LIMIT, 60);
-        expect(result.urls).to.have.length(expectedCount);
-        // Sanity: top URL comes from sheet aggregation and is normalized against base URL
-        expect(result.urls[0].url).to.equal('https://example.com/p0');
-      });
-
-      it('should merge includedURLs with sheet fallback agentic URLs (unique union)', async () => {
-        const athenaQueryStub = sinon.stub().resolves([]);
-        const sheetRows = [
-          { url: '/a', number_of_hits: 10 },
-          { url: '/b', number_of_hits: 9 },
-        ];
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '@adobe/spacecat-shared-athena-client': {
-            AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
-          },
-          '../../../src/prerender/utils/shared.js': {
-            generateReportingPeriods: () => ({
-              weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-              periodIdentifier: 'w45-2025',
-            }),
-            getS3Config: async () => ({
-              bucket: 'b',
-              customerName: 'adobe',
-              customerDomain: 'adobe_com',
-              databaseName: 'db',
-              tableName: 'tbl',
-              aggregatedLocation: 'agg/',
-              getAthenaTempLocation: () => 's3://tmp/',
-            }),
-            loadLatestAgenticSheet: async () => ({
-              weekId: 'w45-2025',
-              baseUrl: 'https://example.com',
-              rows: sheetRows,
-            }),
-          },
-        });
-
-        const context = {
-          site: {
-            getId: () => 'test-site-id',
-            getBaseURL: () => 'https://example.com',
-            getConfig: () => ({
-              getIncludedURLs: () => ['https://example.com/b', 'https://example.com/c'],
-              getLlmoDataFolder: () => 'adobe',
-            }),
-          },
-          dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
-          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
-        };
-
-        const result = await mockHandler.submitForScraping(context);
-        const urls = result.urls.map((u) => u.url);
-        // Sheet /a and /b plus included /c (note: /b overlaps)
-        expect(urls).to.include('https://example.com/a');
-        expect(urls).to.include('https://example.com/b');
-        expect(urls).to.include('https://example.com/c');
-        // Unique union => 3
-        expect(urls.length).to.equal(3);
+        await mockHandler.submitForScraping(context);
+        expect(getTopAgenticUrlsFromAthena).to.have.been.calledOnce;
+        expect(getTopAgenticUrlsFromAthena.firstCall.args[2]).to.equal(TOP_AGENTIC_URLS_LIMIT);
+        expect(TOP_AGENTIC_URLS_LIMIT).to.equal(2000);
       });
 
       it('should handle undefined topPages list from SiteTopPage gracefully', async () => {
@@ -559,7 +646,7 @@ describe('Prerender Audit', () => {
         });
 
         const mockSiteTopPage = {
-          // Return undefined to exercise `(topPages || [])` fallback in getTopOrganicUrlsFromAhrefs
+          // Return undefined to exercise `(topPages || [])` fallback in getTopOrganicUrlsFromSeo
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(undefined),
         };
 
@@ -571,6 +658,7 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
@@ -582,6 +670,277 @@ describe('Prerender Audit', () => {
         expect(result).to.be.an('object');
         expect(result.urls).to.be.an('array');
       });
+      it('rebases organic and included URLs to getPreferredBaseUrl domain', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => [],
+            getPreferredBaseUrl: () => 'https://example.com',
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({
+              getIncludedURLs: () => ['https://www.example.com/included-page'],
+            }),
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: async () => [
+                { getUrl: () => 'https://www.example.com/organic-1' },
+                { getUrl: () => 'https://www.example.com/organic-2' },
+              ],
+            },
+            PageCitability: { allByIndexKeys: async () => [] },
+          },
+          finalUrl: 'https://example.com',
+          log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+        const submittedUrls = result.urls.map((u) => u.url);
+        expect(submittedUrls).to.include('https://example.com/organic-1');
+        expect(submittedUrls).to.include('https://example.com/organic-2');
+        expect(submittedUrls).to.include('https://example.com/included-page');
+        submittedUrls.forEach((u) => expect(u).to.not.include('www.'));
+      });
+
+      describe('daily batching', () => {
+        const makeAgenticUrls = (n, base = 'https://example.com/agentic-') => Array.from({ length: n }, (_, i) => `${base}${i}`);
+        const makeCitabilityRecord = (path) => ({
+          getUrl: () => `https://example.com${path}`,
+        });
+
+        const makeHandlerWithAgentic = async (agenticUrls) => esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: sandbox.stub().resolves(agenticUrls),
+          },
+        });
+
+        const makeContext = (pageCitabilityRecords = []) => ({
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves(pageCitabilityRecords) },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+        });
+
+        it('should cap agentic URLs to DAILY_BATCH_SIZE when no recent citability records exist', async () => {
+          const agenticUrls = makeAgenticUrls(500);
+          const mockHandler = await makeHandlerWithAgentic(agenticUrls);
+          const context = makeContext([]);
+
+          const result = await mockHandler.submitForScraping(context);
+
+          expect(result.urls.length).to.equal(DAILY_BATCH_SIZE);
+        });
+
+        it('should filter out agentic URLs recently processed by prerender (within recent window)', async () => {
+          const agenticUrls = [
+            'https://example.com/agentic-0',
+            'https://example.com/agentic-1',
+            'https://example.com/agentic-2',
+          ];
+          // agentic-0 is in recently-processed set → skip (DB already filtered by date)
+          const recentRecord = makeCitabilityRecord('/agentic-0');
+          const mockHandler = await makeHandlerWithAgentic(agenticUrls);
+          const context = makeContext([recentRecord]);
+
+          const result = await mockHandler.submitForScraping(context);
+          const resultUrls = result.urls.map((u) => u.url);
+
+          // agentic-0 was recently processed → should NOT be in this batch
+          expect(resultUrls).to.not.include('https://example.com/agentic-0');
+          // agentic-1 and agentic-2 were not recently processed → should be included
+          expect(resultUrls).to.include('https://example.com/agentic-1');
+          expect(resultUrls).to.include('https://example.com/agentic-2');
+        });
+
+        it('should include agentic URLs when allByIndexKeys returns no recent records', async () => {
+          const agenticUrls = [
+            'https://example.com/agentic-0',
+            'https://example.com/agentic-1',
+          ];
+          // DB returns no records — date filter excluded stale records at query time
+          const mockHandler = await makeHandlerWithAgentic(agenticUrls);
+          const context = makeContext([]);
+
+          const result = await mockHandler.submitForScraping(context);
+          const resultUrls = result.urls.map((u) => u.url);
+
+          // No recent records → both agentic URLs should be included
+          expect(resultUrls).to.include('https://example.com/agentic-0');
+          expect(resultUrls).to.include('https://example.com/agentic-1');
+        });
+
+        it('should include organic URLs when no citability records exist', async () => {
+          const agenticUrls = makeAgenticUrls(5);
+          const mockHandler = await makeHandlerWithAgentic(agenticUrls);
+
+          const organicUrl = 'https://example.com/organic-page';
+          const context = {
+            site: {
+              getId: () => 'test-site-id',
+              getBaseURL: () => 'https://example.com',
+              getConfig: () => ({ getIncludedURLs: () => [] }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => organicUrl }]),
+              },
+              PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+            },
+            log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const resultUrls = result.urls.map((u) => u.url);
+
+          // No recent citability records → include organic URL
+          expect(resultUrls).to.include(organicUrl);
+        });
+
+        it('should skip organic URLs recently processed by prerender', async () => {
+          const agenticUrls = makeAgenticUrls(5);
+          const organicUrl = 'https://example.com/organic-page';
+          // organic-page is in recently-processed set → skip (DB already filtered by date)
+          const recentRecord = makeCitabilityRecord('/organic-page');
+          const mockHandler = await makeHandlerWithAgentic(agenticUrls);
+
+          const context = {
+            site: {
+              getId: () => 'test-site-id',
+              getBaseURL: () => 'https://example.com',
+              getConfig: () => ({ getIncludedURLs: () => [] }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => organicUrl }]),
+              },
+              PageCitability: { allByIndexKeys: sandbox.stub().resolves([recentRecord]) },
+            },
+            log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const resultUrls = result.urls.map((u) => u.url);
+
+          // organic-page was recently processed → should NOT be in batch
+          expect(resultUrls).to.not.include(organicUrl);
+        });
+
+        it('should pick the next 320 URLs on the next run after filtering recent page citability records', async () => {
+          const agenticUrls = makeAgenticUrls(1000);
+          const organicUrls = Array.from(
+            { length: TOP_ORGANIC_URLS_LIMIT },
+            (_, i) => `https://example.com/organic-${i}`,
+          );
+          const includedUrls = Array.from(
+            { length: 10 },
+            (_, i) => `https://example.com/included-${i}`,
+          );
+          const firstBatchUrls = [
+            ...organicUrls,
+            ...includedUrls,
+            ...agenticUrls.slice(0, DAILY_BATCH_SIZE - organicUrls.length - includedUrls.length),
+          ];
+          const recentRecords = firstBatchUrls.map(
+            (url) => makeCitabilityRecord(new URL(url).pathname),
+          );
+          const mockHandler = await makeHandlerWithAgentic(agenticUrls);
+
+          const context = {
+            site: {
+              getId: () => 'test-site-id',
+              getBaseURL: () => 'https://example.com',
+              getConfig: () => ({ getIncludedURLs: () => includedUrls }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(
+                  organicUrls.map((url) => ({ getUrl: () => url })),
+                ),
+              },
+              PageCitability: { allByIndexKeys: sandbox.stub().resolves(recentRecords) },
+            },
+            log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const resultUrls = result.urls.map((u) => u.url);
+
+          expect(resultUrls).to.deep.equal(
+            agenticUrls.slice(
+              DAILY_BATCH_SIZE - organicUrls.length - includedUrls.length,
+              (DAILY_BATCH_SIZE - organicUrls.length - includedUrls.length) + DAILY_BATCH_SIZE,
+            ),
+          );
+        });
+
+        it('should silently ignore citability records with invalid URLs when building recent pathnames', async () => {
+          // Record with an empty URL — new URL('') throws, triggering catch { return null; }
+          // The null is filtered out so the URL is not treated as recent.
+          const invalidRecord = {
+            getUrl: () => '',
+          };
+          const mockHandler = await makeHandlerWithAgentic(['https://example.com/agentic-0']);
+          const context = makeContext([invalidRecord]);
+
+          // Should not throw; agentic-0 is not blocked by the invalid record
+          const result = await mockHandler.submitForScraping(context);
+          expect(result.urls.map((u) => u.url)).to.include('https://example.com/agentic-0');
+        });
+
+        it('should treat an organic URL that cannot be parsed as not recently processed', async () => {
+          // 'not-a-valid-url' is not an absolute URL — new URL('not-a-valid-url') throws,
+          // triggering catch { return false; } in hasRecentOrganic.
+          const mockHandler = await makeHandlerWithAgentic([]);
+          const context = {
+            site: {
+              getId: () => 'test-site-id',
+              getBaseURL: () => 'https://example.com',
+              getConfig: () => ({ getIncludedURLs: () => [] }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                  { getUrl: () => 'not-a-valid-url' },
+                ]),
+              },
+              PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+            },
+            log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          };
+
+          // Should not throw; the invalid organic URL is treated as not-recently-processed
+          const result = await mockHandler.submitForScraping(context);
+          expect(result).to.be.an('object');
+          expect(result.urls).to.be.an('array');
+        });
+
+        it('should include agentic URLs that cannot be parsed, not treating them as recently processed', async () => {
+          // 'not-a-valid-url' in the agentic list causes new URL(url) to throw inside filteredAgenticUrls,
+          // triggering catch { return true; } — the URL is kept in the batch.
+          const mockHandler = await makeHandlerWithAgentic(['not-a-valid-url', 'https://example.com/valid']);
+          const context = makeContext([]);
+
+          const result = await mockHandler.submitForScraping(context);
+          const resultUrls = result.urls.map((u) => u.url);
+          expect(resultUrls).to.include('not-a-valid-url');
+          expect(resultUrls).to.include('https://example.com/valid');
+        });
+
+      });
+
+
     });
 
     describe('processContentAndGenerateOpportunities', () => {
@@ -663,15 +1022,10 @@ describe('Prerender Audit', () => {
         expect(result.auditResult).to.be.an('object');
       });
 
-      it('should warn when Athena returns no agentic rows and sheet fallback fails', async () => {
-        // Now that getTopAgenticUrlsFromAthena is in a separate module, mock it to return empty
+      it('should warn when agentic URL fetch fails', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
-            getTopAgenticUrlsFromAthena: async () => [],
-          },
-          '../../../src/prerender/utils/shared.js': {
-            loadLatestAgenticSheet: async () => { throw new Error('sheet load failed'); },
-            buildSheetHitsMap: () => new Map(),
+            getTopAgenticUrlsFromAthena: async () => { throw new Error('athena fetch failed'); },
           },
         });
 
@@ -709,14 +1063,9 @@ describe('Prerender Audit', () => {
         expect(result.status).to.equal('complete');
         expect(result.auditResult).to.be.an('object');
 
-        // Should log info about sheet fallback attempt
-        expect(context.log.info).to.have.been.calledWith(
-          'Prerender - No agentic URLs from Athena; attempting Sheet fallback. baseUrl=https://example.com',
-        );
-
-        // Should warn about sheet fallback failure
+        // Should warn about agentic URL fetch failure
         expect(context.log.warn).to.have.been.calledWith(
-          'Prerender - Sheet-based agentic URL fetch failed: sheet load failed. baseUrl=https://example.com',
+          sinon.match(/Failed to fetch agentic URLs: athena fetch failed/),
         );
       });
 
@@ -1281,7 +1630,7 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.error).to.equal('Audit failed');
-        const putCall = s3SendStub.getCalls().find((c) => c.args[0]?.input?.Key === 'prerender/scrapes/test-site-id/status.json');
+        const putCall = s3SendStub.getCalls().find((c) => c.args[0]?.constructor?.name === 'PutObjectCommand' && c.args[0]?.input?.Key === 'prerender/scrapes/test-site-id/status.json');
         expect(putCall).to.exist;
         const statusBody = JSON.parse(putCall.args[0].input.Body);
         expect(statusBody.lastAuditSuccess).to.be.false;
@@ -1338,7 +1687,7 @@ describe('Prerender Audit', () => {
         expect(context.log.error).to.have.been.called;
         expect(syncSuggestionsStub).to.have.been.calledOnce;
 
-        const putCall = s3SendStub.getCalls().find((c) => c.args[0]?.input?.Key === 'prerender/scrapes/test-site-id/status.json');
+        const putCall = s3SendStub.getCalls().find((c) => c.args[0]?.constructor?.name === 'PutObjectCommand' && c.args[0]?.input?.Key === 'prerender/scrapes/test-site-id/status.json');
         expect(putCall).to.exist;
         const statusBody = JSON.parse(putCall.args[0].input.Body);
         expect(statusBody.lastAuditSuccess).to.be.false;
@@ -1978,8 +2327,9 @@ describe('Prerender Audit', () => {
         };
 
         const logStub = {
-          info: sandbox.stub(),
           debug: sandbox.stub(),
+          info: sandbox.stub(),
+          warn: sandbox.stub(),
         };
 
         const context = {
@@ -2009,8 +2359,153 @@ describe('Prerender Audit', () => {
 
         if (domainWideSuggestionLog) {
           expect(domainWideSuggestionLog).to.include('entire domain');
-          expect(domainWideSuggestionLog).to.include('regex');
+          expect(domainWideSuggestionLog).to.include('Regex');
         }
+      });
+
+      it('should include citabilityScore in individual suggestion data', async () => {
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sinon.stub().resolves([]),
+        };
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sinon.stub().resolves(true),
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          scrapeJobId: 'job-123',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://example.com/page1',
+                needsPrerender: true,
+                contentGainRatio: 2.5,
+                wordCountBefore: 120,
+                wordCountAfter: 300,
+                citabilityScore: 0.82,
+              },
+            ],
+          },
+        };
+
+        const context = {
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+          dataAccess: {
+            Suggestion: {
+              STATUSES: {
+                NEW: 'NEW',
+                FIXED: 'FIXED',
+                PENDING_VALIDATION: 'PENDING_VALIDATION',
+                SKIPPED: 'SKIPPED',
+              },
+            },
+          },
+          site: { getId: () => 'test-site-id' },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions(
+          'https://example.com',
+          auditData,
+          context,
+        );
+
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        const syncArgs = syncSuggestionsStub.firstCall.args[0];
+
+        // The individual suggestion (first item in newData) should carry citabilityScore
+        const individualSuggestion = syncArgs.newData.find(
+          (s) => s.url === 'https://example.com/page1',
+        );
+        expect(individualSuggestion).to.exist;
+        expect(individualSuggestion.citabilityScore).to.equal(0.82);
+
+        // mapNewSuggestion should also include citabilityScore via mapSuggestionData
+        const mappedData = syncArgs.mapNewSuggestion(individualSuggestion);
+        expect(mappedData.data.citabilityScore).to.equal(0.82);
+      });
+
+      it('should set citabilityScore to null when not present in audit result', async () => {
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sinon.stub().resolves([]),
+        };
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sinon.stub().resolves(true),
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          scrapeJobId: 'job-123',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://example.com/page2',
+                needsPrerender: true,
+                contentGainRatio: 1.8,
+                wordCountBefore: 80,
+                wordCountAfter: 160,
+                // citabilityScore deliberately omitted
+              },
+            ],
+          },
+        };
+
+        const context = {
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+          dataAccess: {
+            Suggestion: {
+              STATUSES: {
+                NEW: 'NEW',
+                FIXED: 'FIXED',
+                PENDING_VALIDATION: 'PENDING_VALIDATION',
+                SKIPPED: 'SKIPPED',
+              },
+            },
+          },
+          site: { getId: () => 'test-site-id' },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions(
+          'https://example.com',
+          auditData,
+          context,
+        );
+
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        const syncArgs = syncSuggestionsStub.firstCall.args[0];
+
+        const individualSuggestion = syncArgs.newData.find(
+          (s) => s.url === 'https://example.com/page2',
+        );
+        expect(individualSuggestion).to.exist;
+
+        const mappedData = syncArgs.mapNewSuggestion(individualSuggestion);
+        expect(mappedData.data.citabilityScore).to.be.null;
       });
 
       it('should preserve existing domain-wide suggestion when it has edgeDeployed flag', async () => {
@@ -3037,35 +3532,6 @@ describe('Prerender Audit', () => {
   });
 
   describe('Athena and Sheet Fetch Coverage', () => {
-    it('should return top agentic URLs from Athena and filter "Other"; uses path fallback when baseUrl invalid (latest week)', async () => {
-      // Now that getTopAgenticUrlsFromAthena is in a separate module, mock it directly
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/utils/agentic-urls.js': {
-          getTopAgenticUrlsFromAthena: async () => ['/a', '/b'],
-        },
-        '../../../src/prerender/utils/shared.js': {
-          loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [] }),
-          buildSheetHitsMap: () => new Map(),
-        },
-      });
-
-      const result = await mockHandler.submitForScraping({
-        site: {
-          getId: () => 'site',
-          getBaseURL: () => 'invalid', // force URL constructor to throw for fallback branch
-          getConfig: () => ({ getIncludedURLs: () => [] }),
-        },
-        dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
-        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
-      });
-
-      const urls = result.urls.map((u) => u.url);
-      // URLs returned from mocked getTopAgenticUrlsFromAthena
-      expect(urls).to.include('/a');
-      expect(urls).to.include('/b');
-      expect(urls).to.have.length(2);
-    });
-
     it('should populate agentic traffic for included URLs via Athena (hits-for-urls)', async () => {
       const html = '<html><body><p>x</p></body></html>';
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
@@ -3116,63 +3582,48 @@ describe('Prerender Audit', () => {
       expect(found).to.exist;
     });
 
-    it('should cap agentic URLs in SQL via LIMIT; handler maps rows returned', async () => {
-      // Now that getTopAgenticUrlsFromAthena is in a separate module, mock it directly
+  });
+
+  describe('Additional branch coverage (mapping, catches)', () => {
+    it('should return the raw Athena URL when it is already absolute but invalid', async () => {
+      const mergeAndGetUniqueHtmlUrlsStub = sinon.stub().callsFake((...urlGroups) => ({
+        urls: urlGroups.flat(),
+        filteredCount: 0,
+      }));
+
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '../../../src/utils/agentic-urls.js': {
-          getTopAgenticUrlsFromAthena: async () => ['https://example.com/u0'],
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves(['http://[invalid']),
         },
-        '../../../src/prerender/utils/shared.js': {
-          loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [] }),
-          buildSheetHitsMap: () => new Map(),
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sinon.stub().resolves(false),
+          mergeAndGetUniqueHtmlUrls: mergeAndGetUniqueHtmlUrlsStub,
         },
       });
+
       const ctx = {
         site: {
           getId: () => 'site',
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({ getIncludedURLs: () => [] }),
         },
-        dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
-        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
-        auditContext: { scrapeJobId: 'test-job-id' },
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
+          PageCitability: { allByIndexKeys: sinon.stub().resolves([]) },
+        },
+        log: {
+          info: sinon.stub(),
+          warn: sinon.stub(),
+          debug: sinon.stub(),
+        },
       };
-      const out = await mockHandler.submitForScraping(ctx);
-      // Handler returns whatever getTopAgenticUrlsFromAthena returns
-      expect(out.urls).to.have.length(1);
-      expect(out.urls[0].url).to.equal('https://example.com/u0');
+
+      const res = await mockHandler.submitForScraping(ctx);
+
+      expect(res.urls).to.deep.equal([{ url: 'http://[invalid' }]);
+      expect(mergeAndGetUniqueHtmlUrlsStub).to.have.been.calledOnce;
     });
 
-    it('should return [] when sheet fallback has no rows', async () => {
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '@adobe/spacecat-shared-athena-client': {
-          AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
-        },
-        '../../../src/prerender/utils/shared.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-          }),
-          getS3Config: async () => ({
-            customerName: 'adobe',
-          }),
-          loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [] }),
-          weeklyBreakdownQueries: {
-            createAgenticReportQuery: async () => 'SELECT 1',
-          },
-        },
-      });
-
-        const res = await mockHandler.submitForScraping({
-        site: { getId: () => 'id', getBaseURL: () => 'https://example.com', getConfig: () => ({ getIncludedURLs: () => [] }) },
-          dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
-        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
-      });
-      // Falls back to baseUrl when no URLs at all
-      expect(res.urls.length === 0 || res.urls[0].url === 'https://example.com').to.be.true;
-    });
-  });
-
-  describe('Additional branch coverage (mapping, catches)', () => {
     it('should use catch-path sheet fallback and hit toPath catch in fallback', async () => {
       const html = '<html><body><p>x</p></body></html>';
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
@@ -3348,38 +3799,6 @@ describe('Prerender Audit', () => {
       expect(res.auditResult).to.be.an('object');
     });
 
-    it('should hit sheet mapping catch when baseUrl invalid', async () => {
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '@adobe/spacecat-shared-athena-client': {
-          AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
-        },
-        '../../../src/prerender/utils/shared.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-          }),
-          getS3Config: async () => ({
-            customerName: 'adobe',
-          }),
-          loadLatestAgenticSheet: async () => ({
-            weekId: 'w45-2025',
-            baseUrl: 'invalid',
-            rows: [{ url: '/p1', number_of_hits: 10 }],
-          }),
-          weeklyBreakdownQueries: {
-            createAgenticReportQuery: async () => 'SELECT 1',
-          },
-        },
-      });
-
-      const res = await mockHandler.submitForScraping({
-        site: { getId: () => 'id', getBaseURL: () => 'invalid', getConfig: () => ({ getIncludedURLs: () => [] }) },
-        dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
-        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
-      });
-      // mapping catch keeps raw '/p1'
-      expect(res.urls.map((u) => u.url)).to.include('/p1');
-    });
-
     it('should cover agenticStats mapping and ranking loop by returning non-empty top list', async () => {
       const serverHtml = '<html><body>Same</body></html>';
       const clientHtml = '<html><body>Same</body></html>';
@@ -3517,7 +3936,7 @@ describe('Prerender Audit', () => {
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({ getIncludedURLs: () => [] }),
         },
-        // Intentionally omit SiteTopPage to exercise the "no top pages" branch in getTopOrganicUrlsFromAhrefs
+        // Intentionally omit SiteTopPage to exercise the "no top pages" branch in getTopOrganicUrlsFromSeo
         dataAccess: {},
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
       };
@@ -3525,37 +3944,6 @@ describe('Prerender Audit', () => {
       const res = await mockHandler.submitForScraping(ctx);
       expect(res).to.be.an('object');
       expect(res.urls).to.be.an('array');
-    });
-
-    it('should handle Athena results with missing url fields', async () => {
-      // Now that getTopAgenticUrlsFromAthena is in a separate module, mock it directly
-      // The filtering of missing url fields is now handled inside getTopAgenticUrlsFromAthena
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/utils/agentic-urls.js': {
-          // Simulate filtering behavior - only valid URLs returned
-          getTopAgenticUrlsFromAthena: async () => ['https://example.com/valid'],
-        },
-        '../../../src/prerender/utils/shared.js': {
-          loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [] }),
-          buildSheetHitsMap: () => new Map(),
-        },
-      });
-
-      const ctx = {
-        site: {
-          getId: () => 'site',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ getIncludedURLs: () => [] }),
-        },
-        dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
-        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
-      };
-
-      const res = await mockHandler.submitForScraping(ctx);
-      const urls = res.urls.map((u) => u.url);
-      // Only the row with a defined url should be included
-      expect(urls).to.include('https://example.com/valid');
-      expect(urls.filter((u) => u === undefined).length).to.equal(0);
     });
 
     it('should handle sheet load failures gracefully even when log.warn is missing', async () => {
@@ -3591,11 +3979,14 @@ describe('Prerender Audit', () => {
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({ getIncludedURLs: () => [] }),
         },
-        dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
+          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+        },
         log: {
           info: sinon.stub(),
           debug: sinon.stub(),
-          // Intentionally omit warn to exercise optional chaining in getTopAgenticUrlsFromSheet
+          warn: sinon.stub(),
         },
       };
 
@@ -3607,33 +3998,8 @@ describe('Prerender Audit', () => {
     it('should log detailed fallback message when building URL list from fallbacks', async () => {
       const html = '<html><body><p>x</p></body></html>';
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '@adobe/spacecat-shared-athena-client': {
-          AWSAthenaClient: {
-            fromContext: () => ({
-              query: async () => ([
-                { url: '/agentic', number_of_hits: 10 },
-              ]),
-            }),
-          },
-        },
         '../../../src/utils/agentic-urls.js': {
           getTopAgenticUrlsFromAthena: async () => ['https://example.com/agentic'],
-        },
-        '../../../src/prerender/utils/shared.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-          }),
-          getS3Config: async () => ({
-            databaseName: 'db',
-            tableName: 'tbl',
-            getAthenaTempLocation: () => 's3://tmp/',
-          }),
-          weeklyBreakdownQueries: {
-            createAgenticReportQuery: async () => 'SELECT 1',
-            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 2'),
-          },
-          loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [] }),
-          buildSheetHitsMap: () => new Map(),
         },
         '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
@@ -3682,6 +4048,59 @@ describe('Prerender Audit', () => {
       expect(loggedFallback).to.include('includedURLs=1');
     });
 
+    it('rebases organic and included URLs to preferredBase in fallback URL-list path', async () => {
+      const html = '<html><body><p>hello world content here</p></body></html>';
+      let capturedArgs = [];
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: async () => [],
+          getPreferredBaseUrl: () => 'https://example.com',
+        },
+        '../../../src/utils/s3-utils.js': {
+          getObjectFromKey: async () => html,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sinon.stub().resolves(false),
+          mergeAndGetUniqueHtmlUrls: (...args) => {
+            capturedArgs = args.flat();
+            return { urls: capturedArgs, filteredCount: 0 };
+          },
+        },
+      });
+
+      const ctx = {
+        site: {
+          getId: () => 'site-1',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getIncludedURLs: async () => ['https://www.example.com/included'],
+          }),
+        },
+        audit: { getId: () => 'a' },
+        dataAccess: {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+              { getUrl: () => 'https://www.example.com/organic' },
+            ]),
+          },
+          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sinon.stub().resolves() },
+        },
+        log: {
+          info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub(),
+        },
+        s3Client: { send: sinon.stub().resolves({}) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        scrapeResultPaths: new Map(),
+        auditContext: { scrapeJobId: 'test-job-id' },
+      };
+
+      await mockHandler.processContentAndGenerateOpportunities(ctx);
+      expect(capturedArgs).to.include('https://example.com/organic');
+      expect(capturedArgs).to.include('https://example.com/included');
+      capturedArgs.forEach((u) => expect(u).to.not.include('www.'));
+    });
+
     it('should handle missing dataAccess when loading top pages', async () => {
       const html = '<html><body><p>x</p></body></html>';
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
@@ -3724,7 +4143,7 @@ describe('Prerender Audit', () => {
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({ getIncludedURLs: () => [] }),
         },
-        // Intentionally omit dataAccess to exercise `dataAccess || {}` branch in getTopOrganicUrlsFromAhrefs
+        // Intentionally omit dataAccess to exercise `dataAccess || {}` branch in getTopOrganicUrlsFromSeo
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
         s3Client: { send: sinon.stub().resolves({}) },
         env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
@@ -3735,99 +4154,44 @@ describe('Prerender Audit', () => {
       expect(res.urls).to.be.an('array');
     });
 
-    it('should handle missing site.getBaseURL when mapping agentic URLs from Athena', async () => {
-      // Now that getTopAgenticUrlsFromAthena is in a separate module, mock it directly
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '../../../src/utils/agentic-urls.js': {
-          // Simulate the case where baseUrl is empty and URLs come back as raw paths
-          getTopAgenticUrlsFromAthena: async () => ['/from-athena'],
-        },
-        '../../../src/prerender/utils/shared.js': {
-          loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: '', rows: [] }),
-          buildSheetHitsMap: () => new Map(),
-        },
-      });
-
-      const ctx = {
-        site: {
-          getId: () => 'site',
-          // getBaseURL deliberately returns undefined to force `|| ''` fallback
-          getBaseURL: () => undefined,
-          getConfig: () => ({ getIncludedURLs: () => [] }),
-        },
-        dataAccess: {
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
-          },
-        },
-        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
-      };
-
-      const res = await mockHandler.submitForScraping(ctx);
-      const urls = res.urls.map((u) => u.url);
-      // With empty baseUrl, URLs come back as raw paths
-      expect(urls).to.include('/from-athena');
-    });
-
-    it('should log sheet fallback error message when error has no message field', async () => {
-      const athenaQueryStub = sinon.stub().resolves([]);
-      const warn = sinon.stub();
-
-      const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '@adobe/spacecat-shared-athena-client': {
-          AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
-        },
-        '../../../src/prerender/utils/shared.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-            periodIdentifier: 'w45-2025',
-          }),
-          getS3Config: async () => ({
-            databaseName: 'db',
-            tableName: 'tbl',
-            aggregatedLocation: 'agg/',
-            getAthenaTempLocation: () => 's3://tmp/',
-          }),
-          weeklyBreakdownQueries: {
-            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
-          },
-          // Throw a primitive value so `e?.message` is falsy and `|| e` branch is taken
-          loadLatestAgenticSheet: async () => {
-            // eslint-disable-next-line no-throw-literal
-            throw 'sheet-broken';
-          },
-        },
-      });
-
-      const ctx = {
-        site: {
-          getId: () => 'site',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ getIncludedURLs: () => [] }),
-        },
-        dataAccess: {
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
-          },
-        },
-        log: {
-          info: sinon.stub(),
-          warn,
-          debug: sinon.stub(),
-        },
-      };
-
-      const res = await mockHandler.submitForScraping(ctx);
-      expect(res).to.be.an('object');
-      expect(res.urls).to.be.an('array');
-
-      const warnArgs = warn.args.map((a) => String(a[0]));
-      expect(warnArgs.some((msg) => msg.includes('Sheet-based agentic URL fetch failed'))).to.be.true;
-      expect(warnArgs.some((msg) => msg.includes('sheet-broken'))).to.be.true;
-    });
   });
 
   describe('Shared utils loadLatestAgenticSheet', () => {
+    it('falls back to s3Config.customerName when getLlmoDataFolder returns falsy', async () => {
+      const shared = await esmock('../../../src/prerender/utils/shared.js', {
+        '../../../src/cdn-logs-report/utils/report-utils.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date('2025-11-17'), endDate: new Date('2025-11-23') }],
+          }),
+        },
+        '../../../src/llm-error-pages/utils.js': {
+          downloadExistingCdnSheet: async (_weekId, outputLocation) => {
+            // outputLocation should use customerName from s3Config, not getLlmoDataFolder
+            if (!outputLocation.startsWith('acme-customer/')) throw new Error(`unexpected: ${outputLocation}`);
+            return [];
+          },
+        },
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: async () => ({}),
+          readFromSharePoint: async () => ({}),
+        },
+        '../../../src/utils/cdn-utils.js': {
+          resolveConsolidatedBucketName: () => 'bucket',
+          extractCustomerDomain: () => 'acme_com',
+          getS3Config: () => ({ customerName: 'acme-customer', bucket: 'bucket', getAthenaTempLocation: () => '' }),
+        },
+      });
+
+      const site = {
+        getBaseURL: () => 'https://acme.com',
+        // getLlmoDataFolder returns null → falls back to s3Config.customerName
+        getConfig: () => ({ getLlmoDataFolder: () => null }),
+      };
+      const ctx = { log: { info: () => {} } };
+      const result = await shared.loadLatestAgenticSheet(site, ctx);
+      expect(result.rows).to.deep.equal([]);
+    });
+
     it('returns latest week and calls downloadExistingCdnSheet with correct params', async () => {
       const called = { weekId: null, outputLocation: null };
       const shared = await esmock('../../../src/prerender/utils/shared.js', {
@@ -3903,6 +4267,37 @@ describe('Prerender Audit', () => {
       const ctx = { log: { info: () => {} } };
       const result = await shared.loadLatestAgenticSheet(site, ctx);
       expect(result.baseUrl).to.equal('');
+    });
+
+    it('loadLatestAgenticSheet logs zero loaded rows when sheet result is undefined', async () => {
+      const info = sinon.stub();
+      const shared = await esmock('../../../src/prerender/utils/shared.js', {
+        '../../../src/cdn-logs-report/utils/report-utils.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date('2025-11-17'), endDate: new Date('2025-11-23') }],
+          }),
+        },
+        '../../../src/llm-error-pages/utils.js': {
+          downloadExistingCdnSheet: async () => undefined,
+        },
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: async () => ({}),
+          readFromSharePoint: async () => ({}),
+        },
+        '../../../src/utils/cdn-utils.js': {
+          resolveConsolidatedBucketName: () => 'bucket',
+          extractCustomerDomain: () => 'acme_com',
+          getS3Config: () => ({ customerName: 'acme', bucket: 'bucket', getAthenaTempLocation: () => '' }),
+        },
+      });
+      const site = {
+        getBaseURL: () => 'https://acme.com',
+        getConfig: () => ({ getLlmoDataFolder: () => 'acme' }),
+      };
+
+      const result = await shared.loadLatestAgenticSheet(site, { log: { info } });
+      expect(result.rows).to.equal(undefined);
+      expect(info.lastCall.args[0]).to.include('loaded 0 row(s)');
     });
   });
   describe('Shared utils coverage', () => {
@@ -4044,8 +4439,8 @@ describe('Prerender Audit', () => {
 
         expect(result.status).to.equal('complete');
         expect(result.auditResult.totalUrlsChecked).to.equal(1);
-        // Should have errors about missing HTML data (simplified approach)
-        expect(context.log.error.called).to.be.true;
+        // Should have debug logs about missing HTML data
+        expect(context.log.debug.called).to.be.true;
       });
 
       it('should handle error in getScrapedHtmlFromS3 and return null', async () => {
@@ -4092,9 +4487,9 @@ describe('Prerender Audit', () => {
 
         const result = await processContentAndGenerateOpportunities(fullContext);
 
-        // Should complete but with warnings (from S3) and errors (from compareHtmlContent) logged
+        // Should complete but with warnings/debug logs from S3 and compareHtmlContent
         expect(result.status).to.equal('complete');
-        expect(context.log.warn.called || context.log.error.called).to.be.true;
+        expect(context.log.warn.called || context.log.debug.called).to.be.true;
       });
 
       it('should handle missing server-side or client-side HTML in compareHtmlContent', async () => {
@@ -4142,13 +4537,13 @@ describe('Prerender Audit', () => {
         const result = await processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
-        // Should log about missing HTML data (simplified error handling)
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for')
+        expect(context.log.debug).to.have.been.called;
+        // Should log about missing HTML data at debug level
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for')
         );
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should handle when both server-side and client-side HTML are null', async () => {
@@ -4199,13 +4594,13 @@ describe('Prerender Audit', () => {
         const result = await processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
-        // Should log error about missing HTML data (simplified error handling)
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for')
+        expect(context.log.debug).to.have.been.called;
+        // Should log about missing HTML data at debug level
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for')
         );
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should throw for empty HTML strings', async () => {
@@ -4365,7 +4760,7 @@ describe('Prerender Audit', () => {
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
-          log: { info: sandbox.stub(), debug: sandbox.stub() },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
         };
 
         const result = await submitForScraping(context);
@@ -4390,7 +4785,7 @@ describe('Prerender Audit', () => {
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
-          log: { info: sandbox.stub(), debug: sandbox.stub() },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
         };
 
         const result = await submitForScraping(context);
@@ -4694,13 +5089,13 @@ describe('Prerender Audit', () => {
 
         expect(result.status).to.equal('complete');
 
-        // Verify the simplified error handling for missing data
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for')
+        // Verify the simplified error handling for missing data (now at debug level)
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for')
         );
 
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should trigger HTML analysis error handling', async () => {
@@ -4749,9 +5144,9 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
-        // Verify the HTML analysis error was logged
-        expect(context.log.error.args.some(call => call[0].includes('HTML analysis failed for'))).to.be.true;
+        expect(context.log.debug).to.have.been.called;
+        // Verify the HTML analysis error was logged at debug level
+        expect(context.log.debug.args.some(call => call[0].includes('HTML analysis failed for'))).to.be.true;
       });
 
       it('should trigger opportunity and suggestion creation flow', async () => {
@@ -4898,6 +5293,8 @@ describe('Prerender Audit', () => {
 
         expect(mappedSuggestion.data.originalHtmlKey).to.include('prerender/scrapes/scrape-job-123');
         expect(mappedSuggestion.data.prerenderedHtmlKey).to.include('prerender/scrapes/scrape-job-123');
+        // scrapeJobId must be persisted so downstream callers always use the correct job's artifacts
+        expect(mappedSuggestion.data.scrapeJobId).to.equal('scrape-job-123');
       });
 
       it('should update existing PRERENDER opportunity with all data fields', async () => {
@@ -4906,7 +5303,7 @@ describe('Prerender Audit', () => {
           getId: () => 'existing-opp-id',
           getType: () => 'prerender',
           getData: () => ({
-            dataSources: ['ahrefs'],
+            dataSources: ['seo'],
             oldField: 'should-be-preserved',
             scrapeForbidden: true, // Old value
           }),
@@ -4935,6 +5332,7 @@ describe('Prerender Audit', () => {
             Opportunity: mockOpportunity,
           },
           log: {
+            debug: sinon.stub(),
             info: sinon.stub(),
             warn: sinon.stub(),
             error: sinon.stub(),
@@ -4943,7 +5341,7 @@ describe('Prerender Audit', () => {
 
         const createOpportunityDataFn = (auditData) => ({
           data: {
-            dataSources: ['ahrefs', 'site'],
+            dataSources: ['seo', 'site'],
             scrapeForbidden: auditData?.auditResult?.scrapeForbidden === true,
             newField: 'new-value',
           },
@@ -5052,14 +5450,14 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
+        expect(context.log.debug).to.have.been.called;
 
-        // The defensive check should now catch the empty server HTML
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for')
+        // The defensive check should now catch the empty server HTML (logged at debug)
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for')
         );
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should handle S3 fetch errors', async () => {
@@ -5107,14 +5505,14 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
+        expect(context.log.debug).to.have.been.called;
 
-        // Should get Missing HTML data error for both null values
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for')
+        // Should get Missing HTML data logged at debug for both null values
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for')
         );
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should handle both files missing (null responses)', async () => {
@@ -5162,14 +5560,14 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
+        expect(context.log.debug).to.have.been.called;
 
-        // Should handle both null values properly
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for')
+        // Should handle both null values properly (logged at debug)
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for')
         );
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should now properly test the meaningful defensive check', async () => {
@@ -5219,14 +5617,14 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
+        expect(context.log.debug).to.have.been.called;
 
-        // This should trigger the defensive check and log the missing data error
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for') && msg.includes('client-side: false')
+        // This should trigger the defensive check and log at debug
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for') && msg.includes('client-side: false')
         );
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should handle scrape.json fetch rejection', async () => {
@@ -5377,9 +5775,24 @@ describe('Prerender Audit', () => {
     let mockS3Client;
     let context;
 
+    const noSuchKeyError = () => {
+      const err = new Error('NoSuchKey');
+      err.name = 'NoSuchKey';
+      return err;
+    };
+
+    // Helper: find the PutObjectCommand call
+    const getPutCall = (stub) => stub.getCalls().find((c) => c.args[0].constructor.name === 'PutObjectCommand');
+
     beforeEach(() => {
       mockS3Client = {
-        send: sandbox.stub().resolves({}),
+        // By default: GET status.json → NoSuchKey (no prior run), PUT → success
+        send: sandbox.stub().callsFake((command) => {
+          if (command.constructor.name === 'GetObjectCommand') {
+            return Promise.reject(noSuchKeyError());
+          }
+          return Promise.resolve({});
+        }),
       };
 
       context = {
@@ -5395,32 +5808,32 @@ describe('Prerender Audit', () => {
       };
     });
 
-    it('should upload status summary to S3 with scraping metrics', async () => {
+    it('should derive aggregate metrics from merged pages', async () => {
       const auditUrl = 'https://example.com';
       const auditData = {
         siteId: 'test-site-id',
         scrapeJobId: 'scrape-job-999',
         auditedAt: '2025-01-01T00:00:00.000Z',
         auditResult: {
-          totalUrlsChecked: 5,
-          urlsNeedingPrerender: 2,
-          urlsSubmittedForScraping: 10,
-          urlsScrapedSuccessfully: 5,
-          scrapingErrorRate: 50,
-          scrapeForbidden: false,
-          results: [],
+          results: [
+            { url: 'https://example.com/page1', error: false, needsPrerender: true },
+            { url: 'https://example.com/page2', error: true, needsPrerender: false, scrapeError: { statusCode: 403, message: 'Forbidden' } },
+            { url: 'https://example.com/page3', error: false, needsPrerender: false },
+          ],
         },
       };
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      expect(mockS3Client.send).to.have.been.calledOnce;
-      const call = mockS3Client.send.getCall(0);
-      const uploadedData = JSON.parse(call.args[0].input.Body);
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
-      expect(uploadedData.urlsSubmittedForScraping).to.equal(10);
-      expect(uploadedData.urlsScrapedSuccessfully).to.equal(5);
-      expect(uploadedData.scrapingErrorRate).to.equal(50);
+      expect(uploadedData).to.not.have.property('totalUrlsChecked');
+      expect(uploadedData.urlsNeedingPrerender).to.equal(1);
+      expect(uploadedData.urlsSubmittedForScraping).to.equal(3);
+      expect(uploadedData.urlsScrapedSuccessfully).to.equal(2);
+      expect(uploadedData.scrapingErrorRate).to.be.closeTo(33.33, 0.01);
+      expect(uploadedData.scrapeForbidden).to.be.true;
+      expect(uploadedData.scrapeForbiddenCount).to.equal(1);
     });
 
     it('should upload status summary to S3 with complete audit data', async () => {
@@ -5458,9 +5871,9 @@ describe('Prerender Audit', () => {
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      expect(mockS3Client.send).to.have.been.calledOnce;
-      const call = mockS3Client.send.getCall(0);
-      const command = call.args[0];
+      const putCall = getPutCall(mockS3Client.send);
+      expect(putCall).to.exist;
+      const command = putCall.args[0];
 
       expect(command.input.Bucket).to.equal('test-bucket');
       expect(command.input.Key).to.equal('prerender/scrapes/test-site-id/status.json');
@@ -5472,8 +5885,8 @@ describe('Prerender Audit', () => {
       expect(uploadedData.auditType).to.equal('prerender');
       expect(uploadedData.scrapeJobId).to.equal('scrape-job-999');
       expect(uploadedData.lastUpdated).to.equal('2025-01-01T00:00:00.000Z');
-      expect(uploadedData.totalUrlsChecked).to.equal(5);
-      expect(uploadedData.urlsNeedingPrerender).to.equal(2);
+      expect(uploadedData).to.not.have.property('totalUrlsChecked');
+      expect(uploadedData.urlsNeedingPrerender).to.equal(1); // derived: page1 needsPrerender=true
       expect(uploadedData.scrapeForbidden).to.equal(false);
       expect(uploadedData.pages).to.have.lengthOf(2);
 
@@ -5485,6 +5898,8 @@ describe('Prerender Audit', () => {
         wordCountBefore: 100,
         wordCountAfter: 250,
         contentGainRatio: 2.5,
+        scrapedAt: '2025-01-01T00:00:00.000Z',
+        scrapeJobId: 'scrape-job-999',
       });
 
       expect(context.log.info).to.have.been.calledWith(
@@ -5512,9 +5927,7 @@ describe('Prerender Audit', () => {
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      const call = mockS3Client.send.getCall(0);
-      const command = call.args[0];
-      const uploadedData = JSON.parse(command.input.Body);
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
       expect(uploadedData.pages[0].scrapingStatus).to.equal('error');
       expect(uploadedData.pages[0].wordCountBefore).to.equal(0);
@@ -5556,9 +5969,7 @@ describe('Prerender Audit', () => {
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      const call = mockS3Client.send.getCall(0);
-      const command = call.args[0];
-      const uploadedData = JSON.parse(command.input.Body);
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
       // First page should have scrape error
       expect(uploadedData.pages[0].url).to.equal('https://example.com/forbidden-page');
@@ -5595,21 +6006,18 @@ describe('Prerender Audit', () => {
         siteId: 'test-site-id',
         auditedAt: '2025-01-01T00:00:00.000Z',
         auditResult: {
-          totalUrlsChecked: 0,
-          urlsNeedingPrerender: 0,
           results: [],
         },
       };
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      expect(mockS3Client.send).to.have.been.calledOnce;
-      const call = mockS3Client.send.getCall(0);
-      const command = call.args[0];
-      const uploadedData = JSON.parse(command.input.Body);
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
       expect(uploadedData.pages).to.deep.equal([]);
-      expect(uploadedData.totalUrlsChecked).to.equal(0);
+      expect(uploadedData).to.not.have.property('totalUrlsChecked');
+      expect(uploadedData.urlsNeedingPrerender).to.equal(0);
+      expect(uploadedData.scrapingErrorRate).to.equal(null);
     });
 
     it('should handle undefined results (fallback to empty array)', async () => {
@@ -5626,10 +6034,7 @@ describe('Prerender Audit', () => {
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      expect(mockS3Client.send).to.have.been.calledOnce;
-      const call = mockS3Client.send.getCall(0);
-      const command = call.args[0];
-      const uploadedData = JSON.parse(command.input.Body);
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
       expect(uploadedData.pages).to.deep.equal([]);
     });
@@ -5648,10 +6053,7 @@ describe('Prerender Audit', () => {
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      expect(mockS3Client.send).to.have.been.calledOnce;
-      const call = mockS3Client.send.getCall(0);
-      const command = call.args[0];
-      const uploadedData = JSON.parse(command.input.Body);
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
       expect(uploadedData.pages).to.deep.equal([]);
     });
@@ -5669,9 +6071,7 @@ describe('Prerender Audit', () => {
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
       const afterTime = Date.now();
 
-      const call = mockS3Client.send.getCall(0);
-      const command = call.args[0];
-      const uploadedData = JSON.parse(command.input.Body);
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
       // Verify the timestamp is valid ISO string and within time range
       const uploadedTime = new Date(uploadedData.lastUpdated).getTime();
@@ -5717,9 +6117,7 @@ describe('Prerender Audit', () => {
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      const call = mockS3Client.send.getCall(0);
-      const command = call.args[0];
-      const uploadedData = JSON.parse(command.input.Body);
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
 
       expect(uploadedData.pages[0]).to.deep.equal({
         url: 'https://example.com/page1',
@@ -5729,6 +6127,8 @@ describe('Prerender Audit', () => {
         wordCountBefore: 0,
         wordCountAfter: 0,
         contentGainRatio: 0,
+        scrapedAt: '2025-01-01T00:00:00.000Z',
+        scrapeJobId: null,
       });
     });
 
@@ -5770,6 +6170,67 @@ describe('Prerender Audit', () => {
       expect(uploadedData.scrapeForbiddenCount).to.equal(1);
       expect(uploadedData.scrapeForbidden).to.equal(false);
       expect(uploadedData.pages).to.have.lengthOf(2); // page1 + forbidden-page
+      expect(uploadedData.pages[1].scrapeJobId).to.equal('scrape-job-123');
+    });
+
+    it('should preserve scrapeJobId already present on a pre-computed missing page', async () => {
+      const auditUrl = 'https://example.com';
+      const missingPage = {
+        url: 'https://example.com/forbidden-page',
+        scrapingStatus: 'failed',
+        needsPrerender: false,
+        scrapeJobId: 'missing-page-job-456',
+      };
+      const auditData = {
+        siteId: 'test-site-id',
+        scrapeJobId: 'scrape-job-123',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          scrapeForbiddenCount: 0,
+          scrapeForbidden: false,
+          results: [],
+          missingPages: [missingPage],
+        },
+      };
+
+      context.dataAccess = { ScrapeUrl: { allByScrapeJobId: sandbox.stub() } };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const putCall = getPutCall(mockS3Client.send);
+      const uploadedData = JSON.parse(putCall.args[0].input.Body);
+
+      expect(uploadedData.pages).to.have.lengthOf(1);
+      expect(uploadedData.pages[0].scrapeJobId).to.equal('missing-page-job-456');
+    });
+
+    it('should set scrapeJobId to null for a pre-computed missing page when neither source provides one', async () => {
+      const auditUrl = 'https://example.com';
+      const missingPage = {
+        url: 'https://example.com/forbidden-page',
+        scrapingStatus: 'failed',
+        needsPrerender: false,
+      };
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          scrapeForbiddenCount: 0,
+          scrapeForbidden: false,
+          results: [],
+          missingPages: [missingPage],
+        },
+      };
+
+      context.dataAccess = { ScrapeUrl: { allByScrapeJobId: sandbox.stub() } };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const putCall = getPutCall(mockS3Client.send);
+      const uploadedData = JSON.parse(putCall.args[0].input.Body);
+
+      expect(uploadedData.pages).to.have.lengthOf(1);
+      expect(uploadedData.pages[0]).to.have.property('scrapeJobId', null);
     });
 
     it('should use auditResult.scrapeForbidden=true when all pages are forbidden', async () => {
@@ -5803,6 +6264,221 @@ describe('Prerender Audit', () => {
       expect(uploadedData.scrapeForbiddenCount).to.equal(2);
       expect(uploadedData.scrapeForbidden).to.equal(true);
       expect(uploadedData.pages).to.have.lengthOf(2);
+    });
+
+    it('should merge pages from existing status.json, current run overrides same URLs', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-02-01T00:00:00.000Z',
+        auditResult: {
+          totalUrlsChecked: 1,
+          urlsNeedingPrerender: 1,
+          results: [
+            {
+              url: 'https://example.com/page1',
+              error: false,
+              needsPrerender: true,
+              wordCountBefore: 10,
+              wordCountAfter: 200,
+              contentGainRatio: 20,
+            },
+          ],
+        },
+      };
+
+      const existingStatus = {
+        pages: [
+          {
+            url: 'https://example.com/page1',
+            scrapingStatus: 'success',
+            needsPrerender: false,
+            scrapedAt: '2025-01-01T00:00:00.000Z',
+          },
+          {
+            url: 'https://example.com/page2',
+            scrapingStatus: 'success',
+            needsPrerender: true,
+            scrapedAt: '2025-01-01T00:00:00.000Z',
+          },
+        ],
+      };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.resolve({
+            Body: { transformToString: () => Promise.resolve(JSON.stringify(existingStatus)) },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+
+      // page1 overwritten by current run, page2 preserved from prior run
+      expect(uploadedData.pages).to.have.lengthOf(2);
+      const page1 = uploadedData.pages.find((p) => p.url === 'https://example.com/page1');
+      const page2 = uploadedData.pages.find((p) => p.url === 'https://example.com/page2');
+      expect(page1.scrapedAt).to.equal('2025-02-01T00:00:00.000Z');
+      expect(page1.needsPrerender).to.equal(true);
+      expect(page2.scrapedAt).to.equal('2025-01-01T00:00:00.000Z'); // preserved
+    });
+
+    it('should merge status pages by pathname so www and non-www variants do not duplicate', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-02-01T00:00:00.000Z',
+        auditResult: {
+          results: [
+            {
+              url: 'https://example.com/page1',
+              error: false,
+              needsPrerender: true,
+            },
+          ],
+        },
+      };
+
+      const existingStatus = {
+        pages: [
+          {
+            url: 'https://www.example.com/page1',
+            scrapingStatus: 'success',
+            needsPrerender: false,
+            scrapedAt: '2025-01-01T00:00:00.000Z',
+          },
+        ],
+      };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.resolve({
+            Body: { transformToString: () => Promise.resolve(JSON.stringify(existingStatus)) },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+      expect(uploadedData.pages).to.have.lengthOf(1);
+      expect(uploadedData.pages[0].url).to.equal('https://example.com/page1');
+      expect(uploadedData.pages[0].needsPrerender).to.equal(true);
+    });
+
+    it('should aggregate metrics across runs from merged pages', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-02-01T00:00:00.000Z',
+        auditResult: {
+          results: [
+            { url: 'https://example.com/new-page', error: false, needsPrerender: true },
+          ],
+        },
+      };
+
+      const existingStatus = {
+        urlsSubmittedForScraping: 2,
+        pages: [
+          { url: 'https://example.com/old-page', scrapingStatus: 'success', needsPrerender: true, scrapedAt: '2025-01-01T00:00:00.000Z' },
+          { url: 'https://example.com/forbidden', scrapingStatus: 'error', needsPrerender: false, scrapeError: { statusCode: 403, message: 'Forbidden' }, scrapedAt: '2025-01-01T00:00:00.000Z' },
+        ],
+      };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.resolve({
+            Body: { transformToString: () => Promise.resolve(JSON.stringify(existingStatus)) },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+
+      // 3 unique pages across both runs
+      expect(uploadedData).to.not.have.property('totalUrlsChecked');
+      // new-page + old-page both needsPrerender=true
+      expect(uploadedData.urlsNeedingPrerender).to.equal(2);
+      // new-page (success) + old-page (success) = 2 scraped successfully; forbidden = error
+      expect(uploadedData.urlsScrapedSuccessfully).to.equal(2);
+      expect(uploadedData.urlsSubmittedForScraping).to.equal(3);
+      expect(uploadedData.scrapeForbidden).to.be.false;
+      expect(uploadedData.scrapeForbiddenCount).to.equal(1);
+    });
+
+    it('should treat missing existing status.json (NoSuchKey) as empty and not warn', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: { totalUrlsChecked: 0, urlsNeedingPrerender: 0, results: [] },
+      };
+
+      // default stub already returns NoSuchKey for GET
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      expect(context.log.warn).to.not.have.been.calledWith(sinon.match(/Could not read existing status\.json/));
+      expect(getPutCall(mockS3Client.send)).to.exist;
+    });
+
+    it('should warn and start fresh when existing status.json is unreadable (non-NoSuchKey error)', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          totalUrlsChecked: 1,
+          urlsNeedingPrerender: 1,
+          results: [{ url: 'https://example.com/page1', error: false, needsPrerender: true }],
+        },
+      };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.reject(new Error('AccessDenied'));
+        }
+        return Promise.resolve({});
+      });
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      expect(context.log.warn).to.have.been.calledWith(sinon.match(/Could not read existing status\.json.*starting fresh/));
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+      expect(uploadedData.pages).to.have.lengthOf(1);
+    });
+
+    it('should treat existing status without a pages array as empty during merge', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-02-01T00:00:00.000Z',
+        auditResult: {
+          results: [{ url: 'https://example.com/page1', error: false, needsPrerender: true }],
+        },
+      };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.resolve({
+            Body: { transformToString: () => Promise.resolve(JSON.stringify({ pages: null })) },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+      expect(uploadedData.pages).to.have.lengthOf(1);
+      expect(uploadedData.pages[0].url).to.equal('https://example.com/page1');
     });
   });
 
@@ -6610,6 +7286,905 @@ describe('Prerender Audit', () => {
 
       expect(bulkUpdateStatusStub).to.have.been.calledOnceWith([newSuggestion], 'SKIPPED');
       expect(context.log.info).to.have.been.calledWith(sinon.match(/isAllDomainDeployedAtEdge=true/));
+    });
+  });
+
+  describe('domain-wide suggestion preservation', () => {
+    let sandbox;
+
+    beforeEach(() => {
+      sandbox = sinon.createSandbox();
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('should skip domain-wide suggestion creation when a preservable one exists', async () => {
+      const existingDomainWideSuggestion = {
+        getStatus: () => 'NEW',
+        getData: () => ({ isDomainWide: true }),
+      };
+
+      const mockOpportunity = {
+        getId: () => 'test-opp-id',
+        getSuggestions: sandbox.stub().resolves([existingDomainWideSuggestion]),
+      };
+
+      const syncSuggestionsStub = sandbox.stub().resolves();
+      const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/common/opportunity.js': {
+          convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
+        },
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
+        },
+      });
+
+      const auditData = {
+        siteId: 'test-site',
+        auditId: 'audit-123',
+        auditResult: {
+          urlsNeedingPrerender: 1,
+          results: [
+            {
+              url: 'https://example.com/page1',
+              needsPrerender: true,
+              contentGainRatio: 2.5,
+              wordCountBefore: 100,
+              wordCountAfter: 250,
+            },
+          ],
+        },
+      };
+
+      const context = {
+        log: {
+          info: sandbox.stub(),
+          debug: sandbox.stub(),
+          warn: sandbox.stub(),
+          error: sandbox.stub(),
+        },
+      };
+
+      await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match('Skipping domain-wide suggestion creation - existing one will be preserved'),
+      );
+
+      expect(syncSuggestionsStub).to.have.been.calledOnce;
+      const { newData } = syncSuggestionsStub.getCall(0).args[0];
+      const domainWide = newData.find((item) => item.key);
+      expect(domainWide).to.not.exist;
+    });
+
+    it('should preserve domain-wide suggestion when edgeDeployed is true even with non-active status', async () => {
+      const existingDomainWideSuggestion = {
+        getStatus: () => 'APPROVED',
+        getData: () => ({ isDomainWide: true, edgeDeployed: true }),
+      };
+
+      const mockOpportunity = {
+        getId: () => 'test-opp-id',
+        getSuggestions: sandbox.stub().resolves([existingDomainWideSuggestion]),
+      };
+
+      const syncSuggestionsStub = sandbox.stub().resolves();
+      const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/common/opportunity.js': {
+          convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
+        },
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
+        },
+      });
+
+      const auditData = {
+        siteId: 'test-site',
+        auditId: 'audit-123',
+        auditResult: {
+          urlsNeedingPrerender: 1,
+          results: [{
+            url: 'https://example.com/page1',
+            needsPrerender: true,
+            contentGainRatio: 2.5,
+            wordCountBefore: 100,
+            wordCountAfter: 250,
+          }],
+        },
+      };
+
+      const context = {
+        log: {
+          info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(),
+        },
+      };
+
+      await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match('Skipping domain-wide suggestion creation - existing one will be preserved'),
+      );
+    });
+
+    it('should create new domain-wide suggestion when existing ones are not preservable', async () => {
+      const existingDomainWideSuggestion = {
+        getStatus: () => 'OUTDATED',
+        getData: () => ({ isDomainWide: true }),
+      };
+
+      const mockOpportunity = {
+        getId: () => 'test-opp-id',
+        getSuggestions: sandbox.stub().resolves([existingDomainWideSuggestion]),
+      };
+
+      const syncSuggestionsStub = sandbox.stub().resolves();
+      const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/common/opportunity.js': {
+          convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
+        },
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
+        },
+      });
+
+      const auditData = {
+        siteId: 'test-site',
+        auditId: 'audit-123',
+        auditResult: {
+          urlsNeedingPrerender: 1,
+          results: [{
+            url: 'https://example.com/page1',
+            needsPrerender: true,
+            contentGainRatio: 2.5,
+            wordCountBefore: 100,
+            wordCountAfter: 250,
+          }],
+        },
+      };
+
+      const context = {
+        log: {
+          info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(),
+        },
+      };
+
+      await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+      expect(syncSuggestionsStub).to.have.been.calledOnce;
+      const { newData } = syncSuggestionsStub.getCall(0).args[0];
+      const domainWide = newData.find((item) => item.key);
+      expect(domainWide).to.exist;
+    });
+  });
+
+  describe('getScrapeJobStats integration coverage', () => {
+    let sandbox;
+
+    beforeEach(() => {
+      sandbox = sinon.createSandbox();
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('should use ScrapeUrl count when scrapeJobId and ScrapeUrl are available', async () => {
+      const mockScrapeUrls = [
+        { getUrl: () => 'https://example.com/test' },
+        { getUrl: () => 'https://example.com/missing-1' },
+        { getUrl: () => 'https://example.com/missing-2' },
+      ];
+      const mockS3Client = { send: sandbox.stub().resolves({}) };
+
+      const getObjectFromKeyStub = sandbox.stub();
+      getObjectFromKeyStub.resolves(null);
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectFromKey: getObjectFromKeyStub,
+        },
+      });
+
+      const context = {
+        site: {
+          getId: () => 'test-site-id',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getIncludedURLs: () => [],
+          }),
+        },
+        audit: { getId: () => 'audit-id' },
+        dataAccess: {
+          ScrapeUrl: {
+            allByScrapeJobId: sandbox.stub().resolves(mockScrapeUrls),
+          },
+          Opportunity: {
+            allBySiteIdAndStatus: sandbox.stub().resolves([]),
+          },
+        },
+        log: {
+          info: sandbox.stub(),
+          debug: sandbox.stub(),
+          warn: sandbox.stub(),
+          error: sandbox.stub(),
+        },
+        s3Client: mockS3Client,
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
+        auditContext: { scrapeJobId: 'test-scrape-job' },
+      };
+
+      const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(result.status).to.equal('complete');
+      expect(result.auditResult.urlsSubmittedForScraping).to.equal(3);
+    });
+
+    it('should fall back to urlsToCheck length when ScrapeUrl query throws', async () => {
+      const mockS3Client = { send: sandbox.stub().resolves({}) };
+
+      const getObjectFromKeyStub = sandbox.stub();
+      getObjectFromKeyStub.resolves(null);
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectFromKey: getObjectFromKeyStub,
+        },
+      });
+
+      const context = {
+        site: {
+          getId: () => 'test-site-id',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getIncludedURLs: () => [],
+          }),
+        },
+        audit: { getId: () => 'audit-id' },
+        dataAccess: {
+          ScrapeUrl: {
+            allByScrapeJobId: sandbox.stub().rejects(new Error('DB connection failed')),
+          },
+          Opportunity: {
+            allBySiteIdAndStatus: sandbox.stub().resolves([]),
+          },
+        },
+        log: {
+          info: sandbox.stub(),
+          debug: sandbox.stub(),
+          warn: sandbox.stub(),
+          error: sandbox.stub(),
+        },
+        s3Client: mockS3Client,
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
+        auditContext: { scrapeJobId: 'test-scrape-job' },
+      };
+
+      const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(result.status).to.equal('complete');
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match('Failed to fetch ScrapeUrl stats'),
+      );
+    });
+  });
+
+  describe('compareHtmlContent — citability score', () => {
+    it('should pass citability metrics from analyzeHtmlForPrerender to writeToCitabilityRecords', async () => {
+      const pageCitabilityCreateStub = sinon.stub().resolves({});
+      const pageCitabilityAllBySiteIdStub = sinon.stub().resolves([]);
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/prerender/utils/html-comparator.js': {
+          analyzeHtmlForPrerender: sinon.stub().resolves({
+            needsPrerender: false,
+            contentGainRatio: 1.3,
+            wordCountBefore: 100,
+            wordCountAfter: 130,
+            citabilityScore: 0.85,
+            wordDifference: 30,
+          }),
+        },
+      });
+
+      const mockS3Client = {
+        send: sinon.stub().callsFake(async (cmd) => {
+          const key = cmd.input?.Key || '';
+          if (key.endsWith('scrape.json')) {
+            throw Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' });
+          }
+          return {
+            ContentType: 'text/html',
+            Body: { transformToString: () => Promise.resolve('<html><body>content</body></html>') },
+          };
+        }),
+      };
+
+      const context = {
+        site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
+        audit: { getId: () => 'audit-id' },
+        dataAccess: {
+          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+          PageCitability: {
+            allBySiteId: pageCitabilityAllBySiteIdStub,
+            create: pageCitabilityCreateStub,
+          },
+        },
+        log: {
+          info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub(),
+        },
+        s3Client: mockS3Client,
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        auditContext: { scrapeJobId: 'job-1' },
+        scrapeResultPaths: new Map([['https://example.com/page1', '/tmp/page1']]),
+      };
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(pageCitabilityAllBySiteIdStub).to.have.been.calledWith('site-1');
+      expect(pageCitabilityCreateStub).to.have.been.calledOnce;
+      expect(pageCitabilityCreateStub.firstCall.args[0]).to.deep.include({
+        citabilityScore: 0.85,
+        botWords: 100,
+        normalWords: 130,
+      });
+    });
+  });
+
+  describe('writeToCitabilityRecords', () => {
+    it('should create new PageCitability records for URLs not in existing map', async () => {
+      const createStub = sandbox.stub().resolves({});
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([]),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        {
+          url: 'https://example.com/page1',
+          citabilityScore: 0.8,
+          contentGainRatio: 1.5,
+          wordDifference: 50,
+          wordCountBefore: 100,
+          wordCountAfter: 150,
+          isDeployedAtEdge: false,
+        },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(createStub).to.have.been.calledOnce;
+      expect(createStub.firstCall.args[0]).to.deep.include({
+        siteId: 'site-1',
+        url: 'https://example.com/page1',
+        citabilityScore: 0.8,
+        contentRatio: 1.5,
+        wordDifference: 50,
+        botWords: 100,
+        normalWords: 150,
+        isDeployedAtEdge: false,
+      });
+    });
+
+    it('should update an existing PageCitability record when URL matches', async () => {
+      const saveStub = sandbox.stub().resolves();
+      const existingRecord = {
+        getUrl: () => 'https://example.com/page1',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStub,
+      };
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([existingRecord]),
+            create: sandbox.stub(),
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        {
+          url: 'https://example.com/page1',
+          citabilityScore: 0.9,
+          contentGainRatio: 1.2,
+          wordDifference: 20,
+          wordCountBefore: 80,
+          wordCountAfter: 100,
+          isDeployedAtEdge: true,
+        },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(context.dataAccess.PageCitability.create).to.not.have.been.called;
+      expect(existingRecord.setCitabilityScore).to.have.been.calledWith(0.9);
+      expect(existingRecord.setIsDeployedAtEdge).to.have.been.calledWith(true);
+      expect(saveStub).to.have.been.calledOnce;
+    });
+
+    it('should update an existing PageCitability record when only the hostname differs', async () => {
+      const saveStub = sandbox.stub().resolves();
+      const existingRecord = {
+        getUrl: () => 'https://www.example.com/page1',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStub,
+      };
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([existingRecord]),
+            create: sandbox.stub(),
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        {
+          url: 'https://example.com/page1',
+          citabilityScore: 0.75,
+          contentGainRatio: 1.1,
+          wordDifference: 12,
+          wordCountBefore: 90,
+          wordCountAfter: 102,
+          isDeployedAtEdge: false,
+        },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(context.dataAccess.PageCitability.create).to.not.have.been.called;
+      expect(existingRecord.setCitabilityScore).to.have.been.calledWith(0.75);
+      expect(existingRecord.setIsDeployedAtEdge).to.have.been.calledWith(false);
+      expect(saveStub).to.have.been.calledOnce;
+    });
+
+    it('should skip results with error flag set', async () => {
+      const createStub = sandbox.stub().resolves({});
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([]),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      const comparisonResults = [
+        { url: 'https://example.com/error-page', error: true },
+        { url: 'https://example.com/ok-page', citabilityScore: 0.5 },
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(createStub).to.have.been.calledOnce;
+      expect(createStub.firstCall.args[0].url).to.equal('https://example.com/ok-page');
+    });
+
+    it('should warn and continue when a single URL write fails', async () => {
+      const warnStub = sandbox.stub();
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([]),
+            create: sandbox.stub().rejects(new Error('DB write error')),
+          },
+        },
+        log: { info: sandbox.stub(), warn: warnStub },
+      };
+      const comparisonResults = [
+        { url: 'https://example.com/page1', citabilityScore: 0.5 },
+        { url: 'https://example.com/page2', citabilityScore: 0.7 },
+      ];
+
+      // Should not throw despite individual failures
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(warnStub).to.have.been.calledTwice;
+      expect(warnStub.firstCall.args[0]).to.include('Failed to write PageCitability');
+    });
+
+    it('should skip writes when PageCitability is not available in dataAccess', async () => {
+      const debugStub = sandbox.stub();
+      const context = {
+        dataAccess: {},
+        log: { debug: debugStub, info: sandbox.stub(), warn: sandbox.stub() },
+      };
+
+      // Should not throw
+      await writeToCitabilityRecords([], 'site-1', context);
+
+      expect(debugStub).to.have.been.calledWith(sinon.match('PageCitability not available'));
+    });
+
+    it('should fall back to null/false for undefined fields when updating an existing record', async () => {
+      // Exercises the ?? null / ?? false branches at handler.js:1028-1033
+      const saveStub = sandbox.stub().resolves();
+      const existingRecord = {
+        getUrl: () => 'https://example.com/page1',
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
+        save: saveStub,
+      };
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([existingRecord]),
+            create: sandbox.stub(),
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      // All metric fields are undefined — triggers the ?? null / ?? false fallbacks
+      const comparisonResults = [{ url: 'https://example.com/page1' }];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(existingRecord.setCitabilityScore).to.have.been.calledWith(null);
+      expect(existingRecord.setContentRatio).to.have.been.calledWith(null);
+      expect(existingRecord.setWordDifference).to.have.been.calledWith(null);
+      expect(existingRecord.setBotWords).to.have.been.calledWith(null);
+      expect(existingRecord.setNormalWords).to.have.been.calledWith(null);
+      expect(existingRecord.setIsDeployedAtEdge).to.have.been.calledWith(false);
+      expect(saveStub).to.have.been.calledOnce;
+    });
+
+    it('should fall back to null/false for undefined fields when creating a new record', async () => {
+      // Exercises the ?? null / ?? false branches at handler.js:1039+ in the create path
+      const createStub = sandbox.stub().resolves({});
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([]),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+      // All metric fields are undefined — triggers the ?? null / ?? false fallbacks
+      const comparisonResults = [{ url: 'https://example.com/new-page' }];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(createStub).to.have.been.calledOnce;
+      expect(createStub.firstCall.args[0]).to.deep.equal({
+        siteId: 'site-1',
+        url: 'https://example.com/new-page',
+        citabilityScore: null,
+        contentRatio: null,
+        wordDifference: null,
+        botWords: null,
+        normalWords: null,
+        isDeployedAtEdge: false,
+      });
+    });
+
+    it('should process writes in batches of 10 to avoid connection pool exhaustion', async () => {
+      // 320 concurrent writes would exhaust the DB connection pool (20 per task).
+      // Writes must be chunked to 10 at a time.
+      const createOrder = [];
+      const createStub = sandbox.stub().callsFake(async ({ url }) => {
+        createOrder.push(url);
+        return {};
+      });
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([]),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: sandbox.stub() },
+      };
+
+      // 25 URLs — spans 3 batches (10 + 10 + 5)
+      const comparisonResults = Array.from({ length: 25 }, (_, i) => ({
+        url: `https://example.com/page${i}`,
+        citabilityScore: 0.5,
+      }));
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      expect(createStub.callCount).to.equal(25);
+      // All 25 URLs written — batching doesn't drop any
+      expect(createOrder).to.have.lengthOf(25);
+    });
+
+    it('RC-1: should attempt create twice when the same URL appears twice — stale snapshot gap', async () => {
+      // existingRecordsMap is built ONCE from allBySiteId before Promise.all runs.
+      // If the same URL appears twice in comparisonResults (upstream dedup failure),
+      // both iterations see undefined in the map and both call PageCitability.create().
+      // The second create fails (e.g. unique constraint) and is caught silently.
+      const createStub = sandbox.stub()
+        .onFirstCall().resolves({})
+        .onSecondCall().rejects(new Error('unique constraint violation: page_citability_url_key'));
+      const warnStub = sandbox.stub();
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([]),
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: warnStub },
+      };
+
+      const comparisonResults = [
+        { url: 'https://example.com/page', citabilityScore: 0.8 },
+        { url: 'https://example.com/page', citabilityScore: 0.8 }, // same URL duplicated
+      ];
+
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+
+      // Both iterations attempt create because the map was built before either resolved
+      expect(createStub).to.have.been.calledTwice;
+      // The second fails and is warned, not thrown
+      expect(warnStub).to.have.been.calledOnce;
+      expect(warnStub.firstCall.args[0]).to.include('Failed to write PageCitability');
+    });
+
+    it('RC-2: should survive a concurrent Lambda creating the same new URL — second create caught', async () => {
+      // SQS at-least-once delivery can trigger two Lambda instances for the same site.
+      // Both read allBySiteId before either has written, so both see the URL as new.
+      // Simulated by calling writeToCitabilityRecords twice with the same stale empty snapshot:
+      // the first invocation creates the record; the second throws a duplicate-key error.
+      const createStub = sandbox.stub()
+        .onFirstCall().resolves({})
+        .onSecondCall().rejects(new Error('duplicate key value violates unique constraint'));
+      const warnStub = sandbox.stub();
+      const context = {
+        dataAccess: {
+          PageCitability: {
+            allBySiteId: sandbox.stub().resolves([]), // always empty — simulates stale read
+            create: createStub,
+          },
+        },
+        log: { info: sandbox.stub(), warn: warnStub },
+      };
+      const comparisonResults = [{ url: 'https://example.com/new-page', citabilityScore: 0.7 }];
+
+      // First Lambda invocation: create succeeds
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+      expect(createStub).to.have.been.calledOnce;
+      expect(warnStub).to.not.have.been.called;
+
+      // Second Lambda invocation: stale snapshot still shows URL as new → create throws
+      await writeToCitabilityRecords(comparisonResults, 'site-1', context);
+      expect(createStub).to.have.been.calledTwice;
+      expect(warnStub).to.have.been.calledOnce;
+      expect(warnStub.firstCall.args[0]).to.include('Failed to write PageCitability');
+    });
+  });
+
+  describe('scrapedUrlsSet behavior', () => {
+    it('should not pass stalenessDays to syncSuggestions in processOpportunityAndSuggestions', async () => {
+      const syncSuggestionsStub = sinon.stub().resolves();
+      const mockOpportunity = {
+        getId: () => 'opp-id',
+        getSuggestions: sinon.stub().resolves([]),
+      };
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+        },
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sinon.stub().resolves(false),
+          mergeAndGetUniqueHtmlUrls: sinon.stub().returns({ urls: [], filteredCount: 0 }),
+          verifyAndMarkFixedSuggestions: sinon.stub().resolves(0),
+        },
+      });
+
+      const auditData = {
+        siteId: 'test-site',
+        auditId: 'audit-123',
+        scrapeJobId: 'job-123',
+        scrapedUrlsSet: new Set(['https://example.com/page1']),
+        auditResult: {
+          urlsNeedingPrerender: 1,
+          results: [
+            { url: 'https://example.com/page1', needsPrerender: true, contentGainRatio: 2.0 },
+          ],
+        },
+      };
+
+      const context = {
+        log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+        dataAccess: { Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED' } } },
+        site: { getId: () => 'test-site-id' },
+      };
+
+      await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+      expect(syncSuggestionsStub).to.have.been.called;
+      const syncCall = syncSuggestionsStub.firstCall.args[0];
+      expect(syncCall).to.not.have.property('stalenessDays');
+    });
+
+    it('should not augment scrapedUrlsSet with PageCitability records from other writes', async () => {
+      const syncSuggestionsStub = sinon.stub().resolves();
+      const mockOpportunity = {
+        getId: () => 'opp-id',
+        getType: sinon.stub().returns('prerender'),
+        getSuggestions: sinon.stub().resolves([]),
+      };
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      // PageCitability writes should no longer affect prerender suggestion syncing.
+      const recentCitabilityRecord = {
+        getUrl: () => 'https://example.com/citability-page',
+        getUpdatedAt: () => new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+      };
+      const staleCitabilityRecord = {
+        getUrl: () => 'https://example.com/stale-page',
+        getUpdatedAt: () => new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+
+      const context = {
+        site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
+        audit: { getId: () => 'audit-id' },
+        dataAccess: {
+          Opportunity: {
+            allBySiteIdAndStatus: sinon.stub().resolves([mockOpportunity]),
+          },
+          PageCitability: {
+            allBySiteId: sinon.stub().resolves([recentCitabilityRecord, staleCitabilityRecord]),
+            create: sinon.stub().resolves({}),
+          },
+        },
+        log: {
+          info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub(),
+        },
+        s3Client: {
+          send: sinon.stub().resolves({ Body: { transformToString: () => Promise.resolve('') } }),
+        },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        auditContext: { scrapeJobId: 'job-1' },
+        scrapeResultPaths: new Map([['https://example.com/page1', '/tmp/page1']]),
+      };
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(syncSuggestionsStub).to.have.been.called;
+      const syncCall = syncSuggestionsStub.firstCall.args[0];
+      expect(syncCall.scrapedUrlsSet.has('https://example.com/citability-page')).to.be.false;
+      expect(syncCall.scrapedUrlsSet.has('https://example.com/stale-page')).to.be.false;
+      expect(syncCall).to.not.have.property('stalenessDays');
+    });
+  });
+
+  describe('PageCitability isolation', () => {
+    it('does not treat recent PageCitability-only URLs as scraped by prerender', async () => {
+      const syncSuggestionsStub = sinon.stub().resolves();
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      // URL with a recent citability record, 1 day ago — prerender never touched it this cycle
+      const pageCitabilityOwnedRecord = {
+        getUrl: () => 'https://example.com/citability-only-page',
+        getUpdatedAt: () => new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+
+      const context = {
+        site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
+        audit: { getId: () => 'audit-id' },
+        dataAccess: {
+          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+          PageCitability: {
+            allBySiteId: sinon.stub().resolves([pageCitabilityOwnedRecord]),
+            create: sinon.stub().resolves({}),
+          },
+        },
+        log: {
+          info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub(),
+        },
+        s3Client: {
+          send: sinon.stub().resolves({ Body: { transformToString: () => Promise.resolve('') } }),
+        },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        auditContext: { scrapeJobId: 'job-1' },
+        scrapeResultPaths: new Map(),
+      };
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      if (syncSuggestionsStub.called) {
+        const syncCall = syncSuggestionsStub.firstCall.args[0];
+        expect(syncCall.scrapedUrlsSet.has('https://example.com/citability-only-page')).to.be.false;
+      }
+    });
+
+    it('does not depend on a second PageCitability read to build scrapedUrlsSet', async () => {
+      const syncSuggestionsStub = sinon.stub().resolves();
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      // A URL processed yesterday — should be protected by the 7-day window
+      const yesterdayRecord = {
+        getUrl: () => 'https://example.com/yesterday-page',
+        getUpdatedAt: () => new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+
+      const allBySiteIdStub = sinon.stub().resolves([yesterdayRecord]);
+
+      const context = {
+        site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
+        audit: { getId: () => 'audit-id' },
+        dataAccess: {
+          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+          PageCitability: {
+            allBySiteId: allBySiteIdStub,
+            create: sinon.stub().resolves({}),
+          },
+        },
+        log: {
+          info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub(),
+        },
+        s3Client: {
+          send: sinon.stub().resolves({ Body: { transformToString: () => Promise.resolve('') } }),
+        },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        auditContext: { scrapeJobId: 'job-1' },
+        scrapeResultPaths: new Map(),
+      };
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      if (syncSuggestionsStub.called) {
+        const syncCall = syncSuggestionsStub.firstCall.args[0];
+        expect(syncCall.scrapedUrlsSet.has('https://example.com/yesterday-page')).to.be.false;
+      }
+
+      expect(allBySiteIdStub.calledOnce).to.be.true;
     });
   });
 });

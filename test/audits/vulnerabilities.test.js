@@ -548,6 +548,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
     it('should handle auto suggest to trigger starfish-auto-code', async () => {
       const mockOpportunity = {
         getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        getType: () => 'security-vulnerabilities',
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
         getSuggestions: sandbox.stub()
           .onCall(0)

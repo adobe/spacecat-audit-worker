@@ -24,6 +24,7 @@ import {
   OFFSITE_DOMAINS,
   PROVIDERS_SET,
   CITED_ANALYSIS_DRS_CONFIG,
+  YOUTUBE_URL_REGEX,
 } from './constants.js';
 
 const LOG_PREFIX = '[OffsiteBrandPresence]';
@@ -33,13 +34,15 @@ const DOMAIN_ALIASES = Object.freeze({
 });
 
 /**
- * Gets the previous ISO week number and year.
- * @returns {{ week: number, year: number }} Previous week number and year
+ * Gets the ISO week number and year for the previous two weeks.
+ * @returns {Array<{ week: number, year: number }>} Previous two weeks (most recent first)
  */
-function getPreviousWeek() {
-  const now = new Date();
-  now.setUTCDate(now.getUTCDate() - 7);
-  return isoCalendarWeek(now);
+function getPreviousWeeks() {
+  return [1, 2].map((i) => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - (7 * i));
+    return isoCalendarWeek(d);
+  });
 }
 
 /**
@@ -249,6 +252,9 @@ function classifyAndNormalize(rawUrl) {
   const { hostname } = parsed;
   for (const domain of Object.keys(OFFSITE_DOMAINS)) {
     if (hostname === domain || hostname.endsWith(`.${domain}`)) {
+      if (domain === 'youtube.com' && !YOUTUBE_URL_REGEX.test(rawUrl)) {
+        return null;
+      }
       return { url: normalizeUrl(parsed, domain), domain };
     }
   }
@@ -373,8 +379,21 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
   log.info(`${LOG_PREFIX} Selected top ${topCited.length} cited URLs excluding offsite domains (limit ${DRS_URLS_LIMIT})`);
   log.info(`${LOG_PREFIX} Adding ${entries.length} URLs to URL store`);
 
+  let existingUrlSet;
+  try {
+    const keys = entries.map((e) => ({ siteId, url: e.url }));
+    const { data: existingUrls } = await AuditUrl.batchGetByKeys(keys);
+    existingUrlSet = new Set(existingUrls.map((u) => u.getUrl()));
+  } catch (error) {
+    log.error(`${LOG_PREFIX} Failed to check existing URLs: ${error.message}`);
+    return {};
+  }
+
   const results = await Promise.all(
     entries.map(async (entry) => {
+      if (existingUrlSet.has(entry.url)) {
+        return entry.url;
+      }
       try {
         await AuditUrl.create({
           siteId,
@@ -385,17 +404,19 @@ async function addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log)
           updatedBy: 'system',
         });
         return entry.url;
-      } catch (error) {
-        log.warn(`${LOG_PREFIX} Failed to add URL to store: ${entry.url} - ${error.message}`);
+      } catch (createError) {
+        log.warn(`${LOG_PREFIX} Failed to add URL to store: ${entry.url} - ${createError.message}`);
         return null;
       }
     }),
   );
 
   const storedUrls = new Set(results.filter(Boolean));
-  const failCount = results.length - storedUrls.size;
+  const existingCount = existingUrlSet.size;
+  const createdCount = storedUrls.size - existingCount;
+  const failCount = entries.length - storedUrls.size;
 
-  log.info(`${LOG_PREFIX} URL store complete: ${storedUrls.size} created, ${failCount} failed`);
+  log.info(`${LOG_PREFIX} URL store complete: ${createdCount} created, ${existingCount} already existed, ${failCount} failed`);
 
   const storedByDomain = {};
   for (const domain of Object.keys(OFFSITE_DOMAINS)) {
@@ -528,7 +549,10 @@ async function triggerDrsScraping(urlsByDomain, siteId, context) {
     const { datasetIds } = OFFSITE_DOMAINS[domain] || CITED_ANALYSIS_DRS_CONFIG;
 
     for (const datasetId of datasetIds) {
-      const params = { datasetId, siteId, urls: urlList };
+      const scrapeUrls = datasetId === SCRAPE_DATASET_IDS.TOP_CITED
+        ? urlList.map((url) => ({ url }))
+        : urlList;
+      const params = { datasetId, siteId, urls: scrapeUrls };
       if (datasetId === SCRAPE_DATASET_IDS.REDDIT_COMMENTS) {
         params.daysBack = REDDIT_COMMENTS_DAYS_BACK;
       }
@@ -663,14 +687,17 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
     };
   }
 
-  const { week, year } = getPreviousWeek();
-  const weekIndex = String(week).padStart(2, '0');
+  const previousWeeks = getPreviousWeeks();
+  const weekLabels = previousWeeks
+    .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
+    .join(', ');
 
-  log.info(`${LOG_PREFIX} Processing week w${weekIndex} of year ${year}`);
+  log.info(`${LOG_PREFIX} Processing weeks: ${weekLabels}`);
 
-  // Filter brand presence files from query-index for the previous week
-  const matchedFiles = filterBrandPresenceFiles(queryIndex, week, year);
-  log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for week w${weekIndex}`);
+  const matchedFiles = previousWeeks.flatMap(
+    ({ week, year }) => filterBrandPresenceFiles(queryIndex, week, year),
+  );
+  log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for weeks ${weekLabels}`);
 
   // Fetch all matched files and collect source URLs + topic associations
   const { allUrls } = await fetchAndAggregateData(siteId, matchedFiles, env, log);
@@ -693,8 +720,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
       auditResult: {
         success: true,
         urlCounts,
-        week: weekIndex,
-        year,
+        weeks: previousWeeks,
       },
       fullAuditRef: finalUrl,
     };
@@ -721,8 +747,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
       success: true,
       urlCounts,
       drsJobs: drsResults,
-      week: weekIndex,
-      year,
+      weeks: previousWeeks,
     },
     fullAuditRef: finalUrl,
   };

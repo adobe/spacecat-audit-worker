@@ -10,15 +10,18 @@
  * governing permissions and limitations under the License.
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
-import { mapToPaidOpportunity, mapToPaidSuggestion, isLowSeverityGuidanceBody } from './guidance-opportunity-mapper.js';
+import { mapToPaidOpportunity, mapToPaidSuggestion, isHighSeverityGuidanceBody } from './guidance-opportunity-mapper.js';
 import { getAuditData } from './audit-data-provider.js';
 import { createPaidLogger } from '../paid/paid-log.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 const GUIDANCE_TYPE = 'paid-cookie-consent';
 
 function getGuidanceObj(guidance) {
-  const body = guidance && guidance[0] && guidance[0].body;
+  if (!guidance || !guidance[0]) {
+    return null;
+  }
+  const { body } = guidance[0];
 
   return {
     ...guidance[0],
@@ -30,7 +33,7 @@ export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Site, Opportunity, Suggestion } = dataAccess;
   const { siteId, auditId, data } = message;
-  const { url, guidance, suggestions } = data;
+  const { url, guidance } = data;
   const paidLog = createPaidLogger(log, GUIDANCE_TYPE);
 
   paidLog.received(siteId, url, auditId);
@@ -49,16 +52,16 @@ export default async function handler(message, context) {
     return notFound();
   }
 
-  // Check for low severity and skip if so
+  // Parse guidance and check for null/empty
   const guidanceParsed = getGuidanceObj(guidance);
-  if (isLowSeverityGuidanceBody(guidanceParsed.body)) {
-    paidLog.skipping('low issue severity', siteId, url, auditId);
+  if (!guidanceParsed) {
+    paidLog.skipping('no guidance from guidance engine', siteId, url, auditId);
     return ok();
   }
 
-  // Skip if Mystique returned no actionable suggestions
-  if (!isNonEmptyArray(suggestions)) {
-    paidLog.skipping('no suggestions from guidance engine', siteId, url, auditId);
+  // Only proceed for high severity
+  if (!isHighSeverityGuidanceBody(guidanceParsed.body)) {
+    paidLog.skipping('severity not high enough', siteId, url, auditId);
     return ok();
   }
 
@@ -76,6 +79,7 @@ export default async function handler(message, context) {
     url,
     guidanceParsed,
   );
+  warnOnInvalidSuggestionData(suggestionData.data, opportunity.getType(), log);
   await Suggestion.create(suggestionData);
   paidLog.createdSuggestion(opportunity.getId(), siteId, url, auditId);
 
