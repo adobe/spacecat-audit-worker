@@ -3007,64 +3007,6 @@ describe('Prerender Audit', () => {
         expect(domainWideSuggestion.key).to.equal('domain-wide-aggregate|prerender');
       });
 
-      it('should skip creating individual suggestions for deployed-at-edge URLs when domain is fully deployed', async () => {
-        // Domain-wide suggestion with edgeDeployed → isAllDomainDeployedAtEdge=true
-        const domainWideSuggestionExisting = {
-          getId: () => 'domain-wide-id',
-          getStatus: () => 'SKIPPED',
-          getData: () => ({ isDomainWide: true, edgeDeployed: '2026-01-01T00:00:00Z' }),
-        };
-        const mockOpportunity = {
-          getId: () => 'test-opp-id',
-          getSuggestions: sinon.stub().resolves([domainWideSuggestionExisting]),
-        };
-        const syncSuggestionsStub = sinon.stub().resolves();
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../../src/utils/data-access.js': {
-            syncSuggestions: syncSuggestionsStub,
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: sinon.stub().resolves(true),
-          },
-        });
-
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'audit-123',
-          scrapeJobId: 'job-123',
-          auditResult: {
-            urlsNeedingPrerender: 2,
-            // Two URLs: one deployed at edge, one not
-            results: [
-              { url: 'https://example.com/deployed', needsPrerender: true, isDeployedAtEdge: true, contentGainRatio: 2.0, wordCountBefore: 100, wordCountAfter: 200 },
-              { url: 'https://example.com/not-deployed', needsPrerender: true, isDeployedAtEdge: false, contentGainRatio: 1.5, wordCountBefore: 80, wordCountAfter: 120 },
-            ],
-          },
-        };
-
-        const context = {
-          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
-          dataAccess: { Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED' } } },
-          site: { getId: () => 'test-site-id' },
-        };
-
-        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
-
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
-        const syncArgs = syncSuggestionsStub.firstCall.args[0];
-        const individualUrls = syncArgs.newData.filter((s) => !s.key).map((s) => s.url);
-        // Deployed-at-edge URL must NOT be in newData
-        expect(individualUrls).to.not.include('https://example.com/deployed');
-        // Non-deployed URL must still be in newData
-        expect(individualUrls).to.include('https://example.com/not-deployed');
-        // Log message should confirm skipping
-        expect(context.log.info).to.have.been.calledWith(sinon.match(/Domain fully deployed.*skipping suggestion creation/));
-      });
-
       it('should properly execute syncSuggestions with domain-wide aggregate suggestion mapper and merge functions', async () => {
         // This test specifically ensures lines 460-466 are covered (mapNewSuggestion and mergeDataFunction)
         const mockOpportunity = {

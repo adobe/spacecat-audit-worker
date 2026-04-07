@@ -91,12 +91,7 @@ async function getDomainWideSuggestionDeployedAtEdge(opportunity) {
     const d = s.getData();
     return s.getStatus() !== Suggestion.STATUSES.OUTDATED
       && isDomainWideSuggestionData(d) && !!d?.edgeDeployed;
-  }) || null;
-}
-
-async function isAllDomainDeployedAtEdge(opportunity) {
-  const domainWideSuggestion = await getDomainWideSuggestionDeployedAtEdge(opportunity);
-  return domainWideSuggestion !== null;
+  }) ?? null;
 }
 
 /**
@@ -160,12 +155,11 @@ async function markDeployedUrlSuggestionsAsCovered(
  * @param {Set<string>} deployedAtEdgeUrls - URLs confirmed deployed at edge in this audit
  * @returns {Promise<void>}
  */
-// eslint-disable-next-line max-len
-async function markNewSuggestionsAsCoveredWhenAllDomainDeployed(opportunity, context, deployedAtEdgeUrls) {
+async function markNewSuggestionsAsCovered(opportunity, context, deployedAtEdgeUrls) {
   const { log, site } = context;
   const baseUrl = site?.getBaseURL?.() || '';
   const domainWideSuggestion = await getDomainWideSuggestionDeployedAtEdge(opportunity);
-  log.info(`${LOG_PREFIX} markNewSuggestionsAsCoveredWhenAllDomainDeployed: isAllDomainDeployedAtEdge=${!!domainWideSuggestion}, baseUrl=${baseUrl}`);
+  log.info(`${LOG_PREFIX} markNewSuggestionsAsCovered: isAllDomainDeployedAtEdge=${!!domainWideSuggestion}, baseUrl=${baseUrl}`);
   if (!domainWideSuggestion) return;
   await markDeployedUrlSuggestionsAsCovered(
     opportunity,
@@ -1087,21 +1081,9 @@ export async function processOpportunityAndSuggestions(
     ),
   });
 
-  // If the domain-wide suggestion already has edgeDeployed, skip creating individual
-  // suggestions for URLs already deployed at edge — their existing coveredByDomainWide flag is
-  // preserved because scrapedUrlsSet excludes isDeployedAtEdge URLs from OUTDATED detection.
-  const isFullyDeployed = await isAllDomainDeployedAtEdge(opportunity);
-  const individualSuggestions = isFullyDeployed
-    ? preRenderSuggestions.filter((s) => !s.isDeployedAtEdge)
-    : preRenderSuggestions;
-
-  if (isFullyDeployed) {
-    log.info(`${LOG_PREFIX} Domain fully deployed — skipping suggestion creation for ${preRenderSuggestions.length - individualSuggestions.length} deployed-at-edge URLs. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
-  }
-
   const allSuggestions = domainWideSuggestion
-    ? [...individualSuggestions, domainWideSuggestion]
-    : [...individualSuggestions];
+    ? [...preRenderSuggestions, domainWideSuggestion]
+    : [...preRenderSuggestions];
 
   await syncSuggestions({
     opportunity,
@@ -1632,14 +1614,14 @@ export async function processContentAndGenerateOpportunities(context) {
       }
     }
 
-    // When domain-wide suggestion has edgeDeployed, move NEW suggestions to SKIPPED
-    // Only move suggestions for URLs confirmed deployed at edge in this audit run
+    // When domain-wide suggestion has edgeDeployed, mark NEW suggestions as coveredByDomainWide
+    // Only mark suggestions for URLs confirmed deployed at edge in this audit run
     const deployedAtEdgeUrls = new Set(
       successfulComparisons
         .filter((r) => r.isDeployedAtEdge)
         .map((r) => r.url),
     );
-    await markNewSuggestionsAsCoveredWhenAllDomainDeployed(opportunityWithSuggestions, context, deployedAtEdgeUrls); // eslint-disable-line max-len
+    await markNewSuggestionsAsCovered(opportunityWithSuggestions, context, deployedAtEdgeUrls);
 
     const endTime = process.hrtime(startTime);
     const elapsedSeconds = (endTime[0] + endTime[1] / 1e9).toFixed(2);
