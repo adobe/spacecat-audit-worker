@@ -109,6 +109,24 @@ export function getDomElementSelector(element) {
     return childSelector;
   }
 
+  // 1b. Element has no UE attributes — check if a nearby ancestor is a UE editable
+  // (has data-aue-prop). If so, return that ancestor's UE selector instead of a
+  // hybrid structural selector, since UE can only highlight at the editable level.
+  {
+    let ancestor = parent;
+    while (ancestor && ancestor.name && ancestor.name.toLowerCase() !== 'html') {
+      const ancestorProp = ancestor.attribs?.['data-aue-prop'];
+      if (ancestorProp) {
+        return getDomElementSelector(ancestor);
+      }
+      const ancestorResource = ancestor.attribs?.['data-aue-resource'];
+      if (ancestorResource) {
+        break;
+      }
+      ancestor = ancestor.parent;
+    }
+  }
+
   // 2. Build element-level selector from ID or classes
   const id = attribs?.id;
   if (id) {
