@@ -1,4 +1,4 @@
-# CWV Trends Audit endDate Fix — spacecat-audit-worker
+# CWV Trends Audit endDate Fix
 
 **Status:** Completed
 **Branch:** `cwv-trends-audit-enddate-slack-fix`
@@ -6,11 +6,19 @@
 
 ---
 
-## What Was Changed
+## Problem
 
-### `src/cwv-trends-audit/utils.js`
+Running `@spacecat run-audit {site} audit:cwv-trends-audit endDate:2026-04-05` always used today's date instead of the provided `endDate`. The audit result window was never shifted to the requested date.
 
-**Line 260** — `cwvTrendsRunner` now reads `endDate` from both `auditContext.endDate` and `auditContext.messageData?.endDate`:
+## Root Cause
+
+The Slack bot serializes keyword args (e.g. `endDate:2026-04-05`) into `message.data`. The `RunnerAudit` framework parses `message.data` and places it at `auditContext.messageData.endDate`. The `cwvTrendsRunner` was only reading `auditContext.endDate` (top-level), so the value was silently ignored.
+
+This fix is **self-contained in this repo** — the Slack bot and API service already forward the value correctly through the pipeline.
+
+## Fix
+
+**`src/cwv-trends-audit/utils.js`** — one line change:
 
 ```js
 // Before
@@ -20,32 +28,21 @@ const endDate = parseEndDate(auditContext.endDate, log);
 const endDate = parseEndDate(auditContext.endDate ?? auditContext.messageData?.endDate, log);
 ```
 
-### `test/audits/cwv-trends-audit/utils.test.js`
+## Tests
 
-Added one new test case:
+**`test/audits/cwv-trends-audit/utils.test.js`** — one new test added:
 
 - `uses endDate from auditContext.messageData when auditContext.endDate is absent`
-
----
-
-## Why
-
-When the `cwv-trends-audit` is triggered via the SpaceCat Slack bot (`run-audit {site} audit:cwv-trends-audit endDate:2026-04-05`), the keyword args are serialized into `message.data` by the API service. The `RunnerAudit` framework then places the parsed data at `auditContext.messageData`, not at the top level of `auditContext`. The runner was only checking `auditContext.endDate`, so `endDate` was silently ignored and today's date was always used.
-
-The fix adds a fallback: `auditContext.endDate ?? auditContext.messageData?.endDate`. This covers both the Slack bot path (via `messageData`) and the direct SQS/HTTP trigger path (via top-level `auditContext.endDate`), with existing behavior preserved when `endDate` is absent.
-
----
-
-## Testing
 
 ```bash
 npm run test:spec -- test/audits/cwv-trends-audit/utils.test.js
 # 26 passing
 ```
 
----
+## Usage (after fix)
 
-## Related
+```
+@spacecat run-audit www.example.com audit:cwv-trends-audit endDate:2026-04-05
+```
 
-- Paired with `spacecat-api-service` change that registers `cwv-trends-audit` in `GET /trigger` with `endDate` query param support
-- [Workspace spec](../../../../../docs/specs/cwv-trends-audit-enddate-slack-fix/spec.md)
+The audit will now process the 28-day window ending on `2026-04-05` instead of today.
