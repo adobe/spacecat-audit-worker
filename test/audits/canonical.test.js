@@ -2105,7 +2105,9 @@ describe('Canonical URL Tests', () => {
         expect(result.options).to.deep.equal({
           waitTimeoutForMetaTags: 5000,
         });
-        expect(context.log.info).to.have.been.calledWith('[canonical] After filtering: 2 pages will be scraped');
+        expect(context.log.info).to.have.been.calledWith(
+          '[canonical] After filtering: 2 pages will be scraped - ["https://example.com/page1","https://example.com/page2"]',
+        );
       });
 
       it('should handle no top pages found', async () => {
