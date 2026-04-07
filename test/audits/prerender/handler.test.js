@@ -6480,6 +6480,103 @@ describe('Prerender Audit', () => {
       expect(uploadedData.pages).to.have.lengthOf(1);
       expect(uploadedData.pages[0].url).to.equal('https://example.com/page1');
     });
+
+    it('should preserve existing scrapeJobId for fallback URLs not in submittedUrlSet', async () => {
+      // Scenario: fallback mode where all 14 top pages are in auditResult.results, but only
+      // 9 were submitted to the current scrape job (submittedUrlSet has 9 URLs).
+      // The 5 "current organic" URLs not in submittedUrlSet must retain their prior scrapeJobId
+      // from the existing status.json rather than being overwritten with the new scrapeJobId.
+      const auditUrl = 'https://example.com';
+      const submittedUrl = 'https://example.com/submitted-page';
+      const notSubmittedUrl = 'https://example.com/not-submitted-page';
+      const submittedUrlSet = new Set([submittedUrl]);
+
+      const existingStatus = {
+        pages: [
+          {
+            url: notSubmittedUrl,
+            scrapingStatus: 'success',
+            needsPrerender: false,
+            scrapedAt: '2025-01-01T00:00:00.000Z',
+            scrapeJobId: 'old-job-id-from-previous-cycle',
+          },
+        ],
+      };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.resolve({
+            Body: { transformToString: () => Promise.resolve(JSON.stringify(existingStatus)) },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      const auditData = {
+        siteId: 'test-site-id',
+        scrapeJobId: 'current-job-id',
+        auditedAt: '2025-02-01T00:00:00.000Z',
+        submittedUrlSet,
+        auditResult: {
+          results: [
+            { url: submittedUrl, error: false, needsPrerender: true },
+            { url: notSubmittedUrl, error: false, needsPrerender: false },
+          ],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+      expect(uploadedData.pages).to.have.lengthOf(2);
+
+      const submittedPage = uploadedData.pages.find((p) => p.url === submittedUrl);
+      const notSubmittedPage = uploadedData.pages.find((p) => p.url === notSubmittedUrl);
+
+      // URL that was submitted to the current job gets the current scrapeJobId
+      expect(submittedPage.scrapeJobId).to.equal('current-job-id');
+      // URL NOT submitted to the current job retains its prior scrapeJobId from status.json
+      expect(notSubmittedPage.scrapeJobId).to.equal('old-job-id-from-previous-cycle');
+    });
+
+    it('should use null for fallback URL scrapeJobId when not in submittedUrlSet and no prior entry exists', async () => {
+      // Fallback URL has no entry in the existing status.json — scrapeJobId should be null
+      const auditUrl = 'https://example.com';
+      const submittedUrl = 'https://example.com/submitted-page';
+      const newFallbackUrl = 'https://example.com/new-fallback-page';
+      const submittedUrlSet = new Set([submittedUrl]);
+
+      // existing status has no entry for newFallbackUrl
+      const existingStatus = { pages: [] };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.resolve({
+            Body: { transformToString: () => Promise.resolve(JSON.stringify(existingStatus)) },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      const auditData = {
+        siteId: 'test-site-id',
+        scrapeJobId: 'current-job-id',
+        auditedAt: '2025-02-01T00:00:00.000Z',
+        submittedUrlSet,
+        auditResult: {
+          results: [
+            { url: submittedUrl, error: false, needsPrerender: false },
+            { url: newFallbackUrl, error: false, needsPrerender: false },
+          ],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+      const newFallbackPage = uploadedData.pages.find((p) => p.url === newFallbackUrl);
+      expect(newFallbackPage.scrapeJobId).to.equal(null);
+    });
   });
 
   describe('domain-wide suggestion preservation', () => {
@@ -6687,7 +6784,7 @@ describe('Prerender Audit', () => {
       };
       const result = await getScrapeJobStats(null, [], 5, context);
       expect(result).to.deep.equal({
-        urlsSubmittedForScraping: 5, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [],
+        urlsSubmittedForScraping: 5, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [], submittedUrlSet: null,
       });
       expect(context.dataAccess.ScrapeUrl.allByScrapeJobId).to.not.have.been.called;
     });
@@ -6701,7 +6798,7 @@ describe('Prerender Audit', () => {
       };
       const result = await getScrapeJobStats('job-1', [], 5, context);
       expect(result).to.deep.equal({
-        urlsSubmittedForScraping: 5, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [],
+        urlsSubmittedForScraping: 5, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [], submittedUrlSet: null,
       });
     });
 
@@ -6721,9 +6818,13 @@ describe('Prerender Audit', () => {
         env: { S3_SCRAPER_BUCKET_NAME: 'bucket' },
       };
       const result = await getScrapeJobStats('job-1', comparisonResults, 2, context);
-      expect(result).to.deep.equal({
-        urlsSubmittedForScraping: 2, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [],
-      });
+      expect(result.urlsSubmittedForScraping).to.equal(2);
+      expect(result.scrapeForbiddenCount).to.equal(0);
+      expect(result.scrapeForbidden).to.equal(false);
+      expect(result.missingPages).to.deep.equal([]);
+      expect(result.submittedUrlSet).to.be.instanceOf(Set);
+      expect(result.submittedUrlSet.has('https://example.com/page1')).to.be.true;
+      expect(result.submittedUrlSet.has('https://example.com/page2')).to.be.true;
     });
 
     it('should count FAILED-status 403 URL absent from comparisonResults', async () => {
@@ -6757,6 +6858,9 @@ describe('Prerender Audit', () => {
         needsPrerender: false,
         scrapeError: { statusCode: 403, message: 'Forbidden' },
       }]);
+      expect(result.submittedUrlSet).to.be.instanceOf(Set);
+      expect(result.submittedUrlSet.has('https://example.com/page1')).to.be.true;
+      expect(result.submittedUrlSet.has('https://example.com/forbidden')).to.be.true;
     });
 
     it('should set scrapeForbidden=true when all URLs (COMPLETE and FAILED) are 403', async () => {
@@ -6857,7 +6961,7 @@ describe('Prerender Audit', () => {
       };
       const result = await getScrapeJobStats('job-1', [], 3, context);
       expect(result).to.deep.equal({
-        urlsSubmittedForScraping: 3, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [],
+        urlsSubmittedForScraping: 3, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [], submittedUrlSet: null,
       });
       expect(context.log.warn).to.have.been.calledWith(sinon.match('Failed to fetch ScrapeUrl stats'));
     });
@@ -6876,7 +6980,7 @@ describe('Prerender Audit', () => {
       ];
       const result = await getScrapeJobStats('job-1', comparisonResults, 2, context);
       expect(result).to.deep.equal({
-        urlsSubmittedForScraping: 2, scrapeForbiddenCount: 2, scrapeForbidden: true, missingPages: [],
+        urlsSubmittedForScraping: 2, scrapeForbiddenCount: 2, scrapeForbidden: true, missingPages: [], submittedUrlSet: null,
       });
       expect(context.log.warn).to.have.been.calledWith(sinon.match('Failed to fetch ScrapeUrl stats'));
     });

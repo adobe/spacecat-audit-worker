@@ -1,3 +1,10 @@
+## [1.399.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.399.0...v1.399.1) (2026-04-07)
+
+
+### Bug Fixes
+
+* **prerender:** preserve scrapeJobId for URLs not submitted to current scrape job ([#2320](https://github.com/adobe/spacecat-audit-worker/issues/2320)) ([872baa4](https://github.com/adobe/spacecat-audit-worker/commit/872baa497e1c7964e98c50abe61cbd0f3da3b178))
+
 # [1.399.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.8...v1.399.0) (2026-04-07)
 
 
