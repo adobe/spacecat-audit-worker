@@ -6577,6 +6577,38 @@ describe('Prerender Audit', () => {
       const newFallbackPage = uploadedData.pages.find((p) => p.url === newFallbackUrl);
       expect(newFallbackPage.scrapeJobId).to.equal(null);
     });
+
+    it('should include usedEarlyClientSideHtml flag when set on result', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          results: [
+            {
+              url: 'https://example.com/early-html-page',
+              error: false,
+              needsPrerender: true,
+              usedEarlyClientSideHtml: true,
+            },
+            {
+              url: 'https://example.com/normal-page',
+              error: false,
+              needsPrerender: false,
+            },
+          ],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+      const earlyPage = uploadedData.pages.find((p) => p.url === 'https://example.com/early-html-page');
+      const normalPage = uploadedData.pages.find((p) => p.url === 'https://example.com/normal-page');
+
+      expect(earlyPage.usedEarlyClientSideHtml).to.equal(true);
+      expect(normalPage).to.not.have.property('usedEarlyClientSideHtml');
+    });
   });
 
   describe('domain-wide suggestion preservation', () => {
