@@ -27,8 +27,6 @@ import { sendOnboardingNotification } from './onboarding-notifications.js';
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
 
-const GEO_FREE_SPLIT_COUNT = 23;
-
 /**
  * Checks whether the brandalf feature flag is enabled for an organization
  * by calling the SpaceCat API feature-flags endpoint.
@@ -65,32 +63,6 @@ async function isBrandalfEnabled(organizationId, env, log) {
     return false;
   }
 }
-const GEO_FREE_SPLITS = Array.from(
-  { length: GEO_FREE_SPLIT_COUNT },
-  (_, i) => `geo-brand-presence-free-${i + 1}`,
-);
-
-/**
- * Finds the geo-brand-presence-free split with the fewest enabled sites.
- * @param {object} configuration - Configuration instance
- * @returns {string} The split audit type to assign
- */
-function findBestFreeSplit(configuration) {
-  let bestSplit = GEO_FREE_SPLITS[0];
-  let minCount = Infinity;
-
-  for (const split of GEO_FREE_SPLITS) {
-    const count = configuration.getEnabledSiteIdsForHandler(split).length;
-    if (count < minCount) {
-      minCount = count;
-      bestSplit = split;
-      if (count === 0) break;
-    }
-  }
-
-  return bestSplit;
-}
-
 /* c8 ignore start */
 /* this is actually running during tests. verified manually on 2025-12-10. */
 /**
@@ -309,13 +281,13 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   const {
     env, log, s3Client,
   } = context;
+  const { Configuration } = context.dataAccess;
 
   const siteId = site.getSiteId();
   const domain = finalUrl;
 
   // Ensure relevant audits and imports are enabled
   try {
-    const { Configuration } = context.dataAccess;
     const configuration = await Configuration.findLatest();
 
     const auditsToEnable = [
@@ -325,24 +297,9 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       'llm-error-pages',
       'summarization',
       REFERRAL_TRAFFIC_AUDIT,
-      'cdn-logs-report',
       'readability',
       'wikipedia-analysis',
     ];
-    const [isDailyEnabled, isPaidEnabled] = await Promise.all([
-      configuration.isHandlerEnabledForSite('geo-brand-presence-daily', site),
-      configuration.isHandlerEnabledForSite('geo-brand-presence-paid', site),
-    ]);
-
-    // don't tamper with configuration if daily geo brand presence is already enabled.
-    if (!isDailyEnabled) {
-      auditsToEnable.push('geo-brand-presence');
-      // only enable free geo brand presence if paid is not already enabled
-      if (!isPaidEnabled) {
-        const targetSplit = findBestFreeSplit(configuration);
-        auditsToEnable.push(targetSplit);
-      }
-    }
 
     await enableAudits(site, context, auditsToEnable, { configuration });
   } catch (error) {
@@ -501,9 +458,16 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   }
 
   if (hasCdnLogsChanges) {
-    log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
-    await triggerCdnLogsReport(context, site);
-    triggeredSteps.push('cdn-logs-report');
+    const configuration = await Configuration.findLatest();
+    const isCdnLogsReportEnabled = await configuration.isHandlerEnabledForSite('cdn-logs-report', site);
+
+    if (isCdnLogsReportEnabled) {
+      log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
+      await triggerCdnLogsReport(context, site);
+      triggeredSteps.push('cdn-logs-report');
+    } else {
+      log.info('LLMO config changes detected in categories; skipping cdn-logs-report because it is disabled for this site');
+    }
   }
 
   const hasBrandPresenceChanges = changes.topics || changes.categories || changes.entities;
@@ -511,7 +475,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     && (changes.brands || changes.competitors);
 
   if (hasBrandPresenceChanges || needsBrandPresenceRefresh) {
-    log.info('LLMO config changes detected affecting brand presence; geo-brand-presence audits will pick up changes on next scheduled run');
+    log.info('LLMO config changes detected affecting brand presence; data collection will pick up changes on the next scheduled run');
   }
 
   if (triggeredSteps.length > 0) {

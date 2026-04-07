@@ -21,7 +21,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import calculateKpiMetrics from './kpi-metrics.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { syncSuggestionsWithPublishDetection } from '../utils/data-access.js';
+import { syncSuggestionsWithPublishDetection, warnOnInvalidSuggestionData } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
 import {
   filterBrokenSuggestedUrls,
@@ -52,7 +52,7 @@ function getEnvInt(env, key, defaultValue) {
 async function filterOutValidBacklinks(backlinks, log) {
   const fetchWithTimeout = async (url, timeout) => {
     try {
-      return await fetch(url, { timeout });
+      return await fetch(url, { timeout, redirect: 'follow' });
     } catch (error) {
       if (error.code === 'ETIMEOUT') {
         log.warn(`Request to ${url} timed out after ${timeout}ms`);
@@ -355,10 +355,19 @@ export const generateSuggestionData = async (context) => {
       log,
     ),
   });
-  const suggestions = await Suggestion.allByOpportunityIdAndStatus(
-    opportunity.getId(),
-    SuggestionModel.STATUSES.NEW,
-  );
+  const suggestionStatusesToProcess = [SuggestionModel.STATUSES.NEW];
+  if (site?.requiresValidation && SuggestionModel.STATUSES.PENDING_VALIDATION) {
+    suggestionStatusesToProcess.push(SuggestionModel.STATUSES.PENDING_VALIDATION);
+  }
+
+  const suggestions = (
+    await Promise.all(
+      suggestionStatusesToProcess.map((status) => Suggestion.allByOpportunityIdAndStatus(
+        opportunity.getId(),
+        status,
+      )),
+    )
+  ).flat();
 
   // Build broken links array
   const brokenLinks = suggestions
@@ -372,6 +381,8 @@ export const generateSuggestionData = async (context) => {
   // Check if all suggestions were filtered out as invalid
   if (brokenLinks.length === 0 && suggestions.length > 0) {
     log.warn('No valid broken links to send to Mystique. Skipping message.');
+    opportunity.setLastAuditedAt(new Date().toISOString());
+    await opportunity.save();
     return {
       status: 'complete',
     };
@@ -425,12 +436,14 @@ export const generateSuggestionData = async (context) => {
         return;
       }
 
-      suggestion.setData({
+      const updatedData = {
         ...suggestion.getData(),
         urlsSuggested,
         aiRationale: `Suggested URLs are chosen from top search results for closely matching keywords from the broken URL. Keywords used: "${keywords}".`,
         factId: `legacy:${opportunity.getId()}:${brokenLink.suggestionId}`,
-      });
+      };
+      warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
+      suggestion.setData(updatedData);
 
       await suggestion.save();
       resolvedByBrightData.add(brokenLink.suggestionId);
@@ -500,6 +513,8 @@ export const generateSuggestionData = async (context) => {
   // Validate before sending to Mystique
   if (brokenLinksForMystique.length === 0) {
     log.info('All broken links resolved via Bright Data. Skipping Mystique.');
+    opportunity.setLastAuditedAt(new Date().toISOString());
+    await opportunity.save();
     return {
       status: 'complete',
     };
@@ -507,6 +522,8 @@ export const generateSuggestionData = async (context) => {
 
   if (alternativeUrls.length === 0) {
     log.warn('No alternative URLs available. Cannot generate suggestions. Skipping message to Mystique.');
+    opportunity.setLastAuditedAt(new Date().toISOString());
+    await opportunity.save();
     return {
       status: 'complete',
     };
@@ -526,6 +543,8 @@ export const generateSuggestionData = async (context) => {
   };
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
   log.debug(`Message sent to Mystique: ${JSON.stringify(message)}`);
+  opportunity.setLastAuditedAt(new Date().toISOString());
+  await opportunity.save();
   return {
     status: 'complete',
   };

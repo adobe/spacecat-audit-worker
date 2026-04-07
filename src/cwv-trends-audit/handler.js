@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Adobe. All rights reserved.
+ * Copyright 2026 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -11,17 +11,12 @@
  */
 
 import { AuditBuilder } from '../common/audit-builder.js';
-import { wwwUrlResolver } from '../common/index.js';
-import { loadPromptsAndSendDetection } from '../geo-brand-presence/handler.js';
-
-// Daily geo-brand-presence audit flow:
-// STEP 0: Load AI + human prompts, upload to S3, send unified detection message to Mystique
-// STEP 1: Receive categorization status (handled by message handler in index.js)
+import { noopUrlResolver } from '../common/index.js';
+import cwvTrendsRunner from './utils.js';
+import opportunityHandler from './opportunity-handler.js';
 
 export default new AuditBuilder()
-  .withUrlResolver(wwwUrlResolver)
-  .addStep(
-    'loadPromptsAndSendDetectionStep',
-    (context) => loadPromptsAndSendDetection({ ...context, brandPresenceCadence: 'daily' }),
-  )
+  .withRunner(cwvTrendsRunner)
+  .withUrlResolver(noopUrlResolver)
+  .withPostProcessors([opportunityHandler])
   .build();

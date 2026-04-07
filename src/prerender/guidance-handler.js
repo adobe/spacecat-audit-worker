@@ -12,6 +12,7 @@
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { isPaidLLMOCustomer } from './utils/utils.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 const LOG_PREFIX = 'Prerender -';
 
@@ -105,7 +106,7 @@ export default async function handler(message, context) {
     // Load existing suggestions for this opportunity
     const existingSuggestions = await opportunity.getSuggestions();
     if (!existingSuggestions || existingSuggestions.length === 0) {
-      log.warn(`${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, siteId=${siteId}`);
+      log.debug(`${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, siteId=${siteId}`);
       return ok();
     }
 
@@ -178,6 +179,7 @@ export default async function handler(message, context) {
         valuable: isValuable,
       };
 
+      warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
       existing.setData(updatedData);
       suggestionsToSave.push(existing);
     });

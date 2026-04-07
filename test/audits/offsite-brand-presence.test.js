@@ -104,6 +104,7 @@ describe('Offsite Brand Presence Handler', () => {
     dataAccess = {
       AuditUrl: {
         create: sandbox.stub().resolves({}),
+        batchGetByKeys: sandbox.stub().resolves({ data: [] }),
       },
       SentimentTopic: {
         allBySiteId: sandbox.stub().resolves({ data: [] }),
@@ -708,6 +709,20 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(0);
     });
+
+    it('should discard YouTube URLs with non-standard subdomains', async () => {
+      const sources = 'https://music.youtube.com/watch?v=abc;https://studio.youtube.com/channel/123;https://www.youtube.com/watch?v=valid';
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([sources]);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
+    });
   });
 
   describe('URL Normalization', () => {
@@ -833,6 +848,46 @@ describe('Offsite Brand Presence Handler', () => {
       expect(createArg.audits).to.deep.equal(['youtube-analysis']);
     });
 
+    it('should still send URL to DRS when it already exists in the URL store', async () => {
+      dataAccess.AuditUrl.batchGetByKeys.resolves({
+        data: [{ getUrl: () => 'https://youtu.be/test' }],
+      });
+
+      const providerResponses = setupWithYoutubeUrl();
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(dataAccess.AuditUrl.create).to.not.have.been.called;
+      expect(result.auditResult.success).to.be.true;
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/0 created, 1 already existed, 0 failed/),
+      );
+
+      const videosCall = mockSubmitScrapeJob.getCalls().find(
+        (c) => c.args[0].datasetId === 'youtube_videos',
+      );
+      expect(videosCall.args[0].urls).to.include('https://youtu.be/test');
+    });
+
+    it('should return empty storedByDomain when batchGetByKeys fails', async () => {
+      dataAccess.AuditUrl.batchGetByKeys.rejects(new Error('DB connection lost'));
+
+      const providerResponses = setupWithYoutubeUrl();
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(dataAccess.AuditUrl.create).to.not.have.been.called;
+      expect(mockSubmitScrapeJob).to.not.have.been.called;
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Failed to check existing URLs/),
+      );
+    });
+
     it('should handle URL store create failure gracefully and skip DRS for failed URLs', async () => {
       dataAccess.AuditUrl.create.rejects(new Error('DynamoDB error'));
 
@@ -851,7 +906,7 @@ describe('Offsite Brand Presence Handler', () => {
         sinon.match(/Failed to add URL to store/),
       );
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/0 created, 1 failed/),
+        sinon.match(/0 created, 0 already existed, 1 failed/),
       );
     });
 
@@ -870,7 +925,7 @@ describe('Offsite Brand Presence Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/2 created, 1 failed/),
+        sinon.match(/2 created, 0 already existed, 1 failed/),
       );
 
       const videosCall = mockSubmitScrapeJob.getCalls().find(
@@ -1073,7 +1128,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(mockSubmitScrapeJob).to.have.been.calledWith(sinon.match({
         datasetId: SCRAPE_DATASET_IDS.TOP_CITED,
         siteId: SITE_ID,
-        urls: ['https://example.com/page1', 'https://other.com/page2'],
+        urls: [{ url: 'https://example.com/page1' }, { url: 'https://other.com/page2' }],
       }));
     });
 

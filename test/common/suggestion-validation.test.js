@@ -28,6 +28,7 @@ describe('Suggestion Validation Tests', () => {
 
     opportunity = {
       getId: sandbox.stub().returns('opportunity-id'),
+      getType: sandbox.stub().returns('test-type'),
       getSiteId: sandbox.stub().returns('site-id'),
       getSuggestions: sandbox.stub().resolves([]),
       addSuggestions: sandbox.stub().resolves({
@@ -51,6 +52,11 @@ describe('Suggestion Validation Tests', () => {
         Suggestion: {
           bulkUpdateStatus: sandbox.stub().resolves(),
           saveMany: sandbox.stub().resolves(),
+        },
+        Configuration: {
+          findLatest: sinon.stub().resolves({
+            isHandlerEnabledForSite: sinon.stub().returns(false),
+          }),
         },
       },
     };

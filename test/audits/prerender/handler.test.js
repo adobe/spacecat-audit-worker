@@ -2327,8 +2327,9 @@ describe('Prerender Audit', () => {
         };
 
         const logStub = {
-          info: sandbox.stub(),
           debug: sandbox.stub(),
+          info: sandbox.stub(),
+          warn: sandbox.stub(),
         };
 
         const context = {
@@ -2358,7 +2359,7 @@ describe('Prerender Audit', () => {
 
         if (domainWideSuggestionLog) {
           expect(domainWideSuggestionLog).to.include('entire domain');
-          expect(domainWideSuggestionLog).to.include('regex');
+          expect(domainWideSuggestionLog).to.include('Regex');
         }
       });
 
@@ -4438,8 +4439,8 @@ describe('Prerender Audit', () => {
 
         expect(result.status).to.equal('complete');
         expect(result.auditResult.totalUrlsChecked).to.equal(1);
-        // Should have errors about missing HTML data (simplified approach)
-        expect(context.log.error.called).to.be.true;
+        // Should have debug logs about missing HTML data
+        expect(context.log.debug.called).to.be.true;
       });
 
       it('should handle error in getScrapedHtmlFromS3 and return null', async () => {
@@ -4486,9 +4487,9 @@ describe('Prerender Audit', () => {
 
         const result = await processContentAndGenerateOpportunities(fullContext);
 
-        // Should complete but with warnings (from S3) and errors (from compareHtmlContent) logged
+        // Should complete but with warnings/debug logs from S3 and compareHtmlContent
         expect(result.status).to.equal('complete');
-        expect(context.log.warn.called || context.log.error.called).to.be.true;
+        expect(context.log.warn.called || context.log.debug.called).to.be.true;
       });
 
       it('should handle missing server-side or client-side HTML in compareHtmlContent', async () => {
@@ -4536,13 +4537,13 @@ describe('Prerender Audit', () => {
         const result = await processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
-        // Should log about missing HTML data (simplified error handling)
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for')
+        expect(context.log.debug).to.have.been.called;
+        // Should log about missing HTML data at debug level
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for')
         );
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should handle when both server-side and client-side HTML are null', async () => {
@@ -4593,13 +4594,13 @@ describe('Prerender Audit', () => {
         const result = await processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
-        // Should log error about missing HTML data (simplified error handling)
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for')
+        expect(context.log.debug).to.have.been.called;
+        // Should log about missing HTML data at debug level
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for')
         );
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should throw for empty HTML strings', async () => {
@@ -5088,13 +5089,13 @@ describe('Prerender Audit', () => {
 
         expect(result.status).to.equal('complete');
 
-        // Verify the simplified error handling for missing data
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for')
+        // Verify the simplified error handling for missing data (now at debug level)
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for')
         );
 
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should trigger HTML analysis error handling', async () => {
@@ -5143,9 +5144,9 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
-        // Verify the HTML analysis error was logged
-        expect(context.log.error.args.some(call => call[0].includes('HTML analysis failed for'))).to.be.true;
+        expect(context.log.debug).to.have.been.called;
+        // Verify the HTML analysis error was logged at debug level
+        expect(context.log.debug.args.some(call => call[0].includes('HTML analysis failed for'))).to.be.true;
       });
 
       it('should trigger opportunity and suggestion creation flow', async () => {
@@ -5292,6 +5293,8 @@ describe('Prerender Audit', () => {
 
         expect(mappedSuggestion.data.originalHtmlKey).to.include('prerender/scrapes/scrape-job-123');
         expect(mappedSuggestion.data.prerenderedHtmlKey).to.include('prerender/scrapes/scrape-job-123');
+        // scrapeJobId must be persisted so downstream callers always use the correct job's artifacts
+        expect(mappedSuggestion.data.scrapeJobId).to.equal('scrape-job-123');
       });
 
       it('should update existing PRERENDER opportunity with all data fields', async () => {
@@ -5329,6 +5332,7 @@ describe('Prerender Audit', () => {
             Opportunity: mockOpportunity,
           },
           log: {
+            debug: sinon.stub(),
             info: sinon.stub(),
             warn: sinon.stub(),
             error: sinon.stub(),
@@ -5446,14 +5450,14 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
+        expect(context.log.debug).to.have.been.called;
 
-        // The defensive check should now catch the empty server HTML
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for')
+        // The defensive check should now catch the empty server HTML (logged at debug)
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for')
         );
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should handle S3 fetch errors', async () => {
@@ -5501,14 +5505,14 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
+        expect(context.log.debug).to.have.been.called;
 
-        // Should get Missing HTML data error for both null values
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for')
+        // Should get Missing HTML data logged at debug for both null values
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for')
         );
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should handle both files missing (null responses)', async () => {
@@ -5556,14 +5560,14 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
+        expect(context.log.debug).to.have.been.called;
 
-        // Should handle both null values properly
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for')
+        // Should handle both null values properly (logged at debug)
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for')
         );
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should now properly test the meaningful defensive check', async () => {
@@ -5613,14 +5617,14 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
+        expect(context.log.debug).to.have.been.called;
 
-        // This should trigger the defensive check and log the missing data error
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for') && msg.includes('client-side: false')
+        // This should trigger the defensive check and log at debug
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for') && msg.includes('client-side: false')
         );
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should handle scrape.json fetch rejection', async () => {

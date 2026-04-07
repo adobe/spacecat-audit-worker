@@ -69,12 +69,12 @@ describe('Index Tests', () => {
   it('rejects when a message received with unknown type audit', async () => {
     messageBodyJson.type = 'unknown-type';
     context.invocation.event.Records[0].body = JSON.stringify(messageBodyJson);
-    const errorSpy = sandbox.spy(console, 'error');
+    const warnSpy = sandbox.spy(console, 'warn');
     const resp = await main(request, context);
 
     expect(resp.status).to.equal(404);
-    // Check that an error containing 'no such audit type: unknown-type' was logged
-    expect(errorSpy.args.some((args) => args.some(
+    // Check that a warning containing 'no such audit type: unknown-type' was logged
+    expect(warnSpy.args.some((args) => args.some(
       (arg) => (typeof arg === 'string' && arg.includes('no such audit type: unknown-type'))
         || (typeof arg === 'object' && arg?.message?.includes('no such audit type: unknown-type')),
     ))).to.be.true;

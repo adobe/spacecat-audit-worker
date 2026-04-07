@@ -168,6 +168,6 @@ describe('Index DRS message normalization', () => {
     const resp = await main(new Request('https://space.cat'), context);
 
     expect(resp.status).to.equal(404);
-    expect(context.log.error).to.have.been.calledWith('no such audit type: drs:unknown_provider');
+    expect(context.log.warn).to.have.been.calledWith('no such audit type: drs:unknown_provider');
   });
 });
