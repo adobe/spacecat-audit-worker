@@ -5983,6 +5983,7 @@ describe('Prerender Audit', () => {
         scrapingStatus: 'success',
         needsPrerender: true,
         isDeployedAtEdge: false,
+        usedEarlyClientSideHtml: false,
         wordCountBefore: 100,
         wordCountAfter: 250,
         contentGainRatio: 2.5,
@@ -6212,6 +6213,7 @@ describe('Prerender Audit', () => {
         scrapingStatus: 'success',
         needsPrerender: false,
         isDeployedAtEdge: false,
+        usedEarlyClientSideHtml: false,
         wordCountBefore: 0,
         wordCountAfter: 0,
         contentGainRatio: 0,
@@ -6695,7 +6697,7 @@ describe('Prerender Audit', () => {
       const normalPage = uploadedData.pages.find((p) => p.url === 'https://example.com/normal-page');
 
       expect(earlyPage.usedEarlyClientSideHtml).to.equal(true);
-      expect(normalPage).to.not.have.property('usedEarlyClientSideHtml');
+      expect(normalPage.usedEarlyClientSideHtml).to.equal(false);
     });
   });
 

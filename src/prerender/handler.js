@@ -1243,7 +1243,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
         scrapingStatus: result.error ? 'error' : 'success',
         needsPrerender: result.needsPrerender || false,
         isDeployedAtEdge: !!result.isDeployedAtEdge,
-        ...(result.usedEarlyClientSideHtml && { usedEarlyClientSideHtml: true }),
+        usedEarlyClientSideHtml: !!result.usedEarlyClientSideHtml,
         wordCountBefore: result.wordCountBefore || 0,
         wordCountAfter: result.wordCountAfter || 0,
         contentGainRatio: result.contentGainRatio || 0,
