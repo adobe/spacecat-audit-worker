@@ -257,7 +257,7 @@ export default async function cwvTrendsRunner(finalUrl, context, site, auditCont
 
   const siteId = site.getId();
 
-  const endDate = parseEndDate(auditContext.endDate, log);
+  const endDate = parseEndDate(auditContext.endDate ?? auditContext.messageData?.endDate, log);
   const startDate = subtractDays(endDate, TREND_DAYS - 1);
 
   log.info(`[${AUDIT_TYPE}] siteId: ${siteId} | Reading ${TREND_DAYS} days of S3 data`);

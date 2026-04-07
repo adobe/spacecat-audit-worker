@@ -427,6 +427,21 @@ describe('CWV Trends Audit Runner (utils.js)', () => {
     expect(summary.good.change).to.equal(0);
   });
 
+  it('uses endDate from auditContext.messageData when auditContext.endDate is absent', async () => {
+    const dates = makeDates(28, '2026-02-28');
+    const urls = [buildUrl('https://ex.com/p1', 'mobile')];
+    readTrendDataStub.resolves(buildDays(dates, urls));
+
+    const site = makeSite();
+    const context = makeContext();
+    const auditContext = { messageData: { endDate: '2026-03-27' } };
+
+    const result = await cwvTrendsRunner('https://ex.com', context, site, auditContext);
+
+    expect(mobileResult(result).metadata.endDate).to.equal('2026-03-27');
+    expect(mobileResult(result).metadata.startDate).to.equal('2026-02-28');
+  });
+
   it('uses custom endDate from auditContext when provided', async () => {
     const dates = makeDates(28, '2026-02-28');
     const urls = [buildUrl('https://ex.com/p1', 'mobile')];
