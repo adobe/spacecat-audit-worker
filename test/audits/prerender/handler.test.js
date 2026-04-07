@@ -359,6 +359,31 @@ describe('Prerender Audit', () => {
         expect(result.urls).to.deep.equal([{ url: 'https://example.com' }]);
       });
 
+      it('should use overrideBaseURL as fallback URL when no URLs found', async () => {
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://main--example--adobecom.hlx.page',
+            getConfig: () => ({
+              getIncludedURLs: () => [],
+              getFetchConfig: () => ({ overrideBaseURL: 'https://www.override.com' }),
+            }),
+          },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          env: {},
+          auditContext: { next: 'process-content-and-generate-opportunities', auditId: 'test-audit-id', auditType: 'prerender' },
+        };
+
+        const result = await submitForScraping(context);
+        expect(result.urls).to.deep.equal([{ url: 'https://www.override.com' }]);
+      });
+
       it('should use explicit auditContext URLs when provided', async () => {
         const mockSiteTopPage = {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
@@ -426,6 +451,34 @@ describe('Prerender Audit', () => {
         expect(submittedUrls).to.include('https://example.com/csv-page-1');
         expect(submittedUrls).to.include('https://example.com/csv-page-2');
         submittedUrls.forEach((u) => expect(u).to.not.include('www.'));
+      });
+
+      it('uses overrideBaseURL from site config as domain for csvUrls rebasing', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => [],
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://main--example--adobecom.hlx.page',
+            getConfig: () => ({
+              getFetchConfig: () => ({ overrideBaseURL: 'https://www.override.com' }),
+            }),
+          },
+          auditContext: {
+            urls: ['https://main--example--adobecom.hlx.page/page-1'],
+          },
+          finalUrl: 'https://main--example--adobecom.hlx.page',
+          log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+        const submittedUrls = result.urls.map((u) => u.url);
+        expect(submittedUrls).to.include('https://www.override.com/page-1');
       });
 
       it('should include includedURLs from site config', async () => {
@@ -706,6 +759,41 @@ describe('Prerender Audit', () => {
         expect(submittedUrls).to.include('https://example.com/organic-2');
         expect(submittedUrls).to.include('https://example.com/included-page');
         submittedUrls.forEach((u) => expect(u).to.not.include('www.'));
+      });
+
+      it('uses overrideBaseURL from site config as domain for organic and included URL rebasing', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => [],
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://main--example--adobecom.hlx.page',
+            getConfig: () => ({
+              getFetchConfig: () => ({ overrideBaseURL: 'https://www.override.com' }),
+              getIncludedURLs: () => ['https://main--example--adobecom.hlx.page/included'],
+            }),
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: async () => [
+                { getUrl: () => 'https://main--example--adobecom.hlx.page/organic-1' },
+              ],
+            },
+            PageCitability: { allByIndexKeys: async () => [] },
+          },
+          finalUrl: 'https://main--example--adobecom.hlx.page',
+          log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+        const submittedUrls = result.urls.map((u) => u.url);
+        expect(submittedUrls).to.include('https://www.override.com/organic-1');
+        expect(submittedUrls).to.include('https://www.override.com/included');
       });
 
       describe('daily batching', () => {

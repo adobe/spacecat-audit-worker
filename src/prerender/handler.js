@@ -855,7 +855,7 @@ export async function submitForScraping(context) {
 
   if (finalUrls.length === 0) {
     // Fallback to base URL if no URLs found
-    const baseURL = site.getBaseURL();
+    const baseURL = getPreferredBaseUrl(site, context);
     log.info(`${LOG_PREFIX} No URLs found, falling back to baseUrl=${baseURL}, siteId=${site.getId()}`);
     finalUrls.push(baseURL);
   }
@@ -1487,8 +1487,8 @@ export async function processContentAndGenerateOpportunities(context) {
     /* c8 ignore next 5 - Edge case: empty URLs fallback, difficult to reach in tests */
     if (urlsToCheck.length === 0) {
       // Final fallback to base URL
-      urlsToCheck = [site.getBaseURL()];
-      log.info(`${LOG_PREFIX} No URLs found for comparison. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
+      urlsToCheck = [getPreferredBaseUrl(site, context)];
+      log.info(`${LOG_PREFIX} No URLs found for comparison. baseUrl=${getPreferredBaseUrl(site, context)}, siteId=${siteId}`);
     }
 
     const comparisonResults = await Promise.all(
