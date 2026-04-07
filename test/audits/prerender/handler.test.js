@@ -7873,6 +7873,61 @@ describe('Prerender Audit', () => {
         normalWords: 130,
       });
     });
+
+    it('should forward usedEarlyClientSideHtml from scrape.json metadata to auditResult.results', async () => {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/prerender/utils/html-comparator.js': {
+          analyzeHtmlForPrerender: sinon.stub().resolves({
+            needsPrerender: false,
+            contentGainRatio: 1.0,
+            wordCountBefore: 50,
+            wordCountAfter: 50,
+            citabilityScore: 0.5,
+            wordDifference: 0,
+          }),
+        },
+      });
+
+      const mockS3Client = {
+        send: sinon.stub().callsFake(async (cmd) => {
+          const key = cmd.input?.Key || '';
+          if (key.endsWith('scrape.json')) {
+            return {
+              ContentType: 'application/json',
+              Body: { transformToString: () => Promise.resolve(JSON.stringify({ usedEarlyClientSideHtml: true })) },
+            };
+          }
+          return {
+            ContentType: 'text/html',
+            Body: { transformToString: () => Promise.resolve('<html><body>content</body></html>') },
+          };
+        }),
+      };
+
+      const context = {
+        site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
+        audit: { getId: () => 'audit-id' },
+        dataAccess: {
+          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+          PageCitability: {
+            allBySiteId: sinon.stub().resolves([]),
+            create: sinon.stub().resolves({}),
+          },
+        },
+        log: {
+          info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub(),
+        },
+        s3Client: mockS3Client,
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        auditContext: { scrapeJobId: 'job-1' },
+        scrapeResultPaths: new Map([['https://example.com/page1', '/tmp/page1']]),
+      };
+
+      const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+      const page = result.auditResult.results.find((r) => r.url === 'https://example.com/page1');
+      expect(page.usedEarlyClientSideHtml).to.equal(true);
+    });
   });
 
   describe('writeToCitabilityRecords', () => {
