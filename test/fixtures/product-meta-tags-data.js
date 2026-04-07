@@ -300,7 +300,7 @@ const productTestData = {
     },
     tags: ['Commerce', 'Product SEO', 'Traffic acquisition', 'isAco'],
     data: {
-      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.RUM, DATA_SOURCES.SITE],
+      dataSources: [DATA_SOURCES.SEO, DATA_SOURCES.RUM, DATA_SOURCES.SITE],
       projectedTrafficLost: 150,
       projectedTrafficValue: 75,
     },

@@ -71,6 +71,16 @@ describe('Commerce Product Enrichments Handler', () => {
         getExcludedURLs: sinon.stub().returns([]),
         updateExcludedURLs: sinon.stub(),
         getHandlers: sinon.stub().returns({}),
+        state: {
+          commerceLlmoConfig: {
+            'https://example.com/': {
+              environmentId: 'env-123',
+              websiteCode: 'base',
+              storeCode: 'main_store',
+              storeViewCode: 'default',
+            },
+          },
+        },
       }),
       setConfig: sinon.stub(),
       save: sinon.stub().resolves(),
@@ -160,6 +170,53 @@ describe('Commerce Product Enrichments Handler', () => {
       fullAuditRef: 'scrapes/site-1/',
     });
     expect(result).to.not.have.property('auditContext');
+  });
+
+  it('importTopPages returns SKIPPED when commerceLlmoConfig is missing', async () => {
+    site.getConfig.returns({
+      getIncludedURLs: sinon.stub().resolves([]),
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({}),
+    });
+
+    const context = {
+      site,
+      finalUrl: 'https://example.com',
+      log,
+    };
+
+    const result = await importTopPages(context);
+
+    expect(result.auditResult.status).to.equal('SKIPPED');
+    expect(result.auditResult.message).to.include('commerceLlmoConfig');
+    expect(log.warn.calledWithMatch(/No valid commerceLlmoConfig/)).to.be.true;
+  });
+
+  it('importTopPages returns SKIPPED when commerceLlmoConfig has no valid store views', async () => {
+    site.getConfig.returns({
+      getIncludedURLs: sinon.stub().resolves([]),
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({}),
+      state: {
+        commerceLlmoConfig: {
+          'https://example.com/': {
+            environmentId: 'env-123',
+          },
+        },
+      },
+    });
+
+    const context = {
+      site,
+      finalUrl: 'https://example.com',
+      log,
+    };
+
+    const result = await importTopPages(context);
+
+    expect(result.auditResult.status).to.equal('SKIPPED');
   });
 
   it('submitForScraping combines top pages and included URLs, filters PDFs', async () => {
@@ -766,6 +823,71 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.auditResult.message).to.include('Found 1 product pages');
   });
 
+  it('runAuditAndProcessResults detects product page with duplicate JSON-LD Product entries (same SKU)', async () => {
+    site.getConfig.returns({
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({}),
+    });
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            url: 'https://example.com/product-1',
+            finalUrl: 'https://example.com/product-1',
+            scrapeResult: {
+              structuredData: {
+                jsonld: {
+                  Product: [
+                    {
+                      '@type': 'Product',
+                      name: 'Test Product',
+                      sku: 'TEST-SKU-123',
+                    },
+                    {
+                      '@type': 'Product',
+                      name: 'Test Product',
+                      sku: 'TEST-SKU-123',
+                      url: 'https://example.com/product-1',
+                    },
+                  ],
+                },
+              },
+            },
+          })),
+        },
+      }),
+    };
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
+    ]);
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-dup-sku' },
+      finalUrl: 'https://example.com',
+      log: {
+        ...log,
+        debug: sinon.spy(),
+      },
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      scrapeResultPaths,
+    };
+
+    const result = await runAuditAndProcessResults(context);
+
+    expect(result.auditResult.status).to.equal('OPPORTUNITIES_FOUND');
+    expect(result.auditResult.processedPages).to.equal(1);
+    expect(result.auditResult.productPages).to.equal(1);
+    expect(result.auditResult.message).to.include('Found 1 product pages');
+  });
+
   it('runAuditAndProcessResults filters out category pages with multiple products', async () => {
     site.getConfig.returns({
       getExcludedURLs: sinon.stub().returns([]),
@@ -930,7 +1052,6 @@ describe('Commerce Product Enrichments Handler', () => {
     const result = await runAuditAndProcessResults(context);
 
     expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
-    expect(log.warn).to.have.been.calledWith(sinon.match(/Failed to extract commerce config/));
   });
 
   it('runAuditAndProcessResults logs commerce config at debug for minimal AC config', async () => {
@@ -1125,7 +1246,14 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.auditResult.enrichmentResponse).to.deep.equal([null]);
   });
 
-  it('runAuditAndProcessResults skips enrichment when commerce config extraction fails', async () => {
+  it('runAuditAndProcessResults skips enrichment when commerce config extraction fails (deprecated fallback)', async () => {
+    // Override site config to have no commerceLlmoConfig — exercises deprecated remote fallback
+    site.getConfig.returns({
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({}),
+    });
+
     // Mock config fetch with error
     fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
       ok: false,
@@ -1172,6 +1300,9 @@ describe('Commerce Product Enrichments Handler', () => {
     };
 
     const result = await runAuditAndProcessResults(context);
+
+    // Verify deprecation warning was logged
+    expect(log.warn).to.have.been.calledWith(sinon.match(/remote config fallback is deprecated/));
 
     // Verify no enrichment call attempted
     const enrichmentCalls = fetchStub.getCalls().filter((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
@@ -3265,12 +3396,37 @@ describe('Commerce Product Enrichments Handler - Yearly (Sitemap)', () => {
       getConfig: sinon.stub().returns({
         getIncludedURLs: sinon.stub().resolves([]),
         getExcludedURLs: sinon.stub().returns([]),
+        state: {
+          commerceLlmoConfig: {
+            'https://example.com/': {
+              environmentId: 'env-123',
+              websiteCode: 'base',
+              storeCode: 'main_store',
+              storeViewCode: 'default',
+            },
+          },
+        },
       }),
     };
   });
 
   afterEach(() => {
     sinon.restore();
+  });
+
+  it('discoverSitemapUrlsAndSubmitForScraping returns SKIPPED when commerceLlmoConfig is missing', async () => {
+    site.getConfig.returns({
+      getIncludedURLs: sinon.stub().resolves([]),
+      getExcludedURLs: sinon.stub().returns([]),
+    });
+
+    const result = await discoverSitemapUrlsAndSubmitForScraping({
+      site, log, data: {},
+    });
+
+    expect(result.auditResult.status).to.equal('SKIPPED');
+    expect(result.auditResult.message).to.include('commerceLlmoConfig');
+    expect(getSitemapUrlsStub).to.not.have.been.called;
   });
 
   it('discovers sitemap URLs and builds scrape payload', async () => {
@@ -3432,6 +3588,16 @@ describe('Commerce Product Enrichments Handler - Yearly (Sitemap)', () => {
       getExcludedURLs: sinon.stub().returns([
         'https://example.com/page-2',
       ]),
+      state: {
+        commerceLlmoConfig: {
+          'https://example.com/': {
+            environmentId: 'env-123',
+            websiteCode: 'base',
+            storeCode: 'main_store',
+            storeViewCode: 'default',
+          },
+        },
+      },
     });
 
     const result = await discoverSitemapUrlsAndSubmitForScraping({

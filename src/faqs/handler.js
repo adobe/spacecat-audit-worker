@@ -15,13 +15,15 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
 import { getPreviousWeekTriples } from '../utils/date-utils.js';
-import { SPREADSHEET_COLUMNS, validateContentAI } from './utils.js';
+import {
+  buildColumnMap, getColumn, validateContentAI,
+} from './utils.js';
 
 const MAX_SUGGESTION_PROMPTS = 200;
 const WEEKS_TO_LOOK_BACK = 4;
 
 /**
- * Groups prompts by URL and topic
+ * Groups prompts by URL and topic.
  * @param {Array} prompts - Array of prompt objects with url, topic, question
  * @returns {Array} Grouped prompts [{ url, topic, prompts: [] }]
  */
@@ -68,17 +70,19 @@ async function readBrandPresenceSpreadsheet(filename, outputLocation, sharepoint
     }
 
     const prompts = [];
-    // Read all rows (excluding header row)
     const totalDataRows = worksheet.rowCount - 1;
     const rows = worksheet.getRows(2, totalDataRows) || [];
 
     log.info(`[FAQ] Reading all ${totalDataRows} rows from spreadsheet (total rows: ${worksheet.rowCount})`);
 
-    // Extract data using named column constants
+    const colMap = buildColumnMap(worksheet);
+    const topicsCol = getColumn(colMap, 'Topics');
+    const promptCol = getColumn(colMap, 'Prompt');
+    const urlCol = getColumn(colMap, 'URL');
     rows.forEach((row) => {
-      const topic = row.getCell(SPREADSHEET_COLUMNS.TOPICS).value;
-      const prompt = row.getCell(SPREADSHEET_COLUMNS.PROMPT).value;
-      const url = row.getCell(SPREADSHEET_COLUMNS.URL).value || '';
+      const topic = topicsCol ? row.getCell(topicsCol).value : null;
+      const prompt = promptCol ? row.getCell(promptCol).value : null;
+      const url = urlCol ? row.getCell(urlCol).value || '' : '';
 
       if (topic && prompt) {
         prompts.push({
@@ -105,7 +109,7 @@ async function readBrandPresenceSpreadsheet(filename, outputLocation, sharepoint
 }
 
 /**
- * Sorts prompts with URLs first, then prompts without URLs
+ * Sorts prompts with URL-column rows first, then generic rows.
  * @param {Array} prompts - Array of prompt objects with url, topic, and question
  * @returns {Array} Sorted array of prompts
  */
@@ -238,7 +242,7 @@ async function runFaqsAudit(url, context, site) {
 
     log.info(`[FAQ] Using brand presence data from ${usedPeriodIdentifier}`);
 
-    // Sort prompts: ones with URLs first, then ones without URLs
+    // Sort prompts so URL-specific rows win during dedupe over generic rows.
     const sortedPrompts = sortPrompts(topPrompts);
 
     // Deduplicate prompts (keeps first occurrence, which prioritizes URLs due to sorting)

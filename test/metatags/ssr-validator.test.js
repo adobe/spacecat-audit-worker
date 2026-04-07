@@ -217,6 +217,56 @@ describe('SSR Meta Validator', () => {
       expect(result).to.be.null;
       expect(log.warn).to.have.been.calledWith('Error during SSR validation for https://example.com: Request timeout');
     });
+
+    it('should ignore SVG <title> elements and only read <head><title>', async () => {
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Real Page Title</title>
+          </head>
+          <body>
+            <svg aria-labelledby="icon-title" class="icon-globe">
+              <title id="icon-title">Globe</title>
+            </svg>
+          </body>
+        </html>
+      `;
+
+      fetchStub.resolves({
+        ok: true,
+        status: 200,
+        text: async () => html,
+      });
+
+      const result = await validateMetaTagsViaSSR('https://example.com', log);
+
+      expect(result.title).to.equal('Real Page Title');
+    });
+
+    it('should return null title when only an SVG <title> exists and head title is absent', async () => {
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <head></head>
+          <body>
+            <svg aria-labelledby="icon-title" class="icon-globe">
+              <title id="icon-title">Globe</title>
+            </svg>
+          </body>
+        </html>
+      `;
+
+      fetchStub.resolves({
+        ok: true,
+        status: 200,
+        text: async () => html,
+      });
+
+      const result = await validateMetaTagsViaSSR('https://example.com', log);
+
+      expect(result.title).to.be.null;
+    });
   });
 
   describe('validateDetectedIssues', () => {

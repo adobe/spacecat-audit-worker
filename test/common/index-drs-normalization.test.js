@@ -119,6 +119,37 @@ describe('Index DRS message normalization', () => {
     );
   });
 
+  it('passes onboarding_mode and imsOrgId through normalization for v2', async () => {
+    const drsMessage = {
+      event_type: 'JOB_COMPLETED',
+      job_id: 'drs-job-v2',
+      provider_id: 'prompt_generation_base_url',
+      result_location: 's3://bucket/results.json',
+      metadata: {
+        site_id: 'site-123',
+        source: 'onboarding',
+        brand: 'TestBrand',
+        onboarding_mode: 'v2',
+        imsOrgId: 'ABC123@AdobeOrg',
+      },
+    };
+
+    context.invocation = {
+      event: {
+        Records: [{ body: JSON.stringify(drsMessage) }],
+      },
+    };
+
+    const resp = await main(new Request('https://space.cat'), context);
+
+    expect(resp.status).to.equal(200);
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    const [, sentMessage] = context.sqs.sendMessage.firstCall.args;
+    expect(sentMessage.type).to.equal('llmo-customer-analysis');
+    expect(sentMessage.auditContext.onboardingMode).to.equal('v2');
+    expect(sentMessage.auditContext.imsOrgId).to.equal('ABC123@AdobeOrg');
+  });
+
   it('returns 404 for DRS message with unknown provider_id', async () => {
     const drsMessage = {
       event_type: 'JOB_COMPLETED',
@@ -137,6 +168,6 @@ describe('Index DRS message normalization', () => {
     const resp = await main(new Request('https://space.cat'), context);
 
     expect(resp.status).to.equal(404);
-    expect(context.log.error).to.have.been.calledWith('no such audit type: drs:unknown_provider');
+    expect(context.log.warn).to.have.been.calledWith('no such audit type: drs:unknown_provider');
   });
 });

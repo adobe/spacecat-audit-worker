@@ -13,6 +13,7 @@
 import { pickUrlsFromSerpResults } from '../support/bright-data-serp-urls.js';
 import { createInternalLinksConfigResolver } from './config.js';
 import { createInternalLinksStepLogger } from './logging.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 export function createOpportunityAndSuggestionsStep({
   auditType,
@@ -138,12 +139,12 @@ export function createOpportunityAndSuggestionsStep({
       return { status: 'complete', reportedBrokenLinks: reportedLinks };
     }
 
-    let ahrefsTopPages = [];
+    let seoTopPages = [];
     try {
-      ahrefsTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-      log.info(`Found ${ahrefsTopPages.length} top pages from Ahrefs`);
+      seoTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
+      log.info(`Found ${seoTopPages.length} top pages from SEO provider`);
     } catch (error) {
-      log.warn(`Failed to fetch Ahrefs top pages: ${error.message}`);
+      log.warn(`Failed to fetch SEO top pages: ${error.message}`);
     }
 
     const includedURLs = site?.getConfig()?.getIncludedURLs?.('broken-internal-links') || [];
@@ -151,7 +152,7 @@ export function createOpportunityAndSuggestionsStep({
     const maxUrlsToProcess = config.getMaxUrlsToProcess();
 
     const includedTopPages = includedURLs.map((url) => ({ getUrl: () => url }));
-    let topPages = [...ahrefsTopPages, ...includedTopPages];
+    let topPages = [...seoTopPages, ...includedTopPages];
 
     if (topPages.length > maxUrlsToProcess) {
       log.warn(`Capping URLs from ${topPages.length} to ${maxUrlsToProcess}`);
@@ -244,11 +245,13 @@ export function createOpportunityAndSuggestionsStep({
           return;
         }
 
-        suggestion.setData({
+        const updatedData = {
           ...suggestion.getData(),
           urlsSuggested,
           aiRationale: `Suggested URLs are chosen from top search results for closely matching keywords from the broken URL. Keywords used: "${keywords}".`,
-        });
+        };
+        warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
+        suggestion.setData(updatedData);
 
         await suggestion.save();
         resolvedByBrightData.add(brokenLink.suggestionId);

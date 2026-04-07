@@ -12,17 +12,12 @@
 import nock from 'nock';
 import { site2 } from './sites.js';
 
-export const ahrefsMock = (url, result) => {
-  nock(url)
-    .get(/.*/)
-    .reply(200);
-
-  nock('https://ahrefs.com')
-    .get(/.*/)
-    .reply(200, result);
-};
-
-export const mockFixedBacklinks = (backlinks) => {
+/**
+ * Mocks URL validation responses for fixed backlinks.
+ * These nocks simulate the HTTP requests made by filterOutValidBacklinks()
+ * to check whether broken backlink targets are still broken.
+ */
+export const mockFixedBacklinkUrls = () => {
   nock('https://foo.com')
     .get('/fixed')
     .reply(200);
@@ -38,8 +33,4 @@ export const mockFixedBacklinks = (backlinks) => {
   nock(site2.getBaseURL())
     .get('/')
     .reply(200);
-
-  nock('https://ahrefs.com')
-    .get(/.*/)
-    .reply(200, { backlinks });
 };

@@ -18,6 +18,7 @@ import { BaseAudit } from './base-audit.js';
 import {
   isAuditEnabledForSite,
   loadExistingAudit,
+  preserveOnDemand,
   sendContinuationMessage,
 } from './audit-utils.js';
 import { handleAbort } from './bot-detection.js';
@@ -76,9 +77,13 @@ export class StepAudit extends BaseAudit {
       fullAuditRef: audit.getFullAuditRef(),
     };
 
-    const auditContext = isNonEmptyObject(stepResult.auditContext)
-      ? { ...stepResult.auditContext, ...baseAuditContext }
-      : baseAuditContext;
+    const preserved = preserveOnDemand(context.auditContext);
+
+    const auditContext = {
+      ...preserved,
+      ...(isNonEmptyObject(stepResult.auditContext) ? stepResult.auditContext : {}),
+      ...baseAuditContext,
+    };
 
     if (step.destination === AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT) {
       const scrapeClient = ScrapeClient.createFrom(context);
@@ -112,7 +117,7 @@ export class StepAudit extends BaseAudit {
         site.requiresValidation = context.site.requiresValidation;
       }
       if (!(await isAuditEnabledForSite(type, site, context))) {
-        log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
+        log.debug(`${type} audits disabled for site ${siteId}, skipping...`);
         return ok();
       }
 

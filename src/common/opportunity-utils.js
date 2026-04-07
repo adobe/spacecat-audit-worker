@@ -24,7 +24,7 @@ export async function checkGoogleConnection(auditUrl, context) {
   try {
     return !!await GoogleClient.createFrom(context, auditUrl);
   } catch (error) {
-    log.warn(`Failed to create Google client for site with url ${auditUrl}. Site was probably not onboarded to GSC yet. Error: ${error.message}`);
+    log.debug(`Failed to create Google client for site with url ${auditUrl}. Site was probably not onboarded to GSC yet. Error: ${error.message}`);
     return false;
   }
 }

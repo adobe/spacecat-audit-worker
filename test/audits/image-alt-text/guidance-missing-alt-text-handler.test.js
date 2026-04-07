@@ -45,6 +45,7 @@ describe('Missing Alt Text Guidance Handler', () => {
       getType: () => AuditModel.AUDIT_TYPES.ALT_TEXT,
       getSiteId: () => 'site-id',
       setUpdatedBy: sandbox.stub(),
+      setLastAuditedAt: sandbox.stub(),
     };
 
     mockSite = {
@@ -567,6 +568,30 @@ describe('Missing Alt Text Guidance Handler', () => {
 
     expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
     expect(getProjectedMetricsStub).to.have.been.called;
+  });
+
+  it('should set lastAuditedAt when all Mystique responses have been received', async () => {
+    mockOpportunity.getData.returns({
+      mystiqueResponsesReceived: 0,
+      mystiqueResponsesExpected: 1,
+    });
+
+    await guidanceHandler(mockMessage, context);
+
+    expect(mockOpportunity.setLastAuditedAt).to.have.been.calledOnce;
+    const isoArg = mockOpportunity.setLastAuditedAt.firstCall.args[0];
+    expect(new Date(isoArg).toISOString()).to.equal(isoArg);
+  });
+
+  it('should not set lastAuditedAt when Mystique responses are still pending', async () => {
+    mockOpportunity.getData.returns({
+      mystiqueResponsesReceived: 0,
+      mystiqueResponsesExpected: 2,
+    });
+
+    await guidanceHandler(mockMessage, context);
+
+    expect(mockOpportunity.setLastAuditedAt).to.not.have.been.called;
   });
 
   it('should set success status on audit after processing Mystique response', async () => {

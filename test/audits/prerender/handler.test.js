@@ -400,6 +400,34 @@ describe('Prerender Audit', () => {
         expect(context.log.info).to.have.been.calledWithMatch('csvUrls=4');
       });
 
+      it('rebases csvUrls (auditContext.urls) to getPreferredBaseUrl domain', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => [],
+            getPreferredBaseUrl: () => 'https://example.com',
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://example.com',
+          },
+          auditContext: {
+            urls: ['https://www.example.com/csv-page-1', 'https://www.example.com/csv-page-2'],
+          },
+          finalUrl: 'https://example.com',
+          log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+        const submittedUrls = result.urls.map((u) => u.url);
+        expect(submittedUrls).to.include('https://example.com/csv-page-1');
+        expect(submittedUrls).to.include('https://example.com/csv-page-2');
+        submittedUrls.forEach((u) => expect(u).to.not.include('www.'));
+      });
+
       it('should include includedURLs from site config', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-athena-client': {
@@ -618,7 +646,7 @@ describe('Prerender Audit', () => {
         });
 
         const mockSiteTopPage = {
-          // Return undefined to exercise `(topPages || [])` fallback in getTopOrganicUrlsFromAhrefs
+          // Return undefined to exercise `(topPages || [])` fallback in getTopOrganicUrlsFromSeo
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(undefined),
         };
 
@@ -642,6 +670,44 @@ describe('Prerender Audit', () => {
         expect(result).to.be.an('object');
         expect(result.urls).to.be.an('array');
       });
+      it('rebases organic and included URLs to getPreferredBaseUrl domain', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => [],
+            getPreferredBaseUrl: () => 'https://example.com',
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({
+              getIncludedURLs: () => ['https://www.example.com/included-page'],
+            }),
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: async () => [
+                { getUrl: () => 'https://www.example.com/organic-1' },
+                { getUrl: () => 'https://www.example.com/organic-2' },
+              ],
+            },
+            PageCitability: { allByIndexKeys: async () => [] },
+          },
+          finalUrl: 'https://example.com',
+          log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+        const submittedUrls = result.urls.map((u) => u.url);
+        expect(submittedUrls).to.include('https://example.com/organic-1');
+        expect(submittedUrls).to.include('https://example.com/organic-2');
+        expect(submittedUrls).to.include('https://example.com/included-page');
+        submittedUrls.forEach((u) => expect(u).to.not.include('www.'));
+      });
+
       describe('daily batching', () => {
         const makeAgenticUrls = (n, base = 'https://example.com/agentic-') => Array.from({ length: n }, (_, i) => `${base}${i}`);
         const makeCitabilityRecord = (path) => ({
@@ -2261,8 +2327,9 @@ describe('Prerender Audit', () => {
         };
 
         const logStub = {
-          info: sandbox.stub(),
           debug: sandbox.stub(),
+          info: sandbox.stub(),
+          warn: sandbox.stub(),
         };
 
         const context = {
@@ -2292,7 +2359,7 @@ describe('Prerender Audit', () => {
 
         if (domainWideSuggestionLog) {
           expect(domainWideSuggestionLog).to.include('entire domain');
-          expect(domainWideSuggestionLog).to.include('regex');
+          expect(domainWideSuggestionLog).to.include('Regex');
         }
       });
 
@@ -3869,7 +3936,7 @@ describe('Prerender Audit', () => {
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({ getIncludedURLs: () => [] }),
         },
-        // Intentionally omit SiteTopPage to exercise the "no top pages" branch in getTopOrganicUrlsFromAhrefs
+        // Intentionally omit SiteTopPage to exercise the "no top pages" branch in getTopOrganicUrlsFromSeo
         dataAccess: {},
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
       };
@@ -3981,6 +4048,59 @@ describe('Prerender Audit', () => {
       expect(loggedFallback).to.include('includedURLs=1');
     });
 
+    it('rebases organic and included URLs to preferredBase in fallback URL-list path', async () => {
+      const html = '<html><body><p>hello world content here</p></body></html>';
+      let capturedArgs = [];
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: async () => [],
+          getPreferredBaseUrl: () => 'https://example.com',
+        },
+        '../../../src/utils/s3-utils.js': {
+          getObjectFromKey: async () => html,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sinon.stub().resolves(false),
+          mergeAndGetUniqueHtmlUrls: (...args) => {
+            capturedArgs = args.flat();
+            return { urls: capturedArgs, filteredCount: 0 };
+          },
+        },
+      });
+
+      const ctx = {
+        site: {
+          getId: () => 'site-1',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getIncludedURLs: async () => ['https://www.example.com/included'],
+          }),
+        },
+        audit: { getId: () => 'a' },
+        dataAccess: {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+              { getUrl: () => 'https://www.example.com/organic' },
+            ]),
+          },
+          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sinon.stub().resolves() },
+        },
+        log: {
+          info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub(),
+        },
+        s3Client: { send: sinon.stub().resolves({}) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        scrapeResultPaths: new Map(),
+        auditContext: { scrapeJobId: 'test-job-id' },
+      };
+
+      await mockHandler.processContentAndGenerateOpportunities(ctx);
+      expect(capturedArgs).to.include('https://example.com/organic');
+      expect(capturedArgs).to.include('https://example.com/included');
+      capturedArgs.forEach((u) => expect(u).to.not.include('www.'));
+    });
+
     it('should handle missing dataAccess when loading top pages', async () => {
       const html = '<html><body><p>x</p></body></html>';
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
@@ -4023,7 +4143,7 @@ describe('Prerender Audit', () => {
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({ getIncludedURLs: () => [] }),
         },
-        // Intentionally omit dataAccess to exercise `dataAccess || {}` branch in getTopOrganicUrlsFromAhrefs
+        // Intentionally omit dataAccess to exercise `dataAccess || {}` branch in getTopOrganicUrlsFromSeo
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
         s3Client: { send: sinon.stub().resolves({}) },
         env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
@@ -4319,8 +4439,8 @@ describe('Prerender Audit', () => {
 
         expect(result.status).to.equal('complete');
         expect(result.auditResult.totalUrlsChecked).to.equal(1);
-        // Should have errors about missing HTML data (simplified approach)
-        expect(context.log.error.called).to.be.true;
+        // Should have debug logs about missing HTML data
+        expect(context.log.debug.called).to.be.true;
       });
 
       it('should handle error in getScrapedHtmlFromS3 and return null', async () => {
@@ -4367,9 +4487,9 @@ describe('Prerender Audit', () => {
 
         const result = await processContentAndGenerateOpportunities(fullContext);
 
-        // Should complete but with warnings (from S3) and errors (from compareHtmlContent) logged
+        // Should complete but with warnings/debug logs from S3 and compareHtmlContent
         expect(result.status).to.equal('complete');
-        expect(context.log.warn.called || context.log.error.called).to.be.true;
+        expect(context.log.warn.called || context.log.debug.called).to.be.true;
       });
 
       it('should handle missing server-side or client-side HTML in compareHtmlContent', async () => {
@@ -4417,13 +4537,13 @@ describe('Prerender Audit', () => {
         const result = await processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
-        // Should log about missing HTML data (simplified error handling)
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for')
+        expect(context.log.debug).to.have.been.called;
+        // Should log about missing HTML data at debug level
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for')
         );
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should handle when both server-side and client-side HTML are null', async () => {
@@ -4474,13 +4594,13 @@ describe('Prerender Audit', () => {
         const result = await processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
-        // Should log error about missing HTML data (simplified error handling)
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for')
+        expect(context.log.debug).to.have.been.called;
+        // Should log about missing HTML data at debug level
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for')
         );
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should throw for empty HTML strings', async () => {
@@ -4969,13 +5089,13 @@ describe('Prerender Audit', () => {
 
         expect(result.status).to.equal('complete');
 
-        // Verify the simplified error handling for missing data
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for')
+        // Verify the simplified error handling for missing data (now at debug level)
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for')
         );
 
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should trigger HTML analysis error handling', async () => {
@@ -5024,9 +5144,9 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
-        // Verify the HTML analysis error was logged
-        expect(context.log.error.args.some(call => call[0].includes('HTML analysis failed for'))).to.be.true;
+        expect(context.log.debug).to.have.been.called;
+        // Verify the HTML analysis error was logged at debug level
+        expect(context.log.debug.args.some(call => call[0].includes('HTML analysis failed for'))).to.be.true;
       });
 
       it('should trigger opportunity and suggestion creation flow', async () => {
@@ -5173,6 +5293,8 @@ describe('Prerender Audit', () => {
 
         expect(mappedSuggestion.data.originalHtmlKey).to.include('prerender/scrapes/scrape-job-123');
         expect(mappedSuggestion.data.prerenderedHtmlKey).to.include('prerender/scrapes/scrape-job-123');
+        // scrapeJobId must be persisted so downstream callers always use the correct job's artifacts
+        expect(mappedSuggestion.data.scrapeJobId).to.equal('scrape-job-123');
       });
 
       it('should update existing PRERENDER opportunity with all data fields', async () => {
@@ -5181,7 +5303,7 @@ describe('Prerender Audit', () => {
           getId: () => 'existing-opp-id',
           getType: () => 'prerender',
           getData: () => ({
-            dataSources: ['ahrefs'],
+            dataSources: ['seo'],
             oldField: 'should-be-preserved',
             scrapeForbidden: true, // Old value
           }),
@@ -5210,6 +5332,7 @@ describe('Prerender Audit', () => {
             Opportunity: mockOpportunity,
           },
           log: {
+            debug: sinon.stub(),
             info: sinon.stub(),
             warn: sinon.stub(),
             error: sinon.stub(),
@@ -5218,7 +5341,7 @@ describe('Prerender Audit', () => {
 
         const createOpportunityDataFn = (auditData) => ({
           data: {
-            dataSources: ['ahrefs', 'site'],
+            dataSources: ['seo', 'site'],
             scrapeForbidden: auditData?.auditResult?.scrapeForbidden === true,
             newField: 'new-value',
           },
@@ -5327,14 +5450,14 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
+        expect(context.log.debug).to.have.been.called;
 
-        // The defensive check should now catch the empty server HTML
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for')
+        // The defensive check should now catch the empty server HTML (logged at debug)
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for')
         );
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should handle S3 fetch errors', async () => {
@@ -5382,14 +5505,14 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
+        expect(context.log.debug).to.have.been.called;
 
-        // Should get Missing HTML data error for both null values
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for')
+        // Should get Missing HTML data logged at debug for both null values
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for')
         );
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should handle both files missing (null responses)', async () => {
@@ -5437,14 +5560,14 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
+        expect(context.log.debug).to.have.been.called;
 
-        // Should handle both null values properly
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for')
+        // Should handle both null values properly (logged at debug)
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for')
         );
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should now properly test the meaningful defensive check', async () => {
@@ -5494,14 +5617,14 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(context.log.error).to.have.been.called;
+        expect(context.log.debug).to.have.been.called;
 
-        // This should trigger the defensive check and log the missing data error
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg =>
-          msg.includes('Missing HTML data for') && msg.includes('client-side: false')
+        // This should trigger the defensive check and log at debug
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasMissingDataLog = debugMessages.some(msg =>
+          typeof msg === 'string' && msg.includes('Missing HTML data for') && msg.includes('client-side: false')
         );
-        expect(hasMissingDataError).to.be.true;
+        expect(hasMissingDataLog).to.be.true;
       });
 
       it('should handle scrape.json fetch rejection', async () => {
@@ -6357,6 +6480,103 @@ describe('Prerender Audit', () => {
       expect(uploadedData.pages).to.have.lengthOf(1);
       expect(uploadedData.pages[0].url).to.equal('https://example.com/page1');
     });
+
+    it('should preserve existing scrapeJobId for fallback URLs not in submittedUrlSet', async () => {
+      // Scenario: fallback mode where all 14 top pages are in auditResult.results, but only
+      // 9 were submitted to the current scrape job (submittedUrlSet has 9 URLs).
+      // The 5 "current organic" URLs not in submittedUrlSet must retain their prior scrapeJobId
+      // from the existing status.json rather than being overwritten with the new scrapeJobId.
+      const auditUrl = 'https://example.com';
+      const submittedUrl = 'https://example.com/submitted-page';
+      const notSubmittedUrl = 'https://example.com/not-submitted-page';
+      const submittedUrlSet = new Set([submittedUrl]);
+
+      const existingStatus = {
+        pages: [
+          {
+            url: notSubmittedUrl,
+            scrapingStatus: 'success',
+            needsPrerender: false,
+            scrapedAt: '2025-01-01T00:00:00.000Z',
+            scrapeJobId: 'old-job-id-from-previous-cycle',
+          },
+        ],
+      };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.resolve({
+            Body: { transformToString: () => Promise.resolve(JSON.stringify(existingStatus)) },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      const auditData = {
+        siteId: 'test-site-id',
+        scrapeJobId: 'current-job-id',
+        auditedAt: '2025-02-01T00:00:00.000Z',
+        submittedUrlSet,
+        auditResult: {
+          results: [
+            { url: submittedUrl, error: false, needsPrerender: true },
+            { url: notSubmittedUrl, error: false, needsPrerender: false },
+          ],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+      expect(uploadedData.pages).to.have.lengthOf(2);
+
+      const submittedPage = uploadedData.pages.find((p) => p.url === submittedUrl);
+      const notSubmittedPage = uploadedData.pages.find((p) => p.url === notSubmittedUrl);
+
+      // URL that was submitted to the current job gets the current scrapeJobId
+      expect(submittedPage.scrapeJobId).to.equal('current-job-id');
+      // URL NOT submitted to the current job retains its prior scrapeJobId from status.json
+      expect(notSubmittedPage.scrapeJobId).to.equal('old-job-id-from-previous-cycle');
+    });
+
+    it('should use null for fallback URL scrapeJobId when not in submittedUrlSet and no prior entry exists', async () => {
+      // Fallback URL has no entry in the existing status.json — scrapeJobId should be null
+      const auditUrl = 'https://example.com';
+      const submittedUrl = 'https://example.com/submitted-page';
+      const newFallbackUrl = 'https://example.com/new-fallback-page';
+      const submittedUrlSet = new Set([submittedUrl]);
+
+      // existing status has no entry for newFallbackUrl
+      const existingStatus = { pages: [] };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.resolve({
+            Body: { transformToString: () => Promise.resolve(JSON.stringify(existingStatus)) },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      const auditData = {
+        siteId: 'test-site-id',
+        scrapeJobId: 'current-job-id',
+        auditedAt: '2025-02-01T00:00:00.000Z',
+        submittedUrlSet,
+        auditResult: {
+          results: [
+            { url: submittedUrl, error: false, needsPrerender: false },
+            { url: newFallbackUrl, error: false, needsPrerender: false },
+          ],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+      const newFallbackPage = uploadedData.pages.find((p) => p.url === newFallbackUrl);
+      expect(newFallbackPage.scrapeJobId).to.equal(null);
+    });
   });
 
   describe('domain-wide suggestion preservation', () => {
@@ -6564,7 +6784,7 @@ describe('Prerender Audit', () => {
       };
       const result = await getScrapeJobStats(null, [], 5, context);
       expect(result).to.deep.equal({
-        urlsSubmittedForScraping: 5, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [],
+        urlsSubmittedForScraping: 5, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [], submittedUrlSet: null,
       });
       expect(context.dataAccess.ScrapeUrl.allByScrapeJobId).to.not.have.been.called;
     });
@@ -6578,7 +6798,7 @@ describe('Prerender Audit', () => {
       };
       const result = await getScrapeJobStats('job-1', [], 5, context);
       expect(result).to.deep.equal({
-        urlsSubmittedForScraping: 5, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [],
+        urlsSubmittedForScraping: 5, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [], submittedUrlSet: null,
       });
     });
 
@@ -6598,9 +6818,13 @@ describe('Prerender Audit', () => {
         env: { S3_SCRAPER_BUCKET_NAME: 'bucket' },
       };
       const result = await getScrapeJobStats('job-1', comparisonResults, 2, context);
-      expect(result).to.deep.equal({
-        urlsSubmittedForScraping: 2, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [],
-      });
+      expect(result.urlsSubmittedForScraping).to.equal(2);
+      expect(result.scrapeForbiddenCount).to.equal(0);
+      expect(result.scrapeForbidden).to.equal(false);
+      expect(result.missingPages).to.deep.equal([]);
+      expect(result.submittedUrlSet).to.be.instanceOf(Set);
+      expect(result.submittedUrlSet.has('https://example.com/page1')).to.be.true;
+      expect(result.submittedUrlSet.has('https://example.com/page2')).to.be.true;
     });
 
     it('should count FAILED-status 403 URL absent from comparisonResults', async () => {
@@ -6634,6 +6858,9 @@ describe('Prerender Audit', () => {
         needsPrerender: false,
         scrapeError: { statusCode: 403, message: 'Forbidden' },
       }]);
+      expect(result.submittedUrlSet).to.be.instanceOf(Set);
+      expect(result.submittedUrlSet.has('https://example.com/page1')).to.be.true;
+      expect(result.submittedUrlSet.has('https://example.com/forbidden')).to.be.true;
     });
 
     it('should set scrapeForbidden=true when all URLs (COMPLETE and FAILED) are 403', async () => {
@@ -6734,7 +6961,7 @@ describe('Prerender Audit', () => {
       };
       const result = await getScrapeJobStats('job-1', [], 3, context);
       expect(result).to.deep.equal({
-        urlsSubmittedForScraping: 3, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [],
+        urlsSubmittedForScraping: 3, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [], submittedUrlSet: null,
       });
       expect(context.log.warn).to.have.been.calledWith(sinon.match('Failed to fetch ScrapeUrl stats'));
     });
@@ -6753,7 +6980,7 @@ describe('Prerender Audit', () => {
       ];
       const result = await getScrapeJobStats('job-1', comparisonResults, 2, context);
       expect(result).to.deep.equal({
-        urlsSubmittedForScraping: 2, scrapeForbiddenCount: 2, scrapeForbidden: true, missingPages: [],
+        urlsSubmittedForScraping: 2, scrapeForbiddenCount: 2, scrapeForbidden: true, missingPages: [], submittedUrlSet: null,
       });
       expect(context.log.warn).to.have.been.calledWith(sinon.match('Failed to fetch ScrapeUrl stats'));
     });

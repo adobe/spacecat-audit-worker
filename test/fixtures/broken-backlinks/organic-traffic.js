@@ -12,7 +12,7 @@
 export const organicTraffic = (site) => [
   {
     siteId: site.getId(),
-    source: 'ahrefs',
+    source: 'seo',
     time: '2025-02-28T15:51:00Z',
     cost: 14912235,
     name: 'organic-traffic',
@@ -20,7 +20,7 @@ export const organicTraffic = (site) => [
   },
   {
     siteId: site.getId(),
-    source: 'ahrefs',
+    source: 'seo',
     time: '2025-01-03T15:51:00Z',
     cost: 14912235,
     name: 'organic-traffic',

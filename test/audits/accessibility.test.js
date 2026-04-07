@@ -518,7 +518,7 @@ describe('Accessibility Audit Handler', () => {
       expect(mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo)
         .to.have.been.calledWith(
           'test-site-id', // siteId from site.getId()
-          'ahrefs', // source
+          'seo', // source
           'global', // geo
         );
 
@@ -541,7 +541,7 @@ describe('Accessibility Audit Handler', () => {
       expect(mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo)
         .to.have.been.calledWith(
           'test-site-id', // siteId from site.getId()
-          'ahrefs', // source
+          'seo', // source
           'global', // geo
         );
 
@@ -564,7 +564,7 @@ describe('Accessibility Audit Handler', () => {
       expect(mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo)
         .to.have.been.calledWith(
           'test-site-id', // siteId from site.getId()
-          'ahrefs', // source
+          'seo', // source
           'global', // geo
         );
     });
@@ -589,7 +589,7 @@ describe('Accessibility Audit Handler', () => {
       expect(mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo)
         .to.have.been.calledWith(
           'test-site-id', // siteId from site.getId()
-          'ahrefs', // source
+          'seo', // source
           'global', // geo
         );
     });

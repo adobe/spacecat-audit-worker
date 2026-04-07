@@ -32,6 +32,24 @@ export const AUTHOR_ONLY_OPPORTUNITY_TYPES = [
 ];
 
 /**
+ * Validates suggestion data against the Joi schema for the given opportunity type.
+ * Logs a warning if validation fails but does not block the operation.
+ *
+ * @param {Object} data - Suggestion data to validate.
+ * @param {string} opportunityType - The opportunity type from OPPORTUNITY_TYPES enum.
+ * @param {Object} log - Logger object.
+ */
+export function warnOnInvalidSuggestionData(data, opportunityType, log) {
+  try {
+    SuggestionDataAccess.validateData(data, opportunityType);
+  } catch (error) {
+    const msg = error.message.length > 500 ? `${error.message.slice(0, 500)}...[truncated]` : error.message;
+    const identifier = data?.aggregationKey || data?.url || data?.path || 'unknown';
+    log.warn(`Suggestion data validation warning [${opportunityType}] [${identifier}]: ${msg}`);
+  }
+}
+
+/**
  * Safely stringify an object for logging, truncating large arrays to prevent
  * exceeding JavaScript's maximum string length.
  *
@@ -116,7 +134,7 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
 export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
   try {
     const { SiteTopPage } = dataAccess;
-    const result = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    const result = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'seo', 'global');
     log.info('Received top pages response:', JSON.stringify(result, null, 2));
 
     const topPages = result || [];
@@ -280,7 +298,8 @@ export const defaultMergeStatusFunction = (existing, newDataItem, context) => {
   if (currentStatus === SuggestionDataAccess.STATUSES.OUTDATED) {
     log.warn('Outdated suggestion found in audit. Possible regression.');
     const requiresValidation = Boolean(site?.requiresValidation);
-    return requiresValidation
+    const { isSummitPlg = false } = context;
+    return (requiresValidation && !isSummitPlg)
       ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
       : SuggestionDataAccess.STATUSES.NEW;
   }
@@ -323,11 +342,21 @@ export async function syncSuggestions({
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
   existingSuggestions: prefetchedSuggestions = null,
+  newSuggestionStatus = null,
+  bypassValidationForPlg = false,
 }) {
   if (!context) {
     return;
   }
   const { log } = context;
+
+  // Validate newSuggestionStatus if provided
+  if (newSuggestionStatus !== null) {
+    const validStatuses = Object.values(SuggestionDataAccess.STATUSES);
+    if (!validStatuses.includes(newSuggestionStatus)) {
+      throw new Error(`Invalid newSuggestionStatus: ${newSuggestionStatus}. Must be one of: ${validStatuses.join(', ')}`);
+    }
+  }
   const newDataKeys = new Set(newData.map(buildKey));
   // Use pre-fetched suggestions if provided, otherwise fetch from DB
   const existingSuggestions = prefetchedSuggestions ?? await opportunity.getSuggestions();
@@ -350,6 +379,24 @@ export async function syncSuggestions({
 
   log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
+  const opportunityType = opportunity.getType();
+
+  // Prepare new suggestions - O(N) with Set lookup
+  const { site, dataAccess } = context;
+  const requiresValidation = Boolean(site?.requiresValidation);
+
+  // PLG/Freemium sites bypass manual validation — suggestions go directly to NEW status
+  // Compute isSummitPlg before the update loop so it can be used in mergeStatusFunction too
+  let isSummitPlg = false;
+  if (bypassValidationForPlg && requiresValidation && site) {
+    const { Configuration } = dataAccess;
+    const configuration = await Configuration.findLatest();
+    isSummitPlg = configuration.isHandlerEnabledForSite('summit-plg', site);
+    if (isSummitPlg) {
+      log.info(`[syncSuggestions] PLG site ${site.getId()} - skipping manual validation for suggestions`);
+    }
+  }
+
   // Update existing suggestions - O(N) with Map lookup
   const { Suggestion } = context.dataAccess;
   const toUpdate = existingSuggestions
@@ -361,10 +408,13 @@ export async function syncSuggestions({
   toUpdate.forEach((existing) => {
     const existingKey = buildKey(existing.getData());
     const newDataItem = newDataByKey.get(existingKey);
-    existing.setData(mergeDataFunction(existing.getData(), newDataItem));
+    const mergedData = mergeDataFunction(existing.getData(), newDataItem);
+    warnOnInvalidSuggestionData(mergedData, opportunityType, log);
+    existing.setData(mergedData);
 
     // Use the merge status function to determine if status should change
-    const newStatus = mergeStatusFunction(existing, newDataItem, context);
+    // Pass isSummitPlg in context so mergeStatusFunction can apply the PLG bypass
+    const newStatus = mergeStatusFunction(existing, newDataItem, { ...context, isSummitPlg });
     // null indicates to keep existing status
     if (newStatus !== null) {
       existing.setStatus(newStatus);
@@ -377,18 +427,20 @@ export async function syncSuggestions({
   }
   log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
-  // Prepare new suggestions - O(N) with Set lookup
-  const { site } = context;
-  const requiresValidation = Boolean(site?.requiresValidation);
   const newSuggestions = newData
     .filter((data) => !existingSuggestionKeys.has(buildKey(data)))
     .map((data) => {
       const suggestion = mapNewSuggestion(data);
-      return {
+      const result = {
         ...suggestion,
-        status: requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
-          : SuggestionDataAccess.STATUSES.NEW,
+        status: newSuggestionStatus || ((requiresValidation && !isSummitPlg)
+          ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+          : SuggestionDataAccess.STATUSES.NEW),
       };
+      if (result.data != null) {
+        warnOnInvalidSuggestionData(result.data, opportunityType, log);
+      }
+      return result;
     });
 
   // Add new suggestions if any
@@ -683,8 +735,8 @@ export async function syncSuggestionsWithPublishDetection({
   }
   const { log } = context;
 
-  // Determine if this is an author-only opportunity type
-  const opportunityType = opportunity.getType?.();
+  // opportunity is always a valid DB entity passed by callers; getType() is guaranteed to exist.
+  const opportunityType = opportunity.getType();
   const isAuthorOnly = AUTHOR_ONLY_OPPORTUNITY_TYPES.includes(opportunityType);
 
   // Compute disappeared suggestions for reconcile step
