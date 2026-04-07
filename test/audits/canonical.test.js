@@ -27,6 +27,7 @@ import canonicalAudit, {
   processScrapedContent,
   getPreviewAuthOptions,
   isSelfReferencing,
+  isValidCanonicalMetadata,
 } from '../../src/canonical/handler.js';
 import { getTopPagesForSiteId } from '../../src/utils/data-access.js';
 import { CANONICAL_CHECKS } from '../../src/canonical/constants.js';
@@ -1436,6 +1437,76 @@ describe('Canonical URL Tests', () => {
     it('should return fallback message when check object has no suggestion function', () => {
       const result = generateCanonicalSuggestion(CANONICAL_CHECKS.TOPPAGES.check);
       expect(result).to.equal('Review and fix the canonical tag implementation according to SEO best practices.');
+    });
+  });
+
+  describe('isValidCanonicalMetadata', () => {
+    const log = { warn: sinon.stub() };
+    const key = 'scrapes/test/page/scrape.json';
+    const validMetadata = {
+      exists: true, count: 1, href: 'https://example.com/', inHead: true,
+    };
+
+    beforeEach(() => log.warn.resetHistory());
+
+    it('should return false for null metadata', () => {
+      expect(isValidCanonicalMetadata(null, log, key)).to.be.false;
+      expect(log.warn).to.have.been.calledWithMatch(/No canonical metadata/);
+    });
+
+    it('should return false for non-object metadata', () => {
+      expect(isValidCanonicalMetadata('string', log, key)).to.be.false;
+    });
+
+    it('should return false when exists key is absent', () => {
+      const { exists: _, ...meta } = validMetadata;
+      expect(isValidCanonicalMetadata(meta, log, key)).to.be.false;
+      expect(log.warn).to.have.been.calledWithMatch(/missing required field 'exists'/);
+    });
+
+    it('should return false when count key is absent', () => {
+      const { count: _, ...meta } = validMetadata;
+      expect(isValidCanonicalMetadata(meta, log, key)).to.be.false;
+      expect(log.warn).to.have.been.calledWithMatch(/missing required field 'count'/);
+    });
+
+    it('should return false when inHead key is absent', () => {
+      const { inHead: _, ...meta } = validMetadata;
+      expect(isValidCanonicalMetadata(meta, log, key)).to.be.false;
+      expect(log.warn).to.have.been.calledWithMatch(/missing required field 'inHead'/);
+    });
+
+    it('should return false when exists is not a boolean', () => {
+      expect(isValidCanonicalMetadata({ ...validMetadata, exists: '' }, log, key)).to.be.false;
+      expect(log.warn).to.have.been.calledWithMatch(/'exists' is not a boolean/);
+    });
+
+    it('should return false when count is not a number', () => {
+      expect(isValidCanonicalMetadata({ ...validMetadata, count: '' }, log, key)).to.be.false;
+      expect(log.warn).to.have.been.calledWithMatch(/'count' is not a number/);
+    });
+
+    it('should return false when inHead is not a boolean', () => {
+      expect(isValidCanonicalMetadata({ ...validMetadata, inHead: '' }, log, key)).to.be.false;
+      expect(log.warn).to.have.been.calledWithMatch(/'inHead' is not a boolean/);
+    });
+
+    it('should return false when exists is true but href key is absent', () => {
+      const { href: _, ...meta } = validMetadata;
+      expect(isValidCanonicalMetadata(meta, log, key)).to.be.false;
+      expect(log.warn).to.have.been.calledWithMatch(/'href' is absent when exists=true/);
+    });
+
+    it('should return true for valid metadata with exists=true', () => {
+      expect(isValidCanonicalMetadata(validMetadata, log, key)).to.be.true;
+      expect(log.warn).to.not.have.been.called;
+    });
+
+    it('should return true for valid metadata with exists=false and no href', () => {
+      expect(isValidCanonicalMetadata({
+        exists: false, count: 0, inHead: false,
+      }, log, key)).to.be.true;
+      expect(log.warn).to.not.have.been.called;
     });
   });
 
