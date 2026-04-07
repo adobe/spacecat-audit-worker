@@ -1,3 +1,10 @@
+## [1.399.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.399.1...v1.399.2) (2026-04-07)
+
+
+### Bug Fixes
+
+* add REDDIT_URL_REGEX to filter out invalid urls ([#2325](https://github.com/adobe/spacecat-audit-worker/issues/2325)) ([a9553c8](https://github.com/adobe/spacecat-audit-worker/commit/a9553c8c92f9a7e1299de24243f829244612a26a))
+
 ## [1.399.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.399.0...v1.399.1) (2026-04-07)
 
 
