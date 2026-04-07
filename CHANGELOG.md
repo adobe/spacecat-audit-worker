@@ -1,3 +1,10 @@
+# [1.400.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.399.4...v1.400.0) (2026-04-07)
+
+
+### Features
+
+* **prerender:** propagate usedEarlyClientSideHtml flag from scrape.json to status.json ([#2330](https://github.com/adobe/spacecat-audit-worker/issues/2330)) ([5305142](https://github.com/adobe/spacecat-audit-worker/commit/5305142fd785dd4b46899825cfaa812404130dca))
+
 ## [1.399.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.399.3...v1.399.4) (2026-04-07)
 
 
