@@ -16,7 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
-import calculateKpiDeltasForAudit from '../../../src/cwv/kpi-metrics.js';
+import calculateKpiDeltasForAudit, { calculateConfidenceScore } from '../../../src/cwv/kpi-metrics.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -217,6 +217,42 @@ describe('calculates KPI deltas correctly', () => {
 
     const result = calculateKpiDeltasForAudit(auditData, mockDataAccess);
     expect(result).to.deep.equal(expectedAggregatedKpi);
+  });
+
+  it('calculates confidence score as sum of projected traffic lost across devices', () => {
+    const entry = {
+      metrics: [
+        {
+          deviceType: 'desktop',
+          organic: 2000,
+          lcp: 2000, // green
+          cls: 0.2, // poor
+          inp: 220, // poor — Needs Improvement → 0.05
+        },
+        {
+          deviceType: 'mobile',
+          organic: 900,
+          lcp: 2700, // poor
+          cls: 0.2, // poor
+          inp: 220, // poor — Poor → 0.1
+        },
+      ],
+    };
+    // desktop: 2000 * 0.05 = 100, mobile: 900 * 0.1 = 90 → total 190
+    expect(calculateConfidenceScore(entry)).to.equal(190);
+  });
+
+  it('calculates confidence score as zero when no organic traffic', () => {
+    const entry = {
+      metrics: [
+        { deviceType: 'desktop', lcp: 3000, cls: 0.2, inp: 220 },
+      ],
+    };
+    expect(calculateConfidenceScore(entry)).to.equal(0);
+  });
+
+  it('calculates confidence score as zero for empty metrics array', () => {
+    expect(calculateConfidenceScore({ metrics: [] })).to.equal(0);
   });
 
   it('entries without organic', async () => {

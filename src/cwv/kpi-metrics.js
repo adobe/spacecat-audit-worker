@@ -135,4 +135,18 @@ const calculateKpiDeltasForAudit = (auditData, dataAccess, groupedURLs) => {
     );
 };
 
+/**
+ * Calculates the confidence score for a single CWV entry as the sum of
+ * projected traffic lost across all device types.
+ * Higher score = more expected impact from fixing CWV issues on this page.
+ * @param {Object} entry - CWV audit entry with a metrics array.
+ * @returns {number} Total projected traffic lost across all devices.
+ */
+export function calculateConfidenceScore(entry) {
+  return entry.metrics.reduce(
+    (total, deviceMetrics) => total + calculateProjectedTrafficLost(deviceMetrics),
+    0,
+  );
+}
+
 export default calculateKpiDeltasForAudit;
