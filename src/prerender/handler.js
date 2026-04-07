@@ -808,6 +808,7 @@ export async function submitForScraping(context) {
   let currentOrganic;
   let currentIncludedUrls;
   let isFirstRunOfCycle;
+  let agenticNewThisCycle = 0;
 
   if (isSlackTriggered) {
     ({ urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls([
@@ -833,6 +834,7 @@ export async function submitForScraping(context) {
 
     const hasRecentOrganic = filteredOrganicUrls.length !== topPagesUrls.length;
     isFirstRunOfCycle = !hasRecentOrganic;
+    agenticNewThisCycle = filteredAgenticUrls.length;
 
     const orderedCandidateUrls = [
       ...filteredOrganicUrls,
@@ -862,7 +864,7 @@ export async function submitForScraping(context) {
     currentOrganic=${currentOrganic},
     currentIncludedUrls=${currentIncludedUrls},
     isFirstRunOfCycle=${isFirstRunOfCycle},
-    isSlackTriggered=${isSlackTriggered},
+    agenticNewThisCycle=${agenticNewThisCycle},
     baseUrl=${site.getBaseURL()},
     siteId=${siteId}`);
 
