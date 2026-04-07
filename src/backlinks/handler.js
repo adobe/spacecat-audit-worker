@@ -52,7 +52,7 @@ function getEnvInt(env, key, defaultValue) {
 async function filterOutValidBacklinks(backlinks, log) {
   const fetchWithTimeout = async (url, timeout) => {
     try {
-      return await fetch(url, { timeout });
+      return await fetch(url, { timeout, redirect: 'follow' });
     } catch (error) {
       if (error.code === 'ETIMEOUT') {
         log.warn(`Request to ${url} timed out after ${timeout}ms`);
