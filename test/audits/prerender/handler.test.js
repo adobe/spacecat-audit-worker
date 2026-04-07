@@ -428,6 +428,34 @@ describe('Prerender Audit', () => {
         submittedUrls.forEach((u) => expect(u).to.not.include('www.'));
       });
 
+      it('uses overrideBaseURL from site config as domain for csvUrls rebasing', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => [],
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://main--example--adobecom.hlx.page',
+            getConfig: () => ({
+              getFetchConfig: () => ({ overrideBaseURL: 'https://www.override.com' }),
+            }),
+          },
+          auditContext: {
+            urls: ['https://main--example--adobecom.hlx.page/page-1'],
+          },
+          finalUrl: 'https://main--example--adobecom.hlx.page',
+          log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+        const submittedUrls = result.urls.map((u) => u.url);
+        expect(submittedUrls).to.include('https://www.override.com/page-1');
+      });
+
       it('should include includedURLs from site config', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-athena-client': {
@@ -706,6 +734,41 @@ describe('Prerender Audit', () => {
         expect(submittedUrls).to.include('https://example.com/organic-2');
         expect(submittedUrls).to.include('https://example.com/included-page');
         submittedUrls.forEach((u) => expect(u).to.not.include('www.'));
+      });
+
+      it('uses overrideBaseURL from site config as domain for organic and included URL rebasing', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => [],
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://main--example--adobecom.hlx.page',
+            getConfig: () => ({
+              getFetchConfig: () => ({ overrideBaseURL: 'https://www.override.com' }),
+              getIncludedURLs: () => ['https://main--example--adobecom.hlx.page/included'],
+            }),
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: async () => [
+                { getUrl: () => 'https://main--example--adobecom.hlx.page/organic-1' },
+              ],
+            },
+            PageCitability: { allByIndexKeys: async () => [] },
+          },
+          finalUrl: 'https://main--example--adobecom.hlx.page',
+          log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+        const submittedUrls = result.urls.map((u) => u.url);
+        expect(submittedUrls).to.include('https://www.override.com/organic-1');
+        expect(submittedUrls).to.include('https://www.override.com/included');
       });
 
       describe('daily batching', () => {
