@@ -1,3 +1,10 @@
+# [1.399.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.8...v1.399.0) (2026-04-07)
+
+
+### Features
+
+* align Claude UA pattern and remove query row limit ([#2249](https://github.com/adobe/spacecat-audit-worker/issues/2249)) ([bbcefcb](https://github.com/adobe/spacecat-audit-worker/commit/bbcefcbebbaecfdb221464e833aa30b7bb8a7bf4))
+
 ## [1.398.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.398.7...v1.398.8) (2026-04-07)
 
 
