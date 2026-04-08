@@ -31,6 +31,9 @@ export const PAGE_URL_TIMEOUT_MS = 10000; // 10 seconds
 // Batching when fetching/validating page URLs
 export const PAGE_URL_BATCH_SIZE = 750; // must stay under 1000
 export const PAGE_URL_BATCH_DELAY_MS = 0; // none
+// Total number of page URLs we will probe per audit run.
+//   We will automatically proportion this total across the sitemap.xml files we find.
+export const MAX_PAGE_URLS_PROBED = 7200; // ex: 12 min * 600 probes/min = 7200
 
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID URL',
@@ -285,6 +288,87 @@ export async function filterValidUrls(urls, log, timeoutMs = PAGE_URL_TIMEOUT_MS
   }
 
   return results;
+}
+
+/**
+ * Limits which discovered page URLs are probed: at most {@link MAX_PAGE_URLS_PROBED} URLs,
+ * split across sitemaps in proportion to each sitemap's entry count.
+ *
+ * Rules (in order):
+ * 1. Non-empty sitemaps only. Keep existing order from `Object.keys(extractedPaths)`.
+ * 2. If there are more than MAX_PAGE_URLS_PROBED sitemap.xml files with URLs, keep only the first
+ *    MAX_PAGE_URLS_PROBED of them.  Note that, in practice, as long as MAX_PAGE_URLS_PROBED
+ *    is fairly large, we should never reach this condition.
+ * 3. If total URLs is <= MAX_PAGE_URLS_PROBED, probe every URL.
+ * 4. Otherwise, each sitemap.xml file gets floor(MAX * count / total) URLs, with a minimum of
+ *    1 URL probed per sitemap.xml file.  If the new grand total of probed page URLs exceeds
+ *    MAX_PAGE_URLS_PROBED, then we just log this as a warning -- since we assume it's a very rare
+ *    condition -- but we still attempt to probe this new total amount.
+ *
+ * @param {Record<string, string[]>} extractedPaths - Output of discovery (sitemap URL -> page URLs)
+ * @param {Object} [log] - Optional logger
+ * @returns {Record<string, string[]>} Subset map; each value is a prefix slice (top of array)
+ */
+export function applyPageUrlProbeSampling(extractedPaths, log) {
+  // Get the initial set of sitemap.xml files we will be working with.
+  const keys = Object.keys(extractedPaths);
+  const entries = keys
+    .map((key) => [key, extractedPaths[key] ?? []])
+    .filter(([, urls]) => urls.length > 0); // keep non-empty sitemap.xml files
+  if (entries.length === 0) {
+    return {};
+  }
+  // Remember the grand total of all the page URLs we would like to probe.
+  const originalTotal = entries.reduce((sum, [, urls]) => sum + urls.length, 0);
+  // In the extreme condition that there are a zillion sitemap.xml files, reduce these.
+  let working = entries;
+  if (working.length > MAX_PAGE_URLS_PROBED) {
+    log?.info(
+      `Sitemap: ${working.length} sitemap(s) with page URLs exceed cap ${MAX_PAGE_URLS_PROBED}; `
+      + `only the first ${MAX_PAGE_URLS_PROBED} sitemap(s) will be probed.`,
+    );
+    working = working.slice(0, MAX_PAGE_URLS_PROBED);
+  }
+  // Re-compute the grand total of all the page URLs we would like to probe.
+  const totalAfterSitemapCap = working.reduce((sum, [, urls]) => sum + urls.length, 0);
+  if (totalAfterSitemapCap <= MAX_PAGE_URLS_PROBED) {
+    const out = Object.fromEntries(working);
+    if (log && originalTotal > totalAfterSitemapCap) {
+      log.info( // this is extremely unlikely ...
+        'Sitemap: Due to the abundance of sitemap.xml files, we had to reduce the number of these files inspected.'
+        + ` This resulted in reducing the discovered page URLs from ${originalTotal} to `
+        + `${totalAfterSitemapCap}. Consider reducing the number of sitemap.xml files.`,
+      );
+    }
+    return out; // since the number of page URLs is already at/under the cap, we return them all
+  }
+
+  // Goal: determine how many page URLs should be probed from each sitemap.xml file.
+  // * 'counts' array of the number of page URLs referenced per sitemap.xml file
+  // * 'quotas' array of the number of page URLs we will probe from each sitemap.xml file.  Min: 1
+  const counts = working.map(([, urls]) => urls.length);
+  const quotas = counts.map((c) => {
+    const floored = Math.floor((MAX_PAGE_URLS_PROBED * c) / totalAfterSitemapCap);
+    return Math.min(c, Math.max(floored, 1)); // at least 1 URL per sitemap.xml file
+  });
+  const sumQ = quotas.reduce((a, b) => a + b, 0); // actual total URLs to be probed
+  if (sumQ > MAX_PAGE_URLS_PROBED) {
+    log?.warn(
+      `Sitemap: Proportional quotas will actually probe ${sumQ} page URL(s), above the `
+      + `MAX_PAGE_URLS_PROBED (${MAX_PAGE_URLS_PROBED}) desired limit.`,
+    );
+  }
+
+  // Build the actual set of page URLs to be probed from each of the sitemap.xml files
+  const out = {};
+  working.forEach(([key, urls], i) => {
+    out[key] = urls.slice(0, quotas[i]); // quotas[i] is always >= 1
+  });
+  log?.info(
+    `Sitemap: Page URL probe sampling — ${originalTotal} page URL(s) discovered, ${sumQ} selected `
+    + `(target cap ${MAX_PAGE_URLS_PROBED}, with at least 1 probe per each sitemap.xml file).`,
+  );
+  return out;
 }
 
 /**
