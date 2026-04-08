@@ -1,3 +1,10 @@
+# [1.404.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.403.1...v1.404.0) (2026-04-08)
+
+
+### Features
+
+* **prerender:** use organic+included urls when audit is triggered from Slack ([#2307](https://github.com/adobe/spacecat-audit-worker/issues/2307)) ([dcd3b8a](https://github.com/adobe/spacecat-audit-worker/commit/dcd3b8aae78f4529504c629899580cc629023a3f))
+
 ## [1.403.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.403.0...v1.403.1) (2026-04-08)
 
 
