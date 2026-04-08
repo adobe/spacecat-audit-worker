@@ -1169,12 +1169,12 @@ export async function processOpportunityAndSuggestions(
   // exactly the URLs processed in this audit run — not stale suggestions from prior batches.
   const batchKeys = new Set(allSuggestions.map(buildKey));
   const allOpportunitySuggestions = await opportunity.getSuggestions();
-  const batchSuggestions = allOpportunitySuggestions.filter((s) => {
+  const auditRunSuggestions = allOpportunitySuggestions.filter((s) => {
     const data = s.getData();
     return data && batchKeys.has(buildKey(data));
   });
 
-  return { opportunity, batchSuggestions };
+  return { opportunity, auditRunSuggestions };
 }
 
 /**
@@ -1631,7 +1631,7 @@ export async function processContentAndGenerateOpportunities(context) {
 
     /* c8 ignore next 16 - Opportunity processing branch, covered by integration tests */
     if (urlsNeedingPrerender.length > 0) {
-      const { opportunity, batchSuggestions } = await processOpportunityAndSuggestions(
+      const { opportunity, auditRunSuggestions } = await processOpportunityAndSuggestions(
         site.getBaseURL(),
         {
           siteId,
@@ -1650,7 +1650,7 @@ export async function processContentAndGenerateOpportunities(context) {
         { siteId, auditId: audit.getId(), scrapeJobId },
         opportunity,
         context,
-        batchSuggestions,
+        auditRunSuggestions,
       );
       /* c8 ignore next 12 */
     } else if (scrapeForbidden) {
