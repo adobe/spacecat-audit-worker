@@ -1,3 +1,10 @@
+# [1.405.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.404.0...v1.405.0) (2026-04-08)
+
+
+### Features
+
+* We only need pages which are actionable for all customers ([#2299](https://github.com/adobe/spacecat-audit-worker/issues/2299)) ([316813f](https://github.com/adobe/spacecat-audit-worker/commit/316813f8a6875b7af9bd9dce46f29c14efa57ea0))
+
 # [1.404.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.403.1...v1.404.0) (2026-04-08)
 
 
