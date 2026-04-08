@@ -497,7 +497,6 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
   const {
     siteId,
     auditId,
-    batchUrlSet,
   } = auditData || {};
 
   if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
@@ -545,13 +544,6 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
         || status === Suggestion.STATUSES.SKIPPED
         || isDeployedOrFixed
       ) {
-        return;
-      }
-
-      // In normal audit mode a batchUrlSet is provided — only forward suggestions from the
-      // current scrape batch to Mystique. In ai-only mode batchUrlSet is undefined and all
-      // eligible suggestions are forwarded.
-      if (batchUrlSet && !batchUrlSet.has(data.url)) {
         return;
       }
 
@@ -1644,14 +1636,7 @@ export async function processContentAndGenerateOpportunities(context) {
       opportunityWithSuggestions = opportunity;
       await sendPrerenderGuidanceRequestToMystique(
         site.getBaseURL(),
-        {
-          siteId,
-          auditId: audit.getId(),
-          scrapeJobId,
-          // Only forward suggestions scraped in this batch; ai-only mode omits this
-          // so all eligible suggestions are forwarded instead.
-          batchUrlSet: new Set(urlsNeedingPrerender.map((r) => r.url)),
-        },
+        { siteId, auditId: audit.getId(), scrapeJobId },
         opportunity,
         context,
       );
