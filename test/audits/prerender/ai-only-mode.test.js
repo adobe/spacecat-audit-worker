@@ -35,9 +35,7 @@ describe('Prerender AI-Only Mode', () => {
     sandbox = sinon.createSandbox();
 
     mockS3Client = {
-      // Resolves {} by default so HeadObjectCommand calls in sendPrerenderGuidanceRequestToMystique
-      // treat all keys as existing. Individual tests override this as needed.
-      send: sandbox.stub().resolves({}),
+      send: sandbox.stub(),
     };
 
     mockSuggestions = [
@@ -617,49 +615,6 @@ describe('Prerender AI-Only Mode', () => {
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/Failed to send guidance:prerender message/),
       );
-    });
-  });
-
-  describe('sendPrerenderGuidanceRequestToMystique - S3 key existence checks', () => {
-    it('should skip suggestion when markdownDiffKey not found in S3 (NotFound)', async () => {
-      const notFoundError = new Error('Not Found');
-      notFoundError.name = 'NotFound';
-      mockS3Client.send.rejects(notFoundError);
-
-      const result = await importTopPages(context);
-
-      expect(result.auditResult.suggestionCount).to.equal(0);
-      expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/not found in S3/),
-      );
-    });
-
-    it('should skip suggestion when markdownDiffKey not found in S3 (NoSuchKey)', async () => {
-      const noSuchKeyError = new Error('The specified key does not exist');
-      noSuchKeyError.name = 'NoSuchKey';
-      mockS3Client.send.rejects(noSuchKeyError);
-
-      const result = await importTopPages(context);
-
-      expect(result.auditResult.suggestionCount).to.equal(0);
-      expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/not found in S3/),
-      );
-    });
-
-    it('should include suggestion when S3 HEAD check throws unexpected error (fail open)', async () => {
-      const s3Error = new Error('S3 connection timeout');
-      s3Error.name = 'ServiceUnavailable';
-      mockS3Client.send.rejects(s3Error);
-
-      const result = await importTopPages(context);
-
-      // Both suggestions are included despite the S3 error (fail open)
-      expect(result.auditResult.suggestionCount).to.equal(2);
-      expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/S3 HEAD check failed for suggestion/),
-      );
-      expect(mockSqs.sendMessage).to.have.been.called;
     });
   });
 
