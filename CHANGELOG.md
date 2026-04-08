@@ -1,3 +1,10 @@
+## [1.401.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.401.2...v1.401.3) (2026-04-08)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/fetch to v4.3.0 ([#2340](https://github.com/adobe/spacecat-audit-worker/issues/2340)) ([8e516b2](https://github.com/adobe/spacecat-audit-worker/commit/8e516b2efad91eda8fa965bed2fde8dea24e23a7))
+
 ## [1.401.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.401.1...v1.401.2) (2026-04-08)
 
 
