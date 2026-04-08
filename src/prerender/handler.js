@@ -517,7 +517,6 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
   const {
     siteId,
     auditId,
-    scrapeJobId,
     batchUrlSet,
   } = auditData || {};
 
@@ -578,16 +577,26 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
 
       const suggestionId = s.getId();
 
-      // Prefer the scrapeJobId stored on the suggestion itself (set at suggestion-creation time).
-      // This ensures we always reference the S3 artifacts from the exact scrape run that
-      // produced this suggestion, even when re-queued via ai-only mode with a different job id.
-      // Fall back to the audit-level scrapeJobId for suggestions created before this field was
-      // persisted.
-      const effectiveScrapeJobId = data.scrapeJobId || scrapeJobId;
-      if (!data.scrapeJobId) {
-        log.debug(`${LOG_PREFIX} Suggestion ${suggestionId} is missing a per-suggestion scrapeJobId; `
-          + `falling back to audit-level scrapeJobId=${scrapeJobId}. `
-          + `baseUrl=${baseUrl}, siteId=${siteId}`);
+      // Resolve the scrapeJobId in priority order:
+      //   1. data.scrapeJobId — stamped at suggestion-creation time (most reliable)
+      //   2. data.originalHtmlKey — extract the job segment from the stored S3 path
+      //      (format: prerender/scrapes/{scrapeJobId}/...)
+      //   3. Neither available → skip; we cannot build valid S3 keys without a job id
+      let effectiveScrapeJobId = data.scrapeJobId;
+      if (!effectiveScrapeJobId && data.originalHtmlKey) {
+        // prerender/scrapes/{scrapeJobId}/...
+        const parts = data.originalHtmlKey.split('/');
+        effectiveScrapeJobId = parts[2] || null;
+        if (effectiveScrapeJobId) {
+          log.debug(`${LOG_PREFIX} Suggestion ${suggestionId} missing scrapeJobId; `
+            + `derived from originalHtmlKey: ${effectiveScrapeJobId}. `
+            + `baseUrl=${baseUrl}, siteId=${siteId}`);
+        }
+      }
+      if (!effectiveScrapeJobId) {
+        log.warn(`${LOG_PREFIX} Suggestion ${suggestionId} skipped: no scrapeJobId and no `
+          + `originalHtmlKey to derive one from. baseUrl=${baseUrl}, siteId=${siteId}`);
+        return;
       }
 
       // Build markdown-based S3 keys for Mystique to consume

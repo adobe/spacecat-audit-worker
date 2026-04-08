@@ -18,7 +18,6 @@ import {
   submitForScraping,
   processContentAndGenerateOpportunities,
   handleAiOnlyMode,
-  sendPrerenderGuidanceRequestToMystique,
 } from '../../../src/prerender/handler.js';
 
 use(sinonChai);
@@ -47,6 +46,7 @@ describe('Prerender AI-Only Mode', () => {
         getData: sandbox.stub().returns({
           url: 'https://example.com/page1',
           isDomainWide: false,
+          scrapeJobId: 'test-scrape-job',
         }),
         getStatus: sandbox.stub().returns('NEW'),
       },
@@ -55,6 +55,7 @@ describe('Prerender AI-Only Mode', () => {
         getData: sandbox.stub().returns({
           url: 'https://example.com/page2',
           isDomainWide: false,
+          scrapeJobId: 'test-scrape-job',
         }),
         getStatus: sandbox.stub().returns('PENDING_VALIDATION'),
       },
@@ -489,26 +490,45 @@ describe('Prerender AI-Only Mode', () => {
       expect(suggestion.originalHtmlMarkdownKey).to.include(`prerender/scrapes/${perSuggestionJobId}`);
     });
 
-    it('should fall back to audit-level scrapeJobId when suggestion lacks its own', async () => {
-      // Old suggestions without a persisted scrapeJobId fall back to the audit-level job id.
-      const auditLevelJobId = 'test-scrape-job'; // matches context.data.scrapeJobId
+    it('should derive scrapeJobId from originalHtmlKey when scrapeJobId is missing', async () => {
+      const derivedJobId = 'derived-job-id';
       mockSuggestions[0].getData.returns({
         url: 'https://example.com/page1',
         isDomainWide: false,
-        // scrapeJobId intentionally omitted to simulate pre-fix suggestion data
+        // scrapeJobId absent but originalHtmlKey present — job id is the 3rd path segment
+        originalHtmlKey: `prerender/scrapes/${derivedJobId}/page1/server-side.html`,
       });
 
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
       expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(/missing a per-suggestion scrapeJobId/),
+        sinon.match(/derived from originalHtmlKey/),
       );
       const message = mockSqs.sendMessage.getCall(0).args[1];
       const suggestion = message.data.suggestions.find((s) => s.url === 'https://example.com/page1');
       expect(suggestion).to.exist;
-      expect(suggestion.markdownDiffKey).to.include(`prerender/scrapes/${auditLevelJobId}`);
-      expect(suggestion.originalHtmlMarkdownKey).to.include(`prerender/scrapes/${auditLevelJobId}`);
+      expect(suggestion.markdownDiffKey).to.include(`prerender/scrapes/${derivedJobId}`);
+      expect(suggestion.originalHtmlMarkdownKey).to.include(`prerender/scrapes/${derivedJobId}`);
+    });
+
+    it('should skip suggestion when both scrapeJobId and originalHtmlKey are missing', async () => {
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        // neither scrapeJobId nor originalHtmlKey
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/skipped: no scrapeJobId and no originalHtmlKey/),
+      );
+      // suggestion-1 is skipped; only suggestion-2 (which has scrapeJobId) is sent
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(1);
+      expect(message.data.suggestions[0].url).to.equal('https://example.com/page2');
     });
   });
 
@@ -640,105 +660,6 @@ describe('Prerender AI-Only Mode', () => {
         sinon.match(/S3 HEAD check failed for suggestion/),
       );
       expect(mockSqs.sendMessage).to.have.been.called;
-    });
-  });
-
-  describe('sendPrerenderGuidanceRequestToMystique - batchUrlSet filtering', () => {
-    let directContext;
-
-    beforeEach(() => {
-      directContext = {
-        log: {
-          debug: sandbox.stub(),
-          info: sandbox.stub(),
-          warn: sandbox.stub(),
-          error: sandbox.stub(),
-        },
-        site: {
-          getId: sandbox.stub().returns('site-123'),
-          getBaseURL: sandbox.stub().returns('https://example.com'),
-          getDeliveryType: sandbox.stub().returns('aem_edge'),
-        },
-        s3Client: { send: sandbox.stub().resolves({}) },
-        sqs: mockSqs,
-        env: {
-          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-          QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.us-east-1.amazonaws.com/test-queue',
-        },
-      };
-    });
-
-    it('should only send batch suggestions when batchUrlSet is provided', async () => {
-      const opportunity = {
-        getId: sandbox.stub().returns('opportunity-123'),
-        getSuggestions: sandbox.stub().resolves([
-          {
-            getId: () => 'sug-batch',
-            getData: () => ({ url: 'https://example.com/in-batch', scrapeJobId: 'job-1' }),
-            getStatus: () => 'NEW',
-          },
-          {
-            getId: () => 'sug-old',
-            getData: () => ({ url: 'https://example.com/not-in-batch', scrapeJobId: 'job-0' }),
-            getStatus: () => 'NEW',
-          },
-        ]),
-      };
-
-      const auditData = {
-        siteId: 'site-123',
-        auditId: 'audit-123',
-        scrapeJobId: 'job-1',
-        batchUrlSet: new Set(['https://example.com/in-batch']),
-      };
-
-      await sendPrerenderGuidanceRequestToMystique(
-        'https://example.com',
-        auditData,
-        opportunity,
-        directContext,
-      );
-
-      expect(mockSqs.sendMessage).to.have.been.calledOnce;
-      const message = mockSqs.sendMessage.getCall(0).args[1];
-      expect(message.data.suggestions).to.have.lengthOf(1);
-      expect(message.data.suggestions[0].url).to.equal('https://example.com/in-batch');
-    });
-
-    it('should send all eligible suggestions when batchUrlSet is not provided (ai-only mode)', async () => {
-      const opportunity = {
-        getId: sandbox.stub().returns('opportunity-123'),
-        getSuggestions: sandbox.stub().resolves([
-          {
-            getId: () => 'sug-1',
-            getData: () => ({ url: 'https://example.com/page1', scrapeJobId: 'job-1' }),
-            getStatus: () => 'NEW',
-          },
-          {
-            getId: () => 'sug-2',
-            getData: () => ({ url: 'https://example.com/page2', scrapeJobId: 'job-0' }),
-            getStatus: () => 'NEW',
-          },
-        ]),
-      };
-
-      const auditData = {
-        siteId: 'site-123',
-        auditId: 'audit-123',
-        scrapeJobId: 'job-1',
-        // batchUrlSet intentionally omitted — ai-only mode
-      };
-
-      await sendPrerenderGuidanceRequestToMystique(
-        'https://example.com',
-        auditData,
-        opportunity,
-        directContext,
-      );
-
-      expect(mockSqs.sendMessage).to.have.been.calledOnce;
-      const message = mockSqs.sendMessage.getCall(0).args[1];
-      expect(message.data.suggestions).to.have.lengthOf(2);
     });
   });
 
