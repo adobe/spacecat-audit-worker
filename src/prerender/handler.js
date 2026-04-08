@@ -84,33 +84,39 @@ function shouldPreserveDomainWideSuggestion(suggestion) {
  * @param {Object} opportunity - The opportunity object
  * @returns {Promise<boolean>}
  */
-async function isAllDomainDeployedAtEdge(opportunity) {
-  if (!opportunity || typeof opportunity.getSuggestions !== 'function') return false;
+async function getDomainWideSuggestionDeployedAtEdge(opportunity) {
+  if (!opportunity || typeof opportunity.getSuggestions !== 'function') return null;
   const suggestions = await opportunity.getSuggestions();
-  const domainWide = suggestions.find((s) => {
+  return suggestions.find((s) => {
     const d = s.getData();
     return s.getStatus() !== Suggestion.STATUSES.OUTDATED
       && isDomainWideSuggestionData(d) && !!d?.edgeDeployed;
-  });
-  return !!domainWide;
+  }) ?? null;
 }
 
 /**
- * Moves NEW suggestions to SKIPPED, restricted to URLs confirmed deployed at edge
- * in the current audit run.
+ * Sets coveredByDomainWide on NEW suggestions whose URLs are confirmed deployed at edge,
+ * instead of moving them to SKIPPED. This allows rollback to naturally restore them to
+ * the Current tab when the backend clears coveredByDomainWide on domain-wide rollback.
  * @param {Object} opportunity - The opportunity object
  * @param {Object} context - Audit context with dataAccess and log
  * @param {Set<string>} deployedAtEdgeUrls - URLs confirmed deployed at edge in this audit
+ * @param {string} domainWideSuggestionId - ID of the deployed domain-wide suggestion
  * @returns {Promise<void>}
  */
-async function moveDeployedUrlSuggestionsToSkipped(opportunity, context, deployedAtEdgeUrls) {
+async function markDeployedUrlSuggestionsAsCovered(
+  opportunity,
+  context,
+  deployedAtEdgeUrls,
+  domainWideSuggestionId,
+) {
   const { dataAccess, log, site } = context;
   const SuggestionDA = dataAccess?.Suggestion;
 
   const baseUrl = site?.getBaseURL?.() || '';
   const siteId = site?.getId?.() || '';
 
-  if (!SuggestionDA?.allByOpportunityIdAndStatus || !SuggestionDA?.bulkUpdateStatus) {
+  if (!SuggestionDA?.allByOpportunityIdAndStatus || !SuggestionDA?.saveMany) {
     return;
   }
 
@@ -120,37 +126,47 @@ async function moveDeployedUrlSuggestionsToSkipped(opportunity, context, deploye
   );
 
   if (newSuggestions.length === 0) {
-    log.info(`${LOG_PREFIX} moveDeployedUrlSuggestionsToSkipped: no NEW suggestions found. baseUrl=${baseUrl}, siteId=${siteId}`);
+    log.info(`${LOG_PREFIX} markDeployedUrlSuggestionsAsCovered: no NEW suggestions found. baseUrl=${baseUrl}, siteId=${siteId}`);
     return;
   }
 
-  const suggestionsToSkip = deployedAtEdgeUrls?.size > 0
+  const suggestionsToCover = deployedAtEdgeUrls?.size > 0
     ? newSuggestions.filter((s) => deployedAtEdgeUrls.has(s.getData()?.url))
     : [];
 
-  if (suggestionsToSkip.length === 0) {
-    log.info(`${LOG_PREFIX} moveDeployedUrlSuggestionsToSkipped: no NEW suggestions matched deployed URLs. baseUrl=${baseUrl}, siteId=${siteId}`);
+  if (suggestionsToCover.length === 0) {
+    log.info(`${LOG_PREFIX} markDeployedUrlSuggestionsAsCovered: no NEW suggestions matched deployed URLs. baseUrl=${baseUrl}, siteId=${siteId}`);
     return;
   }
-  log.info(`${LOG_PREFIX} All domain deployed: moving ${suggestionsToSkip.length} NEW suggestions to SKIPPED. baseUrl=${baseUrl}, siteId=${siteId}`);
-  await SuggestionDA.bulkUpdateStatus(suggestionsToSkip, Suggestion.STATUSES.SKIPPED);
+
+  suggestionsToCover.forEach((s) => {
+    s.setData({ ...s.getData(), coveredByDomainWide: domainWideSuggestionId });
+  });
+
+  log.info(`${LOG_PREFIX} All domain deployed: marking ${suggestionsToCover.length} NEW suggestions as coveredByDomainWide. baseUrl=${baseUrl}, siteId=${siteId}`);
+  await SuggestionDA.saveMany(suggestionsToCover);
 }
 
 /**
- * Moves suggestions with status=NEW to SKIPPED when domain-wide suggestion has edgeDeployed,
+ * Marks NEW suggestions as coveredByDomainWide when the domain-wide suggestion has edgeDeployed,
  * restricting to URLs confirmed deployed at edge in the current audit run.
  * @param {Object|null} opportunity - The opportunity object (no-op if null)
  * @param {Object} context - Audit context with dataAccess and log
  * @param {Set<string>} deployedAtEdgeUrls - URLs confirmed deployed at edge in this audit
  * @returns {Promise<void>}
  */
-async function skipNewSuggestionsWhenAllDomainDeployed(opportunity, context, deployedAtEdgeUrls) {
+async function markNewSuggestionsAsCovered(opportunity, context, deployedAtEdgeUrls) {
   const { log, site } = context;
   const baseUrl = site?.getBaseURL?.() || '';
-  const isDeployed = await isAllDomainDeployedAtEdge(opportunity);
-  log.info(`${LOG_PREFIX} skipNewSuggestionsWhenAllDomainDeployed: isAllDomainDeployedAtEdge=${isDeployed}, baseUrl=${baseUrl}`);
-  if (!isDeployed) return;
-  await moveDeployedUrlSuggestionsToSkipped(opportunity, context, deployedAtEdgeUrls);
+  const domainWideSuggestion = await getDomainWideSuggestionDeployedAtEdge(opportunity);
+  log.info(`${LOG_PREFIX} markNewSuggestionsAsCovered: isAllDomainDeployedAtEdge=${!!domainWideSuggestion}, baseUrl=${baseUrl}`);
+  if (!domainWideSuggestion) return;
+  await markDeployedUrlSuggestionsAsCovered(
+    opportunity,
+    context,
+    deployedAtEdgeUrls,
+    domainWideSuggestion.getId(),
+  );
 }
 
 /**
@@ -1615,14 +1631,14 @@ export async function processContentAndGenerateOpportunities(context) {
       }
     }
 
-    // When domain-wide suggestion has edgeDeployed, move NEW suggestions to SKIPPED
-    // Only move suggestions for URLs confirmed deployed at edge in this audit run
+    // When domain-wide suggestion has edgeDeployed, mark NEW suggestions as coveredByDomainWide
+    // Only mark suggestions for URLs confirmed deployed at edge in this audit run
     const deployedAtEdgeUrls = new Set(
       successfulComparisons
         .filter((r) => r.isDeployedAtEdge)
         .map((r) => r.url),
     );
-    await skipNewSuggestionsWhenAllDomainDeployed(opportunityWithSuggestions, context, deployedAtEdgeUrls); // eslint-disable-line max-len
+    await markNewSuggestionsAsCovered(opportunityWithSuggestions, context, deployedAtEdgeUrls);
 
     const endTime = process.hrtime(startTime);
     const elapsedSeconds = (endTime[0] + endTime[1] / 1e9).toFixed(2);
