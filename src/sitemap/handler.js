@@ -15,6 +15,7 @@ import {
 } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import {
+  applyPageUrlProbeSampling,
   ERROR_CODES,
   filterValidUrls,
   getSitemapUrls,
@@ -45,7 +46,9 @@ export async function findSitemap(inputUrl, log) {
     /* c8 ignore end */
     return siteMapUrlsResult;
   }
-  const extractedPaths = siteMapUrlsResult.details?.extractedPaths || {};
+  // Of all the page URLs found, proportionally probe them (since we have time constraints)
+  const extractedPathsRaw = siteMapUrlsResult.details?.extractedPaths || {};
+  const extractedPaths = applyPageUrlProbeSampling(extractedPathsRaw, log);
   const filteredSitemapUrls = siteMapUrlsResult.details?.filteredSitemapUrls || [];
   const notOkPagesFromSitemap = {};
 
@@ -195,6 +198,28 @@ export function generateSuggestions(auditUrl, auditData, context) {
   return { ...auditData, suggestions };
 }
 
+/**
+ * Merges existing and new Sitemap suggestion data. URL-type ('notOk' page) rows drop a legacy
+ * `error` field unless it is a non-empty string, so Joi validation matches freshly generated
+ * payloads and previously stored `error: null` do not persist. Otherwise, error-type rows use
+ * the default shallow merge so string ERROR_CODES from the audit are preserved.
+ *
+ * @param {Object} existingData - Previously stored suggestion data
+ * @param {Object} newData - Data from the current audit run
+ * @returns {Object} Merged suggestion data
+ */
+export function mergeSitemapSuggestionData(existingData, newData) {
+  const merged = { ...existingData, ...newData };
+  if (merged.type === 'url') {
+    const { error, ...rest } = merged;
+    if (typeof error === 'string' && error.length > 0) {
+      return { ...rest, error }; // include the 'error' field
+    }
+    return rest; // without the {empty, null} 'error' field
+  }
+  return merged; // when type !== 'url'
+}
+
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
 
@@ -230,6 +255,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     newData: auditData.suggestions,
     context,
     buildKey,
+    mergeDataFunction: mergeSitemapSuggestionData,
     mapNewSuggestion: (issue) => ({
       opportunityId: opportunity.getId(),
       type: 'REDIRECT_UPDATE',
