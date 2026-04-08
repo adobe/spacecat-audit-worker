@@ -361,6 +361,22 @@ describe('Audit Utils Tests', () => {
     it('returns empty object when onDemand is string "false"', () => {
       expect(preserveOnDemand({ onDemand: 'false' })).to.deep.equal({});
     });
+
+    it('preserves slackContext when present', () => {
+      const slackContext = { channelId: 'C123', threadTs: '123.456' };
+      expect(preserveOnDemand({ slackContext })).to.deep.equal({ slackContext });
+    });
+
+    it('preserves both onDemand and slackContext together', () => {
+      const slackContext = { channelId: 'C123', threadTs: '123.456' };
+      expect(preserveOnDemand({ onDemand: true, slackContext }))
+        .to.deep.equal({ onDemand: true, slackContext });
+    });
+
+    it('does not include slackContext when it is falsy', () => {
+      expect(preserveOnDemand({ slackContext: null })).to.deep.equal({});
+      expect(preserveOnDemand({ slackContext: undefined })).to.deep.equal({});
+    });
   });
 
   describe('sendContinuationMessage', () => {

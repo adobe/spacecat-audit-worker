@@ -82,16 +82,19 @@ export async function loadExistingAudit(auditId, context) {
 }
 
 /**
- * Extracts onDemand from an incoming auditContext so it survives
- * multi-step chains (e.g. audit → import-worker → audit continuation).
- * Only forwards onDemand when it is explicitly truthy (boolean true or string "true"),
- * so that `'onDemand' in auditContext` reliably indicates an active on-demand run.
+ * Extracts fields from an incoming auditContext that must survive multi-step chains
+ * (e.g. audit → import-worker → audit continuation).
+ * - onDemand: only forwarded when explicitly truthy (boolean true or string "true")
+ * - slackContext: forwarded as-is when present, so Slack-triggered runs keep their channel/thread
  * @param {Object} auditContext - The incoming auditContext (may be undefined)
- * @returns {Object} `{ onDemand: true }` when active, empty object otherwise
+ * @returns {Object} preserved fields
  */
 export function preserveOnDemand(auditContext) {
-  const { onDemand } = auditContext || {};
-  return (onDemand === true || onDemand === 'true') ? { onDemand: true } : {};
+  const { onDemand, slackContext } = auditContext || {};
+  const result = {};
+  if (onDemand === true || onDemand === 'true') result.onDemand = true;
+  if (slackContext) result.slackContext = slackContext;
+  return result;
 }
 
 export async function sendContinuationMessage(message, context) {
