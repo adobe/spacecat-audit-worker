@@ -1,3 +1,10 @@
+## [1.400.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.400.0...v1.400.1) (2026-04-08)
+
+
+### Bug Fixes
+
+* [preflight] resolve child elements to nearest UE editable selector ([#2333](https://github.com/adobe/spacecat-audit-worker/issues/2333)) ([216efb6](https://github.com/adobe/spacecat-audit-worker/commit/216efb6be21c6f650a1df0fd72433da79c84db7d))
+
 # [1.400.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.399.4...v1.400.0) (2026-04-07)
 
 
