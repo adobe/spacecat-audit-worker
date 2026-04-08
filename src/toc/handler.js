@@ -331,9 +331,7 @@ export async function tocAuditRunner(baseURL, context, site) {
   const { S3_SCRAPER_BUCKET_NAME } = context.env;
 
   try {
-    // Merge all URL sources: custom audit targets, agentic, SEO top pages
-    const mergedInput = await getTocInputUrls(context, site);
-    const auditUrls = mergedInput.urls;
+    const { urls: auditUrls } = await getTocInputUrls(context, site);
 
     if (auditUrls.length === 0) {
       log.warn('[TOC Audit] No URLs found for audit, ending audit.');
