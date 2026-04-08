@@ -71,12 +71,12 @@ describe('dom-selector.js', () => {
       expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/test"]');
     });
 
-    it('should use data-aue-prop for property-level elements', () => {
+    it('should fall back to structural selector when data-aue-prop has no data-aue-resource ancestor', () => {
       const html = '<h1 data-aue-prop="title" class="heading">My Title</h1>';
       const $test = cheerioLoad(html);
       const element = $test('h1').get(0);
       const selector = getDomElementSelector(element);
-      expect(selector).to.equal('h1[data-aue-prop="title"]');
+      expect(selector).to.equal('body > h1.heading');
     });
 
     it('should generate a selector with ID if available', () => {
@@ -573,6 +573,49 @@ describe('dom-selector.js', () => {
       const selector = getDomElementSelector(element);
       expect(selector).to.include('h1#title');
       expect(selector).to.include('div.wrapper');
+    });
+  });
+
+  describe('Disambiguation of duplicate data-aue-prop without data-aue-resource ancestor', () => {
+    it('should produce distinct structural selectors for repeated data-aue-prop elements (EDS/Sidekick context)', () => {
+      const html = `
+        <body>
+          <main>
+            <div class="section offer-container">
+              <div class="offer-wrapper">
+                <div class="offer block" data-block-name="offer">
+                  <div class="offer-content">
+                    <div class="offer-left">
+                      <h4 data-aue-prop="headline" data-aue-type="text" class="headline">Fall in love with coffee.</h4>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="section reward-container">
+              <div class="reward-wrapper">
+                <div class="reward light left block" data-block-name="reward">
+                  <div class="reward-content">
+                    <div class="reward-left">
+                      <h4 data-aue-prop="headline" data-aue-type="text" class="headline"></h4>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </main>
+        </body>
+      `;
+      const $test = cheerioLoad(html);
+      const h4Elements = $test('h4').get();
+      const selector1 = getDomElementSelector(h4Elements[0]);
+      const selector2 = getDomElementSelector(h4Elements[1]);
+
+      expect(selector1).to.not.equal(selector2);
+      expect(selector1).to.include('offer-content');
+      expect(selector2).to.include('reward-content');
+      expect(selector1).to.not.include('data-aue-prop');
+      expect(selector2).to.not.include('data-aue-prop');
     });
   });
 
