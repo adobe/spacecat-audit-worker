@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
 import { subDays } from 'date-fns';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -314,6 +314,26 @@ function getS3Path(url, id, fileName) {
 }
 
 /**
+ * Returns true if the given S3 key exists, false if it does not (404/NoSuchKey).
+ * Re-throws unexpected errors so callers can decide whether to fail open or hard.
+ * @param {Object} s3Client - AWS S3 client
+ * @param {string} bucketName - S3 bucket name
+ * @param {string} key - S3 object key
+ * @returns {Promise<boolean>}
+ */
+async function keyExistsInS3(s3Client, bucketName, key) {
+  try {
+    await s3Client.send(new HeadObjectCommand({ Bucket: bucketName, Key: key }));
+    return true;
+  } catch (error) {
+    if (error.name === 'NotFound' || error.name === 'NoSuchKey') {
+      return false;
+    }
+    throw error;
+  }
+}
+
+/**
  * Gets scraped HTML content and metadata from S3 for a specific URL
  * @param {string} url - Full URL
  * @param {Object} context - Audit context (must contain log, s3Client, env;
@@ -491,7 +511,7 @@ async function fetchLatestScrapeJobId(siteId, context) {
  */
 async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, opportunity, context) {
   const {
-    log, sqs, env, site,
+    log, sqs, env, site, s3Client,
   } = context;
   /* c8 ignore start - Defensive checks and destructuring, tested in ai-only mode tests */
   const {
@@ -526,7 +546,8 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
       return 0;
     }
 
-    const suggestionsPayload = [];
+    // Step 1: synchronous filtering — collect eligible candidates with computed S3 keys.
+    const candidates = [];
 
     existingSuggestions.forEach((s) => {
       const data = s.getData();
@@ -573,13 +594,40 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
         'markdown-diff.md',
       );
 
-      suggestionsPayload.push({
+      candidates.push({
         suggestionId,
         url: data.url,
         originalHtmlMarkdownKey,
         markdownDiffKey,
       });
     });
+
+    // Step 2: HEAD-check each markdownDiffKey to verify the S3 artifact exists before
+    // sending it to Mystique. This avoids Mystique spending AI credits on URLs whose
+    // scrape artifacts were never written (e.g. suggestions from a prior scrape job).
+    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+    const checked = await Promise.all(
+      candidates.map(async (candidate) => {
+        try {
+          const exists = await keyExistsInS3(s3Client, bucketName, candidate.markdownDiffKey);
+          if (!exists) {
+            log.warn(`${LOG_PREFIX} Skipping suggestion ${candidate.suggestionId}: `
+              + `markdownDiffKey not found in S3 (key=${candidate.markdownDiffKey}). `
+              + `baseUrl=${baseUrl}, siteId=${siteId}`);
+            return null;
+          }
+          return candidate;
+        } catch (error) {
+          // Fail open: include the suggestion so Mystique can still attempt processing
+          // rather than silently dropping it due to a transient S3 error.
+          log.warn(`${LOG_PREFIX} S3 HEAD check failed for suggestion ${candidate.suggestionId}, `
+            + `including anyway: ${error.message}. baseUrl=${baseUrl}, siteId=${siteId}`);
+          return candidate;
+        }
+      }),
+    );
+
+    const suggestionsPayload = checked.filter(Boolean);
 
     if (suggestionsPayload.length === 0) {
       log.info(`${LOG_PREFIX} No eligible suggestions to send to Mystique for opportunityId=${opportunityId}. baseUrl=${baseUrl}, siteId=${siteId}`);
