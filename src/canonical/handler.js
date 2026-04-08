@@ -22,7 +22,7 @@ import { isPreviewPage, isPdfUrl } from '../utils/url-utils.js';
 import {
   syncSuggestions,
   keepLatestMergeDataFunction,
-  getAuditTargetUrls,
+  mergeTopPagesWithAuditTargetUrls,
 } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
@@ -85,14 +85,9 @@ export async function submitForScraping(context) {
   const { SiteTopPage } = dataAccess;
 
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
+  const allUrls = mergeTopPagesWithAuditTargetUrls(topPages, site, log);
 
-  const customUrls = getAuditTargetUrls(site, log);
-  const seoUrls = (topPages || []).map((page) => page.getUrl());
-  const seoUrlSet = new Set(seoUrls);
-  const uniqueCustomUrls = customUrls.filter((url) => !seoUrlSet.has(url));
-  const allUrls = [...uniqueCustomUrls, ...seoUrls];
-
-  log.info(`[canonical] Found ${allUrls.length} pages for scraping (${seoUrls.length} from SEO, ${customUrls.length} custom)`);
+  log.info(`[canonical] Found ${allUrls.length} pages for scraping`);
 
   if (allUrls.length === 0) {
     log.info(`[canonical] No pages found for site ${site.getId()}, skipping scraping`);

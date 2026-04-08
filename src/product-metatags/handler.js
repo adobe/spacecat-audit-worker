@@ -29,7 +29,7 @@ import {
   PROJECTED_VALUE_THRESHOLD,
   TITLE,
 } from './constants.js';
-import { syncSuggestions, getAuditTargetUrls } from '../utils/data-access.js';
+import { syncSuggestions, mergeTopPagesWithAuditTargetUrls } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getCommerceConfig } from '../utils/saas.js';
 
@@ -811,15 +811,14 @@ export async function submitForScraping(context) {
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
   log.info(`[PRODUCT-METATAGS] Retrieved ${topPages.length} top pages from database`);
 
-  const topPagesUrls = topPages.map((page) => page.getUrl());
+  const topPagesWithCustom = mergeTopPagesWithAuditTargetUrls(topPages, site, log);
   log.info(`[PRODUCT-METATAGS] reading site config: ${JSON.stringify(site?.getConfig())}`);
-  // Combine includedURLs, custom audit target URLs, and topPages URLs to scrape
+  // Combine SEO + custom audit target URLs with manually included URLs
   const includedURLs = await site?.getConfig()?.getIncludedURLs(auditType) || [];
   log.info(`[PRODUCT-METATAGS] Retrieved ${includedURLs.length} included URLs from site config`);
-  const customUrls = getAuditTargetUrls(site, log);
 
-  const finalUrls = [...new Set([...topPagesUrls, ...includedURLs, ...customUrls])];
-  log.info(`[PRODUCT-METATAGS] Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Custom URLs: ${customUrls.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
+  const finalUrls = [...new Set([...topPagesWithCustom, ...includedURLs])];
+  log.info(`[PRODUCT-METATAGS] Total merged top pages + custom: ${topPagesWithCustom.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
 
   if (finalUrls.length === 0) {
     log.error(`[PRODUCT-METATAGS] No URLs found for site ${site.getId()} - neither top pages nor included URLs`);

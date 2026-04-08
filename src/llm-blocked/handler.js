@@ -15,7 +15,7 @@ import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { syncSuggestions } from '../utils/data-access.js';
+import { syncSuggestions, mergeTopPagesWithAuditTargetUrls } from '../utils/data-access.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 
@@ -79,7 +79,7 @@ export async function checkLLMBlocked(context) {
     log.info('[LLM-BLOCKED] No agentic URLs from Athena, falling back to SEO top pages');
     const { SiteTopPage } = dataAccess;
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
-    topPageUrls = topPages.map((page) => page.getUrl());
+    topPageUrls = mergeTopPagesWithAuditTargetUrls(topPages, site, log);
   }
 
   if (topPageUrls.length === 0) {

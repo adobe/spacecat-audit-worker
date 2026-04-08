@@ -534,8 +534,8 @@ describe('Structured Data Audit', () => {
 
       const result = await submitForScraping(context);
       expect(result.urls).to.deep.equal([
-        { url: 'https://example.com/custom/unique' },
         { url: 'https://example.com/product/1' },
+        { url: 'https://example.com/custom/unique' },
         { url: 'https://example.com/product/2' },
         { url: 'https://example.com/product/3' },
       ]);

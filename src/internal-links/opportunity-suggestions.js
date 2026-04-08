@@ -13,7 +13,7 @@
 import { pickUrlsFromSerpResults } from '../support/bright-data-serp-urls.js';
 import { createInternalLinksConfigResolver } from './config.js';
 import { createInternalLinksStepLogger } from './logging.js';
-import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
+import { warnOnInvalidSuggestionData, getAuditTargetUrls } from '../utils/data-access.js';
 
 export function createOpportunityAndSuggestionsStep({
   auditType,
@@ -147,12 +147,17 @@ export function createOpportunityAndSuggestionsStep({
       log.warn(`Failed to fetch SEO top pages: ${error.message}`);
     }
 
+    const customUrls = getAuditTargetUrls(site, log);
     const includedURLs = site?.getConfig()?.getIncludedURLs?.('broken-internal-links') || [];
     log.info(`Found ${includedURLs.length} includedURLs from siteConfig`);
     const maxUrlsToProcess = config.getMaxUrlsToProcess();
 
-    const includedTopPages = includedURLs.map((url) => ({ getUrl: () => url }));
-    let topPages = [...seoTopPages, ...includedTopPages];
+    const extraUrls = [...customUrls, ...includedURLs];
+    const seoUrlSet = new Set(seoTopPages.map((p) => p.getUrl()));
+    const extraTopPages = extraUrls
+      .filter((url) => !seoUrlSet.has(url))
+      .map((url) => ({ getUrl: () => url }));
+    let topPages = [...extraTopPages, ...seoTopPages];
 
     if (topPages.length > maxUrlsToProcess) {
       log.warn(`Capping URLs from ${topPages.length} to ${maxUrlsToProcess}`);

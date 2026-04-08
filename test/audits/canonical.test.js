@@ -2274,7 +2274,7 @@ describe('Canonical URL Tests', () => {
         expect(result.urls[2]).to.deep.equal({ url: 'https://example.com/page1' });
         expect(result.urls[3]).to.deep.equal({ url: 'https://example.com/page2' });
         expect(context.log.info).to.have.been.calledWith(
-          '[canonical] Found 4 pages for scraping (2 from SEO, 2 custom)',
+          '[canonical] Found 4 pages for scraping',
         );
       });
 
@@ -2299,8 +2299,8 @@ describe('Canonical URL Tests', () => {
         const result = await submitForScraping(testContext);
 
         expect(result.urls).to.have.lengthOf(3);
-        expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/custom1' });
-        expect(result.urls[1]).to.deep.equal({ url: 'https://example.com/page1' });
+        expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page1' });
+        expect(result.urls[1]).to.deep.equal({ url: 'https://example.com/custom1' });
         expect(result.urls[2]).to.deep.equal({ url: 'https://example.com/page2' });
       });
 

@@ -15,6 +15,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 import { getMergedAuditInputUrls, sortTopPagesByTraffic } from '../utils/audit-input-urls.js';
+import { mergeTopPagesWithAuditTargetUrls } from '../utils/data-access.js';
 import { detectExistingContent } from './existing-content-detector.js';
 import { filterOutDynamicUrls } from './dynamic-content-filter.js';
 
@@ -66,9 +67,10 @@ export async function importTopPages(context) {
 
   try {
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
+    const allUrls = mergeTopPagesWithAuditTargetUrls(topPages, site, log);
 
-    if (topPages.length === 0) {
-      log.info('[SUMMARIZATION] No SEO top pages found for site; continuing with fallback URL sources');
+    if (allUrls.length === 0) {
+      log.info('[SUMMARIZATION] No top pages found for site; continuing with fallback URL sources');
       return {
         type: 'top-pages',
         siteId: site.getId(),
@@ -80,14 +82,14 @@ export async function importTopPages(context) {
       };
     }
 
-    log.info(`[SUMMARIZATION] Found ${topPages.length} top pages for site ${site.getId()} (using max ${MAX_TOP_PAGES})`);
+    log.info(`[SUMMARIZATION] Found ${allUrls.length} top pages for site ${site.getId()} (using max ${MAX_TOP_PAGES})`);
 
     return {
       type: 'top-pages',
       siteId: site.getId(),
       auditResult: {
         success: true,
-        topPages: topPages.slice(0, MAX_TOP_PAGES).map((page) => page.getUrl()),
+        topPages: allUrls.slice(0, MAX_TOP_PAGES),
       },
       fullAuditRef: site.getBaseURL(),
     };

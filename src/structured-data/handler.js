@@ -15,7 +15,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access/src/models/suggestion/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { syncSuggestions, getAuditTargetUrls } from '../utils/data-access.js';
+import { syncSuggestions, mergeTopPagesWithAuditTargetUrls } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import {
@@ -166,18 +166,13 @@ export async function submitForScraping(context) {
   } = context;
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
-
-  const customUrls = getAuditTargetUrls(site, log);
-  const seoUrls = topPages.map((topPage) => topPage.getUrl());
-  const seoUrlSet = new Set(seoUrls);
-  const uniqueCustomUrls = customUrls.filter((url) => !seoUrlSet.has(url));
-  const allUrls = [...uniqueCustomUrls, ...seoUrls];
+  const allUrls = mergeTopPagesWithAuditTargetUrls(topPages, site, log);
 
   if (allUrls.length === 0) {
     throw new Error('No top pages found for site');
   }
 
-  log.debug(`SDA: Submitting for scraping ${allUrls.length} URLs (${seoUrls.length} SEO + ${uniqueCustomUrls.length} custom) for site ${site.getId()}, finalUrl: ${finalUrl}`);
+  log.debug(`SDA: Submitting for scraping ${allUrls.length} URLs for site ${site.getId()}, finalUrl: ${finalUrl}`);
 
   return {
     urls: allUrls.map((url) => ({ url })),
@@ -200,12 +195,8 @@ export async function runAuditAndGenerateSuggestions(context) {
 
   try {
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'seo', 'global');
-    const customUrls = getAuditTargetUrls(site, log);
-    const seoUrls = isNonEmptyArray(topPages)
-      ? topPages.map((page) => page.getUrl()) : [];
-    const seoUrlSet = new Set(seoUrls);
-    const uniqueCustomUrls = customUrls.filter((url) => !seoUrlSet.has(url));
-    let allPages = [...uniqueCustomUrls, ...seoUrls].map((url) => ({ url }));
+    const allUrls = mergeTopPagesWithAuditTargetUrls(topPages, site, log);
+    let allPages = allUrls.map((url) => ({ url }));
 
     if (!isNonEmptyArray(allPages)) {
       log.error(`SDA: No top pages for site ID ${siteId} found. Ensure that top pages were imported.`);

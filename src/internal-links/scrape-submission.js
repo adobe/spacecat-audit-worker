@@ -12,7 +12,7 @@
 
 import { createInternalLinksConfigResolver } from './config.js';
 import { createInternalLinksStepLogger } from './logging.js';
-import { getAuditTargetUrls } from '../utils/data-access.js';
+import { mergeTopPagesWithAuditTargetUrls } from '../utils/data-access.js';
 
 export function createSubmitForScraping({
   auditType,
@@ -44,23 +44,22 @@ export function createSubmitForScraping({
 
     log.info('====== Step 2: Submit For Scraping ======');
 
-    let topPagesUrls = [];
+    let topPagesWithCustom = [];
     try {
       const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
-      topPagesUrls = topPages.map((page) => page.getUrl());
-      log.info(`Found ${topPagesUrls.length} top pages from SEO provider`);
+      topPagesWithCustom = mergeTopPagesWithAuditTargetUrls(topPages, site, log);
+      log.info(`Found ${topPagesWithCustom.length} URLs from SEO + custom audit targets`);
     } catch (error) {
       log.warn(`Failed to fetch SEO top pages from database: ${error.message}`);
-      topPagesUrls = [];
+      topPagesWithCustom = [];
     }
 
     const includedURLs = site?.getConfig()?.getIncludedURLs?.('broken-internal-links') || [];
     log.info(`Found ${includedURLs.length} includedURLs from siteConfig`);
-    const customUrls = getAuditTargetUrls(site, log);
     const maxUrlsToProcess = config.getMaxUrlsToProcess();
 
-    let finalUrls = [...new Set([...topPagesUrls, ...includedURLs, ...customUrls])];
-    log.info(`Merged URLs: ${topPagesUrls.length} (SEO) + ${includedURLs.length} (manual) + ${customUrls.length} (custom) = ${finalUrls.length} unique`);
+    let finalUrls = [...new Set([...topPagesWithCustom, ...includedURLs])];
+    log.info(`Merged URLs: ${topPagesWithCustom.length} (SEO+custom) + ${includedURLs.length} (manual) = ${finalUrls.length} unique`);
 
     const baseURL = site.getBaseURL();
     finalUrls = finalUrls.filter((url) => isWithinAuditScope(url, baseURL));

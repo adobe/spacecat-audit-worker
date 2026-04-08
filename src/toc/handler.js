@@ -28,9 +28,9 @@ import {
   getHeadingSelector,
   cheerioLoad,
   loadScrapeJson,
-  getTopPages,
   initializeAuditContext,
 } from '../headings/shared-utils.js';
+import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 
 const auditType = Audit.AUDIT_TYPES.TOC;
 
@@ -289,13 +289,20 @@ export async function validatePageToc(
  * @returns {Promise<Object>}
  */
 export async function tocAuditRunner(baseURL, context, site) {
-  const siteId = site.getId();
   const { log, dataAccess, s3Client } = context;
   const { S3_SCRAPER_BUCKET_NAME } = context.env;
 
   try {
-    // Get top 200 pages (site merges custom auditTargetURLs via getTopPagesForSiteId)
-    const topPages = await getTopPages(dataAccess, siteId, context, log, site, 200);
+    // Merge all URL sources: custom audit targets, included, SEO top pages
+    const mergedInput = await getMergedAuditInputUrls({
+      site,
+      dataAccess,
+      auditType,
+      getAgenticUrls: () => Promise.resolve([]),
+      topOrganicLimit: 200,
+      log,
+    });
+    const topPages = mergedInput.urls.map((url) => ({ url }));
 
     if (topPages.length === 0) {
       log.warn('[TOC Audit] No top pages found, ending audit.');

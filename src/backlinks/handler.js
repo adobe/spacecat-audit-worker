@@ -21,7 +21,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import calculateKpiMetrics from './kpi-metrics.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { syncSuggestionsWithPublishDetection, getAuditTargetUrls, warnOnInvalidSuggestionData } from '../utils/data-access.js';
+import { syncSuggestionsWithPublishDetection, mergeTopPagesWithAuditTargetUrls, warnOnInvalidSuggestionData } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
 import {
   filterBrokenSuggestedUrls,
@@ -236,18 +236,15 @@ export async function submitForScraping(context) {
     throw new Error('Audit failed, skipping scraping and suggestions generation');
   }
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
-
-  const customUrls = getAuditTargetUrls(site, log);
-  const customUrlWrappers = customUrls.map((url) => ({ getUrl: () => url }));
-  const seoUrlSet = new Set(topPages.map((p) => p.getUrl()));
-  const uniqueCustomWrappers = customUrlWrappers.filter((w) => !seoUrlSet.has(w.getUrl()));
-  const allPages = [...uniqueCustomWrappers, ...topPages];
+  const allUrls = mergeTopPagesWithAuditTargetUrls(topPages, site, log);
+  const topPagesByUrl = new Map(topPages.map((p) => [p.getUrl(), p]));
+  const allPages = allUrls.map((url) => topPagesByUrl.get(url) || { getUrl: () => url });
 
   const baseURL = site.getBaseURL();
   // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
   const filteredTopPages = filterByAuditScope(allPages, baseURL, { urlProperty: 'getUrl' }, log);
 
-  log.info(`Found ${allPages.length} top pages (${topPages.length} from SEO, ${customUrls.length} custom), ${filteredTopPages.length} within audit scope`);
+  log.info(`Found ${allPages.length} top pages (${allUrls.length} merged), ${filteredTopPages.length} within audit scope`);
 
   if (filteredTopPages.length === 0) {
     if (allPages.length === 0) {
@@ -478,12 +475,9 @@ export const generateSuggestionData = async (context) => {
 
   // Get top pages and filter by audit scope
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
-
-  const customUrls = getAuditTargetUrls(site, log);
-  const customUrlWrappers = customUrls.map((url) => ({ getUrl: () => url }));
-  const seoUrlSet = new Set(topPages.map((p) => p.getUrl()));
-  const uniqueCustomWrappers = customUrlWrappers.filter((w) => !seoUrlSet.has(w.getUrl()));
-  const allPages = [...uniqueCustomWrappers, ...topPages];
+  const allUrls = mergeTopPagesWithAuditTargetUrls(topPages, site, log);
+  const topPagesByUrl = new Map(topPages.map((p) => [p.getUrl(), p]));
+  const allPages = allUrls.map((url) => topPagesByUrl.get(url) || { getUrl: () => url });
 
   const baseURL = site.getBaseURL();
   // Filter alternatives by locales/subpaths present in broken links

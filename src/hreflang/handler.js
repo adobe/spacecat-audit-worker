@@ -17,7 +17,9 @@ import { isLangCode } from 'is-language-code';
 
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
-import { syncSuggestions, keepLatestMergeDataFunction, getTopPagesForSiteId } from '../utils/data-access.js';
+import {
+  syncSuggestions, keepLatestMergeDataFunction, getTopPagesForSiteId, getAuditTargetUrls,
+} from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
 import { limitConcurrencyAllSettled } from '../support/utils.js';
@@ -166,8 +168,14 @@ export async function hreflangAuditRunner(baseURL, context, site) {
   log.debug(`Starting Hreflang Audit with siteId: ${siteId}`);
 
   try {
-    // Get top 200 pages
-    const allTopPages = await getTopPagesForSiteId(dataAccess, siteId, context, log, site);
+    // Get top 200 pages — merge SEO top pages with custom audit target URLs
+    const seoTopPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
+    const customUrls = getAuditTargetUrls(site, log);
+    const seoUrlSet = new Set(seoTopPages.map((p) => p.url));
+    const allTopPages = [
+      ...customUrls.filter((url) => !seoUrlSet.has(url)).map((url) => ({ url })),
+      ...seoTopPages,
+    ];
     const topPages = allTopPages.slice(0, 200);
 
     log.debug(`Processing ${topPages.length} top pages for hreflang audit (limited to 200)`);
