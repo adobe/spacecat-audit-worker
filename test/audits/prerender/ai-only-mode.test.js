@@ -528,6 +528,149 @@ describe('Prerender AI-Only Mode', () => {
       expect(message.data.suggestions).to.have.lengthOf(1);
       expect(message.data.suggestions[0].url).to.equal('https://example.com/page2');
     });
+
+    it('should skip suggestion when originalHtmlKey has fewer than 3 path segments', async () => {
+      // parts[2] will be undefined → effectiveScrapeJobId = null → suggestion skipped
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        originalHtmlKey: 'prerender/scrapes', // only 2 segments, no job id at index 2
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/skipped: no scrapeJobId and no originalHtmlKey/),
+      );
+      // suggestion-1 is skipped; only suggestion-2 is sent
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(1);
+      expect(message.data.suggestions[0].url).to.equal('https://example.com/page2');
+    });
+  });
+
+  describe('Suggestion scoping — ai-only vs normal audit run', () => {
+    it('ai-only mode sends ALL opportunity suggestions to Mystique, not just a batch', async () => {
+      // Simulate an opportunity with 3 suggestions from different past audit runs.
+      // In ai-only mode every eligible suggestion should be queued regardless of which
+      // audit run produced it.
+      const staleSuggestion = {
+        getId: sandbox.stub().returns('suggestion-stale'),
+        getData: sandbox.stub().returns({
+          url: 'https://example.com/old-page',
+          isDomainWide: false,
+          scrapeJobId: 'old-job-id',
+        }),
+        getStatus: sandbox.stub().returns('NEW'),
+      };
+      mockOpportunity.getSuggestions.resolves([...mockSuggestions, staleSuggestion]);
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      // All 3 suggestions (2 from current run + 1 stale) must be sent
+      expect(result.auditResult.suggestionCount).to.equal(3);
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      const sentUrls = message.data.suggestions.map((s) => s.url);
+      expect(sentUrls).to.include('https://example.com/page1');
+      expect(sentUrls).to.include('https://example.com/page2');
+      expect(sentUrls).to.include('https://example.com/old-page');
+    });
+
+    it('normal audit run sends only auditRunSuggestions (current batch) to Mystique', async () => {
+      // processOpportunityAndSuggestions filters allOpportunitySuggestions down to only those
+      // whose keys match the URLs processed in this audit run.  A stale suggestion from a prior
+      // batch must NOT appear in the Mystique payload.
+      const staleSuggestion = {
+        getId: sinon.stub().returns('suggestion-stale'),
+        getData: sinon.stub().returns({
+          url: 'https://example.com/old-page',
+          isDomainWide: false,
+          scrapeJobId: 'old-job-id',
+          originalHtmlKey: 'prerender/scrapes/old-job-id/old-page/server-side.html',
+          prerenderedHtmlKey: 'prerender/scrapes/old-job-id/old-page/client-side.html',
+        }),
+        getStatus: sinon.stub().returns('NEW'),
+      };
+
+      const currentSuggestion = {
+        getId: sinon.stub().returns('suggestion-current'),
+        getData: sinon.stub().returns({
+          url: 'https://example.com/page1',
+          isDomainWide: false,
+          scrapeJobId: 'current-job-id',
+          originalHtmlKey: 'prerender/scrapes/current-job-id/page1/server-side.html',
+          prerenderedHtmlKey: 'prerender/scrapes/current-job-id/page1/client-side.html',
+        }),
+        getStatus: sinon.stub().returns('NEW'),
+      };
+
+      // opportunity.getSuggestions() returns both the current and stale suggestion
+      const mockOpportunityNormal = {
+        getId: () => 'opp-normal',
+        getSuggestions: sinon.stub().resolves([currentSuggestion, staleSuggestion]),
+      };
+
+      const syncSuggestionsStub = sinon.stub().resolves();
+      const sendMessageStub = sinon.stub().resolves();
+
+      const mockHandler = await (await import('esmock')).default('../../../src/prerender/handler.js', {
+        '../../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves(mockOpportunityNormal),
+        },
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sinon.stub().resolves(true),
+          mergeAndGetUniqueHtmlUrls: sinon.stub().returns({ urls: [], filteredCount: 0 }),
+        },
+      });
+
+      const auditData = {
+        siteId: 'test-site',
+        auditId: 'audit-current',
+        scrapeJobId: 'current-job-id',
+        auditResult: {
+          urlsNeedingPrerender: 1,
+          results: [
+            {
+              url: 'https://example.com/page1',
+              needsPrerender: true,
+              contentGainRatio: 2.0,
+              wordCountBefore: 100,
+              wordCountAfter: 200,
+            },
+          ],
+        },
+      };
+
+      const sqsContext = {
+        log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub() },
+        dataAccess: {
+          Suggestion: {
+            STATUSES: {
+              NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED',
+            },
+          },
+        },
+        site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+        sqs: { sendMessage: sendMessageStub },
+        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.test/queue' },
+      };
+
+      const { opportunity, auditRunSuggestions } = await mockHandler.processOpportunityAndSuggestions(
+        'https://example.com',
+        auditData,
+        sqsContext,
+      );
+
+      expect(opportunity).to.equal(mockOpportunityNormal);
+      // Only the current-batch suggestion should be in auditRunSuggestions — not the stale one
+      expect(auditRunSuggestions).to.have.lengthOf(1);
+      expect(auditRunSuggestions[0].getId()).to.equal('suggestion-current');
+    });
   });
 
   describe('getModeFromData - coverage', () => {
