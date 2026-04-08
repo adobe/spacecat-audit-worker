@@ -359,6 +359,31 @@ describe('Prerender Audit', () => {
         expect(result.urls).to.deep.equal([{ url: 'https://example.com' }]);
       });
 
+      it('should use overrideBaseURL as fallback URL when no URLs found', async () => {
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://main--example--adobecom.hlx.page',
+            getConfig: () => ({
+              getIncludedURLs: () => [],
+              getFetchConfig: () => ({ overrideBaseURL: 'https://www.override.com' }),
+            }),
+          },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          env: {},
+          auditContext: { next: 'process-content-and-generate-opportunities', auditId: 'test-audit-id', auditType: 'prerender' },
+        };
+
+        const result = await submitForScraping(context);
+        expect(result.urls).to.deep.equal([{ url: 'https://www.override.com' }]);
+      });
+
       it('should use explicit auditContext URLs when provided', async () => {
         const mockSiteTopPage = {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
@@ -426,6 +451,34 @@ describe('Prerender Audit', () => {
         expect(submittedUrls).to.include('https://example.com/csv-page-1');
         expect(submittedUrls).to.include('https://example.com/csv-page-2');
         submittedUrls.forEach((u) => expect(u).to.not.include('www.'));
+      });
+
+      it('uses overrideBaseURL from site config as domain for csvUrls rebasing', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => [],
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://main--example--adobecom.hlx.page',
+            getConfig: () => ({
+              getFetchConfig: () => ({ overrideBaseURL: 'https://www.override.com' }),
+            }),
+          },
+          auditContext: {
+            urls: ['https://main--example--adobecom.hlx.page/page-1'],
+          },
+          finalUrl: 'https://main--example--adobecom.hlx.page',
+          log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+        const submittedUrls = result.urls.map((u) => u.url);
+        expect(submittedUrls).to.include('https://www.override.com/page-1');
       });
 
       it('should include includedURLs from site config', async () => {
@@ -706,6 +759,41 @@ describe('Prerender Audit', () => {
         expect(submittedUrls).to.include('https://example.com/organic-2');
         expect(submittedUrls).to.include('https://example.com/included-page');
         submittedUrls.forEach((u) => expect(u).to.not.include('www.'));
+      });
+
+      it('uses overrideBaseURL from site config as domain for organic and included URL rebasing', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => [],
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://main--example--adobecom.hlx.page',
+            getConfig: () => ({
+              getFetchConfig: () => ({ overrideBaseURL: 'https://www.override.com' }),
+              getIncludedURLs: () => ['https://main--example--adobecom.hlx.page/included'],
+            }),
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: async () => [
+                { getUrl: () => 'https://main--example--adobecom.hlx.page/organic-1' },
+              ],
+            },
+            PageCitability: { allByIndexKeys: async () => [] },
+          },
+          finalUrl: 'https://main--example--adobecom.hlx.page',
+          log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+        const submittedUrls = result.urls.map((u) => u.url);
+        expect(submittedUrls).to.include('https://www.override.com/organic-1');
+        expect(submittedUrls).to.include('https://www.override.com/included');
       });
 
       describe('daily batching', () => {
@@ -5895,6 +5983,7 @@ describe('Prerender Audit', () => {
         scrapingStatus: 'success',
         needsPrerender: true,
         isDeployedAtEdge: false,
+        usedEarlyClientSideHtml: false,
         wordCountBefore: 100,
         wordCountAfter: 250,
         contentGainRatio: 2.5,
@@ -6124,6 +6213,7 @@ describe('Prerender Audit', () => {
         scrapingStatus: 'success',
         needsPrerender: false,
         isDeployedAtEdge: false,
+        usedEarlyClientSideHtml: false,
         wordCountBefore: 0,
         wordCountAfter: 0,
         contentGainRatio: 0,
@@ -6607,7 +6697,7 @@ describe('Prerender Audit', () => {
       const normalPage = uploadedData.pages.find((p) => p.url === 'https://example.com/normal-page');
 
       expect(earlyPage.usedEarlyClientSideHtml).to.equal(true);
-      expect(normalPage).to.not.have.property('usedEarlyClientSideHtml');
+      expect(normalPage.usedEarlyClientSideHtml).to.equal(false);
     });
   });
 
@@ -7794,6 +7884,61 @@ describe('Prerender Audit', () => {
         botWords: 100,
         normalWords: 130,
       });
+    });
+
+    it('should forward usedEarlyClientSideHtml from scrape.json metadata to auditResult.results', async () => {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/prerender/utils/html-comparator.js': {
+          analyzeHtmlForPrerender: sinon.stub().resolves({
+            needsPrerender: false,
+            contentGainRatio: 1.0,
+            wordCountBefore: 50,
+            wordCountAfter: 50,
+            citabilityScore: 0.5,
+            wordDifference: 0,
+          }),
+        },
+      });
+
+      const mockS3Client = {
+        send: sinon.stub().callsFake(async (cmd) => {
+          const key = cmd.input?.Key || '';
+          if (key.endsWith('scrape.json')) {
+            return {
+              ContentType: 'application/json',
+              Body: { transformToString: () => Promise.resolve(JSON.stringify({ usedEarlyClientSideHtml: true })) },
+            };
+          }
+          return {
+            ContentType: 'text/html',
+            Body: { transformToString: () => Promise.resolve('<html><body>content</body></html>') },
+          };
+        }),
+      };
+
+      const context = {
+        site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
+        audit: { getId: () => 'audit-id' },
+        dataAccess: {
+          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
+          PageCitability: {
+            allBySiteId: sinon.stub().resolves([]),
+            create: sinon.stub().resolves({}),
+          },
+        },
+        log: {
+          info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub(),
+        },
+        s3Client: mockS3Client,
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        auditContext: { scrapeJobId: 'job-1' },
+        scrapeResultPaths: new Map([['https://example.com/page1', '/tmp/page1']]),
+      };
+
+      const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+      const page = result.auditResult.results.find((r) => r.url === 'https://example.com/page1');
+      expect(page.usedEarlyClientSideHtml).to.equal(true);
     });
   });
 
