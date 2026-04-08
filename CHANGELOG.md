@@ -1,3 +1,10 @@
+# [1.401.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.400.2...v1.401.0) (2026-04-08)
+
+
+### Features
+
+* **cdn-logs-report:** export agentic traffic bundles ([#2263](https://github.com/adobe/spacecat-audit-worker/issues/2263)) ([32ee8bb](https://github.com/adobe/spacecat-audit-worker/commit/32ee8bb2791eb3d951a1c2f9b9cde8d2a666c6c0))
+
 ## [1.400.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.400.1...v1.400.2) (2026-04-08)
 
 
