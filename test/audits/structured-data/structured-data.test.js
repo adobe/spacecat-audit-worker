@@ -135,6 +135,12 @@ describe('Structured Data Audit', () => {
   describe('runAuditAndGenerateSuggestions', () => {
     it('throws an error if no top pages are available', async () => {
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([]);
+      context.site = {
+        ...siteStub,
+        getConfig: () => ({
+          getIncludedURLs: () => [],
+        }),
+      };
 
       const result = await runAuditAndGenerateSuggestions(context);
       expect(result).to.deep.equal({
@@ -494,6 +500,12 @@ describe('Structured Data Audit', () => {
 
     it('throws error if no top pages are found when sending scraping request', async () => {
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([]);
+      context.site = {
+        ...siteStub,
+        getConfig: () => ({
+          getIncludedURLs: () => [],
+        }),
+      };
 
       await expect(submitForScraping(context)).to.be.rejectedWith('No top pages found for site');
     });

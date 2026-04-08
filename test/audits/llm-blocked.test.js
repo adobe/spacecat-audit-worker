@@ -494,8 +494,8 @@ describe('LLM Blocked Audit - Athena/SEO fallback', () => {
     expect(result.auditResult).to.equal('[]');
     // Athena was called
     expect(mockGetTopAgenticUrlsFromAthena).to.have.been.calledOnce;
-    // SEO was NOT called because Athena returned data
-    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
+    // All URL sources are now fetched in parallel via getMergedAuditInputUrls
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledOnce;
   });
 
   it('should fall back to SEO when Athena returns empty array', async () => {
@@ -531,14 +531,9 @@ describe('LLM Blocked Audit - Athena/SEO fallback', () => {
     const result = await checkLLMBlockedWithMocks(context);
 
     expect(result.auditResult).to.equal('[]');
-    // Athena was called first
+    // Both sources are fetched in parallel via getMergedAuditInputUrls
     expect(mockGetTopAgenticUrlsFromAthena).to.have.been.calledOnce;
-    // SEO was called as fallback
     expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledOnce;
-    // Log should indicate fallback
-    expect(context.log.info).to.have.been.calledWith(
-      '[LLM-BLOCKED] No agentic URLs from Athena, falling back to SEO top pages',
-    );
   });
 
   it('should fall back to SEO when Athena returns null', async () => {

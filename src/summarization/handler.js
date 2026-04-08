@@ -15,7 +15,6 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 import { getMergedAuditInputUrls, sortTopPagesByTraffic } from '../utils/audit-input-urls.js';
-import { mergeTopPagesWithAuditTargetUrls } from '../utils/data-access.js';
 import { detectExistingContent } from './existing-content-detector.js';
 import { filterOutDynamicUrls } from './dynamic-content-filter.js';
 
@@ -63,11 +62,15 @@ export async function importTopPages(context) {
   const {
     site, dataAccess, log,
   } = context;
-  const { SiteTopPage } = dataAccess;
-
   try {
-    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
-    const allUrls = mergeTopPagesWithAuditTargetUrls(topPages, site, log);
+    const { urls: allUrls } = await getMergedAuditInputUrls({
+      site,
+      dataAccess,
+      auditType: AUDIT_TYPE,
+      getAgenticUrls: () => Promise.resolve([]),
+      topOrganicLimit: MAX_TOP_PAGES,
+      log,
+    });
 
     if (allUrls.length === 0) {
       log.info('[SUMMARIZATION] No top pages found for site; continuing with fallback URL sources');
@@ -89,7 +92,7 @@ export async function importTopPages(context) {
       siteId: site.getId(),
       auditResult: {
         success: true,
-        topPages: allUrls.slice(0, MAX_TOP_PAGES),
+        topPages: allUrls,
       },
       fullAuditRef: site.getBaseURL(),
     };

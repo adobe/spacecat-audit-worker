@@ -629,11 +629,7 @@ describe('Backlinks Tests', function () {
 
       expect(result.status).to.deep.equal('complete');
 
-      // Verify the filtering log was called
-      expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Filtered out 3 unscrape-able file URLs \(PDFs, Office docs, etc\.\) from alternative URLs before sending to Mystique/),
-      );
-
+      // Non-HTML files (PDFs, Office docs) are pre-filtered by getMergedAuditInputUrls
       // Verify message was sent with only the valid page
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const sentMessage = context.sqs.sendMessage.getCall(0).args[1];

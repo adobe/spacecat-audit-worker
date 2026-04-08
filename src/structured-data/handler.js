@@ -15,7 +15,8 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access/src/models/suggestion/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { syncSuggestions, mergeTopPagesWithAuditTargetUrls } from '../utils/data-access.js';
+import { syncSuggestions } from '../utils/data-access.js';
+import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import {
@@ -164,9 +165,13 @@ export async function submitForScraping(context) {
     log,
     finalUrl,
   } = context;
-  const { SiteTopPage } = dataAccess;
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
-  const allUrls = mergeTopPagesWithAuditTargetUrls(topPages, site, log);
+  const { urls: allUrls } = await getMergedAuditInputUrls({
+    site,
+    dataAccess,
+    auditType,
+    getAgenticUrls: () => Promise.resolve([]),
+    log,
+  });
 
   if (allUrls.length === 0) {
     throw new Error('No top pages found for site');
@@ -185,7 +190,7 @@ export async function runAuditAndGenerateSuggestions(context) {
   const {
     site, finalUrl, log, dataAccess, audit, sqs, env,
   } = context;
-  const { SiteTopPage, Suggestion } = dataAccess;
+  const { Suggestion } = dataAccess;
 
   const startTime = process.hrtime();
   const siteId = site.getId();
@@ -194,8 +199,13 @@ export async function runAuditAndGenerateSuggestions(context) {
   const scrapeCache = new Map();
 
   try {
-    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'seo', 'global');
-    const allUrls = mergeTopPagesWithAuditTargetUrls(topPages, site, log);
+    const { urls: allUrls } = await getMergedAuditInputUrls({
+      site,
+      dataAccess,
+      auditType,
+      getAgenticUrls: () => Promise.resolve([]),
+      log,
+    });
     let allPages = allUrls.map((url) => ({ url }));
 
     if (!isNonEmptyArray(allPages)) {

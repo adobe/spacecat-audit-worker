@@ -15,7 +15,8 @@ import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { syncSuggestions, mergeTopPagesWithAuditTargetUrls } from '../utils/data-access.js';
+import { syncSuggestions } from '../utils/data-access.js';
+import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 
@@ -71,16 +72,14 @@ export async function checkLLMBlocked(context) {
     audit,
   } = context;
 
-  // Try to get top agentic URLs from Athena first
-  let topPageUrls = await getTopAgenticUrlsFromAthena(site, context);
-
-  // Fallback to SEO provider if Athena returns no data
-  if (!topPageUrls || topPageUrls.length === 0) {
-    log.info('[LLM-BLOCKED] No agentic URLs from Athena, falling back to SEO top pages');
-    const { SiteTopPage } = dataAccess;
-    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
-    topPageUrls = mergeTopPagesWithAuditTargetUrls(topPages, site, log);
-  }
+  // Merge all URL sources: agentic (Athena), custom audit targets, included, SEO top pages
+  const { urls: topPageUrls } = await getMergedAuditInputUrls({
+    site,
+    dataAccess,
+    auditType: 'llm-blocked',
+    getAgenticUrls: () => getTopAgenticUrlsFromAthena(site, context),
+    log,
+  });
 
   if (topPageUrls.length === 0) {
     throw new Error('No top pages found for site');
