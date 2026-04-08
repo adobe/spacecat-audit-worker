@@ -1028,6 +1028,106 @@ describe('Prerender Audit', () => {
 
       });
 
+      it('should include organic URLs even when all are in the recency window when triggered from Slack', async () => {
+        const athenaStub = sandbox.stub().resolves([]);
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: athenaStub,
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          auditContext: { slackContext: { channelId: 'C123', threadTs: '1.0' } },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                { getUrl: () => 'https://example.com/organic-page-1' },
+                { getUrl: () => 'https://example.com/organic-page-2' },
+              ]),
+            },
+          },
+          log: { info: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+
+        // Both URLs must be present even though they would be "recent" in a scheduled run
+        expect(result.urls).to.deep.equal([
+          { url: 'https://example.com/organic-page-1' },
+          { url: 'https://example.com/organic-page-2' },
+        ]);
+      });
+
+      it('should not fetch agentic URLs when triggered from Slack', async () => {
+        const athenaStub = sandbox.stub().resolves(['https://example.com/agentic-1']);
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: athenaStub,
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          auditContext: { slackContext: { channelId: 'C123', threadTs: '1.0' } },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                { getUrl: () => 'https://example.com/organic-page-1' },
+                { getUrl: () => 'https://example.com/organic-page-2' },
+              ]),
+            },
+          },
+          log: { info: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+
+        expect(athenaStub).to.not.have.been.called;
+        expect(result.urls).to.deep.equal([
+          { url: 'https://example.com/organic-page-1' },
+          { url: 'https://example.com/organic-page-2' },
+        ]);
+      });
+
+      it('should still fetch agentic URLs for scheduled (non-Slack) runs', async () => {
+        const athenaStub = sandbox.stub().resolves(['https://example.com/agentic-1']);
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: athenaStub,
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-1',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+            },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+          },
+          log: { info: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub() },
+          env: {},
+        };
+
+        await mockHandler.submitForScraping(context);
+
+        expect(athenaStub).to.have.been.called;
+      });
 
     });
 
@@ -1235,6 +1335,51 @@ describe('Prerender Audit', () => {
         expect(result.auditResult.totalUrlsChecked).to.equal(1);
         // Should have logged about fallback to base URL
         expect(context.log.info).to.have.been.calledWith('Prerender - No URLs found for comparison. baseUrl=https://example.com, siteId=test-site-id');
+      });
+
+      it('should not fetch agentic URLs in fallback path when triggered from Slack', async () => {
+        const athenaStub = sandbox.stub().resolves(['https://example.com/agentic-1']);
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: athenaStub,
+            getPreferredBaseUrl: () => 'https://example.com',
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                { getUrl: () => 'https://example.com/organic-1', getTraffic: () => 100 },
+              ]),
+            },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+          scrapeResultPaths: new Map(), // No scrape results → triggers fallback path
+          s3Client: { send: sandbox.stub().rejects(new Error('No S3 data')) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: {
+            scrapeJobId: 'test-job-id',
+            slackContext: { channelId: 'C123', threadTs: '1.0' },
+          },
+        };
+
+        await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(athenaStub).to.not.have.been.called;
       });
 
       it('should trigger opportunity processing path when prerender is detected', async () => {
