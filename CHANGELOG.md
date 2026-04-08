@@ -1,3 +1,10 @@
+# [1.403.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.402.0...v1.403.0) (2026-04-08)
+
+
+### Features
+
+* **toc:** adopt 3-source URL prioritization pattern matching summari… ([#2335](https://github.com/adobe/spacecat-audit-worker/issues/2335)) ([906319d](https://github.com/adobe/spacecat-audit-worker/commit/906319d68c90e39e789a13438a3ae66447db76ea))
+
 # [1.402.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.401.4...v1.402.0) (2026-04-08)
 
 
