@@ -1450,6 +1450,86 @@ describe('Prerender Audit', () => {
         expect(context.log.info.args.some((call) => typeof call[0] === 'string' && call[0].includes('prerender_suggestions_sync_metrics'))).to.be.true;
       });
 
+      it('should only send batch URL suggestions to Mystique in normal audit mode', async () => {
+        const mockSqs = { sendMessage: sinon.stub().resolves() };
+        const mockOpportunity = {
+          getId: () => 'test-opportunity-id',
+          // Two suggestions: one URL was in the current batch, one was not
+          getSuggestions: sinon.stub().resolves([
+            {
+              getId: () => 'sug-batch',
+              getData: () => ({ url: 'https://example.com/page1', scrapeJobId: 'test-job-id' }),
+              getStatus: () => 'NEW',
+            },
+            {
+              getId: () => 'sug-old',
+              getData: () => ({ url: 'https://example.com/old-page', scrapeJobId: 'old-job-id' }),
+              getStatus: () => 'NEW',
+            },
+          ]),
+        };
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: sinon.stub().resolves(),
+          },
+        });
+
+        const serverHtml = '<html><body><h1>Title</h1></body></html>';
+        const clientHtml = '<html><body><h1>Title</h1><p>Significant additional content here</p><div>More dynamic content loaded by JavaScript</div><p>Even more substantial content that greatly increases the word count to trigger prerender detection</p></body></html>';
+
+        // First two calls: fetch server/client HTML for the HTML comparison step.
+        // All subsequent calls (scrape.json fetch + HeadObjectCommand) resolve to {}.
+        const mockS3Client = {
+          send: sandbox.stub()
+            .onCall(0).resolves({ ContentType: 'text/html', Body: { transformToString: () => Promise.resolve(serverHtml) } })
+            .onCall(1).resolves({ ContentType: 'text/html', Body: { transformToString: () => Promise.resolve(clientHtml) } })
+            .resolves({}),
+        };
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getDeliveryType: () => 'aem_edge',
+          },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                { getUrl: () => 'https://example.com/page1', getTraffic: () => 500 },
+              ]),
+            },
+          },
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+          sqs: mockSqs,
+          s3Client: mockS3Client,
+          env: {
+            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+            QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.us-east-1.amazonaws.com/test-queue',
+          },
+          auditContext: { scrapeJobId: 'test-job-id' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(result.status).to.equal('complete');
+        expect(result.auditResult.urlsNeedingPrerender).to.be.greaterThan(0);
+        // Only page1 (in the current batch) should be forwarded — old-page is from a prior batch
+        expect(mockSqs.sendMessage).to.have.been.called;
+        const message = mockSqs.sendMessage.getCall(0).args[1];
+        expect(message.data.suggestions).to.have.lengthOf(1);
+        expect(message.data.suggestions[0].url).to.equal('https://example.com/page1');
+      });
+
       it('should create dummy opportunity when scraping is forbidden', async () => {
         // Test that a dummy opportunity is created when all scrapes return 403
         const mockOpportunity = { getId: () => 'test-opportunity-id', getSuggestions: sinon.stub().resolves([]) };

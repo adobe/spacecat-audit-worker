@@ -18,6 +18,7 @@ import {
   submitForScraping,
   processContentAndGenerateOpportunities,
   handleAiOnlyMode,
+  sendPrerenderGuidanceRequestToMystique,
 } from '../../../src/prerender/handler.js';
 
 use(sinonChai);
@@ -639,6 +640,105 @@ describe('Prerender AI-Only Mode', () => {
         sinon.match(/S3 HEAD check failed for suggestion/),
       );
       expect(mockSqs.sendMessage).to.have.been.called;
+    });
+  });
+
+  describe('sendPrerenderGuidanceRequestToMystique - batchUrlSet filtering', () => {
+    let directContext;
+
+    beforeEach(() => {
+      directContext = {
+        log: {
+          debug: sandbox.stub(),
+          info: sandbox.stub(),
+          warn: sandbox.stub(),
+          error: sandbox.stub(),
+        },
+        site: {
+          getId: sandbox.stub().returns('site-123'),
+          getBaseURL: sandbox.stub().returns('https://example.com'),
+          getDeliveryType: sandbox.stub().returns('aem_edge'),
+        },
+        s3Client: { send: sandbox.stub().resolves({}) },
+        sqs: mockSqs,
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.us-east-1.amazonaws.com/test-queue',
+        },
+      };
+    });
+
+    it('should only send batch suggestions when batchUrlSet is provided', async () => {
+      const opportunity = {
+        getId: sandbox.stub().returns('opportunity-123'),
+        getSuggestions: sandbox.stub().resolves([
+          {
+            getId: () => 'sug-batch',
+            getData: () => ({ url: 'https://example.com/in-batch', scrapeJobId: 'job-1' }),
+            getStatus: () => 'NEW',
+          },
+          {
+            getId: () => 'sug-old',
+            getData: () => ({ url: 'https://example.com/not-in-batch', scrapeJobId: 'job-0' }),
+            getStatus: () => 'NEW',
+          },
+        ]),
+      };
+
+      const auditData = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        scrapeJobId: 'job-1',
+        batchUrlSet: new Set(['https://example.com/in-batch']),
+      };
+
+      await sendPrerenderGuidanceRequestToMystique(
+        'https://example.com',
+        auditData,
+        opportunity,
+        directContext,
+      );
+
+      expect(mockSqs.sendMessage).to.have.been.calledOnce;
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(1);
+      expect(message.data.suggestions[0].url).to.equal('https://example.com/in-batch');
+    });
+
+    it('should send all eligible suggestions when batchUrlSet is not provided (ai-only mode)', async () => {
+      const opportunity = {
+        getId: sandbox.stub().returns('opportunity-123'),
+        getSuggestions: sandbox.stub().resolves([
+          {
+            getId: () => 'sug-1',
+            getData: () => ({ url: 'https://example.com/page1', scrapeJobId: 'job-1' }),
+            getStatus: () => 'NEW',
+          },
+          {
+            getId: () => 'sug-2',
+            getData: () => ({ url: 'https://example.com/page2', scrapeJobId: 'job-0' }),
+            getStatus: () => 'NEW',
+          },
+        ]),
+      };
+
+      const auditData = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        scrapeJobId: 'job-1',
+        // batchUrlSet intentionally omitted — ai-only mode
+      };
+
+      await sendPrerenderGuidanceRequestToMystique(
+        'https://example.com',
+        auditData,
+        opportunity,
+        directContext,
+      );
+
+      expect(mockSqs.sendMessage).to.have.been.calledOnce;
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(2);
     });
   });
 
