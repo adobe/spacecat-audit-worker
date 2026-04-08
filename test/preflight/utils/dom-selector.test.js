@@ -245,6 +245,67 @@ describe('dom-selector.js', () => {
       expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/page/block"] a[data-aue-prop="link"]');
     });
 
+    it('should resolve child of UE editable to the editable selector (heading inside richtext)', () => {
+      const html = `
+        <div data-aue-resource="urn:aemconnection:/content/frescopa/en/index/jcr:content/root/section_1209180770/block/item">
+          <div class="cards-card-body">
+            <div data-aue-prop="text" data-aue-label="Text" data-aue-filter="text" data-aue-type="richtext">
+              <h5>Coffee Machines</h5>
+            </div>
+          </div>
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const h5Element = $test('h5').get(0);
+      const selector = getDomElementSelector(h5Element);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/frescopa/en/index/jcr:content/root/section_1209180770/block/item"] div[data-aue-type="richtext"][data-aue-prop="text"]');
+    });
+
+    it('should resolve deeply nested child to nearest ancestor UE editable', () => {
+      const html = `
+        <div data-aue-resource="urn:aemconnection:/content/page/block">
+          <div data-aue-prop="description" data-aue-type="richtext">
+            <div class="wrapper">
+              <p><strong>Bold text</strong></p>
+            </div>
+          </div>
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const strongElement = $test('strong').get(0);
+      const selector = getDomElementSelector(strongElement);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/page/block"] div[data-aue-type="richtext"][data-aue-prop="description"]');
+    });
+
+    it('should not resolve to ancestor editable when element is outside UE context', () => {
+      const html = `
+        <body>
+          <div class="plain-container">
+            <p>No UE attributes anywhere</p>
+          </div>
+        </body>
+      `;
+      const $test = cheerioLoad(html);
+      const pElement = $test('p').get(0);
+      const selector = getDomElementSelector(pElement);
+      expect(selector).to.include('p');
+      expect(selector).to.not.include('data-aue');
+    });
+
+    it('should stop ancestor search at data-aue-resource and fall back to structural CSS', () => {
+      const html = `
+        <div data-aue-resource="urn:aemconnection:/content/page/block">
+          <div class="no-aue-prop">
+            <span>Text without editable wrapper</span>
+          </div>
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const spanElement = $test('span').get(0);
+      const selector = getDomElementSelector(spanElement);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/page/block"] > div.no-aue-prop > span');
+    });
+
     it('should handle Universal Editor body tag with data-aue-resource', () => {
       const html = `<body data-aue-resource="urn:aemconnection:/content/frescopa/en/index/jcr:content" data-aue-label="Page">
         <main>

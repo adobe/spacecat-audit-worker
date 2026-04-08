@@ -81,7 +81,7 @@ export function getDomElementSelector(element) {
   const tag = name.toLowerCase();
   let selectors = [tag];
 
-  // 1. Check for Universal Editor data attributes
+  // 1a. Check for Universal Editor data attributes on the element itself
   const aueResource = attribs?.['data-aue-resource'];
   const aueProp = attribs?.['data-aue-prop'];
 
@@ -107,6 +107,24 @@ export function getDomElementSelector(element) {
       ancestor = ancestor.parent;
     }
     return childSelector;
+  }
+
+  // 1b. Element has no UE attributes — check if a nearby ancestor is a UE editable
+  // (has data-aue-prop). If so, return that ancestor's UE selector instead of a
+  // hybrid structural selector, since UE can only highlight at the editable level.
+  {
+    let ancestor = parent;
+    while (ancestor && ancestor.name && ancestor.name.toLowerCase() !== 'html') {
+      const ancestorProp = ancestor.attribs?.['data-aue-prop'];
+      if (ancestorProp) {
+        return getDomElementSelector(ancestor);
+      }
+      const ancestorResource = ancestor.attribs?.['data-aue-resource'];
+      if (ancestorResource) {
+        break;
+      }
+      ancestor = ancestor.parent;
+    }
   }
 
   // 2. Build element-level selector from ID or classes
