@@ -81,7 +81,7 @@ export function getDomElementSelector(element) {
   const tag = name.toLowerCase();
   let selectors = [tag];
 
-  // 1. Check for Universal Editor data attributes
+  // 1a. Check for Universal Editor data attributes on the element itself
   const aueResource = attribs?.['data-aue-resource'];
   const aueProp = attribs?.['data-aue-prop'];
 
