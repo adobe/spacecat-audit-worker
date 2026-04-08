@@ -84,7 +84,8 @@ export async function syncOpportunitiesAndSuggestions(context) {
       type: 'CODE_CHANGE',
       // the rank logic for CWV is as follows:
       // 1. if the entry is a group, then the rank is the max confidence for URLs
-      //   plus the confidence for the group (ensures groups sort before URLs)
+      //   plus the confidence for the group (ensures groups sort before URLs,
+      //   because the UI shows groups first)
       // 2. if the entry is a URL, then the rank is the confidence score for that URL
       rank: entry.type === 'group'
         ? maxConfidenceForUrls + calculateConfidenceScore(entry)

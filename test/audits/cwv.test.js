@@ -439,7 +439,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
       suggestionsArg.forEach((s) => expect(s.data).to.have.property('jiraLink', ''));
     });
 
-    it('handles audit result with only group entries for maxPageviewsForUrls coverage', async () => {
+    it('handles audit result with only group entries for maxConfidenceForUrls coverage', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
       sinon.stub(GoogleClient, 'createFrom').resolves({});
