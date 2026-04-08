@@ -57,8 +57,12 @@ function serializeCsv(rows, columns) {
 }
 
 function getAgenticBundleKeyPrefix(siteId, trafficDate, batchId) {
-  const [year, month, day] = trafficDate.split('-');
-  return `${siteId}/agentic-traffic/${year}/${month}/${day}/${batchId}/`;
+  const [year, month] = trafficDate.split('-');
+  return `${siteId}/agentic-traffic/${year}/${month}/${batchId}/`;
+}
+
+function createBundleId(referenceDate = new Date()) {
+  return referenceDate.toISOString().replace(/[-:]/g, '').replace('.', '');
 }
 
 async function ensureAthenaDatabase(athenaClient, databaseName) {
@@ -183,6 +187,7 @@ async function dispatchAnalyticsEvent({
 
 export const testHelpers = {
   cleanupBundleFromS3,
+  createBundleId,
   dispatchAnalyticsEvent,
   escapeCsvValue,
 };
@@ -199,6 +204,10 @@ export async function runDailyAgenticExport({
   const { log } = context;
   const trafficDateObj = getPreviousUtcDate(referenceDate);
   const trafficDate = trafficDateObj.toISOString().split('T')[0];
+  const bundleBucket = context?.env?.S3_IMPORTER_BUCKET_NAME;
+  if (!bundleBucket) {
+    throw new Error('S3_IMPORTER_BUCKET_NAME must be provided for agentic daily export');
+  }
   const queueUrl = await getAnalyticsQueueUrl(context);
   if (!queueUrl) {
     throw new Error('analytics queue is not configured');
@@ -240,15 +249,16 @@ export async function runDailyAgenticExport({
   }
 
   const batchId = uuidv4();
-  const keyPrefix = getAgenticBundleKeyPrefix(site.getId(), trafficDate, batchId);
-  const bundleUri = `s3://${s3Config.bucket}/${keyPrefix}`;
+  const bundleId = createBundleId(referenceDate);
+  const keyPrefix = getAgenticBundleKeyPrefix(site.getId(), trafficDate, bundleId);
+  const bundleUri = `s3://${bundleBucket}/${keyPrefix}`;
   const uploadedFiles = buildBundleFileKeys(keyPrefix);
   let dispatch;
 
   try {
     await uploadBundleToS3({
       s3Client,
-      bucket: s3Config.bucket,
+      bucket: bundleBucket,
       uploadedFiles,
       trafficRows,
       classificationRows,
@@ -265,7 +275,7 @@ export async function runDailyAgenticExport({
   } catch (error) {
     await cleanupBundleFromS3({
       s3Client,
-      bucket: s3Config.bucket,
+      bucket: bundleBucket,
       uploadedFiles,
       log,
     });

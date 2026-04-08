@@ -93,6 +93,7 @@ describe('agentic daily export', () => {
     };
     const context = {
       env: {
+        S3_IMPORTER_BUCKET_NAME: 'spacecat-dev-importer',
       },
       dataAccess: {
         Configuration: {
@@ -141,8 +142,10 @@ describe('agentic daily export', () => {
       '[Athena Query] agentic_daily_flat_data',
     );
     expect(s3Client.send).to.have.been.calledTwice;
-    expect(s3Client.send.firstCall.args[0].input.Key).to.equal('9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/31/batch-123/agentic_traffic.csv');
-    expect(s3Client.send.secondCall.args[0].input.Key).to.equal('9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/31/batch-123/agentic_url_classifications.csv');
+    expect(s3Client.send.firstCall.args[0].input.Bucket).to.equal('spacecat-dev-importer');
+    expect(s3Client.send.secondCall.args[0].input.Bucket).to.equal('spacecat-dev-importer');
+    expect(s3Client.send.firstCall.args[0].input.Key).to.equal('9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/20260401T100000000Z/agentic_traffic.csv');
+    expect(s3Client.send.secondCall.args[0].input.Key).to.equal('9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/20260401T100000000Z/agentic_url_classifications.csv');
     expect(s3Client.send.firstCall.args[0].input.Body).to.include('traffic_date,host,platform');
     expect(s3Client.send.secondCall.args[0].input.Body).to.include('host,url_path,region');
     expect(context.sqs.sendMessage).to.have.been.calledOnceWith(
@@ -151,7 +154,7 @@ describe('agentic daily export', () => {
         type: 'batch.completed',
         correlationId: 'batch-123',
         pipeline_id: 'agentic_traffic',
-        s3_uri: 's3://spacecat-dev-cdn-logs-aggregates-us-east-1/9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/31/batch-123/',
+        s3_uri: 's3://spacecat-dev-importer/9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/20260401T100000000Z/',
         site_id: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
         org_id: 'org-1',
         start_date: '2026-03-31',
@@ -167,7 +170,7 @@ describe('agentic daily export', () => {
       trafficDate: '2026-03-31',
       rowCount: 1,
       classificationCount: 1,
-      bundleUri: 's3://spacecat-dev-cdn-logs-aggregates-us-east-1/9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/31/batch-123/',
+      bundleUri: 's3://spacecat-dev-importer/9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/20260401T100000000Z/',
     });
   });
 
@@ -227,10 +230,54 @@ describe('agentic daily export', () => {
         getId: () => 'site-1',
       },
       batchId: 'batch-123',
-      bundleUri: 's3://bucket/site-1/agentic-traffic/2026/03/31/batch-123/',
+      bundleUri: 's3://bucket/site-1/agentic-traffic/2026/03/20260401T100000000Z/',
       trafficDate: '2026-03-31',
       rowCount: 1,
     })).to.be.rejectedWith('analytics queue is not configured');
+  });
+
+  it('requires an importer bucket before running the daily export', async () => {
+    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js');
+
+    await expect(module.runDailyAgenticExport({
+      athenaClient: {
+        execute: sandbox.stub().resolves(),
+        query: sandbox.stub().resolves([]),
+      },
+      s3Client: {
+        send: sandbox.stub().resolves({}),
+      },
+      s3Config: {
+        bucket: 'cdn-aggregate-bucket',
+        databaseName: 'db',
+      },
+      site: {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getLlmoCdnlogsFilter: () => [],
+        }),
+      },
+      context: {
+        env: {},
+        dataAccess: {
+          Configuration: {
+            findLatest: sandbox.stub().resolves(createConfiguration()),
+          },
+        },
+        log: {
+          info: sandbox.spy(),
+          warn: sandbox.spy(),
+        },
+        sqs: {
+          sendMessage: sandbox.stub().resolves(),
+        },
+      },
+      reportConfig: {
+        tableName: 'aggregated_logs_example_consolidated',
+      },
+      referenceDate: new Date('2026-04-01T10:00:00Z'),
+    })).to.be.rejectedWith('S3_IMPORTER_BUCKET_NAME must be provided for agentic daily export');
   });
 
   it('serializes null and undefined CSV values as empty strings', async () => {
@@ -281,6 +328,9 @@ describe('agentic daily export', () => {
         }),
       },
       context: {
+        env: {
+          S3_IMPORTER_BUCKET_NAME: 'spacecat-dev-importer',
+        },
         dataAccess: {
           Configuration: {
             findLatest: sandbox.stub().resolves(createConfiguration()),
@@ -351,7 +401,9 @@ describe('agentic daily export', () => {
         }),
       },
       context: {
-        env: {},
+        env: {
+          S3_IMPORTER_BUCKET_NAME: 'spacecat-dev-importer',
+        },
         dataAccess: {
           Configuration: {
             findLatest: sandbox.stub().resolves({
@@ -443,6 +495,9 @@ describe('agentic daily export', () => {
         }),
       },
       context: {
+        env: {
+          S3_IMPORTER_BUCKET_NAME: 'spacecat-dev-importer',
+        },
         dataAccess: {
           Configuration: {
             findLatest: sandbox.stub().resolves(createConfiguration()),
@@ -534,6 +589,9 @@ describe('agentic daily export', () => {
         }),
       },
       context: {
+        env: {
+          S3_IMPORTER_BUCKET_NAME: 'spacecat-dev-importer',
+        },
         dataAccess: {
           Configuration: {
             findLatest: sandbox.stub().resolves(createConfiguration()),
@@ -598,6 +656,9 @@ describe('agentic daily export', () => {
         }),
       },
       context: {
+        env: {
+          S3_IMPORTER_BUCKET_NAME: 'spacecat-dev-importer',
+        },
         dataAccess: {
           Configuration: {
             findLatest: sandbox.stub().resolves(createConfiguration()),

@@ -121,8 +121,7 @@ export function inferProviderFromUserAgent(userAgent = '') {
 
   if (/(chatgpt|gptbot|oai-searchbot)/.test(ua)) return 'ChatGPT';
   if (/perplexity/.test(ua)) return 'Perplexity';
-  if (/anthropic/.test(ua)) return 'Anthropic';
-  if (/claude/.test(ua)) return 'Claude';
+  if (/(anthropic|claude)/.test(ua)) return 'Anthropic';
   if (/gemini/.test(ua)) return 'Gemini';
   if (/(google|googlebot|googleagent|notebooklm)/.test(ua)) return 'Google';
   if (/copilot/.test(ua)) return 'Copilot';

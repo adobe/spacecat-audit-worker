@@ -117,7 +117,7 @@ describe('User Agent Patterns', () => {
 
       expect(inferProviderFromUserAgent('ChatGPT-User/1.0')).to.equal('ChatGPT');
       expect(inferProviderFromUserAgent('PerplexityBot')).to.equal('Perplexity');
-      expect(inferProviderFromUserAgent('ClaudeBot')).to.equal('Claude');
+      expect(inferProviderFromUserAgent('ClaudeBot')).to.equal('Anthropic');
       expect(inferProviderFromUserAgent('Anthropic-SearchBot')).to.equal('Anthropic');
       expect(inferProviderFromUserAgent('Gemini-Deep-Research')).to.equal('Gemini');
       expect(inferProviderFromUserAgent('GoogleAgent-Chrome')).to.equal('Google');
