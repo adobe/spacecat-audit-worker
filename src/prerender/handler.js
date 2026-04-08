@@ -1620,7 +1620,7 @@ export async function processContentAndGenerateOpportunities(context) {
 
     let opportunityWithSuggestions = null;
 
-    /* c8 ignore next 13 - Opportunity processing branch, covered by integration tests */
+    /* c8 ignore next 15 - Opportunity processing branch, covered by integration tests */
     if (urlsNeedingPrerender.length > 0) {
       const opportunity = await processOpportunityAndSuggestions(
         site.getBaseURL(),
