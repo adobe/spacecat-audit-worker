@@ -1,3 +1,10 @@
+# [1.402.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.401.4...v1.402.0) (2026-04-08)
+
+
+### Features
+
+* LLMO-3904: Modify the Summary suggestions experience to not need GenA… ([#2332](https://github.com/adobe/spacecat-audit-worker/issues/2332)) ([11d9fa2](https://github.com/adobe/spacecat-audit-worker/commit/11d9fa2913da13718fe6b86898754764ceb80538))
+
 ## [1.401.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.401.3...v1.401.4) (2026-04-08)
 
 
