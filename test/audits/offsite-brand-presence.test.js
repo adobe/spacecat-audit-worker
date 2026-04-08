@@ -1587,7 +1587,7 @@ describe('Offsite Brand Presence Handler', () => {
     }
 
     it('should send a Slack thread reply with DRS job IDs when slackContext is provided', async () => {
-      setupWithSources('https://youtube.com/shorts/v1;https://reddit.com/r/adobe');
+      setupWithSources('https://youtube.com/shorts/v1');
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, AUDIT_CONTEXT_WITH_SLACK);
 
@@ -1599,6 +1599,17 @@ describe('Offsite Brand Presence Handler', () => {
       expect(callText).to.include('offsite-brand-presence');
       expect(callText).to.include(BASE_URL);
       expect(callText).to.include('youtube.com');
+      expect(callText).to.include('mock-job');
+      expect(callText).to.not.include(':x:');
+    });
+
+    it('should include each triggered domain in the Slack thread message', async () => {
+      setupWithSources('https://reddit.com/r/adobe');
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, AUDIT_CONTEXT_WITH_SLACK);
+
+      expect(mockPostMessageOptional).to.have.been.calledOnce;
+      const callText = mockPostMessageOptional.firstCall.args[2];
       expect(callText).to.include('reddit.com');
       expect(callText).to.include('mock-job');
       expect(callText).to.not.include(':x:');
