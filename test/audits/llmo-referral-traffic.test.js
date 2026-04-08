@@ -161,6 +161,17 @@ describe('LLMO Referral Traffic Handler', () => {
       expect(result.auditResult.rowCount).to.equal(2);
       expect(saveExcelReportStub).to.have.been.calledOnce;
     });
+
+    it('should extract the country from bare country/language paths', async () => {
+      const mockTrafficData = [
+        { path: 'cz/cs/page1', trf_type: 'earned' },
+      ];
+
+      mockAthenaClient.query.resolves(mockTrafficData);
+
+      await handlerModule.referralTrafficRunner(context);
+
+      expect(mockTrafficData[0].region).to.equal('CZ');
+    });
   });
 });
-

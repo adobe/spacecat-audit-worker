@@ -71,12 +71,12 @@ describe('dom-selector.js', () => {
       expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/test"]');
     });
 
-    it('should use data-aue-prop for property-level elements', () => {
+    it('should fall back to structural selector when data-aue-prop has no data-aue-resource ancestor', () => {
       const html = '<h1 data-aue-prop="title" class="heading">My Title</h1>';
       const $test = cheerioLoad(html);
       const element = $test('h1').get(0);
       const selector = getDomElementSelector(element);
-      expect(selector).to.equal('h1[data-aue-prop="title"]');
+      expect(selector).to.equal('body > h1.heading');
     });
 
     it('should generate a selector with ID if available', () => {
@@ -243,6 +243,67 @@ describe('dom-selector.js', () => {
       const element = $test('a').get(0);
       const selector = getDomElementSelector(element);
       expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/page/block"] a[data-aue-prop="link"]');
+    });
+
+    it('should resolve child of UE editable to the editable selector (heading inside richtext)', () => {
+      const html = `
+        <div data-aue-resource="urn:aemconnection:/content/frescopa/en/index/jcr:content/root/section_1209180770/block/item">
+          <div class="cards-card-body">
+            <div data-aue-prop="text" data-aue-label="Text" data-aue-filter="text" data-aue-type="richtext">
+              <h5>Coffee Machines</h5>
+            </div>
+          </div>
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const h5Element = $test('h5').get(0);
+      const selector = getDomElementSelector(h5Element);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/frescopa/en/index/jcr:content/root/section_1209180770/block/item"] div[data-aue-type="richtext"][data-aue-prop="text"]');
+    });
+
+    it('should resolve deeply nested child to nearest ancestor UE editable', () => {
+      const html = `
+        <div data-aue-resource="urn:aemconnection:/content/page/block">
+          <div data-aue-prop="description" data-aue-type="richtext">
+            <div class="wrapper">
+              <p><strong>Bold text</strong></p>
+            </div>
+          </div>
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const strongElement = $test('strong').get(0);
+      const selector = getDomElementSelector(strongElement);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/page/block"] div[data-aue-type="richtext"][data-aue-prop="description"]');
+    });
+
+    it('should not resolve to ancestor editable when element is outside UE context', () => {
+      const html = `
+        <body>
+          <div class="plain-container">
+            <p>No UE attributes anywhere</p>
+          </div>
+        </body>
+      `;
+      const $test = cheerioLoad(html);
+      const pElement = $test('p').get(0);
+      const selector = getDomElementSelector(pElement);
+      expect(selector).to.include('p');
+      expect(selector).to.not.include('data-aue');
+    });
+
+    it('should stop ancestor search at data-aue-resource and fall back to structural CSS', () => {
+      const html = `
+        <div data-aue-resource="urn:aemconnection:/content/page/block">
+          <div class="no-aue-prop">
+            <span>Text without editable wrapper</span>
+          </div>
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const spanElement = $test('span').get(0);
+      const selector = getDomElementSelector(spanElement);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/page/block"] > div.no-aue-prop > span');
     });
 
     it('should handle Universal Editor body tag with data-aue-resource', () => {
@@ -512,6 +573,49 @@ describe('dom-selector.js', () => {
       const selector = getDomElementSelector(element);
       expect(selector).to.include('h1#title');
       expect(selector).to.include('div.wrapper');
+    });
+  });
+
+  describe('Disambiguation of duplicate data-aue-prop without data-aue-resource ancestor', () => {
+    it('should produce distinct structural selectors for repeated data-aue-prop elements (EDS/Sidekick context)', () => {
+      const html = `
+        <body>
+          <main>
+            <div class="section offer-container">
+              <div class="offer-wrapper">
+                <div class="offer block" data-block-name="offer">
+                  <div class="offer-content">
+                    <div class="offer-left">
+                      <h4 data-aue-prop="headline" data-aue-type="text" class="headline">Fall in love with coffee.</h4>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="section reward-container">
+              <div class="reward-wrapper">
+                <div class="reward light left block" data-block-name="reward">
+                  <div class="reward-content">
+                    <div class="reward-left">
+                      <h4 data-aue-prop="headline" data-aue-type="text" class="headline"></h4>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </main>
+        </body>
+      `;
+      const $test = cheerioLoad(html);
+      const h4Elements = $test('h4').get();
+      const selector1 = getDomElementSelector(h4Elements[0]);
+      const selector2 = getDomElementSelector(h4Elements[1]);
+
+      expect(selector1).to.not.equal(selector2);
+      expect(selector1).to.include('offer-content');
+      expect(selector2).to.include('reward-content');
+      expect(selector1).to.not.include('data-aue-prop');
+      expect(selector2).to.not.include('data-aue-prop');
     });
   });
 
