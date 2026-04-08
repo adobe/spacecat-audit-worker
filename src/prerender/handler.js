@@ -487,9 +487,11 @@ async function fetchLatestScrapeJobId(siteId, context) {
  * @param {Object} auditData - Audit data used to build the message
  * @param {Object} opportunity - The prerender opportunity entity
  * @param {Object} context - Processing context
+ * @param {Array} [suggestions] - Pre-fetched suggestions; if omitted they are loaded from the DB
  * @returns {Promise<number>} - Number of suggestions sent to Mystique
  */
-async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, opportunity, context) {
+// eslint-disable-next-line max-len
+async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, opportunity, context, suggestions) {
   const {
     log, sqs, env, site,
   } = context;
@@ -515,10 +517,10 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
   try {
     const baseUrl = auditUrl;
 
-    // Load the suggestions we just synced so that we can:
-    // - include real suggestion IDs
-    // - filter out domain-wide aggregate suggestions
-    const existingSuggestions = await opportunity.getSuggestions();
+    // Use pre-fetched suggestions when provided (normal audit mode passes the freshly synced
+    // batch directly to avoid a redundant DB round-trip). Fall back to fetching from the DB
+    // for ai-only mode where no batch is available.
+    const existingSuggestions = suggestions ?? await opportunity.getSuggestions();
 
     if (!existingSuggestions || existingSuggestions.length === 0) {
       log.debug(`${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, skipping Mystique message. baseUrl=${baseUrl}, siteId=${siteId}`);
@@ -1634,11 +1636,13 @@ export async function processContentAndGenerateOpportunities(context) {
         isPaid,
       );
       opportunityWithSuggestions = opportunity;
+      const batchSuggestions = await opportunity.getSuggestions();
       await sendPrerenderGuidanceRequestToMystique(
         site.getBaseURL(),
         { siteId, auditId: audit.getId(), scrapeJobId },
         opportunity,
         context,
+        batchSuggestions,
       );
       /* c8 ignore next 12 */
     } else if (scrapeForbidden) {
