@@ -30,7 +30,6 @@ import { createLLMOSharepointClient, bulkPublishToAdminHlx } from '../utils/repo
 import { getConfigs } from './constants/report-configs.js';
 import { generatePatternsWorkbook } from './patterns/patterns-uploader.js';
 import {
-  isAgenticDailyExportEnabled,
   runDailyAgenticExport,
 } from './agentic-daily-export.js';
 
@@ -156,11 +155,10 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   }
 
   let dailyAgenticExport;
-  const isDailyAgenticExportEnabled = isAgenticDailyExportEnabled(site);
   if (!isWeeklyOnlyRun) {
-    if (!agenticReportConfig && isDailyAgenticExportEnabled) {
+    if (!agenticReportConfig) {
       log.debug(`Skipping daily agentic export for ${siteId}: agentic report config not found`);
-    } else if (agenticReportConfig && isDailyAgenticExportEnabled) {
+    } else {
       // eslint-disable-next-line no-await-in-loop
       try {
         dailyAgenticExport = await runDailyAgenticExport({
