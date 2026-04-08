@@ -556,6 +556,32 @@ async function sendPrerenderGuidanceRequestToMystique(
       return 0;
     }
 
+    // Send LLMO site config category/topic/region names to Mystique for prompt classification.
+    // Mirrors how the rcv-prompts utility injects llmoCategoryNames/llmoTopicNames/llmoRegionNames.
+    // Gracefully degrades to empty arrays if config is unavailable.
+    let llmoCategories = [];
+    let llmoTopics = [];
+    let llmoRegions = [];
+    /* c8 ignore next 15 - LLMO config read is best-effort; tested separately */
+    try {
+      const llmoCfg = site?.getConfig?.()?.getLlmoConfig?.();
+      if (llmoCfg) {
+        llmoCategories = Object.values(llmoCfg.categories || {})
+          .map((c) => c.name).filter(Boolean);
+        const allTopics = { ...llmoCfg.topics, ...llmoCfg.aiTopics };
+        llmoTopics = Object.values(allTopics).map((t) => t.name).filter(Boolean);
+        const regionSet = new Set();
+        Object.values(llmoCfg.categories || {}).forEach((cat) => {
+          if (Array.isArray(cat.region)) cat.region.forEach((r) => regionSet.add(r));
+          else if (cat.region) regionSet.add(cat.region);
+        });
+        llmoRegions = [...regionSet];
+        log.debug(`${LOG_PREFIX} Loaded LLMO config: ${llmoCategories.length} categories, ${llmoTopics.length} topics, ${llmoRegions.length} regions. baseUrl=${baseUrl}`);
+      }
+    } catch (llmoErr) {
+      log.warn(`${LOG_PREFIX} Failed to read LLMO config for prompt classification (non-fatal): ${llmoErr.message}. baseUrl=${baseUrl}`);
+    }
+
     const deliveryType = site?.getDeliveryType?.() || 'unknown';
 
     const message = {
@@ -568,6 +594,9 @@ async function sendPrerenderGuidanceRequestToMystique(
         opportunityId,
         suggestions: suggestionsPayload,
         generatePrompts,
+        llmoCategories,
+        llmoTopics,
+        llmoRegions,
       },
     };
 
