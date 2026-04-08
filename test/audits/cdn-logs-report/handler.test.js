@@ -616,7 +616,6 @@ describe('CDN Logs Report Handler', function test() {
       const runDailyAgenticExportStub = sandbox.stub().resolves();
       const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
         '../../../src/cdn-logs-report/agentic-daily-export.js': {
-          isAgenticDailyExportEnabled: sandbox.stub().returns(true),
           runDailyAgenticExport: runDailyAgenticExportStub,
         },
         '../../../src/cdn-logs-report/utils/report-utils.js': {
@@ -685,7 +684,6 @@ describe('CDN Logs Report Handler', function test() {
       const runDailyAgenticExportStub = sandbox.stub().rejects(new Error('daily export boom'));
       const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
         '../../../src/cdn-logs-report/agentic-daily-export.js': {
-          isAgenticDailyExportEnabled: sandbox.stub().returns(true),
           runDailyAgenticExport: runDailyAgenticExportStub,
         },
       }, {
@@ -717,7 +715,7 @@ describe('CDN Logs Report Handler', function test() {
       expect(result.auditResult).to.be.an('array').that.is.not.empty;
     });
 
-    it('includes successful daily agentic export results for allowlisted sites', async () => {
+    it('includes successful daily agentic export results for enabled sites', async () => {
       const runDailyAgenticExportStub = sandbox.stub().resolves({
         enabled: true,
         success: true,
@@ -726,7 +724,6 @@ describe('CDN Logs Report Handler', function test() {
       });
       const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
         '../../../src/cdn-logs-report/agentic-daily-export.js': {
-          isAgenticDailyExportEnabled: sandbox.stub().returns(true),
           runDailyAgenticExport: runDailyAgenticExportStub,
         },
       }, {
@@ -737,7 +734,7 @@ describe('CDN Logs Report Handler', function test() {
         },
       });
 
-      const allowlistedSite = {
+      const enabledSite = {
         ...site,
         getId: () => '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
         getSiteId: () => '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
@@ -746,7 +743,7 @@ describe('CDN Logs Report Handler', function test() {
       const result = await localHandler.runner(
         'https://example.com',
         context,
-        allowlistedSite,
+        enabledSite,
         createAuditContext(sandbox),
       );
 
@@ -771,7 +768,6 @@ describe('CDN Logs Report Handler', function test() {
       const runWeeklyReportStub = sandbox.stub().resolves({ success: true, uploadResult: null });
       const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
         '../../../src/cdn-logs-report/agentic-daily-export.js': {
-          isAgenticDailyExportEnabled: sandbox.stub().returns(true),
           runDailyAgenticExport: runDailyAgenticExportStub,
         },
         '../../../src/cdn-logs-report/utils/report-runner.js': {
@@ -785,7 +781,7 @@ describe('CDN Logs Report Handler', function test() {
         },
       });
 
-      const allowlistedSite = {
+      const enabledSite = {
         ...site,
         getId: () => '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
         getSiteId: () => '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
@@ -794,7 +790,7 @@ describe('CDN Logs Report Handler', function test() {
       const result = await localHandler.runner(
         'https://example.com',
         context,
-        allowlistedSite,
+        enabledSite,
         createAuditContext(sandbox, { date: '2026-04-01T10:00:00Z' }),
       );
 
@@ -820,7 +816,6 @@ describe('CDN Logs Report Handler', function test() {
       });
       const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
         '../../../src/cdn-logs-report/agentic-daily-export.js': {
-          isAgenticDailyExportEnabled: sandbox.stub().returns(true),
           runDailyAgenticExport: runDailyAgenticExportStub,
         },
       }, {
