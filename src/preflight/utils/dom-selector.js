@@ -106,7 +106,9 @@ export function getDomElementSelector(element) {
       }
       ancestor = ancestor.parent;
     }
-    return childSelector;
+    // No data-aue-resource ancestor found — the bare UE-attribute selector
+    // (e.g. h4[data-aue-prop="headline"]) could match multiple elements on
+    // the page. Fall through to structural selectors for disambiguation.
   }
 
   // 1b. Element has no UE attributes — check if a nearby ancestor is a UE editable
