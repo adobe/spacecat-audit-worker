@@ -335,7 +335,7 @@ export function applyPageUrlProbeSampling(extractedPaths, log) {
     const out = Object.fromEntries(working);
     if (log && originalTotal > totalAfterSitemapCap) {
       log.info( // this is extremely unlikely ...
-        'Sitemap: Due to the abundance of sitemap.xml files, we had to reduced the number of these files inspected.'
+        'Sitemap: Due to the abundance of sitemap.xml files, we had to reduce the number of these files inspected.'
         + ` This resulted in reducing the discovered page URLs from ${originalTotal} to `
         + `${totalAfterSitemapCap}. Consider reducing the number of sitemap.xml files.`,
       );
