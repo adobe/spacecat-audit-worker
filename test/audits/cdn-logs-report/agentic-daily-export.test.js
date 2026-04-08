@@ -116,8 +116,6 @@ describe('agentic daily export', () => {
       }),
     };
 
-    expect(module.isAgenticDailyExportEnabled(site, context)).to.equal(true);
-
     const result = await module.runDailyAgenticExport({
       athenaClient,
       s3Client,
@@ -172,23 +170,6 @@ describe('agentic daily export', () => {
       classificationCount: 1,
       bundleUri: 's3://spacecat-dev-importer/agentic-traffic-daily-export/9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/31/20260401T100000000Z/',
     });
-  });
-
-  it('enables daily export only for the temporary allowlisted site ids', async () => {
-    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js');
-
-    expect(module.isAgenticDailyExportEnabled({
-      getId: () => '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
-    })).to.equal(true);
-    expect(module.isAgenticDailyExportEnabled({
-      getId: () => '12d54932-e963-4783-aac3-4b1edbc27cde',
-    })).to.equal(true);
-    expect(module.isAgenticDailyExportEnabled({
-      getId: () => 'site-1',
-    })).to.equal(false);
-    expect(module.isAgenticDailyExportEnabled({
-      getId: () => undefined,
-    })).to.equal(false);
   });
 
   it('logs a warning when cleanup after failure also fails', async () => {

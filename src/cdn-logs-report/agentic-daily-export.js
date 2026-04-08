@@ -16,15 +16,6 @@ import { loadSql } from './utils/report-utils.js';
 import { weeklyBreakdownQueries } from './utils/query-builder.js';
 import { mapToAgenticTrafficBundle } from './utils/agentic-traffic-mapper.js';
 
-const ENABLED_AGENTIC_DAILY_EXPORT_SITE_IDS = new Set([
-  '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
-  '12d54932-e963-4783-aac3-4b1edbc27cde',
-]);
-
-export function isAgenticDailyExportEnabled(site) {
-  return ENABLED_AGENTIC_DAILY_EXPORT_SITE_IDS.has(site?.getId?.());
-}
-
 export function getPreviousUtcDate(referenceDate = new Date()) {
   const previous = new Date(referenceDate);
   previous.setUTCDate(previous.getUTCDate() - 1);
