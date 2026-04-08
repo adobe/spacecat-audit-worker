@@ -77,7 +77,7 @@
     "reporter-options": "configFile=.mocha-multi.json"
   },
   "dependencies": {
-    "@adobe/fetch": "4.2.3",
+    "@adobe/fetch": "4.3.0",
     "@adobe/helix-shared-wrap": "2.0.2",
     "@adobe/helix-status": "10.1.5",
     "@adobe/helix-universal-logger": "3.0.28",
@@ -166,7 +166,7 @@
     "yaml": "2.8.3"
   },
   "overrides": {
-    "@adobe/fetch": "4.2.3"
+    "@adobe/fetch": "4.3.0"
   },
   "lint-staged": {
     "*.js": "eslint",
