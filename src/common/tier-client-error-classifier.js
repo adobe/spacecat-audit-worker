@@ -22,6 +22,8 @@
  * - HTTP client errors (401, 403, 404)
  * - Business logic errors (no entitlement, not enrolled, invalid product code)
  *
+ * Walks the error.cause chain since DataAccessError wraps PostgREST errors in .cause property.
+ *
  * @param {Error} error - Error from TierClient.checkValidEntitlement()
  * @returns {boolean} - True if transient/retryable, false if permanent
  */
@@ -30,47 +32,57 @@ export function isTransientTierClientError(error) {
     return false;
   }
 
-  const message = error?.message?.toLowerCase() || '';
-  const code = error?.code?.toUpperCase() || '';
-  const statusCode = error?.statusCode || error?.status;
+  // Walk the error.cause chain to find transient indicators.
+  // Real DataAccessError from data-access layer wraps PostgREST errors:
+  // { name: 'DataAccessError', message: 'Failed to query',
+  //   cause: { code: 'PGRST003', message: '...' } }
+  let current = error;
+  while (current) {
+    const message = current?.message?.toLowerCase() || '';
+    const code = current?.code?.toUpperCase() || '';
+    const statusCode = current?.statusCode || current?.status;
 
-  // Database errors - PostgREST connection and timeout issues
-  // PGRST000: Could not connect with database (503)
-  // PGRST001: Could not connect due to internal error (503)
-  // PGRST002: Could not connect when building schema cache (503)
-  // PGRST003: Timed out acquiring connection from connection pool (504)
-  const transientPostgrestCodes = ['PGRST000', 'PGRST001', 'PGRST002', 'PGRST003'];
-  if (transientPostgrestCodes.includes(code)) {
-    return true;
-  }
+    // Database errors - PostgREST connection and timeout issues
+    // PGRST000: Could not connect with database (503)
+    // PGRST001: Could not connect due to internal error (503)
+    // PGRST002: Could not connect when building schema cache (503)
+    // PGRST003: Timed out acquiring connection from pool (504)
+    const transientPostgrestCodes = ['PGRST000', 'PGRST001', 'PGRST002', 'PGRST003'];
+    if (transientPostgrestCodes.includes(code)) {
+      return true;
+    }
 
-  // Database timeout patterns
-  if (message.includes('connection pool') || message.includes('timed out')) {
-    return true;
-  }
+    // Database timeout patterns
+    if (message.includes('connection pool') || message.includes('timed out')) {
+      return true;
+    }
 
-  // Network errors
-  const transientNetworkCodes = ['ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'ECONNRESET'];
-  if (transientNetworkCodes.includes(code)) {
-    return true;
-  }
+    // Network errors
+    const transientNetworkCodes = ['ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'ECONNRESET'];
+    if (transientNetworkCodes.includes(code)) {
+      return true;
+    }
 
-  // Network error patterns in message
-  if (message.includes('network error')
-    || message.includes('socket hang up')
-    || message.includes('eai_again')) {
-    return true;
-  }
+    // Network error patterns in message
+    if (message.includes('network error')
+      || message.includes('socket hang up')
+      || message.includes('eai_again')) {
+      return true;
+    }
 
-  // Transient HTTP status codes
-  const transientStatusCodes = [408, 429, 500, 502, 503, 504];
-  if (statusCode && transientStatusCodes.includes(statusCode)) {
-    return true;
-  }
+    // Transient HTTP status codes
+    const transientStatusCodes = [408, 429, 500, 502, 503, 504];
+    if (statusCode && transientStatusCodes.includes(statusCode)) {
+      return true;
+    }
 
-  // Generic transient patterns
-  if (message.includes('temporary failure') || message.includes('service unavailable')) {
-    return true;
+    // Generic transient patterns
+    if (message.includes('temporary failure') || message.includes('service unavailable')) {
+      return true;
+    }
+
+    // Walk to the next error in the cause chain
+    current = current.cause;
   }
 
   // Default to permanent (conservative approach)

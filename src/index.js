@@ -16,6 +16,7 @@ import { sqsEventAdapter, logWrapper } from '@adobe/spacecat-shared-utils';
 import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import dataAccess from './support/data-access.js';
 import { checkSiteRequiresValidation } from './utils/site-validation.js';
+import { isTransientTierClientError } from './common/tier-client-error-classifier.js';
 
 import sqs from './support/sqs.js';
 import s3Client from './support/s3-client.js';
@@ -304,6 +305,12 @@ async function run(message, context) {
         context.site = site;
       }
     } catch (e) {
+      // Rethrow transient errors to trigger Lambda/SQS retry
+      if (isTransientTierClientError(e)) {
+        log.error(`Transient error during site validation check for ${siteId}, triggering retry: ${e.message}`);
+        throw e;
+      }
+      // Log and swallow non-transient errors (e.g., site not found, not entitled)
       if (!siteId.startsWith('warmup-site-')) {
         log.warn(`Failed to fetch site ${siteId}: ${e.message}`);
       }

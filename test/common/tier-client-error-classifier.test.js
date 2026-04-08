@@ -13,178 +13,195 @@
 /* eslint-env mocha */
 
 import { expect } from 'chai';
+import { DataAccessError } from '@adobe/spacecat-shared-data-access';
 import { isTransientTierClientError } from '../../src/common/tier-client-error-classifier.js';
 
 describe('tier-client-error-classifier', () => {
   describe('isTransientTierClientError', () => {
     describe('transient database errors', () => {
       it('returns true for PGRST000 error code (connection error)', () => {
-        const error = new Error('Could not connect with the database');
-        error.code = 'PGRST000';
+        const pgrstError = { code: 'PGRST000', message: 'Could not connect with the database' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, pgrstError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
 
       it('returns true for PGRST001 error code (internal connection error)', () => {
-        const error = new Error('Could not connect due to internal error');
-        error.code = 'PGRST001';
+        const pgrstError = { code: 'PGRST001', message: 'Could not connect due to internal error' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, pgrstError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
 
       it('returns true for PGRST002 error code (schema cache connection error)', () => {
-        const error = new Error('Could not connect when building schema cache');
-        error.code = 'PGRST002';
+        const pgrstError = { code: 'PGRST002', message: 'Could not connect when building schema cache' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, pgrstError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
 
       it('returns true for PGRST003 error code (pool timeout)', () => {
-        const error = new Error('Timed out acquiring connection from connection pool');
-        error.code = 'PGRST003';
+        const pgrstError = {
+          code: 'PGRST003',
+          message: 'Timed out acquiring connection from connection pool',
+          details: 'Waited 10 seconds',
+          hint: 'Increase pool size or timeout',
+        };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, pgrstError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
 
-      it('returns true for connection pool timeout message', () => {
-        const error = new Error('Timed out acquiring connection from connection pool');
+      it('returns true for connection pool timeout message in cause', () => {
+        const pgrstError = {
+          code: 'PGRST003',
+          message: 'Timed out acquiring connection from connection pool',
+        };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, pgrstError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
 
-      it('returns true for generic timeout message', () => {
-        const error = new Error('Operation timed out');
+      it('returns true for generic timeout message in cause', () => {
+        const pgrstError = { message: 'Operation timed out' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, pgrstError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
 
-      it('returns true for connection pool message (case insensitive)', () => {
-        const error = new Error('CONNECTION POOL exhausted');
+      it('returns true for connection pool message (case insensitive) in cause', () => {
+        const pgrstError = { message: 'CONNECTION POOL exhausted' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, pgrstError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
     });
 
     describe('transient network errors', () => {
       it('returns true for ECONNREFUSED', () => {
-        const error = new Error('Connection refused');
-        error.code = 'ECONNREFUSED';
+        const networkError = { code: 'ECONNREFUSED', message: 'Connection refused' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, networkError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
 
       it('returns true for ETIMEDOUT', () => {
-        const error = new Error('Connection timed out');
-        error.code = 'ETIMEDOUT';
+        const networkError = { code: 'ETIMEDOUT', message: 'Connection timed out' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, networkError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
 
       it('returns true for ENOTFOUND', () => {
-        const error = new Error('DNS lookup failed');
-        error.code = 'ENOTFOUND';
+        const networkError = { code: 'ENOTFOUND', message: 'DNS lookup failed' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, networkError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
 
       it('returns true for ECONNRESET', () => {
-        const error = new Error('Connection reset by peer');
-        error.code = 'ECONNRESET';
+        const networkError = { code: 'ECONNRESET', message: 'Connection reset by peer' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, networkError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
 
-      it('returns true for network error message', () => {
-        const error = new Error('Network error occurred');
+      it('returns true for network error message in cause', () => {
+        const networkError = { message: 'Network error occurred' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, networkError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
 
-      it('returns true for socket hang up message', () => {
-        const error = new Error('socket hang up');
+      it('returns true for socket hang up message in cause', () => {
+        const networkError = { message: 'socket hang up' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, networkError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
 
-      it('returns true for EAI_AGAIN message', () => {
-        const error = new Error('getaddrinfo EAI_AGAIN');
+      it('returns true for EAI_AGAIN message in cause', () => {
+        const networkError = { message: 'getaddrinfo EAI_AGAIN' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, networkError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
     });
 
     describe('transient HTTP errors', () => {
-      it('returns true for HTTP 408 (Request Timeout)', () => {
-        const error = new Error('Request Timeout');
-        error.statusCode = 408;
+      it('returns true for HTTP 408 (Request Timeout) in cause', () => {
+        const httpError = { statusCode: 408, message: 'Request Timeout' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, httpError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
 
-      it('returns true for HTTP 429 (Too Many Requests)', () => {
-        const error = new Error('Too Many Requests');
-        error.statusCode = 429;
+      it('returns true for HTTP 429 (Too Many Requests) in cause', () => {
+        const httpError = { statusCode: 429, message: 'Too Many Requests' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, httpError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
 
-      it('returns true for HTTP 500 (Internal Server Error)', () => {
-        const error = new Error('Internal Server Error');
-        error.statusCode = 500;
+      it('returns true for HTTP 500 (Internal Server Error) in cause', () => {
+        const httpError = { statusCode: 500, message: 'Internal Server Error' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, httpError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
 
-      it('returns true for HTTP 502 (Bad Gateway)', () => {
-        const error = new Error('Bad Gateway');
-        error.statusCode = 502;
+      it('returns true for HTTP 502 (Bad Gateway) in cause', () => {
+        const httpError = { statusCode: 502, message: 'Bad Gateway' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, httpError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
 
-      it('returns true for HTTP 503 (Service Unavailable)', () => {
-        const error = new Error('Service Unavailable');
-        error.statusCode = 503;
+      it('returns true for HTTP 503 (Service Unavailable) in cause', () => {
+        const httpError = { statusCode: 503, message: 'Service Unavailable' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, httpError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
 
-      it('returns true for HTTP 504 (Gateway Timeout)', () => {
-        const error = new Error('Gateway Timeout');
-        error.statusCode = 504;
+      it('returns true for HTTP 504 (Gateway Timeout) in cause', () => {
+        const httpError = { statusCode: 504, message: 'Gateway Timeout' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, httpError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
 
-      it('returns true for status property instead of statusCode', () => {
-        const error = new Error('Gateway Timeout');
-        error.status = 504;
+      it('returns true for status property instead of statusCode in cause', () => {
+        const httpError = { status: 504, message: 'Gateway Timeout' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, httpError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
     });
 
     describe('transient generic patterns', () => {
-      it('returns true for temporary failure message', () => {
-        const error = new Error('Temporary failure in name resolution');
+      it('returns true for temporary failure message in cause', () => {
+        const innerError = { message: 'Temporary failure in name resolution' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, innerError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
 
-      it('returns true for service unavailable message', () => {
-        const error = new Error('Service unavailable, please try again');
+      it('returns true for service unavailable message in cause', () => {
+        const innerError = { message: 'Service unavailable, please try again' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, innerError);
         expect(isTransientTierClientError(error)).to.be.true;
       });
     });
 
     describe('permanent errors', () => {
       it('returns false for HTTP 401 (Unauthorized)', () => {
-        const error = new Error('Unauthorized');
-        error.statusCode = 401;
+        const httpError = { statusCode: 401, message: 'Unauthorized' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, httpError);
         expect(isTransientTierClientError(error)).to.be.false;
       });
 
       it('returns false for HTTP 403 (Forbidden)', () => {
-        const error = new Error('Forbidden');
-        error.statusCode = 403;
+        const httpError = { statusCode: 403, message: 'Forbidden' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, httpError);
         expect(isTransientTierClientError(error)).to.be.false;
       });
 
       it('returns false for HTTP 404 (Not Found)', () => {
-        const error = new Error('Not Found');
-        error.statusCode = 404;
+        const httpError = { statusCode: 404, message: 'Not Found' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, httpError);
         expect(isTransientTierClientError(error)).to.be.false;
       });
 
-      it('returns false for not enrolled message', () => {
+      it('returns false for not enrolled message (business logic error)', () => {
         const error = new Error('Site not enrolled for product code ASO');
         expect(isTransientTierClientError(error)).to.be.false;
       });
 
-      it('returns false for no entitlement message', () => {
+      it('returns false for no entitlement message (business logic error)', () => {
         const error = new Error('No entitlement found');
         expect(isTransientTierClientError(error)).to.be.false;
       });
 
-      it('returns false for invalid product code message', () => {
+      it('returns false for invalid product code message (business logic error)', () => {
         const error = new Error('Invalid product code');
         expect(isTransientTierClientError(error)).to.be.false;
       });
@@ -194,21 +211,26 @@ describe('tier-client-error-classifier', () => {
         expect(isTransientTierClientError(error)).to.be.false;
       });
 
+      it('returns false for DataAccessError with generic message and no cause', () => {
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' });
+        expect(isTransientTierClientError(error)).to.be.false;
+      });
+
       it('returns false for PGRST100 (bad request - parsing error)', () => {
-        const error = new Error('Parsing error in query string');
-        error.code = 'PGRST100';
+        const pgrstError = { code: 'PGRST100', message: 'Parsing error in query string' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, pgrstError);
         expect(isTransientTierClientError(error)).to.be.false;
       });
 
       it('returns false for PGRST202 (function not found)', () => {
-        const error = new Error('Function not found');
-        error.code = 'PGRST202';
+        const pgrstError = { code: 'PGRST202', message: 'Function not found' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, pgrstError);
         expect(isTransientTierClientError(error)).to.be.false;
       });
 
       it('returns false for PGRST300 (configuration error)', () => {
-        const error = new Error('JWT secret missing');
-        error.code = 'PGRST300';
+        const pgrstError = { code: 'PGRST300', message: 'JWT secret missing' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, pgrstError);
         expect(isTransientTierClientError(error)).to.be.false;
       });
     });
@@ -232,10 +254,27 @@ describe('tier-client-error-classifier', () => {
         expect(isTransientTierClientError(error)).to.be.false;
       });
 
-      it('handles lowercase error codes', () => {
-        const error = new Error('Connection refused');
-        error.code = 'econnrefused';
+      it('handles lowercase error codes in cause', () => {
+        const networkError = { code: 'econnrefused', message: 'Connection refused' };
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, networkError);
         expect(isTransientTierClientError(error)).to.be.true;
+      });
+
+      it('walks multiple levels of cause chain', () => {
+        // Create a deeply nested error chain
+        const rootCause = { code: 'PGRST003', message: 'Timed out acquiring connection' };
+        const middleError = new Error('Database operation failed');
+        middleError.cause = rootCause;
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, middleError);
+        expect(isTransientTierClientError(error)).to.be.true;
+      });
+
+      it('returns false when no level in cause chain is transient', () => {
+        const rootCause = { code: 'PGRST100', message: 'Bad request' };
+        const middleError = new Error('Invalid query');
+        middleError.cause = rootCause;
+        const error = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, middleError);
+        expect(isTransientTierClientError(error)).to.be.false;
       });
     });
   });

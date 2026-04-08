@@ -15,9 +15,12 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
+import { DataAccessError } from '@adobe/spacecat-shared-data-access';
 
 use(sinonChai);
+use(chaiAsPromised);
 
 describe('Prerender Utils', () => {
   let sandbox;
@@ -147,8 +150,11 @@ describe('Prerender Utils', () => {
     });
 
     it('should throw when transient PGRST003 error occurs in createForSite', async () => {
-      const dbError = new Error('Timed out acquiring connection from connection pool');
-      dbError.code = 'PGRST003';
+      const pgrstError = {
+        code: 'PGRST003',
+        message: 'Timed out acquiring connection from connection pool',
+      };
+      const dbError = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, pgrstError);
       TierClientStub.createForSite.rejects(dbError);
 
       const context = { site: mockSite, log };
@@ -161,7 +167,8 @@ describe('Prerender Utils', () => {
     });
 
     it('should throw when transient network error occurs', async () => {
-      const networkError = new Error('Network error occurred');
+      const networkCause = { message: 'Network error occurred' };
+      const networkError = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, networkCause);
       TierClientStub.createForSite.rejects(networkError);
 
       const context = { site: mockSite, log };

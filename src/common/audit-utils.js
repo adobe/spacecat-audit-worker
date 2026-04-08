@@ -47,8 +47,10 @@ export async function checkProductCodeEntitlements(productCodes, site, context) 
     );
     return enrollmentChecks.some((hasEnrollment) => hasEnrollment);
   } catch (error) {
-    // If we reach here, a transient error was thrown from inner loop
-    context.log.error('Transient error in entitlement check, job will retry:', error);
+    // Any error reaching here (transient or unexpected) triggers retry rather than cancellation.
+    // Inner loop only throws on transient errors, but this also catches unexpected errors
+    // from Promise.all or the enrollment check itself, which is safer than returning false.
+    context.log.error('Error in entitlement check, job will retry:', error);
     throw error; // Propagate to trigger Lambda retry
   }
 }

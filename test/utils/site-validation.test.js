@@ -15,10 +15,13 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
+import { DataAccessError } from '@adobe/spacecat-shared-data-access';
 import { checkSiteRequiresValidation, IS_LLMO_OPPTY } from '../../src/utils/site-validation.js';
 
 use(sinonChai);
+use(chaiAsPromised);
 
 describe('utils/site-validation', () => {
   let sandbox;
@@ -128,24 +131,28 @@ describe('utils/site-validation', () => {
 
   it('throws when transient PGRST003 error occurs', async () => {
     const site = { getId: sandbox.stub().returns('site-transient') };
-    const dbError = new Error('Timed out acquiring connection from connection pool');
-    dbError.code = 'PGRST003';
+    const pgrstError = {
+      code: 'PGRST003',
+      message: 'Timed out acquiring connection from connection pool',
+    };
+    const dbError = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, pgrstError);
     context.log.error = sandbox.spy();
     sandbox.stub(TierClient, 'createForSite').rejects(dbError);
 
     await expect(checkSiteRequiresValidation(site, context))
-      .to.be.rejectedWith('Transient entitlement check error');
+      .to.be.rejectedWith(Error, 'Transient entitlement check error');
     expect(context.log.error).to.have.been.called;
   });
 
   it('throws when transient network error occurs', async () => {
     const site = { getId: sandbox.stub().returns('site-network-err') };
-    const networkError = new Error('Network error occurred');
+    const networkCause = { message: 'Network error occurred' };
+    const networkError = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, networkCause);
     context.log.error = sandbox.spy();
     sandbox.stub(TierClient, 'createForSite').rejects(networkError);
 
     await expect(checkSiteRequiresValidation(site, context))
-      .to.be.rejectedWith('Transient entitlement check error');
+      .to.be.rejectedWith(Error, 'Transient entitlement check error');
     expect(context.log.error).to.have.been.called;
   });
 

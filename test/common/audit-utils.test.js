@@ -18,6 +18,7 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
+import { DataAccessError } from '@adobe/spacecat-shared-data-access';
 import {
   isAuditEnabledForSite,
   loadExistingAudit,
@@ -291,12 +292,15 @@ describe('Audit Utils Tests', () => {
 
       await expect(checkProductCodeEntitlements(['ASO', 'LLMO'], site, context))
         .to.be.rejectedWith('Critical Promise.all error');
-      expect(context.log.error).to.have.been.calledWith('Transient error in entitlement check, job will retry:', sinon.match.instanceOf(Error));
+      expect(context.log.error).to.have.been.calledWith('Error in entitlement check, job will retry:', sinon.match.instanceOf(Error));
     });
 
     it('throws when PGRST003 database timeout occurs', async () => {
-      const dbError = new Error('Timed out acquiring connection from connection pool');
-      dbError.code = 'PGRST003';
+      const pgrstError = {
+        code: 'PGRST003',
+        message: 'Timed out acquiring connection from connection pool',
+      };
+      const dbError = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, pgrstError);
       const mockTierClient = {
         checkValidEntitlement: sandbox.stub().rejects(dbError),
       };
@@ -311,8 +315,8 @@ describe('Audit Utils Tests', () => {
     });
 
     it('throws when connection timeout occurs', async () => {
-      const timeoutError = new Error('Connection timed out');
-      timeoutError.code = 'ETIMEDOUT';
+      const networkCause = { code: 'ETIMEDOUT', message: 'Connection timed out' };
+      const timeoutError = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, networkCause);
       const mockTierClient = {
         checkValidEntitlement: sandbox.stub().rejects(timeoutError),
       };
@@ -323,7 +327,8 @@ describe('Audit Utils Tests', () => {
     });
 
     it('throws when network error occurs', async () => {
-      const networkError = new Error('Network error occurred');
+      const networkCause = { message: 'Network error occurred' };
+      const networkError = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, networkCause);
       const mockTierClient = {
         checkValidEntitlement: sandbox.stub().rejects(networkError),
       };
@@ -334,8 +339,8 @@ describe('Audit Utils Tests', () => {
     });
 
     it('returns false when permanent error (404) occurs', async () => {
-      const notFoundError = new Error('Not Found');
-      notFoundError.statusCode = 404;
+      const httpCause = { statusCode: 404, message: 'Not Found' };
+      const notFoundError = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, httpCause);
       const mockTierClient = {
         checkValidEntitlement: sandbox.stub().rejects(notFoundError),
       };

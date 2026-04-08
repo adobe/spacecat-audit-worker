@@ -90,4 +90,26 @@ describe('Index siteId handling and validation flag', () => {
     // Site should not be set on context since fetch failed
     expect(context.site).to.be.undefined;
   });
+
+  it('rethrows transient entitlement errors during site validation to trigger retry', async () => {
+    const transientError = new Error('tier service unavailable');
+    transientError.statusCode = 503;
+
+    sandbox.stub(TierClient, 'createForSite').returns({
+      checkValidEntitlement: sandbox.stub().rejects(transientError),
+    });
+
+    let thrown;
+    try {
+      await main(new Request('https://space.cat'), context);
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.be.an('error');
+    expect(thrown.message).to.equal('Transient entitlement check error: tier service unavailable');
+    expect(context.log.error).to.have.been.calledWith(
+      'Transient error during site validation check for site-xyz, triggering retry: Transient entitlement check error: tier service unavailable',
+    );
+  });
 });
