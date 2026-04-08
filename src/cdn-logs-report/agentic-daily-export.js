@@ -57,8 +57,8 @@ function serializeCsv(rows, columns) {
 }
 
 function getAgenticBundleKeyPrefix(siteId, trafficDate, batchId) {
-  const [year, month] = trafficDate.split('-');
-  return `${siteId}/agentic-traffic/${year}/${month}/${batchId}/`;
+  const [year, month, day] = trafficDate.split('-');
+  return `agentic-traffic-daily-export/${siteId}/agentic-traffic/${year}/${month}/${day}/${batchId}/`;
 }
 
 function createBundleId(referenceDate = new Date()) {

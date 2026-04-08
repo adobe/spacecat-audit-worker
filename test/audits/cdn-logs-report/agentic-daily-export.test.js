@@ -144,8 +144,8 @@ describe('agentic daily export', () => {
     expect(s3Client.send).to.have.been.calledTwice;
     expect(s3Client.send.firstCall.args[0].input.Bucket).to.equal('spacecat-dev-importer');
     expect(s3Client.send.secondCall.args[0].input.Bucket).to.equal('spacecat-dev-importer');
-    expect(s3Client.send.firstCall.args[0].input.Key).to.equal('9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/20260401T100000000Z/agentic_traffic.csv');
-    expect(s3Client.send.secondCall.args[0].input.Key).to.equal('9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/20260401T100000000Z/agentic_url_classifications.csv');
+    expect(s3Client.send.firstCall.args[0].input.Key).to.equal('agentic-traffic-daily-export/9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/31/20260401T100000000Z/agentic_traffic.csv');
+    expect(s3Client.send.secondCall.args[0].input.Key).to.equal('agentic-traffic-daily-export/9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/31/20260401T100000000Z/agentic_url_classifications.csv');
     expect(s3Client.send.firstCall.args[0].input.Body).to.include('traffic_date,host,platform');
     expect(s3Client.send.secondCall.args[0].input.Body).to.include('host,url_path,region');
     expect(context.sqs.sendMessage).to.have.been.calledOnceWith(
@@ -154,7 +154,7 @@ describe('agentic daily export', () => {
         type: 'batch.completed',
         correlationId: 'batch-123',
         pipeline_id: 'agentic_traffic',
-        s3_uri: 's3://spacecat-dev-importer/9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/20260401T100000000Z/',
+        s3_uri: 's3://spacecat-dev-importer/agentic-traffic-daily-export/9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/31/20260401T100000000Z/',
         site_id: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
         org_id: 'org-1',
         start_date: '2026-03-31',
@@ -170,7 +170,7 @@ describe('agentic daily export', () => {
       trafficDate: '2026-03-31',
       rowCount: 1,
       classificationCount: 1,
-      bundleUri: 's3://spacecat-dev-importer/9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/20260401T100000000Z/',
+      bundleUri: 's3://spacecat-dev-importer/agentic-traffic-daily-export/9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/31/20260401T100000000Z/',
     });
   });
 
@@ -230,7 +230,7 @@ describe('agentic daily export', () => {
         getId: () => 'site-1',
       },
       batchId: 'batch-123',
-      bundleUri: 's3://bucket/site-1/agentic-traffic/2026/03/20260401T100000000Z/',
+      bundleUri: 's3://bucket/agentic-traffic-daily-export/site-1/agentic-traffic/2026/03/31/20260401T100000000Z/',
       trafficDate: '2026-03-31',
       rowCount: 1,
     })).to.be.rejectedWith('analytics queue is not configured');
