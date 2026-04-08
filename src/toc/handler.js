@@ -30,9 +30,47 @@ import {
   loadScrapeJson,
   initializeAuditContext,
 } from '../headings/shared-utils.js';
-import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
+import { getMergedAuditInputUrls, sortTopPagesByTraffic } from '../utils/audit-input-urls.js';
+import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 
 const auditType = Audit.AUDIT_TYPES.TOC;
+const MAX_TOP_PAGES = 200;
+
+/**
+ * Fetches and merges TOC audit input URLs from three sources in priority order:
+ * 1. Customer desired URLs (from site config)
+ * 2. Agentic traffic (Athena CDN logs)
+ * 3. Organic SEO top pages (DB)
+ * @param {Object} context - Audit context
+ * @param {Object} site - Site object
+ * @returns {Promise<Object>} Merged URL result from getMergedAuditInputUrls
+ */
+async function getTocInputUrls(context, site) {
+  const { dataAccess, log } = context;
+  const result = await getMergedAuditInputUrls({
+    site,
+    dataAccess,
+    auditType,
+    getAgenticUrls: () => getTopAgenticUrlsFromAthena(site, context, MAX_TOP_PAGES),
+    getTopPages: async () => {
+      const topPages = await dataAccess?.SiteTopPage?.allBySiteIdAndSourceAndGeo?.(
+        site.getId(),
+        'seo',
+        'global',
+      );
+      return sortTopPagesByTraffic(topPages || []);
+    },
+    topOrganicLimit: MAX_TOP_PAGES,
+  });
+
+  log.info(
+    `[TOC] URL inputs: topPages=${result.topPagesUrls.length}, `
+    + `agentic=${result.agenticUrls.length}, includedURLs=${result.includedURLs.length}, `
+    + `filteredOutUrls=${result.filteredCount}, finalUrls=${result.urls.length}`,
+  );
+
+  return result;
+}
 
 export const TOC_CHECK = {
   check: 'toc',
@@ -45,8 +83,8 @@ export const TOC_CHECK = {
 export const TOPPAGES_CHECK = {
   check: 'top-pages',
   title: 'Top Pages',
-  description: 'No top pages available for audit',
-  explanation: 'No top pages found',
+  description: 'No URLs available for audit',
+  explanation: 'No URLs found for audit',
 };
 
 /**
@@ -289,23 +327,16 @@ export async function validatePageToc(
  * @returns {Promise<Object>}
  */
 export async function tocAuditRunner(baseURL, context, site) {
-  const { log, dataAccess, s3Client } = context;
+  const { log, s3Client } = context;
   const { S3_SCRAPER_BUCKET_NAME } = context.env;
 
   try {
-    // Merge all URL sources: custom audit targets, included, SEO top pages
-    const mergedInput = await getMergedAuditInputUrls({
-      site,
-      dataAccess,
-      auditType,
-      getAgenticUrls: () => Promise.resolve([]),
-      topOrganicLimit: 200,
-      log,
-    });
-    const topPages = mergedInput.urls.map((url) => ({ url }));
+    // Merge all URL sources: custom audit targets, agentic, SEO top pages
+    const mergedInput = await getTocInputUrls(context, site);
+    const auditUrls = mergedInput.urls;
 
-    if (topPages.length === 0) {
-      log.warn('[TOC Audit] No top pages found, ending audit.');
+    if (auditUrls.length === 0) {
+      log.warn('[TOC Audit] No URLs found for audit, ending audit.');
       return {
         fullAuditRef: baseURL,
         auditResult: {
@@ -318,9 +349,9 @@ export async function tocAuditRunner(baseURL, context, site) {
 
     const { allKeys } = await initializeAuditContext(context, site);
 
-    // Validate TOC for each page
-    const auditPromises = topPages.map(async (page) => validatePageToc(
-      page.url,
+    // Validate TOC for each URL
+    const auditPromises = auditUrls.map(async (url) => validatePageToc(
+      url,
       log,
       site,
       allKeys,
