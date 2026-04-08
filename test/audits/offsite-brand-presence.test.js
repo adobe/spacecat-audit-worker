@@ -1701,7 +1701,7 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should include each triggered domain in the Slack thread message', async () => {
-      setupWithSources('https://reddit.com/r/adobe');
+      setupWithSources('https://reddit.com/r/adobe/comments/xyz123/a-reddit-post');
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, AUDIT_CONTEXT_WITH_SLACK);
 
