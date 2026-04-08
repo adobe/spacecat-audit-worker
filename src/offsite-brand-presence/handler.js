@@ -145,14 +145,20 @@ async function fetchBrandPresenceData(siteId, fileName, env, log) {
  * @returns {string|null} The matched file path, or null
  */
 function matchBrandPresenceEntry(entry, targetWeek, targetYear) {
-  if (!entry?.path) return null;
+  if (!entry?.path) {
+    return null;
+  }
 
   const bpIdx = entry.path.indexOf('brand-presence/');
-  if (bpIdx === -1) return null;
+  if (bpIdx === -1) {
+    return null;
+  }
 
   const filePath = entry.path.substring(bpIdx);
   const match = filePath.match(BRAND_PRESENCE_REGEX);
-  if (!match) return null;
+  if (!match) {
+    return null;
+  }
 
   const [, providerId, weekStr, yearStr] = match;
   const fileWeek = Number.parseInt(weekStr, 10);

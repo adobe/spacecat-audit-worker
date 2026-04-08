@@ -188,7 +188,9 @@ export async function runAuditAndSendToMystique(context) {
         const buildFilename = (code) => `agentictraffic-errors-${code}-${periodIdentifier}.xlsx`;
 
         const writeCategoryExcel = async (code, errors) => {
-          if (!errors || errors.length === 0) return;
+          if (!errors || errors.length === 0) {
+            return;
+          }
 
           /* c8 ignore next 2 */
           const sorted = [...errors].sort(

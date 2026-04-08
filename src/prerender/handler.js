@@ -85,7 +85,9 @@ function shouldPreserveDomainWideSuggestion(suggestion) {
  * @returns {Promise<boolean>}
  */
 async function isAllDomainDeployedAtEdge(opportunity) {
-  if (!opportunity || typeof opportunity.getSuggestions !== 'function') return false;
+  if (!opportunity || typeof opportunity.getSuggestions !== 'function') {
+    return false;
+  }
   const suggestions = await opportunity.getSuggestions();
   const domainWide = suggestions.find((s) => {
     const d = s.getData();
@@ -149,7 +151,9 @@ async function skipNewSuggestionsWhenAllDomainDeployed(opportunity, context, dep
   const baseUrl = site?.getBaseURL?.() || '';
   const isDeployed = await isAllDomainDeployedAtEdge(opportunity);
   log.info(`${LOG_PREFIX} skipNewSuggestionsWhenAllDomainDeployed: isAllDomainDeployedAtEdge=${isDeployed}, baseUrl=${baseUrl}`);
-  if (!isDeployed) return;
+  if (!isDeployed) {
+    return;
+  }
   await moveDeployedUrlSuggestionsToSkipped(opportunity, context, deployedAtEdgeUrls);
 }
 

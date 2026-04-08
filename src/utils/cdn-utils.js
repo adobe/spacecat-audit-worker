@@ -165,7 +165,7 @@ export async function resolveCdnBucketName(site, context) {
 
 async function bufferFromStream(stream) {
   const chunks = [];
-  for await (const c of stream) chunks.push(c);
+  for await (const c of stream) { chunks.push(c); }
   return Buffer.concat(chunks);
 }
 
@@ -174,7 +174,9 @@ export async function determineCdnProvider(s3, bucket, prefix) {
     Bucket: bucket, Prefix: prefix, MaxKeys: 1,
   }));
   const key = list.Contents?.[0]?.Key;
-  if (!key) return null;
+  if (!key) {
+    return null;
+  }
 
   let text;
   if (key.endsWith('.gz')) {
@@ -189,9 +191,15 @@ export async function determineCdnProvider(s3, bucket, prefix) {
   const first = text.split('\n').find((l) => l.trim());
   try {
     const rec = JSON.parse(first);
-    if (hasText(rec.reqPath)) return CDN_TYPES.AKAMAI;
-    if (hasText(rec.url)) return CDN_TYPES.FASTLY;
-    if (hasText(rec.ClientRequestURI)) return CDN_TYPES.CLOUDFLARE;
+    if (hasText(rec.reqPath)) {
+      return CDN_TYPES.AKAMAI;
+    }
+    if (hasText(rec.url)) {
+      return CDN_TYPES.FASTLY;
+    }
+    if (hasText(rec.ClientRequestURI)) {
+      return CDN_TYPES.CLOUDFLARE;
+    }
   } catch {
     // fall-through intended
   }
@@ -437,7 +445,9 @@ export async function shouldRecreateTable(
     const createStatement = result?.map((row) => row.createtab_stmt).join('\n');
     const locationMatch = createStatement?.match(/LOCATION\s*['"]([^'"]+)['"]/i);
 
-    if (!locationMatch) return true;
+    if (!locationMatch) {
+      return true;
+    }
 
     const normalize = (loc) => (loc.endsWith('/') ? loc : `${loc}/`);
     if (normalize(locationMatch[1]) !== normalize(expectedLocation)) {

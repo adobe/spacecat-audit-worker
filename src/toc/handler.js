@@ -67,7 +67,9 @@ export function hasTocInDom($) {
     }
     return true; // continue
   });
-  if (anchorListFound) return true;
+  if (anchorListFound) {
+    return true;
+  }
 
   // Signal 2: elements with TOC-related class or id names
   const tocPatterns = [

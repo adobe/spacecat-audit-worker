@@ -103,7 +103,9 @@ function collectTrendOnlyWeeks(decisionWeekKeys) {
   const seen = new Set(decisionWeekKeys);
   return monthlyWeeks.filter(({ week, year }) => {
     const key = `${week}-${year}`;
-    if (seen.has(key)) return false;
+    if (seen.has(key)) {
+      return false;
+    }
     seen.add(key);
     return true;
   });

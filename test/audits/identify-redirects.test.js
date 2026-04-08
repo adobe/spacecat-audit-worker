@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import { hasText } from '@adobe/spacecat-shared-utils';
 import sinon from 'sinon';

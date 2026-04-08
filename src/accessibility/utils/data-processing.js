@@ -359,16 +359,22 @@ export function mergeAccessibilityData(existingData, newData, log, logIdentifier
 
   // Process each URL's violations
   Object.entries(merged).forEach(([key, urlData]) => {
-    if (key === 'overall' || !urlData || !urlData.violations) return;
+    if (key === 'overall' || !urlData || !urlData.violations) {
+      return;
+    }
 
     // Process critical and serious violations
     ['critical', 'serious'].forEach((severity) => {
       const severityData = urlData.violations[severity];
-      if (!severityData?.items) return;
+      if (!severityData?.items) {
+        return;
+      }
 
       // Merge each rule's data
       Object.entries(severityData.items).forEach(([ruleId, ruleData]) => {
-        if (!ruleId || !ruleData || typeof ruleData !== 'object') return;
+        if (!ruleId || !ruleData || typeof ruleData !== 'object') {
+          return;
+        }
 
         const overallItems = recalculatedOverall.violations[severity].items;
 

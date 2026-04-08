@@ -382,7 +382,9 @@ export function createProcessAccessibilityOpportunitiesWithDevice(deviceType) {
     let deviceSpecificIssues = 0;
 
     Object.entries(aggregationResult.finalResultFiles.current).forEach(([key, urlData]) => {
-      if (key === 'overall' || !urlData.violations) return;
+      if (key === 'overall' || !urlData.violations) {
+        return;
+      }
 
       ['critical', 'serious'].forEach((severity) => {
         if (urlData.violations[severity]?.items) {

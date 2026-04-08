@@ -82,14 +82,18 @@ function buildTopicLookup(urls, topics) {
 }
 
 export function enrichUrlsWithTopicData(urls, topics) {
-  if (!urls?.length || !topics?.length) return urls || [];
+  if (!urls?.length || !topics?.length) {
+    return urls || [];
+  }
 
   const topicLookup = buildTopicLookup(urls, topics);
 
   return urls.map((urlItem) => {
     const normalized = urlItem.url?.toLowerCase();
     const match = normalized ? topicLookup.get(normalized) : null;
-    if (!match) return urlItem;
+    if (!match) {
+      return urlItem;
+    }
 
     return {
       ...urlItem,

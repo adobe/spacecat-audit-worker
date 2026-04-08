@@ -76,7 +76,9 @@ const hyphenatorCache = new Map(); // Map<string, Promise<Function|null>>
 export async function getHyphenator(language) {
   const key = String(language).toLowerCase();
   const cached = hyphenatorCache.get(key);
-  if (cached) return cached;
+  if (cached) {
+    return cached;
+  }
 
   const loader = (async () => {
     const locale = LOCALE_MAP[key];
@@ -121,13 +123,13 @@ function* iterateWords(text, locale) {
       const w = seg.segment;
       // keep inner apostrophes/dashes; drop other punctuation
       const cleaned = w.normalize('NFKC').replace(/[^\p{L}\p{M}\p{N}''-]/gu, '');
-      if (cleaned && /[\p{L}\p{N}]/u.test(cleaned)) yield cleaned;
+      if (cleaned && /[\p{L}\p{N}]/u.test(cleaned)) { yield cleaned; }
     }
   } else {
     // conservative fallback
     for (const w of text.split(/\s+/)) {
       const cleaned = w.normalize('NFKC').replace(/[^\p{L}\p{M}\p{N}''-]/gu, '');
-      if (cleaned && /[\p{L}\p{N}]/u.test(cleaned)) yield cleaned;
+      if (cleaned && /[\p{L}\p{N}]/u.test(cleaned)) { yield cleaned; }
     }
   }
 }
@@ -137,7 +139,7 @@ function countSentences(text, locale) {
     const seg = new Intl.Segmenter(locale, { granularity: 'sentence' }).segment(text);
     let n = 0;
     for (const it of seg) {
-      if (/[\p{L}\p{N}]/u.test(it.segment)) n += 1;
+      if (/[\p{L}\p{N}]/u.test(it.segment)) { n += 1; }
     }
     return Math.max(n, 1);
   }
@@ -264,8 +266,11 @@ export async function analyzeReadability(text, language, opts = {}) {
     allWords.push(w);
     const key = `${lang}:${w}`;
     const e = entries.get(key);
-    if (e) e.count += 1;
-    else entries.set(key, { word: w, count: 1 });
+    if (e) {
+      e.count += 1;
+    } else {
+      entries.set(key, { word: w, count: 1 });
+    }
   }
 
   // 2) Resolve syllables per unique word, using cache and deduped promises
@@ -284,7 +289,9 @@ export async function analyzeReadability(text, language, opts = {}) {
       toResolve.push(p);
     }
   }
-  if (toResolve.length) await Promise.all(toResolve);
+  if (toResolve.length) {
+    await Promise.all(toResolve);
+  }
 
   // 3) Aggregate syllables/complex words using frequencies
   let syllableCount = 0;
@@ -301,12 +308,16 @@ export async function analyzeReadability(text, language, opts = {}) {
       }));
     }
   }
-  if (toRecalculate.length) await Promise.all(toRecalculate);
+  if (toRecalculate.length) {
+    await Promise.all(toRecalculate);
+  }
 
   for (const [key, { count }] of entries) {
     const s = cache.get(key) ?? 0;
     syllableCount += s * count;
-    if (s >= complexThreshold) complexWords += count;
+    if (s >= complexThreshold) {
+      complexWords += count;
+    }
   }
 
   // 4) Compute metrics once

@@ -300,7 +300,9 @@ function buildPathTrafficMap(results) {
  */
 function isPredominantlyPaid(pathTrafficMap, path, thresholdPct = PREDOMINANT_TRAFFIC_PCT) {
   const trafficData = pathTrafficMap.get(path);
-  if (!trafficData || trafficData.total === 0) return false;
+  if (!trafficData || trafficData.total === 0) {
+    return false;
+  }
 
   const paidPct = (trafficData.paid / trafficData.total) * 100;
   return paidPct >= thresholdPct;
@@ -315,7 +317,9 @@ function isPredominantlyPaid(pathTrafficMap, path, thresholdPct = PREDOMINANT_TR
 function getPaidTrafficRow(pathTrafficMap, path) {
   const trafficData = pathTrafficMap.get(path);
   /* c8 ignore next 1 */
-  if (!trafficData) return null;
+  if (!trafficData) {
+    return null;
+  }
 
   /* c8 ignore next 1 */
   return trafficData.rows.find((row) => row.trfType === 'paid') || null;

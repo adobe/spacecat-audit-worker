@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 /* eslint-disable max-len */
 import { expect, use } from 'chai';
 import sinon from 'sinon';

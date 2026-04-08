@@ -556,7 +556,9 @@ export async function calculateProjectedTraffic(context, site, detectedTags, log
       // Iterate over tag values, filtering out non-issue properties like productTags
       Object.entries(tags).forEach(([tagName, tagIssueDetails]) => {
         // Skip non-issue properties (like productTags) and tags without issues
-        if (tagName === 'productTags' || !tagIssueDetails?.issue) return;
+        if (tagName === 'productTags' || !tagIssueDetails?.issue) {
+          return;
+        }
 
         // Multiplying by 1% for missing tags, and 0.5% for other tag issues
         // For duplicate tags, each page's traffic is multiplied by .5% so

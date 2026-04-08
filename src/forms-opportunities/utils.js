@@ -531,7 +531,9 @@ export function checkDynamoItem(item, safetyMargin = 0.85) {
 const DELIMITER = '__';
 
 function sortClassList(classString) {
-  if (!classString) return '';
+  if (!classString) {
+    return '';
+  }
   return classString.trim().split(/\s+/).sort().join(' ');
 }
 
@@ -539,7 +541,9 @@ function getFieldSignature(field) {
   const tag = field.tagName.toLowerCase();
   let type = (field.type || '').toLowerCase();
   // Default to 'text' if input has no type,
-  if (tag === 'input' && !type) type = 'text';
+  if (tag === 'input' && !type) {
+    type = 'text';
+  }
 
   const classes = sortClassList(field.classList);
 
@@ -637,7 +641,9 @@ export class FormDeDuplicator {
   findDuplicate(url, formSource) {
     const fingerprintKey = buildKey(url, formSource);
     const myFingerprint = this.fingerprintByUrl.get(fingerprintKey);
-    if (!myFingerprint) return [];
+    if (!myFingerprint) {
+      return [];
+    }
 
     const duplicates = [];
     for (const [key, otherFingerprint] of this.fingerprintByUrl) {
@@ -674,15 +680,23 @@ export function filterDuplicateScrapedForms(sortedFormDataArray) {
       const scrapeResultArray = Array.isArray(formPage.scrapeResult) ? formPage.scrapeResult : [];
       const dedupedResults = scrapeResultArray.filter((sr) => {
         // Excluded forms (search, zero-field, etc.) are kept but do not join the fingerprint pool
-        if (shouldExcludeForm(sr)) return true;
+        if (shouldExcludeForm(sr)) {
+          return true;
+        }
         // Forms without fields cannot be fingerprinted — keep as-is
-        if (!Array.isArray(sr.formFields) || sr.formFields.length === 0) return true;
+        if (!Array.isArray(sr.formFields) || sr.formFields.length === 0) {
+          return true;
+        }
         const fp = getFormFingerprint(sr);
-        if (seenFingerprints.some((seen) => isFingerMatch(fp, seen))) return false;
+        if (seenFingerprints.some((seen) => isFingerMatch(fp, seen))) {
+          return false;
+        }
         seenFingerprints.push(fp);
         return true;
       });
-      if (dedupedResults.length === 0) return null;
+      if (dedupedResults.length === 0) {
+        return null;
+      }
       return { ...formPage, scrapeResult: dedupedResults };
     })
     .filter(Boolean);

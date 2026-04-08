@@ -21,7 +21,9 @@ import { removeTrailingSlash } from './url-utils.js';
  * @returns {string|null} The matching store view URL key, or null
  */
 export function findBestMatchingStoreViewUrl(commerceLlmoConfig, productUrl) {
-  if (!commerceLlmoConfig || !productUrl) return null;
+  if (!commerceLlmoConfig || !productUrl) {
+    return null;
+  }
 
   const normalizedProductUrl = removeTrailingSlash(productUrl);
 
@@ -30,8 +32,10 @@ export function findBestMatchingStoreViewUrl(commerceLlmoConfig, productUrl) {
 
   for (const storeViewUrl of storeViewUrls) {
     const normalized = removeTrailingSlash(storeViewUrl);
-    if (normalizedProductUrl === normalized) return storeViewUrl;
-    if (normalizedProductUrl.startsWith(`${normalized}/`)) return storeViewUrl;
+    if (normalizedProductUrl === normalized) {
+      return storeViewUrl;
+    }
+    if (normalizedProductUrl.startsWith(`${normalized}/`)) { return storeViewUrl; }
   }
 
   return null;
@@ -44,7 +48,9 @@ export function findBestMatchingStoreViewUrl(commerceLlmoConfig, productUrl) {
  * @returns {{ url: string|undefined, headers: Object }}
  */
 export function transformToCommerceConfig(storeViewConfig) {
-  if (!storeViewConfig) return { url: undefined, headers: {} };
+  if (!storeViewConfig) {
+    return { url: undefined, headers: {} };
+  }
 
   const headers = {};
 
@@ -86,10 +92,14 @@ export function configGroupKey(commerceConfig) {
  * @returns {{ url: string|undefined, headers: Object }|null} Transformed config, or null
  */
 export function resolveManualCommerceConfig(commerceLlmoConfig, productUrl) {
-  if (!commerceLlmoConfig || Object.keys(commerceLlmoConfig).length === 0) return null;
+  if (!commerceLlmoConfig || Object.keys(commerceLlmoConfig).length === 0) {
+    return null;
+  }
 
   const matchedUrl = findBestMatchingStoreViewUrl(commerceLlmoConfig, productUrl);
-  if (!matchedUrl) return null;
+  if (!matchedUrl) {
+    return null;
+  }
 
   return { ...transformToCommerceConfig(commerceLlmoConfig[matchedUrl]), storeViewUrl: matchedUrl };
 }
@@ -105,7 +115,9 @@ export function createMemoizedManualConfigResolver(site) {
   const cache = new Map();
 
   return (productUrl) => {
-    if (!commerceLlmoConfig || Object.keys(commerceLlmoConfig).length === 0) return null;
+    if (!commerceLlmoConfig || Object.keys(commerceLlmoConfig).length === 0) {
+      return null;
+    }
 
     if (cache.has(productUrl)) {
       return cache.get(productUrl);

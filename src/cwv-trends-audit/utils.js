@@ -21,7 +21,9 @@ import { categorizeUrl } from './cwv-categorizer.js';
  * Validates a URL string for basic sanity.
  */
 function isValidUrl(url) {
-  if (!url || typeof url !== 'string') return false;
+  if (!url || typeof url !== 'string') {
+    return false;
+  }
   try {
     const parsed = new URL(url);
     return parsed.protocol === 'http:' || parsed.protocol === 'https:';
@@ -46,8 +48,12 @@ function filterUrls(urlEntries, deviceType, log) {
       const normalizedUrl = new URL(entry.url).href;
 
       const metrics = entry.metrics?.find((m) => m.deviceType === deviceType);
-      if (!metrics) return null;
-      if (metrics.pageviews < MIN_PAGEVIEWS) return null;
+      if (!metrics) {
+        return null;
+      }
+      if (metrics.pageviews < MIN_PAGEVIEWS) {
+        return null;
+      }
 
       // Filter out URLs with no CWV data (all three metrics are null)
       if (metrics.lcp == null && metrics.cls == null && metrics.inp == null) {
@@ -85,9 +91,11 @@ function buildTrendData(dailyData, deviceType, log) {
 
     for (const url of urls) {
       const category = categorizeUrl(url.lcp, url.cls, url.inp);
-      if (category === 'good') good += 1;
-      else if (category === 'needsImprovement') needsImprovement += 1;
-      else if (category === 'poor') poor += 1;
+      if (category === 'good') {
+        good += 1;
+      } else if (category === 'needsImprovement') { needsImprovement += 1; } else if (category === 'poor') {
+        poor += 1;
+      }
     }
 
     return {
@@ -99,7 +107,9 @@ function buildTrendData(dailyData, deviceType, log) {
 }
 
 function pctChange(current, previous) {
-  if (previous === 0) return current === 0 ? 0 : 100;
+  if (previous === 0) {
+    return current === 0 ? 0 : 100;
+  }
   return Math.round(((current - previous) / previous) * 10000) / 100;
 }
 
