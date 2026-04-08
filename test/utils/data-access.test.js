@@ -20,7 +20,6 @@ import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-
 import {
   retrieveSiteBySiteId,
   getTopPagesForSiteId,
-  mergeTopPagesWithAuditTargetUrls,
   getAuditTargetUrls,
   INCLUDE_CUSTOM_URLS,
   syncSuggestions,
@@ -254,7 +253,6 @@ describe('data-access', () => {
 
       mockLog = {
         info: sinon.stub(),
-        warn: sinon.stub(),
         error: sinon.stub(),
       };
     });
@@ -277,7 +275,8 @@ describe('data-access', () => {
       ]);
       expect(mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo)
         .to.have.been.calledOnceWith('site-1', 'seo', 'global');
-      expect(mockLog.info).to.have.been.calledWith('Found 2 top pages from SEO');
+      expect(mockLog.info).to.have.been.calledWith('Received top pages response:', sinon.match.string);
+      expect(mockLog.info).to.have.been.calledWith('Found 2 top pages');
     });
 
     it('returns an empty array when no top pages are found', async () => {
@@ -295,97 +294,6 @@ describe('data-access', () => {
       await expect(getTopPagesForSiteId(mockDataAccess, 'site-1', {}, mockLog))
         .to.be.rejectedWith('lookup failed');
       expect(mockLog.error).to.have.been.calledWith('Error retrieving top pages for site site-1: lookup failed');
-    });
-  });
-
-  describe('mergeTopPagesWithAuditTargetUrls', () => {
-    let mockLog;
-
-    beforeEach(() => {
-      mockLog = {
-        info: sinon.stub(),
-        warn: sinon.stub(),
-      };
-    });
-
-    afterEach(() => {
-      sinon.restore();
-    });
-
-    it('merges custom audit target URLs with SEO top pages', () => {
-      const topPages = [
-        { getUrl: sinon.stub().returns('https://example.com/seo-page') },
-      ];
-      const site = {
-        getConfig: () => ({
-          getAuditTargetURLs: () => [
-            { url: 'https://example.com/custom-page' },
-          ],
-        }),
-      };
-
-      const result = mergeTopPagesWithAuditTargetUrls(topPages, site, mockLog);
-
-      expect(result).to.deep.equal([
-        'https://example.com/custom-page',
-        'https://example.com/seo-page',
-      ]);
-    });
-
-    it('deduplicates custom URLs against SEO URLs', () => {
-      const topPages = [
-        { getUrl: sinon.stub().returns('https://example.com/overlap') },
-        { getUrl: sinon.stub().returns('https://example.com/seo-only') },
-      ];
-      const site = {
-        getConfig: () => ({
-          getAuditTargetURLs: () => [
-            { url: 'https://example.com/overlap' },
-            { url: 'https://example.com/custom-only' },
-          ],
-        }),
-      };
-
-      const result = mergeTopPagesWithAuditTargetUrls(topPages, site, mockLog);
-
-      expect(result).to.deep.equal([
-        'https://example.com/overlap',
-        'https://example.com/custom-only',
-        'https://example.com/seo-only',
-      ]);
-    });
-
-    it('returns only SEO URLs when no custom URLs configured', () => {
-      const topPages = [
-        { getUrl: sinon.stub().returns('https://example.com/seo-page') },
-      ];
-      const site = {
-        getConfig: () => ({
-          getAuditTargetURLs: () => [],
-        }),
-      };
-
-      const result = mergeTopPagesWithAuditTargetUrls(topPages, site, mockLog);
-
-      expect(result).to.deep.equal([
-        'https://example.com/seo-page',
-      ]);
-    });
-
-    it('handles null topPages gracefully', () => {
-      const site = {
-        getConfig: () => ({
-          getAuditTargetURLs: () => [
-            { url: 'https://example.com/custom-page' },
-          ],
-        }),
-      };
-
-      const result = mergeTopPagesWithAuditTargetUrls(null, site, mockLog);
-
-      expect(result).to.deep.equal([
-        'https://example.com/custom-page',
-      ]);
     });
   });
 

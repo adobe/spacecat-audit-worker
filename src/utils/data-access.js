@@ -159,46 +159,28 @@ export function getAuditTargetUrls(site, log) {
 }
 
 /**
- * Merges SiteTopPage query results with custom audit target URLs from site config.
- * Custom audit target URLs are prepended (highest priority) and deduplicated.
- *
- * @param {Array} topPages - SiteTopPage query results (objects with .getUrl()).
- * @param {Object} site - The site object.
- * @param {Object} log - The logging object.
- * @returns {string[]} Deduplicated URL strings (custom URLs first).
- */
-export function mergeTopPagesWithAuditTargetUrls(topPages, site, log) {
-  const topPageUrls = (topPages || []).map((page) => page.getUrl());
-  const customUrls = getAuditTargetUrls(site, log);
-  const seen = new Set();
-  return [...customUrls, ...topPageUrls].filter((url) => {
-    if (seen.has(url)) return false;
-    seen.add(url);
-    return true;
-  });
-}
-
-/**
- * Retrieves the SEO top pages for a given site as normalized { url } objects.
+ * Retrieves the top pages for a given site.
  *
  * @param {Object} dataAccess - The data access object for database operations.
  * @param {string} siteId - The site ID to retrieve the top pages for.
  * @param {Object} context - The context object containing necessary information.
  * @param {Object} log - The logging object.
- * @returns {Promise<Array<Object>>} - A promise that resolves to an array of { url } objects.
+ * @returns {Promise<Array<Object>>} - A promise that resolves to an array of top pages.
  */
 export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
   try {
     const { SiteTopPage } = dataAccess;
     const result = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'seo', 'global');
+    log.info('Received top pages response:', JSON.stringify(result, null, 2));
 
-    const topPages = (result || []).map((page) => ({ url: page.getUrl() }));
+    const topPages = result || [];
     if (topPages.length > 0) {
-      log.info(`Found ${topPages.length} top pages from SEO`);
-    } else {
-      log.info('No top pages found');
+      const topPagesUrls = topPages.map((page) => ({ url: page.getUrl() }));
+      log.info(`Found ${topPagesUrls.length} top pages`);
+      return topPagesUrls;
     }
-    return topPages;
+    log.info('No top pages found');
+    return [];
   } catch (error) {
     log.error(`Error retrieving top pages for site ${siteId}: ${error.message}`);
     throw error;
