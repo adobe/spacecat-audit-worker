@@ -1157,7 +1157,7 @@ export async function processOpportunityAndSuggestions(
     },
   });
 
-  log.info(`${LOG_PREFIX} 
+  log.info(`${LOG_PREFIX}
     prerender_suggestions_sync_metrics:
     siteId=${auditData.siteId},
     baseUrl=${auditUrl},
@@ -1165,7 +1165,16 @@ export async function processOpportunityAndSuggestions(
     suggestions=${preRenderSuggestions.length},
     totalSuggestions=${allSuggestions.length},`);
 
-  return opportunity;
+  // Fetch only the suggestions that belong to the current batch so that Mystique receives
+  // exactly the URLs processed in this audit run — not stale suggestions from prior batches.
+  const batchKeys = new Set(allSuggestions.map(buildKey));
+  const allOpportunitySuggestions = await opportunity.getSuggestions();
+  const batchSuggestions = allOpportunitySuggestions.filter((s) => {
+    const data = s.getData();
+    return data && batchKeys.has(buildKey(data));
+  });
+
+  return { opportunity, batchSuggestions };
 }
 
 /**
@@ -1620,9 +1629,9 @@ export async function processContentAndGenerateOpportunities(context) {
 
     let opportunityWithSuggestions = null;
 
-    /* c8 ignore next 15 - Opportunity processing branch, covered by integration tests */
+    /* c8 ignore next 16 - Opportunity processing branch, covered by integration tests */
     if (urlsNeedingPrerender.length > 0) {
-      const opportunity = await processOpportunityAndSuggestions(
+      const { opportunity, batchSuggestions } = await processOpportunityAndSuggestions(
         site.getBaseURL(),
         {
           siteId,
@@ -1636,7 +1645,6 @@ export async function processContentAndGenerateOpportunities(context) {
         isPaid,
       );
       opportunityWithSuggestions = opportunity;
-      const batchSuggestions = await opportunity.getSuggestions();
       await sendPrerenderGuidanceRequestToMystique(
         site.getBaseURL(),
         { siteId, auditId: audit.getId(), scrapeJobId },
