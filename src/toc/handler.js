@@ -83,8 +83,8 @@ export const TOC_CHECK = {
 export const TOPPAGES_CHECK = {
   check: 'top-pages',
   title: 'Top Pages',
-  description: 'No top pages available for audit',
-  explanation: 'No top pages found',
+  description: 'No URLs available for audit',
+  explanation: 'No URLs found for audit',
 };
 
 /**
