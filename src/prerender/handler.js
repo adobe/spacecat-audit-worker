@@ -28,6 +28,7 @@ import {
   TOP_ORGANIC_URLS_LIMIT,
   PRERENDER_RECENT_PROCESSING_TIME_DAYS,
   MODE_AI_ONLY,
+  MYSTIQUE_BATCH_SIZE,
 } from './utils/constants.js';
 
 function rebaseUrl(url, preferredBase, log) {
@@ -587,21 +588,30 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
 
     const deliveryType = site?.getDeliveryType?.() || 'unknown';
 
-    const message = {
+    // SQS has a 256 KB message size limit. Chunk suggestions into batches to stay safely under it.
+    const batches = [];
+    for (let i = 0; i < suggestionsPayload.length; i += MYSTIQUE_BATCH_SIZE) {
+      batches.push(suggestionsPayload.slice(i, i + MYSTIQUE_BATCH_SIZE));
+    }
+
+    const time = new Date().toISOString();
+    const queue = env.QUEUE_SPACECAT_TO_MYSTIQUE;
+    await Promise.all(batches.map((batch, index) => sqs.sendMessage(queue, {
       type: 'guidance:prerender',
       siteId,
       auditId,
       deliveryType,
-      time: new Date().toISOString(),
+      time,
       data: {
         opportunityId,
-        suggestions: suggestionsPayload,
+        suggestions: batch,
+        batchIndex: index,
+        totalBatches: batches.length,
       },
-    };
+    })));
 
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.info(`${LOG_PREFIX} Queued guidance:prerender message to Mystique for baseUrl=${baseUrl}, `
-      + `siteId=${siteId}, opportunityId=${opportunityId}, suggestions=${suggestionsPayload.length}`);
+      + `siteId=${siteId}, opportunityId=${opportunityId}, suggestions=${suggestionsPayload.length}, batches=${batches.length}`);
     return suggestionsPayload.length;
   /* c8 ignore next 8 - Error handling for SQS failures when sending to Mystique,
    * difficult to test reliably */
