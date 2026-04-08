@@ -1,3 +1,10 @@
+## [1.401.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.401.0...v1.401.1) (2026-04-08)
+
+
+### Bug Fixes
+
+* **prerender:** mark NEW suggestions as coveredByDomainWide instead of SKIPPED on domain-wide deployment ([#2326](https://github.com/adobe/spacecat-audit-worker/issues/2326)) ([93a1273](https://github.com/adobe/spacecat-audit-worker/commit/93a1273351901756fb110b9de9ab31226b419a2d))
+
 # [1.401.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.400.2...v1.401.0) (2026-04-08)
 
 
