@@ -1,3 +1,10 @@
+# [1.406.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.405.0...v1.406.0) (2026-04-08)
+
+
+### Features
+
+* enhance the Sitemap audit to proportionately probe across the s… ([#2343](https://github.com/adobe/spacecat-audit-worker/issues/2343)) ([84a1787](https://github.com/adobe/spacecat-audit-worker/commit/84a17877bec7d6bf90009c4fbdc64820269ac857))
+
 # [1.405.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.404.0...v1.405.0) (2026-04-08)
 
 
