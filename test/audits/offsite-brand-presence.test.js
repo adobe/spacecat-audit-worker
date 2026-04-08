@@ -466,7 +466,7 @@ describe('Offsite Brand Presence Handler', () => {
       const providerResponses = [
         stubProviderData(['https://www.youtube.com/watch?v=abc']),
         stubProviderData([]),
-        stubProviderData(['https://reddit.com/r/test']),
+        stubProviderData(['https://reddit.com/r/test/']),
         okJsonResponse({}),
         okJsonResponse({}),
         okJsonResponse({}),
@@ -512,7 +512,7 @@ describe('Offsite Brand Presence Handler', () => {
 
       const page2Response = okJsonResponse({
         data: [{
-          Sources: 'https://reddit.com/r/p2', Region: 'US', Mentions: 'true', Citations: 'true',
+          Sources: 'https://reddit.com/r/p2/', Region: 'US', Mentions: 'true', Citations: 'true',
         }],
       });
 
@@ -554,7 +554,7 @@ describe('Offsite Brand Presence Handler', () => {
 
   describe('URL Extraction', () => {
     it('should extract youtube.com and reddit.com URLs including subdomains', async () => {
-      const urls = 'https://www.youtube.com/watch?v=x;https://m.reddit.com/r/test';
+      const urls = 'https://www.youtube.com/watch?v=x;https://www.reddit.com/r/test/';
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
         if (i === 0) return stubProviderData([urls]);
         return okJsonResponse({});
@@ -571,7 +571,7 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should handle semicolon, newline, and mixed separators in Sources field', async () => {
-      const sources = 'https://youtube.com/shorts/a;https://youtube.com/shorts/b\nhttps://reddit.com/r/test';
+      const sources = 'https://youtube.com/shorts/a;https://youtube.com/shorts/b\nhttps://reddit.com/r/test/';
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
         if (i === 0) return stubProviderData([sources]);
         return okJsonResponse({});
@@ -660,7 +660,7 @@ describe('Offsite Brand Presence Handler', () => {
             Sources: 'https://youtube.com/ok', Region: 'US',
           },
           {
-            Sources: 'https://reddit.com/r/ok', Region: 'US',
+            Sources: 'https://reddit.com/r/ok/', Region: 'US',
           },
         ],
       };
@@ -722,6 +722,62 @@ describe('Offsite Brand Presence Handler', () => {
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
+    });
+
+    it('should discard Reddit URLs with non-standard subdomains', async () => {
+      const sources = 'https://m.reddit.com/r/test/;https://old.reddit.com/r/test/;https://www.reddit.com/r/valid/';
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([sources]);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
+    });
+
+    it('should discard Reddit URLs without a path after subreddit name', async () => {
+      const sources = 'https://reddit.com/r/test;https://reddit.com/r/valid/comments/abc/title';
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([sources]);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
+    });
+
+    it('should accept Reddit URLs with /t/ topic and /user/ paths', async () => {
+      const sources = 'https://reddit.com/t/gaming/;https://reddit.com/user/someone/comments/abc/post';
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([sources]);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.urlCounts['reddit.com']).to.equal(2);
+    });
+
+    it('should accept Reddit URLs with percent-encoded characters in path', async () => {
+      const sources = 'https://reddit.com/r/sub/some%20path/';
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([sources]);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
     });
   });
 
@@ -911,7 +967,7 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should only send successfully stored URLs to DRS when some fail', async () => {
-      const sources = 'https://youtube.com/shorts/a;https://youtube.com/shorts/b;https://reddit.com/r/test';
+      const sources = 'https://youtube.com/shorts/a;https://youtube.com/shorts/b;https://reddit.com/r/test/';
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
         if (i === 0) return stubProviderData([sources]);
         return okJsonResponse({});
@@ -940,7 +996,7 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should skip DRS for a domain when all its URLs fail to store', async () => {
-      const sources = 'https://youtube.com/shorts/a;https://reddit.com/r/test';
+      const sources = 'https://youtube.com/shorts/a;https://reddit.com/r/test/';
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
         if (i === 0) return stubProviderData([sources]);
         return okJsonResponse({});
@@ -967,7 +1023,7 @@ describe('Offsite Brand Presence Handler', () => {
 
     it('should add URLs for multiple domains to URL store', async () => {
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://youtube.com/shorts/a;https://reddit.com/r/test']);
+        if (i === 0) return stubProviderData(['https://youtube.com/shorts/a;https://reddit.com/r/test/']);
         return okJsonResponse({});
       });
       const responses = buildHappyResponses({
@@ -1089,7 +1145,7 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should exclude offsite domain URLs from top-cited bucket', async () => {
-      const sources = 'https://youtube.com/watch?v=abc;https://reddit.com/r/test;https://en.wikipedia.org/wiki/Adobe;https://example.com/page';
+      const sources = 'https://youtube.com/watch?v=abc;https://reddit.com/r/test/;https://en.wikipedia.org/wiki/Adobe;https://example.com/page';
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
         if (i === 0) return stubProviderData([sources]);
         return okJsonResponse({});
@@ -1209,7 +1265,7 @@ describe('Offsite Brand Presence Handler', () => {
           Sources: 'https://youtube.com/watch?v=abc', Topic: 'Topic A', Category: 'Cat1', Prompt: 'Prompt 1',
         },
         {
-          Sources: 'https://reddit.com/r/test', Topic: 'Topic B', Category: 'Cat2', Prompt: 'Prompt 2',
+          Sources: 'https://reddit.com/r/test/', Topic: 'Topic B', Category: 'Cat2', Prompt: 'Prompt 2',
         },
       ];
       stubWithTopicRows(rows);
@@ -1438,7 +1494,7 @@ describe('Offsite Brand Presence Handler', () => {
 
   describe('DRS Scraping', () => {
     it('should trigger DRS jobs for youtube (2 datasets) and reddit (2 datasets)', async () => {
-      const urls = 'https://youtube.com/shorts/v1;https://reddit.com/r/test';
+      const urls = 'https://youtube.com/shorts/v1;https://reddit.com/r/test/';
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
         if (i === 0) return stubProviderData([urls]);
         return okJsonResponse({});
@@ -1499,7 +1555,7 @@ describe('Offsite Brand Presence Handler', () => {
 
     it('should include daysBack for reddit_comments', async () => {
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://reddit.com/r/adobe']);
+        if (i === 0) return stubProviderData(['https://reddit.com/r/adobe/']);
         return okJsonResponse({});
       });
       const responses = buildHappyResponses({

@@ -20,6 +20,10 @@ import { weeklyBreakdownQueries } from '../cdn-logs-report/utils/query-builder.j
 const DEFAULT_TOP_AGENTIC_URLS_LIMIT = 200;
 
 export function getPreferredBaseUrl(site, context) {
+  const overrideBaseURL = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL;
+  if (overrideBaseURL && /^https?:\/\//.test(overrideBaseURL)) {
+    return overrideBaseURL;
+  }
   return context.finalUrl && !/^https?:\/\//.test(context.finalUrl)
     ? `https://${context.finalUrl}`
     : context.finalUrl || site.getBaseURL();

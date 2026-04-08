@@ -625,65 +625,43 @@ describe('isLinkInaccessible - Asset Handling', () => {
     nock.cleanAll();
   });
 
-  it('should handle static assets (PNG) with Range header', async function call() {
-    this.timeout(6000);
-    nock('https://example.com')
-      .get('/image.png')
-      .reply(206, 'partial content');
-
+  it('should skip static assets (PNG) without making HTTP requests', async () => {
+    // No nock interceptor — any HTTP call would throw an error
     const result = await isLinkInaccessible('https://example.com/image.png', mockLog, 'test-site-id');
     expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.false;
+    expect(result.httpStatus).to.be.null;
   });
 
-  it('should handle static assets (SVG) with Range header', async function call() {
-    this.timeout(6000);
-    nock('https://example.com')
-      .get('/icon.svg')
-      .reply(200, 'svg content');
-
+  it('should skip static assets (SVG) without making HTTP requests', async () => {
     const result = await isLinkInaccessible('https://example.com/icon.svg', mockLog, 'test-site-id');
     expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.false;
   });
 
-  it('should handle static assets (CSS) with Range header', async function call() {
-    this.timeout(6000);
-    nock('https://example.com')
-      .get('/styles.css')
-      .reply(200, 'css content');
-
+  it('should skip static assets (CSS) without making HTTP requests', async () => {
     const result = await isLinkInaccessible('https://example.com/styles.css', mockLog, 'test-site-id');
     expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.false;
   });
 
-  it('should handle static assets (JS) with Range header', async function call() {
-    this.timeout(6000);
-    nock('https://example.com')
-      .get('/app.js')
-      .reply(200, 'js content');
-
+  it('should skip static assets (JS) without making HTTP requests', async () => {
     const result = await isLinkInaccessible('https://example.com/app.js', mockLog, 'test-site-id');
     expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.false;
   });
 
-  it('should treat pdf links as static assets', async function call() {
-    this.timeout(6000);
-    nock('https://example.com')
-      .get('/brochure.pdf')
-      .matchHeader('Range', 'bytes=0-0')
-      .reply(200);
-
+  it('should skip PDF links without making HTTP requests', async () => {
     const result = await isLinkInaccessible('https://example.com/brochure.pdf', mockLog, 'test-site-id');
     expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.false;
   });
 
-  it('should detect broken static assets', async function call() {
-    this.timeout(6000);
-    nock('https://example.com')
-      .get('/missing.png')
-      .reply(404);
-
+  it('should skip missing static assets without reporting them as broken', async () => {
+    // Static assets are excluded from broken-link detection regardless of HTTP status.
+    // A 404 PNG is not an SEO issue we surface.
     const result = await isLinkInaccessible('https://example.com/missing.png', mockLog, 'test-site-id');
-    expect(result.isBroken).to.be.true;
+    expect(result.isBroken).to.be.false;
   });
 
   it('should handle GET error with type field', async function call() {
@@ -770,6 +748,64 @@ describe('isLinkInaccessible - Asset Handling', () => {
       .reply(200);
 
     const result = await isLinkInaccessible('https://www.example.com/path/with%20spaces/page.html/', mockLog, 'test-site-id');
+    expect(result.isBroken).to.be.false;
+  });
+});
+
+describe('isLinkInaccessible - Malformed URL Handling', () => {
+  let mockLog;
+
+  beforeEach(() => {
+    mockLog = {
+      info: sinon.stub(),
+      warn: sinon.stub(),
+      error: sinon.stub(),
+      debug: sinon.stub(),
+    };
+    nock.cleanAll();
+  });
+
+  afterEach(() => {
+    nock.cleanAll();
+  });
+
+  it('should skip URLs with bare .html extension and no page name (e.g. /.html)', async () => {
+    // CMS artifact — empty slug with extension appended
+    const result = await isLinkInaccessible('https://www.parcelpro.com/jp/en/legal/.html', mockLog, 'test-site-id');
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.false;
+    expect(result.httpStatus).to.be.null;
+  });
+
+  it('should skip URLs with bare .htm extension', async () => {
+    const result = await isLinkInaccessible('https://example.com/section/.htm', mockLog, 'test-site-id');
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.false;
+  });
+
+  it('should skip URLs with bare .php extension', async () => {
+    const result = await isLinkInaccessible('https://example.com/page/.php', mockLog, 'test-site-id');
+    expect(result.isBroken).to.be.false;
+    expect(result.inconclusive).to.be.false;
+  });
+
+  it('should NOT skip a normal page URL ending in .html', async function call() {
+    this.timeout(6000);
+    nock('https://example.com')
+      .head('/legal/privacy.html')
+      .reply(200);
+
+    const result = await isLinkInaccessible('https://example.com/legal/privacy.html', mockLog, 'test-site-id');
+    expect(result.isBroken).to.be.false;
+  });
+
+  it('should NOT skip a normal page URL with no extension', async function call() {
+    this.timeout(6000);
+    nock('https://example.com')
+      .head('/jp/en/legal')
+      .reply(200);
+
+    const result = await isLinkInaccessible('https://example.com/jp/en/legal', mockLog, 'test-site-id');
     expect(result.isBroken).to.be.false;
   });
 });
