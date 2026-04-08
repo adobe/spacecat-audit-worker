@@ -1,3 +1,10 @@
+## [1.401.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.401.3...v1.401.4) (2026-04-08)
+
+
+### Bug Fixes
+
+* remove daily agentic export enablement helper ([#2337](https://github.com/adobe/spacecat-audit-worker/issues/2337)) ([eeaa331](https://github.com/adobe/spacecat-audit-worker/commit/eeaa331059763e86e97a00f7ebb40d029a9db7f7))
+
 ## [1.401.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.401.2...v1.401.3) (2026-04-08)
 
 
