@@ -1,3 +1,10 @@
+## [1.401.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.401.1...v1.401.2) (2026-04-08)
+
+
+### Bug Fixes
+
+* [preflight] fix ambiguous highlight selector ([#2339](https://github.com/adobe/spacecat-audit-worker/issues/2339)) ([512a714](https://github.com/adobe/spacecat-audit-worker/commit/512a714b95190e690d5428317c770ea9130e5ae2))
+
 ## [1.401.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.401.0...v1.401.1) (2026-04-08)
 
 
