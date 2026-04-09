@@ -75,7 +75,7 @@ async function fetchStoreData(siteId, context) {
 
   log.info(`${LOG_PREFIX} Fetching data from stores for siteId: ${siteId}`);
 
-  const rawUrls = await storeClient.getUrls(siteId, URL_TYPES.YOUTUBE);
+  const rawUrls = await storeClient.getUrls(siteId, URL_TYPES.YOUTUBE, { sortBy: 'createdAt', sortOrder: 'desc' });
   log.info(`${LOG_PREFIX} Retrieved ${rawUrls.length} YouTube URLs from URL Store`);
 
   const drsClient = DrsClient.createFrom(context);

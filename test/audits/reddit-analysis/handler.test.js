@@ -205,7 +205,7 @@ describe('Reddit Analysis Handler', () => {
       expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(expectedSentimentConfig);
       expect(result.auditResult.config.urlLimit).to.equal(MYSTIQUE_URLS_LIMIT);
       expect(result.fullAuditRef).to.equal(baseURL);
-      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'reddit-analysis');
+      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'reddit-analysis', { sortBy: 'createdAt', sortOrder: 'desc' });
       expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, GUIDELINE_TYPES.REDDIT_ANALYSIS);
       expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
     });
@@ -213,7 +213,7 @@ describe('Reddit Analysis Handler', () => {
     it('should call StoreClient and compute topics from brand presence', async () => {
       await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'reddit-analysis');
+      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'reddit-analysis', { sortBy: 'createdAt', sortOrder: 'desc' });
       expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, GUIDELINE_TYPES.REDDIT_ANALYSIS);
       expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
     });

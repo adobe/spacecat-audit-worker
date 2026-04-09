@@ -206,7 +206,7 @@ describe('YouTube Analysis Handler', () => {
       expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(expectedSentimentConfigForPostProcessor);
       expect(result.auditResult.config.urlLimit).to.equal(MYSTIQUE_URLS_LIMIT);
       expect(result.fullAuditRef).to.equal(baseURL);
-      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'youtube-analysis');
+      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'youtube-analysis', { sortBy: 'createdAt', sortOrder: 'desc' });
       expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, GUIDELINE_TYPES.YOUTUBE_ANALYSIS);
       expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
     });
@@ -234,7 +234,7 @@ describe('YouTube Analysis Handler', () => {
     it('should call StoreClient with correct parameters', async () => {
       await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'youtube-analysis');
+      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'youtube-analysis', { sortBy: 'createdAt', sortOrder: 'desc' });
       expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, 'youtube-analysis');
     });
 
