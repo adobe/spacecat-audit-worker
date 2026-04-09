@@ -127,7 +127,9 @@ function normalizeFormA11yIssue(issue) {
   }
   const type = issue.type ?? issue.Type ?? '';
   const htmlWithIssues = Array.isArray(issue.htmlWithIssues) ? issue.htmlWithIssues : [];
-  if (htmlWithIssues.length === 0) return null;
+  if (htmlWithIssues.length === 0) {
+    return null;
+  }
   const normalizedHtml = htmlWithIssues.map(normalizeHtmlWithIssuesItem);
   return {
     type: String(type),
@@ -293,7 +295,9 @@ async function createFormAccessibilityIndividualSuggestions(aggregatedData, oppo
 
     Object.entries(aggregatedData).forEach(([key, data]) => {
       // Skip the 'overall' key as it contains summary data
-      if (key === 'overall') return;
+      if (key === 'overall') {
+        return;
+      }
 
       const { violations } = data;
       if (violations) {
@@ -377,7 +381,9 @@ export async function createAccessibilityOpportunity(auditData, context) {
     // Process each form identified by composite key (URL + formSource)
     Object.entries(aggregatedData).forEach(([key]) => {
       // Skip the 'overall' key as it contains summary data
-      if (key === 'overall') return;
+      if (key === 'overall') {
+        return;
+      }
 
       // Extract URL and formSource from the composite key
       const [url, formSource] = key.includes(URL_SOURCE_SEPARATOR)

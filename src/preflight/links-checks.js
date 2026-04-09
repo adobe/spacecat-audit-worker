@@ -209,11 +209,15 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
 
         // Filter out null results and add to respective arrays
         internalResults.forEach((result) => {
-          if (result) brokenInternalLinks.push(result);
+          if (result) {
+            brokenInternalLinks.push(result);
+          }
         });
 
         externalResults.forEach((result) => {
-          if (result) brokenExternalLinks.push(result);
+          if (result) {
+            brokenExternalLinks.push(result);
+          }
         });
       }),
   );

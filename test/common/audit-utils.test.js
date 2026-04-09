@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -25,6 +23,7 @@ import {
   checkProductCodeEntitlements,
   parseMessageDataForRunnerAudit,
   preserveOnDemand,
+  preserveSlackContext,
 } from '../../src/common/audit-utils.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -360,6 +359,29 @@ describe('Audit Utils Tests', () => {
 
     it('returns empty object when onDemand is string "false"', () => {
       expect(preserveOnDemand({ onDemand: 'false' })).to.deep.equal({});
+    });
+  });
+
+  describe('preserveSlackContext', () => {
+    it('preserves slackContext when present', () => {
+      const slackContext = { channelId: 'C123', threadTs: '123.456' };
+      expect(preserveSlackContext({ slackContext })).to.deep.equal({ slackContext });
+    });
+
+    it('returns empty object when auditContext is undefined', () => {
+      expect(preserveSlackContext(undefined)).to.deep.equal({});
+    });
+
+    it('returns empty object when auditContext is null', () => {
+      expect(preserveSlackContext(null)).to.deep.equal({});
+    });
+
+    it('returns empty object when slackContext is not set', () => {
+      expect(preserveSlackContext({ onDemand: true })).to.deep.equal({});
+    });
+
+    it('returns empty object when slackContext is null', () => {
+      expect(preserveSlackContext({ slackContext: null })).to.deep.equal({});
     });
   });
 

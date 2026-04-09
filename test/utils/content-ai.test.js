@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -35,7 +33,9 @@ describe('Content AI Utils', () => {
 
     afterEach(() => {
       sandbox.restore();
-      if (clock) clock.restore();
+      if (clock) {
+        clock.restore();
+      }
     });
 
     it('should increment day when hour is 23 (wraps to midnight)', () => {

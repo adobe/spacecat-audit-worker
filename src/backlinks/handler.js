@@ -40,7 +40,9 @@ const BRIGHT_DATA_MAX_RESULTS = 'BRIGHT_DATA_MAX_RESULTS';
 const BRIGHT_DATA_REQUEST_DELAY_MS = 'BRIGHT_DATA_REQUEST_DELAY_MS';
 
 function getEnvBool(env, key, defaultValue) {
-  if (env?.[key] === undefined) return defaultValue;
+  if (env?.[key] === undefined) {
+    return defaultValue;
+  }
   return String(env[key]).toLowerCase() === 'true';
 }
 
@@ -99,7 +101,9 @@ export async function checkIfBacklinkFixedWithSuggestion(suggestion, log) {
   const targets = data?.urlEdited
     ? [data.urlEdited, ...suggestedTargets]
     : suggestedTargets;
-  if (!urlTo || targets.length === 0) return false;
+  if (!urlTo || targets.length === 0) {
+    return false;
+  }
   try {
     const resp = await fetch(urlTo, {
       redirect: 'follow',
@@ -154,7 +158,9 @@ export function buildBacklinkFixEntityPayload(suggestion, opportunity, isAuthorO
  */
 export async function checkIfBacklinkResolvedOnProduction(suggestion, log) {
   const url = suggestion?.getData?.()?.url_to;
-  if (!url) return false;
+  if (!url) {
+    return false;
+  }
   const stillBrokenItems = await filterOutValidBacklinks([{ url_to: url }], log);
   return stillBrokenItems.length === 0; // resolved if NO items are still broken
 }
@@ -185,7 +191,9 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
     };
 
     const filteredBacklinks = result?.backlinks?.filter((backlink) => {
-      if (!excludedURLs || excludedURLs.length === 0) return true;
+      if (!excludedURLs || excludedURLs.length === 0) {
+        return true;
+      }
 
       const normalizedBacklink = normalizeUrl(backlink.url_to);
       return !excludedURLs.some((excludedUrl) => {

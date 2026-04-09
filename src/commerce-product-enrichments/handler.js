@@ -26,7 +26,9 @@ const REQUIRED_COMMERCE_CONFIG_FIELDS = ['environmentId', 'websiteCode', 'storeC
 
 function hasValidCommerceLlmoConfig(site) {
   const commerceLlmoConfig = site?.getConfig?.()?.state?.commerceLlmoConfig;
-  if (!commerceLlmoConfig || typeof commerceLlmoConfig !== 'object') return false;
+  if (!commerceLlmoConfig || typeof commerceLlmoConfig !== 'object') {
+    return false;
+  }
 
   return Object.values(commerceLlmoConfig).some(
     (storeView) => REQUIRED_COMMERCE_CONFIG_FIELDS.every((field) => storeView?.[field]),
@@ -506,7 +508,9 @@ export async function runAuditAndProcessResults(context) {
   });
   const settledResults = await Promise.allSettled(enrichmentPromises);
   const enrichmentResponses = settledResults.map((result) => {
-    if (result.status === 'fulfilled') return result.value;
+    if (result.status === 'fulfilled') {
+      return result.value;
+    }
     log.error(`${LOG_PREFIX} Step 3: Enrichment API call failed: ${result.reason?.message}`);
     return { error: result.reason?.message };
   });

@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
@@ -280,6 +278,32 @@ describe('Step-based Audit Tests', () => {
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const [, payload] = context.sqs.sendMessage.firstCall.args;
       expect(payload.auditContext).to.include({ onDemand: true });
+    });
+
+    it('preserves slackContext across step chain', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      const slackContext = { channelId: 'C123', threadTs: '123.456' };
+      const messageWithSlack = {
+        type: 'content-audit',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        auditContext: { slackContext },
+      };
+
+      await audit.run(messageWithSlack, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, payload] = context.sqs.sendMessage.firstCall.args;
+      expect(payload.auditContext).to.deep.include({ slackContext });
     });
 
     it('continues execution from specified step', async () => {

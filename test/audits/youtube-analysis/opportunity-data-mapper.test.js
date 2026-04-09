@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect } from 'chai';
 import { createOpportunityData } from '../../../src/youtube-analysis/opportunity-data-mapper.js';
 

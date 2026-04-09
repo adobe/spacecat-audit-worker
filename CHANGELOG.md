@@ -1,3 +1,57 @@
+# [1.409.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.408.2...v1.409.0) (2026-04-09)
+
+
+### Features
+
+* filter cited/reddit/youtube urls by DRS status; enhance storeClient getUrls to accept optional queryParams ([#2351](https://github.com/adobe/spacecat-audit-worker/issues/2351)) ([276f8ec](https://github.com/adobe/spacecat-audit-worker/commit/276f8ec39368946d861d48f0adca546344076bb6))
+
+## [1.408.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.408.1...v1.408.2) (2026-04-09)
+
+
+### Bug Fixes
+
+* **cdn-analysis:** use URL fallback when byocdn-other content type is missing ([#2354](https://github.com/adobe/spacecat-audit-worker/issues/2354)) ([dff9654](https://github.com/adobe/spacecat-audit-worker/commit/dff96547f3a43e4f326eb1eb7179ad39ee21d917))
+
+## [1.408.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.408.0...v1.408.1) (2026-04-09)
+
+
+### Bug Fixes
+
+* **prerender:** batch Mystique SQS messages and harden suggestion key resolution ([#2338](https://github.com/adobe/spacecat-audit-worker/issues/2338)) ([7751f0b](https://github.com/adobe/spacecat-audit-worker/commit/7751f0bdb78caf55f79a0f4c354a8f94e9385338))
+
+# [1.408.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.407.0...v1.408.0) (2026-04-09)
+
+
+### Features
+
+* add Slack completion notifications for offsite analysis audits ([#2350](https://github.com/adobe/spacecat-audit-worker/issues/2350)) ([12105d7](https://github.com/adobe/spacecat-audit-worker/commit/12105d7bf7c3582c97e1b396acda4179c1aad371))
+
+# [1.407.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.406.2...v1.407.0) (2026-04-09)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.112.4 ([#2347](https://github.com/adobe/spacecat-audit-worker/issues/2347)) ([a88d8f9](https://github.com/adobe/spacecat-audit-worker/commit/a88d8f9da1fbad1e5dabf27f1a28f22ab3f1d790))
+
+
+### Features
+
+* enhance offsiteBrandPresenceRunner to send Slack notifications for DRS job results ([#2341](https://github.com/adobe/spacecat-audit-worker/issues/2341)) ([e75e17a](https://github.com/adobe/spacecat-audit-worker/commit/e75e17aa452b7cb8cfb99d98f18163128a9dddb8))
+
+## [1.406.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.406.1...v1.406.2) (2026-04-09)
+
+
+### Bug Fixes
+
+* enforce curly braces and remove eslint-env comments ([#2342](https://github.com/adobe/spacecat-audit-worker/issues/2342)) ([44c465e](https://github.com/adobe/spacecat-audit-worker/commit/44c465e7117bb2ef18800738ee182dae92bccc11))
+
+## [1.406.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.406.0...v1.406.1) (2026-04-09)
+
+
+### Bug Fixes
+
+* **audit:** preserve slackContext across multi-step audit chains ([#2346](https://github.com/adobe/spacecat-audit-worker/issues/2346)) ([d919c2c](https://github.com/adobe/spacecat-audit-worker/commit/d919c2c296b821b4865831567159cbdc5a2f998c))
+
 # [1.406.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.405.0...v1.406.0) (2026-04-08)
 
 

@@ -104,8 +104,12 @@ export default class StoreClient {
 
   #ensureConfigured() {
     const missing = [];
-    if (!this.apiBaseUrl) missing.push('SPACECAT_API_BASE_URL');
-    if (!this.apiKey) missing.push('SPACECAT_API_KEY');
+    if (!this.apiBaseUrl) {
+      missing.push('SPACECAT_API_BASE_URL');
+    }
+    if (!this.apiKey) {
+      missing.push('SPACECAT_API_KEY');
+    }
     if (missing.length > 0) {
       throw new Error(`StoreClient is not configured: missing ${missing.join(', ')}`);
     }
@@ -190,13 +194,18 @@ export default class StoreClient {
    *
    * @param {string} siteId - The site ID
    * @param {string} auditType - The audit type (e.g., 'wikipedia-analysis', 'reddit-analysis')
+   * @param {Object} [queryParams={}] - Additional query parameters forwarded to every page request
+   *   (e.g. `{ sortBy: 'createdAt', sortOrder: 'desc' }`)
    * @returns {Promise<Array<Object>>} Array of URL objects
    * @throws {StoreEmptyError} If no URLs are found
    */
-  async getUrls(siteId, auditType) {
+  async getUrls(siteId, auditType, queryParams = {}) {
     this.log.info(`[StoreClient] Fetching ${auditType} URLs for siteId: ${siteId}`);
 
-    const urls = await this.#fetchAllPages(`/sites/${siteId}/url-store/by-audit/${auditType}`);
+    const urls = await this.#fetchAllPages(
+      `/sites/${siteId}/url-store/by-audit/${auditType}`,
+      queryParams,
+    );
 
     if (urls.length === 0) {
       throw new StoreEmptyError('urlStore', siteId, `No ${auditType} URLs found`);

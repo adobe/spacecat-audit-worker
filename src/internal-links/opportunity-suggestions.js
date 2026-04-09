@@ -286,7 +286,9 @@ export function createOpportunityAndSuggestionsStep({
     const brokenLinkLocales = new Set();
     brokenLinksForMystique.forEach((link) => {
       const locale = extractPathPrefix(link.urlTo);
-      if (locale) brokenLinkLocales.add(locale);
+      if (locale) {
+        brokenLinkLocales.add(locale);
+      }
     });
 
     let alternativeUrls = [];

@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -279,6 +278,19 @@ describe('CDN Analysis Handler', () => {
         .to.include('/raw/byocdn-other/2025/06/15/');
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
+
+      const executeCalls = context.athenaClient.execute.getCalls();
+      const aggregatedCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated data for byocdn-other'));
+      const referralCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated referral data for byocdn-other'));
+
+      expect(aggregatedCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NOT NULL");
+      expect(aggregatedCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NULL");
+      expect(aggregatedCall.args[0]).to.include("NOT REGEXP_LIKE(url_extract_path(COALESCE(url, ''))");
+      expect(aggregatedCall.args[0]).to.include("REGEXP_LIKE(url_extract_path(COALESCE(url, '')), '(?i)(\\.htm|\\.pdf|\\.md|robots\\.txt|sitemap)')");
+
+      expect(referralCall.args[0]).to.include("lower(response_content_type) LIKE 'text/html%'");
+      expect(referralCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NULL");
+      expect(referralCall.args[0]).to.include("NOT REGEXP_LIKE(url_extract_path(COALESCE(url, ''))");
     });
 
     it('dispatcher-scheduled byocdn-other run with no recent files returns early', async () => {

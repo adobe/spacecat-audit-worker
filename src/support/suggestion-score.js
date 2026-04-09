@@ -15,7 +15,9 @@ const MIN_WORD_LEN = 3;
 /** @param {string} url */
 export function normalizeForScore(url) {
   const s = (url || '').trim();
-  if (!s) return ['', ''];
+  if (!s) {
+    return ['', ''];
+  }
   try {
     const href = s.startsWith('http://') || s.startsWith('https://') ? s : `https://${s}`;
     const u = new URL(href);
@@ -80,8 +82,11 @@ export function scoreSuggestion(brokenUrl, suggestedUrl) {
   let prefixCommon = 0;
   const len = Math.min(bSegs.length, sSegs.length);
   for (let i = 0; i < len; i += 1) {
-    if (bSegs[i] === sSegs[i]) prefixCommon += 1;
-    else break;
+    if (bSegs[i] === sSegs[i]) {
+      prefixCommon += 1;
+    } else {
+      break;
+    }
   }
 
   const totalCommon = bSegs.filter((seg) => sSegs.includes(seg)).length;

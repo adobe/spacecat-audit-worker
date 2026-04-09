@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.406.0",
+  "version": "1.409.0",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -97,7 +97,7 @@
     "@adobe/spacecat-shared-slack-client": "1.6.5",
     "@adobe/spacecat-shared-splunk-client": "^1.0.30",
     "@adobe/spacecat-shared-tier-client": "1.5.0",
-    "@adobe/spacecat-shared-utils": "1.112.3",
+    "@adobe/spacecat-shared-utils": "1.112.4",
     "@adobe/spacecat-shared-vault-secrets": "1.3.2",
     "@adobe/structured-data-validator": "1.7.0",
     "@aws-sdk/client-athena": "3.1024.0",

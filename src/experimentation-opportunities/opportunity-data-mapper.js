@@ -14,7 +14,9 @@ import { DATA_SOURCES } from '../common/constants.js';
 
 function calculateOpptyImpact(organicTraffic, siteAverageCTR, pageCTR) {
   // assume oppty cannot go over site average CTR
-  if (pageCTR > siteAverageCTR) return 0;
+  if (pageCTR > siteAverageCTR) {
+    return 0;
+  }
 
   // total margin in the potential impact
   return (siteAverageCTR - pageCTR) * organicTraffic;
