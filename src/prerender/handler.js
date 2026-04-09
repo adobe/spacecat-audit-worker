@@ -1165,14 +1165,15 @@ export async function processOpportunityAndSuggestions(
     suggestions=${preRenderSuggestions.length},
     totalSuggestions=${allSuggestions.length},`);
 
-  // Fetch only the suggestions that belong to the current batch so that Mystique receives
-  // exactly the URLs processed in this audit run — not stale suggestions from prior batches.
-  const batchKeys = new Set(allSuggestions.map(buildKey));
-  const allOpportunitySuggestions = await opportunity.getSuggestions();
-  const auditRunSuggestions = allOpportunitySuggestions.filter((s) => {
-    const data = s.getData();
-    return data && batchKeys.has(buildKey(data));
-  });
+  // Build lightweight suggestion-like adapters directly from the URL list processed in this
+  // audit run. This avoids a redundant DB round-trip: we already have the data needed to
+  // construct S3 keys for Mystique. Domain-wide suggestions are intentionally excluded —
+  // Mystique only needs individual URL suggestions.
+  const auditRunSuggestions = preRenderSuggestions.map((s) => ({
+    getId: () => null,
+    getStatus: () => Suggestion.STATUSES.NEW,
+    getData: () => mapSuggestionData(s),
+  }));
 
   return { opportunity, auditRunSuggestions };
 }

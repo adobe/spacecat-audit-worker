@@ -578,42 +578,17 @@ describe('Prerender AI-Only Mode', () => {
       expect(sentUrls).to.include('https://example.com/old-page');
     });
 
-    it('normal audit run sends only auditRunSuggestions (current batch) to Mystique', async () => {
-      // processOpportunityAndSuggestions filters allOpportunitySuggestions down to only those
-      // whose keys match the URLs processed in this audit run.  A stale suggestion from a prior
-      // batch must NOT appear in the Mystique payload.
-      const staleSuggestion = {
-        getId: sinon.stub().returns('suggestion-stale'),
-        getData: sinon.stub().returns({
-          url: 'https://example.com/old-page',
-          isDomainWide: false,
-          scrapeJobId: 'old-job-id',
-          originalHtmlKey: 'prerender/scrapes/old-job-id/old-page/server-side.html',
-          prerenderedHtmlKey: 'prerender/scrapes/old-job-id/old-page/client-side.html',
-        }),
-        getStatus: sinon.stub().returns('NEW'),
-      };
-
-      const currentSuggestion = {
-        getId: sinon.stub().returns('suggestion-current'),
-        getData: sinon.stub().returns({
-          url: 'https://example.com/page1',
-          isDomainWide: false,
-          scrapeJobId: 'current-job-id',
-          originalHtmlKey: 'prerender/scrapes/current-job-id/page1/server-side.html',
-          prerenderedHtmlKey: 'prerender/scrapes/current-job-id/page1/client-side.html',
-        }),
-        getStatus: sinon.stub().returns('NEW'),
-      };
-
-      // opportunity.getSuggestions() returns both the current and stale suggestion
+    it('normal audit run builds auditRunSuggestions from URL list without a DB call', async () => {
+      // auditRunSuggestions is built directly from preRenderSuggestions (the URL list produced
+      // by the current audit run) — no getSuggestions() DB call is made. Stale suggestions
+      // from prior batches are therefore not included.
+      const getSuggestionsStub = sinon.stub().resolves([]);
       const mockOpportunityNormal = {
         getId: () => 'opp-normal',
-        getSuggestions: sinon.stub().resolves([currentSuggestion, staleSuggestion]),
+        getSuggestions: getSuggestionsStub,
       };
 
       const syncSuggestionsStub = sinon.stub().resolves();
-      const sendMessageStub = sinon.stub().resolves();
 
       const mockHandler = await (await import('esmock')).default('../../../src/prerender/handler.js', {
         '../../../src/common/opportunity.js': {
@@ -656,8 +631,6 @@ describe('Prerender AI-Only Mode', () => {
           },
         },
         site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
-        sqs: { sendMessage: sendMessageStub },
-        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.test/queue' },
       };
 
       const { opportunity, auditRunSuggestions } = await mockHandler.processOpportunityAndSuggestions(
@@ -667,9 +640,15 @@ describe('Prerender AI-Only Mode', () => {
       );
 
       expect(opportunity).to.equal(mockOpportunityNormal);
-      // Only the current-batch suggestion should be in auditRunSuggestions — not the stale one
+      // getSuggestions is called once by findPreservableDomainWideSuggestion but NOT a second
+      // time to build auditRunSuggestions — that data comes directly from the URL list.
+      expect(getSuggestionsStub).to.have.been.calledOnce;
+      // One suggestion adapter per URL in the current batch
       expect(auditRunSuggestions).to.have.lengthOf(1);
-      expect(auditRunSuggestions[0].getId()).to.equal('suggestion-current');
+      expect(auditRunSuggestions[0].getData().url).to.equal('https://example.com/page1');
+      expect(auditRunSuggestions[0].getData().scrapeJobId).to.equal('current-job-id');
+      expect(auditRunSuggestions[0].getStatus()).to.equal('NEW');
+      expect(auditRunSuggestions[0].getId()).to.be.null;
     });
   });
 
