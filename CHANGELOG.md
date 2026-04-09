@@ -1,3 +1,10 @@
+# [1.408.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.407.0...v1.408.0) (2026-04-09)
+
+
+### Features
+
+* add Slack completion notifications for offsite analysis audits ([#2350](https://github.com/adobe/spacecat-audit-worker/issues/2350)) ([12105d7](https://github.com/adobe/spacecat-audit-worker/commit/12105d7bf7c3582c97e1b396acda4179c1aad371))
+
 # [1.407.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.406.2...v1.407.0) (2026-04-09)
 
 
