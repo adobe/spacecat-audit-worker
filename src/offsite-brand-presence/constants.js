@@ -55,5 +55,3 @@ export const CITED_ANALYSIS_DRS_CONFIG = Object.freeze({
   auditType: Audit.AUDIT_TYPES.CITED_ANALYSIS,
   datasetIds: [SCRAPE_DATASET_IDS.TOP_CITED],
 });
-export const YOUTUBE_URL_REGEX = /^(?:https?:\/\/)?(?:www\.)?(?:m\.)?(?:youtube(?:-nocookie)?\.com|youtu\.be)(?:[/?#]|$)/;
-export const REDDIT_URL_REGEX = /^https:\/\/(www)?\.?reddit\.com\/([rt]|user)\/[a-zA-Z0-9_/%-]+\/(comments\/[a-zA-Z0-9_-]+\/.+\/?|.*)$/;

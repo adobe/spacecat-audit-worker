@@ -20,6 +20,8 @@ import {
 } from '../../../src/utils/store-client.js';
 import {
   MYSTIQUE_URLS_LIMIT,
+  YOUTUBE_URL_REGEX,
+  filterUrlsByRegex as realFilterUrlsByRegex,
   resolveMystiqueUrlLimit as realResolveMystiqueUrlLimit,
 } from '../../../src/utils/offsite-audit-utils.js';
 import esmock from 'esmock';
@@ -105,6 +107,8 @@ describe('YouTube Analysis Handler', () => {
       },
       '../../../src/utils/offsite-audit-utils.js': {
         MYSTIQUE_URLS_LIMIT,
+        YOUTUBE_URL_REGEX,
+        filterUrlsByRegex: realFilterUrlsByRegex,
         resolveMystiqueUrlLimit: realResolveMystiqueUrlLimit,
       },
       '../../../src/utils/brand-presence-enrichment.js': {
@@ -457,6 +461,31 @@ describe('YouTube Analysis Handler', () => {
       expect(context.log.info).to.have.been.calledWith(
         `[YouTube] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
       );
+    });
+
+    it('should filter out URLs that do not match YOUTUBE_URL_REGEX before sending to Mystique', async () => {
+      const validUrl = { url: 'https://www.youtube.com/watch?v=abc123', type: 'youtube', metadata: {} };
+      const invalidUrl = { url: 'https://not-youtube.example.com/video/123', type: 'youtube', metadata: {} };
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test', companyWebsite: baseURL, competitors: [], competitorRegion: null, industry: null, brandKeywords: [] },
+          storeData: {
+            urls: [validUrl, invalidUrl],
+            sentimentConfig: { topics: [], guidelines: [] },
+          },
+        },
+      };
+
+      const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentUrls = context.sqs.sendMessage.firstCall.args[1].data.urls;
+      expect(sentUrls).to.have.lengthOf(1);
+      expect(sentUrls[0].url).to.equal(validUrl.url);
     });
 
     it('should skip sending message when audit failed', async () => {

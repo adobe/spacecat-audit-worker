@@ -15,6 +15,9 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import {
   MYSTIQUE_URLS_LIMIT,
+  YOUTUBE_URL_REGEX,
+  REDDIT_URL_REGEX,
+  filterUrlsByRegex,
   resolveMystiqueUrlLimit,
 } from '../../src/utils/offsite-audit-utils.js';
 
@@ -29,6 +32,95 @@ describe('offsite-audit-utils', () => {
 
   afterEach(() => {
     sandbox.restore();
+  });
+
+  describe('YOUTUBE_URL_REGEX', () => {
+    it('should match standard youtube.com URLs', () => {
+      expect(YOUTUBE_URL_REGEX.test('https://www.youtube.com/watch?v=abc123')).to.be.true;
+      expect(YOUTUBE_URL_REGEX.test('https://youtube.com/watch?v=abc123')).to.be.true;
+      expect(YOUTUBE_URL_REGEX.test('https://m.youtube.com/watch?v=abc123')).to.be.true;
+      expect(YOUTUBE_URL_REGEX.test('https://youtu.be/abc123')).to.be.true;
+    });
+
+    it('should not match non-youtube URLs', () => {
+      expect(YOUTUBE_URL_REGEX.test('https://not-youtube.example.com/video')).to.be.false;
+      expect(YOUTUBE_URL_REGEX.test('https://vimeo.com/123')).to.be.false;
+    });
+  });
+
+  describe('REDDIT_URL_REGEX', () => {
+    it('should match valid reddit post URLs', () => {
+      expect(REDDIT_URL_REGEX.test('https://www.reddit.com/r/example/comments/abc/post_title/')).to.be.true;
+      expect(REDDIT_URL_REGEX.test('https://reddit.com/r/example/comments/abc/post_title/')).to.be.true;
+      expect(REDDIT_URL_REGEX.test('https://www.reddit.com/user/someone/submitted/')).to.be.true;
+    });
+
+    it('should not match bare reddit.com or search URLs', () => {
+      expect(REDDIT_URL_REGEX.test('https://reddit.com/search?q=foo')).to.be.false;
+      expect(REDDIT_URL_REGEX.test('https://www.reddit.com/')).to.be.false;
+    });
+  });
+
+  describe('filterUrlsByRegex', () => {
+    it('should return only URLs matching the regex', () => {
+      const urls = [
+        { url: 'https://www.youtube.com/watch?v=abc', metadata: {} },
+        { url: 'https://not-youtube.example.com/video', metadata: {} },
+      ];
+      const result = filterUrlsByRegex(urls, YOUTUBE_URL_REGEX);
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].url).to.equal('https://www.youtube.com/watch?v=abc');
+    });
+
+    it('should return all URLs when all match', () => {
+      const urls = [
+        { url: 'https://www.youtube.com/watch?v=abc', metadata: {} },
+        { url: 'https://youtu.be/xyz', metadata: {} },
+      ];
+      expect(filterUrlsByRegex(urls, YOUTUBE_URL_REGEX)).to.have.lengthOf(2);
+    });
+
+    it('should return empty array when no URLs match', () => {
+      const urls = [{ url: 'https://vimeo.com/123', metadata: {} }];
+      expect(filterUrlsByRegex(urls, YOUTUBE_URL_REGEX)).to.have.lengthOf(0);
+    });
+
+    it('should log info when URLs are filtered out', () => {
+      const log = { info: sandbox.stub() };
+      const urls = [
+        { url: 'https://www.youtube.com/watch?v=abc', metadata: {} },
+        { url: 'https://not-youtube.example.com/video', metadata: {} },
+      ];
+      filterUrlsByRegex(urls, YOUTUBE_URL_REGEX, log, '[T]');
+      expect(log.info).to.have.been.calledOnce;
+      expect(log.info).to.have.been.calledWithMatch(/Filtered out 1 URL/);
+    });
+
+    it('should not log when no URLs are filtered out', () => {
+      const log = { info: sandbox.stub() };
+      const urls = [{ url: 'https://www.youtube.com/watch?v=abc', metadata: {} }];
+      filterUrlsByRegex(urls, YOUTUBE_URL_REGEX, log, '[T]');
+      expect(log.info).to.not.have.been.called;
+    });
+
+    it('should use empty string prefix when logPrefix is not provided', () => {
+      const log = { info: sandbox.stub() };
+      const urls = [
+        { url: 'https://www.youtube.com/watch?v=abc', metadata: {} },
+        { url: 'https://not-youtube.example.com/video', metadata: {} },
+      ];
+      filterUrlsByRegex(urls, YOUTUBE_URL_REGEX, log);
+      expect(log.info).to.have.been.calledWithMatch(/Filtered out 1 URL/);
+    });
+
+    it('should work without log argument', () => {
+      const urls = [
+        { url: 'https://www.youtube.com/watch?v=abc', metadata: {} },
+        { url: 'https://not-youtube.example.com/video', metadata: {} },
+      ];
+      expect(() => filterUrlsByRegex(urls, YOUTUBE_URL_REGEX)).to.not.throw();
+      expect(filterUrlsByRegex(urls, YOUTUBE_URL_REGEX)).to.have.lengthOf(1);
+    });
   });
 
   describe('MYSTIQUE_URLS_LIMIT', () => {

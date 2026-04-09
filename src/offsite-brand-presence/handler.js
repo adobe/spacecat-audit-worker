@@ -24,9 +24,8 @@ import {
   OFFSITE_DOMAINS,
   PROVIDERS_SET,
   CITED_ANALYSIS_DRS_CONFIG,
-  YOUTUBE_URL_REGEX,
-  REDDIT_URL_REGEX,
 } from './constants.js';
+import { YOUTUBE_URL_REGEX, REDDIT_URL_REGEX } from '../utils/offsite-audit-utils.js';
 
 const LOG_PREFIX = '[OffsiteBrandPresence]';
 

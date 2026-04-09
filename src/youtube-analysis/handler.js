@@ -17,6 +17,8 @@ import StoreClient, {
 } from '../utils/store-client.js';
 import {
   MYSTIQUE_URLS_LIMIT,
+  YOUTUBE_URL_REGEX,
+  filterUrlsByRegex,
   resolveMystiqueUrlLimit,
 } from '../utils/offsite-audit-utils.js';
 import { computeTopicsFromBrandPresence } from '../utils/brand-presence-enrichment.js';
@@ -208,7 +210,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     log.info(`${LOG_PREFIX} urlLimit=${urlLimit} (URLs sent to Mystique)`);
 
     const { urls, sentimentConfig } = storeData;
-    const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
+    const filteredUrls = filterUrlsByRegex(urls, YOUTUBE_URL_REGEX, log, LOG_PREFIX);
+    const enrichedUrls = enrichUrlsWithTopicData(filteredUrls, sentimentConfig.topics)
       .slice(0, urlLimit);
 
     const message = {

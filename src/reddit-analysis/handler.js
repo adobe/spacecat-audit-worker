@@ -17,9 +17,9 @@ import StoreClient, {
 } from '../utils/store-client.js';
 import {
   MYSTIQUE_URLS_LIMIT,
-  resolveMystiqueUrlLimit,
+  REDDIT_URL_REGEX,
+  filterUrlsByRegex,
 } from '../utils/offsite-audit-utils.js';
-import { computeTopicsFromBrandPresence } from '../utils/brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 
 const LOG_PREFIX = '[Reddit]';
@@ -29,10 +29,8 @@ const LOG_PREFIX = '[Reddit]';
  *
  * This audit performs Reddit analysis by:
  * 1. Fetching Reddit URLs from the URL Store (discovered during brand presence analysis)
- * 2. Computing topics from LLMO brand-presence data (for URL enrichment);
- *    optional guidelines from Sentiment Config
- * 3. Sending config and enriched URLs to Mystique
- *    (topics/guidelines are not on the SQS payload for now)
+ * 2. Fetching analysis topics and guidelines from the Sentiment Config
+ * 3. Sending all data to Mystique for analysis
  *
  * Mystique will fetch the actual page content from the Content Store directly
  * (content can exceed SQS message size limits).
@@ -64,7 +62,7 @@ function getRedditConfig(site) {
  * @param {string} siteId - The site ID
  * @param {Object} context - The audit context
  * @returns {Promise<Object>} Object containing urls and sentimentConfig
- * @throws {StoreEmptyError} If the URL store returns empty results
+ * @throws {StoreEmptyError} If any store returns empty results
  */
 async function fetchStoreData(siteId, context) {
   const { log } = context;
@@ -75,17 +73,9 @@ async function fetchStoreData(siteId, context) {
   const urls = await storeClient.getUrls(siteId, URL_TYPES.REDDIT);
   log.info(`${LOG_PREFIX} Retrieved ${urls.length} Reddit URLs from URL Store`);
 
-  const topics = await computeTopicsFromBrandPresence(siteId, context);
-  log.info(`${LOG_PREFIX} Computed ${topics.length} topics from brand presence data`);
-  log.debug(`${LOG_PREFIX} Brand-presence topics payload: ${JSON.stringify(topics)}`);
-
-  let guidelines = [];
+  let sentimentConfig = { topics: [], guidelines: [] };
   try {
-    const sentimentConfig = await storeClient.getGuidelines(
-      siteId,
-      GUIDELINE_TYPES.REDDIT_ANALYSIS,
-    );
-    guidelines = sentimentConfig.guidelines ?? [];
+    sentimentConfig = await storeClient.getGuidelines(siteId, GUIDELINE_TYPES.REDDIT_ANALYSIS);
   } catch (error) {
     if (error instanceof StoreEmptyError) {
       log.info(`${LOG_PREFIX} No guidelines configured for reddit-analysis, proceeding without`);
@@ -94,11 +84,13 @@ async function fetchStoreData(siteId, context) {
     }
   }
 
-  log.info(`${LOG_PREFIX} Retrieved ${guidelines.length} guidelines`);
+  const topicCount = sentimentConfig.topics.length;
+  const guidelineCount = sentimentConfig.guidelines.length;
+  log.info(`${LOG_PREFIX} Retrieved ${topicCount} topics and ${guidelineCount} guidelines`);
 
   return {
     urls,
-    sentimentConfig: { topics, guidelines },
+    sentimentConfig,
   };
 }
 
@@ -107,16 +99,13 @@ async function fetchStoreData(siteId, context) {
  * @param {string} url - The resolved URL for the audit
  * @param {Object} context - The audit context
  * @param {Object} site - The site being audited
- * @param {Object} [auditContext] - SQS audit context; optional `messageData` from `message.data`
- *   (e.g. urlLimit from Slack)
  * @returns {Promise<Object>} Audit result
  */
-async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
+async function runRedditAnalysisAudit(url, context, site) {
   const { log } = context;
   const siteId = site.getId();
 
   log.info(`${LOG_PREFIX} Starting Reddit analysis audit for site: ${siteId}`);
-  log.info(`${LOG_PREFIX} auditContext: ${JSON.stringify(auditContext)}`);
 
   try {
     const redditConfig = getRedditConfig(site);
@@ -135,15 +124,14 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
     log.info(`${LOG_PREFIX} Config: companyName=${redditConfig.companyName}, website=${redditConfig.companyWebsite}`);
 
     const storeData = await fetchStoreData(siteId, context);
-    log.info(`${LOG_PREFIX} Successfully fetched all store data for ${redditConfig.companyName}`);
 
-    const urlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
+    log.info(`${LOG_PREFIX} Successfully fetched all store data for ${redditConfig.companyName}`);
 
     return {
       auditResult: {
         success: true,
         status: 'pending_analysis',
-        config: { ...redditConfig, urlLimit },
+        config: redditConfig,
         storeData,
       },
       fullAuditRef: url,
@@ -204,12 +192,10 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     }
 
     const { config, storeData } = auditResult;
-    const urlLimit = config?.urlLimit ?? MYSTIQUE_URLS_LIMIT;
-    log.info(`${LOG_PREFIX} urlLimit=${urlLimit} (URLs sent to Mystique)`);
-
     const { urls, sentimentConfig } = storeData;
-    const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
-      .slice(0, urlLimit);
+    const filteredUrls = filterUrlsByRegex(urls, REDDIT_URL_REGEX, log, LOG_PREFIX);
+    const enrichedUrls = enrichUrlsWithTopicData(filteredUrls, sentimentConfig.topics)
+      .slice(0, MYSTIQUE_URLS_LIMIT);
 
     const message = {
       type: 'guidance:reddit-analysis',
@@ -226,20 +212,19 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
         industry: config.industry,
         brandKeywords: config.brandKeywords,
         urls: enrichedUrls,
+        topics: sentimentConfig.topics,
+        guidelines: sentimentConfig.guidelines,
       },
     };
 
-    log.debug(`${LOG_PREFIX} Built Mystique message type ${message.type}`);
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(
-      `${LOG_PREFIX} Queued Reddit analysis request to Mystique for ${config.companyName} `
-        + `with ${enrichedUrls.length} URLs`,
-    );
-    return auditData;
+    log.info(`${LOG_PREFIX} Queued Reddit analysis request to Mystique for ${config.companyName} with ${enrichedUrls.length} URLs`);
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
     throw error;
   }
+
+  return auditData;
 }
 
 export default new AuditBuilder()

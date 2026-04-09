@@ -12,10 +12,44 @@
 
 /**
  * Shared helpers for off-site guidance audits (reddit, youtube, cited, etc.):
- * caps on URLs sent to Mystique (SQS payload size) and optional `urlLimit` from the audit queue.
+ * URL regex filters, caps on URLs sent to Mystique (SQS payload size),
+ * and optional `urlLimit` from the audit queue.
  */
 
 export const MYSTIQUE_URLS_LIMIT = 50;
+
+/**
+ * Matches valid YouTube URLs (any youtube.com / youtu.be / youtube-nocookie.com / m.youtube.com).
+ * Used to filter out non-content YouTube URLs (e.g. homepage, channel root) before
+ * sending to Mystique.
+ */
+export const YOUTUBE_URL_REGEX = /^(?:https?:\/\/)?(?:www\.)?(?:m\.)?(?:youtube(?:-nocookie)?\.com|youtu\.be)(?:[/?#]|$)/;
+
+/**
+ * Matches valid Reddit post/comment/community URLs.
+ * Requires a subreddit (/r/), topic (/t/), or user (/user/) path segment followed by a
+ * content path. Bare reddit.com links, search, etc. are excluded.
+ */
+export const REDDIT_URL_REGEX = /^https:\/\/(www)?\.?reddit\.com\/([rt]|user)\/[a-zA-Z0-9_/%-]+\/(comments\/[a-zA-Z0-9_-]+\/.+\/?|.*)$/;
+
+/**
+ * Filters an array of URL objects (each with a `.url` string property) to only those
+ * whose URL matches the given regex. Logs how many were removed.
+ *
+ * @param {Array<{url: string}>} urls
+ * @param {RegExp} regex
+ * @param {object} [log]
+ * @param {string} [logPrefix]
+ * @returns {Array<{url: string}>}
+ */
+export function filterUrlsByRegex(urls, regex, log, logPrefix) {
+  const filtered = urls.filter((item) => regex.test(item.url));
+  const removed = urls.length - filtered.length;
+  if (removed > 0) {
+    log?.info(`${logPrefix ?? ''} Filtered out ${removed} URL(s) that did not match the expected pattern`);
+  }
+  return filtered;
+}
 
 /**
  * Effective max URLs to send to Mystique for store-backed guidance audits
