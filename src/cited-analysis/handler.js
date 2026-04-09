@@ -10,15 +10,19 @@
  * governing permissions and limitations under the License.
  */
 
+import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import StoreClient, {
   StoreEmptyError, URL_TYPES, GUIDELINE_TYPES,
 } from '../utils/store-client.js';
 import {
+  DrsNoContentAvailableError,
   MYSTIQUE_URLS_LIMIT,
+  filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
 } from '../utils/offsite-audit-utils.js';
+import { CITED_ANALYSIS_DRS_CONFIG } from '../offsite-brand-presence/constants.js';
 import { computeTopicsFromBrandPresence } from '../utils/brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 
@@ -67,8 +71,13 @@ async function fetchStoreData(siteId, context) {
 
   log.info(`${LOG_PREFIX} Fetching data from stores for siteId: ${siteId}`);
 
-  const urls = await storeClient.getUrls(siteId, URL_TYPES.CITED);
-  log.info(`${LOG_PREFIX} Retrieved ${urls.length} cited URLs from URL Store`);
+  const rawUrls = await storeClient.getUrls(siteId, URL_TYPES.CITED, { sortBy: 'createdAt', sortOrder: 'desc' });
+  log.info(`${LOG_PREFIX} Retrieved ${rawUrls.length} cited URLs from URL Store`);
+
+  const drsClient = DrsClient.createFrom(context);
+  const { datasetIds } = CITED_ANALYSIS_DRS_CONFIG;
+  const urls = await filterUrlsByDrsStatus(rawUrls, datasetIds, siteId, drsClient, log, LOG_PREFIX);
+  log.info(`${LOG_PREFIX} ${urls.length} cited URLs available in DRS`);
 
   const topics = await computeTopicsFromBrandPresence(siteId, context);
   log.info(`${LOG_PREFIX} Computed ${topics.length} topics from brand presence data`);
@@ -151,6 +160,17 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
           success: false,
           error: error.message,
           storeName: error.storeName,
+        },
+        fullAuditRef: url,
+      };
+    }
+
+    if (error instanceof DrsNoContentAvailableError) {
+      log.error(`${LOG_PREFIX} No DRS content available yet: ${error.message}`);
+      return {
+        auditResult: {
+          success: false,
+          error: error.message,
         },
         fullAuditRef: url,
       };

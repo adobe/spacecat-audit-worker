@@ -19,9 +19,11 @@ import {
   GUIDELINE_TYPES,
 } from '../../../src/utils/store-client.js';
 import {
+  DrsNoContentAvailableError,
   MYSTIQUE_URLS_LIMIT,
   resolveMystiqueUrlLimit as realResolveMystiqueUrlLimit,
 } from '../../../src/utils/offsite-audit-utils.js';
+import { OFFSITE_DOMAINS } from '../../../src/offsite-brand-presence/constants.js';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
 
@@ -35,6 +37,8 @@ describe('Reddit Analysis Handler', () => {
   let mockAudit;
   let mockStoreClient;
   let mockComputeTopicsFromBrandPresence;
+  let mockFilterUrlsByDrsStatus;
+  let mockDrsClient;
   let redditAnalysisHandler;
   let StoreEmptyError;
 
@@ -85,6 +89,9 @@ describe('Reddit Analysis Handler', () => {
     };
 
     mockComputeTopicsFromBrandPresence = sandbox.stub().resolves(mockComputedTopics);
+    mockFilterUrlsByDrsStatus = sandbox.stub().callsFake(async (urls) => urls);
+
+    mockDrsClient = { isConfigured: sandbox.stub().returns(true) };
 
     mockStoreClient = {
       getUrls: sandbox.stub().resolves(mockUrls),
@@ -95,7 +102,14 @@ describe('Reddit Analysis Handler', () => {
       createFrom: sandbox.stub().returns(mockStoreClient),
     };
 
+    const mockDrsClientClass = {
+      createFrom: sandbox.stub().returns(mockDrsClient),
+    };
+
     redditAnalysisHandler = await esmock('../../../src/reddit-analysis/handler.js', {
+      '@adobe/spacecat-shared-drs-client': {
+        default: mockDrsClientClass,
+      },
       '../../../src/utils/store-client.js': {
         default: mockStoreClientClass,
         StoreEmptyError,
@@ -103,8 +117,13 @@ describe('Reddit Analysis Handler', () => {
         GUIDELINE_TYPES,
       },
       '../../../src/utils/offsite-audit-utils.js': {
+        DrsNoContentAvailableError,
         MYSTIQUE_URLS_LIMIT,
+        filterUrlsByDrsStatus: mockFilterUrlsByDrsStatus,
         resolveMystiqueUrlLimit: realResolveMystiqueUrlLimit,
+      },
+      '../../../src/offsite-brand-presence/constants.js': {
+        OFFSITE_DOMAINS,
       },
       '../../../src/utils/brand-presence-enrichment.js': {
         computeTopicsFromBrandPresence: mockComputeTopicsFromBrandPresence,
@@ -188,7 +207,7 @@ describe('Reddit Analysis Handler', () => {
       expect(result.auditResult.storeData.sentimentConfig).to.deep.equal(expectedSentimentConfig);
       expect(result.auditResult.config.urlLimit).to.equal(MYSTIQUE_URLS_LIMIT);
       expect(result.fullAuditRef).to.equal(baseURL);
-      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'reddit-analysis');
+      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'reddit-analysis', { sortBy: 'createdAt', sortOrder: 'desc' });
       expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, GUIDELINE_TYPES.REDDIT_ANALYSIS);
       expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
     });
@@ -196,7 +215,7 @@ describe('Reddit Analysis Handler', () => {
     it('should call StoreClient and compute topics from brand presence', async () => {
       await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'reddit-analysis');
+      expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, 'reddit-analysis', { sortBy: 'createdAt', sortOrder: 'desc' });
       expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, GUIDELINE_TYPES.REDDIT_ANALYSIS);
       expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
     });
@@ -219,6 +238,16 @@ describe('Reddit Analysis Handler', () => {
       expect(context.log.debug).to.have.been.calledWith(
         `[Reddit] Brand-presence topics payload: ${JSON.stringify(mockComputedTopics)}`,
       );
+    });
+
+    it('should return error when DRS has no available content', async () => {
+      mockFilterUrlsByDrsStatus.rejects(new DrsNoContentAvailableError('no content'));
+
+      const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.equal('no content');
+      expect(context.log.error).to.have.been.calledWithMatch(/No DRS content available yet/);
     });
 
     it('should return error when urlStore returns empty', async () => {
@@ -266,6 +295,24 @@ describe('Reddit Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(context.log.info).to.have.been.calledWith('[Reddit] Retrieved 0 guidelines');
+    });
+
+    it('should filter URLs by DRS availability before returning store data', async () => {
+      const availableUrl = mockUrls[0];
+      mockFilterUrlsByDrsStatus.callsFake(async () => [availableUrl]);
+
+      const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.storeData.urls).to.deep.equal([availableUrl]);
+      expect(mockFilterUrlsByDrsStatus).to.have.been.calledWith(
+        mockUrls,
+        OFFSITE_DOMAINS['reddit.com'].datasetIds,
+        siteId,
+        mockDrsClient,
+        sinon.match.object,
+        '[Reddit]',
+      );
     });
 
     it('should return error when company name is not configured', async () => {

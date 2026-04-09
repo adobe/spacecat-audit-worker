@@ -1,3 +1,17 @@
+# [1.409.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.408.2...v1.409.0) (2026-04-09)
+
+
+### Features
+
+* filter cited/reddit/youtube urls by DRS status; enhance storeClient getUrls to accept optional queryParams ([#2351](https://github.com/adobe/spacecat-audit-worker/issues/2351)) ([276f8ec](https://github.com/adobe/spacecat-audit-worker/commit/276f8ec39368946d861d48f0adca546344076bb6))
+
+## [1.408.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.408.1...v1.408.2) (2026-04-09)
+
+
+### Bug Fixes
+
+* **cdn-analysis:** use URL fallback when byocdn-other content type is missing ([#2354](https://github.com/adobe/spacecat-audit-worker/issues/2354)) ([dff9654](https://github.com/adobe/spacecat-audit-worker/commit/dff96547f3a43e4f326eb1eb7179ad39ee21d917))
+
 ## [1.408.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.408.0...v1.408.1) (2026-04-09)
 
 
