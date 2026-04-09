@@ -38,6 +38,7 @@ describe('Offsite Brand Presence Handler', () => {
   let mockIsoCalendarWeek;
   let mockSubmitScrapeJob;
   let mockDrsIsConfigured;
+  let mockPostMessageOptional;
   let offsiteBrandPresenceRunner;
   let handlerDefault;
 
@@ -61,6 +62,7 @@ describe('Offsite Brand Presence Handler', () => {
     mockIsoCalendarWeek.onSecondCall().returns({ week: DEFAULT_WEEK_2, year: DEFAULT_YEAR });
     mockSubmitScrapeJob = sandbox.stub().resolves({ job_id: 'mock-job' });
     mockDrsIsConfigured = sandbox.stub().returns(true);
+    mockPostMessageOptional = sandbox.stub().resolves({ success: true, result: {} });
 
     sharedMocks = {
       '@adobe/spacecat-shared-utils': {
@@ -77,6 +79,9 @@ describe('Offsite Brand Presence Handler', () => {
         SCRAPE_DATASET_IDS: {
           ...SCRAPE_DATASET_IDS,
         },
+      },
+      '../../src/utils/slack-utils.js': {
+        postMessageOptional: mockPostMessageOptional,
       },
     };
 
@@ -1659,6 +1664,78 @@ describe('Offsite Brand Presence Handler', () => {
       );
     });
 
+  });
+
+  describe('Slack Notifications', () => {
+    const SLACK_CHANNEL_ID = 'C-test-channel';
+    const SLACK_THREAD_TS = '1700000000.123456';
+    const AUDIT_CONTEXT_WITH_SLACK = {
+      slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
+    };
+
+    function setupWithSources(sources) {
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([sources]);
+        return okJsonResponse({});
+      });
+      stubFetchSequence(buildHappyResponses({ providerResponses }));
+    }
+
+    it('should send a Slack thread reply with DRS job IDs when slackContext is provided', async () => {
+      setupWithSources('https://youtube.com/shorts/v1');
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, AUDIT_CONTEXT_WITH_SLACK);
+
+      expect(mockPostMessageOptional).to.have.been.calledOnce;
+      const [callCtx, callChannelId, callText, callOptions] = mockPostMessageOptional.firstCall.args;
+      expect(callCtx).to.equal(context);
+      expect(callChannelId).to.equal(SLACK_CHANNEL_ID);
+      expect(callOptions).to.deep.equal({ threadTs: SLACK_THREAD_TS });
+      expect(callText).to.include('offsite-brand-presence');
+      expect(callText).to.include(BASE_URL);
+      expect(callText).to.include('youtube.com');
+      expect(callText).to.include('mock-job');
+      expect(callText).to.not.include(':x:');
+    });
+
+    it('should include each triggered domain in the Slack thread message', async () => {
+      setupWithSources('https://reddit.com/r/adobe/comments/xyz123/a-reddit-post');
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, AUDIT_CONTEXT_WITH_SLACK);
+
+      expect(mockPostMessageOptional).to.have.been.calledOnce;
+      const callText = mockPostMessageOptional.firstCall.args[2];
+      expect(callText).to.include('reddit.com');
+      expect(callText).to.include('mock-job');
+      expect(callText).to.not.include(':x:');
+    });
+
+    it('should include a failed jobs section in the Slack message when some DRS jobs fail', async () => {
+      mockSubmitScrapeJob
+        .onFirstCall().rejects(new Error('DRS timeout'))
+        .onSecondCall().resolves({ job_id: 'mock-job' });
+
+      setupWithSources('https://youtube.com/shorts/v1');
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, AUDIT_CONTEXT_WITH_SLACK);
+
+      expect(mockPostMessageOptional).to.have.been.calledOnce;
+      const callText = mockPostMessageOptional.firstCall.args[2];
+      expect(callText).to.include(':x:');
+      expect(callText).to.include('Failed (1)');
+      expect(callText).to.include('DRS timeout');
+      expect(callText).to.include('youtube.com');
+      expect(callText).to.include('mock-job');
+    });
+
+    it('should not send a Slack message when no DRS jobs are triggered', async () => {
+      mockDrsIsConfigured.returns(false);
+      setupWithSources('https://youtube.com/shorts/v1');
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, AUDIT_CONTEXT_WITH_SLACK);
+
+      expect(mockPostMessageOptional).to.not.have.been.called;
+    });
   });
 
   describe('Full Integration Flow', () => {
