@@ -14,8 +14,14 @@ import { joinBaseAndPath } from '../../utils/url-utils.js';
 import { validateCountryCode } from './report-utils.js';
 import { inferProviderFromUserAgent } from '../../common/user-agent-classification.js';
 
+const MAX_AVG_TTFB_MS = 999999.99;
+const UNSUPPORTED_URL_PREFIXES = ['data:', `java${'script:'}`, 'blob:', 'mailto:'];
+
 function normalizeText(value, fallback = '') {
-  return typeof value === 'string' ? value : fallback;
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+  return value.replaceAll('\0', '');
 }
 
 function normalizeLabel(value) {
@@ -110,6 +116,22 @@ async function getCitabilityScores(site, context) {
   }
 }
 
+function canonicalizeAgenticUrlPath(rawUrl, baseURL, log) {
+  const normalizedUrl = rawUrl === '-' ? '/' : normalizeText(rawUrl, '/');
+  const pseudoUrlCandidate = normalizedUrl.replace(/^\/+/, '').toLowerCase();
+  if (UNSUPPORTED_URL_PREFIXES.some((prefix) => pseudoUrlCandidate.startsWith(prefix))) {
+    return null;
+  }
+
+  try {
+    const canonicalUrl = new URL(joinBaseAndPath(baseURL, normalizedUrl || '/'));
+    return canonicalUrl.pathname.replaceAll('\0', '');
+  } catch (error) {
+    log?.warn?.(`Skipping malformed agentic URL during daily export mapping: ${error.message}`);
+    return null;
+  }
+}
+
 export async function mapToAgenticTrafficBundle(rows, site, context, trafficDate) {
   if (!Array.isArray(rows) || !site || !trafficDate) {
     return {
@@ -135,9 +157,11 @@ export async function mapToAgenticTrafficBundle(rows, site, context, trafficDate
         return null;
       }
 
-      const rawPath = row.url === '-' ? '/' : normalizeText(row.url, '/');
-      const canonicalUrl = new URL(joinBaseAndPath(baseURL, rawPath || '/'));
-      const urlPath = canonicalUrl.pathname;
+      const urlPath = canonicalizeAgenticUrlPath(row.url, baseURL, context?.log);
+      if (!urlPath) {
+        return null;
+      }
+
       const host = normalizeText(row.host, defaultHost) || defaultHost;
       const citability = citabilityMap[urlPath];
       const dimensions = {};
@@ -164,6 +188,9 @@ export async function mapToAgenticTrafficBundle(rows, site, context, trafficDate
       }
 
       const avgTtfb = Number(row.avg_ttfb_ms);
+      const normalizedAvgTtfb = Number.isFinite(avgTtfb) && avgTtfb <= MAX_AVG_TTFB_MS
+        ? avgTtfb
+        : null;
 
       return {
         traffic_date: trafficDate,
@@ -174,7 +201,7 @@ export async function mapToAgenticTrafficBundle(rows, site, context, trafficDate
         http_status: Number(row.status) || 0,
         url_path: urlPath,
         hits,
-        avg_ttfb_ms: Number.isFinite(avgTtfb) ? avgTtfb : null,
+        avg_ttfb_ms: normalizedAvgTtfb,
         dimensions,
         metrics: {},
         updated_by: 'audit-worker:agentic-daily-export',
