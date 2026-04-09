@@ -100,17 +100,27 @@ function isRedirectChainError(error) {
 
 export function classifyStatusBucket(status, error = null) {
   if (error) {
-    if (isRedirectChainError(error)) return STATUS_BUCKETS.REDIRECT_CHAIN_EXCESSIVE;
+    if (isRedirectChainError(error)) {
+      return STATUS_BUCKETS.REDIRECT_CHAIN_EXCESSIVE;
+    }
     return null;
   }
 
-  if (status === 404) return STATUS_BUCKETS.NOT_FOUND_404;
-  if (status === 410) return STATUS_BUCKETS.GONE_410;
+  if (status === 404) {
+    return STATUS_BUCKETS.NOT_FOUND_404;
+  }
+  if (status === 410) {
+    return STATUS_BUCKETS.GONE_410;
+  }
   if (status === 401 || status === 403 || status === 429 || status === 451) {
     return STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED;
   }
-  if (status === 408) return STATUS_BUCKETS.TIMEOUT_OR_NETWORK;
-  if (status >= 500) return STATUS_BUCKETS.SERVER_ERROR_5XX;
+  if (status === 408) {
+    return STATUS_BUCKETS.TIMEOUT_OR_NETWORK;
+  }
+  if (status >= 500) {
+    return STATUS_BUCKETS.SERVER_ERROR_5XX;
+  }
 
   return null;
 }
@@ -179,7 +189,9 @@ function isSoft404Text(bodyText) {
 }
 
 async function releaseResponseBody(response, log, requestLabel) {
-  if (!response) return;
+  if (!response) {
+    return;
+  }
 
   /* c8 ignore start - Runtime-specific response body cleanup */
   try {

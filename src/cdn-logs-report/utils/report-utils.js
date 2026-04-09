@@ -51,7 +51,9 @@ export function validateCountryCode(code, siteIgnoreList = []) {
   const countryAliases = {
     UK: 'UK',
   };
-  if (!code || typeof code !== 'string') return DEFAULT_COUNTRY_CODE;
+  if (!code || typeof code !== 'string') {
+    return DEFAULT_COUNTRY_CODE;
+  }
 
   const upperCode = code.toUpperCase();
   const upperSiteIgnoreList = siteIgnoreList.map((c) => c.toUpperCase());

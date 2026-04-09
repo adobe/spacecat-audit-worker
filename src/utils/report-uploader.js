@@ -87,7 +87,9 @@ async function fetchWithRetry(url, options, endpointName, log, maxRetries = 3) {
   async function attemptFetch(attemptNumber) {
     try {
       const response = await fetch(url, options);
-      if (response.ok) return response;
+      if (response.ok) {
+        return response;
+      }
 
       const error = new Error(`${response.status} ${response.statusText}`);
       error.status = response.status;
@@ -253,7 +255,9 @@ async function runBulkJob(route, operation, paths, log) {
   );
   const data = await res.json();
   const jobUrl = data.links?.self;
-  if (!jobUrl) throw new Error(`No job URL from ${operation}`);
+  if (!jobUrl) {
+    throw new Error(`No job URL from ${operation}`);
+  }
   log.info(`%s: ${operation} job started for ${paths.length} paths: ${paths.join(', ')}, job URL: ${jobUrl}`, AUDIT_NAME);
 
   // Poll until complete for 10 minutes
@@ -271,7 +275,9 @@ async function runBulkJob(route, operation, paths, log) {
     const status = await statusRes.json();
     const { state, progress } = status;
     log.info(`%s: ${operation} status: ${state} - ${progress?.success ?? 0} success, ${progress?.failed ?? 0} failed for job URL: ${jobUrl}`, AUDIT_NAME);
-    if (state === 'stopped') return;
+    if (state === 'stopped') {
+      return;
+    }
   }
   throw new Error(`${operation} timeout for job URL: ${jobUrl}`);
 }
@@ -282,7 +288,9 @@ async function runBulkJob(route, operation, paths, log) {
  * @param {object} log - Logger
  */
 export async function bulkPublishToAdminHlx(reports, log) {
-  if (!reports?.length) return;
+  if (!reports?.length) {
+    return;
+  }
 
   const paths = reports.map((r) => `/${r.outputLocation}/${r.filename.replace(/\.[^/.]+$/, '')}.json`);
   log.info(`%s: Starting bulk publish for ${paths.length} files`, AUDIT_NAME);

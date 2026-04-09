@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect } from "chai";
 import { describe } from "mocha";
 import { getNoCTAAboveTheFoldAnalysisQuery } from "../../../src/no-cta-above-the-fold/queries.js";

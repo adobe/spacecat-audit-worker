@@ -85,7 +85,9 @@ export default async function writeDrsPromptsToLlmoConfig({
     // Track regions for this category
     for (const p of prompts) {
       if (p.region) {
-        if (!categoryRegions.has(categoryId)) categoryRegions.set(categoryId, new Set());
+        if (!categoryRegions.has(categoryId)) {
+          categoryRegions.set(categoryId, new Set());
+        }
         categoryRegions.get(categoryId).add(p.region.toLowerCase());
       }
     }

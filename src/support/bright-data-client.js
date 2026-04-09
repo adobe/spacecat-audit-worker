@@ -120,7 +120,9 @@ export function buildLocaleSearchUrl(baseUrl, brokenLinkUrl) {
   const searchUrl = prependSchema(baseUrl);
   const parsedBaseUrl = new URL(searchUrl);
   const hasBaseSubpath = parsedBaseUrl.pathname && parsedBaseUrl.pathname !== '/';
-  if (hasBaseSubpath) return searchUrl;
+  if (hasBaseSubpath) {
+    return searchUrl;
+  }
   const locale = extractLocaleFromUrl(brokenLinkUrl);
   return locale ? `${searchUrl}/${locale}` : searchUrl;
 }
@@ -135,8 +137,12 @@ export function buildLocaleSearchUrl(baseUrl, brokenLinkUrl) {
  * @returns {boolean}
  */
 export function localesMatch(locale1, locale2) {
-  if (!locale1 && !locale2) return true;
-  if (!locale1 || !locale2) return false;
+  if (!locale1 && !locale2) {
+    return true;
+  }
+  if (!locale1 || !locale2) {
+    return false;
+  }
   return locale1.toLowerCase() === locale2.toLowerCase();
 }
 
@@ -423,11 +429,19 @@ class BrightDataClient {
    */
   // eslint-disable-next-line class-methods-use-this
   isUsefulToken(token) {
-    if (!token) return false;
+    if (!token) {
+      return false;
+    }
     const trimmed = token.trim();
-    if (trimmed.length < 2) return false;
-    if (/^\d+$/.test(trimmed)) return false;
-    if (!/[a-z]/i.test(trimmed)) return false;
+    if (trimmed.length < 2) {
+      return false;
+    }
+    if (/^\d+$/.test(trimmed)) {
+      return false;
+    }
+    if (!/[a-z]/i.test(trimmed)) {
+      return false;
+    }
     return true;
   }
 
@@ -437,9 +451,13 @@ class BrightDataClient {
   // eslint-disable-next-line class-methods-use-this
   stripFileExtension(segment) {
     const match = segment.match(/^(.+)\.([a-z0-9]{1,5})$/i);
-    if (!match) return segment;
+    if (!match) {
+      return segment;
+    }
     const extension = match[2].toLowerCase();
-    if (!FILE_EXTENSIONS.has(extension)) return segment;
+    if (!FILE_EXTENSIONS.has(extension)) {
+      return segment;
+    }
     return match[1];
   }
 
@@ -448,7 +466,9 @@ class BrightDataClient {
    */
   // eslint-disable-next-line class-methods-use-this
   trimTokensByCharLimit(tokens, maxChars, { fromStart = false } = {}) {
-    if (!maxChars || maxChars <= 0) return tokens;
+    if (!maxChars || maxChars <= 0) {
+      return tokens;
+    }
     const trimmed = [];
     let length = 0;
     if (fromStart) {

@@ -22,17 +22,23 @@ const CDN_LOGS_ANALYSIS_DELAY_SECONDS = 5;
  * Fetches commerce-fastly service for given domain
  */
 export async function fetchCommerceFastlyService(domain, { log }) {
-  if (!domain || !process.env.LLMO_HLX_API_KEY) return null;
+  if (!domain || !process.env.LLMO_HLX_API_KEY) {
+    return null;
+  }
 
   try {
     const res = await fetch('https://main--project-elmo-ui-data--adobe.aem.live/adobe-managed-domains/commerce-fastly-domains.json?limit=10000', {
       headers: { 'User-Agent': 'spacecat-audit-worker', Authorization: `token ${process.env.LLMO_HLX_API_KEY}` },
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      return null;
+    }
 
     const { data: services } = await res.json();
-    if (!Array.isArray(services)) return null;
+    if (!Array.isArray(services)) {
+      return null;
+    }
     const { host } = new URL(domain);
     const trimmedHost = host.trim().replace(/^www\./, '');
 
@@ -149,10 +155,14 @@ export async function handleCdnBucketConfigChanges(context, data) {
   } = data;
   const { dataAccess: { Configuration }, log } = context;
 
-  if (!siteId) throw new Error('Site ID is required for CDN configuration');
+  if (!siteId) {
+    throw new Error('Site ID is required for CDN configuration');
+  }
 
   const site = await context.dataAccess.Site.findById(siteId);
-  if (!site) throw new Error(`Site with ID ${siteId} not found`);
+  if (!site) {
+    throw new Error(`Site with ID ${siteId} not found`);
+  }
 
   const baseURL = site.getBaseURL();
   const previousConfig = site.getConfig()?.getLlmoCdnBucketConfig() ?? {};

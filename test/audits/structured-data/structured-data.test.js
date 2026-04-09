@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';

@@ -419,7 +419,9 @@ export function formatWcagRule(wcagRule) {
   // Format the number with dots (e.g., "412" -> "4.1.2")
   let formattedNumber = '';
   for (let i = 0; i < numberPart.length; i += 1) {
-    if (i > 0) formattedNumber += '.';
+    if (i > 0) {
+      formattedNumber += '.';
+    }
     formattedNumber += numberPart[i];
   }
 

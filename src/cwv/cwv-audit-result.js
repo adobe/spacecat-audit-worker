@@ -27,7 +27,9 @@ const TOP_PAGES_COUNT = 15;
  * @returns {boolean} - True if the entry's URL matches the given URL
  */
 function isHomepage(data, baseURL) {
-  if (data.type !== 'url') return false;
+  if (data.type !== 'url') {
+    return false;
+  }
   return removeTrailingSlash(data.url) === baseURL;
 }
 

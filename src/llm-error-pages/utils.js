@@ -65,7 +65,9 @@ export function buildLlmUserAgentFilter(providers = null) {
 }
 
 export function normalizeUserAgentToProvider(rawUserAgent) {
-  if (!rawUserAgent || typeof rawUserAgent !== 'string') return 'Unknown';
+  if (!rawUserAgent || typeof rawUserAgent !== 'string') {
+    return 'Unknown';
+  }
 
   if (/chatgpt|gptbot|oai-searchbot/i.test(rawUserAgent)) {
     return 'ChatGPT';
@@ -379,13 +381,19 @@ export function categorizeErrorsByStatusCode(errorPages) {
   errorPages.forEach((error) => {
     const statusCode = error.status?.toString();
     if (statusCode === '404') {
-      if (!categorized[404]) categorized[404] = [];
+      if (!categorized[404]) {
+        categorized[404] = [];
+      }
       categorized[404].push(error);
     } else if (statusCode === '403') {
-      if (!categorized[403]) categorized[403] = [];
+      if (!categorized[403]) {
+        categorized[403] = [];
+      }
       categorized[403].push(error);
     } else if (statusCode && statusCode.startsWith('5')) {
-      if (!categorized['5xx']) categorized['5xx'] = [];
+      if (!categorized['5xx']) {
+        categorized['5xx'] = [];
+      }
       categorized['5xx'].push(error);
     }
   });
@@ -499,7 +507,9 @@ export async function downloadExistingCdnSheet(
     const rows = [];
 
     worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-      if (rowNumber === 1) return;
+      if (rowNumber === 1) {
+        return;
+      }
 
       const { values } = row;
       rows.push({
