@@ -1,3 +1,10 @@
+# [1.409.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.408.2...v1.409.0) (2026-04-09)
+
+
+### Features
+
+* filter cited/reddit/youtube urls by DRS status; enhance storeClient getUrls to accept optional queryParams ([#2351](https://github.com/adobe/spacecat-audit-worker/issues/2351)) ([276f8ec](https://github.com/adobe/spacecat-audit-worker/commit/276f8ec39368946d861d48f0adca546344076bb6))
+
 ## [1.408.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.408.1...v1.408.2) (2026-04-09)
 
 
