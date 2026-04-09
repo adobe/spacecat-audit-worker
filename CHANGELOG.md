@@ -1,3 +1,10 @@
+## [1.409.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.409.1...v1.409.2) (2026-04-09)
+
+
+### Bug Fixes
+
+* harden agentic daily export URL mapping ([#2357](https://github.com/adobe/spacecat-audit-worker/issues/2357)) ([c1567c5](https://github.com/adobe/spacecat-audit-worker/commit/c1567c522c6c9aeb484c658f3661e21144a8e79f))
+
 ## [1.409.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.409.0...v1.409.1) (2026-04-09)
 
 
