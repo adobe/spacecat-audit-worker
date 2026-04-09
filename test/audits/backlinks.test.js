@@ -316,6 +316,49 @@ describe('Backlinks Tests', function () {
       .to.be.rejectedWith('All 2 top pages filtered out by audit scope. BaseURL: https://example.com/blog requires subpath match but no pages match scope.');
   });
 
+  it('should merge custom audit target URLs into scraping URLs', async () => {
+    context.audit.getAuditResult.returns({ success: true });
+    const siteWithConfig = {
+      ...contextSite,
+      getConfig: () => ({
+        getAuditTargetURLs: () => [
+          { url: 'https://example.com/custom/page1' },
+          { url: 'https://example.com/custom/page2' },
+        ],
+      }),
+    };
+    context.site = siteWithConfig;
+
+    const result = await submitForScraping(context);
+
+    expect(result.urls).to.have.length(4);
+    expect(result.urls.map((u) => u.url)).to.include('https://example.com/custom/page1');
+    expect(result.urls.map((u) => u.url)).to.include('https://example.com/custom/page2');
+    expect(result.urls.map((u) => u.url)).to.include('https://example.com/blog/page1');
+    expect(result.urls.map((u) => u.url)).to.include('https://example.com/blog/page2');
+  });
+
+  it('should deduplicate custom URLs against SEO URLs in scraping', async () => {
+    context.audit.getAuditResult.returns({ success: true });
+    const siteWithConfig = {
+      ...contextSite,
+      getConfig: () => ({
+        getAuditTargetURLs: () => [
+          { url: 'https://example.com/blog/page1' }, // duplicate with SEO
+          { url: 'https://example.com/custom-only' },
+        ],
+      }),
+    };
+    context.site = siteWithConfig;
+
+    const result = await submitForScraping(context);
+
+    expect(result.urls).to.have.length(3);
+    const urls = result.urls.map((u) => u.url);
+    expect(urls.filter((u) => u === 'https://example.com/blog/page1')).to.have.length(1);
+    expect(urls).to.include('https://example.com/custom-only');
+  });
+
   it('should filter out broken backlinks that return ok (even with redirection)', async () => {
     const allBacklinks = auditDataMock.auditResult.brokenBacklinks
       .concat(fixedBacklinks)
@@ -585,11 +628,7 @@ describe('Backlinks Tests', function () {
 
       expect(result.status).to.deep.equal('complete');
 
-      // Verify the filtering log was called
-      expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Filtered out 3 unscrape-able file URLs \(PDFs, Office docs, etc\.\) from alternative URLs before sending to Mystique/),
-      );
-
+      // Non-HTML files (PDFs, Office docs) are pre-filtered by getMergedAuditInputUrls
       // Verify message was sent with only the valid page
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
@@ -654,6 +693,58 @@ describe('Backlinks Tests', function () {
       expect(result.status).to.deep.equal('complete');
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(context.log.warn).to.have.been.calledWith('No alternative URLs available. Cannot generate suggestions. Skipping message to Mystique.');
+    });
+
+    it('should include custom audit target URLs in alternative URLs sent to Mystique', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+
+      const siteWithConfig = {
+        ...contextSite,
+        getConfig: () => ({
+          getExcludedURLs: () => [],
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/custom/target1' },
+            { url: 'https://example.com/custom/target2' },
+          ],
+        }),
+      };
+      context.site = siteWithConfig;
+
+      context.s3Client.send.onCall(0).resolves(null);
+      context.s3Client.send.onCall(1).resolves(null);
+
+      const suggestionsWithRootUrl = [
+        {
+          opportunityId: 'test-opportunity-id',
+          getId: () => 'test-suggestion-1',
+          type: 'REDIRECT_UPDATE',
+          rank: 550000,
+          getData: () => ({
+            url_from: 'https://from.com/from-2',
+            url_to: 'https://example.com',
+          }),
+        },
+      ];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+        .withArgs('opportunity-id', sinon.match.any)
+        .resolves(suggestionsWithRootUrl);
+
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+        .resolves(topPages);
+
+      const result = await generateSuggestionData(context);
+
+      expect(result.status).to.deep.equal('complete');
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.alternativeUrls).to.include('https://example.com/custom/target1');
+      expect(sentMessage.data.alternativeUrls).to.include('https://example.com/custom/target2');
+      expect(sentMessage.data.alternativeUrls).to.include('https://example.com/blog/page1');
+      expect(sentMessage.data.alternativeUrls).to.include('https://example.com/blog/page2');
     });
 
     it('should query both NEW and PENDING_VALIDATION suggestions for paid sites', async () => {

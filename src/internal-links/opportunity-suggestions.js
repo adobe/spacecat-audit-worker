@@ -14,6 +14,7 @@ import { pickUrlsFromSerpResults } from '../support/bright-data-serp-urls.js';
 import { createInternalLinksConfigResolver } from './config.js';
 import { createInternalLinksStepLogger } from './logging.js';
 import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
+import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 
 export function createOpportunityAndSuggestionsStep({
   auditType,
@@ -27,7 +28,6 @@ export function createOpportunityAndSuggestionsStep({
   syncBrokenInternalLinksSuggestions,
   filterByAuditScope,
   extractPathPrefix,
-  isUnscrapeable,
   filterBrokenSuggestedUrls,
   BrightDataClient,
   buildLocaleSearchUrl,
@@ -48,7 +48,7 @@ export function createOpportunityAndSuggestionsStep({
       auditId: audit.getId(),
       step: 'opportunity-and-suggestions',
     });
-    const { Suggestion, SiteTopPage } = dataAccess;
+    const { Suggestion } = dataAccess;
     const maxBrokenLinksReported = config.getMaxBrokenLinksReported();
     const maxBrokenLinksPerBatch = config.getMaxBrokenLinksPerBatch();
     const brightDataBatchSize = config.getBrightDataBatchSize();
@@ -139,20 +139,25 @@ export function createOpportunityAndSuggestionsStep({
       return { status: 'complete', reportedBrokenLinks: reportedLinks };
     }
 
-    let seoTopPages = [];
-    try {
-      seoTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
-      log.info(`Found ${seoTopPages.length} top pages from SEO provider`);
-    } catch (error) {
-      log.warn(`Failed to fetch SEO top pages: ${error.message}`);
-    }
-
-    const includedURLs = site?.getConfig()?.getIncludedURLs?.('broken-internal-links') || [];
-    log.info(`Found ${includedURLs.length} includedURLs from siteConfig`);
+    const { urls: mergedUrls } = await getMergedAuditInputUrls({
+      site,
+      dataAccess,
+      auditType: 'broken-internal-links',
+      getAgenticUrls: () => Promise.resolve([]),
+      getTopPages: async () => {
+        try {
+          const { SiteTopPage } = dataAccess;
+          return await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
+        } catch (error) {
+          log.warn(`Failed to fetch SEO top pages: ${error.message}`);
+          return [];
+        }
+      },
+      log,
+    });
     const maxUrlsToProcess = config.getMaxUrlsToProcess();
 
-    const includedTopPages = includedURLs.map((url) => ({ getUrl: () => url }));
-    let topPages = [...seoTopPages, ...includedTopPages];
+    let topPages = mergedUrls.map((url) => ({ getUrl: () => url }));
 
     if (topPages.length > maxUrlsToProcess) {
       log.warn(`Capping URLs from ${topPages.length} to ${maxUrlsToProcess}`);
@@ -296,11 +301,6 @@ export function createOpportunityAndSuggestionsStep({
       alternativeUrls = allTopPageUrls;
     }
 
-    const originalCount = alternativeUrls.length;
-    alternativeUrls = alternativeUrls.filter((url) => !isUnscrapeable(url));
-    if (alternativeUrls.length < originalCount) {
-      log.info(`Filtered out ${originalCount - alternativeUrls.length} unscrape-able file URLs`);
-    }
     /* c8 ignore start - activated for exceptionally large alternative URL sets */
     if (alternativeUrls.length > maxAlternativeUrlsToSend) {
       log.warn(`Capping alternative URLs from ${alternativeUrls.length} to ${maxAlternativeUrlsToSend}`);

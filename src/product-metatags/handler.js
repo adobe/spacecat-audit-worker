@@ -30,6 +30,7 @@ import {
   TITLE,
 } from './constants.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getCommerceConfig } from '../utils/saas.js';
 
@@ -813,42 +814,25 @@ export async function submitForScraping(context) {
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
   log.info(`[PRODUCT-METATAGS] Retrieved ${topPages.length} top pages from database`);
 
-  const topPagesUrls = topPages.map((page) => page.getUrl());
   log.info(`[PRODUCT-METATAGS] reading site config: ${JSON.stringify(site?.getConfig())}`);
-  // Combine includedURLs and topPages URLs to scrape
-  const includedURLs = await site?.getConfig()?.getIncludedURLs(auditType) || [];
-  log.info(`[PRODUCT-METATAGS] Retrieved ${includedURLs.length} included URLs from site config`);
 
-  const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
-  log.info(`[PRODUCT-METATAGS] Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
+  const { urls: finalUrls } = await getMergedAuditInputUrls({
+    site,
+    dataAccess,
+    auditType,
+    getAgenticUrls: () => Promise.resolve([]),
+    topPages,
+    log,
+  });
+  log.info(`[PRODUCT-METATAGS] Final URLs to scrape after merging and deduplication: ${finalUrls.length}`);
 
   if (finalUrls.length === 0) {
     log.error(`[PRODUCT-METATAGS] No URLs found for site ${site.getId()} - neither top pages nor included URLs`);
     throw new Error('No URLs found for site neither top pages nor included URLs');
   }
 
-  // Filter out PDF files
-  const isPdfUrl = (url) => {
-    try {
-      const pathname = new URL(url).pathname.toLowerCase();
-      return pathname.endsWith('.pdf');
-    } catch {
-      return false;
-    }
-  };
-
-  const filteredUrls = finalUrls.filter((url) => {
-    if (isPdfUrl(url)) {
-      log.info(`[PRODUCT-METATAGS] Skipping PDF file from scraping: ${url}`);
-      return false;
-    }
-    return true;
-  });
-
-  log.info(`[PRODUCT-METATAGS] Filtered ${finalUrls.length - filteredUrls.length} PDF files from ${finalUrls.length} URLs`);
-
   const result = {
-    urls: filteredUrls.map((url) => ({ url })),
+    urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'product-metatags',
   };

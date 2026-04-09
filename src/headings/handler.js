@@ -19,6 +19,7 @@ import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
+import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
 import {
@@ -29,7 +30,6 @@ import {
   cheerioLoad,
   loadScrapeJson,
   getBrandGuidelines,
-  getTopPages,
   initializeAuditContext,
 } from './shared-utils.js';
 
@@ -379,22 +379,20 @@ export async function headingsAuditRunner(baseURL, context, site) {
   const { S3_SCRAPER_BUCKET_NAME } = context.env;
 
   try {
-    // Get top 200 pages - try Athena first, fall back to SEO provider
+    // Merge all URL sources: custom audit targets, included, agentic (Athena), SEO top pages
     log.debug(`[Headings Audit] Fetching top pages for site: ${siteId}`);
 
-    let topPages = [];
+    const mergedInput = await getMergedAuditInputUrls({
+      site,
+      dataAccess,
+      auditType,
+      getAgenticUrls: () => getTopAgenticUrlsFromAthena(site, context),
+      topOrganicLimit: 200,
+      log,
+    });
+    const topPages = mergedInput.urls.map((url) => ({ url }));
 
-    // Try to get top agentic URLs from Athena first
-    const athenaUrls = await getTopAgenticUrlsFromAthena(site, context);
-    if (athenaUrls && athenaUrls.length > 0) {
-      topPages = athenaUrls.slice(0, 200).map((url) => ({ url }));
-    } else {
-      // Fallback to SEO provider if Athena returns no data
-      log.info('[Headings Audit] No agentic URLs from Athena, falling back to SEO top pages');
-      topPages = await getTopPages(dataAccess, siteId, context, log, 200);
-    }
-
-    log.debug(`[Headings Audit] Processing ${topPages.length} top pages for headings audit (limited to 200)`);
+    log.debug(`[Headings Audit] Processing ${topPages.length} top pages for headings audit`);
     log.debug(`[Headings Audit] Top pages sample: ${topPages.slice(0, 3).map((p) => p.url).join(', ')}`);
     if (topPages.length === 0) {
       log.warn('[Headings Audit] No top pages found, ending audit.');

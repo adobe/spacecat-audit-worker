@@ -14,6 +14,7 @@ import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { getRUMUrl } from '../support/utils.js';
 import { RUM_INTERVAL } from './constants.js';
+import { getAuditTargetUrls } from '../utils/data-access.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
@@ -32,7 +33,8 @@ function normalizeUrl(url) {
 }
 
 /**
- * Fetches top page URLs using a fallback chain: SEO → RUM → includedURLs.
+ * Fetches top page URLs using a fallback chain: SEO → RUM → includedURLs,
+ * then merges custom audit target URLs from site config.
  * @param {Object} params
  * @param {string} params.siteId - Site ID
  * @param {Object} params.site - Site object
@@ -45,43 +47,57 @@ export async function getTopPageUrls({
   siteId, site, dataAccess, context, log,
 }) {
   const { SiteTopPage } = dataAccess;
+  let baseUrls = [];
 
   // 1. Try SEO top pages
   const seoPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'seo', 'global');
   if (seoPages.length > 0) {
     log.info(`[${AUDIT_TYPE}]: Found ${seoPages.length} top pages from SEO provider`);
-    return seoPages.map((page) => page.getUrl());
+    baseUrls = seoPages.map((page) => page.getUrl());
   }
 
   // 2. Fallback to RUM traffic-acquisition
-  log.info(`[${AUDIT_TYPE}]: No SEO top pages, falling back to RUM`);
-  try {
-    const finalUrl = await getRUMUrl(site.getBaseURL());
-    const rumAPIClient = RUMAPIClient.createFrom(context);
-    const options = {
-      domain: finalUrl,
-      interval: RUM_INTERVAL,
-    };
-    const results = await rumAPIClient.query('traffic-acquisition', options);
-    if (results && results.length > 0) {
-      const rumUrls = results
-        .sort((a, b) => (b.earned || 0) - (a.earned || 0))
-        .map((r) => normalizeUrl(r.url));
-      log.info(`[${AUDIT_TYPE}]: Found ${rumUrls.length} URLs from RUM`);
-      return rumUrls;
+  if (baseUrls.length === 0) {
+    log.info(`[${AUDIT_TYPE}]: No SEO top pages, falling back to RUM`);
+    try {
+      const finalUrl = await getRUMUrl(site.getBaseURL());
+      const rumAPIClient = RUMAPIClient.createFrom(context);
+      const options = {
+        domain: finalUrl,
+        interval: RUM_INTERVAL,
+      };
+      const results = await rumAPIClient.query('traffic-acquisition', options);
+      if (results && results.length > 0) {
+        baseUrls = results
+          .sort((a, b) => (b.earned || 0) - (a.earned || 0))
+          .map((r) => normalizeUrl(r.url));
+        log.info(`[${AUDIT_TYPE}]: Found ${baseUrls.length} URLs from RUM`);
+      }
+    } catch (err) {
+      log.warn(`[${AUDIT_TYPE}]: RUM fallback failed: ${err.message}`);
     }
-  } catch (err) {
-    log.warn(`[${AUDIT_TYPE}]: RUM fallback failed: ${err.message}`);
   }
 
   // 3. Fallback to includedURLs from site config
-  log.info(`[${AUDIT_TYPE}]: No URLs from RUM, falling back to includedURLs`);
-  const includedURLs = site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
-  if (includedURLs.length > 0) {
-    log.info(`[${AUDIT_TYPE}]: Found ${includedURLs.length} included URLs from site config`);
-    return includedURLs;
+  if (baseUrls.length === 0) {
+    log.info(`[${AUDIT_TYPE}]: No URLs from RUM, falling back to includedURLs`);
+    const includedURLs = site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
+    if (includedURLs.length > 0) {
+      log.info(`[${AUDIT_TYPE}]: Found ${includedURLs.length} included URLs from site config`);
+      baseUrls = includedURLs;
+    }
   }
 
-  log.warn(`[${AUDIT_TYPE}]: No URLs found from any source (SEO, RUM, includedURLs)`);
-  return [];
+  // 4. Merge custom audit target URLs
+  const customUrls = getAuditTargetUrls(site, log);
+  if (customUrls.length > 0) {
+    const merged = [...new Set([...baseUrls, ...customUrls])];
+    log.info(`[${AUDIT_TYPE}]: Merged ${baseUrls.length} base URLs + ${customUrls.length} custom URLs = ${merged.length} unique`);
+    return merged;
+  }
+
+  if (baseUrls.length === 0) {
+    log.warn(`[${AUDIT_TYPE}]: No URLs found from any source (SEO, RUM, includedURLs, custom)`);
+  }
+  return baseUrls;
 }

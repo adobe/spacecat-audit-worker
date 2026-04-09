@@ -1498,11 +1498,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     expect(result.status).to.equal('complete');
 
-    // Verify the log message about filtering file types was called
-    expect(context.log.info).to.have.been.calledWith(
-      sinon.match(/Filtered out 5 unscrape-able file URLs/),
-    );
-
+    // Non-HTML files (PDFs, Office docs) are pre-filtered by getMergedAuditInputUrls
     // Verify SQS was called with only scrapeable URLs
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     const messageArg = context.sqs.sendMessage.getCall(0).args[1];
