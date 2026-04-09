@@ -131,15 +131,12 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
 
     const urlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
 
-    const { slackContext } = auditContext;
-
     return {
       auditResult: {
         success: true,
         status: 'pending_analysis',
         config: { ...citedConfig, urlLimit },
         storeData,
-        ...(slackContext && { slackContext }),
       },
       fullAuditRef: url,
     };
@@ -241,4 +238,5 @@ export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .withRunner(runCitedAnalysisAudit)
   .withPostProcessors([sendMystiqueMessagePostProcessor])
+  .withSlackContext()
   .build();

@@ -56,6 +56,13 @@ export class RunnerAudit extends BaseAudit {
       const finalUrl = await this.urlResolver(site, context);
       const result = await this.runner(finalUrl, context, site, auditContext);
 
+      if (this.preserveSlackContext && auditContext?.slackContext) {
+        const { auditResult } = result;
+        if (auditResult && typeof auditResult === 'object' && !Array.isArray(auditResult)) {
+          result.auditResult = { ...auditResult, slackContext: auditContext.slackContext };
+        }
+      }
+
       return this.processAuditResult(
         result,
         {

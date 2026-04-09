@@ -14,15 +14,12 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { GUIDANCE_TYPE } from './constants.js';
 
-export async function auditRunner(auditUrl, context, site, auditContext = {}) {
-  const { slackContext } = auditContext;
-
+export async function auditRunner(auditUrl, context, site) {
   return {
     auditResult: {
       siteId: site.getId(),
       url: auditUrl,
       status: 'pending-mystique',
-      ...(slackContext && { slackContext }),
     },
     fullAuditRef: auditUrl,
   };
@@ -53,4 +50,5 @@ export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(auditRunner)
   .withPostProcessors([sendToMystique])
+  .withSlackContext()
   .build();

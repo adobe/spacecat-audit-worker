@@ -191,6 +191,154 @@ describe('RunnerAudit', () => {
     );
   });
 
+  describe('withSlackContext (auto slackContext injection)', () => {
+    it('injects slackContext into auditResult when _preserveSlackContext is true', async () => {
+      const runner = sandbox.stub().resolves({
+        auditResult: { success: true },
+        fullAuditRef: 'https://example.com',
+      });
+      const auditRecord = { getId: () => 'audit-1' };
+      const persister = sandbox.stub().resolves(auditRecord);
+      const { instance } = buildInstance(runner, persister);
+      instance.preserveSlackContext = true;
+
+      const context = {
+        log: {
+          warn: sandbox.stub(),
+          error: sandbox.stub(),
+          info: sandbox.stub(),
+          debug: sandbox.stub(),
+        },
+        dataAccess: {},
+        invocation: {},
+      };
+
+      await instance.run(
+        {
+          type: 'test-audit',
+          siteId: 'site-1',
+          auditContext: {
+            slackContext: { channelId: 'C123', threadTs: '1234.5678' },
+          },
+        },
+        context,
+      );
+
+      expect(persister).to.have.been.calledOnce;
+      const persistedData = persister.firstCall.args[0];
+      expect(persistedData.auditResult).to.deep.include({
+        success: true,
+        slackContext: { channelId: 'C123', threadTs: '1234.5678' },
+      });
+    });
+
+    it('does not inject slackContext when _preserveSlackContext is false', async () => {
+      const runner = sandbox.stub().resolves({
+        auditResult: { success: true },
+        fullAuditRef: 'https://example.com',
+      });
+      const auditRecord = { getId: () => 'audit-1' };
+      const persister = sandbox.stub().resolves(auditRecord);
+      const { instance } = buildInstance(runner, persister);
+      instance.preserveSlackContext = false;
+
+      const context = {
+        log: {
+          warn: sandbox.stub(),
+          error: sandbox.stub(),
+          info: sandbox.stub(),
+          debug: sandbox.stub(),
+        },
+        dataAccess: {},
+        invocation: {},
+      };
+
+      await instance.run(
+        {
+          type: 'test-audit',
+          siteId: 'site-1',
+          auditContext: {
+            slackContext: { channelId: 'C123', threadTs: '1234.5678' },
+          },
+        },
+        context,
+      );
+
+      const persistedData = persister.firstCall.args[0];
+      expect(persistedData.auditResult).to.not.have.property('slackContext');
+    });
+
+    it('does not inject slackContext when auditContext has no slackContext', async () => {
+      const runner = sandbox.stub().resolves({
+        auditResult: { success: true },
+        fullAuditRef: 'https://example.com',
+      });
+      const auditRecord = { getId: () => 'audit-1' };
+      const persister = sandbox.stub().resolves(auditRecord);
+      const { instance } = buildInstance(runner, persister);
+      instance.preserveSlackContext = true;
+
+      const context = {
+        log: {
+          warn: sandbox.stub(),
+          error: sandbox.stub(),
+          info: sandbox.stub(),
+          debug: sandbox.stub(),
+        },
+        dataAccess: {},
+        invocation: {},
+      };
+
+      await instance.run(
+        {
+          type: 'test-audit',
+          siteId: 'site-1',
+          auditContext: {},
+        },
+        context,
+      );
+
+      const persistedData = persister.firstCall.args[0];
+      expect(persistedData.auditResult).to.deep.equal({ success: true });
+    });
+
+    it('skips injection when auditResult is an array', async () => {
+      const runner = sandbox.stub().resolves({
+        auditResult: [1, 2, 3],
+        fullAuditRef: 'https://example.com',
+      });
+      const auditRecord = { getId: () => 'audit-1' };
+      const persister = sandbox.stub().resolves(auditRecord);
+      const { instance } = buildInstance(runner, persister);
+      instance.preserveSlackContext = true;
+
+      const context = {
+        log: {
+          warn: sandbox.stub(),
+          error: sandbox.stub(),
+          info: sandbox.stub(),
+          debug: sandbox.stub(),
+        },
+        dataAccess: {},
+        invocation: {},
+      };
+
+      await instance.run(
+        {
+          type: 'test-audit',
+          siteId: 'site-1',
+          auditContext: {
+            slackContext: { channelId: 'C123' },
+          },
+        },
+        context,
+      );
+
+      const persistedData = persister.firstCall.args[0];
+      expect(persistedData.auditResult).to.deep.equal([1, 2, 3]);
+    });
+  });
+
   it('wraps runner failures with a descriptive error', async () => {
     const runner = sandbox.stub().rejects(new Error('runner boom'));
     const persister = sandbox.stub();

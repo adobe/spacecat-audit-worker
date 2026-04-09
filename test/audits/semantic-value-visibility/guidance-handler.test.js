@@ -32,10 +32,8 @@ describe('Semantic Value Visibility Guidance Handler', () => {
   let log;
   let Opportunity;
   let Site;
-  let Audit;
   let syncSuggestionsStub;
   let convertToOpportunityStub;
-  let mockPostMessageOptional;
   let handler;
   let dummyOpportunity;
 
@@ -45,7 +43,6 @@ describe('Semantic Value Visibility Guidance Handler', () => {
     // Stub external dependencies - these are FAKE, not real
     syncSuggestionsStub = sinon.stub().resolves();
     convertToOpportunityStub = sinon.stub();
-    mockPostMessageOptional = sinon.stub().resolves();
 
     // Load handler with mocked dependencies
     const mockedHandler = await esmock(
@@ -56,9 +53,6 @@ describe('Semantic Value Visibility Guidance Handler', () => {
         },
         '../../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
-        },
-        '../../../src/utils/slack-utils.js': {
-          postMessageOptional: mockPostMessageOptional,
         },
       },
     );
@@ -77,10 +71,6 @@ describe('Semantic Value Visibility Guidance Handler', () => {
       allBySiteIdAndStatus: sinon.stub().resolves([]),
     };
 
-    Audit = {
-      findById: sinon.stub().resolves({ getAuditResult: () => ({}) }),
-    };
-
     Site = {
       findById: sinon.stub().resolves({ getId: () => 'site-123' }),
     };
@@ -96,7 +86,6 @@ describe('Semantic Value Visibility Guidance Handler', () => {
       log,
       dataAccess: {
         Opportunity,
-        Audit,
         Site,
       },
     };
@@ -348,74 +337,6 @@ describe('Semantic Value Visibility Guidance Handler', () => {
 
       expect(staleOpportunity.setStatus).to.have.been.calledWith('RESOLVED');
       expect(staleOpportunity.save).to.have.been.calledOnce;
-    });
-  });
-
-  describe('Slack Notifications', () => {
-    it('should send Slack notification when slackContext is present in audit result', async () => {
-      Audit.findById.resolves({
-        getAuditResult: () => ({
-          slackContext: { channelId: 'C123', threadTs: '1234.5678' },
-        }),
-      });
-
-      const message = {
-        siteId: 'site-krisshop',
-        auditId: 'audit-123',
-        url: krisshopFixture.url,
-        data: {
-          url: krisshopFixture.url,
-          guidance: krisshopFixture.guidance,
-          suggestions: krisshopFixture.suggestions,
-        },
-      };
-
-      await handler(message, context);
-
-      expect(mockPostMessageOptional).to.have.been.calledOnce;
-      expect(mockPostMessageOptional).to.have.been.calledWith(
-        context,
-        'C123',
-        sinon.match(/semantic-value-visibility.*audit finished/),
-        { threadTs: '1234.5678' },
-      );
-    });
-
-    it('should not send Slack notification when slackContext is absent', async () => {
-      Audit.findById.resolves({
-        getAuditResult: () => ({}),
-      });
-
-      const message = {
-        siteId: 'site-krisshop',
-        auditId: 'audit-123',
-        url: krisshopFixture.url,
-        data: {
-          url: krisshopFixture.url,
-          guidance: krisshopFixture.guidance,
-          suggestions: krisshopFixture.suggestions,
-        },
-      };
-
-      await handler(message, context);
-
-      expect(mockPostMessageOptional).not.to.have.been.called;
-    });
-
-    it('should not send Slack notification when auditId is missing', async () => {
-      const message = {
-        siteId: 'site-krisshop',
-        url: krisshopFixture.url,
-        data: {
-          url: krisshopFixture.url,
-          guidance: krisshopFixture.guidance,
-          suggestions: krisshopFixture.suggestions,
-        },
-      };
-
-      await handler(message, context);
-
-      expect(mockPostMessageOptional).not.to.have.been.called;
     });
   });
 });

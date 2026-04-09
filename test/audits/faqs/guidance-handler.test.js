@@ -20,7 +20,6 @@ use(sinonChai);
 describe('FAQs guidance handler', () => {
   let context;
   let Site;
-  let Audit;
   let Opportunity;
   let log;
   let dummySite;
@@ -35,7 +34,6 @@ describe('FAQs guidance handler', () => {
   let createLLMOSharepointClientStub;
   let readFromSharePointStub;
   let mockWorkbook;
-  let mockPostMessageOptional;
 
   const mockFaqData = {
     opportunity_id: 'oppty-123',
@@ -81,7 +79,6 @@ describe('FAQs guidance handler', () => {
     this.timeout(10000); // Increase timeout for esmock loading
     syncSuggestionsStub = sinon.stub().resolves();
     convertToOpportunityStub = sinon.stub();
-    mockPostMessageOptional = sinon.stub().resolves();
     fetchStub = sinon.stub().resolves({
       ok: true,
       status: 200,
@@ -117,9 +114,6 @@ describe('FAQs guidance handler', () => {
         createLLMOSharepointClient: createLLMOSharepointClientStub,
         readFromSharePoint: readFromSharePointStub,
       },
-      '../../../src/utils/slack-utils.js': {
-        postMessageOptional: mockPostMessageOptional,
-      },
       '@adobe/spacecat-shared-utils': {
         tracingFetch: fetchStub,
       },
@@ -140,10 +134,6 @@ describe('FAQs guidance handler', () => {
     });
 
     handler = mockedHandler.default;
-
-    Audit = {
-      findById: sinon.stub().resolves({ getAuditResult: () => ({}) }),
-    };
 
     Site = {
       findById: sinon.stub(),
@@ -181,7 +171,6 @@ describe('FAQs guidance handler', () => {
       getOutputLocation: sinon.stub().returns('/data/llmo/brand-presence'),
       dataAccess: {
         Site,
-        Audit,
         Opportunity,
       },
       s3Client,
@@ -1713,64 +1702,5 @@ describe('FAQs guidance handler', () => {
     
     // Should set shouldOptimize to false because sources are undefined
     expect(newData[0].shouldOptimize).to.equal(false);
-  });
-
-  describe('Slack Notifications', () => {
-    it('should send Slack notification when slackContext is present in audit result', async () => {
-      Audit.findById.resolves({
-        getAuditResult: () => ({
-          slackContext: { channelId: 'C123', threadTs: '1234.5678' },
-        }),
-      });
-
-      const message = {
-        auditId: 'audit-123',
-        siteId: 'site-123',
-        data: {
-          presignedUrl: 'https://s3.aws.com/faqs.json',
-        },
-      };
-
-      await handler(message, context);
-
-      expect(mockPostMessageOptional).to.have.been.calledOnce;
-      expect(mockPostMessageOptional).to.have.been.calledWith(
-        context,
-        'C123',
-        sinon.match(/faqs.*audit finished.*adobe\.com/),
-        { threadTs: '1234.5678' },
-      );
-    });
-
-    it('should not send Slack notification when slackContext is absent from audit result', async () => {
-      Audit.findById.resolves({
-        getAuditResult: () => ({}),
-      });
-
-      const message = {
-        auditId: 'audit-123',
-        siteId: 'site-123',
-        data: {
-          presignedUrl: 'https://s3.aws.com/faqs.json',
-        },
-      };
-
-      await handler(message, context);
-
-      expect(mockPostMessageOptional).not.to.have.been.called;
-    });
-
-    it('should not send Slack notification when auditId is missing', async () => {
-      const message = {
-        siteId: 'site-123',
-        data: {
-          presignedUrl: 'https://s3.aws.com/faqs.json',
-        },
-      };
-
-      await handler(message, context);
-
-      expect(mockPostMessageOptional).not.to.have.been.called;
-    });
   });
 });

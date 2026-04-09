@@ -150,7 +150,7 @@ function deduplicatePrompts(prompts) {
   return Array.from(seenQuestions.values());
 }
 
-async function runFaqsAudit(url, context, site, auditContext = {}) {
+async function runFaqsAudit(url, context, site) {
   const {
     log,
   } = context;
@@ -261,12 +261,9 @@ async function runFaqsAudit(url, context, site, auditContext = {}) {
 
     log.info(`[FAQ] Grouped ${limitedPrompts.length} prompts into ${promptsByUrl.length} topics`);
 
-    const { slackContext } = auditContext;
-
     const auditResult = {
       success: true,
       promptsByUrl,
-      ...(slackContext && { slackContext }),
     };
 
     return {
@@ -345,4 +342,5 @@ export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .withRunner(runFaqsAudit)
   .withPostProcessors([sendMystiqueMessagePostProcessor])
+  .withSlackContext()
   .build();

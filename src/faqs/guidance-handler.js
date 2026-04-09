@@ -18,7 +18,6 @@ import { load as cheerioLoad } from 'cheerio';
 import ExcelJS from 'exceljs';
 
 import { syncSuggestions } from '../utils/data-access.js';
-import { postMessageOptional } from '../utils/slack-utils.js';
 import { getPreviousWeekTriples } from '../utils/date-utils.js';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
 import {
@@ -348,7 +347,7 @@ async function addSuggestions(
  */
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Site, Audit: AuditModel } = dataAccess;
+  const { Site } = dataAccess;
   const { siteId, auditId, data } = message;
   const { presignedUrl } = data;
 
@@ -429,20 +428,6 @@ export default async function handler(message, context) {
     }
 
     log.info(`[FAQ] Successfully processed FAQ guidance for site: ${siteId}, ${totalSuitableFaqs} suitable FAQs`);
-
-    if (auditId) {
-      const auditRecord = await AuditModel.findById(auditId);
-      const slackContext = auditRecord?.getAuditResult()?.slackContext;
-      if (slackContext) {
-        const { channelId, threadTs } = slackContext;
-        await postMessageOptional(
-          context,
-          channelId,
-          `:white_check_mark: *faqs* audit finished for *${baseUrl}*`,
-          { threadTs },
-        );
-      }
-    }
 
     return ok();
   } catch (error) {

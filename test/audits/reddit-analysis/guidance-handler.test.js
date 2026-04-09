@@ -30,7 +30,6 @@ describe('Reddit Analysis Guidance Handler', () => {
   let syncSuggestionsStub;
   let convertToOpportunityStub;
   let fetchStub;
-  let mockPostMessageOptional;
 
   const baseURL = 'https://example.com';
   const siteId = 'test-site-id';
@@ -61,8 +60,6 @@ describe('Reddit Analysis Guidance Handler', () => {
     convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
     fetchStub = sandbox.stub();
 
-    mockPostMessageOptional = sandbox.stub().resolves({ success: true });
-
     handler = await esmock('../../../src/reddit-analysis/guidance-handler.js', {
       '../../../src/utils/data-access.js': {
         syncSuggestions: syncSuggestionsStub,
@@ -70,7 +67,6 @@ describe('Reddit Analysis Guidance Handler', () => {
       '../../../src/common/opportunity.js': {
         convertToOpportunity: convertToOpportunityStub,
       },
-      '../../../src/utils/slack-utils.js': { postMessageOptional: mockPostMessageOptional },
       '@adobe/spacecat-shared-utils': {
         tracingFetch: fetchStub,
       },
@@ -378,99 +374,6 @@ describe('Reddit Analysis Guidance Handler', () => {
 
       expect(result.status).to.equal(400);
       expect(context.log.error).to.have.been.calledWith(sinon.match(/Error fetching from presigned URL/));
-    });
-  });
-
-  describe('Slack Notifications', () => {
-    const SLACK_CHANNEL_ID = 'C-test-channel';
-    const SLACK_THREAD_TS = '1700000000.123456';
-    const mockAnalysisData = {
-      suggestions: [
-        { id: 's1', priority: 'HIGH', title: 'Test', description: 'Test' },
-      ],
-    };
-
-    it('should send Slack notification when slackContext is stored on audit', async () => {
-      mockAudit.getAuditResult.returns({
-        slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
-      });
-
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          analysis: mockAnalysisData,
-          companyName: 'Example Corp',
-        },
-      };
-
-      await handler.default(message, context);
-
-      expect(mockPostMessageOptional).to.have.been.calledOnce;
-      const [callCtx, callChannelId, callText, callOptions] = mockPostMessageOptional.firstCall.args;
-      expect(callCtx).to.equal(context);
-      expect(callChannelId).to.equal(SLACK_CHANNEL_ID);
-      expect(callOptions).to.deep.equal({ threadTs: SLACK_THREAD_TS });
-      expect(callText).to.include('reddit-analysis');
-      expect(callText).to.include('audit finished');
-      expect(callText).to.include(baseURL);
-    });
-
-    it('should not send Slack notification when no slackContext on audit', async () => {
-      mockAudit.getAuditResult.returns({});
-
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          analysis: mockAnalysisData,
-          companyName: 'Example Corp',
-        },
-      };
-
-      await handler.default(message, context);
-
-      expect(mockPostMessageOptional).to.not.have.been.called;
-    });
-
-    it('should not send Slack notification when auditId is missing', async () => {
-      const message = {
-        siteId,
-        data: {
-          analysis: mockAnalysisData,
-          companyName: 'Example Corp',
-        },
-      };
-
-      await handler.default(message, context);
-
-      expect(mockPostMessageOptional).to.not.have.been.called;
-    });
-
-    it('should handle plural suggestion count in Slack message', async () => {
-      mockAudit.getAuditResult.returns({
-        slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
-      });
-
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          analysis: {
-            suggestions: [
-              { id: 's1', type: 'CONTENT_UPDATE', rank: 1, data: {} },
-              { id: 's2', type: 'CONTENT_UPDATE', rank: 2, data: {} },
-            ],
-            opportunity: {},
-          },
-          companyName: 'Example Corp',
-        },
-      };
-
-      await handler.default(message, context);
-
-      const callText = mockPostMessageOptional.firstCall.args[2];
-      expect(callText).to.include('2 suggestions processed');
     });
   });
 

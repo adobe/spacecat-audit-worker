@@ -15,7 +15,6 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { OPPORTUNITY_TYPE } from './constants.js';
-import { postMessageOptional } from '../utils/slack-utils.js';
 
 /**
  * Guidance handler for semantic value visibility.
@@ -30,7 +29,7 @@ import { postMessageOptional } from '../utils/slack-utils.js';
  */
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Opportunity, Site, Audit: AuditModel } = dataAccess;
+  const { Opportunity, Site } = dataAccess;
   const { siteId, auditId, data } = message;
 
   // Validate siteId
@@ -116,20 +115,6 @@ export default async function handler(message, context) {
   });
 
   log.info(`[semantic-value-visibility] Synced ${validSuggestions.length} suggestions for opportunity ${opportunity.getId()}`);
-
-  if (auditId) {
-    const auditRecord = await AuditModel.findById(auditId);
-    const slackContext = auditRecord?.getAuditResult()?.slackContext;
-    if (slackContext) {
-      const { channelId, threadTs } = slackContext;
-      await postMessageOptional(
-        context,
-        channelId,
-        `:white_check_mark: *semantic-value-visibility* audit finished for *${url}*`,
-        { threadTs },
-      );
-    }
-  }
 
   return ok();
 }

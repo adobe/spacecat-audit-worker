@@ -21,7 +21,7 @@ const AUDIT_CONSTANTS = {
 };
 const MAX_PARALLEL_MESSAGES = 5;
 
-export async function runAudit(auditUrl, context, site, auditContext = {}) {
+export async function runAudit(auditUrl, context, site) {
   const { log, env } = context;
 
   const siteId = site.getId();
@@ -63,12 +63,9 @@ export async function runAudit(auditUrl, context, site, auditContext = {}) {
     '[Athena Query] No engageable content above the fold analysis',
   );
 
-  const { slackContext } = auditContext;
-
   return {
     auditResult: {
       rows,
-      ...(slackContext && { slackContext }),
     },
     fullAuditRef: auditUrl,
   };
@@ -139,4 +136,5 @@ export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .withRunner(runAudit)
   .withPostProcessors([sendResultsToMystique])
+  .withSlackContext()
   .build();

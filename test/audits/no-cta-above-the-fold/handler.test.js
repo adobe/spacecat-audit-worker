@@ -206,36 +206,13 @@ describe("No CTA above the fold handler", () => {
 
   it("handles auditResult object without rows property gracefully", async () => {
     const auditData = {
-      auditResult: { slackContext: { channelId: "C123" } },
+      auditResult: { someOtherProp: true },
     };
 
     const result = await sendResultsToMystique(auditUrl, auditData, context, site);
 
     expect(result).to.equal(auditData);
     expect(sqsStub.sendMessage).not.to.have.been.called;
-  });
-
-  it("includes slackContext in auditResult when provided in auditContext", async () => {
-    const rows = [{ path: "/test", pageviews: "100", bounce_rate: 0.5, projected_traffic_lost: 50 }];
-    athenaStub.query.resolves(rows);
-
-    const auditContext = { slackContext: { channelId: "C123", threadTs: "1234.5678" } };
-    const auditData = await runAudit(auditUrl, context, site, auditContext);
-
-    expect(auditData.auditResult).to.deep.equal({
-      rows,
-      slackContext: { channelId: "C123", threadTs: "1234.5678" },
-    });
-  });
-
-  it("does not include slackContext in auditResult when not provided", async () => {
-    const rows = [{ path: "/test", pageviews: "100", bounce_rate: 0.5, projected_traffic_lost: 50 }];
-    athenaStub.query.resolves(rows);
-
-    const auditData = await runAudit(auditUrl, context, site);
-
-    expect(auditData.auditResult).to.deep.equal({ rows });
-    expect(auditData.auditResult).to.not.have.property("slackContext");
   });
 });
 

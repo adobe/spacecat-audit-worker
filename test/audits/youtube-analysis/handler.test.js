@@ -325,26 +325,6 @@ describe('YouTube Analysis Handler', () => {
       expect(result.auditResult.error).to.equal('Config error');
       expect(context.log.error).to.have.been.called;
     });
-
-    it('should include slackContext in auditResult when provided in auditContext', async () => {
-      const slackContext = { channelId: 'C-test', threadTs: '1700000000.123456' };
-      const result = await youtubeAnalysisHandler.default.runner(
-        baseURL,
-        context,
-        mockSite,
-        { slackContext },
-      );
-
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.slackContext).to.deep.equal(slackContext);
-    });
-
-    it('should not include slackContext in auditResult when not provided', async () => {
-      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.slackContext).to.be.undefined;
-    });
   });
 
   describe('Post Processor - sendMystiqueMessagePostProcessor', () => {

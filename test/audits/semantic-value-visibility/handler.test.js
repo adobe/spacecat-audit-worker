@@ -70,24 +70,6 @@ describe('Semantic Value Visibility Handler', () => {
       expect(result.fullAuditRef).to.equal(auditUrl);
       expect(sqsStub.sendMessage).not.to.have.been.called;
     });
-
-    it('should include slackContext in auditResult when provided in auditContext', async () => {
-      const auditContext = { slackContext: { channelId: 'C123', threadTs: '1234.5678' } };
-      const result = await auditRunner(auditUrl, context, site, auditContext);
-
-      expect(result.auditResult).to.deep.equal({
-        siteId,
-        url: auditUrl,
-        status: 'pending-mystique',
-        slackContext: { channelId: 'C123', threadTs: '1234.5678' },
-      });
-    });
-
-    it('should not include slackContext in auditResult when not provided', async () => {
-      const result = await auditRunner(auditUrl, context, site);
-
-      expect(result.auditResult).to.not.have.property('slackContext');
-    });
   });
 
   describe('sendToMystique', () => {
