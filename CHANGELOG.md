@@ -1,3 +1,10 @@
+## [1.408.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.408.0...v1.408.1) (2026-04-09)
+
+
+### Bug Fixes
+
+* **prerender:** batch Mystique SQS messages and harden suggestion key resolution ([#2338](https://github.com/adobe/spacecat-audit-worker/issues/2338)) ([7751f0b](https://github.com/adobe/spacecat-audit-worker/commit/7751f0bdb78caf55f79a0f4c354a8f94e9385338))
+
 # [1.408.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.407.0...v1.408.0) (2026-04-09)
 
 
