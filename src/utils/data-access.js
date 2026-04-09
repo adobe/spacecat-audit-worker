@@ -124,7 +124,9 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
 
 function customAuditTargetUrlsEnabled() {
   const v = process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS;
-  if (v === '0' || v === 'false') return false;
+  if (v === '0' || v === 'false') {
+    return false;
+  }
   return true;
 }
 
@@ -136,7 +138,9 @@ function customAuditTargetUrlsEnabled() {
  * @returns {string[]} - Array of URL strings from config.auditTargetURLs.
  */
 export function getAuditTargetUrls(site, log) {
-  if (!customAuditTargetUrlsEnabled()) return [];
+  if (!customAuditTargetUrlsEnabled()) {
+    return [];
+  }
   try {
     const config = site.getConfig?.();
     const entries = config?.getAuditTargetURLs?.() || [];
