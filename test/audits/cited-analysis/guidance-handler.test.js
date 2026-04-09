@@ -30,6 +30,7 @@ describe('Cited Analysis Guidance Handler', () => {
   let syncSuggestionsStub;
   let convertToOpportunityStub;
   let fetchStub;
+  let mockPostMessageOptional;
 
   const baseURL = 'https://example.com';
   const siteId = 'test-site-id';
@@ -45,6 +46,7 @@ describe('Cited Analysis Guidance Handler', () => {
 
     mockAudit = {
       getId: sandbox.stub().returns(auditId),
+      getAuditResult: sandbox.stub().returns({}),
     };
 
     mockOpportunity = {
@@ -58,6 +60,7 @@ describe('Cited Analysis Guidance Handler', () => {
     syncSuggestionsStub = sandbox.stub().resolves();
     convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
     fetchStub = sandbox.stub();
+    mockPostMessageOptional = sandbox.stub().resolves({ success: true });
 
     handler = await esmock('../../../src/cited-analysis/guidance-handler.js', {
       '../../../src/utils/data-access.js': {
@@ -69,6 +72,7 @@ describe('Cited Analysis Guidance Handler', () => {
       '@adobe/spacecat-shared-utils': {
         tracingFetch: fetchStub,
       },
+      '../../../src/utils/slack-utils.js': { postMessageOptional: mockPostMessageOptional },
     });
 
     context = new MockContextBuilder()
@@ -495,6 +499,73 @@ describe('Cited Analysis Guidance Handler', () => {
       const key = buildKey({ id: 'my_suggestion_id' });
 
       expect(key).to.equal('cited::my_suggestion_id');
+    });
+  });
+
+  describe('Slack Notifications', () => {
+    const SLACK_CHANNEL_ID = 'C-test-channel';
+    const SLACK_THREAD_TS = '1700000000.123456';
+    const mockAnalysisData = {
+      suggestions: [
+        { id: 's1', priority: 'HIGH', title: 'Test', description: 'Test' },
+      ],
+    };
+
+    it('should send Slack notification when slackContext is stored on audit', async () => {
+      mockAudit.getAuditResult.returns({
+        slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
+      });
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          analysis: mockAnalysisData,
+          companyName: 'Example Corp',
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockPostMessageOptional).to.have.been.calledOnce;
+      const [callCtx, callChannelId, callText, callOptions] = mockPostMessageOptional.firstCall.args;
+      expect(callCtx).to.equal(context);
+      expect(callChannelId).to.equal(SLACK_CHANNEL_ID);
+      expect(callOptions).to.deep.equal({ threadTs: SLACK_THREAD_TS });
+      expect(callText).to.include('cited-analysis');
+      expect(callText).to.include('audit finished');
+      expect(callText).to.include(baseURL);
+    });
+
+    it('should not send Slack notification when no slackContext on audit', async () => {
+      mockAudit.getAuditResult.returns({});
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          analysis: mockAnalysisData,
+          companyName: 'Example Corp',
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockPostMessageOptional).to.not.have.been.called;
+    });
+
+    it('should not send Slack notification when auditId is missing', async () => {
+      const message = {
+        siteId,
+        data: {
+          analysis: mockAnalysisData,
+          companyName: 'Example Corp',
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockPostMessageOptional).to.not.have.been.called;
     });
   });
 
