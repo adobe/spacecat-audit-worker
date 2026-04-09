@@ -1,3 +1,10 @@
+## [1.406.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.406.0...v1.406.1) (2026-04-09)
+
+
+### Bug Fixes
+
+* **audit:** preserve slackContext across multi-step audit chains ([#2346](https://github.com/adobe/spacecat-audit-worker/issues/2346)) ([d919c2c](https://github.com/adobe/spacecat-audit-worker/commit/d919c2c296b821b4865831567159cbdc5a2f998c))
+
 # [1.406.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.405.0...v1.406.0) (2026-04-08)
 
 
