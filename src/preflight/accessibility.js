@@ -188,7 +188,9 @@ export async function processAccessibilityOpportunities(context, auditContext) {
           // Process violations and map them to opportunity types
           if (accessibilityData.violations) {
             Object.entries(accessibilityData.violations).forEach(([impact, impactData]) => {
-              if (impact === 'total') { return; } // Skip the total count
+              if (impact === 'total') {
+                return; // Skip the total count
+              }
 
               if (impactData.items) {
                 Object.entries(impactData.items).forEach(([violationId, violationData]) => {

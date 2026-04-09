@@ -111,7 +111,9 @@ function deepEqual(a, b, path = '') {
   if (typeof a === 'object' && typeof b === 'object') {
     const keysA = Object.keys(a).sort();
     const keysB = Object.keys(b).sort();
-    if (!deepEqual(keysA, keysB, `${path}.keys`)) { return false; }
+    if (!deepEqual(keysA, keysB, `${path}.keys`)) {
+      return false;
+    }
     return keysA.every((key) => deepEqual(a[key], b[key], `${path}.${key}`));
   }
 

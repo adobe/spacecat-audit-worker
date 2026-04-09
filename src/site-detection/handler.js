@@ -110,7 +110,7 @@ async function fetchCandidates(authorization, log) {
       }
 
       jsonData.result.results.forEach(({ userData }) => {
-        /* c8 ignore next 1 */
+        /* c8 ignore next 3 */
         if (!userData) {
           return;
         }

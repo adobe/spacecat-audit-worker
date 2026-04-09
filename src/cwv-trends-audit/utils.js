@@ -93,7 +93,9 @@ function buildTrendData(dailyData, deviceType, log) {
       const category = categorizeUrl(url.lcp, url.cls, url.inp);
       if (category === 'good') {
         good += 1;
-      } else if (category === 'needsImprovement') { needsImprovement += 1; } else if (category === 'poor') {
+      } else if (category === 'needsImprovement') {
+        needsImprovement += 1;
+      } else if (category === 'poor') {
         poor += 1;
       }
     }

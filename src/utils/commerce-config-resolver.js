@@ -35,7 +35,9 @@ export function findBestMatchingStoreViewUrl(commerceLlmoConfig, productUrl) {
     if (normalizedProductUrl === normalized) {
       return storeViewUrl;
     }
-    if (normalizedProductUrl.startsWith(`${normalized}/`)) { return storeViewUrl; }
+    if (normalizedProductUrl.startsWith(`${normalized}/`)) {
+      return storeViewUrl;
+    }
   }
 
   return null;

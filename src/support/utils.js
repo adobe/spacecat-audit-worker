@@ -123,8 +123,10 @@ export function toggleWWW(baseUrl) {
  * @returns {string} - The URL with the www subdomain toggled.
  */
 export function toggleWWWHostname(hostname) {
-  /* c8 ignore next 1 */
-  if (hasNonWWWSubdomain(`https://${hostname}`)) { return hostname; }
+  /* c8 ignore next 3 */
+  if (hasNonWWWSubdomain(`https://${hostname}`)) {
+    return hostname;
+  }
   return hostname.startsWith('www.') ? hostname.replace('www.', '') : `www.${hostname}`;
 }
 

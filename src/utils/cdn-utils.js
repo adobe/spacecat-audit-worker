@@ -165,7 +165,9 @@ export async function resolveCdnBucketName(site, context) {
 
 async function bufferFromStream(stream) {
   const chunks = [];
-  for await (const c of stream) { chunks.push(c); }
+  for await (const c of stream) {
+    chunks.push(c);
+  }
   return Buffer.concat(chunks);
 }
 

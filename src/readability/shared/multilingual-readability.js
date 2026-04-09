@@ -123,13 +123,17 @@ function* iterateWords(text, locale) {
       const w = seg.segment;
       // keep inner apostrophes/dashes; drop other punctuation
       const cleaned = w.normalize('NFKC').replace(/[^\p{L}\p{M}\p{N}''-]/gu, '');
-      if (cleaned && /[\p{L}\p{N}]/u.test(cleaned)) { yield cleaned; }
+      if (cleaned && /[\p{L}\p{N}]/u.test(cleaned)) {
+        yield cleaned;
+      }
     }
   } else {
     // conservative fallback
     for (const w of text.split(/\s+/)) {
       const cleaned = w.normalize('NFKC').replace(/[^\p{L}\p{M}\p{N}''-]/gu, '');
-      if (cleaned && /[\p{L}\p{N}]/u.test(cleaned)) { yield cleaned; }
+      if (cleaned && /[\p{L}\p{N}]/u.test(cleaned)) {
+        yield cleaned;
+      }
     }
   }
 }
@@ -139,7 +143,9 @@ function countSentences(text, locale) {
     const seg = new Intl.Segmenter(locale, { granularity: 'sentence' }).segment(text);
     let n = 0;
     for (const it of seg) {
-      if (/[\p{L}\p{N}]/u.test(it.segment)) { n += 1; }
+      if (/[\p{L}\p{N}]/u.test(it.segment)) {
+        n += 1;
+      }
     }
     return Math.max(n, 1);
   }

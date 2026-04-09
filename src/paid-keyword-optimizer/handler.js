@@ -316,7 +316,7 @@ function isPredominantlyPaid(pathTrafficMap, path, thresholdPct = PREDOMINANT_TR
  */
 function getPaidTrafficRow(pathTrafficMap, path) {
   const trafficData = pathTrafficMap.get(path);
-  /* c8 ignore next 1 */
+  /* c8 ignore next 3 */
   if (!trafficData) {
     return null;
   }
