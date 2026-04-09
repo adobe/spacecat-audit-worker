@@ -176,11 +176,12 @@ export default async function handler(message, context) {
       const slackContext = auditRecord?.getAuditResult()?.slackContext;
       if (slackContext) {
         const { channelId, threadTs } = slackContext;
+        const plural = suggestions.length === 1 ? '' : 's';
         await postMessageOptional(
           context,
           channelId,
           `:white_check_mark: *wikipedia-analysis* audit finished for *${baseUrl}*\n`
-          + `• ${suggestions.length} suggestion${suggestions.length === 1 ? '' : 's'} processed`,
+          + `• ${suggestions.length} suggestion${plural} processed`,
           { threadTs },
         );
       }
