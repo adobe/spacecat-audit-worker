@@ -150,7 +150,7 @@ function deduplicatePrompts(prompts) {
   return Array.from(seenQuestions.values());
 }
 
-async function runFaqsAudit(url, context, site) {
+async function runFaqsAudit(url, context, site, auditContext = {}) {
   const {
     log,
   } = context;
@@ -261,9 +261,12 @@ async function runFaqsAudit(url, context, site) {
 
     log.info(`[FAQ] Grouped ${limitedPrompts.length} prompts into ${promptsByUrl.length} topics`);
 
+    const { slackContext } = auditContext;
+
     const auditResult = {
       success: true,
       promptsByUrl,
+      ...(slackContext && { slackContext }),
     };
 
     return {

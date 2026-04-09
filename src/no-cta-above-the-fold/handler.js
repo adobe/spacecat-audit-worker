@@ -21,7 +21,7 @@ const AUDIT_CONSTANTS = {
 };
 const MAX_PARALLEL_MESSAGES = 5;
 
-export async function runAudit(auditUrl, context, site) {
+export async function runAudit(auditUrl, context, site, auditContext = {}) {
   const { log, env } = context;
 
   const siteId = site.getId();
@@ -63,8 +63,13 @@ export async function runAudit(auditUrl, context, site) {
     '[Athena Query] No engageable content above the fold analysis',
   );
 
+  const { slackContext } = auditContext;
+
   return {
-    auditResult: rows,
+    auditResult: {
+      rows,
+      ...(slackContext && { slackContext }),
+    },
     fullAuditRef: auditUrl,
   };
 }
@@ -78,10 +83,11 @@ export async function sendResultsToMystique(auditUrl, auditData, context, site) 
   } = context;
 
   const baseURL = await site.getBaseURL();
-  const { auditResult = [] } = auditData;
+  const { auditResult = {} } = auditData;
+  const rows = Array.isArray(auditResult) ? auditResult : (auditResult.rows || []);
   const siteId = site.getId();
   const deliveryType = site.getDeliveryType();
-  const messageCount = auditResult.length;
+  const messageCount = rows.length;
 
   if (messageCount === 0) {
     log.info(`[no-cta-above-the-fold] [Site: ${auditUrl}] No messages to dispatch to Mystique`);
@@ -92,8 +98,8 @@ export async function sendResultsToMystique(auditUrl, auditData, context, site) 
     `[no-cta-above-the-fold] [Site: ${auditUrl}] Dispatching ${messageCount} message(s) to Mystique for high bounce rate pages`,
   );
 
-  for (let i = 0; i < auditResult.length; i += MAX_PARALLEL_MESSAGES) {
-    const batch = auditResult.slice(i, i + MAX_PARALLEL_MESSAGES);
+  for (let i = 0; i < rows.length; i += MAX_PARALLEL_MESSAGES) {
+    const batch = rows.slice(i, i + MAX_PARALLEL_MESSAGES);
 
     // eslint-disable-next-line no-await-in-loop
     await Promise.all(

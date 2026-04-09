@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
+import { postMessageOptional } from '../utils/slack-utils.js';
 import {
   mapToOpportunity,
   mapToSuggestion,
@@ -94,6 +95,17 @@ export default async function handler(message, context) {
   warnOnInvalidSuggestionData(suggestionData.data, opportunity.getType(), log);
   await Suggestion.create(suggestionData);
   paidLog.createdSuggestion(opportunity.getId(), siteId, url, auditId);
+
+  const slackContext = audit?.getAuditResult()?.slackContext;
+  if (slackContext) {
+    const { channelId, threadTs } = slackContext;
+    await postMessageOptional(
+      context,
+      channelId,
+      `:white_check_mark: *no-cta-above-the-fold* audit finished for *${url}*`,
+      { threadTs },
+    );
+  }
 
   return ok();
 }

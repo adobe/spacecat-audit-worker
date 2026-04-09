@@ -1258,6 +1258,129 @@ describe('FAQs Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.promptsByUrl[0].url).to.equal('https://adobe.com/fallback');
     });
+
+    it('should include slackContext in auditResult when provided in auditContext', async () => {
+      validateContentAIStub.resolves({
+        uid: 'test-uid',
+        genSearchEnabled: true,
+        isWorking: true,
+        indexName: 'test-index',
+      });
+
+      const slackContext = { channelId: 'C123456', threadTs: '1234567890.123456' };
+      const auditContext = { slackContext };
+
+      const mockWorkbook = {
+        worksheets: [
+          {
+            rowCount: 2,
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
+            getRows: () => [
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'topic-a' };
+                  if (col === 3) return { value: 'A sample prompt?' };
+                  if (col === 7) return { value: 'https://adobe.com/page' };
+                  return { value: '' };
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      readFromSharePointStub.resolves(Buffer.from('mock'));
+
+      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: createLLMOSharepointClientStub,
+          readFromSharePoint: readFromSharePointStub,
+        },
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
+        },
+        exceljs: {
+          Workbook: class {
+            constructor() {}
+
+            get xlsx() {
+              const self = this;
+              return {
+                load: async () => {
+                  Object.assign(self, mockWorkbook);
+                },
+              };
+            }
+          },
+        },
+      });
+
+      const runner = excelJsMock.default.runner;
+      const result = await runner('https://adobe.com', context, site, auditContext);
+
+      expect(result.auditResult.success).to.equal(true);
+      expect(result.auditResult.slackContext).to.deep.equal(slackContext);
+    });
+
+    it('should omit slackContext from auditResult when not provided in auditContext', async () => {
+      validateContentAIStub.resolves({
+        uid: 'test-uid',
+        genSearchEnabled: true,
+        isWorking: true,
+        indexName: 'test-index',
+      });
+
+      const mockWorkbook = {
+        worksheets: [
+          {
+            rowCount: 2,
+            getRow: () => ({ values: BRAND_PRESENCE_HEADERS }),
+            getRows: () => [
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'topic-a' };
+                  if (col === 3) return { value: 'A sample prompt?' };
+                  if (col === 7) return { value: 'https://adobe.com/page' };
+                  return { value: '' };
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      readFromSharePointStub.resolves(Buffer.from('mock'));
+
+      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: createLLMOSharepointClientStub,
+          readFromSharePoint: readFromSharePointStub,
+        },
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
+        },
+        exceljs: {
+          Workbook: class {
+            constructor() {}
+
+            get xlsx() {
+              const self = this;
+              return {
+                load: async () => {
+                  Object.assign(self, mockWorkbook);
+                },
+              };
+            }
+          },
+        },
+      });
+
+      const runner = excelJsMock.default.runner;
+      const result = await runner('https://adobe.com', context, site, {});
+
+      expect(result.auditResult.success).to.equal(true);
+      expect(result.auditResult).to.not.have.property('slackContext');
+    });
   });
 
   describe('sendMystiqueMessagePostProcessor', () => {
