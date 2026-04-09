@@ -561,6 +561,53 @@ describe('agentic traffic mapper', () => {
     });
   });
 
+  it('logs and skips malformed URLs when canonicalization throws', async () => {
+    const warn = sinon.spy();
+    const OriginalURL = globalThis.URL;
+
+    globalThis.URL = class URLStub extends OriginalURL {
+      constructor(url, base) {
+        if (String(url).includes('/will-throw')) {
+          throw new TypeError('bad url');
+        }
+        super(url, base);
+      }
+    };
+
+    try {
+      const result = await mapToAgenticTrafficBundle([
+        {
+          agent_type: 'Chatbots',
+          user_agent_display: 'ChatGPT-User',
+          status: 200,
+          number_of_hits: 1,
+          avg_ttfb_ms: 10,
+          country_code: 'US',
+          url: '/will-throw',
+          host: 'www.example.com',
+          product: 'Docs',
+          category: 'Documentation',
+        },
+      ], {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://www.example.com',
+        getConfig: () => ({
+          getLlmoCountryCodeIgnoreList: () => [],
+        }),
+      }, { log: { warn } }, '2026-03-31');
+
+      expect(result).to.deep.equal({
+        trafficRows: [],
+        classificationRows: [],
+      });
+      expect(warn).to.have.been.calledWith(
+        'Skipping malformed agentic URL during daily export mapping: bad url',
+      );
+    } finally {
+      globalThis.URL = OriginalURL;
+    }
+  });
+
   it('nulls impossible avg_ttfb_ms values instead of exporting them', async () => {
     const result = await mapToAgenticTrafficBundle([
       {
