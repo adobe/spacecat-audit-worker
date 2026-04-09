@@ -633,7 +633,7 @@ describe('Prerender AI-Only Mode', () => {
         site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
       };
 
-      const { opportunity, auditRunSuggestions } = await mockHandler.processOpportunityAndSuggestions(
+      const { opportunity, auditRunCandidates } = await mockHandler.processOpportunityAndSuggestions(
         'https://example.com',
         auditData,
         sqsContext,
@@ -641,14 +641,15 @@ describe('Prerender AI-Only Mode', () => {
 
       expect(opportunity).to.equal(mockOpportunityNormal);
       // getSuggestions is called once by findPreservableDomainWideSuggestion but NOT a second
-      // time to build auditRunSuggestions — that data comes directly from the URL list.
+      // time to build auditRunCandidates — keys are derived directly from the URL list.
       expect(getSuggestionsStub).to.have.been.calledOnce;
-      // One suggestion adapter per URL in the current batch
-      expect(auditRunSuggestions).to.have.lengthOf(1);
-      expect(auditRunSuggestions[0].getData().url).to.equal('https://example.com/page1');
-      expect(auditRunSuggestions[0].getData().scrapeJobId).to.equal('current-job-id');
-      expect(auditRunSuggestions[0].getStatus()).to.equal('NEW');
-      expect(auditRunSuggestions[0].getId()).to.be.null;
+      // One candidate per URL in the current batch — plain objects with S3 keys, no DB entity
+      expect(auditRunCandidates).to.have.lengthOf(1);
+      expect(auditRunCandidates[0].url).to.equal('https://example.com/page1');
+      expect(auditRunCandidates[0].originalHtmlMarkdownKey).to.include('current-job-id');
+      expect(auditRunCandidates[0].markdownDiffKey).to.include('current-job-id');
+      expect(auditRunCandidates[0]).to.not.have.property('getId');
+      expect(auditRunCandidates[0]).to.not.have.property('getStatus');
     });
   });
 

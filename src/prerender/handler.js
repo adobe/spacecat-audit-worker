@@ -487,11 +487,13 @@ async function fetchLatestScrapeJobId(siteId, context) {
  * @param {Object} auditData - Audit data used to build the message
  * @param {Object} opportunity - The prerender opportunity entity
  * @param {Object} context - Processing context
- * @param {Array} [suggestions] - Pre-fetched suggestions; if omitted they are loaded from the DB
+ * @param {Array|null} [preBuiltCandidates] - Pre-built candidate objects for normal audit runs
+ *   (avoids a DB round-trip). Each entry is { url, originalHtmlMarkdownKey, markdownDiffKey }.
+ *   When null/omitted, candidates are derived from all DB suggestions (ai-only mode).
  * @returns {Promise<number>} - Number of suggestions sent to Mystique
  */
 // eslint-disable-next-line max-len
-async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, opportunity, context, suggestions) {
+async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, opportunity, context, preBuiltCandidates) {
   const {
     log, sqs, env, site,
   } = context;
@@ -517,83 +519,75 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
   try {
     const baseUrl = auditUrl;
 
-    // Use pre-fetched suggestions when provided (normal audit mode passes the freshly synced
-    // batch directly to avoid a redundant DB round-trip). Fall back to fetching from the DB
-    // for ai-only mode where no batch is available.
-    const existingSuggestions = suggestions ?? await opportunity.getSuggestions();
+    let suggestionsPayload;
 
-    if (!existingSuggestions || existingSuggestions.length === 0) {
-      log.debug(`${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, skipping Mystique message. baseUrl=${baseUrl}, siteId=${siteId}`);
-      return 0;
-    }
+    /* c8 ignore next 4 - Normal run path exercised via processContentAndGenerateOpportunities */
+    if (preBuiltCandidates) {
+      suggestionsPayload = preBuiltCandidates;
+    } else {
+      // ai-only mode: no URL list available, derive candidates from all DB suggestions.
+      const existingSuggestions = await opportunity.getSuggestions();
 
-    // Step 1: synchronous filtering — collect eligible candidates with computed S3 keys.
-    const candidates = [];
-
-    existingSuggestions.forEach((s) => {
-      const data = s.getData();
-
-      // Skip domain-wide aggregate suggestion and anything without URL
-      if (!data?.url || data?.isDomainWide) {
-        return;
+      if (!existingSuggestions || existingSuggestions.length === 0) {
+        log.debug(`${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, skipping Mystique message. baseUrl=${baseUrl}, siteId=${siteId}`);
+        return 0;
       }
 
-      // Skip OUTDATED and SKIPPED suggestions (stale or user-dismissed)
-      const status = s.getStatus();
-      const isDeployedOrFixed = status === Suggestion.STATUSES.FIXED || !!data?.edgeDeployed;
-      if (
-        status === Suggestion.STATUSES.OUTDATED
-        || status === Suggestion.STATUSES.SKIPPED
-        || isDeployedOrFixed
-      ) {
-        return;
-      }
+      const candidates = [];
 
-      const suggestionId = s.getId();
+      existingSuggestions.forEach((s) => {
+        const data = s.getData();
 
-      // Resolve the scrapeJobId in priority order:
-      //   1. data.scrapeJobId — stamped at suggestion-creation time (most reliable)
-      //   2. data.originalHtmlKey — extract the job segment from the stored S3 path
-      //      (format: prerender/scrapes/{scrapeJobId}/...)
-      //   3. Neither available → skip; we cannot build valid S3 keys without a job id
-      let effectiveScrapeJobId = data.scrapeJobId;
-      if (!effectiveScrapeJobId && data.originalHtmlKey) {
-        // prerender/scrapes/{scrapeJobId}/...
-        const parts = data.originalHtmlKey.split('/');
-        effectiveScrapeJobId = parts[2] || null;
-        if (effectiveScrapeJobId) {
-          log.debug(`${LOG_PREFIX} Suggestion ${suggestionId} missing scrapeJobId; `
-            + `derived from originalHtmlKey: ${effectiveScrapeJobId}. `
-            + `baseUrl=${baseUrl}, siteId=${siteId}`);
+        // Skip domain-wide aggregate suggestion and anything without URL
+        if (!data?.url || data?.isDomainWide) {
+          return;
         }
-      }
-      if (!effectiveScrapeJobId) {
-        log.warn(`${LOG_PREFIX} Suggestion ${suggestionId} skipped: no scrapeJobId and no `
-          + `originalHtmlKey to derive one from. baseUrl=${baseUrl}, siteId=${siteId}`);
-        return;
-      }
 
-      // Build markdown-based S3 keys for Mystique to consume
-      const originalHtmlMarkdownKey = getS3Path(
-        data.url,
-        effectiveScrapeJobId,
-        'server-side-html.md',
-      );
-      const markdownDiffKey = getS3Path(
-        data.url,
-        effectiveScrapeJobId,
-        'markdown-diff.md',
-      );
+        // Skip OUTDATED and SKIPPED suggestions (stale or user-dismissed)
+        const status = s.getStatus();
+        const isDeployedOrFixed = status === Suggestion.STATUSES.FIXED || !!data?.edgeDeployed;
+        if (
+          status === Suggestion.STATUSES.OUTDATED
+          || status === Suggestion.STATUSES.SKIPPED
+          || isDeployedOrFixed
+        ) {
+          return;
+        }
 
-      candidates.push({
-        suggestionId,
-        url: data.url,
-        originalHtmlMarkdownKey,
-        markdownDiffKey,
+        const suggestionId = s.getId();
+
+        // Resolve the scrapeJobId in priority order:
+        //   1. data.scrapeJobId — stamped at suggestion-creation time (most reliable)
+        //   2. data.originalHtmlKey — extract the job segment from the stored S3 path
+        //      (format: prerender/scrapes/{scrapeJobId}/...)
+        //   3. Neither available → skip; we cannot build valid S3 keys without a job id
+        let effectiveScrapeJobId = data.scrapeJobId;
+        if (!effectiveScrapeJobId && data.originalHtmlKey) {
+          // prerender/scrapes/{scrapeJobId}/...
+          const parts = data.originalHtmlKey.split('/');
+          effectiveScrapeJobId = parts[2] || null;
+          if (effectiveScrapeJobId) {
+            log.debug(`${LOG_PREFIX} Suggestion ${suggestionId} missing scrapeJobId; `
+              + `derived from originalHtmlKey: ${effectiveScrapeJobId}. `
+              + `baseUrl=${baseUrl}, siteId=${siteId}`);
+          }
+        }
+        if (!effectiveScrapeJobId) {
+          log.warn(`${LOG_PREFIX} Suggestion ${suggestionId} skipped: no scrapeJobId and no `
+            + `originalHtmlKey to derive one from. baseUrl=${baseUrl}, siteId=${siteId}`);
+          return;
+        }
+
+        candidates.push({
+          suggestionId,
+          url: data.url,
+          originalHtmlMarkdownKey: getS3Path(data.url, effectiveScrapeJobId, 'server-side-html.md'),
+          markdownDiffKey: getS3Path(data.url, effectiveScrapeJobId, 'markdown-diff.md'),
+        });
       });
-    });
 
-    const suggestionsPayload = candidates;
+      suggestionsPayload = candidates;
+    }
 
     if (suggestionsPayload.length === 0) {
       log.info(`${LOG_PREFIX} No eligible suggestions to send to Mystique for opportunityId=${opportunityId}. baseUrl=${baseUrl}, siteId=${siteId}`);
@@ -1165,17 +1159,23 @@ export async function processOpportunityAndSuggestions(
     suggestions=${preRenderSuggestions.length},
     totalSuggestions=${allSuggestions.length},`);
 
-  // Build lightweight suggestion-like adapters directly from the URL list processed in this
-  // audit run. This avoids a redundant DB round-trip: we already have the data needed to
-  // construct S3 keys for Mystique. Domain-wide suggestions are intentionally excluded —
-  // Mystique only needs individual URL suggestions.
-  const auditRunSuggestions = preRenderSuggestions.map((s) => ({
-    getId: () => null,
-    getStatus: () => Suggestion.STATUSES.NEW,
-    getData: () => mapSuggestionData(s),
-  }));
+  // Build Mystique candidates directly from the URL list processed in this audit run.
+  // This avoids a redundant DB round-trip — we have all the data needed to construct S3
+  // keys. Domain-wide suggestions are intentionally excluded; Mystique needs individual URLs.
+  const auditRunCandidates = preRenderSuggestions.reduce((acc, s) => {
+    try {
+      acc.push({
+        url: s.url,
+        originalHtmlMarkdownKey: getS3Path(s.url, auditData.scrapeJobId, 'server-side-html.md'),
+        markdownDiffKey: getS3Path(s.url, auditData.scrapeJobId, 'markdown-diff.md'),
+      });
+    } catch {
+      // skip malformed URLs — getS3Path throws if new URL(url) fails
+    }
+    return acc;
+  }, []);
 
-  return { opportunity, auditRunSuggestions };
+  return { opportunity, auditRunCandidates };
 }
 
 /**
@@ -1632,7 +1632,7 @@ export async function processContentAndGenerateOpportunities(context) {
 
     /* c8 ignore next 16 - Opportunity processing branch, covered by integration tests */
     if (urlsNeedingPrerender.length > 0) {
-      const { opportunity, auditRunSuggestions } = await processOpportunityAndSuggestions(
+      const { opportunity, auditRunCandidates } = await processOpportunityAndSuggestions(
         site.getBaseURL(),
         {
           siteId,
@@ -1651,7 +1651,7 @@ export async function processContentAndGenerateOpportunities(context) {
         { siteId, auditId: audit.getId(), scrapeJobId },
         opportunity,
         context,
-        auditRunSuggestions,
+        auditRunCandidates,
       );
       /* c8 ignore next 12 */
     } else if (scrapeForbidden) {
