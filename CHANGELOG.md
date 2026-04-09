@@ -1,3 +1,10 @@
+## [1.406.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.406.1...v1.406.2) (2026-04-09)
+
+
+### Bug Fixes
+
+* enforce curly braces and remove eslint-env comments ([#2342](https://github.com/adobe/spacecat-audit-worker/issues/2342)) ([44c465e](https://github.com/adobe/spacecat-audit-worker/commit/44c465e7117bb2ef18800738ee182dae92bccc11))
+
 ## [1.406.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.406.0...v1.406.1) (2026-04-09)
 
 
