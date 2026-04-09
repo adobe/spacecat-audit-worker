@@ -12,7 +12,8 @@
 
 /**
  * Shared helpers for off-site guidance audits (reddit, youtube, cited, etc.):
- * caps on URLs sent to Mystique (SQS payload size) and optional `urlLimit` from the audit queue.
+ * caps on URLs sent to Mystique (SQS payload size), optional `urlLimit` from the audit queue,
+ * and DRS availability filtering to ensure only already-scraped URLs are sent for analysis.
  */
 
 export const MYSTIQUE_URLS_LIMIT = 50;
@@ -30,6 +31,73 @@ export const MYSTIQUE_URLS_LIMIT = 50;
  * @param {string} [logPrefix]
  * @returns {number}
  */
+/**
+ * Filters an array of URL objects to only those whose content is already available in DRS.
+ *
+ * Runs one `lookupScrapeResults` call per dataset ID. A URL passes the filter when it has
+ * `status === 'available'` in **at least one** of the provided datasets, meaning Mystique
+ * will be able to retrieve its scraped content.
+ *
+ * Falls back gracefully (returns the original list unchanged) when:
+ *  - `drsClient` is null / undefined / not configured (`isConfigured()` returns false)
+ *  - `lookupScrapeResults` throws or returns null for every dataset
+ *
+ * @param {Array<{url: string}>} urls - URL objects from the URL Store
+ * @param {string[]} datasetIds - DRS dataset IDs to check
+ *   (e.g. ['reddit_posts', 'reddit_comments'])
+ * @param {string} siteId - Site ID required by the DRS lookup API
+ * @param {object|null} drsClient - Configured DrsClient instance (or null / unconfigured)
+ * @param {object} [log]
+ * @param {string} [logPrefix]
+ * @returns {Promise<Array<{url: string}>>} Filtered URL objects (may equal input on fallback)
+ */
+export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, log, logPrefix) {
+  const prefix = logPrefix ?? '';
+
+  if (!drsClient || !drsClient.isConfigured()) {
+    log?.info(`${prefix} DRS client not configured, skipping availability filter`);
+    return urls;
+  }
+
+  const rawUrls = urls.map((item) => item.url);
+  const availableUrls = new Set();
+
+  for (const datasetId of datasetIds) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const response = await drsClient.lookupScrapeResults({ datasetId, siteId, urls: rawUrls });
+      if (!response) {
+        log?.warn(`${prefix} DRS lookup returned null for datasetId=${datasetId}, skipping`);
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      for (const result of response.results) {
+        if (result.status === 'available') {
+          availableUrls.add(result.url);
+        }
+      }
+      log?.info(
+        `${prefix} DRS lookup datasetId=${datasetId}: `
+        + `${response.summary?.available ?? 0}/${response.summary?.total ?? rawUrls.length} available`,
+      );
+    } catch (error) {
+      log?.warn(`${prefix} DRS lookup failed for datasetId=${datasetId}: ${error.message}, skipping`);
+    }
+  }
+
+  if (availableUrls.size === 0) {
+    log?.warn(`${prefix} No URLs found available in DRS across datasets [${datasetIds.join(', ')}], falling back to full list`);
+    return urls;
+  }
+
+  const filtered = urls.filter((item) => availableUrls.has(item.url));
+  const removed = urls.length - filtered.length;
+  if (removed > 0) {
+    log?.info(`${prefix} DRS availability filter: removed ${removed} URL(s) not yet scraped, ${filtered.length} remaining`);
+  }
+  return filtered;
+}
+
 export function resolveMystiqueUrlLimit(auditContext, log, logPrefix) {
   const prefix = logPrefix ?? '';
   const ctx = auditContext ?? {};

@@ -22,6 +22,7 @@ import {
   MYSTIQUE_URLS_LIMIT,
   resolveMystiqueUrlLimit as realResolveMystiqueUrlLimit,
 } from '../../../src/utils/offsite-audit-utils.js';
+import { OFFSITE_DOMAINS } from '../../../src/offsite-brand-presence/constants.js';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
 
@@ -35,6 +36,8 @@ describe('Reddit Analysis Handler', () => {
   let mockAudit;
   let mockStoreClient;
   let mockComputeTopicsFromBrandPresence;
+  let mockFilterUrlsByDrsStatus;
+  let mockDrsClient;
   let redditAnalysisHandler;
   let StoreEmptyError;
 
@@ -85,6 +88,9 @@ describe('Reddit Analysis Handler', () => {
     };
 
     mockComputeTopicsFromBrandPresence = sandbox.stub().resolves(mockComputedTopics);
+    mockFilterUrlsByDrsStatus = sandbox.stub().callsFake(async (urls) => urls);
+
+    mockDrsClient = { isConfigured: sandbox.stub().returns(true) };
 
     mockStoreClient = {
       getUrls: sandbox.stub().resolves(mockUrls),
@@ -95,7 +101,14 @@ describe('Reddit Analysis Handler', () => {
       createFrom: sandbox.stub().returns(mockStoreClient),
     };
 
+    const mockDrsClientClass = {
+      createFrom: sandbox.stub().returns(mockDrsClient),
+    };
+
     redditAnalysisHandler = await esmock('../../../src/reddit-analysis/handler.js', {
+      '@adobe/spacecat-shared-drs-client': {
+        default: mockDrsClientClass,
+      },
       '../../../src/utils/store-client.js': {
         default: mockStoreClientClass,
         StoreEmptyError,
@@ -104,7 +117,11 @@ describe('Reddit Analysis Handler', () => {
       },
       '../../../src/utils/offsite-audit-utils.js': {
         MYSTIQUE_URLS_LIMIT,
+        filterUrlsByDrsStatus: mockFilterUrlsByDrsStatus,
         resolveMystiqueUrlLimit: realResolveMystiqueUrlLimit,
+      },
+      '../../../src/offsite-brand-presence/constants.js': {
+        OFFSITE_DOMAINS,
       },
       '../../../src/utils/brand-presence-enrichment.js': {
         computeTopicsFromBrandPresence: mockComputeTopicsFromBrandPresence,
@@ -266,6 +283,24 @@ describe('Reddit Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(context.log.info).to.have.been.calledWith('[Reddit] Retrieved 0 guidelines');
+    });
+
+    it('should filter URLs by DRS availability before returning store data', async () => {
+      const availableUrl = mockUrls[0];
+      mockFilterUrlsByDrsStatus.callsFake(async () => [availableUrl]);
+
+      const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.storeData.urls).to.deep.equal([availableUrl]);
+      expect(mockFilterUrlsByDrsStatus).to.have.been.calledWith(
+        mockUrls,
+        OFFSITE_DOMAINS['reddit.com'].datasetIds,
+        siteId,
+        mockDrsClient,
+        sinon.match.object,
+        '[Reddit]',
+      );
     });
 
     it('should return error when company name is not configured', async () => {

@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import StoreClient, {
@@ -17,8 +18,10 @@ import StoreClient, {
 } from '../utils/store-client.js';
 import {
   MYSTIQUE_URLS_LIMIT,
+  filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
 } from '../utils/offsite-audit-utils.js';
+import { OFFSITE_DOMAINS } from '../offsite-brand-presence/constants.js';
 import { computeTopicsFromBrandPresence } from '../utils/brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 
@@ -72,8 +75,13 @@ async function fetchStoreData(siteId, context) {
 
   log.info(`${LOG_PREFIX} Fetching data from stores for siteId: ${siteId}`);
 
-  const urls = await storeClient.getUrls(siteId, URL_TYPES.YOUTUBE);
-  log.info(`${LOG_PREFIX} Retrieved ${urls.length} YouTube URLs from URL Store`);
+  const rawUrls = await storeClient.getUrls(siteId, URL_TYPES.YOUTUBE);
+  log.info(`${LOG_PREFIX} Retrieved ${rawUrls.length} YouTube URLs from URL Store`);
+
+  const drsClient = DrsClient.createFrom(context);
+  const { datasetIds } = OFFSITE_DOMAINS['youtube.com'];
+  const urls = await filterUrlsByDrsStatus(rawUrls, datasetIds, siteId, drsClient, log, LOG_PREFIX);
+  log.info(`${LOG_PREFIX} ${urls.length} YouTube URLs available in DRS`);
 
   const topics = await computeTopicsFromBrandPresence(siteId, context);
   log.info(`${LOG_PREFIX} Computed ${topics.length} topics from brand presence data`);

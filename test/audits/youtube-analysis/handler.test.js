@@ -22,6 +22,7 @@ import {
   MYSTIQUE_URLS_LIMIT,
   resolveMystiqueUrlLimit as realResolveMystiqueUrlLimit,
 } from '../../../src/utils/offsite-audit-utils.js';
+import { OFFSITE_DOMAINS } from '../../../src/offsite-brand-presence/constants.js';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
 
@@ -35,6 +36,8 @@ describe('YouTube Analysis Handler', () => {
   let mockAudit;
   let mockStoreClient;
   let mockComputeTopicsFromBrandPresence;
+  let mockFilterUrlsByDrsStatus;
+  let mockDrsClient;
   let youtubeAnalysisHandler;
   let StoreEmptyError;
 
@@ -86,6 +89,9 @@ describe('YouTube Analysis Handler', () => {
     };
 
     mockComputeTopicsFromBrandPresence = sandbox.stub().resolves(mockComputedTopics);
+    mockFilterUrlsByDrsStatus = sandbox.stub().callsFake(async (urls) => urls);
+
+    mockDrsClient = { isConfigured: sandbox.stub().returns(true) };
 
     mockStoreClient = {
       getUrls: sandbox.stub().resolves(mockUrls),
@@ -96,7 +102,14 @@ describe('YouTube Analysis Handler', () => {
       createFrom: sandbox.stub().returns(mockStoreClient),
     };
 
+    const mockDrsClientClass = {
+      createFrom: sandbox.stub().returns(mockDrsClient),
+    };
+
     youtubeAnalysisHandler = await esmock('../../../src/youtube-analysis/handler.js', {
+      '@adobe/spacecat-shared-drs-client': {
+        default: mockDrsClientClass,
+      },
       '../../../src/utils/store-client.js': {
         default: mockStoreClientClass,
         StoreEmptyError,
@@ -105,7 +118,11 @@ describe('YouTube Analysis Handler', () => {
       },
       '../../../src/utils/offsite-audit-utils.js': {
         MYSTIQUE_URLS_LIMIT,
+        filterUrlsByDrsStatus: mockFilterUrlsByDrsStatus,
         resolveMystiqueUrlLimit: realResolveMystiqueUrlLimit,
+      },
+      '../../../src/offsite-brand-presence/constants.js': {
+        OFFSITE_DOMAINS,
       },
       '../../../src/utils/brand-presence-enrichment.js': {
         computeTopicsFromBrandPresence: mockComputeTopicsFromBrandPresence,
@@ -267,6 +284,24 @@ describe('YouTube Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.include('Network timeout');
+    });
+
+    it('should filter URLs by DRS availability before returning store data', async () => {
+      const availableUrl = mockUrls[0];
+      mockFilterUrlsByDrsStatus.callsFake(async () => [availableUrl]);
+
+      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.storeData.urls).to.deep.equal([availableUrl]);
+      expect(mockFilterUrlsByDrsStatus).to.have.been.calledWith(
+        mockUrls,
+        OFFSITE_DOMAINS['youtube.com'].datasetIds,
+        siteId,
+        mockDrsClient,
+        sinon.match.object,
+        '[YouTube]',
+      );
     });
 
     it('should return error when company name is not configured', async () => {

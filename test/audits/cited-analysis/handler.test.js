@@ -22,6 +22,7 @@ import {
   MYSTIQUE_URLS_LIMIT,
   resolveMystiqueUrlLimit as realResolveMystiqueUrlLimit,
 } from '../../../src/utils/offsite-audit-utils.js';
+import { CITED_ANALYSIS_OFFSITE_CONFIG } from '../../../src/offsite-brand-presence/constants.js';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
 
@@ -35,6 +36,8 @@ describe('Cited Analysis Handler', () => {
   let mockAudit;
   let mockStoreClient;
   let mockComputeTopicsFromBrandPresence;
+  let mockFilterUrlsByDrsStatus;
+  let mockDrsClient;
   let citedAnalysisHandler;
   let StoreEmptyError;
 
@@ -85,6 +88,9 @@ describe('Cited Analysis Handler', () => {
     };
 
     mockComputeTopicsFromBrandPresence = sandbox.stub().resolves(mockComputedTopics);
+    mockFilterUrlsByDrsStatus = sandbox.stub().callsFake(async (urls) => urls);
+
+    mockDrsClient = { isConfigured: sandbox.stub().returns(true) };
 
     mockStoreClient = {
       getUrls: sandbox.stub().resolves(mockUrls),
@@ -95,7 +101,14 @@ describe('Cited Analysis Handler', () => {
       createFrom: sandbox.stub().returns(mockStoreClient),
     };
 
+    const mockDrsClientClass = {
+      createFrom: sandbox.stub().returns(mockDrsClient),
+    };
+
     citedAnalysisHandler = await esmock('../../../src/cited-analysis/handler.js', {
+      '@adobe/spacecat-shared-drs-client': {
+        default: mockDrsClientClass,
+      },
       '../../../src/utils/store-client.js': {
         default: mockStoreClientClass,
         StoreEmptyError,
@@ -104,7 +117,11 @@ describe('Cited Analysis Handler', () => {
       },
       '../../../src/utils/offsite-audit-utils.js': {
         MYSTIQUE_URLS_LIMIT,
+        filterUrlsByDrsStatus: mockFilterUrlsByDrsStatus,
         resolveMystiqueUrlLimit: realResolveMystiqueUrlLimit,
+      },
+      '../../../src/offsite-brand-presence/constants.js': {
+        CITED_ANALYSIS_DRS_CONFIG: CITED_ANALYSIS_OFFSITE_CONFIG,
       },
       '../../../src/utils/brand-presence-enrichment.js': {
         computeTopicsFromBrandPresence: mockComputeTopicsFromBrandPresence,
@@ -218,6 +235,24 @@ describe('Cited Analysis Handler', () => {
 
       expect(mockStoreClient.getUrls).to.have.been.calledWith(siteId, URL_TYPES.CITED);
       expect(mockStoreClient.getGuidelines).to.have.been.calledWith(siteId, GUIDELINE_TYPES.CITED_ANALYSIS);
+    });
+
+    it('should filter URLs by DRS availability before returning store data', async () => {
+      const availableUrl = mockUrls[0];
+      mockFilterUrlsByDrsStatus.callsFake(async () => [availableUrl]);
+
+      const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.storeData.urls).to.deep.equal([availableUrl]);
+      expect(mockFilterUrlsByDrsStatus).to.have.been.calledWith(
+        mockUrls,
+        CITED_ANALYSIS_OFFSITE_CONFIG.datasetIds,
+        siteId,
+        mockDrsClient,
+        sinon.match.object,
+        '[Cited]',
+      );
     });
 
     it('should use empty guidelines when sentiment API omits guidelines', async () => {
