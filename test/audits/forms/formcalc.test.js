@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect } from 'chai';
 import { formVitalsCollection, formVitalsCollection2 } from '../../fixtures/forms/formcalcaudit.js';
 import {

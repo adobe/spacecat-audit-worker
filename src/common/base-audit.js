@@ -82,6 +82,7 @@ export async function wwwUrlResolver(site, context) {
   try {
     const wwwToggledHostname = toggleWWWHostname(hostname);
     await rumApiClient.retrieveDomainkey(wwwToggledHostname);
+    /* c8 ignore next 2 */
     log.debug(`Resolved URL ${wwwToggledHostname} for ${baseURL} using RUM API Client`);
     return wwwToggledHostname;
   } catch (e) {

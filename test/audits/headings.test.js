@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 /* eslint-disable no-use-before-define */
 
 import { expect, use as chaiUse } from 'chai';

@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect } from 'chai';
 import { DATA_SOURCES } from '../../../src/common/constants.js';
 import { createOpportunityData } from '../../../src/readability/opportunities/opportunity-data-mapper.js';

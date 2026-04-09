@@ -118,8 +118,12 @@ function sortPrompts(prompts) {
     const aHasUrl = a.url && a.url.length > 0;
     const bHasUrl = b.url && b.url.length > 0;
 
-    if (aHasUrl && !bHasUrl) return -1;
-    if (!aHasUrl && bHasUrl) return 1;
+    if (aHasUrl && !bHasUrl) {
+      return -1;
+    }
+    if (!aHasUrl && bHasUrl) {
+      return 1;
+    }
     return 0;
   });
 }

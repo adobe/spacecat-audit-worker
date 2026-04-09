@@ -124,7 +124,9 @@ async function getAllSkus(params, log) {
           shouldBreak = true;
         }
       }
-      if (shouldBreak) break;
+      if (shouldBreak) {
+        break;
+      }
     }
   }
 
@@ -161,7 +163,9 @@ async function sitemapProductCoverageAudit(inputUrl, context, site) {
     };
   }
   const siteMapUrlsResult = await getSitemapUrls(inputUrl);
-  if (!siteMapUrlsResult.success) return siteMapUrlsResult;
+  if (!siteMapUrlsResult.success) {
+    return siteMapUrlsResult;
+  }
   const extractedPaths = siteMapUrlsResult.details?.extractedPaths || {};
   const filteredSitemapUrls = siteMapUrlsResult.details?.filteredSitemapUrls || [];
   const notCoveredProduct = {};

@@ -29,17 +29,23 @@ export function categorizeUrl(lcp, cls, inp) {
   const hasCls = cls !== null && cls !== undefined;
   const hasInp = inp !== null && inp !== undefined;
 
-  if (!hasLcp && !hasCls && !hasInp) return null;
+  if (!hasLcp && !hasCls && !hasInp) {
+    return null;
+  }
 
   const isPoor = (hasLcp && lcp > CWV_THRESHOLDS.LCP.POOR)
     || (hasCls && cls > CWV_THRESHOLDS.CLS.POOR)
     || (hasInp && inp > CWV_THRESHOLDS.INP.POOR);
-  if (isPoor) return 'poor';
+  if (isPoor) {
+    return 'poor';
+  }
 
   const isGood = (!hasLcp || lcp <= CWV_THRESHOLDS.LCP.GOOD)
     && (!hasCls || cls <= CWV_THRESHOLDS.CLS.GOOD)
     && (!hasInp || inp <= CWV_THRESHOLDS.INP.GOOD);
-  if (isGood) return 'good';
+  if (isGood) {
+    return 'good';
+  }
 
   return 'needsImprovement';
 }

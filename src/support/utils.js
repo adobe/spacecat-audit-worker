@@ -109,7 +109,9 @@ export function hasNonWWWSubdomain(baseUrl) {
  * @returns {string} - The URL with the www subdomain toggled.
  */
 export function toggleWWW(baseUrl) {
-  if (hasNonWWWSubdomain(baseUrl)) return baseUrl;
+  if (hasNonWWWSubdomain(baseUrl)) {
+    return baseUrl;
+  }
   return baseUrl.startsWith('https://www')
     ? baseUrl.replace('https://www.', 'https://')
     : baseUrl.replace('https://', 'https://www.');
@@ -121,8 +123,10 @@ export function toggleWWW(baseUrl) {
  * @returns {string} - The URL with the www subdomain toggled.
  */
 export function toggleWWWHostname(hostname) {
-  /* c8 ignore next 1 */
-  if (hasNonWWWSubdomain(`https://${hostname}`)) return hostname;
+  /* c8 ignore next 3 */
+  if (hasNonWWWSubdomain(`https://${hostname}`)) {
+    return hostname;
+  }
   return hostname.startsWith('www.') ? hostname.replace('www.', '') : `www.${hostname}`;
 }
 

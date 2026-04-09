@@ -133,7 +133,9 @@ function parseExperimentConfig(json) {
     let lastKey = 'default';
     json.experiences.data.forEach((line) => {
       let key = toCamelCase(line.Name);
-      if (!key) key = lastKey;
+      if (!key) {
+        key = lastKey;
+      }
       lastKey = key;
       const vns = Object.keys(line);
       vns.shift();
@@ -141,8 +143,11 @@ function parseExperimentConfig(json) {
         const camelVN = toCamelCase(vn);
         if (key === 'pages' || key === 'blocks') {
           variants[camelVN][key] = variants[camelVN][key] || [];
-          if (key === 'pages') variants[camelVN][key].push(new URL(line[vn]).pathname);
-          else variants[camelVN][key].push(line[vn]);
+          if (key === 'pages') {
+            variants[camelVN][key].push(new URL(line[vn]).pathname);
+          } else {
+            variants[camelVN][key].push(line[vn]);
+          }
         } else {
           variants[camelVN][key] = line[vn];
         }

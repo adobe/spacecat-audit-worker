@@ -85,7 +85,9 @@ function shouldPreserveDomainWideSuggestion(suggestion) {
  * @returns {Promise<boolean>}
  */
 async function getDomainWideSuggestionDeployedAtEdge(opportunity) {
-  if (!opportunity || typeof opportunity.getSuggestions !== 'function') return null;
+  if (!opportunity || typeof opportunity.getSuggestions !== 'function') {
+    return null;
+  }
   const suggestions = await opportunity.getSuggestions();
   return suggestions.find((s) => {
     const d = s.getData();
@@ -160,7 +162,9 @@ async function markNewSuggestionsAsCovered(opportunity, context, deployedAtEdgeU
   const baseUrl = site?.getBaseURL?.() || '';
   const domainWideSuggestion = await getDomainWideSuggestionDeployedAtEdge(opportunity);
   log.info(`${LOG_PREFIX} markNewSuggestionsAsCovered: isAllDomainDeployedAtEdge=${!!domainWideSuggestion}, baseUrl=${baseUrl}`);
-  if (!domainWideSuggestion) return;
+  if (!domainWideSuggestion) {
+    return;
+  }
   await markDeployedUrlSuggestionsAsCovered(
     opportunity,
     context,
@@ -252,6 +256,21 @@ async function getRecentlyProcessedPathnames(context, siteId) {
   } catch (e) {
     log.warn(`${LOG_PREFIX} Failed to load recently-processed pathnames: ${e.message}`);
     return new Set();
+  }
+}
+
+/**
+ * Returns true when the URL's pathname is NOT in the set of recently processed pathnames.
+ * URLs that cannot be parsed are treated as not recent (included by default).
+ * @param {string} url
+ * @param {Set<string>} recentPathnames
+ * @returns {boolean}
+ */
+function isNotRecentUrl(url, recentPathnames) {
+  try {
+    return !recentPathnames.has(new URL(url).pathname);
+  } catch {
+    return true;
   }
 }
 
@@ -747,21 +766,6 @@ export async function importTopPages(context) {
 }
 
 /**
- * Returns true when the URL's pathname is NOT in the set of recently processed pathnames.
- * URLs that cannot be parsed are treated as not recent (included by default).
- * @param {string} url
- * @param {Set<string>} recentPathnames
- * @returns {boolean}
- */
-function isNotRecentUrl(url, recentPathnames) {
-  try {
-    return !recentPathnames.has(new URL(url).pathname);
-  } catch {
-    return true;
-  }
-}
-
-/**
  * Step 2: Submit URLs for scraping OR skip if in ai-only mode
  * @param {Object} context - Audit context with site and dataAccess
  * @returns {Promise<Object>} - URLs to scrape and metadata OR ai-only result
@@ -811,55 +815,70 @@ export async function submitForScraping(context) {
   }
 
   const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
-  // getTopAgenticUrls internally handles errors and returns [] on failure
-  const agenticUrls = await getTopAgenticUrls(site, context);
-
   const preferredBase = getPreferredBaseUrl(site, context);
   const rebasedTopPagesUrls = topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log));
   const rebasedIncludedURLs = ((await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [])
     .map((url) => rebaseUrl(url, preferredBase, log));
 
-  // Daily batching: filter URLs recently processed within the rolling recent window
-  const recentPathnames = await getRecentlyProcessedPathnames(context, siteId);
+  // When triggered from Slack, skip agentic sources and daily batching
+  const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
 
-  const filteredOrganicUrls = rebasedTopPagesUrls
-    .filter((url) => isNotRecentUrl(url, recentPathnames));
-  const filteredIncludedURLs = rebasedIncludedURLs
-    .filter((url) => isNotRecentUrl(url, recentPathnames));
-  const filteredAgenticUrls = agenticUrls.filter((url) => isNotRecentUrl(url, recentPathnames));
+  let finalUrls;
+  let filteredCount;
+  let agenticUrlsCount = 0;
+  let currentAgentic = 0;
+  let currentOrganic;
+  let currentIncludedUrls;
+  let isFirstRunOfCycle;
+  let agenticNewThisCycle = 0;
 
-  const hasRecentOrganic = filteredOrganicUrls.length !== topPagesUrls.length;
-  const isFirstRunOfCycle = !hasRecentOrganic;
+  if (isSlackTriggered) {
+    ({ urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls([
+      ...rebasedTopPagesUrls,
+      ...rebasedIncludedURLs,
+    ]));
+    currentOrganic = rebasedTopPagesUrls.length;
+    currentIncludedUrls = rebasedIncludedURLs.length;
+    isFirstRunOfCycle = true;
+  } else {
+    // getTopAgenticUrls internally handles errors and returns [] on failure
+    const agenticUrls = await getTopAgenticUrls(site, context);
+    agenticUrlsCount = agenticUrls.length;
 
-  // Build a single ordered queue across all URL sources and slice the next daily batch
-  // after removing anything processed within the recent window.
-  const orderedCandidateUrls = [
-    ...filteredOrganicUrls,
-    ...filteredIncludedURLs,
-    ...filteredAgenticUrls,
-  ];
-  const batchedUrls = orderedCandidateUrls.slice(0, DAILY_BATCH_SIZE);
+    // Daily batching: filter URLs recently processed within the rolling recent window
+    const recentPathnames = await getRecentlyProcessedPathnames(context, siteId);
 
-  const organicUrlSet = new Set(filteredOrganicUrls);
-  const includedUrlSet = new Set(filteredIncludedURLs);
-  const batchedOrganicUrls = batchedUrls.filter((url) => organicUrlSet.has(url));
-  const batchedIncludedURLs = batchedUrls.filter((url) => includedUrlSet.has(url));
-  const batchedAgenticUrls = batchedUrls.filter(
-    (url) => !organicUrlSet.has(url) && !includedUrlSet.has(url),
-  );
+    const filteredOrganicUrls = rebasedTopPagesUrls
+      .filter((url) => isNotRecentUrl(url, recentPathnames));
+    const filteredIncludedURLs = rebasedIncludedURLs
+      .filter((url) => isNotRecentUrl(url, recentPathnames));
+    const filteredAgenticUrls = agenticUrls.filter((url) => isNotRecentUrl(url, recentPathnames));
 
-  // Merge URLs ensuring uniqueness while handling www vs non-www differences
-  // Also filters out non-HTML URLs (PDFs, images, etc.) in a single pass
-  const { urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(batchedUrls);
+    const hasRecentOrganic = filteredOrganicUrls.length !== topPagesUrls.length;
+    isFirstRunOfCycle = !hasRecentOrganic;
+    agenticNewThisCycle = filteredAgenticUrls.length;
 
-  const currentAgentic = batchedAgenticUrls.length;
-  const currentOrganic = batchedOrganicUrls.length;
-  const currentIncludedUrls = batchedIncludedURLs.length;
+    const orderedCandidateUrls = [
+      ...filteredOrganicUrls,
+      ...filteredIncludedURLs,
+      ...filteredAgenticUrls,
+    ];
+    const batchedUrls = orderedCandidateUrls.slice(0, DAILY_BATCH_SIZE);
 
-  log.info(`${LOG_PREFIX} 
-    prerender_submit_scraping_metrics:
+    const organicUrlSet = new Set(filteredOrganicUrls);
+    const includedUrlSet = new Set(filteredIncludedURLs);
+    currentOrganic = batchedUrls.filter((url) => organicUrlSet.has(url)).length;
+    currentIncludedUrls = batchedUrls.filter((url) => includedUrlSet.has(url)).length;
+    currentAgentic = batchedUrls.filter(
+      (url) => !organicUrlSet.has(url) && !includedUrlSet.has(url),
+    ).length;
+
+    ({ urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(batchedUrls));
+  }
+
+  log.info(`${LOG_PREFIX} prerender_submit_scraping_metrics:
     submittedUrls=${finalUrls.length},
-    agenticUrls=${agenticUrls.length},
+    agenticUrls=${agenticUrlsCount},
     topPagesUrls=${topPagesUrls.length},
     includedURLs=${rebasedIncludedURLs.length},
     filteredOutUrls=${filteredCount},
@@ -867,9 +886,9 @@ export async function submitForScraping(context) {
     currentOrganic=${currentOrganic},
     currentIncludedUrls=${currentIncludedUrls},
     isFirstRunOfCycle=${isFirstRunOfCycle},
-    agenticNewThisCycle=${filteredAgenticUrls.length},
+    agenticNewThisCycle=${agenticNewThisCycle},
     baseUrl=${site.getBaseURL()},
-    siteId=${siteId},`);
+    siteId=${siteId}`);
 
   if (finalUrls.length === 0) {
     // Fallback to base URL if no URLs found
@@ -880,7 +899,7 @@ export async function submitForScraping(context) {
 
   return {
     urls: finalUrls.map((url) => ({ url })),
-    siteId: site.getId(),
+    siteId,
     processingType: AUDIT_TYPE,
     maxScrapeAge: 0,
     options: {
@@ -1441,7 +1460,7 @@ export async function getScrapeJobStats(
  */
 export async function processContentAndGenerateOpportunities(context) {
   const {
-    site, audit, log, scrapeResultPaths, data, dataAccess,
+    site, audit, log, scrapeResultPaths, data, dataAccess, auditContext,
   } = context;
 
   // Check for AI-only mode - skip processing step (step 1 already triggered Mystique)
@@ -1453,6 +1472,7 @@ export async function processContentAndGenerateOpportunities(context) {
 
   const siteId = site.getId();
   const startTime = process.hrtime();
+  const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
 
   // Check if this is a paid LLMO customer early so we can use it in all logs
   const isPaid = await isPaidLLMOCustomer(context);
@@ -1470,11 +1490,13 @@ export async function processContentAndGenerateOpportunities(context) {
       log.info(`${LOG_PREFIX} Found ${urlsToCheck.length} URLs from scrape results`);
     } else {
       /* c8 ignore start */
-      // Fetch agentic URLs only for URL list fallback
-      try {
-        agenticUrls = await getTopAgenticUrls(site, context);
-      } catch (e) {
-        log.warn(`${LOG_PREFIX} Failed to fetch agentic URLs for fallback: ${e.message}. baseUrl=${site.getBaseURL()}`);
+      // Fetch agentic URLs for URL list fallback (skipped for Slack-triggered runs)
+      if (!isSlackTriggered) {
+        try {
+          agenticUrls = await getTopAgenticUrls(site, context);
+        } catch (e) {
+          log.warn(`${LOG_PREFIX} Failed to fetch agentic URLs for fallback: ${e.message}. baseUrl=${site.getBaseURL()}`);
+        }
       }
 
       // Load top organic pages cache for fallback merging
@@ -1522,7 +1544,6 @@ export async function processContentAndGenerateOpportunities(context) {
 
     log.info(`${LOG_PREFIX} Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender from total ${urlsToCheck.length} URLs scraped. isPaidLLMOCustomer=${isPaid}`);
 
-    const { auditContext } = context;
     const { scrapeJobId } = auditContext || {};
     // getScrapeJobStats combines 403s from COMPLETE-status URLs (already in comparisonResults)
     // and FAILED-status URLs (absent from comparisonResults, fetched from ScrapeUrl table).
@@ -1672,7 +1693,6 @@ export async function processContentAndGenerateOpportunities(context) {
     };
 
     // Upload status.json on error so UI can show audit status via S3 fallback
-    const { auditContext } = context;
     await uploadStatusSummaryToS3(site.getBaseURL(), {
       siteId,
       auditId: audit.getId(),

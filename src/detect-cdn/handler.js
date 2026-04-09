@@ -35,8 +35,12 @@ function getFetchForCdnDetection() {
  */
 function normalizeUrl(url) {
   const u = (url || '').trim();
-  if (!u) return '';
-  if (u.startsWith('http://') || u.startsWith('https://')) return u;
+  if (!u) {
+    return '';
+  }
+  if (u.startsWith('http://') || u.startsWith('https://')) {
+    return u;
+  }
   return `https://${u}`;
 }
 

@@ -29,8 +29,12 @@ const MAX_OPPORTUNITIES_PER_TYPE = 4;
  * @returns {string} The inferred recommendation type
  */
 function inferRecommendationType(suggestions) {
-  if (suggestions?.some((s) => s.suggestionText)) return 'audit_required';
-  if (suggestions?.some((s) => s.variationChanges)) return 'modify_heading';
+  if (suggestions?.some((s) => s.suggestionText)) {
+    return 'audit_required';
+  }
+  if (suggestions?.some((s) => s.variationChanges)) {
+    return 'modify_heading';
+  }
   return 'unknown';
 }
 

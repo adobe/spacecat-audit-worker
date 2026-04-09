@@ -60,7 +60,9 @@ export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL) {
  * @returns {string} - The country code.
  */
 export function getCountryCodeFromLang(lang, defaultCountry = 'us') {
-  if (!hasText(lang)) return defaultCountry;
+  if (!hasText(lang)) {
+    return defaultCountry;
+  }
   // Split on hyphen or underscore (both are used in the wild)
   const parts = lang.split(/[-_]/);
   if (parts.length === 2 && parts[1].length === 2) {
@@ -238,7 +240,9 @@ export function normalizeUrlForComparison(url) {
 export function urlsMatch(url1, url2) {
   const norm1 = normalizeUrlForComparison(url1);
   const norm2 = normalizeUrlForComparison(url2);
-  if (norm1 === norm2) return true;
+  if (norm1 === norm2) {
+    return true;
+  }
 
   // Also try without query strings
   const stripped1 = normalizeUrlForComparison(stripQueryString(url1));

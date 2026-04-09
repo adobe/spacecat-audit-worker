@@ -201,7 +201,9 @@ export function getHighPageViewsLowFormCtrMetrics(
     }
 
     // Skip entry if no valid maxPageviewUrl is found
-    if (!maxPageviewUrl) return;
+    if (!maxPageviewUrl) {
+      return;
+    }
 
     // Calculate `y`: find the CTA with the highest clicks and include the source
     const y = maxPageviewUrl.CTAs.reduce((maxCta, cta) => {

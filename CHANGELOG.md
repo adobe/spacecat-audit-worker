@@ -1,3 +1,59 @@
+## [1.406.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.406.1...v1.406.2) (2026-04-09)
+
+
+### Bug Fixes
+
+* enforce curly braces and remove eslint-env comments ([#2342](https://github.com/adobe/spacecat-audit-worker/issues/2342)) ([44c465e](https://github.com/adobe/spacecat-audit-worker/commit/44c465e7117bb2ef18800738ee182dae92bccc11))
+
+## [1.406.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.406.0...v1.406.1) (2026-04-09)
+
+
+### Bug Fixes
+
+* **audit:** preserve slackContext across multi-step audit chains ([#2346](https://github.com/adobe/spacecat-audit-worker/issues/2346)) ([d919c2c](https://github.com/adobe/spacecat-audit-worker/commit/d919c2c296b821b4865831567159cbdc5a2f998c))
+
+# [1.406.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.405.0...v1.406.0) (2026-04-08)
+
+
+### Features
+
+* enhance the Sitemap audit to proportionately probe across the s… ([#2343](https://github.com/adobe/spacecat-audit-worker/issues/2343)) ([84a1787](https://github.com/adobe/spacecat-audit-worker/commit/84a17877bec7d6bf90009c4fbdc64820269ac857))
+
+# [1.405.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.404.0...v1.405.0) (2026-04-08)
+
+
+### Features
+
+* We only need pages which are actionable for all customers ([#2299](https://github.com/adobe/spacecat-audit-worker/issues/2299)) ([316813f](https://github.com/adobe/spacecat-audit-worker/commit/316813f8a6875b7af9bd9dce46f29c14efa57ea0))
+
+# [1.404.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.403.1...v1.404.0) (2026-04-08)
+
+
+### Features
+
+* **prerender:** use organic+included urls when audit is triggered from Slack ([#2307](https://github.com/adobe/spacecat-audit-worker/issues/2307)) ([dcd3b8a](https://github.com/adobe/spacecat-audit-worker/commit/dcd3b8aae78f4529504c629899580cc629023a3f))
+
+## [1.403.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.403.0...v1.403.1) (2026-04-08)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2345](https://github.com/adobe/spacecat-audit-worker/issues/2345)) ([5457772](https://github.com/adobe/spacecat-audit-worker/commit/5457772888d09c5b165b55d221c3427bd9e6f42e))
+
+# [1.403.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.402.0...v1.403.0) (2026-04-08)
+
+
+### Features
+
+* **toc:** adopt 3-source URL prioritization pattern matching summari… ([#2335](https://github.com/adobe/spacecat-audit-worker/issues/2335)) ([906319d](https://github.com/adobe/spacecat-audit-worker/commit/906319d68c90e39e789a13438a3ae66447db76ea))
+
+# [1.402.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.401.4...v1.402.0) (2026-04-08)
+
+
+### Features
+
+* LLMO-3904: Modify the Summary suggestions experience to not need GenA… ([#2332](https://github.com/adobe/spacecat-audit-worker/issues/2332)) ([11d9fa2](https://github.com/adobe/spacecat-audit-worker/commit/11d9fa2913da13718fe6b86898754764ceb80538))
+
 ## [1.401.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.401.3...v1.401.4) (2026-04-08)
 
 

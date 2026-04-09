@@ -29,7 +29,9 @@ import {
  * @returns {string} - The trimmed text content, or empty string if null/undefined
  */
 export function getTextContent(element, $) {
-  if (!element || !$) return '';
+  if (!element || !$) {
+    return '';
+  }
   return $(element).text().trim();
 }
 

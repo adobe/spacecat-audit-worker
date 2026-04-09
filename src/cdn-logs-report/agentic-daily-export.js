@@ -24,7 +24,9 @@ export function getPreviousUtcDate(referenceDate = new Date()) {
 }
 
 function escapeCsvValue(value) {
-  if (value === null || value === undefined) return '';
+  if (value === null || value === undefined) {
+    return '';
+  }
   let normalized;
   if (typeof value === 'string') {
     normalized = value;

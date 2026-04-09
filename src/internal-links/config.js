@@ -54,7 +54,9 @@ const DEFAULT_MYSTIQUE_ITEM_TYPES = [
 ];
 
 function getEnvBool(env, key, defaultValue) {
-  if (env?.[key] === undefined) return defaultValue;
+  if (env?.[key] === undefined) {
+    return defaultValue;
+  }
   return String(env[key]).toLowerCase() === 'true';
 }
 
@@ -69,11 +71,17 @@ export function getPositiveIntConfig(value, fallback) {
 }
 
 function getBooleanConfig(value, fallback) {
-  if (typeof value === 'boolean') return value;
+  if (typeof value === 'boolean') {
+    return value;
+  }
   /* c8 ignore start - defensive support for string-based configs */
   if (typeof value === 'string') {
-    if (value.toLowerCase() === 'true') return true;
-    if (value.toLowerCase() === 'false') return false;
+    if (value.toLowerCase() === 'true') {
+      return true;
+    }
+    if (value.toLowerCase() === 'false') {
+      return false;
+    }
   }
   /* c8 ignore stop */
   return fallback;

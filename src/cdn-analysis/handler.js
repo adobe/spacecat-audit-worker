@@ -36,7 +36,9 @@ const ONE_HOUR_MS = 60 * 60 * 1000;
 const pad2 = (n) => String(n).padStart(2, '0');
 
 function isValidAuditContext(auditContext) {
-  if (!isNonEmptyObject(auditContext)) return false;
+  if (!isNonEmptyObject(auditContext)) {
+    return false;
+  }
   return ['year', 'month', 'day', 'hour'].every((k) => isInteger(auditContext[k]));
 }
 

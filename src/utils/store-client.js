@@ -104,8 +104,12 @@ export default class StoreClient {
 
   #ensureConfigured() {
     const missing = [];
-    if (!this.apiBaseUrl) missing.push('SPACECAT_API_BASE_URL');
-    if (!this.apiKey) missing.push('SPACECAT_API_KEY');
+    if (!this.apiBaseUrl) {
+      missing.push('SPACECAT_API_BASE_URL');
+    }
+    if (!this.apiKey) {
+      missing.push('SPACECAT_API_KEY');
+    }
     if (missing.length > 0) {
       throw new Error(`StoreClient is not configured: missing ${missing.join(', ')}`);
     }
