@@ -46,7 +46,7 @@ export const OFFSITE_DOMAINS = Object.freeze({
   },
 });
 
-export const CITED_ANALYSIS_OFFSITE_CONFIG = Object.freeze({
+export const CITED_ANALYSIS_DRS_CONFIG = Object.freeze({
   auditType: Audit.AUDIT_TYPES.CITED_ANALYSIS,
   datasetIds: [SCRAPE_DATASET_IDS.TOP_CITED],
 });

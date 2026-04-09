@@ -23,7 +23,7 @@ import {
   MYSTIQUE_URLS_LIMIT,
   resolveMystiqueUrlLimit as realResolveMystiqueUrlLimit,
 } from '../../../src/utils/offsite-audit-utils.js';
-import { CITED_ANALYSIS_OFFSITE_CONFIG } from '../../../src/offsite-brand-presence/constants.js';
+import { CITED_ANALYSIS_DRS_CONFIG } from '../../../src/offsite-brand-presence/constants.js';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
 
@@ -123,7 +123,7 @@ describe('Cited Analysis Handler', () => {
         resolveMystiqueUrlLimit: realResolveMystiqueUrlLimit,
       },
       '../../../src/offsite-brand-presence/constants.js': {
-        CITED_ANALYSIS_DRS_CONFIG: CITED_ANALYSIS_OFFSITE_CONFIG,
+        CITED_ANALYSIS_DRS_CONFIG,
       },
       '../../../src/utils/brand-presence-enrichment.js': {
         computeTopicsFromBrandPresence: mockComputeTopicsFromBrandPresence,
@@ -249,7 +249,7 @@ describe('Cited Analysis Handler', () => {
       expect(result.auditResult.storeData.urls).to.deep.equal([availableUrl]);
       expect(mockFilterUrlsByDrsStatus).to.have.been.calledWith(
         mockUrls,
-        CITED_ANALYSIS_OFFSITE_CONFIG.datasetIds,
+        CITED_ANALYSIS_DRS_CONFIG.datasetIds,
         siteId,
         mockDrsClient,
         sinon.match.object,

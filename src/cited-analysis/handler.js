@@ -22,7 +22,7 @@ import {
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
 } from '../utils/offsite-audit-utils.js';
-import { CITED_ANALYSIS_OFFSITE_CONFIG } from '../offsite-brand-presence/constants.js';
+import { CITED_ANALYSIS_DRS_CONFIG } from '../offsite-brand-presence/constants.js';
 import { computeTopicsFromBrandPresence } from '../utils/brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 
@@ -75,7 +75,7 @@ async function fetchStoreData(siteId, context) {
   log.info(`${LOG_PREFIX} Retrieved ${rawUrls.length} cited URLs from URL Store`);
 
   const drsClient = DrsClient.createFrom(context);
-  const { datasetIds } = CITED_ANALYSIS_OFFSITE_CONFIG;
+  const { datasetIds } = CITED_ANALYSIS_DRS_CONFIG;
   const urls = await filterUrlsByDrsStatus(rawUrls, datasetIds, siteId, drsClient, log, LOG_PREFIX);
   log.info(`${LOG_PREFIX} ${urls.length} cited URLs available in DRS`);
 
