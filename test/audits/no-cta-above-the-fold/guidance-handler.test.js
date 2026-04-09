@@ -273,6 +273,34 @@ describe("No CTA above the fold guidance handler", () => {
     expect(Suggestion.create).not.to.have.been.called;
   });
 
+  it("handles auditResult as object without rows property", async () => {
+    const audit = {
+      getAuditId: () => "audit-id",
+      getAuditResult: () => ({}),
+    };
+    Audit.findById.resolves(audit);
+
+    Opportunity.create.resolves({
+      getId: () => "oppty-123",
+      getType: () => "no-cta-above-the-fold",
+    });
+
+    const result = await handler(
+      {
+        auditId: "audit-id",
+        siteId,
+        data: { url: pageUrl, guidance },
+      },
+      context
+    );
+
+    expect(result.status).to.equal(ok().status);
+    expect(Opportunity.create).to.have.been.calledOnce;
+    const opptyArg = Opportunity.create.getCall(0).args[0];
+    expect(opptyArg.data.pageViews).to.equal(0);
+    expect(opptyArg.data.bounceRate).to.equal(0);
+  });
+
   it("creates opportunity when no matching opportunity of either type exists", async () => {
     const audit = {
       getAuditId: () => "audit-id",
