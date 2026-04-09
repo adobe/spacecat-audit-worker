@@ -21,7 +21,6 @@ import {
   retrieveSiteBySiteId,
   getTopPagesForSiteId,
   getAuditTargetUrls,
-  INCLUDE_CUSTOM_URLS,
   syncSuggestions,
   syncSuggestionsWithPublishDetection,
   getImsOrgId,
@@ -172,10 +171,6 @@ describe('data-access', () => {
 
       expect(result).to.deep.equal([]);
       expect(mockLog.warn).to.have.been.calledWith('Failed to read audit target URLs: config broken');
-    });
-
-    it('exports INCLUDE_CUSTOM_URLS constant set to true', () => {
-      expect(INCLUDE_CUSTOM_URLS).to.equal(true);
     });
 
     it('returns empty array when custom URLs are disabled via SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS=false', () => {

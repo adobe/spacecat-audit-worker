@@ -122,13 +122,6 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
   }
 }
 
-/**
- * Global toggle for custom audit target URL inclusion (default: on).
- * Disable with `SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS=0` or `=false`.
- * Enable explicitly with `1` or `true` (optional when unset).
- */
-export const INCLUDE_CUSTOM_URLS = true;
-
 function customAuditTargetUrlsEnabled() {
   const v = process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS;
   if (v === '0' || v === 'false') return false;
