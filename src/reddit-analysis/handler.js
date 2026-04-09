@@ -17,6 +17,7 @@ import StoreClient, {
   StoreEmptyError, URL_TYPES, GUIDELINE_TYPES,
 } from '../utils/store-client.js';
 import {
+  DrsNoContentAvailableError,
   MYSTIQUE_URLS_LIMIT,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
@@ -164,6 +165,17 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
           success: false,
           error: error.message,
           storeName: error.storeName,
+        },
+        fullAuditRef: url,
+      };
+    }
+
+    if (error instanceof DrsNoContentAvailableError) {
+      log.error(`${LOG_PREFIX} No DRS content available yet: ${error.message}`);
+      return {
+        auditResult: {
+          success: false,
+          error: error.message,
         },
         fullAuditRef: url,
       };

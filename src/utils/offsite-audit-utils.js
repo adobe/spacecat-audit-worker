@@ -32,15 +32,28 @@ export const MYSTIQUE_URLS_LIMIT = 50;
  * @returns {number}
  */
 /**
+ * Error thrown when DRS successfully responded but reported no available scraped content.
+ * Signals that scraping has not completed yet for any of the requested URLs.
+ */
+export class DrsNoContentAvailableError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'DrsNoContentAvailableError';
+  }
+}
+
+/**
  * Filters an array of URL objects to only those whose content is already available in DRS.
  *
  * Runs one `lookupScrapeResults` call per dataset ID. A URL passes the filter when it has
  * `status === 'available'` in **at least one** of the provided datasets, meaning Mystique
  * will be able to retrieve its scraped content.
  *
- * Falls back gracefully (returns the original list unchanged) when:
- *  - `drsClient` is null / undefined / not configured (`isConfigured()` returns false)
- *  - `lookupScrapeResults` throws or returns null for every dataset
+ * Falls back gracefully (returns the original list unchanged) when DRS is not configured or
+ * every dataset lookup fails / returns null — i.e. when DRS availability cannot be determined.
+ *
+ * Throws a `DrsNoContentAvailableError` when DRS is reachable and successfully responded but
+ * reported zero available URLs, meaning scraping has not completed yet.
  *
  * @param {Array<{url: string}>} urls - URL objects from the URL Store
  * @param {string[]} datasetIds - DRS dataset IDs to check
@@ -49,7 +62,8 @@ export const MYSTIQUE_URLS_LIMIT = 50;
  * @param {object|null} drsClient - Configured DrsClient instance (or null / unconfigured)
  * @param {object} [log]
  * @param {string} [logPrefix]
- * @returns {Promise<Array<{url: string}>>} Filtered URL objects (may equal input on fallback)
+ * @returns {Promise<Array<{url: string}>>} Filtered URL objects
+ * @throws {DrsNoContentAvailableError} When DRS responded but no URLs are available yet
  */
 export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, log, logPrefix) {
   const prefix = logPrefix ?? '';
@@ -61,6 +75,7 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
 
   const rawUrls = urls.map((item) => item.url);
   const availableUrls = new Set();
+  let atLeastOneLookupSucceeded = false;
 
   for (const datasetId of datasetIds) {
     try {
@@ -71,6 +86,7 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
         // eslint-disable-next-line no-continue
         continue;
       }
+      atLeastOneLookupSucceeded = true;
       for (const result of response.results) {
         if (result.status === 'available') {
           availableUrls.add(result.url);
@@ -85,9 +101,15 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
     }
   }
 
-  if (availableUrls.size === 0) {
-    log?.warn(`${prefix} No URLs found available in DRS across datasets [${datasetIds.join(', ')}], falling back to full list`);
+  if (!atLeastOneLookupSucceeded) {
+    log?.warn(`${prefix} All DRS lookups failed or returned null for datasets [${datasetIds.join(', ')}], skipping availability filter`);
     return urls;
+  }
+
+  if (availableUrls.size === 0) {
+    throw new DrsNoContentAvailableError(
+      `No scraped content available in DRS for datasets [${datasetIds.join(', ')}] and siteId: ${siteId}`,
+    );
   }
 
   const filtered = urls.filter((item) => availableUrls.has(item.url));

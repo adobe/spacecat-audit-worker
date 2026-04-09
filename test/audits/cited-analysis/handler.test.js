@@ -19,6 +19,7 @@ import {
   GUIDELINE_TYPES,
 } from '../../../src/utils/store-client.js';
 import {
+  DrsNoContentAvailableError,
   MYSTIQUE_URLS_LIMIT,
   resolveMystiqueUrlLimit as realResolveMystiqueUrlLimit,
 } from '../../../src/utils/offsite-audit-utils.js';
@@ -116,6 +117,7 @@ describe('Cited Analysis Handler', () => {
         GUIDELINE_TYPES,
       },
       '../../../src/utils/offsite-audit-utils.js': {
+        DrsNoContentAvailableError,
         MYSTIQUE_URLS_LIMIT,
         filterUrlsByDrsStatus: mockFilterUrlsByDrsStatus,
         resolveMystiqueUrlLimit: realResolveMystiqueUrlLimit,
@@ -262,6 +264,16 @@ describe('Cited Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(context.log.info).to.have.been.calledWith('[Cited] Retrieved 0 guidelines');
+    });
+
+    it('should return error when DRS has no available content', async () => {
+      mockFilterUrlsByDrsStatus.rejects(new DrsNoContentAvailableError('no content'));
+
+      const result = await citedAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.equal('no content');
+      expect(context.log.error).to.have.been.calledWithMatch(/No DRS content available yet/);
     });
 
     it('should proceed with empty guidelines when guidelinesStore returns empty', async () => {

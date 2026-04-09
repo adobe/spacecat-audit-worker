@@ -14,6 +14,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import {
+  DrsNoContentAvailableError,
   MYSTIQUE_URLS_LIMIT,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
@@ -36,6 +37,15 @@ describe('offsite-audit-utils', () => {
     it('should be a positive number', () => {
       expect(MYSTIQUE_URLS_LIMIT).to.be.a('number');
       expect(MYSTIQUE_URLS_LIMIT).to.be.greaterThan(0);
+    });
+  });
+
+  describe('DrsNoContentAvailableError', () => {
+    it('should be an Error with the correct name', () => {
+      const error = new DrsNoContentAvailableError('nothing ready');
+      expect(error).to.be.instanceOf(Error);
+      expect(error.name).to.equal('DrsNoContentAvailableError');
+      expect(error.message).to.equal('nothing ready');
     });
   });
 
@@ -117,7 +127,7 @@ describe('offsite-audit-utils', () => {
       expect(log.info).to.have.been.calledWith('[T] DRS lookup datasetId=ds1: 1/3 available');
     });
 
-    it('falls back to full list when no URLs are available across all datasets', async () => {
+    it('throws DrsNoContentAvailableError when DRS responded but no URLs are available', async () => {
       const log = { info: sandbox.stub(), warn: sandbox.stub() };
       const drsClient = {
         isConfigured: sandbox.stub().returns(true),
@@ -129,13 +139,12 @@ describe('offsite-audit-utils', () => {
         }),
       };
 
-      const result = await filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, log, '[T]');
-
-      expect(result).to.deep.equal(urls);
-      expect(log.warn).to.have.been.calledWithMatch(/falling back to full list/);
+      await expect(
+        filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, log, '[T]'),
+      ).to.be.rejectedWith(DrsNoContentAvailableError);
     });
 
-    it('skips dataset and warns when lookupScrapeResults returns null', async () => {
+    it('falls back to full list when all lookups return null', async () => {
       const log = { info: sandbox.stub(), warn: sandbox.stub() };
       const drsClient = {
         isConfigured: sandbox.stub().returns(true),
@@ -146,9 +155,10 @@ describe('offsite-audit-utils', () => {
 
       expect(result).to.deep.equal(urls);
       expect(log.warn).to.have.been.calledWithMatch(/DRS lookup returned null/);
+      expect(log.warn).to.have.been.calledWithMatch(/All DRS lookups failed or returned null/);
     });
 
-    it('skips dataset and warns when lookupScrapeResults throws', async () => {
+    it('falls back to full list when all lookups throw', async () => {
       const log = { info: sandbox.stub(), warn: sandbox.stub() };
       const drsClient = {
         isConfigured: sandbox.stub().returns(true),
@@ -159,6 +169,7 @@ describe('offsite-audit-utils', () => {
 
       expect(result).to.deep.equal(urls);
       expect(log.warn).to.have.been.calledWithMatch(/DRS lookup failed for datasetId=ds1/);
+      expect(log.warn).to.have.been.calledWithMatch(/All DRS lookups failed or returned null/);
     });
 
     it('does not log removed count when all URLs pass the filter', async () => {
