@@ -1,3 +1,15 @@
+# [1.407.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.406.2...v1.407.0) (2026-04-09)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.112.4 ([#2347](https://github.com/adobe/spacecat-audit-worker/issues/2347)) ([a88d8f9](https://github.com/adobe/spacecat-audit-worker/commit/a88d8f9da1fbad1e5dabf27f1a28f22ab3f1d790))
+
+
+### Features
+
+* enhance offsiteBrandPresenceRunner to send Slack notifications for DRS job results ([#2341](https://github.com/adobe/spacecat-audit-worker/issues/2341)) ([e75e17a](https://github.com/adobe/spacecat-audit-worker/commit/e75e17aa452b7cb8cfb99d98f18163128a9dddb8))
+
 ## [1.406.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.406.1...v1.406.2) (2026-04-09)
 
 
