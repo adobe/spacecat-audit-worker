@@ -94,6 +94,18 @@ export function preserveOnDemand(auditContext) {
   return (onDemand === true || onDemand === 'true') ? { onDemand: true } : {};
 }
 
+/**
+ * Extracts slackContext from an incoming auditContext so it survives
+ * multi-step chains (e.g. audit → import-worker → audit continuation).
+ * This ensures Slack-triggered runs retain their channel/thread identity across steps.
+ * @param {Object} auditContext - The incoming auditContext (may be undefined)
+ * @returns {Object} `{ slackContext }` when present, empty object otherwise
+ */
+export function preserveSlackContext(auditContext) {
+  const { slackContext } = auditContext || {};
+  return slackContext ? { slackContext } : {};
+}
+
 export async function sendContinuationMessage(message, context) {
   const { log } = context;
   const { queueUrl, payload } = message;

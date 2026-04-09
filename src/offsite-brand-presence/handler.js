@@ -25,6 +25,7 @@ import {
   PROVIDERS_SET,
   CITED_ANALYSIS_DRS_CONFIG,
   YOUTUBE_URL_REGEX,
+  REDDIT_URL_REGEX,
 } from './constants.js';
 
 const LOG_PREFIX = '[OffsiteBrandPresence]';
@@ -259,6 +260,9 @@ function classifyAndNormalize(rawUrl) {
   for (const domain of Object.keys(OFFSITE_DOMAINS)) {
     if (hostname === domain || hostname.endsWith(`.${domain}`)) {
       if (domain === 'youtube.com' && !YOUTUBE_URL_REGEX.test(rawUrl)) {
+        return null;
+      }
+      if (domain === 'reddit.com' && !REDDIT_URL_REGEX.test(rawUrl)) {
         return null;
       }
       return { url: normalizeUrl(parsed, domain), domain };

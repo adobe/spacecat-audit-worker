@@ -109,4 +109,23 @@ describe('User Agent Patterns', () => {
       expect(sql).to.include('Google-Extended');
     });
   });
+
+  describe('inferProviderFromUserAgent', () => {
+    it('maps known user agents to normalized provider labels', () => {
+      const { inferProviderFromUserAgent } = userAgentPatterns;
+
+      expect(inferProviderFromUserAgent('ChatGPT-User/1.0')).to.equal('ChatGPT');
+      expect(inferProviderFromUserAgent('PerplexityBot')).to.equal('Perplexity');
+      expect(inferProviderFromUserAgent('ClaudeBot')).to.equal('Anthropic');
+      expect(inferProviderFromUserAgent('Anthropic-SearchBot')).to.equal('Anthropic');
+      expect(inferProviderFromUserAgent('Gemini-Deep-Research')).to.equal('Gemini');
+      expect(inferProviderFromUserAgent('GoogleAgent-Chrome')).to.equal('Google');
+      expect(inferProviderFromUserAgent('google-notebooklm')).to.equal('Google');
+      expect(inferProviderFromUserAgent('CopilotBot')).to.equal('Copilot');
+      expect(inferProviderFromUserAgent('BingBot')).to.equal('Bing');
+      expect(inferProviderFromUserAgent('MistralAI-Search')).to.equal('MistralAI');
+      expect(inferProviderFromUserAgent('Amazonbot/0.1')).to.equal('Amazon');
+      expect(inferProviderFromUserAgent('something-unknown')).to.equal('Other');
+    });
+  });
 });

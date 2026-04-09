@@ -11,7 +11,7 @@
  */
 
 import { getStaticContent, isoCalendarWeek } from '@adobe/spacecat-shared-utils';
-import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL } from '../common/user-agent-classification.js';
+import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL, PROVIDER_USER_AGENT_PATTERNS } from '../common/user-agent-classification.js';
 import { ELMO_LIVE_HOST } from '../common/constants.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
 
@@ -19,13 +19,16 @@ import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
 // CONSTANTS
 // ============================================================================
 
-export const LLM_USER_AGENT_PATTERNS = {
-  chatgpt: '(?i)ChatGPT|GPTBot|OAI-SearchBot',
-  perplexity: '(?i)Perplexity',
-  claude: '(?i)Claude|Anthropic',
-  gemini: '(?i)Gemini',
-  copilot: '(?i)Copilot',
-};
+// LLM providers to track — subset of PROVIDER_USER_AGENT_PATTERNS (excludes search bots)
+const LLM_PROVIDERS = ['chatgpt', 'perplexity', 'claude', 'googleai', 'copilot'];
+
+export const LLM_USER_AGENT_PATTERNS = Object.fromEntries(
+  LLM_PROVIDERS.map((key) => [key, PROVIDER_USER_AGENT_PATTERNS[key]]),
+);
+
+// Maximum rows returned per status code (404, 403, 5xx) in a single Athena query.
+// Each status is capped independently so no single status can dominate results.
+export const ROWS_PER_STATUS = 300;
 
 const TIME_CONSTANTS = {
   ISO_MONDAY: 1,
@@ -234,6 +237,8 @@ export async function buildLlmErrorPagesQuery(options) {
     pageCategoryClassification: generatePageTypeClassification(remotePatterns),
     // country extraction
     countryExtraction: buildCountryExtractionSQL(),
+    // per-status row cap
+    rowsPerStatus: ROWS_PER_STATUS,
   }, './src/llm-error-pages/sql/llm-error-pages.sql');
 }
 

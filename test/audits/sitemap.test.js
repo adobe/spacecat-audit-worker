@@ -21,6 +21,7 @@ import {
   findSitemap,
   getPagesWithIssues,
   getSitemapsWithIssues,
+  mergeSitemapSuggestionData,
 } from '../../src/sitemap/handler.js';
 import {
   ERROR_CODES,
@@ -31,6 +32,8 @@ import {
   fetchContent,
   fetchWithHeadFallback,
   getBaseUrlPagesFromSitemaps,
+  applyPageUrlProbeSampling,
+  MAX_PAGE_URLS_PROBED,
   SITEMAP_XML_BATCH_SIZE,
   PAGE_URL_BATCH_SIZE,
   PAGE_URL_BATCH_DELAY_MS,
@@ -1028,6 +1031,199 @@ describe('Sitemap Audit', () => {
         urlsSuggested: 'https://example.com/new-page',
         recommendedAction: 'use this url instead: https://example.com/new-page',
       });
+    });
+  });
+
+  describe('mergeSitemapSuggestionData', () => {
+    const newUrlPayload = {
+      type: 'url',
+      sitemapUrl: 'https://example.com/sitemap.xml',
+      pageUrl: 'https://example.com/page',
+      statusCode: 301,
+      urlsSuggested: 'https://example.com/new',
+      recommendedAction: 'use this url instead: https://example.com/new',
+    };
+
+    it('removes null error for type url after merge', () => {
+      const existing = {
+        type: 'url',
+        sitemapUrl: 'https://example.com/sitemap.xml',
+        pageUrl: 'https://example.com/page',
+        statusCode: 301,
+        error: null,
+        recommendedAction: 'old',
+      };
+      const merged = mergeSitemapSuggestionData(existing, newUrlPayload);
+      expect(merged).to.deep.equal(newUrlPayload);
+      expect(merged).to.not.have.property('error');
+    });
+
+    it('removes null error when only newData would omit error', () => {
+      const existing = { type: 'url', error: null, stale: true };
+      const merged = mergeSitemapSuggestionData(existing, {
+        type: 'url',
+        sitemapUrl: 'https://example.com/sitemap.xml',
+        pageUrl: 'https://example.com/page',
+        statusCode: 404,
+        recommendedAction: 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
+      });
+      expect(merged).to.not.have.property('error');
+      expect(merged.stale).to.equal(true);
+    });
+
+    it('keeps non-empty string error for type url', () => {
+      const merged = mergeSitemapSuggestionData(
+        { type: 'url', sitemapUrl: 'https://a.com/s.xml', pageUrl: 'https://a.com/p' },
+        { ...newUrlPayload, error: 'optional detail' },
+      );
+      expect(merged.error).to.equal('optional detail');
+    });
+
+    it('drops empty string error for type url', () => {
+      const merged = mergeSitemapSuggestionData(
+        { type: 'url', error: '' },
+        newUrlPayload,
+      );
+      expect(merged).to.not.have.property('error');
+    });
+
+    it('shallow-merges type error without stripping error string', () => {
+      const existing = { type: 'error', error: ERROR_CODES.FETCH_ERROR, extra: 1 };
+      const newData = {
+        type: 'error',
+        error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
+        recommendedAction: 'x',
+      };
+      const merged = mergeSitemapSuggestionData(existing, newData);
+      expect(merged).to.deep.equal({
+        type: 'error',
+        error: ERROR_CODES.NO_SITEMAP_IN_ROBOTS,
+        extra: 1,
+        recommendedAction: 'x',
+      });
+    });
+  });
+
+  describe('applyPageUrlProbeSampling', () => {
+    const totalProbed = (out) => Object.values(out).reduce((s, urls) => s + urls.length, 0);
+
+    /** Mirrors production: proportional floor + at least 1, capped by sitemap size. */
+    const expectedQuota = (sitemapUrlCount, grandTotal) => {
+      const floored = Math.floor((MAX_PAGE_URLS_PROBED * sitemapUrlCount) / grandTotal);
+      return Math.min(sitemapUrlCount, Math.max(floored, 1));
+    };
+
+    it('returns empty object when there are no page URLs', () => {
+      expect(applyPageUrlProbeSampling({})).to.deep.equal({});
+      expect(applyPageUrlProbeSampling({ 'https://ex.com/s.xml': [] })).to.deep.equal({});
+    });
+
+    it('treats undefined sitemap page list like empty (nullish coalescing to [])', () => {
+      expect(applyPageUrlProbeSampling({ 'https://ex.com/s.xml': undefined })).to.deep.equal({});
+    });
+
+    it('probes every URL when total is at or below MAX_PAGE_URLS_PROBED', () => {
+      const paths = {
+        'https://ex.com/a.xml': ['https://ex.com/1', 'https://ex.com/2'],
+        'https://ex.com/b.xml': ['https://ex.com/3'],
+      };
+      const out = applyPageUrlProbeSampling(paths);
+      expect(out).to.deep.equal(paths);
+      expect(totalProbed(out)).to.equal(3);
+    });
+
+    it('allocates proportional floor counts matching 10/20/40/30% split of totals (derived from MAX_PAGE_URLS_PROBED)', () => {
+      const mk = (n, prefix) => Array.from({ length: n }, (_, i) => `https://ex.com/${prefix}-${i}`);
+      const counts = [1000, 2000, 4000, 3000];
+      const keys = [
+        'https://ex.com/s1.xml',
+        'https://ex.com/s2.xml',
+        'https://ex.com/s3.xml',
+        'https://ex.com/s4.xml',
+      ];
+      const grandTotal = counts.reduce((a, b) => a + b, 0);
+      const paths = {
+        [keys[0]]: mk(counts[0], 'a'),
+        [keys[1]]: mk(counts[1], 'b'),
+        [keys[2]]: mk(counts[2], 'c'),
+        [keys[3]]: mk(counts[3], 'd'),
+      };
+      const expectedLengths = counts.map((c) => expectedQuota(c, grandTotal));
+      const out = applyPageUrlProbeSampling(paths);
+      keys.forEach((key, i) => {
+        expect(out[key].length, key).to.equal(expectedLengths[i]);
+      });
+      expect(totalProbed(out)).to.equal(expectedLengths.reduce((a, b) => a + b, 0));
+    });
+
+    it('keeps only the first MAX_PAGE_URLS_PROBED sitemaps when more sitemaps have URLs', function () {
+      this.timeout(60000);
+      const paths = {};
+      for (let i = 0; i < MAX_PAGE_URLS_PROBED + 1; i += 1) {
+        paths[`https://ex.com/s${i}.xml`] = [`https://ex.com/p${i}`];
+      }
+      const out = applyPageUrlProbeSampling(paths);
+      expect(Object.keys(out).length).to.equal(MAX_PAGE_URLS_PROBED);
+      expect(totalProbed(out)).to.equal(MAX_PAGE_URLS_PROBED);
+    });
+
+    it('slices a single large sitemap using MAX_PAGE_URLS_PROBED when discovery exceeds the cap', () => {
+      const discovered = 10000;
+      const urls = Array.from({ length: discovered }, (_, i) => `https://ex.com/u${i}`);
+      const out = applyPageUrlProbeSampling({ 'https://ex.com/s.xml': urls });
+      const expectedLen = discovered <= MAX_PAGE_URLS_PROBED
+        ? discovered
+        : expectedQuota(discovered, discovered);
+      expect(out['https://ex.com/s.xml'].length).to.equal(expectedLen);
+      expect(out['https://ex.com/s.xml'][0]).to.equal('https://ex.com/u0');
+      expect(totalProbed(out)).to.equal(expectedLen);
+    });
+
+    it('uses proportional floors across many equal-sized sitemaps', () => {
+      const numSitemaps = 200;
+      const urlsPerSitemap = 100;
+      const grandTotal = numSitemaps * urlsPerSitemap;
+      const expectedPerSitemap = expectedQuota(urlsPerSitemap, grandTotal);
+      const paths = {};
+      for (let s = 0; s < numSitemaps; s += 1) {
+        paths[`https://ex.com/s${s}.xml`] = Array.from(
+          { length: urlsPerSitemap },
+          (_, i) => `https://ex.com/p${s}-${i}`,
+        );
+      }
+      const out = applyPageUrlProbeSampling(paths);
+      const expectedTotal = numSitemaps * expectedPerSitemap;
+      expect(totalProbed(out)).to.equal(expectedTotal);
+      Object.values(out).forEach((urls) => {
+        expect(urls.length).to.equal(expectedPerSitemap);
+      });
+    });
+
+    it('logs when sitemap-count cap reduces discovered URL count below original total', function () {
+      this.timeout(60000);
+      const log = { info: sinon.spy() };
+      const paths = {};
+      for (let i = 0; i < MAX_PAGE_URLS_PROBED + 1; i += 1) {
+        paths[`https://ex.com/s${i}.xml`] = [`https://ex.com/p${i}`];
+      }
+      applyPageUrlProbeSampling(paths, log);
+      const messages = log.info.getCalls().map((c) => String(c.args[0]));
+      expect(messages.some((m) => m.includes('abundance of sitemap'))).to.equal(true);
+    });
+
+    it('warns when proportional quotas sum above MAX_PAGE_URLS_PROBED', function () {
+      this.timeout(60000);
+      const log = { warn: sinon.spy(), info: sinon.spy() };
+      const paths = {
+        'https://ex.com/huge.xml': Array.from({ length: 5000 }, (_, i) => `https://ex.com/h${i}`),
+      };
+      for (let i = 0; i < 7199; i += 1) {
+        paths[`https://ex.com/t${i}.xml`] = [`https://ex.com/p${i}`];
+      }
+      applyPageUrlProbeSampling(paths, log);
+      expect(log.warn.calledOnce).to.equal(true);
+      expect(String(log.warn.firstCall.args[0])).to.include('above the ');
+      expect(log.info.called).to.equal(true);
     });
   });
 
