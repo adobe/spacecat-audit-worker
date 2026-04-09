@@ -1,3 +1,10 @@
+# [1.410.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.409.2...v1.410.0) (2026-04-09)
+
+
+### Features
+
+* Process a custom list of audit target URLs ([#2298](https://github.com/adobe/spacecat-audit-worker/issues/2298)) ([32ed884](https://github.com/adobe/spacecat-audit-worker/commit/32ed8848ae51dc148378fd3283b225878b7e829d))
+
 ## [1.409.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.409.1...v1.409.2) (2026-04-09)
 
 
