@@ -594,5 +594,35 @@ describe('Wikipedia Analysis Guidance Handler', () => {
 
       expect(mockPostMessageOptional).to.not.have.been.called;
     });
+
+    it('should handle singular suggestion count in Slack message', async () => {
+      mockAudit.getAuditResult.returns({
+        slackContext: { channelId: SLACK_CHANNEL_ID, threadTs: SLACK_THREAD_TS },
+      });
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          analysis: {
+            suggestions: [
+              {
+                id: 'single-suggestion',
+                priority: 'HIGH',
+                title: 'Single improvement',
+                description: 'Only one',
+              },
+            ],
+            company: 'Example Corp',
+            industryAnalysis: { industry: 'Technology' },
+          },
+        },
+      };
+
+      await handler.default(message, context);
+
+      const callText = mockPostMessageOptional.firstCall.args[2];
+      expect(callText).to.include('1 suggestion processed');
+    });
   });
 });
