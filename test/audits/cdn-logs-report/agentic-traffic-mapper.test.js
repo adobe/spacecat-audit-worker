@@ -456,4 +456,133 @@ describe('agentic traffic mapper', () => {
     });
     expect(result.classificationRows[1].category_name).to.equal('');
   });
+
+  it('skips pseudo-urls while preserving normal path-only URLs', async () => {
+    const result = await mapToAgenticTrafficBundle([
+      {
+        agent_type: 'Chatbots',
+        user_agent_display: 'ChatGPT-User',
+        status: 200,
+        number_of_hits: 5,
+        avg_ttfb_ms: 15,
+        country_code: 'DE',
+        url: '/data:image/x-icon;base64,abcd',
+        host: 'www.example.com',
+        product: 'Docs',
+        category: 'Asset',
+      },
+      {
+        agent_type: 'Chatbots',
+        user_agent_display: 'ChatGPT-User',
+        status: 200,
+        number_of_hits: 3,
+        avg_ttfb_ms: 10,
+        country_code: 'DE',
+        url: 'de/docs/start',
+        host: 'www.example.com',
+        product: 'Docs',
+        category: 'Documentation',
+      },
+    ], {
+      getId: () => 'site-1',
+      getBaseURL: () => 'https://www.example.com',
+      getConfig: () => ({
+        getLlmoCountryCodeIgnoreList: () => [],
+      }),
+    }, { log: { warn: sinon.spy() } }, '2026-03-31');
+
+    expect(result.trafficRows).to.have.length(1);
+    expect(result.classificationRows).to.have.length(1);
+    expect(result.trafficRows[0].url_path).to.equal('/de/docs/start');
+    expect(result.classificationRows[0].url_path).to.equal('/de/docs/start');
+  });
+
+  it('strips null bytes from host and url path values', async () => {
+    const result = await mapToAgenticTrafficBundle([
+      {
+        agent_type: 'Chatbots',
+        user_agent_display: 'ChatGPT-User',
+        status: 200,
+        number_of_hits: 2,
+        avg_ttfb_ms: 20,
+        country_code: 'US',
+        url: '/unsafe\0path/index.htm',
+        host: 'WWW.EXAMPLE.COM\0',
+        product: 'Docs',
+        category: 'Documentation',
+      },
+    ], {
+      getId: () => 'site-1',
+      getBaseURL: () => 'https://fallback.example.com',
+      getConfig: () => ({
+        getLlmoCountryCodeIgnoreList: () => [],
+      }),
+    }, { log: { warn: sinon.spy() } }, '2026-03-31');
+
+    expect(result.trafficRows[0]).to.include({
+      host: 'WWW.EXAMPLE.COM',
+      url_path: '/unsafepath/index.htm',
+    });
+    expect(result.classificationRows[0]).to.include({
+      host: 'WWW.EXAMPLE.COM',
+      url_path: '/unsafepath/index.htm',
+    });
+  });
+
+  it('canonicalizes traversal-style paths after stripping null bytes', async () => {
+    const result = await mapToAgenticTrafficBundle([
+      {
+        agent_type: 'Chatbots',
+        user_agent_display: 'ChatGPT-User',
+        status: 200,
+        number_of_hits: 1,
+        avg_ttfb_ms: 10,
+        country_code: 'US',
+        url: '/wlmdeu/../../../../../../../../../../../etc/passwd\0index.htm',
+        host: 'corporate.walmart.com\0',
+        product: 'Docs',
+        category: 'Documentation',
+      },
+    ], {
+      getId: () => 'site-1',
+      getBaseURL: () => 'https://corporate.walmart.com',
+      getConfig: () => ({
+        getLlmoCountryCodeIgnoreList: () => [],
+      }),
+    }, { log: { warn: sinon.spy() } }, '2026-03-31');
+
+    expect(result.trafficRows[0]).to.include({
+      host: 'corporate.walmart.com',
+      url_path: '/etc/passwdindex.htm',
+    });
+    expect(result.classificationRows[0]).to.include({
+      host: 'corporate.walmart.com',
+      url_path: '/etc/passwdindex.htm',
+    });
+  });
+
+  it('nulls impossible avg_ttfb_ms values instead of exporting them', async () => {
+    const result = await mapToAgenticTrafficBundle([
+      {
+        agent_type: 'Chatbots',
+        user_agent_display: 'ChatGPT-User',
+        status: 200,
+        number_of_hits: 2,
+        avg_ttfb_ms: 24412667,
+        country_code: 'US',
+        url: '/normal/path',
+        host: 'www.example.com',
+        product: 'Docs',
+        category: 'Documentation',
+      },
+    ], {
+      getId: () => 'site-1',
+      getBaseURL: () => 'https://fallback.example.com',
+      getConfig: () => ({
+        getLlmoCountryCodeIgnoreList: () => [],
+      }),
+    }, { log: { warn: sinon.spy() } }, '2026-03-31');
+
+    expect(result.trafficRows[0].avg_ttfb_ms).to.equal(null);
+  });
 });
