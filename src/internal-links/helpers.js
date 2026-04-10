@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { tracingFetch as fetch, analyzeBotProtection } from '@adobe/spacecat-shared-utils';
 import {
   createInternalLinksAuditLogger,
   isInternalLinksContextLogger,
@@ -123,6 +123,24 @@ export function classifyStatusBucket(status, error = null) {
   }
 
   return null;
+}
+
+/**
+ * Analyzes if a 403 response is from a known WAF/bot blocker.
+ * Uses analyzeBotProtection to detect known WAF signatures (Cloudflare, Akamai, Imperva, etc.).
+ * @param {number} status - HTTP status code
+ * @param {Object} headers - Response headers (Headers object from fetch)
+ * @returns {boolean} True if known WAF with high confidence (>= 0.95)
+ */
+function isKnownWafBlock(status, headers) {
+  if (status !== 403) {
+    return false;
+  }
+
+  const analysis = analyzeBotProtection({ status, headers });
+
+  // High confidence (0.95+) and not crawlable means known WAF block
+  return analysis.confidence >= 0.95 && !analysis.crawlable;
 }
 
 /**
@@ -246,7 +264,27 @@ async function checkLinkWithHead(url, log) {
       };
     }
 
-    // For auth errors, return null to trigger GET verification before classifying.
+    // For FORBIDDEN_OR_BLOCKED, check if it's a known WAF before classifying
+    if (statusBucket === STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED) {
+      if (isKnownWafBlock(status, headResponse.headers)) {
+        log.warn(`Skipping WAF-protected link: ${url} (HEAD ${status}, known WAF detected)`);
+        return {
+          isBroken: false,
+          inconclusive: true,
+          httpStatus: status,
+          statusBucket: STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED,
+          contentType,
+        };
+      }
+
+      // Not a known WAF - treat as broken
+      log.info(`✗ BROKEN LINK FOUND: ${url} (HEAD ${status}, bucket=${statusBucket})`);
+      return {
+        isBroken: true, httpStatus: status, statusBucket, contentType,
+      };
+    }
+
+    // For other auth errors, return null to trigger GET verification before classifying.
     return null;
   } catch (headError) {
     return null;
@@ -292,6 +330,28 @@ async function checkLinkWithGet(url, log) {
       };
     }
 
+    // For FORBIDDEN_OR_BLOCKED, check if it's a known WAF before classifying
+    if (statusBucket === STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED) {
+      if (isKnownWafBlock(status, getResponse.headers)) {
+        log.warn(`Skipping WAF-protected link: ${url} (GET ${status}, known WAF detected)`);
+        return {
+          isBroken: false,
+          inconclusive: true,
+          httpStatus: status,
+          statusBucket: STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED,
+          contentType,
+        };
+      }
+
+      // Not a known WAF - treat as broken
+      log.info(`✗ BROKEN LINK FOUND: ${url} (GET ${status}, bucket=${statusBucket})`);
+      return {
+        isBroken: true, httpStatus: status, statusBucket, contentType,
+      };
+    }
+
+    // For other error buckets, treat as broken
+    log.info(`✗ BROKEN LINK FOUND: ${url} (GET ${status}, bucket=${statusBucket})`);
     return {
       isBroken: true, httpStatus: status, statusBucket, contentType,
     };
