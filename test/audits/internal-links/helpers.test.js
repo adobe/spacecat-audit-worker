@@ -314,14 +314,13 @@ describe('isLinkInaccessible', () => {
       this.timeout(6000);
       nock('https://example.com')
         .head('/waf-non-403')
-        .reply(200, '', { 'cf-ray': '1234567890abc-SJC' })
-        .get('/waf-non-403')
         .reply(200, '', { 'cf-ray': '1234567890abc-SJC' });
 
       const result = await isLinkInaccessible('https://example.com/waf-non-403', mockLog, 'test-site-id');
       expect(result.isBroken).to.be.false;
-      expect(result.inconclusive).to.be.false;
       expect(result.httpStatus).to.equal(200);
+      // 200 responses don't have inconclusive field - WAF detection only applies to 403s
+      expect(result.inconclusive).to.be.undefined;
     });
 
     it('should detect when multiple WAF signatures are present', async function call() {
