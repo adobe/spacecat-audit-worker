@@ -292,9 +292,6 @@ async function checkLinkWithHead(url, log) {
       // (some servers block HEAD but allow GET, or WAF might not be detected via HEAD)
       return null;
     }
-
-    // For other auth errors, return null to trigger GET verification before classifying.
-    return null;
   } catch (headError) {
     return null;
   /* c8 ignore next 2 - Finally branch always runs; c8 tracks try/catch path split */
