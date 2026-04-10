@@ -8,7 +8,7 @@ SELECT
   0.0 AS time_to_first_byte,
   COUNT(*) AS count,
   '{{serviceProvider}}' AS cdn_provider,
-  '' AS x_forwarded_host,
+  COALESCE(s_computername, '') as x_forwarded_host,
 
   '{{year}}' AS year,
   '{{month}}' AS month,
@@ -25,9 +25,8 @@ WHERE
 
   -- only count HTML/PDF/Markdown responses, plus .md paths, robots.txt and sitemaps
   AND (
-    REGEXP_LIKE(lower(url_extract_path(cs_uri)), '(?i)((\.html|\.pdf|\.md)(\?.*)?)$')
-    OR cs_uri LIKE '%robots.txt'
-    OR cs_uri LIKE '%sitemap%'
+    NOT REGEXP_LIKE(url_extract_path(cs_uri), '(?i)\.(css|js|png|jpg|jpeg|gif|webp|php|svg|ico|woff|woff2|otf|ttf|eot|mp4|mp3|avi|mov|zip|tar|gz|json|xml|txt)$')
+    OR REGEXP_LIKE(url_extract_path(cs_uri), '(?i)((\.html?|\.pdf|\.md|robots\.txt)$|sitemap)')
   )
 
   -- agentic and LLM-attributed traffic never has self-referer

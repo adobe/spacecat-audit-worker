@@ -82,8 +82,11 @@ referrals_raw AS (
       )
     )
 
-    -- only count HTML page views
-    AND REGEXP_LIKE(lower(url_extract_path(url)), '(?i)((\.html)(\?.*)?)$')
+    -- only count HTML page views with negative pattern matching on static assets
+    AND (
+      NOT REGEXP_LIKE(url_extract_path(url), '(?i)\.(pdf|md|css|js|png|jpg|jpeg|gif|webp|php|svg|ico|woff|woff2|otf|ttf|eot|mp4|mp3|avi|mov|zip|tar|gz|json|xml|txt)$')
+      OR REGEXP_LIKE(url_extract_path(url), '(?i)(\.html?)$')
+    )
 
     -- basic filtering on user_agent for bots, crawlers, programmatic clients
     AND NOT REGEXP_LIKE(
