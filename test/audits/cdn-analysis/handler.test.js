@@ -55,6 +55,13 @@ function createS3MockForCdnType(cdnType, options = {}) {
       keyPath: `${orgId}/raw/byocdn-other/${year}/${month}/${day}/file1.log`,
       prefix: `${orgId}/raw/byocdn-other/`,
     },
+    imperva: {
+      logSample: null,
+      keyPath: `${orgId}_raw_byocdn-imperva/somefile.log`,
+      // underscore-layout prefix used for both provider discovery and raw data check
+      prefix: `${orgId}_raw_byocdn-imperva/`,
+      underscoreLayout: true,
+    },
   };
 
   const config = cdnConfigs[cdnType];
@@ -70,6 +77,17 @@ function createS3MockForCdnType(cdnType, options = {}) {
       const { Prefix = '' } = command.input || {};
       if (Prefix.includes('aggregated')) {
         return Promise.resolve({ Contents: [] });
+      }
+      if (config.underscoreLayout) {
+        // Slash-layout listing (getBucketInfo first call) returns no providers;
+        // underscore-layout listing and raw data check both use the underscore prefix.
+        if (Prefix.endsWith('/raw/')) {
+          return Promise.resolve({ Contents: [], CommonPrefixes: [] });
+        }
+        return Promise.resolve({
+          Contents: [{ Key: config.keyPath }],
+          CommonPrefixes: [{ Prefix: config.prefix }],
+        });
       }
       return Promise.resolve({
         Contents: [{ Key: config.keyPath }],
@@ -197,6 +215,30 @@ describe('CDN Analysis Handler', () => {
       expect(result23.auditResult.providers[0]).to.have.property('cdnType', 'cloudflare');
 
       // Test CloudFlare at hour 22 (should skip CloudFlare if bucket exists)
+      const result22 = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext22);
+      expect(result22.auditResult.providers).to.be.an('array').with.length(0);
+    });
+
+    it('handles Imperva processing: daily-only and flat rawDataPath', async () => {
+      const auditContext23 = {
+        year: 2025, month: 6, day: 15, hour: 23,
+      };
+      const auditContext22 = {
+        year: 2025, month: 6, day: 15, hour: 22,
+      };
+
+      context.s3Client.send.callsFake(createS3MockForCdnType('imperva'));
+
+      // At hour 23: should process imperva and use flat rawLocation as rawDataPath
+      const result23 = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext23);
+      expect(result23.auditResult.providers).to.be.an('array').with.length.greaterThan(0);
+      const impervaResult = result23.auditResult.providers[0];
+      expect(impervaResult).to.have.property('cdnType', 'imperva');
+      expect(impervaResult).to.have.property('serviceProvider', 'byocdn-imperva');
+      // rawDataPath must equal rawLocation exactly (no year/month/day/hour appended)
+      expect(impervaResult.rawDataPath).to.equal(impervaResult.rawDataPath.replace(/\d{4}\/\d{2}\/\d{2}/, ''));
+
+      // At hour 22: should skip (daily-only provider)
       const result22 = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext22);
       expect(result22.auditResult.providers).to.be.an('array').with.length(0);
     });

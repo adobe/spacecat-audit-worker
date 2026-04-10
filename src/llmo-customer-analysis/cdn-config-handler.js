@@ -17,6 +17,29 @@ import { getImsOrgId } from '../utils/data-access.js';
 import { SERVICE_PROVIDER_TYPES } from '../utils/cdn-utils.js';
 
 const CDN_LOGS_ANALYSIS_DELAY_SECONDS = 5;
+const CDN_LOGS_REPORT_DELAY_SECONDS = 900;
+
+function getAdobeFastlyBackfillDays(referenceDate = new Date()) {
+  const lastMonday = startOfWeek(subWeeks(referenceDate, 1), { weekStartsOn: 1 });
+  const backfillDays = [];
+
+  for (let date = new Date(lastMonday); !isAfter(date, referenceDate); date = addDays(date, 1)) {
+    const year = date.getUTCFullYear();
+    const month = date.getUTCMonth() + 1;
+    const day = date.getUTCDate();
+
+    backfillDays.push({
+      year,
+      month,
+      day,
+      // cdn-logs-report daily runs treat auditContext.date as the reference date
+      // and then export the previous UTC day, so we send next-day midnight here.
+      reportDate: new Date(Date.UTC(year, month - 1, day + 1)).toISOString(),
+    });
+  }
+
+  return backfillDays;
+}
 
 /**
  * Fetches commerce-fastly service for given domain
@@ -75,6 +98,7 @@ async function handleAdobeFastly(
 ) {
   const config = await Configuration.findLatest();
   const auditQueue = config.getQueues().audits;
+  const backfillDays = getAdobeFastlyBackfillDays();
 
   // Skip CDN analysis if current site already has cdn-logs-analysis with fullAuditRef
   const cdnLogsAnalysis = await LatestAudit.findBySiteIdAndAuditType(siteId, 'cdn-logs-analysis');
@@ -85,25 +109,19 @@ async function handleAdobeFastly(
   if (hasCdnAnalysisWithResults) {
     log.info(`Skipping CDN analysis for site ${siteId} - site already has cdn-logs-analysis with results`);
   } else {
-    // Queue CDN analysis from last Monday until today
-    const lastMonday = startOfWeek(subWeeks(new Date(), 1), { weekStartsOn: 1 });
-    const today = new Date();
-
     const analysisPromises = [];
-    let delaySeconds = 0;
-    for (let date = new Date(lastMonday); !isAfter(date, today); date = addDays(date, 1)) {
+    for (const [index, backfillDay] of backfillDays.entries()) {
       analysisPromises.push(sqs.sendMessage(auditQueue, {
         type: 'cdn-logs-analysis',
         siteId,
         auditContext: {
-          year: date.getUTCFullYear(),
-          month: date.getUTCMonth() + 1,
-          day: date.getUTCDate(),
+          year: backfillDay.year,
+          month: backfillDay.month,
+          day: backfillDay.day,
           hour: 8,
           processFullDay: true,
         },
-      }, null, delaySeconds));
-      delaySeconds += CDN_LOGS_ANALYSIS_DELAY_SECONDS;
+      }, null, index * CDN_LOGS_ANALYSIS_DELAY_SECONDS));
     }
 
     await Promise.all(analysisPromises);
@@ -114,7 +132,17 @@ async function handleAdobeFastly(
     type: 'cdn-logs-report',
     siteId,
     auditContext: { weekOffset: -1 },
-  }, null, 900);
+  }, null, CDN_LOGS_REPORT_DELAY_SECONDS);
+
+  const reportPromises = backfillDays.map((backfillDay, index) => sqs.sendMessage(auditQueue, {
+    type: 'cdn-logs-report',
+    siteId,
+    auditContext: {
+      date: backfillDay.reportDate,
+    },
+  }, null, CDN_LOGS_REPORT_DELAY_SECONDS + (index * CDN_LOGS_ANALYSIS_DELAY_SECONDS)));
+
+  await Promise.all(reportPromises);
 }
 
 async function handleBucketConfiguration(

@@ -1,3 +1,10 @@
+# [1.411.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.410.0...v1.411.0) (2026-04-10)
+
+
+### Features
+
+* byocdn-imperva cdn audits ([#2358](https://github.com/adobe/spacecat-audit-worker/issues/2358)) ([52e2671](https://github.com/adobe/spacecat-audit-worker/commit/52e26710919f332a26e4cd97da3cbfcfe1ceedae))
+
 # [1.410.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.409.2...v1.410.0) (2026-04-09)
 
 
