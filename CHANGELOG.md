@@ -1,3 +1,24 @@
+## [1.413.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.413.0...v1.413.1) (2026-04-10)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.51.0 ([#2367](https://github.com/adobe/spacecat-audit-worker/issues/2367)) ([8b26e54](https://github.com/adobe/spacecat-audit-worker/commit/8b26e5402e08294daacf5dbb586d231b69699448))
+
+# [1.413.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.412.3...v1.413.0) (2026-04-10)
+
+
+### Features
+
+* enhance the Sitemap audit to be able to slow down its probing rate ([#2364](https://github.com/adobe/spacecat-audit-worker/issues/2364)) ([1c80a28](https://github.com/adobe/spacecat-audit-worker/commit/1c80a283329388b0d43557d3d0d0020d36d2e2d1))
+
+## [1.412.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.412.2...v1.412.3) (2026-04-10)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2362](https://github.com/adobe/spacecat-audit-worker/issues/2362)) ([817a39a](https://github.com/adobe/spacecat-audit-worker/commit/817a39ab195406c57178313e163654f888cc28ce))
+
 ## [1.412.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.412.1...v1.412.2) (2026-04-10)
 
 
