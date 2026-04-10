@@ -889,12 +889,12 @@ describe('Sitemap Audit', () => {
         expect(filterStub.thirdCall.args[0]).to.have.length(10);
         expect(filterStub.thirdCall.args[3]).to.deep.equal(slowBatchOpts);
         const summaryMsg = log.info.getCalls().map((c) => c.args[0]).find((m) => typeof m === 'string' && m.includes('slow page URL probing summary'));
-        expect(summaryMsg).to.include('otherStatus codes: 6 of 11 page URLs probed slowly (54.5%)');
+        expect(summaryMsg).to.include('otherStatus codes: 6 of 11 page URLs probed slowly (55%)');
         expect(log.warn).to.have.been.calledOnce;
         expect(log.warn.firstCall.args[0]).to.include(sitemapB);
         expect(log.warn.firstCall.args[0]).to.include(`'otherStatus' count=6`);
         expect(log.warn.firstCall.args[0]).to.include('total count=10');
-        expect(log.warn.firstCall.args[0]).to.include('60.0%');
+        expect(log.warn.firstCall.args[0]).to.include('(60%)');
       });
 
       it('does not switch to slow when fewer than 10 URLs are probed', async () => {
@@ -979,7 +979,7 @@ describe('Sitemap Audit', () => {
         expect(filterStub.secondCall.args[0]).to.have.length(10);
         expect(log.warn).to.have.been.calledOnce;
         const summaryMsg = log.info.getCalls().map((c) => c.args[0]).find((m) => typeof m === 'string' && m.includes('slow page URL probing summary'));
-        expect(summaryMsg).to.include('otherStatus codes: 6 of 10 page URLs probed slowly (60.0%)');
+        expect(summaryMsg).to.include('otherStatus codes: 6 of 10 page URLs probed slowly (60%)');
       });
 
       it('slices sampled URLs on later sitemaps after slow mode using SLOW_MAX / FAST_MAX ratio', async () => {
