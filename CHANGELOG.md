@@ -1,3 +1,10 @@
+# [1.412.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.411.0...v1.412.0) (2026-04-10)
+
+
+### Features
+
+* **llmo:** trigger daily DB backfill for Adobe-managed Fastly ([#2359](https://github.com/adobe/spacecat-audit-worker/issues/2359)) ([234c2f7](https://github.com/adobe/spacecat-audit-worker/commit/234c2f785669825af1093c9545f48fe7ef876567))
+
 # [1.411.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.410.0...v1.411.0) (2026-04-10)
 
 
