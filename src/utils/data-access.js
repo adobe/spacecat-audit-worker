@@ -126,8 +126,12 @@ const MANUAL_SOURCE = 'manual';
 const MONEY_PAGES_SOURCE = 'moneyPages';
 
 function isSourceIncluded(source, config) {
-  if (source === MANUAL_SOURCE) return true;
-  if (source === MONEY_PAGES_SOURCE) return config?.isMoneyPageUrlsEnabled?.() !== false;
+  if (source === MANUAL_SOURCE) {
+    return true;
+  }
+  if (source === MONEY_PAGES_SOURCE) {
+    return config?.isMoneyPageUrlsEnabled?.() !== false;
+  }
   return false;
 }
 
