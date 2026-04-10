@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { tracingFetch as fetch, analyzeBotProtection } from '@adobe/spacecat-shared-utils';
+import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import {
   createInternalLinksAuditLogger,
   isInternalLinksContextLogger,
@@ -127,20 +127,31 @@ export function classifyStatusBucket(status, error = null) {
 
 /**
  * Analyzes if a 403 response is from a known WAF/bot blocker.
- * Uses analyzeBotProtection to detect known WAF signatures (Cloudflare, Akamai, Imperva, etc.).
+ * Detects known WAF signatures (Cloudflare, Akamai, Imperva, Fastly, CloudFront).
  * @param {number} status - HTTP status code
  * @param {Object} headers - Response headers (Headers object from fetch)
- * @returns {boolean} True if known WAF with high confidence (>= 0.95)
+ * @returns {boolean} True if known WAF detected
  */
 function isKnownWafBlock(status, headers) {
   if (status !== 403) {
     return false;
   }
 
-  const analysis = analyzeBotProtection({ status, headers });
+  // Check for known WAF/CDN headers
+  const hasCloudflare = headers.get('cf-ray') || headers.get('server') === 'cloudflare';
+  const hasImperva = headers.get('x-iinfo') || headers.get('x-cdn') === 'Incapsula';
+  const hasAkamai = headers.get('x-akamai-request-id')
+    || headers.get('x-akamai-session-id')
+    || (headers.get('server') || '').includes('AkamaiGHost')
+    || headers.get('akamai-cache-status')
+    || headers.get('akamai-grn');
+  const hasFastly = (headers.get('x-served-by') || '').startsWith('cache-')
+    || headers.get('fastly-io-info');
+  const hasCloudFront = headers.get('x-amz-cf-id')
+    || headers.get('x-amz-cf-pop')
+    || (headers.get('via') || '').includes('CloudFront');
 
-  // High confidence (0.95+) and not crawlable means known WAF block
-  return analysis.confidence >= 0.95 && !analysis.crawlable;
+  return hasCloudflare || hasImperva || hasAkamai || hasFastly || hasCloudFront;
 }
 
 /**
@@ -277,11 +288,9 @@ async function checkLinkWithHead(url, log) {
         };
       }
 
-      // Not a known WAF - treat as broken
-      log.info(`✗ BROKEN LINK FOUND: ${url} (HEAD ${status}, bucket=${statusBucket})`);
-      return {
-        isBroken: true, httpStatus: status, statusBucket, contentType,
-      };
+      // Not a known WAF - fallback to GET to verify if it's truly broken
+      // (some servers block HEAD but allow GET, or WAF might not be detected via HEAD)
+      return null;
     }
 
     // For other auth errors, return null to trigger GET verification before classifying.
