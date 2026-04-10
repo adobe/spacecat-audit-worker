@@ -1,3 +1,10 @@
+## [1.414.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.0...v1.414.1) (2026-04-10)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/mysticat-shared-seo-client to v1.2.1 ([#2368](https://github.com/adobe/spacecat-audit-worker/issues/2368)) ([68a6aaa](https://github.com/adobe/spacecat-audit-worker/commit/68a6aaa54879302ffb7e2f0787bb058bdd453331))
+
 # [1.414.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.413.1...v1.414.0) (2026-04-10)
 
 
