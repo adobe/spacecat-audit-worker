@@ -170,6 +170,9 @@ describe('agentic daily export', () => {
       classificationCount: 1,
       bundleUri: 's3://spacecat-dev-importer/agentic-traffic-daily-export/9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/31/20260401T100000000Z/',
     });
+    expect(context.log.info).to.have.been.calledWith(
+      '[cdn-logs-report] Daily agentic export dispatched for 9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3 (https://www.example.com) on 2026-03-31. batchId: batch-123, Rows: 1, classifications: 1',
+    );
   });
 
   it('logs a warning when cleanup after failure also fails', async () => {
