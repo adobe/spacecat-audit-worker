@@ -1,3 +1,10 @@
+## [1.412.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.412.0...v1.412.1) (2026-04-10)
+
+
+### Bug Fixes
+
+* byocdn-imperva org id extraction ([#2361](https://github.com/adobe/spacecat-audit-worker/issues/2361)) ([1704ad6](https://github.com/adobe/spacecat-audit-worker/commit/1704ad608518f3ef14723248329c0ab232391fa1))
+
 # [1.412.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.411.0...v1.412.0) (2026-04-10)
 
 
