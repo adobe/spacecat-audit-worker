@@ -275,23 +275,22 @@ async function checkLinkWithHead(url, log) {
       };
     }
 
-    // For FORBIDDEN_OR_BLOCKED, check if it's a known WAF before classifying
-    if (statusBucket === STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED) {
-      if (isKnownWafBlock(status, headResponse.headers)) {
-        log.warn(`Skipping WAF-protected link: ${url} (HEAD ${status}, known WAF detected)`);
-        return {
-          isBroken: false,
-          inconclusive: true,
-          httpStatus: status,
-          statusBucket: STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED,
-          contentType,
-        };
-      }
-
-      // Not a known WAF - fallback to GET to verify if it's truly broken
-      // (some servers block HEAD but allow GET, or WAF might not be detected via HEAD)
-      return null;
+    // At this point, statusBucket === FORBIDDEN_OR_BLOCKED
+    // Check if it's a known WAF before classifying
+    if (isKnownWafBlock(status, headResponse.headers)) {
+      log.warn(`Skipping WAF-protected link: ${url} (HEAD ${status}, known WAF detected)`);
+      return {
+        isBroken: false,
+        inconclusive: true,
+        httpStatus: status,
+        statusBucket: STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED,
+        contentType,
+      };
     }
+
+    // Not a known WAF - fallback to GET to verify if it's truly broken
+    // (some servers block HEAD but allow GET, or WAF might not be detected via HEAD)
+    return null;
   } catch (headError) {
     return null;
   /* c8 ignore next 2 - Finally branch always runs; c8 tracks try/catch path split */
