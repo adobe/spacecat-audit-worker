@@ -138,6 +138,8 @@ export default async function handler(message, context) {
     // Track valuable suggestion metrics for quality logging
     let valuableCount = 0;
     let validAiSummaryCount = 0;
+    let suggestionsWithPrompts = 0;
+    let totalPromptCount = 0;
 
     suggestions.forEach((incoming) => {
       // Handle potential null/undefined elements in suggestions array
@@ -171,6 +173,12 @@ export default async function handler(message, context) {
         }
       }
 
+      const hasNewPrompts = Array.isArray(prompts) && prompts.length > 0;
+      if (hasNewPrompts) {
+        suggestionsWithPrompts += 1;
+        totalPromptCount += prompts.length;
+      }
+
       const updatedData = {
         ...currentData,
         // Use new summary if valid; otherwise preserve existing (don't overwrite with empty)
@@ -178,9 +186,7 @@ export default async function handler(message, context) {
         // Default to true if not provided, but respect explicit boolean from Mystique
         valuable: isValuable,
         // Use new prompts if provided; otherwise preserve existing
-        prompts: Array.isArray(prompts) && prompts.length > 0
-          ? prompts
-          : (currentData.prompts ?? []),
+        prompts: hasNewPrompts ? prompts : (currentData.prompts ?? []),
       };
 
       warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
@@ -204,7 +210,9 @@ export default async function handler(message, context) {
           isPaidLLMOCustomer=${isPaid},
           totalSuggestions=${suggestionsToSave.length},
           valuableSuggestions=${valuableCount},
-          validAiSummaryCount=${validAiSummaryCount},`);
+          validAiSummaryCount=${validAiSummaryCount},
+          suggestionsWithPrompts=${suggestionsWithPrompts},
+          totalPromptCount=${totalPromptCount},`);
       } catch (error) {
         log.error(`${LOG_PREFIX} Error batch saving suggestions: ${error.message}`);
         throw error;

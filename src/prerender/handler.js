@@ -562,7 +562,7 @@ async function sendPrerenderGuidanceRequestToMystique(
     let llmoCategories = [];
     let llmoTopics = [];
     let llmoRegions = [];
-    /* c8 ignore next 15 - LLMO config read is best-effort; tested separately */
+    /* c8 ignore start - LLMO config read is best-effort; tested separately */
     try {
       const llmoCfg = site?.getConfig?.()?.getLlmoConfig?.();
       if (llmoCfg) {
@@ -581,6 +581,7 @@ async function sendPrerenderGuidanceRequestToMystique(
     } catch (llmoErr) {
       log.warn(`${LOG_PREFIX} Failed to read LLMO config for prompt classification (non-fatal): ${llmoErr.message}. baseUrl=${baseUrl}`);
     }
+    /* c8 ignore stop */
 
     const deliveryType = site?.getDeliveryType?.() || 'unknown';
 
