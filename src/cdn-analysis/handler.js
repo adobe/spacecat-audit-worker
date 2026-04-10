@@ -335,7 +335,11 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
     const cdnType = mapServiceToCdnProvider(serviceProvider);
 
     const cdnTypeLower = cdnType.toLowerCase();
-    const hasDailyPartitioningOnly = [CDN_TYPES.CLOUDFLARE, CDN_TYPES.OTHER].includes(cdnTypeLower);
+    const hasDailyPartitioningOnly = [
+      CDN_TYPES.CLOUDFLARE,
+      CDN_TYPES.IMPERVA,
+      CDN_TYPES.OTHER,
+    ].includes(cdnTypeLower);
 
     // Skip providers with daily partitioning only (no hourly partitions) unless hour=23
     if (hasDailyPartitioningOnly && hour !== '23') {
@@ -404,6 +408,10 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
         }
         if (cdnTypeLower === CDN_TYPES.OTHER) {
           return `${paths.rawLocation}${year}/${month}/${day}/`;
+        }
+        if (cdnTypeLower === CDN_TYPES.IMPERVA) {
+          // Imperva raw files are delivered flat at the rawLocation prefix (no date/hour subdirs)
+          return paths.rawLocation;
         }
         return `${paths.rawLocation}${year}/${month}/${day}/${hour}/`;
       })();
