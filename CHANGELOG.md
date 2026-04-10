@@ -1,3 +1,10 @@
+# [1.414.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.413.1...v1.414.0) (2026-04-10)
+
+
+### Features
+
+* filter moneyPages URLs when enableMoneyPageUrls flag is false ([#2366](https://github.com/adobe/spacecat-audit-worker/issues/2366)) ([8c91e99](https://github.com/adobe/spacecat-audit-worker/commit/8c91e996dbe20309d956f79abcf6accab08acfae))
+
 ## [1.413.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.413.0...v1.413.1) (2026-04-10)
 
 
