@@ -122,6 +122,8 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
   }
 }
 
+const MONEY_PAGES_SOURCE = 'moneyPages';
+
 function customAuditTargetUrlsEnabled() {
   const v = process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS;
   if (v === '0' || v === 'false') {
@@ -144,7 +146,10 @@ export function getAuditTargetUrls(site, log) {
   try {
     const config = site.getConfig?.();
     const entries = config?.getAuditTargetURLs?.() || [];
-    const urls = entries.map(({ url }) => url).filter(Boolean);
+    const filtered = config?.isMoneyPageUrlsEnabled?.() === false
+      ? entries.filter(({ source }) => source !== MONEY_PAGES_SOURCE)
+      : entries;
+    const urls = filtered.map(({ url }) => url).filter(Boolean);
     if (urls.length > 0) {
       log?.info(`Found ${urls.length} custom audit target URLs from site config`);
     }
@@ -168,7 +173,7 @@ export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
   try {
     const { SiteTopPage } = dataAccess;
     const result = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'seo', 'global');
-    log.info('Received top pages response:', JSON.stringify(result, null, 2));
+    log.info('Received top pages response:', safeStringify(result));
 
     const topPages = result || [];
     if (topPages.length > 0) {
