@@ -86,11 +86,11 @@ function delay(ms) {
  */
 export function slicePageUrlsForSlowProbeSampling(urls) {
   if (!urls?.length) {
-    return urls; // guard: return any empty array, or null, or undefined
+    return []; // if nothing was passed in, then we return an empty array
   }
   const ratio = SLOW_MAX_PAGE_URLS_PROBED / FAST_MAX_PAGE_URLS_PROBED; // ex: 0.1 == 10%
   const n = Math.min(urls.length, Math.max(1, Math.floor(urls.length * ratio)));
-  return urls.slice(0, n);
+  return urls.slice(0, n); // minimally will have 1 element in the array
 }
 
 /**
@@ -571,7 +571,7 @@ export async function getSitemapUrls(inputUrl, log) {
   } catch (error) {
     /* c8 ignore next */
     log?.error(`Sitemap: Error checking robots.txt for ${inputUrl}: ${error.message}`);
-    // If robots.txt fails, return error immediately (to match test expectations)
+    // If robots.txt fails, return error immediately (since something is horribly wrong)
     return {
       success: false,
       reasons: [{ value: `${error.message}`, error: ERROR_CODES.FETCH_ERROR }],
@@ -585,6 +585,7 @@ export async function getSitemapUrls(inputUrl, log) {
       `${protocol}://${domain}/sitemap.xml`,
       `${protocol}://${domain}/sitemap_index.xml`,
     ];
+    // note: we are really using `filterValidUrls` for the side effect of checking their presence
     sitemapUrls = await filterValidUrls(commonSitemapUrls, log, SITEMAP_GET_TIMEOUT_MS, {
       pageUrlBatchSize: SITEMAP_XML_BATCH_SIZE,
       pageUrlBatchDelayMs: SITEMAP_XML_BATCH_DELAY_MS,

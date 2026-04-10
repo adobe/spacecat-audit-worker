@@ -1540,8 +1540,10 @@ describe('Sitemap Audit', () => {
       expect(out).to.deep.equal(['https://ex.com/only']);
     });
 
-    it('returns empty for empty input', () => {
+    it('returns empty array for empty or missing input', () => {
       expect(slicePageUrlsForSlowProbeSampling([])).to.deep.equal([]);
+      expect(slicePageUrlsForSlowProbeSampling(undefined)).to.deep.equal([]);
+      expect(slicePageUrlsForSlowProbeSampling(null)).to.deep.equal([]);
     });
   });
 
