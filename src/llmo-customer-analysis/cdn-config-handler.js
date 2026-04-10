@@ -32,6 +32,8 @@ function getAdobeFastlyBackfillDays(referenceDate = new Date()) {
       year,
       month,
       day,
+      // cdn-logs-report daily runs treat auditContext.date as the reference date
+      // and then export the previous UTC day, so we send next-day midnight here.
       reportDate: new Date(Date.UTC(year, month - 1, day + 1)).toISOString(),
     });
   }
