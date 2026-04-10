@@ -265,5 +265,96 @@ describe('audit-input-urls', () => {
         'https://example.com/model-page',
       ]);
     });
+
+    it('should merge auditTargetURLs with highest priority', async () => {
+      const site = {
+        getId: () => 'site-123',
+        getConfig: () => ({
+          getIncludedURLs: () => ['https://example.com/included'],
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/custom1' },
+            { url: 'https://example.com/custom2' },
+          ],
+        }),
+      };
+
+      const result = await getMergedAuditInputUrls({
+        site,
+        auditType: 'summarization',
+        getAgenticUrls: async () => ['https://example.com/agentic'],
+      });
+
+      expect(result.auditTargetUrls).to.deep.equal([
+        'https://example.com/custom1',
+        'https://example.com/custom2',
+      ]);
+      expect(result.urls[0]).to.equal('https://example.com/custom1');
+      expect(result.urls[1]).to.equal('https://example.com/custom2');
+      expect(result.urls).to.include('https://example.com/included');
+      expect(result.urls).to.include('https://example.com/agentic');
+    });
+
+    it('should deduplicate auditTargetURLs against other sources', async () => {
+      const site = {
+        getId: () => 'site-123',
+        getConfig: () => ({
+          getIncludedURLs: () => ['https://example.com/overlap'],
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/overlap' },
+            { url: 'https://example.com/unique-custom' },
+          ],
+        }),
+      };
+
+      const result = await getMergedAuditInputUrls({
+        site,
+        auditType: 'summarization',
+        getAgenticUrls: async () => [],
+      });
+
+      const overlapCount = result.urls.filter((u) => u === 'https://example.com/overlap').length;
+      expect(overlapCount).to.equal(1);
+      expect(result.urls[0]).to.equal('https://example.com/overlap');
+      expect(result.urls).to.include('https://example.com/unique-custom');
+    });
+
+    it('should return empty auditTargetUrls when config has none', async () => {
+      const site = {
+        getId: () => 'site-123',
+        getConfig: () => ({
+          getIncludedURLs: () => [],
+        }),
+      };
+
+      const result = await getMergedAuditInputUrls({
+        site,
+        auditType: 'summarization',
+        getAgenticUrls: async () => [],
+      });
+
+      expect(result.auditTargetUrls).to.deep.equal([]);
+    });
+
+    it('should handle getAuditTargetURLs returning entries without url field', async () => {
+      const site = {
+        getId: () => 'site-123',
+        getConfig: () => ({
+          getIncludedURLs: () => [],
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/valid' },
+            { source: 'manual' },
+            { url: '' },
+          ],
+        }),
+      };
+
+      const result = await getMergedAuditInputUrls({
+        site,
+        auditType: 'summarization',
+        getAgenticUrls: async () => [],
+      });
+
+      expect(result.auditTargetUrls).to.deep.equal(['https://example.com/valid']);
+    });
   });
 });

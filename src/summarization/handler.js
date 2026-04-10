@@ -41,6 +41,7 @@ async function getSummarizationInputUrls(context) {
       return sortTopPagesByTraffic(topPages || []);
     },
     topOrganicLimit: MAX_TOP_PAGES,
+    log,
   });
 
   log.info(
@@ -61,13 +62,18 @@ export async function importTopPages(context) {
   const {
     site, dataAccess, log,
   } = context;
-  const { SiteTopPage } = dataAccess;
-
   try {
-    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
+    const { urls: allUrls } = await getMergedAuditInputUrls({
+      site,
+      dataAccess,
+      auditType: AUDIT_TYPE,
+      getAgenticUrls: () => Promise.resolve([]),
+      topOrganicLimit: MAX_TOP_PAGES,
+      log,
+    });
 
-    if (topPages.length === 0) {
-      log.info('[SUMMARIZATION] No SEO top pages found for site; continuing with fallback URL sources');
+    if (allUrls.length === 0) {
+      log.info('[SUMMARIZATION] No top pages found for site; continuing with fallback URL sources');
       return {
         type: 'top-pages',
         siteId: site.getId(),
@@ -79,14 +85,14 @@ export async function importTopPages(context) {
       };
     }
 
-    log.info(`[SUMMARIZATION] Found ${topPages.length} top pages for site ${site.getId()} (using max ${MAX_TOP_PAGES})`);
+    log.info(`[SUMMARIZATION] Found ${allUrls.length} top pages for site ${site.getId()} (using max ${MAX_TOP_PAGES})`);
 
     return {
       type: 'top-pages',
       siteId: site.getId(),
       auditResult: {
         success: true,
-        topPages: topPages.slice(0, MAX_TOP_PAGES).map((page) => page.getUrl()),
+        topPages: allUrls,
       },
       fullAuditRef: site.getBaseURL(),
     };

@@ -23,6 +23,7 @@ import {
   syncSuggestions,
   keepLatestMergeDataFunction,
 } from '../utils/data-access.js';
+import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
 import { CANONICAL_CHECKS } from './constants.js';
@@ -81,14 +82,18 @@ export async function submitForScraping(context) {
     };
   }
 
-  const { SiteTopPage } = dataAccess;
+  const { urls: allUrls } = await getMergedAuditInputUrls({
+    site,
+    dataAccess,
+    auditType,
+    getAgenticUrls: () => Promise.resolve([]),
+    log,
+  });
 
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
+  log.info(`[canonical] Found ${allUrls.length} pages for scraping`);
 
-  log.info(`[canonical] Found ${topPages?.length || 0} top pages for scraping`);
-
-  if (!topPages || topPages.length === 0) {
-    log.info(`[canonical] No top pages found for site ${site.getId()}, skipping scraping`);
+  if (allUrls.length === 0) {
+    log.info(`[canonical] No pages found for site ${site.getId()}, skipping scraping`);
     return {
       auditResult: {
         status: 'NO_OPPORTUNITIES',
@@ -98,18 +103,8 @@ export async function submitForScraping(context) {
     };
   }
 
-  const topPagesUrls = topPages.map((page) => page.getUrl());
-
-  // Filter out auth pages and PDFs before scraping
-  const filteredUrls = topPagesUrls.filter((url) => {
-    if (isAuthUrl(url)) {
-      return false;
-    }
-    if (isPdfUrl(url)) {
-      return false;
-    }
-    return true;
-  });
+  // Filter out auth pages (non-HTML/PDFs already filtered by getMergedAuditInputUrls)
+  const filteredUrls = allUrls.filter((url) => !isAuthUrl(url));
 
   // Filter out pages disallowed by robots.txt
   const robots = await fetchRobotsTxt(site.getBaseURL(), log);

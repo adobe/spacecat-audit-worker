@@ -151,6 +151,19 @@ describe('StoreClient', () => {
       expect(mockFetch.firstCall.args[0]).to.include(`/sites/${siteId}/url-store/by-audit/wikipedia-analysis`);
     });
 
+    it('should forward optional queryParams to every page request', async () => {
+      mockFetch.resolves({
+        ok: true,
+        json: sandbox.stub().resolves({ items: [{ url: 'https://example.com/1' }], pagination: {} }),
+      });
+
+      await storeClient.getUrls(siteId, URL_TYPES.REDDIT, { sortBy: 'createdAt', sortOrder: 'desc' });
+
+      const calledUrl = mockFetch.firstCall.args[0];
+      expect(calledUrl).to.include('sortBy=createdAt');
+      expect(calledUrl).to.include('sortOrder=desc');
+    });
+
     it('should fetch all pages when paginated', async () => {
       const page1 = [{ url: 'https://example.com/1' }];
       const page2 = [{ url: 'https://example.com/2' }];

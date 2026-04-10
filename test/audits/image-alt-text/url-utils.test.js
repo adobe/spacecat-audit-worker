@@ -29,10 +29,11 @@ describe('url-utils', () => {
   const siteId = 'site-id';
   const baseURL = 'https://example.com';
 
-  const makeSite = (includedURLs = []) => ({
+  const makeSite = (includedURLs = [], auditTargetURLs = []) => ({
     getBaseURL: () => baseURL,
     getConfig: () => ({
       getIncludedURLs: sinon.stub().returns(includedURLs),
+      getAuditTargetURLs: () => auditTargetURLs,
     }),
   });
 
@@ -90,6 +91,28 @@ describe('url-utils', () => {
     ]);
     expect(rumCreateFromStub).to.not.have.been.called;
     expect(log.info).to.have.been.calledWith(sinon.match('Found 2 top pages from SEO provider'));
+  });
+
+  it('merges custom audit target URLs with SEO URLs and deduplicates', async () => {
+    allBySiteIdAndSourceAndGeoStub.resolves([
+      { getUrl: () => 'https://example.com/page1' },
+    ]);
+    const site = makeSite([], [
+      { url: 'https://example.com/custom' },
+      { url: 'https://example.com/page1' },
+    ]);
+
+    const result = await getTopPageUrls({
+      siteId, site, dataAccess: makeDataAccess(), context: {}, log,
+    });
+
+    expect(result).to.deep.equal([
+      'https://example.com/page1',
+      'https://example.com/custom',
+    ]);
+    expect(log.info).to.have.been.calledWith(
+      sinon.match('Merged 1 base URLs + 2 custom URLs = 2 unique'),
+    );
   });
 
   it('falls back to RUM when SEO is empty, sorted by earned desc', async () => {
