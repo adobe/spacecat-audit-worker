@@ -84,7 +84,7 @@
     "@adobe/mysticat-shared-seo-client": "1.2.0",
     "@adobe/spacecat-helix-content-sdk": "1.4.33",
     "@adobe/spacecat-shared-athena-client": "1.9.11",
-    "@adobe/spacecat-shared-data-access": "3.50.1",
+    "@adobe/spacecat-shared-data-access": "3.51.0",
     "@adobe/spacecat-shared-data-access-v2": "npm:@adobe/spacecat-shared-data-access@2.109.0",
     "@adobe/spacecat-shared-drs-client": "1.4.2",
     "@adobe/spacecat-shared-google-client": "1.5.11",
