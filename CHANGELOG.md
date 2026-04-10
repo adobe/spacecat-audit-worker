@@ -1,3 +1,52 @@
+# [1.410.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.409.2...v1.410.0) (2026-04-09)
+
+
+### Features
+
+* Process a custom list of audit target URLs ([#2298](https://github.com/adobe/spacecat-audit-worker/issues/2298)) ([32ed884](https://github.com/adobe/spacecat-audit-worker/commit/32ed8848ae51dc148378fd3283b225878b7e829d))
+
+## [1.409.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.409.1...v1.409.2) (2026-04-09)
+
+
+### Bug Fixes
+
+* harden agentic daily export URL mapping ([#2357](https://github.com/adobe/spacecat-audit-worker/issues/2357)) ([c1567c5](https://github.com/adobe/spacecat-audit-worker/commit/c1567c522c6c9aeb484c658f3661e21144a8e79f))
+
+## [1.409.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.409.0...v1.409.1) (2026-04-09)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2356](https://github.com/adobe/spacecat-audit-worker/issues/2356)) ([bed2e57](https://github.com/adobe/spacecat-audit-worker/commit/bed2e5788521fccaeaddb5bed716af87a958f37d))
+
+# [1.409.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.408.2...v1.409.0) (2026-04-09)
+
+
+### Features
+
+* filter cited/reddit/youtube urls by DRS status; enhance storeClient getUrls to accept optional queryParams ([#2351](https://github.com/adobe/spacecat-audit-worker/issues/2351)) ([276f8ec](https://github.com/adobe/spacecat-audit-worker/commit/276f8ec39368946d861d48f0adca546344076bb6))
+
+## [1.408.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.408.1...v1.408.2) (2026-04-09)
+
+
+### Bug Fixes
+
+* **cdn-analysis:** use URL fallback when byocdn-other content type is missing ([#2354](https://github.com/adobe/spacecat-audit-worker/issues/2354)) ([dff9654](https://github.com/adobe/spacecat-audit-worker/commit/dff96547f3a43e4f326eb1eb7179ad39ee21d917))
+
+## [1.408.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.408.0...v1.408.1) (2026-04-09)
+
+
+### Bug Fixes
+
+* **prerender:** batch Mystique SQS messages and harden suggestion key resolution ([#2338](https://github.com/adobe/spacecat-audit-worker/issues/2338)) ([7751f0b](https://github.com/adobe/spacecat-audit-worker/commit/7751f0bdb78caf55f79a0f4c354a8f94e9385338))
+
+# [1.408.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.407.0...v1.408.0) (2026-04-09)
+
+
+### Features
+
+* add Slack completion notifications for offsite analysis audits ([#2350](https://github.com/adobe/spacecat-audit-worker/issues/2350)) ([12105d7](https://github.com/adobe/spacecat-audit-worker/commit/12105d7bf7c3582c97e1b396acda4179c1aad371))
+
 # [1.407.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.406.2...v1.407.0) (2026-04-09)
 
 

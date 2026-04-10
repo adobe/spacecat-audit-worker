@@ -18,6 +18,7 @@ import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-
 import {
   retrieveSiteBySiteId,
   getTopPagesForSiteId,
+  getAuditTargetUrls,
   syncSuggestions,
   syncSuggestionsWithPublishDetection,
   getImsOrgId,
@@ -86,6 +87,149 @@ describe('data-access', () => {
       await expect(retrieveSiteBySiteId(mockDataAccess, 'site1', mockLog)).to.be.rejectedWith('Error getting site site1: database error');
       expect(mockDataAccess.Site.findById).to.have.been.calledOnceWith('site1');
       expect(mockLog.warn).to.not.have.been.called;
+    });
+  });
+
+  describe('getAuditTargetUrls', () => {
+    let mockLog;
+
+    beforeEach(() => {
+      mockLog = {
+        info: sinon.stub(),
+        warn: sinon.stub(),
+      };
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('returns URL strings from config.auditTargetURLs', () => {
+      const site = {
+        getConfig: () => ({
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/page1' },
+            { url: 'https://example.com/page2' },
+          ],
+        }),
+      };
+
+      const result = getAuditTargetUrls(site, mockLog);
+
+      expect(result).to.deep.equal([
+        'https://example.com/page1',
+        'https://example.com/page2',
+      ]);
+      expect(mockLog.info).to.have.been.calledWith('Found 2 custom audit target URLs from site config');
+    });
+
+    it('returns empty array when config has no getAuditTargetURLs', () => {
+      const site = {
+        getConfig: () => ({}),
+      };
+
+      const result = getAuditTargetUrls(site, mockLog);
+
+      expect(result).to.deep.equal([]);
+      expect(mockLog.info).to.not.have.been.called;
+    });
+
+    it('returns empty array when getConfig returns null', () => {
+      const site = {
+        getConfig: () => null,
+      };
+
+      const result = getAuditTargetUrls(site, mockLog);
+
+      expect(result).to.deep.equal([]);
+    });
+
+    it('filters out entries without a url field', () => {
+      const site = {
+        getConfig: () => ({
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/valid' },
+            { source: 'manual' },
+            { url: '' },
+          ],
+        }),
+      };
+
+      const result = getAuditTargetUrls(site, mockLog);
+
+      expect(result).to.deep.equal(['https://example.com/valid']);
+    });
+
+    it('returns empty array and logs warning on config error', () => {
+      const site = {
+        getConfig: () => { throw new Error('config broken'); },
+      };
+
+      const result = getAuditTargetUrls(site, mockLog);
+
+      expect(result).to.deep.equal([]);
+      expect(mockLog.warn).to.have.been.calledWith('Failed to read audit target URLs: config broken');
+    });
+
+    it('returns empty array when custom URLs are disabled via SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS=false', () => {
+      const prev = process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS;
+      process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS = 'false';
+      try {
+        const site = {
+          getConfig: () => ({
+            getAuditTargetURLs: () => [{ url: 'https://example.com/page1' }],
+          }),
+        };
+        const result = getAuditTargetUrls(site, mockLog);
+        expect(result).to.deep.equal([]);
+        expect(mockLog.info).to.not.have.been.called;
+      } finally {
+        if (prev === undefined) {
+          delete process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS;
+        } else {
+          process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS = prev;
+        }
+      }
+    });
+
+    it('returns empty array when custom URLs are disabled via SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS=0', () => {
+      const prev = process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS;
+      process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS = '0';
+      try {
+        const site = {
+          getConfig: () => ({
+            getAuditTargetURLs: () => [{ url: 'https://example.com/page1' }],
+          }),
+        };
+        const result = getAuditTargetUrls(site, mockLog);
+        expect(result).to.deep.equal([]);
+      } finally {
+        if (prev === undefined) {
+          delete process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS;
+        } else {
+          process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS = prev;
+        }
+      }
+    });
+
+    it('returns custom URLs when SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS=1', () => {
+      const prev = process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS;
+      process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS = '1';
+      try {
+        const site = {
+          getConfig: () => ({
+            getAuditTargetURLs: () => [{ url: 'https://example.com/explicit' }],
+          }),
+        };
+        const result = getAuditTargetUrls(site, mockLog);
+        expect(result).to.deep.equal(['https://example.com/explicit']);
+      } finally {
+        if (prev === undefined) {
+          delete process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS;
+        } else {
+          process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS = prev;
+        }
+      }
     });
   });
 

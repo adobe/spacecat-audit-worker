@@ -16,5 +16,4 @@ jobs:
     uses: adobe/mysticat-ci/.github/workflows/service-ci.yaml@v1
     with:
       service-name: audit-worker
-      skip-upload-artifacts: true
     secrets: inherit

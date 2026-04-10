@@ -22,10 +22,10 @@ import calculateKpiMetrics from './kpi-metrics.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestionsWithPublishDetection, warnOnInvalidSuggestionData } from '../utils/data-access.js';
+import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
 import {
   filterBrokenSuggestedUrls,
-  isUnscrapeable,
   urlsMatch,
 } from '../utils/url-utils.js';
 import BrightDataClient, { buildLocaleSearchUrl } from '../support/bright-data-client.js';
@@ -238,24 +238,30 @@ export async function submitForScraping(context) {
   const {
     site, dataAccess, audit, log,
   } = context;
-  const { SiteTopPage } = dataAccess;
   const auditResult = audit.getAuditResult();
   if (auditResult.success === false) {
     throw new Error('Audit failed, skipping scraping and suggestions generation');
   }
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
+  const { urls: allUrls } = await getMergedAuditInputUrls({
+    site,
+    dataAccess,
+    auditType: 'broken-backlinks',
+    getAgenticUrls: () => Promise.resolve([]),
+    log,
+  });
+  const allPages = allUrls.map((url) => ({ getUrl: () => url }));
 
-  // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
   const baseURL = site.getBaseURL();
-  const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
+  // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
+  const filteredTopPages = filterByAuditScope(allPages, baseURL, { urlProperty: 'getUrl' }, log);
 
-  log.info(`Found ${topPages.length} top pages, ${filteredTopPages.length} within audit scope`);
+  log.info(`Found ${allPages.length} top pages (${allUrls.length} merged), ${filteredTopPages.length} within audit scope`);
 
   if (filteredTopPages.length === 0) {
-    if (topPages.length === 0) {
+    if (allPages.length === 0) {
       throw new Error(`No top pages found in database for site ${site.getId()}. SEO data import required.`);
     } else {
-      throw new Error(`All ${topPages.length} top pages filtered out by audit scope. BaseURL: ${baseURL} requires subpath match but no pages match scope.`);
+      throw new Error(`All ${allPages.length} top pages filtered out by audit scope. BaseURL: ${baseURL} requires subpath match but no pages match scope.`);
     }
   }
 
@@ -270,7 +276,7 @@ export const generateSuggestionData = async (context) => {
   const {
     site, audit, dataAccess, log, sqs, env, finalUrl,
   } = context;
-  const { Configuration, Suggestion, SiteTopPage } = dataAccess;
+  const { Configuration, Suggestion } = dataAccess;
 
   const auditResult = audit.getAuditResult();
   if (auditResult.success === false) {
@@ -479,12 +485,20 @@ export const generateSuggestionData = async (context) => {
   );
 
   // Get top pages and filter by audit scope
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
-  const baseURL = site.getBaseURL();
-  const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
+  const { urls: allUrls } = await getMergedAuditInputUrls({
+    site,
+    dataAccess,
+    auditType: 'broken-backlinks',
+    getAgenticUrls: () => Promise.resolve([]),
+    log,
+  });
+  const allPages = allUrls.map((url) => ({ getUrl: () => url }));
 
+  const baseURL = site.getBaseURL();
   // Filter alternatives by locales/subpaths present in broken links
   // This limits suggestions to relevant locales only
+  const filteredTopPages = filterByAuditScope(allPages, baseURL, { urlProperty: 'getUrl' }, log);
+
   const allTopPageUrls = filteredTopPages.map((page) => page.getUrl());
 
   // Extract unique locales/subpaths from broken links
@@ -509,13 +523,6 @@ export const generateSuggestionData = async (context) => {
   } else {
     // No locale prefixes found, include all alternatives
     alternativeUrls = allTopPageUrls;
-  }
-
-  // Filter out unscrape-able file types before sending to Mystique
-  const originalCount = alternativeUrls.length;
-  alternativeUrls = alternativeUrls.filter((url) => !isUnscrapeable(url));
-  if (alternativeUrls.length < originalCount) {
-    log.info(`Filtered out ${originalCount - alternativeUrls.length} unscrape-able file URLs (PDFs, Office docs, etc.) from alternative URLs before sending to Mystique`);
   }
 
   // Validate before sending to Mystique

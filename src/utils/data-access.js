@@ -122,6 +122,39 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
   }
 }
 
+function customAuditTargetUrlsEnabled() {
+  const v = process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS;
+  if (v === '0' || v === 'false') {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Extracts custom audit target URL strings from a site's configuration.
+ *
+ * @param {Object} site - The site object.
+ * @param {Object} log - The logging object.
+ * @returns {string[]} - Array of URL strings from config.auditTargetURLs.
+ */
+export function getAuditTargetUrls(site, log) {
+  if (!customAuditTargetUrlsEnabled()) {
+    return [];
+  }
+  try {
+    const config = site.getConfig?.();
+    const entries = config?.getAuditTargetURLs?.() || [];
+    const urls = entries.map(({ url }) => url).filter(Boolean);
+    if (urls.length > 0) {
+      log?.info(`Found ${urls.length} custom audit target URLs from site config`);
+    }
+    return urls;
+  } catch (e) {
+    log?.warn(`Failed to read audit target URLs: ${e.message}`);
+    return [];
+  }
+}
+
 /**
  * Retrieves the top pages for a given site.
  *

@@ -44,6 +44,7 @@ describe('Prerender AI-Only Mode', () => {
         getData: sandbox.stub().returns({
           url: 'https://example.com/page1',
           isDomainWide: false,
+          scrapeJobId: 'test-scrape-job',
         }),
         getStatus: sandbox.stub().returns('NEW'),
       },
@@ -52,6 +53,7 @@ describe('Prerender AI-Only Mode', () => {
         getData: sandbox.stub().returns({
           url: 'https://example.com/page2',
           isDomainWide: false,
+          scrapeJobId: 'test-scrape-job',
         }),
         getStatus: sandbox.stub().returns('PENDING_VALIDATION'),
       },
@@ -486,26 +488,168 @@ describe('Prerender AI-Only Mode', () => {
       expect(suggestion.originalHtmlMarkdownKey).to.include(`prerender/scrapes/${perSuggestionJobId}`);
     });
 
-    it('should fall back to audit-level scrapeJobId when suggestion lacks its own', async () => {
-      // Old suggestions without a persisted scrapeJobId fall back to the audit-level job id.
-      const auditLevelJobId = 'test-scrape-job'; // matches context.data.scrapeJobId
+    it('should derive scrapeJobId from originalHtmlKey when scrapeJobId is missing', async () => {
+      const derivedJobId = 'derived-job-id';
       mockSuggestions[0].getData.returns({
         url: 'https://example.com/page1',
         isDomainWide: false,
-        // scrapeJobId intentionally omitted to simulate pre-fix suggestion data
+        // scrapeJobId absent but originalHtmlKey present — job id is the 3rd path segment
+        originalHtmlKey: `prerender/scrapes/${derivedJobId}/page1/server-side.html`,
       });
 
       const result = await importTopPages(context);
 
       expect(result.status).to.equal('complete');
       expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(/missing a per-suggestion scrapeJobId/),
+        sinon.match(/derived from originalHtmlKey/),
       );
       const message = mockSqs.sendMessage.getCall(0).args[1];
       const suggestion = message.data.suggestions.find((s) => s.url === 'https://example.com/page1');
       expect(suggestion).to.exist;
-      expect(suggestion.markdownDiffKey).to.include(`prerender/scrapes/${auditLevelJobId}`);
-      expect(suggestion.originalHtmlMarkdownKey).to.include(`prerender/scrapes/${auditLevelJobId}`);
+      expect(suggestion.markdownDiffKey).to.include(`prerender/scrapes/${derivedJobId}`);
+      expect(suggestion.originalHtmlMarkdownKey).to.include(`prerender/scrapes/${derivedJobId}`);
+    });
+
+    it('should skip suggestion when both scrapeJobId and originalHtmlKey are missing', async () => {
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        // neither scrapeJobId nor originalHtmlKey
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/skipped: no scrapeJobId and no originalHtmlKey/),
+      );
+      // suggestion-1 is skipped; only suggestion-2 (which has scrapeJobId) is sent
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(1);
+      expect(message.data.suggestions[0].url).to.equal('https://example.com/page2');
+    });
+
+    it('should skip suggestion when originalHtmlKey has fewer than 3 path segments', async () => {
+      // parts[2] will be undefined → effectiveScrapeJobId = null → suggestion skipped
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        originalHtmlKey: 'prerender/scrapes', // only 2 segments, no job id at index 2
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/skipped: no scrapeJobId and no originalHtmlKey/),
+      );
+      // suggestion-1 is skipped; only suggestion-2 is sent
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(1);
+      expect(message.data.suggestions[0].url).to.equal('https://example.com/page2');
+    });
+  });
+
+  describe('Suggestion scoping — ai-only vs normal audit run', () => {
+    it('ai-only mode sends ALL opportunity suggestions to Mystique, not just a batch', async () => {
+      // Simulate an opportunity with 3 suggestions from different past audit runs.
+      // In ai-only mode every eligible suggestion should be queued regardless of which
+      // audit run produced it.
+      const staleSuggestion = {
+        getId: sandbox.stub().returns('suggestion-stale'),
+        getData: sandbox.stub().returns({
+          url: 'https://example.com/old-page',
+          isDomainWide: false,
+          scrapeJobId: 'old-job-id',
+        }),
+        getStatus: sandbox.stub().returns('NEW'),
+      };
+      mockOpportunity.getSuggestions.resolves([...mockSuggestions, staleSuggestion]);
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      // All 3 suggestions (2 from current run + 1 stale) must be sent
+      expect(result.auditResult.suggestionCount).to.equal(3);
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      const sentUrls = message.data.suggestions.map((s) => s.url);
+      expect(sentUrls).to.include('https://example.com/page1');
+      expect(sentUrls).to.include('https://example.com/page2');
+      expect(sentUrls).to.include('https://example.com/old-page');
+    });
+
+    it('normal audit run builds auditRunSuggestions from URL list without a DB call', async () => {
+      // auditRunSuggestions is built directly from preRenderSuggestions (the URL list produced
+      // by the current audit run) — no getSuggestions() DB call is made. Stale suggestions
+      // from prior batches are therefore not included.
+      const getSuggestionsStub = sinon.stub().resolves([]);
+      const mockOpportunityNormal = {
+        getId: () => 'opp-normal',
+        getSuggestions: getSuggestionsStub,
+      };
+
+      const syncSuggestionsStub = sinon.stub().resolves();
+
+      const mockHandler = await (await import('esmock')).default('../../../src/prerender/handler.js', {
+        '../../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves(mockOpportunityNormal),
+        },
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sinon.stub().resolves(true),
+          mergeAndGetUniqueHtmlUrls: sinon.stub().returns({ urls: [], filteredCount: 0 }),
+        },
+      });
+
+      const auditData = {
+        siteId: 'test-site',
+        auditId: 'audit-current',
+        scrapeJobId: 'current-job-id',
+        auditResult: {
+          urlsNeedingPrerender: 1,
+          results: [
+            {
+              url: 'https://example.com/page1',
+              needsPrerender: true,
+              contentGainRatio: 2.0,
+              wordCountBefore: 100,
+              wordCountAfter: 200,
+            },
+          ],
+        },
+      };
+
+      const sqsContext = {
+        log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub() },
+        dataAccess: {
+          Suggestion: {
+            STATUSES: {
+              NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED',
+            },
+          },
+        },
+        site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+      };
+
+      const { opportunity, auditRunCandidates } = await mockHandler.processOpportunityAndSuggestions(
+        'https://example.com',
+        auditData,
+        sqsContext,
+      );
+
+      expect(opportunity).to.equal(mockOpportunityNormal);
+      // getSuggestions is called once by findPreservableDomainWideSuggestion but NOT a second
+      // time to build auditRunCandidates — keys are derived directly from the URL list.
+      expect(getSuggestionsStub).to.have.been.calledOnce;
+      // One candidate per URL in the current batch — plain objects with S3 keys, no DB entity
+      expect(auditRunCandidates).to.have.lengthOf(1);
+      expect(auditRunCandidates[0].url).to.equal('https://example.com/page1');
+      expect(auditRunCandidates[0].originalHtmlMarkdownKey).to.include('current-job-id');
+      expect(auditRunCandidates[0].markdownDiffKey).to.include('current-job-id');
+      expect(auditRunCandidates[0]).to.not.have.property('getId');
+      expect(auditRunCandidates[0]).to.not.have.property('getStatus');
     });
   });
 
