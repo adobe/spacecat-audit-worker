@@ -108,8 +108,8 @@ describe('data-access', () => {
       const site = {
         getConfig: () => ({
           getAuditTargetURLs: () => [
-            { url: 'https://example.com/page1' },
-            { url: 'https://example.com/page2' },
+            { url: 'https://example.com/page1', source: 'manual' },
+            { url: 'https://example.com/page2', source: 'manual' },
           ],
         }),
       };
@@ -148,9 +148,9 @@ describe('data-access', () => {
       const site = {
         getConfig: () => ({
           getAuditTargetURLs: () => [
-            { url: 'https://example.com/valid' },
+            { url: 'https://example.com/valid', source: 'manual' },
             { source: 'manual' },
-            { url: '' },
+            { url: '', source: 'manual' },
           ],
         }),
       };
@@ -177,7 +177,7 @@ describe('data-access', () => {
       try {
         const site = {
           getConfig: () => ({
-            getAuditTargetURLs: () => [{ url: 'https://example.com/page1' }],
+            getAuditTargetURLs: () => [{ url: 'https://example.com/page1', source: 'manual' }],
           }),
         };
         const result = getAuditTargetUrls(site, mockLog);
@@ -198,7 +198,7 @@ describe('data-access', () => {
       try {
         const site = {
           getConfig: () => ({
-            getAuditTargetURLs: () => [{ url: 'https://example.com/page1' }],
+            getAuditTargetURLs: () => [{ url: 'https://example.com/page1', source: 'manual' }],
           }),
         };
         const result = getAuditTargetUrls(site, mockLog);
@@ -218,7 +218,7 @@ describe('data-access', () => {
       try {
         const site = {
           getConfig: () => ({
-            getAuditTargetURLs: () => [{ url: 'https://example.com/explicit' }],
+            getAuditTargetURLs: () => [{ url: 'https://example.com/explicit', source: 'manual' }],
           }),
         };
         const result = getAuditTargetUrls(site, mockLog);
@@ -230,6 +230,103 @@ describe('data-access', () => {
           process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS = prev;
         }
       }
+    });
+
+    it('returns all URLs when enableMoneyPageUrls is true', () => {
+      const site = {
+        getConfig: () => ({
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/manual1', source: 'manual' },
+            { url: 'https://example.com/money1', source: 'moneyPages' },
+          ],
+          isMoneyPageUrlsEnabled: () => true,
+        }),
+      };
+      const result = getAuditTargetUrls(site, mockLog);
+      expect(result).to.deep.equal([
+        'https://example.com/manual1',
+        'https://example.com/money1',
+      ]);
+    });
+
+    it('returns all URLs when enableMoneyPageUrls flag is absent (default enabled)', () => {
+      const site = {
+        getConfig: () => ({
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/manual1', source: 'manual' },
+            { url: 'https://example.com/money1', source: 'moneyPages' },
+          ],
+        }),
+      };
+      const result = getAuditTargetUrls(site, mockLog);
+      expect(result).to.deep.equal([
+        'https://example.com/manual1',
+        'https://example.com/money1',
+      ]);
+    });
+
+    it('filters out moneyPages URLs when enableMoneyPageUrls is false', () => {
+      const site = {
+        getConfig: () => ({
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/manual1', source: 'manual' },
+            { url: 'https://example.com/money1', source: 'moneyPages' },
+            { url: 'https://example.com/money2', source: 'moneyPages' },
+          ],
+          isMoneyPageUrlsEnabled: () => false,
+        }),
+      };
+      const result = getAuditTargetUrls(site, mockLog);
+      expect(result).to.deep.equal(['https://example.com/manual1']);
+    });
+
+    it('always returns manual URLs regardless of enableMoneyPageUrls flag', () => {
+      const site = {
+        getConfig: () => ({
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/manual1', source: 'manual' },
+            { url: 'https://example.com/manual2', source: 'manual' },
+          ],
+          isMoneyPageUrlsEnabled: () => false,
+        }),
+      };
+      const result = getAuditTargetUrls(site, mockLog);
+      expect(result).to.deep.equal([
+        'https://example.com/manual1',
+        'https://example.com/manual2',
+      ]);
+    });
+
+    it('excludes unknown sources by default', () => {
+      const site = {
+        getConfig: () => ({
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/manual1', source: 'manual' },
+            { url: 'https://example.com/unknown1', source: 'informational' },
+          ],
+        }),
+      };
+      const result = getAuditTargetUrls(site, mockLog);
+      expect(result).to.deep.equal(['https://example.com/manual1']);
+    });
+
+    it('filters out moneyPages but keeps all manual URLs when both sources are present and flag is false', () => {
+      const site = {
+        getConfig: () => ({
+          getAuditTargetURLs: () => [
+            { url: 'https://example.com/manual1', source: 'manual' },
+            { url: 'https://example.com/money1', source: 'moneyPages' },
+            { url: 'https://example.com/manual2', source: 'manual' },
+            { url: 'https://example.com/money2', source: 'moneyPages' },
+          ],
+          isMoneyPageUrlsEnabled: () => false,
+        }),
+      };
+      const result = getAuditTargetUrls(site, mockLog);
+      expect(result).to.deep.equal([
+        'https://example.com/manual1',
+        'https://example.com/manual2',
+      ]);
     });
   });
 
