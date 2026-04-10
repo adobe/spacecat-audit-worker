@@ -300,17 +300,22 @@ describe('isLinkInaccessible', () => {
       this.timeout(6000);
       nock('https://example.com')
         .head('/null-headers')
+        .reply(403, '', {})
+        .get('/null-headers')
         .reply(403, '', {});
 
       const result = await isLinkInaccessible('https://example.com/null-headers', mockLog, 'test-site-id');
-      // No WAF headers, should fallback to GET
-      expect(result).to.exist;
+      // No WAF headers, should be treated as broken
+      expect(result.isBroken).to.be.true;
+      expect(result.statusBucket).to.equal(STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED);
     });
 
     it('should ignore WAF headers on non-403 status codes', async function call() {
       this.timeout(6000);
       nock('https://example.com')
         .head('/waf-non-403')
+        .reply(200, '', { 'cf-ray': '1234567890abc-SJC' })
+        .get('/waf-non-403')
         .reply(200, '', { 'cf-ray': '1234567890abc-SJC' });
 
       const result = await isLinkInaccessible('https://example.com/waf-non-403', mockLog, 'test-site-id');
@@ -338,11 +343,14 @@ describe('isLinkInaccessible', () => {
       this.timeout(6000);
       nock('https://example.com')
         .head('/fake-fastly')
+        .reply(403, '', { 'x-served-by': 'cache-cdn123-XYZ' })
+        .get('/fake-fastly')
         .reply(403, '', { 'x-served-by': 'cache-cdn123-XYZ' });
 
       const result = await isLinkInaccessible('https://example.com/fake-fastly', mockLog, 'test-site-id');
-      // Should fallback to GET since it doesn't match Fastly pattern
-      expect(result).to.exist;
+      // Should be treated as broken since it doesn't match Fastly pattern
+      expect(result.isBroken).to.be.true;
+      expect(result.statusBucket).to.equal(STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED);
     });
   });
 
