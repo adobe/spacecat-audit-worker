@@ -1,3 +1,10 @@
+# [1.413.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.412.3...v1.413.0) (2026-04-10)
+
+
+### Features
+
+* enhance the Sitemap audit to be able to slow down its probing rate ([#2364](https://github.com/adobe/spacecat-audit-worker/issues/2364)) ([1c80a28](https://github.com/adobe/spacecat-audit-worker/commit/1c80a283329388b0d43557d3d0d0020d36d2e2d1))
+
 ## [1.412.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.412.2...v1.412.3) (2026-04-10)
 
 
