@@ -217,6 +217,11 @@ export async function handleCdnBucketConfigChanges(context, data) {
   if (allowedPaths && allowedPaths.length > 0) {
     const [firstPath] = allowedPaths;
     [pathId] = firstPath.split('/');
+    // For byocdn-imperva the raw prefix uses underscores ({pathId}_raw_{provider}/),
+    // so the first path segment includes the suffix — strip it to recover the bare pathId.
+    if (cdnProvider === SERVICE_PROVIDER_TYPES.BYOCDN_IMPERVA && pathId.includes('_raw_byocdn-imperva')) {
+      pathId = pathId.replace('_raw_byocdn-imperva', '');
+    }
   }
 
   if (cdnProvider === SERVICE_PROVIDER_TYPES.COMMERCE_FASTLY) {
