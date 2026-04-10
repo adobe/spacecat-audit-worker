@@ -1,3 +1,10 @@
+## [1.412.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.412.1...v1.412.2) (2026-04-10)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** add dispatch log correlation context ([#2363](https://github.com/adobe/spacecat-audit-worker/issues/2363)) ([a25875a](https://github.com/adobe/spacecat-audit-worker/commit/a25875ad2cefd06c346fc2b713c1f337d10c4325))
+
 ## [1.412.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.412.0...v1.412.1) (2026-04-10)
 
 
