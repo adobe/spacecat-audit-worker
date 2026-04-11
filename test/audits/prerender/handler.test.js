@@ -6980,6 +6980,7 @@ describe('Prerender Audit', () => {
     it('should create new domain-wide suggestion when existing ones are not preservable', async () => {
       const existingDomainWideSuggestion = {
         getStatus: () => 'OUTDATED',
+        getId: () => 'outdated-domain-wide-id',
         getData: () => ({ isDomainWide: true }),
       };
 
@@ -7613,8 +7614,8 @@ describe('Prerender Audit', () => {
       // Simulate the production scenario: multiple domain-wide suggestions (OUTDATED ones first,
       // the deployed one last). A naive find() on the first match would return OUTDATED without
       // edgeDeployed and incorrectly return false.
-      const outdatedDomainWide1 = { getStatus: () => 'OUTDATED', getData: () => ({ isDomainWide: true }) };
-      const outdatedDomainWide2 = { getStatus: () => 'OUTDATED', getData: () => ({ isDomainWide: true }) };
+      const outdatedDomainWide1 = { getStatus: () => 'OUTDATED', getId: () => 'outdated-dw-1', getData: () => ({ isDomainWide: true }) };
+      const outdatedDomainWide2 = { getStatus: () => 'OUTDATED', getId: () => 'outdated-dw-2', getData: () => ({ isDomainWide: true }) };
       const deployedDomainWide = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
       const newSuggestion = buildSuggestionWithSetData('s1', { url: 'https://example.com/page1' });
 
@@ -7642,8 +7643,8 @@ describe('Prerender Audit', () => {
     });
 
     it('should return false when all domain-wide suggestions lack edgeDeployed', async () => {
-      const outdatedDomainWide1 = { getStatus: () => 'OUTDATED', getData: () => ({ isDomainWide: true }) };
-      const outdatedDomainWide2 = { getStatus: () => 'OUTDATED', getData: () => ({ isDomainWide: true }) };
+      const outdatedDomainWide1 = { getStatus: () => 'OUTDATED', getId: () => 'outdated-dw-1', getData: () => ({ isDomainWide: true }) };
+      const outdatedDomainWide2 = { getStatus: () => 'OUTDATED', getId: () => 'outdated-dw-2', getData: () => ({ isDomainWide: true }) };
       const newDomainWideNoEdge = { getStatus: () => 'NEW', getId: () => 'no-edge-id', getData: () => ({ isDomainWide: true }) };
 
       const saveManyStub = sandbox.stub().resolves();
@@ -7668,7 +7669,7 @@ describe('Prerender Audit', () => {
     it('should return false when only OUTDATED domain-wide suggestions have edgeDeployed', async () => {
       // An OUTDATED domain-wide suggestion with edgeDeployed should NOT count —
       // only active (non-OUTDATED) suggestions are considered.
-      const outdatedWithEdge = { getStatus: () => 'OUTDATED', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
+      const outdatedWithEdge = { getStatus: () => 'OUTDATED', getId: () => 'outdated-with-edge-id', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
       const newNoEdge = { getStatus: () => 'NEW', getId: () => 'new-no-edge-id', getData: () => ({ isDomainWide: true }) };
 
       const saveManyStub = sandbox.stub().resolves();
@@ -7866,6 +7867,7 @@ describe('Prerender Audit', () => {
     it('should create new domain-wide suggestion when existing ones are not preservable', async () => {
       const existingDomainWideSuggestion = {
         getStatus: () => 'OUTDATED',
+        getId: () => 'outdated-domain-wide-id',
         getData: () => ({ isDomainWide: true }),
       };
 

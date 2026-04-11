@@ -1163,14 +1163,7 @@ export async function processOpportunityAndSuggestions(
   // suggestionId is required by Mystique to correlate AI summaries back to the right suggestion.
   const savedSuggestions = await opportunity.getSuggestions();
   const urlToSuggestionId = new Map(
-    savedSuggestions
-      .filter((s) => {
-        const status = s.getStatus();
-        return status !== Suggestion.STATUSES.OUTDATED
-          && status !== Suggestion.STATUSES.SKIPPED
-          && status !== Suggestion.STATUSES.FIXED;
-      })
-      .map((s) => [s.getData()?.url, s.getId()]),
+    savedSuggestions.map((s) => [s.getData()?.url, s.getId()]),
   );
 
   // Build Mystique candidates directly from the URL list processed in this audit run.
