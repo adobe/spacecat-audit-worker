@@ -578,11 +578,16 @@ describe('Prerender AI-Only Mode', () => {
       expect(sentUrls).to.include('https://example.com/old-page');
     });
 
-    it('normal audit run builds auditRunSuggestions from URL list without a DB call', async () => {
-      // auditRunSuggestions is built directly from preRenderSuggestions (the URL list produced
-      // by the current audit run) — no getSuggestions() DB call is made. Stale suggestions
-      // from prior batches are therefore not included.
-      const getSuggestionsStub = sinon.stub().resolves([]);
+    it('normal audit run builds auditRunCandidates with suggestionId from saved suggestions', async () => {
+      // auditRunCandidates is built from preRenderSuggestions (the URL list produced by the
+      // current audit run). getSuggestions() is called once by findPreservableDomainWideSuggestion
+      // and once after syncSuggestions to resolve suggestionId for each candidate URL.
+      const savedSuggestion = {
+        getId: sinon.stub().returns('page1-suggestion-id'),
+        getData: sinon.stub().returns({ url: 'https://example.com/page1' }),
+        getStatus: sinon.stub().returns('NEW'),
+      };
+      const getSuggestionsStub = sinon.stub().resolves([savedSuggestion]);
       const mockOpportunityNormal = {
         getId: () => 'opp-normal',
         getSuggestions: getSuggestionsStub,
@@ -640,11 +645,12 @@ describe('Prerender AI-Only Mode', () => {
       );
 
       expect(opportunity).to.equal(mockOpportunityNormal);
-      // getSuggestions is called once by findPreservableDomainWideSuggestion but NOT a second
-      // time to build auditRunCandidates — keys are derived directly from the URL list.
-      expect(getSuggestionsStub).to.have.been.calledOnce;
-      // One candidate per URL in the current batch — plain objects with S3 keys, no DB entity
+      // getSuggestions is called twice: once by findPreservableDomainWideSuggestion and once
+      // after syncSuggestions to resolve suggestionId for each candidate URL.
+      expect(getSuggestionsStub).to.have.been.calledTwice;
+      // One candidate per URL in the current batch — plain objects with S3 keys and suggestionId
       expect(auditRunCandidates).to.have.lengthOf(1);
+      expect(auditRunCandidates[0].suggestionId).to.equal('page1-suggestion-id');
       expect(auditRunCandidates[0].url).to.equal('https://example.com/page1');
       expect(auditRunCandidates[0].originalHtmlMarkdownKey).to.include('current-job-id');
       expect(auditRunCandidates[0].markdownDiffKey).to.include('current-job-id');

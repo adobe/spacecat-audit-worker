@@ -487,8 +487,8 @@ async function fetchLatestScrapeJobId(siteId, context) {
  * @param {Object} auditData - Audit data used to build the message
  * @param {Object} opportunity - The prerender opportunity entity
  * @param {Object} context - Processing context
- * @param {Array|null} [preBuiltCandidates] - Pre-built candidate objects for normal audit runs
- *   (avoids a DB round-trip). Each entry is { url, originalHtmlMarkdownKey, markdownDiffKey }.
+ * @param {Array|null} [preBuiltCandidates] - Pre-built candidate objects for normal audit runs.
+ *   Each entry is { suggestionId, url, originalHtmlMarkdownKey, markdownDiffKey }.
  *   When null/omitted, candidates are derived from all DB suggestions (ai-only mode).
  * @returns {Promise<number>} - Number of suggestions sent to Mystique
  */
@@ -1159,12 +1159,26 @@ export async function processOpportunityAndSuggestions(
     suggestions=${preRenderSuggestions.length},
     totalSuggestions=${allSuggestions.length},`);
 
+  // Fetch saved suggestions to map URL → suggestionId for Mystique payload.
+  // suggestionId is required by Mystique to correlate AI summaries back to the right suggestion.
+  const savedSuggestions = await opportunity.getSuggestions();
+  const urlToSuggestionId = new Map(
+    savedSuggestions
+      .filter((s) => {
+        const status = s.getStatus();
+        return status !== Suggestion.STATUSES.OUTDATED
+          && status !== Suggestion.STATUSES.SKIPPED
+          && status !== Suggestion.STATUSES.FIXED;
+      })
+      .map((s) => [s.getData()?.url, s.getId()]),
+  );
+
   // Build Mystique candidates directly from the URL list processed in this audit run.
-  // This avoids a redundant DB round-trip — we have all the data needed to construct S3
-  // keys. Domain-wide suggestions are intentionally excluded; Mystique needs individual URLs.
+  // Domain-wide suggestions are intentionally excluded; Mystique needs individual URLs.
   const auditRunCandidates = preRenderSuggestions.reduce((acc, s) => {
     try {
       acc.push({
+        suggestionId: urlToSuggestionId.get(s.url),
         url: s.url,
         originalHtmlMarkdownKey: getS3Path(s.url, auditData.scrapeJobId, 'server-side-html.md'),
         markdownDiffKey: getS3Path(s.url, auditData.scrapeJobId, 'markdown-diff.md'),
