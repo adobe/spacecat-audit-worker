@@ -1,3 +1,10 @@
+## [1.414.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.1...v1.414.2) (2026-04-11)
+
+
+### Bug Fixes
+
+* (prerender)keep valuable flag in sync with aiSummary in guidance handler ([#2369](https://github.com/adobe/spacecat-audit-worker/issues/2369)) ([45b640d](https://github.com/adobe/spacecat-audit-worker/commit/45b640db9146a30691771dd6f6a52d79fbe995c7))
+
 ## [1.414.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.0...v1.414.1) (2026-04-10)
 
 
