@@ -19,4 +19,4 @@ export const TOP_ORGANIC_URLS_LIMIT = 200;
  */
 export const PRERENDER_RECENT_PROCESSING_TIME_DAYS = 7;
 export const MODE_AI_ONLY = 'ai-only';
-export const MYSTIQUE_BATCH_SIZE = 320;
+export const MYSTIQUE_BATCH_SIZE = DAILY_BATCH_SIZE;
