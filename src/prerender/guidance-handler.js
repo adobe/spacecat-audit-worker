@@ -175,8 +175,8 @@ export default async function handler(message, context) {
         ...currentData,
         // Use new summary if valid; otherwise preserve existing (don't overwrite with empty)
         aiSummary: hasValidAiSummary ? aiSummary : (currentData.aiSummary ?? ''),
-        // Default to true if not provided, but respect explicit boolean from Mystique
-        valuable: isValuable,
+        // Keep valuable in sync with aiSummary — only update when new AI response is valid
+        valuable: hasValidAiSummary ? isValuable : (currentData.valuable ?? true),
       };
 
       warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
