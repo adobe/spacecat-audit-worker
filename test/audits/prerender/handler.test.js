@@ -6860,6 +6860,7 @@ describe('Prerender Audit', () => {
     it('should skip domain-wide suggestion creation when a preservable one exists', async () => {
       const existingDomainWideSuggestion = {
         getStatus: () => 'NEW',
+        getId: () => 'existing-domain-wide-id',
         getData: () => ({ isDomainWide: true }),
       };
 
@@ -6924,6 +6925,7 @@ describe('Prerender Audit', () => {
     it('should preserve domain-wide suggestion when edgeDeployed is true even with non-active status', async () => {
       const existingDomainWideSuggestion = {
         getStatus: () => 'APPROVED',
+        getId: () => 'approved-domain-wide-id',
         getData: () => ({ isDomainWide: true, edgeDeployed: true }),
       };
 
@@ -6978,6 +6980,7 @@ describe('Prerender Audit', () => {
     it('should create new domain-wide suggestion when existing ones are not preservable', async () => {
       const existingDomainWideSuggestion = {
         getStatus: () => 'OUTDATED',
+        getId: () => 'outdated-domain-wide-id',
         getData: () => ({ isDomainWide: true }),
       };
 
@@ -7028,6 +7031,64 @@ describe('Prerender Audit', () => {
       const { newData } = syncSuggestionsStub.getCall(0).args[0];
       const domainWide = newData.find((item) => item.key);
       expect(domainWide).to.exist;
+    });
+
+    it('should include suggestionId in auditRunCandidates from saved suggestions', async () => {
+      const savedSuggestion = {
+        getStatus: () => 'NEW',
+        getId: () => 'saved-suggestion-id',
+        getData: () => ({ url: 'https://example.com/page1' }),
+      };
+
+      const mockOpportunity = {
+        getId: () => 'test-opp-id',
+        getSuggestions: sandbox.stub().resolves([savedSuggestion]),
+      };
+
+      const syncSuggestionsStub = sandbox.stub().resolves();
+      const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/common/opportunity.js': {
+          convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
+        },
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
+        },
+      });
+
+      const auditData = {
+        siteId: 'test-site',
+        auditId: 'audit-123',
+        scrapeJobId: 'job-123',
+        auditResult: {
+          urlsNeedingPrerender: 1,
+          results: [{
+            url: 'https://example.com/page1',
+            needsPrerender: true,
+            contentGainRatio: 2.5,
+            wordCountBefore: 100,
+            wordCountAfter: 250,
+          }],
+        },
+      };
+
+      const context = {
+        log: {
+          info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(),
+        },
+      };
+
+      const result = await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+      expect(result).to.not.be.null;
+      const { auditRunCandidates } = result;
+      expect(auditRunCandidates).to.be.an('array').with.lengthOf(1);
+      expect(auditRunCandidates[0].suggestionId).to.equal('saved-suggestion-id');
+      expect(auditRunCandidates[0].url).to.equal('https://example.com/page1');
     });
   });
 
@@ -7531,7 +7592,7 @@ describe('Prerender Audit', () => {
     });
 
     it('should log isAllDomainDeployedAtEdge=false and skip when domain is not deployed', async () => {
-      const nonDeployedSuggestion = { getStatus: () => 'NEW', getData: () => ({ isDomainWide: true }) };
+      const nonDeployedSuggestion = { getStatus: () => 'NEW', getId: () => 'non-deployed-id', getData: () => ({ isDomainWide: true }) };
 
       const saveManyStub = sandbox.stub().resolves();
       const mockHandler = await buildMockHandler(sandbox, [nonDeployedSuggestion]);
@@ -7553,8 +7614,8 @@ describe('Prerender Audit', () => {
       // Simulate the production scenario: multiple domain-wide suggestions (OUTDATED ones first,
       // the deployed one last). A naive find() on the first match would return OUTDATED without
       // edgeDeployed and incorrectly return false.
-      const outdatedDomainWide1 = { getStatus: () => 'OUTDATED', getData: () => ({ isDomainWide: true }) };
-      const outdatedDomainWide2 = { getStatus: () => 'OUTDATED', getData: () => ({ isDomainWide: true }) };
+      const outdatedDomainWide1 = { getStatus: () => 'OUTDATED', getId: () => 'outdated-dw-1', getData: () => ({ isDomainWide: true }) };
+      const outdatedDomainWide2 = { getStatus: () => 'OUTDATED', getId: () => 'outdated-dw-2', getData: () => ({ isDomainWide: true }) };
       const deployedDomainWide = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
       const newSuggestion = buildSuggestionWithSetData('s1', { url: 'https://example.com/page1' });
 
@@ -7582,9 +7643,9 @@ describe('Prerender Audit', () => {
     });
 
     it('should return false when all domain-wide suggestions lack edgeDeployed', async () => {
-      const outdatedDomainWide1 = { getStatus: () => 'OUTDATED', getData: () => ({ isDomainWide: true }) };
-      const outdatedDomainWide2 = { getStatus: () => 'OUTDATED', getData: () => ({ isDomainWide: true }) };
-      const newDomainWideNoEdge = { getStatus: () => 'NEW', getData: () => ({ isDomainWide: true }) };
+      const outdatedDomainWide1 = { getStatus: () => 'OUTDATED', getId: () => 'outdated-dw-1', getData: () => ({ isDomainWide: true }) };
+      const outdatedDomainWide2 = { getStatus: () => 'OUTDATED', getId: () => 'outdated-dw-2', getData: () => ({ isDomainWide: true }) };
+      const newDomainWideNoEdge = { getStatus: () => 'NEW', getId: () => 'no-edge-id', getData: () => ({ isDomainWide: true }) };
 
       const saveManyStub = sandbox.stub().resolves();
       const mockHandler = await buildMockHandler(
@@ -7608,8 +7669,8 @@ describe('Prerender Audit', () => {
     it('should return false when only OUTDATED domain-wide suggestions have edgeDeployed', async () => {
       // An OUTDATED domain-wide suggestion with edgeDeployed should NOT count —
       // only active (non-OUTDATED) suggestions are considered.
-      const outdatedWithEdge = { getStatus: () => 'OUTDATED', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
-      const newNoEdge = { getStatus: () => 'NEW', getData: () => ({ isDomainWide: true }) };
+      const outdatedWithEdge = { getStatus: () => 'OUTDATED', getId: () => 'outdated-with-edge-id', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
+      const newNoEdge = { getStatus: () => 'NEW', getId: () => 'new-no-edge-id', getData: () => ({ isDomainWide: true }) };
 
       const saveManyStub = sandbox.stub().resolves();
       const mockHandler = await buildMockHandler(sandbox, [outdatedWithEdge, newNoEdge]);
@@ -7686,6 +7747,7 @@ describe('Prerender Audit', () => {
     it('should skip domain-wide suggestion creation when a preservable one exists', async () => {
       const existingDomainWideSuggestion = {
         getStatus: () => 'NEW',
+        getId: () => 'existing-domain-wide-id',
         getData: () => ({ isDomainWide: true }),
       };
 
@@ -7750,6 +7812,7 @@ describe('Prerender Audit', () => {
     it('should preserve domain-wide suggestion when edgeDeployed is true even with non-active status', async () => {
       const existingDomainWideSuggestion = {
         getStatus: () => 'APPROVED',
+        getId: () => 'approved-domain-wide-id',
         getData: () => ({ isDomainWide: true, edgeDeployed: true }),
       };
 
@@ -7804,6 +7867,7 @@ describe('Prerender Audit', () => {
     it('should create new domain-wide suggestion when existing ones are not preservable', async () => {
       const existingDomainWideSuggestion = {
         getStatus: () => 'OUTDATED',
+        getId: () => 'outdated-domain-wide-id',
         getData: () => ({ isDomainWide: true }),
       };
 
