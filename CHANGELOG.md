@@ -1,3 +1,10 @@
+## [1.414.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.2...v1.414.3) (2026-04-11)
+
+
+### Bug Fixes
+
+* **prerender:** increase Mystique batch size to 320 and include suggestionId in guidance message ([#2370](https://github.com/adobe/spacecat-audit-worker/issues/2370)) ([6655656](https://github.com/adobe/spacecat-audit-worker/commit/6655656a7d3155dd72ddaa1de6e8add4225038cd))
+
 ## [1.414.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.1...v1.414.2) (2026-04-11)
 
 
