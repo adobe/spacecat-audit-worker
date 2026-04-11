@@ -597,14 +597,12 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
     const deliveryType = site?.getDeliveryType?.() || 'unknown';
 
     // SQS has a 256 KB message size limit. Chunk suggestions into batches to stay safely under it.
-    const batches = [];
-    for (let i = 0; i < suggestionsPayload.length; i += MYSTIQUE_BATCH_SIZE) {
-      batches.push(suggestionsPayload.slice(i, i + MYSTIQUE_BATCH_SIZE));
-    }
+    // TODO: send all batches once Mystique multi-batch handling is fully deployed.
+    const firstBatch = suggestionsPayload.slice(0, MYSTIQUE_BATCH_SIZE);
 
     const time = new Date().toISOString();
     const queue = env.QUEUE_SPACECAT_TO_MYSTIQUE;
-    await Promise.all(batches.map((batch, index) => sqs.sendMessage(queue, {
+    await sqs.sendMessage(queue, {
       type: 'guidance:prerender',
       siteId,
       auditId,
@@ -612,15 +610,15 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
       time,
       data: {
         opportunityId,
-        suggestions: batch,
-        batchIndex: index,
-        totalBatches: batches.length,
+        suggestions: firstBatch,
+        batchIndex: 0,
+        totalBatches: 1,
       },
-    })));
+    });
 
     log.info(`${LOG_PREFIX} Queued guidance:prerender message to Mystique for baseUrl=${baseUrl}, `
-      + `siteId=${siteId}, opportunityId=${opportunityId}, suggestions=${suggestionsPayload.length}, batches=${batches.length}`);
-    return suggestionsPayload.length;
+      + `siteId=${siteId}, opportunityId=${opportunityId}, suggestions=${firstBatch.length} (capped to 1 batch of ${MYSTIQUE_BATCH_SIZE})`);
+    return firstBatch.length;
   /* c8 ignore next 8 - Error handling for SQS failures when sending to Mystique,
    * difficult to test reliably */
   } catch (error) {
