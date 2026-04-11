@@ -76,9 +76,12 @@ export function mergeAndGetUniqueHtmlUrls(...urlArrays) {
         normalizedPath = normalizedPath.replace(/\/+$/, ''); // Remove all trailing slashes
       }
 
-      // Only add URL if we haven't seen this path before
-      if (!seenPaths.has(normalizedPath)) {
-        seenPaths.add(normalizedPath);
+      // Include query string so URLs that differ only by query params are treated as distinct
+      const dedupeKey = normalizedPath + urlObj.search;
+
+      // Only add URL if we haven't seen this path+query before
+      if (!seenPaths.has(dedupeKey)) {
+        seenPaths.add(dedupeKey);
         uniqueUrls.push(url); // Keep original URL unchanged
       }
     } catch (error) {

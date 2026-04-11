@@ -251,15 +251,28 @@ describe('Prerender Utils', () => {
       expect(result.filteredCount).to.equal(0);
     });
 
-    it('should handle URLs with query parameters', () => {
+    it('should treat URLs with different query parameters as distinct', () => {
       const urls1 = ['https://example.com/page?foo=bar'];
       const urls2 = ['https://example.com/page?baz=qux'];
 
       const result = utils.mergeAndGetUniqueHtmlUrls(urls1, urls2);
 
-      // Same path but different query params - should keep only first one
+      // Different query params mean different content — both should be kept
+      expect(result.urls).to.have.lengthOf(2);
+      expect(result.urls).to.include('https://example.com/page?foo=bar');
+      expect(result.urls).to.include('https://example.com/page?baz=qux');
+      expect(result.filteredCount).to.equal(0);
+    });
+
+    it('should deduplicate URLs with identical query parameters', () => {
+      const urls1 = ['https://www.example.com/page?foo=bar'];
+      const urls2 = ['https://example.com/page?foo=bar'];
+
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls1, urls2);
+
+      // Same path AND same query string — keep only first occurrence
       expect(result.urls).to.have.lengthOf(1);
-      expect(result.urls[0]).to.equal('https://example.com/page?foo=bar');
+      expect(result.urls[0]).to.equal('https://www.example.com/page?foo=bar');
       expect(result.filteredCount).to.equal(0);
     });
 

@@ -247,7 +247,8 @@ async function getRecentlyProcessedPathnames(context, siteId) {
       records
         .map((r) => {
           try {
-            return new URL(r.getUrl()).pathname;
+            const { pathname, search } = new URL(r.getUrl());
+            return pathname + search;
           } catch {
             return null;
           }
@@ -269,7 +270,8 @@ async function getRecentlyProcessedPathnames(context, siteId) {
  */
 function isNotRecentUrl(url, recentPathnames) {
   try {
-    return !recentPathnames.has(new URL(url).pathname);
+    const { pathname, search } = new URL(url);
+    return !recentPathnames.has(pathname + search);
   } catch {
     return true;
   }
@@ -277,8 +279,9 @@ function isNotRecentUrl(url, recentPathnames) {
 
 function normalizePathname(url) {
   try {
-    const { pathname } = new URL(url);
-    return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+    const { pathname, search } = new URL(url);
+    const normalizedPath = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+    return normalizedPath + search;
   } catch {
     return url;
   }
