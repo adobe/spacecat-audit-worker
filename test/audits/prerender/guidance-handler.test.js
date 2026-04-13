@@ -968,6 +968,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       expect(setDataStub).to.have.been.calledWith({
         aiSummary: 'Summary 1',
         valuable: true,
+        prompts: [], // no prompts from Mystique, currentData null → default []
       });
       expect(Suggestion.saveMany).to.have.been.calledOnce;
     });
@@ -997,6 +998,192 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
 
       expect(log.warn).to.have.been.calledWith(sinon.match(/No existing suggestion found for URL/));
       expect(Suggestion.saveMany).to.not.have.been.called;
+    });
+  });
+
+  describe('Prompts field — preserve-or-update logic', () => {
+    it('should store new prompts when Mystique returns them', async () => {
+      const newPrompts = [
+        { question: 'What is prerendering?', category: 'SEO', topic: 'Performance', region: '' },
+      ];
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          {
+            url: 'https://example.com/page1',
+            aiSummary: 'Good summary',
+            valuable: true,
+            prompts: newPrompts,
+          },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/path', opportunityId: 'opportunity-123' },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockSuggestions[0].setData).to.have.been.calledWith(
+        sinon.match({ prompts: newPrompts }),
+      );
+    });
+
+    it('should preserve existing prompts when Mystique returns empty prompts array', async () => {
+      const existingPrompts = [{ question: 'Old question?', category: 'SEO', topic: 'Content', region: '' }];
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        aiSummary: 'Previous summary',
+        prompts: existingPrompts,
+      });
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          {
+            url: 'https://example.com/page1',
+            aiSummary: 'Updated summary',
+            valuable: true,
+            prompts: [], // Empty — Mystique generated nothing new
+          },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/path', opportunityId: 'opportunity-123' },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockSuggestions[0].setData).to.have.been.calledWith(
+        sinon.match({ prompts: existingPrompts }), // Existing preserved
+      );
+    });
+
+    it('should preserve existing prompts when Mystique omits the prompts field', async () => {
+      const existingPrompts = [{ question: 'Existing?', category: 'SEO', topic: 'Content', region: '' }];
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        aiSummary: 'Previous summary',
+        prompts: existingPrompts,
+      });
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          {
+            url: 'https://example.com/page1',
+            aiSummary: 'Updated summary',
+            valuable: true,
+            // prompts field absent
+          },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/path', opportunityId: 'opportunity-123' },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockSuggestions[0].setData).to.have.been.calledWith(
+        sinon.match({ prompts: existingPrompts }), // Still preserved
+      );
+    });
+
+    it('should default prompts to [] when neither Mystique nor existing data has them', async () => {
+      // Suggestion has no prompts in existing data
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        aiSummary: '',
+        // no prompts field
+      });
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          {
+            url: 'https://example.com/page1',
+            aiSummary: 'New summary',
+            valuable: true,
+            // no prompts field from Mystique either
+          },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/path', opportunityId: 'opportunity-123' },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockSuggestions[0].setData).to.have.been.calledWith(
+        sinon.match({ prompts: [] }),
+      );
+    });
+
+    it('should log suggestionsWithPrompts and totalPromptCount in metrics', async () => {
+      const prompts = [
+        { question: 'Q1?', category: 'SEO', topic: 'Content', region: '' },
+        { question: 'Q2?', category: 'SEO', topic: 'Content', region: '' },
+      ];
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          {
+            url: 'https://example.com/page1',
+            aiSummary: 'Summary with prompts',
+            valuable: true,
+            prompts,
+          },
+          {
+            url: 'https://example.com/page2',
+            aiSummary: 'Summary without prompts',
+            valuable: true,
+            // no prompts
+          },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/path', opportunityId: 'opportunity-123' },
+      };
+
+      await handler.default(message, context);
+
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/prerender_ai_summary_metrics/)
+          .and(sinon.match(/suggestionsWithPrompts=1/))
+          .and(sinon.match(/totalPromptCount=2/)),
+      );
+    });
+
+    it('should log zero prompt metrics when no suggestions have prompts', async () => {
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          { url: 'https://example.com/page1', aiSummary: 'Summary', valuable: true },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/path', opportunityId: 'opportunity-123' },
+      };
+
+      await handler.default(message, context);
+
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/prerender_ai_summary_metrics/)
+          .and(sinon.match(/suggestionsWithPrompts=0/))
+          .and(sinon.match(/totalPromptCount=0/)),
+      );
     });
   });
 
