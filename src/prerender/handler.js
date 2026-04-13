@@ -1162,7 +1162,7 @@ export async function processOpportunityAndSuggestions(
   const savedSuggestions = await opportunity.getSuggestions();
   const urlToSuggestionId = new Map(
     savedSuggestions
-      .filter((s) => s.getData()?.url)
+      .filter((s) => s.getData()?.url && s.getStatus() !== Suggestion.STATUSES.OUTDATED)
       .map((s) => [s.getData().url, s.getId()]),
   );
 
