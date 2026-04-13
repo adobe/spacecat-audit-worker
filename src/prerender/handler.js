@@ -1168,6 +1168,8 @@ export async function processOpportunityAndSuggestions(
 
   // Build Mystique candidates directly from the URL list processed in this audit run.
   // Domain-wide suggestions are intentionally excluded; Mystique needs individual URLs.
+  // Always send suggestionId (Mystique requires non-empty string). Use URL as fallback
+  // when the exact suggestion ID isn't found (www/non-www URL mismatch between runs).
   let missingSuggestionIdCount = 0;
   const auditRunCandidates = preRenderSuggestions.reduce((acc, s) => {
     try {
@@ -1176,7 +1178,7 @@ export async function processOpportunityAndSuggestions(
         missingSuggestionIdCount += 1;
       }
       acc.push({
-        ...(suggestionId && { suggestionId }),
+        suggestionId: suggestionId || s.url,
         url: s.url,
         originalHtmlMarkdownKey: getS3Path(s.url, auditData.scrapeJobId, 'server-side-html.md'),
         markdownDiffKey: getS3Path(s.url, auditData.scrapeJobId, 'markdown-diff.md'),
@@ -1189,7 +1191,7 @@ export async function processOpportunityAndSuggestions(
 
   if (missingSuggestionIdCount > 0) {
     log.warn(`${LOG_PREFIX} ${missingSuggestionIdCount} suggestions missing suggestionId `
-      + `(URL not found in saved suggestions). baseUrl=${auditUrl}, siteId=${auditData.siteId}, `
+      + `(using URL as fallback). baseUrl=${auditUrl}, siteId=${auditData.siteId}, `
       + `savedSuggestions=${savedSuggestions.length}, candidates=${auditRunCandidates.length}`);
   }
 
