@@ -341,7 +341,7 @@ describe('CDN Logs Report Handler', function test() {
         'https://example.com',
         context,
         site,
-        createAuditContext(sandbox, { categoriesUpdated: false }),
+        createAuditContext(sandbox, { weekOffset: 0, categoriesUpdated: false }),
       );
 
       expect(fetchRemotePatternsStub).to.have.been.calledOnce;
@@ -412,7 +412,7 @@ describe('CDN Logs Report Handler', function test() {
         'https://example.com',
         context,
         site,
-        createAuditContext(sandbox, { categoriesUpdated: false }),
+        createAuditContext(sandbox, { weekOffset: 0, categoriesUpdated: false }),
       );
 
       expect(fetchRemotePatternsStub).to.have.been.calledOnce;
@@ -610,6 +610,10 @@ describe('CDN Logs Report Handler', function test() {
     });
 
     it('skips daily export when the agentic report config is missing', async () => {
+      const clock = sinon.useFakeTimers({
+        now: new Date('2025-01-07'),
+        toFake: ['Date'],
+      });
       const runWeeklyReportStub = sandbox.stub().resolves({ success: true, uploadResult: null });
       const runDailyAgenticExportStub = sandbox.stub().resolves();
       const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
@@ -666,12 +670,17 @@ describe('CDN Logs Report Handler', function test() {
         },
       });
 
-      const result = await localHandler.runner(
-        'https://example.com',
-        context,
-        site,
-        createAuditContext(sandbox, { categoriesUpdated: false }),
-      );
+      let result;
+      try {
+        result = await localHandler.runner(
+          'https://example.com',
+          context,
+          site,
+          createAuditContext(sandbox, { categoriesUpdated: false }),
+        );
+      } finally {
+        clock.restore();
+      }
 
       expect(runDailyAgenticExportStub).to.not.have.been.called;
       expect(result.dailyAgenticExport).to.equal(undefined);
