@@ -13,14 +13,13 @@
 /* eslint-disable no-param-reassign */
 /* c8 ignore start */
 
-import {
-  getStaticContent, getWeekInfo, isoCalendarWeek,
-} from '@adobe/spacecat-shared-utils';
+import { getStaticContent, getWeekInfo, isoCalendarWeek } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import ExcelJS from 'exceljs';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
+import { filterByAuditScope } from '../internal-links/subpath-filter.js';
 import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
 
@@ -87,10 +86,7 @@ export async function triggerTrafficAnalysisImport(context) {
     ({ week, year } = isoCalendarWeek(yesterday));
   }
 
-  log.info(
-    `[llmo-referral-traffic] Triggering traffic-analysis import for site: ${siteId}, `
-    + `week: ${week}, year: ${year}`,
-  );
+  log.info(`[llmo-referral-traffic] Triggering traffic-analysis import for site: ${siteId}, week: ${week}, year: ${year}`);
 
   return {
     type: 'traffic-analysis',
@@ -121,10 +117,7 @@ export async function referralTrafficRunner(context) {
   const siteId = site.getSiteId();
   const baseURL = site.getBaseURL();
 
-  log.info(
-    `[llmo-referral-traffic] Starting referral traffic extraction for site: ${siteId}, `
-    + `week: ${week}, year: ${year}`,
-  );
+  log.info(`[llmo-referral-traffic] Starting referral traffic extraction for site: ${siteId}, week: ${week}, year: ${year}`);
 
   // constants
   const tempLocation = `s3://${importerBucket}/rum-metrics-compact/temp/out/`;
@@ -155,6 +148,9 @@ export async function referralTrafficRunner(context) {
     };
   }
 
+  // filter results by audit scope (subpath)
+  const scopedResults = filterByAuditScope(results, baseURL, { urlProperty: 'path' }, log);
+
   log.info('[llmo-referral-traffic] Enriching data with page intents and region information');
   const pageIntents = await site.getPageIntents();
   log.info(`[llmo-referral-traffic] Retrieved ${pageIntents.length} page intents for site ${siteId}`);
@@ -164,16 +160,16 @@ export async function referralTrafficRunner(context) {
   }, {});
 
   // enrich with extra fields
-  results.forEach((result) => {
+  scopedResults.forEach((result) => {
     result.page_intent = pageIntentMap[result.path] || '';
     result.region = extractCountryCode(result.path);
   });
-  log.info(`[llmo-referral-traffic] Data enrichment completed for ${results.length} rows`);
+  log.info(`[llmo-referral-traffic] Data enrichment completed for ${scopedResults.length} rows`);
 
   // upload to sharepoint & publish via hlx admin api
   const sharepointClient = await createLLMOSharepointClient(context);
 
-  const workbook = await createWorkbook(results);
+  const workbook = await createWorkbook(scopedResults);
   const llmoFolder = site.getConfig()?.getLlmoDataFolder();
   const outputLocation = `${llmoFolder}/referral-traffic`;
   const filename = `referral-traffic-w${String(week).padStart(2, '0')}-${year}.xlsx`;
@@ -190,7 +186,7 @@ export async function referralTrafficRunner(context) {
     auditResult: {
       filename,
       outputLocation,
-      rowCount: results.length,
+      rowCount: scopedResults.length,
     },
     fullAuditRef: `${outputLocation}/${filename}`,
   };
@@ -198,14 +194,7 @@ export async function referralTrafficRunner(context) {
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .addStep(
-    'trigger-traffic-analysis-import',
-    triggerTrafficAnalysisImport,
-    AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
-  )
-  .addStep(
-    'run-referral-traffic',
-    referralTrafficRunner,
-  )
+  .addStep('trigger-traffic-analysis-import', triggerTrafficAnalysisImport, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('run-referral-traffic', referralTrafficRunner)
   .build();
 /* c8 ignore end */
