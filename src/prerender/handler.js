@@ -1161,13 +1161,11 @@ export async function processOpportunityAndSuggestions(
   // suggestionId is required by Mystique to correlate AI summaries back to the right suggestion.
   // Use normalized pathname as key to handle trailing slash / scheme / www differences.
   const savedSuggestions = await opportunity.getSuggestions();
-  const urlToSuggestionId = new Map();
-  for (const s of savedSuggestions) {
-    const sUrl = s.getData()?.url;
-    if (sUrl) {
-      urlToSuggestionId.set(normalizePathname(sUrl), s.getId());
-    }
-  }
+  const urlToSuggestionId = new Map(
+    savedSuggestions
+      .filter((s) => s.getData()?.url)
+      .map((s) => [normalizePathname(s.getData().url), s.getId()]),
+  );
 
   // Build Mystique candidates directly from the URL list processed in this audit run.
   // Domain-wide suggestions are intentionally excluded; Mystique needs individual URLs.
@@ -1192,7 +1190,7 @@ export async function processOpportunityAndSuggestions(
 
   if (missingSuggestionIdCount > 0) {
     log.warn(`${LOG_PREFIX} ${missingSuggestionIdCount} suggestions missing suggestionId `
-      + `(URL not found in saved suggestions). siteId=${auditData.siteId}, `
+      + `(URL not found in saved suggestions). baseUrl=${auditUrl}, siteId=${auditData.siteId}, `
       + `savedSuggestions=${savedSuggestions.length}, candidates=${auditRunCandidates.length}`);
   }
 

@@ -3289,6 +3289,7 @@ describe('Prerender Audit', () => {
           log: {
             info: sandbox.stub(),
             debug: sandbox.stub(),
+            warn: sandbox.stub(),
           },
         };
 
