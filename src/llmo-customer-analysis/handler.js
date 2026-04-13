@@ -321,16 +321,19 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   const triggeredSteps = [];
   const hasOptelData = await checkOptelData(domain, context);
-  const { configVersion, previousConfigVersion } = auditContext;
+  const { configVersion, previousConfigVersion, onboardingMode } = auditContext;
   const isFirstTimeOnboarding = !previousConfigVersion;
 
-  // For brandalf-enabled orgs, resolve brand ID so the DRS scheduler can use v2 prompts
+  // For brandalf-enabled orgs, resolve brand ID so the DRS scheduler can use v2 prompts.
+  // If onboardingMode is explicitly 'v1' (set by api-service for mixed-state orgs with
+  // pre-Brandalf sites), skip v2 brand resolution — the org has brandalf=true but was
+  // onboarded via the v1 path, so no customer config brand exists yet.
   let brandId;
   let organizationId;
   if (isFirstTimeOnboarding) {
     const orgId = site.getOrganizationId?.() || auditContext.imsOrgId;
     if (orgId) {
-      const isV2 = await isBrandalfEnabled(orgId, env, log);
+      const isV2 = onboardingMode !== 'v1' && await isBrandalfEnabled(orgId, env, log);
       if (isV2) {
         organizationId = orgId;
         try {

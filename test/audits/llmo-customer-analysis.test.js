@@ -1987,6 +1987,57 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(body.brand_id).to.be.undefined;
     });
 
+    it('should skip brandalf check and omit brand_id when onboardingMode is v1 (mixed-state org)', async () => {
+      // Mixed-state: org has brandalf=true but was onboarded via v1 path because it has
+      // pre-Brandalf sites. onboardingMode='v1' in auditContext must bypass isBrandalfEnabled
+      // so we don't send brand_id to DRS (no customer config brand exists for v1 onboarding).
+      const auditContext = { onboardingMode: 'v1' };
+
+      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
+      context.env.SPACECAT_API_KEY = 'test-api-key';
+
+      mockFetch.reset();
+      // Only DRS calls expected — feature-flags API must NOT be called
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-v1' }),
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // feature-flags API must NOT have been called
+      const featureFlagsCall = mockFetch.getCalls().find(
+        (c) => typeof c.args[0] === 'string' && c.args[0].includes('/feature-flags'),
+      );
+      expect(featureFlagsCall).to.not.exist;
+
+      // Schedule should be created without brand_id
+      const scheduleCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      expect(scheduleCall).to.exist;
+      const scheduleBody = JSON.parse(scheduleCall.args[1].body);
+      expect(scheduleBody.brand_id).to.be.undefined;
+      expect(scheduleBody.spacecat_org_id).to.be.undefined;
+    });
+
   });
 
 });
