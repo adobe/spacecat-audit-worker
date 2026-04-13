@@ -1159,14 +1159,12 @@ export async function processOpportunityAndSuggestions(
 
   // Fetch saved suggestions to map URL → suggestionId for Mystique payload.
   // suggestionId is required by Mystique to correlate AI summaries back to the right suggestion.
-  // Build map from both url and normalized pathname to handle trailing slash / www differences.
+  // Use normalized pathname as key to handle trailing slash / scheme / www differences.
   const savedSuggestions = await opportunity.getSuggestions();
   const urlToSuggestionId = new Map();
   for (const s of savedSuggestions) {
     const sUrl = s.getData()?.url;
     if (sUrl) {
-      urlToSuggestionId.set(sUrl, s.getId());
-      // Also map by normalized pathname for resilience against trailing slash / scheme diffs
       urlToSuggestionId.set(normalizePathname(sUrl), s.getId());
     }
   }
@@ -1176,8 +1174,7 @@ export async function processOpportunityAndSuggestions(
   let missingSuggestionIdCount = 0;
   const auditRunCandidates = preRenderSuggestions.reduce((acc, s) => {
     try {
-      const suggestionId = urlToSuggestionId.get(s.url)
-        || urlToSuggestionId.get(normalizePathname(s.url));
+      const suggestionId = urlToSuggestionId.get(normalizePathname(s.url));
       if (!suggestionId) {
         missingSuggestionIdCount += 1;
       }
