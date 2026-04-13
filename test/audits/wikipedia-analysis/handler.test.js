@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -415,6 +413,26 @@ describe('Wikipedia Analysis Handler', () => {
             && msg.includes('wikipediaUrl='),
         ),
       );
+    });
+
+    it('should include slackContext in auditResult when provided in auditContext', async () => {
+      const slackContext = { channelId: 'C-test', threadTs: '1700000000.123456' };
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { slackContext },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.slackContext).to.deep.equal(slackContext);
+    });
+
+    it('should not include slackContext in auditResult when not provided', async () => {
+      const result = await wikipediaAnalysisHandler.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.slackContext).to.be.undefined;
     });
   });
 

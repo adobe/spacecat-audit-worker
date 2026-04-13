@@ -13,6 +13,7 @@ WITH base_referrals AS (
     NULLIF(UPPER(REGEXP_EXTRACT(url, '(?i)^(?:/|(?:https?:\/\/|\/\/)?[^/]+/)?[a-z]{2}_([a-z]{2})\.[a-z]+$', 1)), ''),
     NULLIF(UPPER(REGEXP_EXTRACT(url, '(?i)^(?:/|(?:https?:\/\/|\/\/)?[^/]+/)(?:global|international)/([a-z]{2})(?:/|$)', 1)), ''),
     NULLIF(UPPER(REGEXP_EXTRACT(url, '(?i)^(?:/|(?:https?:\/\/|\/\/)?[^/]+/)(?:countries?|regions?)/([a-z]{2})(?:/|$)', 1)), ''),
+    NULLIF(UPPER(REGEXP_EXTRACT(url, '(?i)^/?([a-z]{2})/[a-z]{2}(?:/|$)', 1)), ''),
     NULLIF(UPPER(REGEXP_EXTRACT(url, '(?i)^(?:/|(?:https?:\/\/|\/\/)?[^/]+/)([a-z]{2})/[a-z]{2}(?:/|$)', 1)), ''),
     NULLIF(UPPER(REGEXP_EXTRACT(url, '(?i)^(?:/|(?:https?:\/\/|\/\/)?[^/]+/)?([a-z]{2})(?:/|$)', 1)), ''),
     NULLIF(UPPER(REGEXP_EXTRACT(url, '(?i)[?&]country=([a-z]{2,3})(?:&|$)', 1)), ''),

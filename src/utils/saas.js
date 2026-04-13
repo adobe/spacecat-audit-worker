@@ -80,7 +80,9 @@ export async function request(name, url, req = [], timeout = 60000) {
     try {
       responseText = await resp.text();
       // eslint-disable-next-line no-unused-vars
-    } catch (e) { /* nothing to be done */ }
+    } catch (e) {
+      /* nothing to be done */
+    }
   }
 
   throw new Error(`Request '${name}' to '${url}' failed (${resp.status}): ${resp.headers.get('x-error') || resp.statusText}${responseText.length > 0 ? ` responseText: ${responseText}` : ''}`);

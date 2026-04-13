@@ -105,11 +105,15 @@ async function fetchCandidates(authorization, log) {
   return batches.reduce((acc, batch) => {
     try {
       const jsonData = JSON.parse(batch);
-      if (!jsonData.result?.results) return acc;
+      if (!jsonData.result?.results) {
+        return acc;
+      }
 
       jsonData.result.results.forEach(({ userData }) => {
-        /* c8 ignore next 1 */
-        if (!userData) return;
+        /* c8 ignore next 3 */
+        if (!userData) {
+          return;
+        }
 
         const {
           request_x_forwarded_host: xFwHost,

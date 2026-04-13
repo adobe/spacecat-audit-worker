@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
@@ -149,7 +147,7 @@ describe('Summarization Handler', () => {
         fullAuditRef: 'https://adobe.com',
       });
       expect(log.info).to.have.been.calledWith(
-        '[SUMMARIZATION] No SEO top pages found for site; continuing with fallback URL sources',
+        '[SUMMARIZATION] No top pages found for site; continuing with fallback URL sources',
       );
     });
 
@@ -642,7 +640,7 @@ describe('Summarization Handler - Athena/SEO fallback', () => {
     expect(result.auditResult.success).to.be.true;
     expect(result.auditResult.topPages).to.deep.equal([]);
     expect(context.log.info).to.have.been.calledWith(
-      '[SUMMARIZATION] No SEO top pages found for site; continuing with fallback URL sources',
+      '[SUMMARIZATION] No top pages found for site; continuing with fallback URL sources',
     );
     expect(mockGetTopAgenticUrlsFromAthena).to.not.have.been.called;
   });

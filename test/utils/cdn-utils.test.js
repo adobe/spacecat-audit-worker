@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -52,6 +51,7 @@ describe('CDN Utils', () => {
         CLOUDFLARE: 'cloudflare',
         CLOUDFRONT: 'cloudfront',
         FRONTDOOR: 'frontdoor',
+        IMPERVA: 'imperva',
         OTHER: 'other',
       });
     });
@@ -227,14 +227,27 @@ describe('CDN Utils', () => {
     });
 
     it('returns modern bucket info when byocdn-other prefix exists', async () => {
-      s3Client.send.resolves({
+      s3Client.send.onFirstCall().resolves({
         CommonPrefixes: [{ Prefix: `${pathId}/raw/byocdn-other/` }],
       });
+      s3Client.send.onSecondCall().resolves({ CommonPrefixes: [] });
 
       const result = await getBucketInfo(s3Client, bucketName, pathId);
 
       expect(result.isLegacy).to.be.false;
       expect(result.providers).to.deep.equal(['byocdn-other']);
+    });
+
+    it('returns modern bucket info when byocdn-imperva prefix exists', async () => {
+      s3Client.send.onFirstCall().resolves({ CommonPrefixes: [] });
+      s3Client.send.onSecondCall().resolves({
+        CommonPrefixes: [{ Prefix: `${pathId}_raw_byocdn-imperva/` }],
+      });
+
+      const result = await getBucketInfo(s3Client, bucketName, pathId);
+
+      expect(result.isLegacy).to.be.false;
+      expect(result.providers).to.deep.equal(['byocdn-imperva']);
     });
   });
 

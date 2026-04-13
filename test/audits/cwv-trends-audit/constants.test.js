@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect } from 'chai';
 import {
   AUDIT_TYPE, TREND_DAYS, CURRENT_WEEK_DAYS, S3_BASE_PATH,

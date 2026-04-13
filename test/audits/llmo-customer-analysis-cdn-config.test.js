@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -274,6 +272,27 @@ describe('CDN Config Handler', () => {
     let mockSiteConfig;
     let mockConfiguration;
 
+    const getCdnLogsAnalysisCalls = () => context.sqs.sendMessage.getCalls()
+      .filter((call) => call.args[1].type === 'cdn-logs-analysis');
+
+    const getCdnLogsReportCalls = () => context.sqs.sendMessage.getCalls()
+      .filter((call) => call.args[1].type === 'cdn-logs-report');
+
+    const getWeeklyReportCalls = () => getCdnLogsReportCalls()
+      .filter((call) => call.args[1].auditContext?.weekOffset !== undefined);
+
+    const getDailyReportCalls = () => getCdnLogsReportCalls()
+      .filter((call) => call.args[1].auditContext?.date);
+
+    const getExpectedReportDate = (analysisCall) => {
+      const {
+        year,
+        month,
+        day,
+      } = analysisCall.args[1].auditContext;
+      return new Date(Date.UTC(year, month - 1, day + 1)).toISOString();
+    };
+
     beforeEach(() => {
       // Mock Config.toDynamoItem static method
       sandbox.stub(Config, 'toDynamoItem').returns({});
@@ -387,16 +406,29 @@ describe('CDN Config Handler', () => {
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
       expect(context.sqs.sendMessage).to.have.been.called;
-      const cdnLogsAnalysisCalls = context.sqs.sendMessage.getCalls()
-        .filter((call) => call.args[1].type === 'cdn-logs-analysis');
+      const cdnLogsAnalysisCalls = getCdnLogsAnalysisCalls();
+      const weeklyReportCalls = getWeeklyReportCalls();
+      const dailyReportCalls = getDailyReportCalls();
+
       expect(cdnLogsAnalysisCalls.length).to.be.greaterThan(0);
-      expect(context.sqs.sendMessage).to.have.been.calledWith(
-        sinon.match.any,
-        sinon.match({ type: 'cdn-logs-report' }),
-      );
+      expect(weeklyReportCalls).to.have.length(1);
+      expect(weeklyReportCalls[0].args[1].auditContext).to.deep.equal({ weekOffset: -1 });
+      expect(weeklyReportCalls[0].args[3]).to.equal(900);
+      expect(dailyReportCalls).to.have.length(cdnLogsAnalysisCalls.length);
+
+      dailyReportCalls.forEach((call, index) => {
+        expect(call.args[1].auditContext).to.deep.equal({
+          date: getExpectedReportDate(cdnLogsAnalysisCalls[index]),
+        });
+        expect(call.args[3]).to.equal(900 + (index * 5));
+      });
     });
 
     it('should not run Fastly analysis for commerce-fastly provider when pathId is not resolved', async () => {
+      nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
+        .reply(200, { data: [] });
+
       const data = { bucketName: 'test-bucket', cdnProvider: 'commerce-fastly' };
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
@@ -405,6 +437,10 @@ describe('CDN Config Handler', () => {
     });
 
     it('should handle bucket configuration when bucketName provided', async () => {
+      nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
+        .reply(200, { data: [] });
+
       const data = { bucketName: 'test-bucket', cdnProvider: 'commerce-fastly' };
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
@@ -427,6 +463,10 @@ describe('CDN Config Handler', () => {
     });
 
     it('should handle bucket configuration when allowedPaths provided', async () => {
+      nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
+        .reply(200, { data: [] });
+
       const data = { allowedPaths: ['test-org/path1', 'test-org/path2'], cdnProvider: 'commerce-fastly' };
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
@@ -435,7 +475,23 @@ describe('CDN Config Handler', () => {
       expect(mockSite.save).to.have.been.called;
     });
 
+    it('should extract bare orgId from byocdn-imperva underscore-layout allowedPaths', async () => {
+      const data = {
+        allowedPaths: ['TestOrg123AdobeOrg_raw_byocdn-imperva/somefile.log'],
+        cdnProvider: 'byocdn-imperva',
+      };
+
+      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+      expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ orgId: 'TestOrg123AdobeOrg' });
+      expect(mockSite.save).to.have.been.called;
+    });
+
     it('should handle bucket configuration when both bucketName and allowedPaths provided', async () => {
+      nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
+        .reply(200, { data: [] });
+
       const data = { bucketName: 'test-bucket', allowedPaths: ['test-org/path1'], cdnProvider: 'commerce-fastly' };
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
@@ -448,6 +504,10 @@ describe('CDN Config Handler', () => {
     });
 
     it('should persist region in bucket configuration when provided', async () => {
+      nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/adobe-managed-domains/commerce-fastly-domains.json?limit=10000')
+        .reply(200, { data: [] });
+
       const data = { bucketName: 'test-bucket', region: 'eu-west-1', cdnProvider: 'commerce-fastly' };
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
@@ -460,6 +520,7 @@ describe('CDN Config Handler', () => {
     });
 
     it('should handle aem-cs-fastly provider', async () => {
+      const clock = sandbox.useFakeTimers(new Date('2025-01-10T12:00:00Z'));
       context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({}), getFullAuditRef: () => '' });
 
       const data = { cdnProvider: 'aem-cs-fastly' };
@@ -468,33 +529,45 @@ describe('CDN Config Handler', () => {
 
       expect(context.sqs.sendMessage).to.have.been.called;
       // Should send multiple cdn-logs-analysis messages (one per day from last Monday to today)
-      const cdnLogsAnalysisCalls = context.sqs.sendMessage.getCalls().filter(call => call.args[1].type === 'cdn-logs-analysis');
+      const cdnLogsAnalysisCalls = getCdnLogsAnalysisCalls();
+      const weeklyReportCalls = getWeeklyReportCalls();
+      const dailyReportCalls = getDailyReportCalls();
+
       expect(cdnLogsAnalysisCalls.length).to.be.greaterThan(0);
-      // Should also send cdn-logs-report
-      expect(context.sqs.sendMessage).to.have.been.calledWith(
-        sinon.match.any,
-        sinon.match({ type: 'cdn-logs-report' })
-      );
+      expect(weeklyReportCalls).to.have.length(1);
+      expect(dailyReportCalls).to.have.length(cdnLogsAnalysisCalls.length);
+
+      clock.restore();
     });
 
-    it('should stagger aem-cs-fastly cdn-logs-analysis messages by 5 seconds per day', async () => {
+    it('should stagger aem-cs-fastly analysis and date-based report messages by 5 seconds per day', async () => {
+      const clock = sandbox.useFakeTimers(new Date('2025-01-10T12:00:00Z'));
       context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({}), getFullAuditRef: () => '' });
 
       const data = { cdnProvider: 'aem-cs-fastly' };
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
-      const cdnLogsAnalysisCalls = context.sqs.sendMessage
-        .getCalls()
-        .filter((call) => call.args[1].type === 'cdn-logs-analysis');
+      const cdnLogsAnalysisCalls = getCdnLogsAnalysisCalls();
+      const dailyReportCalls = getDailyReportCalls();
 
       expect(cdnLogsAnalysisCalls.length).to.be.greaterThan(0);
       cdnLogsAnalysisCalls.forEach((call, index) => {
         expect(call.args[3]).to.equal(index * 5);
       });
+      expect(dailyReportCalls).to.have.length(cdnLogsAnalysisCalls.length);
+      dailyReportCalls.forEach((call, index) => {
+        expect(call.args[1].auditContext).to.deep.equal({
+          date: getExpectedReportDate(cdnLogsAnalysisCalls[index]),
+        });
+        expect(call.args[3]).to.equal(900 + (index * 5));
+      });
+
+      clock.restore();
     });
 
     it('should skip aem-cs-fastly processing when site already has cdn-logs-analysis with fullAuditRef', async () => {
+      const clock = sandbox.useFakeTimers(new Date('2025-01-10T12:00:00Z'));
       context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ 
         getAuditResult: () => ({ providers: ['fastly'] }), 
         getFullAuditRef: () => 'some-audit-ref' 
@@ -504,17 +577,25 @@ describe('CDN Config Handler', () => {
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
-      // Should only send CDN logs report, not cdn-logs-analysis since fullAuditRef already exists for this site
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
-      expect(context.sqs.sendMessage).to.have.been.calledWith(
-        sinon.match.any,
-        sinon.match({ type: 'cdn-logs-report' })
-      );
+      const cdnLogsAnalysisCalls = getCdnLogsAnalysisCalls();
+      const weeklyReportCalls = getWeeklyReportCalls();
+      const dailyReportCalls = getDailyReportCalls();
+
+      expect(cdnLogsAnalysisCalls).to.have.length(0);
+      expect(weeklyReportCalls).to.have.length(1);
+      expect(weeklyReportCalls[0].args[1].auditContext).to.deep.equal({ weekOffset: -1 });
+      expect(dailyReportCalls.length).to.be.greaterThan(0);
+      dailyReportCalls.forEach((call, index) => {
+        expect(call.args[1].auditContext.date).to.match(/T00:00:00\.000Z$/);
+        expect(call.args[3]).to.equal(900 + (index * 5));
+      });
       // Verify it checked for cdn-logs-analysis
       expect(context.dataAccess.LatestAudit.findBySiteIdAndAuditType).to.have.been.calledWith(
         'site-123',
         'cdn-logs-analysis'
       );
+
+      clock.restore();
     });
 
     it('should skip commerce-fastly processing when site already has cdn-logs-analysis with fullAuditRef', async () => {
@@ -537,11 +618,17 @@ describe('CDN Config Handler', () => {
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
-      expect(context.sqs.sendMessage).to.have.been.calledWith(
-        sinon.match.any,
-        sinon.match({ type: 'cdn-logs-report' }),
-      );
+      const cdnLogsAnalysisCalls = getCdnLogsAnalysisCalls();
+      const weeklyReportCalls = getWeeklyReportCalls();
+      const dailyReportCalls = getDailyReportCalls();
+
+      expect(cdnLogsAnalysisCalls).to.have.length(0);
+      expect(weeklyReportCalls).to.have.length(1);
+      expect(dailyReportCalls.length).to.be.greaterThan(0);
+      dailyReportCalls.forEach((call, index) => {
+        expect(call.args[1].auditContext.date).to.match(/T00:00:00\.000Z$/);
+        expect(call.args[3]).to.equal(900 + (index * 5));
+      });
       expect(context.dataAccess.LatestAudit.findBySiteIdAndAuditType).to.have.been.calledWith(
         'site-123',
         'cdn-logs-analysis',

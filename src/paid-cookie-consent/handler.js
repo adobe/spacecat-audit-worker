@@ -221,7 +221,9 @@ export function calculateBounceGapLoss(bounceGapData, log) {
   // Result: { paid: { show: {...}, hidden: {...} }, earned: {...}, owned: {...} }
   const groupedByTrafficType = {};
   for (const row of bounceGapData) {
-    if (!groupedByTrafficType[row.trfType]) groupedByTrafficType[row.trfType] = {};
+    if (!groupedByTrafficType[row.trfType]) {
+      groupedByTrafficType[row.trfType] = {};
+    }
     groupedByTrafficType[row.trfType][row.consent] = {
       pageViews: row.pageViews,
       bounceRate: row.bounceRate,

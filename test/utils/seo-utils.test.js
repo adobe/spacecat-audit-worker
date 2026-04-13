@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect } from 'chai';
 import { trimTagValue, normalizeTagValue, getIssueRanking } from '../../src/utils/seo-utils.js';
 

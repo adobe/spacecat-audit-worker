@@ -1,0 +1,63 @@
+CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
+  date string,
+  time string,
+  cs_vid string,
+  cs_clapp string,
+  cs_browsertype string,
+  cs_js_support string,
+  cs_co_support string,
+  cs_clappsig string,
+  s_capsupport string,
+  s_suid string,
+  cs_user_agent string,
+  cs_sessionid string,
+  s_siteid string,
+  cs_countrycode string,
+  s_tag string,
+  cs_cicode string,
+  s_computername string,
+  cs_lat string,
+  cs_long string,
+  s_accountname string,
+  sr_pop string,
+  s_sitetag string,
+  cs_uri string,
+  cs_postbody string,
+  cs_version string,
+  sc_action string,
+  s_externalid string,
+  cs_referrer string,
+  s_ip string,
+  s_port string,
+  cs_method string,
+  cs_uri_query string,
+  sc_status string,
+  s_xff string,
+  cs_bytes string,
+  cs_start string,
+  c_port string,
+  cs_rule string,
+  c_ip string,
+  cs_protver string,
+  cs_end string,
+  cs_additionalReqHeaders string,
+  cs_additionalResHeaders string,
+  cs_severity string,
+  cs_attacktype string,
+  cs_attackid string,
+  s_ruleName string,
+  cs_ruleInfo string
+)
+ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.OpenCSVSerde'
+WITH SERDEPROPERTIES (
+  'separatorChar' = ' ',
+  'quoteChar'     = '"',
+  'escapeChar'    = '\\'
+)
+LOCATION '{{rawLocation}}'
+TBLPROPERTIES (
+  'schema_version'            = '1',
+  'skip.header.line.count'    = '4',
+  'projection.enabled'        = 'false',
+  'has_encrypted_data'        = 'false'
+);

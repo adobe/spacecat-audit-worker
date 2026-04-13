@@ -142,7 +142,9 @@ async function fetchPromptsBatched(postgrestClient, organizationId, log) {
     const rows = data || [];
     allRows.push(...rows);
     log.info(`Fetched prompts batch: ${rows.length} rows (total: ${allRows.length})`);
-    if (rows.length < FETCH_BATCH_SIZE) break;
+    if (rows.length < FETCH_BATCH_SIZE) {
+      break;
+    }
     offset += FETCH_BATCH_SIZE;
   }
   return allRows;
@@ -192,7 +194,9 @@ function resolvePromptId(p, topicId, topicUuid, existingPrompts) {
   if (existing) {
     return existing.prompt_id;
   }
-  if (!p.prompt) return null;
+  if (!p.prompt) {
+    return null;
+  }
   const generated = uuidv5(`${topicId}:${p.prompt}`, PROMPT_ID_NAMESPACE);
   return generated;
 }
@@ -210,7 +214,9 @@ function collectPrompts(
   const rows = [];
 
   const addFromTopics = (topicsRecord, status) => {
-    if (!topicsRecord) return;
+    if (!topicsRecord) {
+      return;
+    }
     Object.entries(topicsRecord).forEach(([topicId, topic]) => {
       const topicUuid = topicLookup.get(topicId) || null;
       const categoryUuid = topic.category ? (categoryLookup.get(topic.category) || null) : null;
@@ -370,7 +376,9 @@ export default async function llmoConfigDbSync(message, context) {
           .from('categories')
           .upsert(catDiff.toUpsert, { onConflict: 'organization_id,category_id' })
           .select('id,category_id');
-        if (catError) throw new Error(`Failed to upsert categories: ${catError.message}`);
+        if (catError) {
+          throw new Error(`Failed to upsert categories: ${catError.message}`);
+        }
         (catData || []).forEach((c) => categoryLookup.set(c.category_id, c.id));
       }
     }
@@ -379,7 +387,9 @@ export default async function llmoConfigDbSync(message, context) {
     // Step 4: Build & diff topics
     const topicRows = [];
     const addTopics = (topicsRecord) => {
-      if (!topicsRecord) return;
+      if (!topicsRecord) {
+        return;
+      }
       Object.entries(topicsRecord).forEach(([topicId, topic]) => {
         topicRows.push({
           organization_id: organizationId,
@@ -407,7 +417,9 @@ export default async function llmoConfigDbSync(message, context) {
         .from('topics')
         .upsert(topicDiff.toUpsert, { onConflict: 'organization_id,topic_id' })
         .select('id,topic_id,name');
-      if (topicError) throw new Error(`Failed to upsert topics: ${topicError.message}`);
+      if (topicError) {
+        throw new Error(`Failed to upsert topics: ${topicError.message}`);
+      }
       (topicData || []).forEach((t) => {
         topicLookup.set(t.topic_id, t.id);
         topicNameLookup.set(t.name, t.id);
@@ -456,7 +468,9 @@ export default async function llmoConfigDbSync(message, context) {
             .from('categories')
             .upsert(missingCatRows, { onConflict: 'organization_id,category_id' })
             .select('id,category_id');
-          if (catError) throw new Error(`Failed to upsert deleted-ref categories: ${catError.message}`);
+          if (catError) {
+            throw new Error(`Failed to upsert deleted-ref categories: ${catError.message}`);
+          }
           (catData || []).forEach((c) => categoryLookup.set(c.category_id, c.id));
         }
         log.info(`${tag}Deleted-ref categories: ${missingCatRows.length} ensured`);
@@ -469,7 +483,9 @@ export default async function llmoConfigDbSync(message, context) {
             .from('topics')
             .upsert(missingTopicRows, { onConflict: 'organization_id,topic_id' })
             .select('id,topic_id,name');
-          if (topicError) throw new Error(`Failed to upsert deleted-ref topics: ${topicError.message}`);
+          if (topicError) {
+            throw new Error(`Failed to upsert deleted-ref topics: ${topicError.message}`);
+          }
           (topicData || []).forEach((t) => {
             topicLookup.set(t.topic_id, t.id);
             topicNameLookup.set(t.name, t.id);

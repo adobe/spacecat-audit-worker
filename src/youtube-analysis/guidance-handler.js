@@ -17,6 +17,7 @@ import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
+import { postMessageOptional } from '../utils/slack-utils.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS;
 
@@ -130,6 +131,22 @@ export default async function handler(message, context) {
     await opportunity.save();
 
     log.info(`[YouTube] Successfully processed YouTube analysis for site: ${siteId}, company: ${companyName}, ${suggestions.length} suggestions`);
+
+    if (auditId) {
+      const audit = await AuditModel.findById(auditId);
+      const slackContext = audit?.getAuditResult()?.slackContext;
+      if (slackContext) {
+        const { channelId, threadTs } = slackContext;
+        await postMessageOptional(
+          context,
+          channelId,
+          `:white_check_mark: *youtube-analysis* audit finished for *${site.getBaseURL()}*\n`
+          + `• ${suggestions.length} suggestion${suggestions.length === 1 ? '' : 's'} processed`,
+          { threadTs },
+        );
+      }
+    }
+
     return ok();
   } catch (error) {
     log.error(`[YouTube] Error processing YouTube analysis: ${error.message}`, error);

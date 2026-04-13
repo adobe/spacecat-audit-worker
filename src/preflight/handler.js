@@ -257,10 +257,14 @@ export const preflightAudit = async (context) => {
           // solely because a descendant contains "Lorem ipsum".
           const loremElements = allLoremElements.filter(
             (el) => !allLoremElements.some((other) => {
-              if (other === el) return false;
+              if (other === el) {
+                return false;
+              }
               let cursor = other.parent;
               while (cursor) {
-                if (cursor === el) return true;
+                if (cursor === el) {
+                  return true;
+                }
                 cursor = cursor.parent;
               }
               return false;

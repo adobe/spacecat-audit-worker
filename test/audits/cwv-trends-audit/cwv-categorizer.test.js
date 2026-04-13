@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect } from 'chai';
 import { categorizeUrl } from '../../../src/cwv-trends-audit/cwv-categorizer.js';
 

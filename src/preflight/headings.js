@@ -60,7 +60,9 @@ function getElementsFromCheck(scrapeJsonObject, check) {
       // Target the main content area where H1 should be added
       const mainElement = $('body > main').get(0) || $('body').get(0);
       const selector = getDomElementSelector(mainElement);
-      if (selector) selectors.push(selector);
+      if (selector) {
+        selectors.push(selector);
+      }
       break;
     }
 
@@ -78,7 +80,9 @@ function getElementsFromCheck(scrapeJsonObject, check) {
       const h1Element = $('h1').get(0);
       if (h1Element) {
         const selector = getDomElementSelector(h1Element);
-        if (selector) selectors.push(selector);
+        if (selector) {
+          selectors.push(selector);
+        }
       }
       break;
     }
@@ -111,7 +115,9 @@ function getElementsFromCheck(scrapeJsonObject, check) {
         }
         if (element) {
           const selector = getDomElementSelector(element);
-          if (selector) selectors.push(selector);
+          if (selector) {
+            selectors.push(selector);
+          }
         }
       }
       break;

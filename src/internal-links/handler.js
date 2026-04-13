@@ -17,7 +17,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createContextLogger } from '../common/context-logger.js';
-import { isUnscrapeable, filterBrokenSuggestedUrls } from '../utils/url-utils.js';
+import { filterBrokenSuggestedUrls } from '../utils/url-utils.js';
 import { syncBrokenInternalLinksSuggestions } from './suggestions-generator.js';
 import {
   isLinkInaccessible,
@@ -98,7 +98,6 @@ export const submitForScraping = createSubmitForScraping({
   auditType: AUDIT_TYPE,
   createContextLogger,
   isWithinAuditScope,
-  isUnscrapeable,
 });
 
 export const opportunityAndSuggestionsStep = createOpportunityAndSuggestionsStep({
@@ -113,7 +112,6 @@ export const opportunityAndSuggestionsStep = createOpportunityAndSuggestionsStep
   syncBrokenInternalLinksSuggestions,
   filterByAuditScope,
   extractPathPrefix: extractLocalePathPrefix,
-  isUnscrapeable,
   filterBrokenSuggestedUrls,
   BrightDataClient,
   buildLocaleSearchUrl,
