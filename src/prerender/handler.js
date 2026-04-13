@@ -1159,17 +1159,30 @@ export async function processOpportunityAndSuggestions(
 
   // Fetch saved suggestions to map URL → suggestionId for Mystique payload.
   // suggestionId is required by Mystique to correlate AI summaries back to the right suggestion.
+  // Build map from both url and normalized pathname to handle trailing slash / www differences.
   const savedSuggestions = await opportunity.getSuggestions();
-  const urlToSuggestionId = new Map(
-    savedSuggestions.map((s) => [s.getData()?.url, s.getId()]),
-  );
+  const urlToSuggestionId = new Map();
+  for (const s of savedSuggestions) {
+    const sUrl = s.getData()?.url;
+    if (sUrl) {
+      urlToSuggestionId.set(sUrl, s.getId());
+      // Also map by normalized pathname for resilience against trailing slash / scheme diffs
+      urlToSuggestionId.set(normalizePathname(sUrl), s.getId());
+    }
+  }
 
   // Build Mystique candidates directly from the URL list processed in this audit run.
   // Domain-wide suggestions are intentionally excluded; Mystique needs individual URLs.
+  let missingSuggestionIdCount = 0;
   const auditRunCandidates = preRenderSuggestions.reduce((acc, s) => {
     try {
+      const suggestionId = urlToSuggestionId.get(s.url)
+        || urlToSuggestionId.get(normalizePathname(s.url));
+      if (!suggestionId) {
+        missingSuggestionIdCount += 1;
+      }
       acc.push({
-        suggestionId: urlToSuggestionId.get(s.url),
+        ...(suggestionId && { suggestionId }),
         url: s.url,
         originalHtmlMarkdownKey: getS3Path(s.url, auditData.scrapeJobId, 'server-side-html.md'),
         markdownDiffKey: getS3Path(s.url, auditData.scrapeJobId, 'markdown-diff.md'),
@@ -1179,6 +1192,12 @@ export async function processOpportunityAndSuggestions(
     }
     return acc;
   }, []);
+
+  if (missingSuggestionIdCount > 0) {
+    log.warn(`${LOG_PREFIX} ${missingSuggestionIdCount} suggestions missing suggestionId `
+      + `(URL not found in saved suggestions). siteId=${auditData.siteId}, `
+      + `savedSuggestions=${savedSuggestions.length}, candidates=${auditRunCandidates.length}`);
+  }
 
   return { opportunity, auditRunCandidates };
 }
