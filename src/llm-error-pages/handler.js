@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-import ExcelJS from 'exceljs';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
@@ -21,16 +20,44 @@ import {
   consolidateErrorsByUrl,
   sortErrorsByTrafficVolume,
   categorizeErrorsByStatusCode,
-  SPREADSHEET_COLUMNS,
+  groupErrorsByUrl,
+  parsePeriodIdentifier,
   toPathOnly,
 } from './utils.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
-import { validateCountryCode } from '../cdn-logs-report/utils/report-utils.js';
 import { buildSiteFilters, getS3Config, getCdnAwsRuntime } from '../utils/cdn-utils.js';
 import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { syncSuggestions } from '../utils/data-access.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
+
+/**
+ * One Opportunity per status code bucket. Each Opportunity has its own lifecycle
+ * (NEW/IN_PROGRESS/RESOLVED) and remediation guidance:
+ *
+ *   llm-error-pages-404  → REDIRECT_UPDATE suggestions; sent to Mystique for AI enrichment
+ *   llm-error-pages-403  → CODE_CHANGE suggestions; read-only in UI (no Mystique)
+ *   llm-error-pages-5xx  → CODE_CHANGE suggestions; read-only in UI (no Mystique)
+ */
+const STATUS_BUCKETS = [
+  { code: 404, auditType: 'llm-error-pages-404', suggestionType: 'REDIRECT_UPDATE' },
+  { code: 403, auditType: 'llm-error-pages-403', suggestionType: 'CODE_CHANGE' },
+  { code: '5xx', auditType: 'llm-error-pages-5xx', suggestionType: 'CODE_CHANGE' },
+];
+
+/** Suggestions not seen in any of the last N weeks are marked OUTDATED. */
+const RETENTION_WEEKS = 4;
+const RETENTION_MS = RETENTION_WEEKS * 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Rolling history window stored in each Suggestion's weeklyData array.
+ * Entries older than this are dropped on each merge to bound storage.
+ * ~3 months of weekly audit runs at 7 days per week.
+ */
+const HISTORY_WEEKS = 13;
+const HISTORY_MS = HISTORY_WEEKS * 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Step 1: Import top pages and submit for scraping
@@ -123,18 +150,31 @@ export async function submitForScraping(context) {
 }
 
 /**
- * Step 3: Run audit, generate Excel reports, and send to Mystique.
+ * Step 3: Run audit, write Opportunities to DB, and send 404s to Mystique.
+ *
+ * Replaces the legacy Excel/SharePoint output with DB-backed Opportunities and
+ * Suggestions. Three Opportunities are created per audit run — one per HTTP status
+ * code bucket (404, 403, 5xx). Each error URL becomes one Suggestion under the
+ * matching Opportunity.
+ *
+ * Rolling 4-week data window: URLs that reappear across weeks accumulate hit counts
+ * in a single Suggestion (no duplicate records). Suggestions not seen in any of the
+ * last 4 weeks are marked OUTDATED. AI-enriched fields (suggestedUrls, aiRationale,
+ * confidenceScore) written by guidance-handler.js are preserved when the same URL
+ * reappears in a later week.
+ *
  * Supports multiple weeks via auditContext.weekOffset for backfill.
  */
 /* eslint-disable no-await-in-loop */
 export async function runAuditAndSendToMystique(context) {
   const { log, site } = context;
-  const s3Config = getS3Config(site, context);
   const url = site.getBaseURL();
+  let s3Config;
 
   log.info(`[LLM-ERROR-PAGES] Starting audit for ${url}`);
 
   try {
+    s3Config = getS3Config(site, context);
     const awsRuntime = getCdnAwsRuntime(site, context);
     const athenaClient = awsRuntime.createAthenaClient(s3Config.getAthenaTempLocation());
 
@@ -153,12 +193,11 @@ export async function runAuditAndSendToMystique(context) {
 
     const filters = site.getConfig()?.getLlmoCdnlogsFilter?.() || [];
     const siteFilters = buildSiteFilters(filters, site);
-    const sharepointClient = await createLLMOSharepointClient(context);
-    const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.customerName;
-    const outputLocation = `${llmoFolder}/agentic-traffic`;
     const {
       dataAccess, sqs, env, audit,
     } = context;
+    const { Suggestion } = dataAccess;
+    const retentionCutoff = new Date(Date.now() - RETENTION_MS);
 
     for (const week of weeks) {
       const { startDate, endDate, periodIdentifier } = week;
@@ -185,59 +224,166 @@ export async function runAuditAndSendToMystique(context) {
         const processedResults = processErrorPagesResults(results);
         const categorizedResults = categorizeErrorsByStatusCode(processedResults.errorPages);
 
-        const buildFilename = (code) => `agentictraffic-errors-${code}-${periodIdentifier}.xlsx`;
-
-        const writeCategoryExcel = async (code, errors) => {
-          if (!errors || errors.length === 0) {
-            return;
-          }
-
-          /* c8 ignore next 2 */
-          const sorted = [...errors].sort(
-            (a, b) => (b.total_requests || 0) - (a.total_requests || 0),
-          );
-
-          const workbook = new ExcelJS.Workbook();
-          const sheet = workbook.addWorksheet('data');
-          sheet.addRow(SPREADSHEET_COLUMNS);
-
-          sorted.forEach((e) => {
-            sheet.addRow([
-              e.agent_type || '',
-              e.user_agent || '',
-              e.total_requests || 0,
-              e.avg_ttfb_ms ?? '',
-              /* c8 ignore next */
-              validateCountryCode(e.country_code),
-              /* c8 ignore next */
-              e.url || '',
-              e.product || '',
-              e.category || '',
-              '',
-              '',
-              '',
-            ]);
-          });
-
-          const filename = buildFilename(code);
-          await saveExcelReport({
-            workbook,
-            outputLocation,
-            log,
-            sharepointClient,
-            filename,
-          });
-          log.info(`[LLM-ERROR-PAGES] Uploaded Excel for ${code}: ${filename} (${sorted.length} rows)`);
-        };
-
-        await Promise.all([
-          writeCategoryExcel('404', categorizedResults[404]?.slice(0, 50)),
-          writeCategoryExcel('403', categorizedResults[403]),
-          writeCategoryExcel('5xx', categorizedResults['5xx']),
-        ]);
-
         log.info(`[LLM-ERROR-PAGES] Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
 
+        // ── Opportunity + Suggestion sync ──────────────────────────────────────
+        // One Opportunity per status code bucket. One Suggestion per unique URL.
+        const opportunityMap = {};
+
+        for (const { code, auditType, suggestionType } of STATUS_BUCKETS) {
+          const rawErrors = categorizedResults[code] || [];
+
+          if (rawErrors.length > 0) {
+            // Group by URL: Athena returns one row per (url, user_agent) pair.
+            // groupErrorsByUrl merges those into one entry per URL with summed hitCount
+            // and a collected agentTypes array. Without this, duplicate buildKeys would
+            // cause syncSuggestions to silently overwrite earlier rows. See JSDoc.
+            const groupedErrors = groupErrorsByUrl(rawErrors);
+
+            // Create or find the Opportunity for this status code bucket.
+            const opportunity = await convertToOpportunity(
+              url,
+              { siteId: site.getId(), auditId: audit.getId(), id: audit.getId() },
+              context,
+              createOpportunityData,
+              auditType,
+              { statusCode: code, totalErrors: groupedErrors.length },
+            );
+
+            opportunityMap[code] = opportunity;
+
+            // Pre-fetch suggestions once — reused by syncSuggestions (via existingSuggestions
+            // param) and by the 4-week cleanup below to avoid a second DB round-trip.
+            const existingSuggestions = await opportunity.getSuggestions();
+
+            // Sync current week's URLs as Suggestions.
+            //
+            // scrapedUrlsSet: prevents syncSuggestions from marking previous-week URLs as
+            //   OUTDATED. The OUTDATED filter fires only when a Suggestion's URL is in
+            //   scrapedUrlsSet AND absent from newData. Since scrapedUrlsSet === URLs in
+            //   newData, that condition is never true. Old URLs stay active until the
+            //   explicit 4-week cleanup below.
+            //
+            // mergeDataFunction: refreshes live metrics (hitCount, agentTypes, etc.) for
+            //   URLs that recur across weeks while preserving Mystique-enriched fields
+            //   (suggestedUrls, aiRationale, confidenceScore) set by guidance-handler.js.
+            await syncSuggestions({
+              opportunity,
+              newData: groupedErrors,
+              buildKey: (error) => `${auditType}::${error.url}`,
+              context,
+              log,
+              existingSuggestions,
+              scrapedUrlsSet: new Set(groupedErrors.map((e) => e.url)),
+              mergeDataFunction: (existingData, newDataItem) => {
+                // Build this week's entry for the rolling history array.
+                const newWeekEntry = {
+                  periodIdentifier,
+                  hitCount: newDataItem.hitCount,
+                  agentTypes: newDataItem.agentTypes,
+                  avgTtfb: newDataItem.avgTtfb,
+                };
+
+                // Remove any same-week entry first so Monday's 2-week runs are
+                // idempotent — the second pass for the same periodIdentifier must
+                // not create a duplicate entry.
+                const existingWeeklyData = existingData.weeklyData || [];
+                const deduplicated = existingWeeklyData.filter(
+                  (w) => w.periodIdentifier !== periodIdentifier,
+                );
+
+                // Age-cap: drop entries older than HISTORY_WEEKS so the array
+                // stays bounded regardless of how long the URL keeps erroring.
+                // Using parsePeriodIdentifier (imported from utils.js).
+                const historyCutoff = new Date(Date.now() - HISTORY_MS);
+                const ageCapped = deduplicated.filter(
+                  (w) => parsePeriodIdentifier(w.periodIdentifier) >= historyCutoff,
+                );
+
+                // Count-cap as a safety net for backfill runs or any edge case
+                // where more than HISTORY_WEEKS entries slip through the age filter.
+                // Keep at most (HISTORY_WEEKS - 1) existing entries so the new entry
+                // always fits within the HISTORY_WEEKS total limit.
+                const trimmed = ageCapped.slice(-(HISTORY_WEEKS - 1));
+
+                const weeklyData = [...trimmed, newWeekEntry];
+
+                return {
+                  ...existingData,
+                  // Refresh top-level fields with current week's Athena metrics.
+                  // These drive rank and the 4-week retention cleanup.
+                  hitCount: newDataItem.hitCount,
+                  agentTypes: newDataItem.agentTypes,
+                  avgTtfb: newDataItem.avgTtfb,
+                  countryCode: newDataItem.countryCode,
+                  product: newDataItem.product,
+                  category: newDataItem.category,
+                  periodIdentifier,
+                  // Rolling ~3-month history (capped at HISTORY_WEEKS entries).
+                  // Supplementary — used by the UI to show weekly trends per URL.
+                  weeklyData,
+                  // Preserve AI-enriched fields from Mystique if already present.
+                  // Avoids redundant Mystique calls when the same URL reappears in a
+                  // later week — guidance-handler.js checks these fields before re-queuing.
+                  ...(existingData.suggestedUrls && { suggestedUrls: existingData.suggestedUrls }),
+                  ...(existingData.aiRationale && { aiRationale: existingData.aiRationale }),
+                  ...(existingData.confidenceScore !== undefined && {
+                    confidenceScore: existingData.confidenceScore,
+                  }),
+                };
+              },
+              mapNewSuggestion: (error) => ({
+                opportunityId: opportunity.getId(),
+                type: suggestionType,
+                rank: error.hitCount,
+                data: {
+                  url: error.url,
+                  httpStatus: error.httpStatus,
+                  agentTypes: error.agentTypes,
+                  hitCount: error.hitCount,
+                  avgTtfb: error.avgTtfb,
+                  countryCode: error.countryCode,
+                  product: error.product,
+                  category: error.category,
+                  periodIdentifier,
+                  // Seed the rolling history with the first week's data.
+                  weeklyData: [{
+                    periodIdentifier,
+                    hitCount: error.hitCount,
+                    agentTypes: error.agentTypes,
+                    avgTtfb: error.avgTtfb,
+                  }],
+                },
+              }),
+            });
+
+            // 4-week retention cleanup: OUTDATED Suggestions whose URL has not been seen
+            // in any of the last RETENTION_WEEKS weeks.
+            //
+            // syncSuggestions updated periodIdentifier in-memory for every URL that
+            // reappeared, so existingSuggestions already reflects the current state.
+            // New Suggestions added this week (by addSuggestions) are not in this list
+            // and are therefore not at risk of false-outdating here.
+            const toOutdate = existingSuggestions.filter((s) => {
+              const lastSeen = s.getData()?.periodIdentifier;
+              if (!lastSeen) return false; // no timestamp → skip (old data, handled separately)
+              const status = s.getStatus();
+              if (['OUTDATED', 'FIXED', 'RESOLVED', 'REJECTED', 'APPROVED'].includes(status)) {
+                return false;
+              }
+              return parsePeriodIdentifier(lastSeen) < retentionCutoff;
+            });
+
+            if (toOutdate.length > 0) {
+              await Suggestion.bulkUpdateStatus(toOutdate, 'OUTDATED');
+              log.info(`[LLM-ERROR-PAGES] Outdated ${toOutdate.length} stale suggestions for ${auditType} (older than ${RETENTION_WEEKS} weeks)`);
+            }
+          } else {
+            log.info(`[LLM-ERROR-PAGES] No ${code} errors for ${periodIdentifier}, skipping bucket`);
+          }
+        }
+
+        // ── Send 404s to Mystique for AI guidance ──────────────────────────────
         if (sqs && env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
           const errors404 = categorizedResults[404] || [];
 
@@ -280,7 +426,7 @@ export async function runAuditAndSendToMystique(context) {
                   }))
                   .filter((link) => link.urlFrom.length > 0),
                 alternativeUrls,
-                opportunityId: `llm-404-${periodIdentifier}`,
+                opportunityId: opportunityMap[404]?.getId(),
               },
             };
 
