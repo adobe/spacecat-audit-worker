@@ -604,6 +604,7 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
     const queue = env.QUEUE_SPACECAT_TO_MYSTIQUE;
     await sqs.sendMessage(queue, {
       type: 'guidance:prerender',
+      url: baseUrl,
       siteId,
       auditId,
       deliveryType,
