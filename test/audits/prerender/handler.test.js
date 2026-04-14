@@ -3886,6 +3886,63 @@ describe('Prerender Audit', () => {
           sinon.match(/suggestions missing suggestionId/),
         );
       });
+
+      it('should warn when a suggestion has status=SKIPPED with edgeDeployed set', async () => {
+        // This combination should never occur in practice; the warning is a diagnostic guard.
+        const skippedEdgeDeployedSuggestion = {
+          getId: sinon.stub().returns('skipped-edge-id'),
+          getData: sinon.stub().returns({ url: 'https://example.com/page1', edgeDeployed: 1234567890 }),
+          getStatus: sinon.stub().returns('SKIPPED'),
+        };
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sandbox.stub().resolves([skippedEdgeDeployedSuggestion]),
+        };
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: sandbox.stub().resolves(),
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sandbox.stub().resolves(true),
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          scrapeJobId: 'job-123',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [{
+              url: 'https://example.com/page1',
+              needsPrerender: true,
+              contentGainRatio: 2.0,
+              wordCountBefore: 100,
+              wordCountAfter: 200,
+            }],
+          },
+        };
+
+        const context = {
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub() },
+          dataAccess: {
+            Suggestion: {
+              STATUSES: { NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED' },
+            },
+          },
+          site: { getId: () => 'test-site-id' },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+        expect(context.log.warn).to.have.been.calledWith(
+          sinon.match(/suggestion\(s\) have status=SKIPPED with edgeDeployed set/),
+        );
+      });
     });
   });
 

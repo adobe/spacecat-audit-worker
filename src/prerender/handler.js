@@ -1168,6 +1168,14 @@ export async function processOpportunityAndSuggestions(
       .map((s) => [s.getData().url, s.getId()]),
   );
 
+  // Diagnostic: SKIPPED + edgeDeployed should never coexist — log a warning if found.
+  const skippedEdgeDeployedCount = savedSuggestions.filter(
+    (s) => s.getStatus() === Suggestion.STATUSES.SKIPPED && s.getData()?.edgeDeployed,
+  ).length;
+  if (skippedEdgeDeployedCount > 0) {
+    log.warn(`${LOG_PREFIX} ${skippedEdgeDeployedCount} suggestion(s) have status=SKIPPED with edgeDeployed set — this should be 0. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
+  }
+
   // Build Mystique candidates directly from the URL list processed in this audit run.
   // Domain-wide suggestions are intentionally excluded; Mystique needs individual URLs.
   // Always send suggestionId (Mystique requires non-empty string). Use URL as fallback
