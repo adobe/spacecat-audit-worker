@@ -134,8 +134,10 @@ async function markDeployedUrlSuggestionsAsCovered(
   }
 
   const suggestionsToCover = deployedAtEdgeUrls?.size > 0
-    ? newSuggestions.filter((s) => deployedAtEdgeUrls.has(s.getData()?.url)
-      && !s.getData()?.edgeDeployed)
+    ? newSuggestions.filter((s) => {
+      const data = s.getData();
+      return deployedAtEdgeUrls.has(data?.url) && !data?.edgeDeployed;
+    })
     : [];
 
   if (suggestionsToCover.length === 0) {
@@ -1184,15 +1186,15 @@ export async function processOpportunityAndSuggestions(
   const auditRunCandidates = preRenderSuggestions.reduce((acc, s) => {
     try {
       const suggestionId = urlToSuggestionId.get(s.url);
-      if (!suggestionId) {
-        missingSuggestionIdCount += 1;
-      }
       acc.push({
         suggestionId: suggestionId || s.url,
         url: s.url,
         originalHtmlMarkdownKey: getS3Path(s.url, auditData.scrapeJobId, 'server-side-html.md'),
         markdownDiffKey: getS3Path(s.url, auditData.scrapeJobId, 'markdown-diff.md'),
       });
+      if (!suggestionId) {
+        missingSuggestionIdCount += 1;
+      }
     } catch {
       // skip malformed URLs — getS3Path throws if new URL(url) fails
     }
