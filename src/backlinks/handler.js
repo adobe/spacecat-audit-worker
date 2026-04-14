@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+/* eslint-disable no-unused-vars */
 import { tracingFetch as fetch, prependSchema, stripWWW } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import {
@@ -579,9 +580,139 @@ export const generateSuggestionData = async (context) => {
   };
 };
 
+// DEMO HACK: Convert to RunnerAudit to skip import-worker and scrape-client
+// eslint-disable-next-line no-unused-vars
+const originalStepAudit = null;
+// Original was:
+// new AuditBuilder()
+//   .withUrlResolver((site) => site.resolveFinalURL())
+//   .addStep('audit-and-import-top-pages', runAuditAndImportTopPages,
+//     AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+//   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+//   .addStep('generate-suggestion-data', generateSuggestionData)
+//   .build();
+
+// eslint-disable-next-line max-len
+async function demoSuggestionPostProcessor(finalUrl, auditData, context, site) { // eslint-disable-line max-params
+  const {
+    log, dataAccess, sqs, env,
+  } = context;
+  const { Configuration, Suggestion, SiteTopPage } = dataAccess;
+  const { audit } = context;
+  const auditResult = audit.getAuditResult();
+
+  if (auditResult.success === false) {
+    log.info('DEMO HACK: Audit failed, skipping suggestions generation');
+    return auditData;
+  }
+
+  const configuration = await Configuration.findLatest();
+  if (!configuration.isHandlerEnabledForSite('broken-backlinks-auto-suggest', site)) {
+    log.info('DEMO HACK: Auto-suggest is disabled for site, skipping');
+    return auditData;
+  }
+
+  if (!auditResult?.brokenBacklinks?.length) {
+    log.info('DEMO HACK: No broken backlinks, skipping opportunity creation');
+    return auditData;
+  }
+
+  const kpiDeltas = await calculateKpiMetrics(audit, context, site);
+  const opportunity = await convertToOpportunity(
+    finalUrl,
+    { siteId: site.getId(), id: audit.getId() },
+    context,
+    createOpportunityData,
+    Audit.AUDIT_TYPES.BROKEN_BACKLINKS,
+    kpiDeltas,
+  );
+
+  const buildKey = (backlink) => `${backlink.url_from}|${backlink.url_to}`;
+  const mergeDataFunction = (existingData, newData) => {
+    const merged = { ...existingData, ...newData };
+    // eslint-disable-next-line max-len
+    if (existingData.urlEdited !== undefined && existingData.urlEdited !== null && existingData.isEdited !== null) {
+      merged.urlEdited = existingData.urlEdited;
+      merged.isEdited = existingData.isEdited;
+    } else {
+      delete merged.urlEdited;
+    }
+    return merged;
+  };
+
+  await syncSuggestionsWithPublishDetection({
+    opportunity,
+    newData: auditResult.brokenBacklinks,
+    buildKey,
+    context,
+    mergeDataFunction,
+    mapNewSuggestion: (backlink) => ({
+      opportunityId: opportunity.getId(),
+      type: 'REDIRECT_UPDATE',
+      rank: backlink.traffic_domain,
+      data: {
+        title: backlink.title,
+        url_from: backlink.url_from,
+        url_to: backlink.url_to,
+        traffic_domain: backlink.traffic_domain,
+      },
+    }),
+    // eslint-disable-next-line max-len
+    isIssueFixedWithAISuggestion: (suggestion) => checkIfBacklinkFixedWithSuggestion(suggestion, log),
+    // eslint-disable-next-line max-len
+    buildFixEntityPayload: (suggestion, opp, isAuthorOnly) => buildBacklinkFixEntityPayload(suggestion, opp, isAuthorOnly, site),
+    // eslint-disable-next-line max-len
+    isIssueResolvedOnProduction: (suggestion) => checkIfBacklinkResolvedOnProduction(suggestion, log),
+  });
+
+  const suggestions = await Suggestion.allByOpportunityIdAndStatus(
+    opportunity.getId(),
+    SuggestionModel.STATUSES.NEW,
+  );
+  const brokenLinks = suggestions
+    .map((suggestion) => ({
+      urlFrom: suggestion?.getData()?.url_from,
+      urlTo: suggestion?.getData()?.url_to,
+      suggestionId: suggestion?.getId(),
+    }))
+    .filter((link) => link.urlFrom && link.urlTo && link.suggestionId);
+
+  if (brokenLinks.length === 0) {
+    log.info('DEMO HACK: No valid broken links for Mystique. Done.');
+    return auditData;
+  }
+
+  // DEMO HACK: Hardcode alternative URLs (no top pages in DB)
+  const base = 'https://main--wknd-backlink-test-sharepoint-external--mimchome.aem.live';
+  const alternativeUrls = [
+    `${base}/`,
+    `${base}/about`,
+    `${base}/products`,
+    `${base}/contact`,
+    `${base}/blog`,
+  ];
+  log.info(`DEMO HACK: Using ${alternativeUrls.length} hardcoded alternative URLs`);
+
+  const mystiqueMessage = {
+    type: 'guidance:broken-links',
+    siteId: site.getId(),
+    auditId: audit.getId(),
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    data: {
+      alternativeUrls,
+      opportunityId: opportunity?.getId(),
+      brokenLinks,
+    },
+  };
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+  log.info(`DEMO HACK: Message sent to Mystique for ${site.getId()}`);
+
+  return auditData;
+}
+
 export default new AuditBuilder()
   .withUrlResolver((site) => site.resolveFinalURL())
-  .addStep('audit-and-import-top-pages', runAuditAndImportTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
-  .addStep('generate-suggestion-data', generateSuggestionData)
+  .withRunner(brokenBacklinksAuditRunner)
+  .withPostProcessors([demoSuggestionPostProcessor])
   .build();
