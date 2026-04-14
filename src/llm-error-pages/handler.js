@@ -366,7 +366,9 @@ export async function runAuditAndSendToMystique(context) {
             // and are therefore not at risk of false-outdating here.
             const toOutdate = existingSuggestions.filter((s) => {
               const lastSeen = s.getData()?.periodIdentifier;
-              if (!lastSeen) return false; // no timestamp → skip (old data, handled separately)
+              if (!lastSeen) {
+                return false; // no timestamp → skip (old data, handled separately)
+              }
               const status = s.getStatus();
               if (['OUTDATED', 'FIXED', 'RESOLVED', 'REJECTED', 'APPROVED'].includes(status)) {
                 return false;
