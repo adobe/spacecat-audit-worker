@@ -459,6 +459,14 @@ describe('Prerender AI-Only Mode', () => {
       expect(message.deliveryType).to.equal('unknown');
     });
 
+    it('should include the site base URL as top-level url in the SQS message', async () => {
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.url).to.equal('https://example.com');
+    });
+
     it('should handle missing getId method on suggestion', async () => {
       mockSuggestions[0].getId = undefined;
 

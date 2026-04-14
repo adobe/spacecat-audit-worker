@@ -3762,6 +3762,130 @@ describe('Prerender Audit', () => {
         expect(domainWideSuggestion.data.wordCountAfter).to.equal(1600); // 500+800+300+0+0
         expect(domainWideSuggestion.data.contentGainRatio).to.equal(7.5); // 2+3+1.5+0+1
       });
+
+      it('should warn and use URL as fallback when suggestion URL does not match saved suggestion (www/non-www mismatch)', async () => {
+        // Saved suggestion has www-prefixed URL; current audit uses the non-www variant —
+        // exact-match lookup fails, URL is used as suggestionId fallback, and a warning is logged.
+        const savedSuggestion = {
+          getId: sinon.stub().returns('saved-suggestion-id'),
+          getData: sinon.stub().returns({ url: 'https://www.example.com/page1' }),
+          getStatus: sinon.stub().returns('NEW'),
+        };
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sandbox.stub().resolves([savedSuggestion]),
+        };
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: sandbox.stub().resolves(),
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sandbox.stub().resolves(true),
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          scrapeJobId: 'job-123',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [{
+              url: 'https://example.com/page1',
+              needsPrerender: true,
+              contentGainRatio: 2.0,
+              wordCountBefore: 100,
+              wordCountAfter: 200,
+            }],
+          },
+        };
+
+        const context = {
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub() },
+          dataAccess: {
+            Suggestion: {
+              STATUSES: { NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED' },
+            },
+          },
+          site: { getId: () => 'test-site-id' },
+        };
+
+        const { auditRunCandidates } = await mockHandler.processOpportunityAndSuggestions(
+          'https://example.com', auditData, context,
+        );
+
+        // URL mismatch → urlToSuggestionId lookup fails → URL used as suggestionId fallback
+        expect(auditRunCandidates[0].suggestionId).to.equal('https://example.com/page1');
+        expect(context.log.warn).to.have.been.calledWith(
+          sinon.match(/suggestions missing suggestionId/),
+        );
+      });
+
+      it('should exclude OUTDATED suggestions from the urlToSuggestionId map', async () => {
+        // OUTDATED suggestion with a URL matching the current audit — must be excluded from
+        // the urlToSuggestionId map so the URL fallback is used and a warning is logged.
+        const outdatedSuggestion = {
+          getId: sinon.stub().returns('outdated-suggestion-id'),
+          getData: sinon.stub().returns({ url: 'https://example.com/page1' }),
+          getStatus: sinon.stub().returns('OUTDATED'),
+        };
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sandbox.stub().resolves([outdatedSuggestion]),
+        };
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: sandbox.stub().resolves(),
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sandbox.stub().resolves(true),
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          scrapeJobId: 'job-123',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [{
+              url: 'https://example.com/page1',
+              needsPrerender: true,
+              contentGainRatio: 2.0,
+              wordCountBefore: 100,
+              wordCountAfter: 200,
+            }],
+          },
+        };
+
+        const context = {
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub() },
+          dataAccess: {
+            Suggestion: {
+              STATUSES: { NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED' },
+            },
+          },
+          site: { getId: () => 'test-site-id' },
+        };
+
+        const { auditRunCandidates } = await mockHandler.processOpportunityAndSuggestions(
+          'https://example.com', auditData, context,
+        );
+
+        // OUTDATED suggestion excluded from map → URL used as suggestionId fallback
+        expect(auditRunCandidates[0].suggestionId).to.equal('https://example.com/page1');
+        expect(context.log.warn).to.have.been.calledWith(
+          sinon.match(/suggestions missing suggestionId/),
+        );
+      });
     });
   });
 
