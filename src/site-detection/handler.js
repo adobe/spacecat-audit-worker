@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Adobe. All rights reserved.
+ * Copyright 2025 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -10,60 +10,60 @@
  * governing permissions and limitations under the License.
  */
 
-import { fetch, hasText, stripWWW } from '@adobe/spacecat-shared-utils';
-import URI from 'urijs';
-import { noopPersister, noopUrlResolver } from '../common/index.js';
+import {
+  composeBaseURL,
+  fetch,
+  hasText,
+  isObject,
+  isValidUrl,
+} from '@adobe/spacecat-shared-utils';
+import {
+  AsyncJob, Site as SiteModel, SiteCandidate as SiteCandidateModel,
+} from '@adobe/spacecat-shared-data-access';
+import { BaseSlackClient, SLACK_TARGETS } from '@adobe/spacecat-shared-slack-client';
 import { AuditBuilder } from '../common/audit-builder.js';
-
-const CORALOGIX_API_URL = 'https://ng-api-http.coralogix.com/api/v1/dataprime/query';
-const CORALOGIX_QUERY = 'source logs | create $d.split_hosts from arraySplit($d.request_x_forwarded_host, \',\') | create $d.domain from $d.split_hosts[0] | distinct $d.domain, $l.subsystemname, $d.request_x_forwarded_host';
+import { noopPersister, noopUrlResolver } from '../common/index.js';
 
 const DEFAULT_IGNORED_SUBDOMAIN_TOKENS = ['demo', 'dev', 'stag', 'stg', 'qa', '--', 'sitemap', 'test', 'preview', 'cm-verify', 'owa', 'mail', 'ssl', 'secure', 'publish', 'prod', 'proxy', 'muat', 'edge', 'eds', 'aem'];
 const DEFAULT_IGNORED_DOMAINS = [/helix3.dev/, /fastly.net/, /ngrok-free.app/, /oastify.co/, /fastly-aem.page/, /findmy.media/, /impactful-[0-9]+\.site/, /shuyi-guan/, /adobevipthankyou/, /alshayauat/, /caseytokarchuk/, /\.pfizer$/, /adobeaemcloud.com/, /sabya.xyz/, /magento.com/, /appsechcl.com/, /workers.dev/, /livereview.site/, /localhost/, /lean.delivery/, /kestrelone/];
 
 const IP_ADDRESS_REGEX = /^\d{1,3}(\.\d{1,3}){3}$|^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/;
 
-function isValidCandidate(config, domain, log) {
-  /* c8 ignore next 1 */
-  const uri = new URI(domain.startsWith('http') ? domain : `https://${domain}`);
-  const {
-    ignoredSubdomains,
-    ignoredDomains,
-  } = config;
+/**
+ * Checks if the domain passes the basic validity rules (not an IP, not an ignored
+ * subdomain/domain, no port, no path/query).
+ */
+function isValidCandidate(domain, config, log) {
+  const url = new URL(domain.startsWith('http') ? domain : `https://${domain}`);
 
-  // x-fw-host header should contain hostname only. If it contains path and/or search
-  // params, then it's most likely a h4ck attempt
-  if (uri.path() !== '/' || uri.query() !== '') {
+  if (url.pathname !== '/' || url.search !== '') {
     log.info(`Rejected ${domain} because it contains path and/or search params`);
     return false;
   }
 
-  // disregard the IP addresses
-  if (IP_ADDRESS_REGEX.test(domain)) {
+  if (IP_ADDRESS_REGEX.test(url.hostname)) {
     log.info(`Rejected ${domain} because it's an IP address`);
     return false;
   }
 
-  // disregard the non-prod hostnames
-  if (ignoredSubdomains.some((ignored) => uri.subdomain().includes(ignored))) {
+  const subdomain = url.hostname.split('.').slice(0, -2).join('.');
+
+  if (config.ignoredSubdomains.some((token) => subdomain.includes(token))) {
     log.info(`Rejected ${domain} because it contains an ignored subdomain`);
     return false;
   }
 
-  // ignore on-character subdomains
-  if (uri.subdomain().length === 1) {
-    log.info(`Rejected ${domain} because it contains an on-character subdomain`);
+  if (subdomain.length === 1) {
+    log.info(`Rejected ${domain} because it contains a one-character subdomain`);
     return false;
   }
 
-  // disregard unwanted domains
-  if (ignoredDomains.some((ignored) => uri.domain().match(ignored))) {
-    log.info(`Rejected ${domain} because it contains an ignored domain`);
+  if (config.ignoredDomains.some((pattern) => url.hostname.match(pattern))) {
+    log.info(`Rejected ${domain} because it matches an ignored domain`);
     return false;
   }
 
-  // disregard candidates with ports
-  if (hasText(uri.port())) {
+  if (hasText(url.port)) {
     log.info(`Rejected ${domain} because it contains a port`);
     return false;
   }
@@ -71,143 +71,310 @@ function isValidCandidate(config, domain, log) {
   return true;
 }
 
-async function fetchCandidates(authorization, log) {
-  const endDate = new Date();
-  const startDate = new Date(endDate.getTime() - 60 * 60 * 1000);
-
-  const options = {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${authorization}`,
-      'Content-Type': 'application/json',
-    },
-    body: {
-      query: CORALOGIX_QUERY,
-      metadata: {
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
-      },
-    },
-  };
-  const response = await fetch(CORALOGIX_API_URL, options);
-
-  if (!response.ok) {
-    throw new Error(`Coralogix API request was not successful. Status: ${response.status}.`);
+/**
+ * Verifies that the given URL is an AEM EDS (Helix) site by checking the DOM structure.
+ * @returns {Promise<{isHelix: boolean, reason?: string}>}
+ */
+async function isHelixSite(url) {
+  let resp;
+  try {
+    resp = await fetch(url);
+  } catch (e) {
+    return { isHelix: false, reason: `Cannot fetch the site: ${e.message}` };
   }
 
-  const data = await response.text(); // Since response is NDJSON, treat it as text initially
-  const batches = data.split('\n').filter(Boolean); // Split the response into batches
+  const dom = await resp.text();
+  const containsHelixDom = /<header><\/header>\s*<main>\s*<div>/.test(dom);
 
-  // response may contain duplicate domains since uniqueness is based on
-  // domain - request_x_forwarded_host pair
-  const domains = new Set();
+  if (!containsHelixDom) {
+    return {
+      isHelix: false,
+      reason: `DOM is not in Helix format. Status: ${resp.status}`,
+    };
+  }
 
-  return batches.reduce((acc, batch) => {
-    try {
-      const jsonData = JSON.parse(batch);
-      if (!jsonData.result?.results) {
-        return acc;
-      }
-
-      jsonData.result.results.forEach(({ userData }) => {
-        /* c8 ignore next 3 */
-        if (!userData) {
-          return;
-        }
-
-        const {
-          request_x_forwarded_host: xFwHost,
-          subsystemname,
-          domain,
-        } = JSON.parse(userData);
-        if (!domains.has(domain) && hasText(xFwHost) && hasText(subsystemname)) {
-          domains.add(domain);
-          acc.push({
-            domain,
-            xFwHost: stripWWW(xFwHost),
-            hlxVersion: subsystemname,
-          });
-        }
-      });
-    } catch (e) {
-      log.error('Failed to parse Coralogix response');
-      throw e;
-    }
-    return acc;
-  }, []);
+  return { isHelix: true };
 }
 
-async function refeed(xFwHost, hlxVersion, webhook) {
-  const hlxVersions = {
-    helix5: 5,
-    helix4: 4,
+/**
+ * Parses a hlx.live / aem.live RSO domain into its components.
+ * Returns null if the domain does not match the pattern.
+ */
+function parseHlxRSO(domain) {
+  const match = domain.match(/^([\w-]+)--([\w-]+)--([\w-]+)\.(hlx\.live|aem\.live)$/);
+  if (!match) return null;
+  return {
+    ref: match[1], site: match[2], owner: match[3], tld: match[4],
   };
-
-  const response = await fetch(webhook, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: {
-      requestXForwardedHost: xFwHost,
-      hlxVersion: hlxVersions[hlxVersion],
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Re-feed request failed with ${response.status}`);
-  }
 }
 
-export async function siteDetectionRunner(_, context) {
-  const {
-    dataAccess,
-    env,
-    log,
-  } = context;
-  const { Site, SiteCandidate } = dataAccess;
-  const {
-    CORALOGIX_API_KEY: authorization,
-    SITE_DETECTION_WEBHOOK: siteDetectionWebHook,
-    SITE_DETECTION_IGNORED_DOMAINS: ignoredDomains = DEFAULT_IGNORED_DOMAINS,
-    SITE_DETECTION_IGNORED_SUBDOMAIN_TOKENS: ignoredSubdomains = DEFAULT_IGNORED_SUBDOMAIN_TOKENS,
-  } = env;
+/**
+ * Attempts to fetch the aggregated hlx config for a v5 site.
+ * Requires HLX_ADMIN_TOKEN in the worker environment.
+ */
+async function fetchHlxConfig(rso, hlxAdminToken, log) {
+  if (!hasText(hlxAdminToken)) return null;
 
-  const config = {
-    ignoredDomains,
-    ignoredSubdomains,
-  };
+  const { owner, site } = rso;
+  const url = `https://admin.hlx.page/config/${owner}/aggregated/${site}.json`;
 
-  const sites = await Site.all();
-  const siteCandidates = await SiteCandidate.all();
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: `token ${hlxAdminToken}` },
+    });
 
-  const knownHosts = new Set([...sites, ...siteCandidates]
-    .map((s) => s.getBaseURL())
-    .map((url) => url.replace(/^https?:\/\//, '')));
+    if (response.status === 200) return response.json();
+    if (response.status === 404) {
+      log.debug(`No hlx config found for ${owner}/${site}`);
+      return null;
+    }
 
-  const unfilteredCandidates = await fetchCandidates(authorization, log);
+    log.error(`Error fetching hlx config for ${owner}/${site}. Status: ${response.status}`);
+  } catch (e) {
+    log.error(`Error fetching hlx config for ${owner}/${site}: ${e.message}`);
+  }
 
-  const candidates = unfilteredCandidates
-    .filter((candidate) => !knownHosts.has(candidate.domain))
-    .filter((candidate) => isValidCandidate(config, candidate.domain, log));
+  return null;
+}
 
-  log.debug(`Out of ${unfilteredCandidates.length} candidates, found ${candidates.length} valid candidates`);
+/**
+ * Extracts the hlxConfig from the primary domain if it matches the RSO pattern.
+ * For v5+ sites, attempts to enrich with the admin API config.
+ */
+async function extractHlxConfig(domain, hlxVersion, hlxAdminToken, log) {
+  const hlxConfig = { hlxVersion: hlxVersion ?? null, rso: {} };
 
-  // TODO: replace the HOOK call with a proper post-processing step
-  for (const candidate of candidates) {
-    try {
-      log.debug(`Re-feeding ${candidate.domain}; x-fw: ${candidate.xFwHost}, v: ${candidate.hlxVersion}`);
-      // eslint-disable-next-line no-await-in-loop
-      await refeed(candidate.xFwHost, candidate.hlxVersion, siteDetectionWebHook);
-    } catch (e) {
-      log.warn(`Failed to re-feed ${candidate.domain}: ${e.message}`);
+  const rso = parseHlxRSO(domain);
+  if (!isObject(rso)) return hlxConfig;
+
+  hlxConfig.rso = rso;
+
+  if ((hlxVersion ?? 0) >= 5 || rso.tld === 'aem.live') {
+    const config = await fetchHlxConfig(rso, hlxAdminToken, log);
+    if (isObject(config)) {
+      const { cdn, code, content } = config;
+      if (isObject(cdn)) hlxConfig.cdn = cdn;
+      if (isObject(code)) hlxConfig.code = code;
+      if (isObject(content)) hlxConfig.content = content;
+      hlxConfig.hlxVersion = 5;
     }
   }
+
+  return hlxConfig;
+}
+
+/**
+ * Builds the Slack blocks for the site discovery notification.
+ */
+function buildSlackBlocks(baseURL, hlxConfig) {
+  const rso = hlxConfig?.rso;
+  const rsoText = rso?.owner ? ` (_owner:_ *${rso.owner}/${rso.site}*` + (rso.ref ? `, _ref:_ ${rso.ref}` : '') + ')' : '';
 
   return {
-    auditResult: candidates,
-    fullAuditRef: 'site-detection',
+    channel: null, // set by caller
+    text: `New site discovered: ${baseURL}`,
+    blocks: [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `I discovered a new site on Edge Delivery Services: *<${baseURL}|${baseURL}>*. Would you like me to include it in the Star Catalogue? (_source:_ *CDN*${rsoText})`,
+        },
+      },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: 'As Customer' },
+            action_id: 'approveSiteCandidate',
+            style: 'primary',
+          },
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: 'As Friends/Family' },
+            action_id: 'approveFriendsFamily',
+            style: 'primary',
+          },
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: 'Ignore' },
+            action_id: 'ignoreSiteCandidate',
+            style: 'danger',
+          },
+        ],
+      },
+    ],
   };
+}
+
+/**
+ * Main handler for the 'site-detection' async job type.
+ *
+ * Receives an SQS message with { jobId, type: 'site-detection' }.
+ * Reads the payload (domain, hlxVersion) from the AsyncJob metadata,
+ * validates the domain, verifies it's a Helix site, creates a SiteCandidate,
+ * sends a Slack notification, and marks the job COMPLETED.
+ */
+export async function siteDetectionRunner(message, context) {
+  const { dataAccess, env, log } = context;
+  const { AsyncJob: AsyncJobEntity, Site, SiteCandidate } = dataAccess;
+
+  const {
+    SITE_DETECTION_IGNORED_DOMAINS: rawIgnoredDomains,
+    SITE_DETECTION_IGNORED_SUBDOMAIN_TOKENS: rawIgnoredSubdomains,
+    HLX_ADMIN_TOKEN: hlxAdminToken,
+    SLACK_SITE_DISCOVERY_CHANNEL_INTERNAL: slackChannel,
+  } = env;
+
+  const ignoredDomains = rawIgnoredDomains
+    ? rawIgnoredDomains.split(',').map((d) => {
+      const t = d.trim();
+      const body = t.startsWith('/') && t.endsWith('/') ? t.slice(1, -1) : t;
+      return new RegExp(body);
+    })
+    : DEFAULT_IGNORED_DOMAINS;
+
+  const ignoredSubdomains = rawIgnoredSubdomains
+    ? rawIgnoredSubdomains.split(',').map((t) => t.trim())
+    : DEFAULT_IGNORED_SUBDOMAIN_TOKENS;
+
+  const config = { ignoredDomains, ignoredSubdomains };
+
+  const { jobId } = message;
+
+  // Load the job to get the payload
+  let job = await AsyncJobEntity.findById(jobId);
+
+  if (!job) {
+    log.error(`[site-detection] Job ${jobId} not found`);
+    return { auditResult: { error: 'Job not found' }, fullAuditRef: 'site-detection' };
+  }
+
+  if (job.getStatus() !== AsyncJob.Status.IN_PROGRESS) {
+    log.warn(`[site-detection] Job ${jobId} is not IN_PROGRESS (${job.getStatus()}), skipping`);
+    return { auditResult: { skipped: true }, fullAuditRef: 'site-detection' };
+  }
+
+  const { domain, hlxVersion } = job.getMetadata()?.payload ?? {};
+
+  if (!hasText(domain)) {
+    log.error(`[site-detection] Job ${jobId}: missing domain in payload`);
+    job.setStatus(AsyncJob.Status.FAILED);
+    job.setError({ code: 'INVALID_PAYLOAD', message: 'Missing domain in job payload' });
+    job.setEndedAt(new Date().toISOString());
+    await job.save();
+    return { auditResult: { error: 'Missing domain' }, fullAuditRef: 'site-detection' };
+  }
+
+  const baseURL = composeBaseURL(domain);
+
+  log.info(`[site-detection] Job ${jobId}: processing domain ${domain} (baseURL: ${baseURL})`);
+
+  try {
+    // Step 1: Domain validation
+    if (!isValidCandidate(domain, config, log)) {
+      log.info(`[site-detection] Job ${jobId}: domain ${domain} rejected by validation rules`);
+      job.setStatus(AsyncJob.Status.FAILED);
+      job.setResult({ action: 'rejected', domain, reason: 'Domain failed validation rules' });
+      job.setEndedAt(new Date().toISOString());
+      await job.save();
+      return { auditResult: { action: 'rejected', domain }, fullAuditRef: 'site-detection' };
+    }
+
+    // Step 2: Check for existing Site
+    const existingSite = await Site.findByBaseURL(baseURL);
+    if (existingSite && existingSite.getDeliveryType() === SiteModel.DELIVERY_TYPES.AEM_EDGE) {
+      log.info(`[site-detection] Job ${jobId}: site already exists for ${baseURL}`);
+      job.setStatus(AsyncJob.Status.FAILED);
+      job.setResult({ action: 'duplicate', domain, reason: 'Site already exists' });
+      job.setEndedAt(new Date().toISOString());
+      await job.save();
+      return { auditResult: { action: 'duplicate', domain }, fullAuditRef: 'site-detection' };
+    }
+
+    // Step 3: Check for existing SiteCandidate
+    const existingCandidate = await SiteCandidate.findByBaseURL(baseURL);
+    if (existingCandidate !== null) {
+      log.info(`[site-detection] Job ${jobId}: site candidate already exists for ${baseURL}`);
+      job.setStatus(AsyncJob.Status.FAILED);
+      job.setResult({ action: 'duplicate', domain, reason: 'Site candidate already evaluated' });
+      job.setEndedAt(new Date().toISOString());
+      await job.save();
+      return { auditResult: { action: 'duplicate', domain }, fullAuditRef: 'site-detection' };
+    }
+
+    // Step 4: Verify Helix site
+    const { isHelix, reason: helixReason } = await isHelixSite(baseURL);
+    if (!isHelix) {
+      log.info(`[site-detection] Job ${jobId}: ${baseURL} is not a Helix site: ${helixReason}`);
+      job.setStatus(AsyncJob.Status.FAILED);
+      job.setResult({ action: 'rejected', domain, reason: `Not a Helix site: ${helixReason}` });
+      job.setEndedAt(new Date().toISOString());
+      await job.save();
+      return { auditResult: { action: 'rejected', domain }, fullAuditRef: 'site-detection' };
+    }
+
+    // Step 5: Extract hlxConfig (best-effort; proceeds even if it fails)
+    let hlxConfig = { hlxVersion: hlxVersion ?? null, rso: {} };
+    try {
+      hlxConfig = await extractHlxConfig(domain, hlxVersion, hlxAdminToken, log);
+    } catch (e) {
+      log.warn(`[site-detection] Job ${jobId}: failed to extract hlxConfig for ${domain}: ${e.message}`);
+    }
+
+    // Step 6: Create SiteCandidate
+    await SiteCandidate.create({
+      baseURL,
+      source: SiteCandidateModel.SITE_CANDIDATE_SOURCES.CDN,
+      status: SiteCandidateModel.SITE_CANDIDATE_STATUS.PENDING,
+      hlxConfig,
+    });
+
+    log.info(`[site-detection] Job ${jobId}: created SiteCandidate for ${baseURL}`);
+
+    // Step 7: Send Slack notification (best-effort; does not fail the job)
+    if (hasText(slackChannel)) {
+      try {
+        const slackClient = BaseSlackClient.createFrom(context, SLACK_TARGETS.WORKSPACE_INTERNAL);
+        const messagePayload = buildSlackBlocks(baseURL, hlxConfig);
+        messagePayload.channel = slackChannel;
+        await slackClient.postMessage(messagePayload);
+        log.info(`[site-detection] Job ${jobId}: Slack notification sent for ${baseURL}`);
+      } catch (e) {
+        log.warn(`[site-detection] Job ${jobId}: failed to send Slack notification: ${e.message}`);
+      }
+    } else {
+      log.warn(`[site-detection] Job ${jobId}: SLACK_SITE_DISCOVERY_CHANNEL_INTERNAL not set, skipping Slack`);
+    }
+
+    // Step 8: Mark job COMPLETED
+    job = await AsyncJobEntity.findById(jobId);
+    job.setStatus(AsyncJob.Status.COMPLETED);
+    job.setResult({ action: 'created', domain, baseURL });
+    job.setEndedAt(new Date().toISOString());
+    await job.save();
+
+    log.info(`[site-detection] Job ${jobId}: completed for ${baseURL}`);
+
+    return {
+      auditResult: { action: 'created', domain, baseURL },
+      fullAuditRef: 'site-detection',
+    };
+  } catch (error) {
+    log.error(`[site-detection] Job ${jobId}: unexpected error for ${domain}: ${error.message}`, error);
+
+    try {
+      job.setStatus(AsyncJob.Status.FAILED);
+      job.setError({ code: 'EXCEPTION', message: error.message, details: error.stack });
+      job.setEndedAt(new Date().toISOString());
+      await job.save();
+    } catch (saveErr) {
+      log.error(`[site-detection] Job ${jobId}: failed to save error state: ${saveErr.message}`);
+    }
+
+    return { auditResult: { error: error.message }, fullAuditRef: 'site-detection' };
+  }
 }
 
 export default new AuditBuilder()
