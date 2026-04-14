@@ -3889,9 +3889,10 @@ describe('Prerender Audit', () => {
         );
       });
 
-      it('should warn when a non-NEW suggestion has edgeDeployed set', async () => {
+      it('should warn when a non-NEW suggestion has edgeDeployed set (via detectWrongEdgeDeployedStatus)', async () => {
+        // detectWrongEdgeDeployedStatus runs at the start of processContentAndGenerateOpportunities.
         // Any non-NEW suggestion with edgeDeployed means the status was changed after edge
-        // deployment, which should not happen. The warning is a diagnostic guard.
+        // deployment, which should not happen.
         const skippedEdgeDeployedSuggestion = {
           getId: sinon.stub().returns('skipped-edge-id'),
           getData: sinon.stub().returns({ url: 'https://example.com/page1', edgeDeployed: 1234567890 }),
@@ -3899,13 +3900,11 @@ describe('Prerender Audit', () => {
         };
         const mockOpportunity = {
           getId: () => 'test-opp-id',
+          getType: () => 'prerender',
           getSuggestions: sandbox.stub().resolves([skippedEdgeDeployedSuggestion]),
         };
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
-          },
           '../../../src/utils/data-access.js': {
             syncSuggestions: sandbox.stub().resolves(),
           },
@@ -3914,38 +3913,26 @@ describe('Prerender Audit', () => {
           },
         });
 
-        const auditData = {
-          siteId: 'test-site',
-          auditId: 'audit-123',
-          scrapeJobId: 'job-123',
-          auditResult: {
-            urlsNeedingPrerender: 1,
-            results: [{
-              url: 'https://example.com/page1',
-              needsPrerender: true,
-              contentGainRatio: 2.0,
-              wordCountBefore: 100,
-              wordCountAfter: 200,
-            }],
-          },
-        };
-
         const context = {
-          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub() },
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
           dataAccess: {
-            Suggestion: {
-              STATUSES: {
-                NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED', OUTDATED: 'OUTDATED',
-              },
+            Opportunity: {
+              allBySiteIdAndStatus: sandbox.stub().resolves([mockOpportunity]),
             },
+            ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves([]) },
           },
-          site: { getId: () => 'test-site-id' },
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub() },
+          s3Client: { send: sandbox.stub().resolves({ Body: { transformToString: () => Promise.resolve('') } }) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'job-123' },
+          scrapeResultPaths: new Map([['https://example.com/page1', '/tmp/test']]),
         };
 
-        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+        await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(context.log.warn).to.have.been.calledWith(
-          sinon.match(/Unexpected non-NEW suggestions with edgeDeployed set \(post-sync\)/),
+          sinon.match(/Unexpected non-NEW suggestions with edgeDeployed set/),
         );
       });
     });

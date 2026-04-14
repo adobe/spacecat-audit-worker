@@ -81,21 +81,26 @@ function shouldPreserveDomainWideSuggestion(suggestion) {
 }
 
 /**
- * Diagnostic: warns if any non-NEW suggestions have edgeDeployed set.
+ * Diagnostic: detects and warns if any non-NEW suggestions have edgeDeployed set.
  * This should never happen — edgeDeployed is set when a URL is deployed at the CDN edge,
  * and the suggestion status should not be changed away from NEW after that point.
- * @param {Array} suggestions - Array of suggestion entities
- * @param {string} phase - 'pre-sync' or 'post-sync' to distinguish call sites in logs
+ * @param {Object} dataAccess - Data access layer
+ * @param {string} siteId - Site ID to look up the opportunity
  * @param {string} auditUrl - Base URL for log context
- * @param {string} siteId - Site ID for log context
  * @param {Object} log - Logger
  */
-function logNonNewEdgeDeployedDiagnostic(suggestions, phase, auditUrl, siteId, log) {
+async function detectWrongEdgeDeployedStatus(dataAccess, siteId, auditUrl, log) {
+  const opportunities = await dataAccess?.Opportunity?.allBySiteIdAndStatus?.(siteId, 'NEW') ?? [];
+  const opportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
+  if (!opportunity) {
+    return;
+  }
+  const suggestions = await opportunity.getSuggestions?.() ?? [];
   const count = suggestions.filter(
     (s) => s.getStatus() !== Suggestion.STATUSES.NEW && s.getData()?.edgeDeployed,
   ).length;
   if (count > 0) {
-    log.warn(`${LOG_PREFIX} Unexpected non-NEW suggestions with edgeDeployed set (${phase}). baseUrl=${auditUrl}, siteId=${siteId}, nonNewEdgeDeployedCount=${count}`);
+    log.warn(`${LOG_PREFIX} Unexpected non-NEW suggestions with edgeDeployed set. baseUrl=${auditUrl}, siteId=${siteId}, nonNewEdgeDeployedCount=${count}`);
   }
 }
 
@@ -1184,8 +1189,6 @@ export async function processOpportunityAndSuggestions(
   // suggestionId is required by Mystique to correlate AI summaries back to the right suggestion.
   const savedSuggestions = await opportunity.getSuggestions();
 
-  logNonNewEdgeDeployedDiagnostic(savedSuggestions, 'post-sync', auditUrl, auditData.siteId, log);
-
   const urlToSuggestionId = new Map(
     savedSuggestions
       .filter((s) => s.getData()?.url && s.getStatus() !== Suggestion.STATUSES.OUTDATED)
@@ -1557,14 +1560,9 @@ export async function processContentAndGenerateOpportunities(context) {
   const startTime = process.hrtime();
   const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
 
-  // Diagnostic pre-sync: run before syncSuggestions so bad state from prior audits is caught
-  // even when no URLs need prerender in this run (processOpportunityAndSuggestions is skipped).
-  const preSyncOpportunities = await dataAccess?.Opportunity?.allBySiteIdAndStatus?.(siteId, 'NEW') ?? [];
-  const preSyncOpportunity = preSyncOpportunities.find((o) => o.getType() === AUDIT_TYPE);
-  if (preSyncOpportunity) {
-    const preSyncSuggestions = await preSyncOpportunity.getSuggestions?.() ?? [];
-    logNonNewEdgeDeployedDiagnostic(preSyncSuggestions, 'pre-sync', site.getBaseURL(), siteId, log);
-  }
+  // Diagnostic: detect non-NEW suggestions with edgeDeployed before syncing.
+  // Runs unconditionally so audits with no prerender findings still catch pre-existing issues.
+  await detectWrongEdgeDeployedStatus(dataAccess, siteId, site.getBaseURL(), log);
 
   // Check if this is a paid LLMO customer early so we can use it in all logs
   const isPaid = await isPaidLLMOCustomer(context);
