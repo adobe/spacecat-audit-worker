@@ -355,13 +355,9 @@ export async function siteDetectionRunner(message, context) {
       return { auditResult: { action: 'rejected', domain }, fullAuditRef: 'site-detection' };
     }
 
-    // Step 5: Extract hlxConfig (best-effort; proceeds even if it fails)
+    // Step 5: Extract hlxConfig (best-effort; fetchHlxConfig handles errors internally)
     let hlxConfig = { hlxVersion: hlxVersion ?? null, rso: {} };
-    try {
-      hlxConfig = await extractHlxConfig(domain, hlxVersion, hlxAdminToken, log);
-    } catch (e) {
-      log.warn(`[site-detection] Job ${jobId}: failed to extract hlxConfig for ${domain}: ${e.message}`);
-    }
+    hlxConfig = await extractHlxConfig(domain, hlxVersion, hlxAdminToken, log);
 
     // Step 6: Create SiteCandidate
     await SiteCandidate.create({
