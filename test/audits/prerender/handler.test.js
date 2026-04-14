@@ -3889,8 +3889,9 @@ describe('Prerender Audit', () => {
         );
       });
 
-      it('should warn when a suggestion has status=SKIPPED with edgeDeployed set', async () => {
-        // This combination should never occur in practice; the warning is a diagnostic guard.
+      it('should warn when a non-NEW suggestion has edgeDeployed set', async () => {
+        // Any non-NEW suggestion with edgeDeployed means the status was changed after edge
+        // deployment, which should not happen. The warning is a diagnostic guard.
         const skippedEdgeDeployedSuggestion = {
           getId: sinon.stub().returns('skipped-edge-id'),
           getData: sinon.stub().returns({ url: 'https://example.com/page1', edgeDeployed: 1234567890 }),
@@ -3944,7 +3945,7 @@ describe('Prerender Audit', () => {
         await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
 
         expect(context.log.warn).to.have.been.calledWith(
-          sinon.match(/Unexpected SKIPPED suggestions with edgeDeployed set/),
+          sinon.match(/Unexpected non-NEW suggestions with edgeDeployed set/),
         );
       });
     });

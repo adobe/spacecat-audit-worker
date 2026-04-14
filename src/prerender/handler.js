@@ -1164,19 +1164,21 @@ export async function processOpportunityAndSuggestions(
   // Fetch saved suggestions to map URL → suggestionId for Mystique payload.
   // suggestionId is required by Mystique to correlate AI summaries back to the right suggestion.
   const savedSuggestions = await opportunity.getSuggestions();
+
+  // Diagnostic: any non-NEW suggestion with edgeDeployed set is suspicious — it means the
+  // suggestion status was changed after edge deployment, which should not happen.
+  const nonNewEdgeDeployedCount = savedSuggestions.filter(
+    (s) => s.getStatus() !== Suggestion.STATUSES.NEW && s.getData()?.edgeDeployed,
+  ).length;
+  if (nonNewEdgeDeployedCount > 0) {
+    log.warn(`${LOG_PREFIX} Unexpected non-NEW suggestions with edgeDeployed set. baseUrl=${auditUrl}, siteId=${auditData.siteId}, nonNewEdgeDeployedCount=${nonNewEdgeDeployedCount}`);
+  }
+
   const urlToSuggestionId = new Map(
     savedSuggestions
       .filter((s) => s.getData()?.url && s.getStatus() !== Suggestion.STATUSES.OUTDATED)
       .map((s) => [s.getData().url, s.getId()]),
   );
-
-  // Diagnostic: SKIPPED + edgeDeployed should never coexist — log a warning if found.
-  const skippedEdgeDeployedCount = savedSuggestions.filter(
-    (s) => s.getStatus() === Suggestion.STATUSES.SKIPPED && s.getData()?.edgeDeployed,
-  ).length;
-  if (skippedEdgeDeployedCount > 0) {
-    log.warn(`${LOG_PREFIX} Unexpected SKIPPED suggestions with edgeDeployed set. baseUrl=${auditUrl}, siteId=${auditData.siteId}, skippedEdgeDeployedCount=${skippedEdgeDeployedCount}`);
-  }
 
   // Build Mystique candidates directly from the URL list processed in this audit run.
   // Domain-wide suggestions are intentionally excluded; Mystique needs individual URLs.
