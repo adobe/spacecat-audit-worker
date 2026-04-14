@@ -1051,6 +1051,26 @@ async function prepareDomainWideAggregateSuggestion(
 }
 
 /**
+ * Clears the opportunity's accessor cache and fetches the latest suggestions from the DB.
+ *
+ * syncSuggestions() internally calls getSuggestions(), which populates the accessor cache.
+ * addSuggestions() does not invalidate that cache, so a naive getSuggestions() call after sync
+ * returns the pre-sync snapshot, missing any newly created suggestions. Clearing the cache
+ * forces a fresh DB fetch with the full post-sync suggestion list.
+ *
+ * @param {Object} opportunity - Opportunity entity
+ * @returns {Promise<Array>} Fresh suggestion list including any newly created suggestions
+ */
+async function clearCacheAndGetSuggestions(opportunity) {
+  // eslint-disable-next-line no-underscore-dangle
+  if (opportunity._accessorCache) {
+    // eslint-disable-next-line no-underscore-dangle, no-param-reassign
+    opportunity._accessorCache = {};
+  }
+  return opportunity.getSuggestions();
+}
+
+/**
  * Processes opportunities and suggestions for prerender audit results.
  * Persists suggestions in the database so they can later be enriched
  * with AI guidance from Mystique.
@@ -1187,7 +1207,7 @@ export async function processOpportunityAndSuggestions(
 
   // Fetch saved suggestions to map URL → suggestionId for Mystique payload.
   // suggestionId is required by Mystique to correlate AI summaries back to the right suggestion.
-  const savedSuggestions = await opportunity.getSuggestions();
+  const savedSuggestions = await clearCacheAndGetSuggestions(opportunity);
 
   const urlToSuggestionId = new Map(
     savedSuggestions
@@ -1195,13 +1215,8 @@ export async function processOpportunityAndSuggestions(
       .map((s) => [s.getData().url, s.getId()]),
   );
 
-  // Build Mystique candidates directly from the URL list processed in this audit run.
-  // Domain-wide suggestions are intentionally excluded; Mystique needs individual URLs.
-  // Always send suggestionId (Mystique requires non-empty string). Use URL as fallback
-  // when the exact suggestion ID isn't found (www/non-www URL mismatch between runs).
-  // NOTE: the guidance handler (guidance-handler.js) matches Mystique's response back to
-  // suggestions by URL, not by suggestionId — so the URL fallback does not break AI summary
-  // delivery for URLs that are correctly matched on the Mystique→handler return path.
+  // Build Mystique candidates from individual URLs (domain-wide excluded).
+  // Falls back to URL string when suggestionId is not found (e.g. www/non-www mismatch).
   let missingSuggestionIdCount = 0;
   const auditRunCandidates = preRenderSuggestions.reduce((acc, s) => {
     try {

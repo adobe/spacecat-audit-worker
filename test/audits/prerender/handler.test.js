@@ -3889,6 +3889,75 @@ describe('Prerender Audit', () => {
         );
       });
 
+      it('should clear the accessor cache before fetching suggestions post-sync', async () => {
+        const mockSuggestion = {
+          getId: sinon.stub().returns('suggestion-id'),
+          getData: sinon.stub().returns({ url: 'https://example.com/page1' }),
+          getStatus: sinon.stub().returns('NEW'),
+        };
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sandbox.stub().resolves([mockSuggestion]),
+          _accessorCache: { 'getSuggestions:_': [] }, // stale cache from syncSuggestions
+        };
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: sandbox.stub().resolves(),
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sandbox.stub().resolves(true),
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          scrapeJobId: 'job-123',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [{
+              url: 'https://example.com/page1',
+              needsPrerender: true,
+              contentGainRatio: 2.0,
+              wordCountBefore: 100,
+              wordCountAfter: 200,
+            }],
+          },
+        };
+
+        const context = {
+          log: {
+            info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub(),
+          },
+          dataAccess: {
+            Suggestion: {
+              STATUSES: {
+                NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED', OUTDATED: 'OUTDATED',
+              },
+            },
+          },
+          site: { getId: () => 'test-site-id' },
+        };
+
+        const { auditRunCandidates } = await mockHandler.processOpportunityAndSuggestions(
+          'https://example.com', auditData, context,
+        );
+
+        // Cache was cleared before getSuggestions — ensures newly created suggestions are visible
+        expect(mockOpportunity._accessorCache).to.deep.equal({});
+        // calledTwice: once by findPreservableDomainWideSuggestion, once by clearCacheAndGetSuggestions
+        expect(mockOpportunity.getSuggestions).to.have.been.calledTwice;
+        // Suggestion URL matched → real suggestionId used, no fallback needed
+        expect(auditRunCandidates[0].suggestionId).to.equal('suggestion-id');
+        expect(context.log.warn).to.not.have.been.calledWith(
+          sinon.match(/suggestions missing suggestionId/),
+        );
+      });
+
       it('should warn when a non-NEW suggestion has edgeDeployed set (via detectWrongEdgeDeployedStatus)', async () => {
         // detectWrongEdgeDeployedStatus runs at the start of processContentAndGenerateOpportunities.
         // Any non-NEW suggestion with edgeDeployed means the status was changed after edge
