@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect } from 'chai';
 import { describe } from 'mocha';
 import { getPaidTrafficAnalysisTemplate, getTop3PagesWithTrafficLostTemplate, getBounceGapMetricsTemplate, getTopPagesWithBounceGapTemplate } from '../../../src/paid-cookie-consent/queries.js';

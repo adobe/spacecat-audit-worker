@@ -19,6 +19,7 @@ import {
   isAuditEnabledForSite,
   loadExistingAudit,
   preserveOnDemand,
+  preserveSlackContext,
   sendContinuationMessage,
 } from './audit-utils.js';
 import { handleAbort } from './bot-detection.js';
@@ -77,10 +78,9 @@ export class StepAudit extends BaseAudit {
       fullAuditRef: audit.getFullAuditRef(),
     };
 
-    const preserved = preserveOnDemand(context.auditContext);
-
     const auditContext = {
-      ...preserved,
+      ...preserveOnDemand(context.auditContext),
+      ...preserveSlackContext(context.auditContext),
       ...(isNonEmptyObject(stepResult.auditContext) ? stepResult.auditContext : {}),
       ...baseAuditContext,
     };

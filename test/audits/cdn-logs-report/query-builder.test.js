@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import {
@@ -117,6 +116,24 @@ describe('CDN Logs Query Builder', () => {
 
     expect(query).to.include("year = '2025'");
     expect(query).to.include("month = '01'");
+  });
+
+  it('creates a daily agentic export query for a single UTC day', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery({
+      trafficDate: new Date('2025-01-07T00:00:00Z'),
+      databaseName: 'test_db',
+      tableName: 'test_table',
+      site: createMockSite(),
+    });
+
+    expect(query).to.include("year = '2025'");
+    expect(query).to.include("month = '01'");
+    expect(query).to.include("day = '07'");
+    expect(query).to.include('test_db.test_table');
+    expect(query).to.include('user_agent_display');
+    expect(query).to.include('avg_ttfb_ms');
+    expect(query).to.include("WHERE agent_type != 'Other'");
+    expect(query).to.not.include('cdn_provider');
   });
 
   it('handles site with no page patterns', async () => {

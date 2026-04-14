@@ -91,14 +91,24 @@ function buildDispatcherQuery(serviceId, minutes) {
 }
 
 export function pickWinner(patternResults) {
-  if (patternResults.error) return { redirectMethodUsed: 'none', fileName: 'none' };
-  if (patternResults.length === 0) return { redirectMethodUsed: 'vanityurlmgr', fileName: 'none' };
-  if (patternResults.every((r) => r.error)) return null;
+  if (patternResults.error) {
+    return { redirectMethodUsed: 'none', fileName: 'none' };
+  }
+  if (patternResults.length === 0) {
+    return { redirectMethodUsed: 'vanityurlmgr', fileName: 'none' };
+  }
+  if (patternResults.every((r) => r.error)) {
+    return null;
+  }
 
   // Sort by most recent, then by totalLogHits; ties leave order unchanged
   patternResults.sort((a, b) => {
-    if (b.mostRecentEpoch !== a.mostRecentEpoch) return b.mostRecentEpoch - a.mostRecentEpoch;
-    if (b.totalLogHits !== a.totalLogHits) return b.totalLogHits - a.totalLogHits;
+    if (b.mostRecentEpoch !== a.mostRecentEpoch) {
+      return b.mostRecentEpoch - a.mostRecentEpoch;
+    }
+    if (b.totalLogHits !== a.totalLogHits) {
+      return b.totalLogHits - a.totalLogHits;
+    }
     return 0;
   });
 

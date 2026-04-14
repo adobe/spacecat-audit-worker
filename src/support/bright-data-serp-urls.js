@@ -60,7 +60,9 @@ export function pickUrlsFromSerpResults(results, brokenLinkUrl, options = {}) {
   }
 
   scored.sort((a, b) => {
-    if (a.localeMatch !== b.localeMatch) return a.localeMatch ? -1 : 1;
+    if (a.localeMatch !== b.localeMatch) {
+      return a.localeMatch ? -1 : 1;
+    }
     return b.score - a.score;
   });
 

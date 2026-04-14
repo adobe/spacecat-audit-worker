@@ -234,11 +234,14 @@ async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) 
 
     log.info(`${LOG_PREFIX} Wikipedia config: companyName=${wikipediaConfig.companyName}, website=${wikipediaConfig.companyWebsite}, wikipediaUrl=${wikipediaConfig.wikipediaUrl}`);
 
+    const slackContext = auditContext?.slackContext;
+
     return {
       auditResult: {
         success: true,
         status: 'pending_analysis',
         config: wikipediaConfig,
+        ...(slackContext && { slackContext }),
       },
       fullAuditRef: url,
     };

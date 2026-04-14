@@ -44,7 +44,9 @@ const DYNAMIC_PATH_SEGMENTS = new Set([
  * @returns {boolean}
  */
 export function isDynamicPageUrl(url) {
-  if (!url || typeof url !== 'string') return false;
+  if (!url || typeof url !== 'string') {
+    return false;
+  }
   let pathname;
   try {
     if (url.startsWith('http://') || url.startsWith('https://')) {
@@ -65,6 +67,8 @@ export function isDynamicPageUrl(url) {
  * @returns {string[]}
  */
 export function filterOutDynamicUrls(urls) {
-  if (!Array.isArray(urls)) return [];
+  if (!Array.isArray(urls)) {
+    return [];
+  }
   return urls.filter((url) => !isDynamicPageUrl(url));
 }

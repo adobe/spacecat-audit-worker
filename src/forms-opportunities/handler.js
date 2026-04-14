@@ -116,10 +116,14 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     const formsourceGroups = {};
     formVitals.forEach((entry) => {
       const { formsource } = entry;
-      if (!formsource) return;
+      if (!formsource) {
+        return;
+      }
 
       const totalPageview = Object.values(entry.pageview).reduce((sum, val) => sum + val, 0);
-      if (!formsourceGroups[formsource]) formsourceGroups[formsource] = [];
+      if (!formsourceGroups[formsource]) {
+        formsourceGroups[formsource] = [];
+      }
       formsourceGroups[formsource].push({ entry, totalPageview });
     });
 

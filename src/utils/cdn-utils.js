@@ -28,6 +28,7 @@ export const CDN_TYPES = {
   CLOUDFLARE: 'cloudflare',
   CLOUDFRONT: 'cloudfront',
   FRONTDOOR: 'frontdoor',
+  IMPERVA: 'imperva',
   OTHER: 'other',
 };
 
@@ -39,6 +40,7 @@ export const SERVICE_PROVIDER_TYPES = {
   BYOCDN_CLOUDFLARE: 'byocdn-cloudflare',
   BYOCDN_CLOUDFRONT: 'byocdn-cloudfront',
   BYOCDN_FRONTDOOR: 'byocdn-frontdoor',
+  BYOCDN_IMPERVA: 'byocdn-imperva',
   BYOCDN_OTHER: 'byocdn-other',
   AMS_CLOUDFRONT: 'ams-cloudfront',
   AMS_FRONTDOOR: 'ams-frontdoor',
@@ -53,6 +55,7 @@ export const SERVICE_TO_CDN_MAPPING = {
   [SERVICE_PROVIDER_TYPES.BYOCDN_CLOUDFLARE]: CDN_TYPES.CLOUDFLARE,
   [SERVICE_PROVIDER_TYPES.BYOCDN_CLOUDFRONT]: CDN_TYPES.CLOUDFRONT,
   [SERVICE_PROVIDER_TYPES.BYOCDN_FRONTDOOR]: CDN_TYPES.FRONTDOOR,
+  [SERVICE_PROVIDER_TYPES.BYOCDN_IMPERVA]: CDN_TYPES.IMPERVA,
   [SERVICE_PROVIDER_TYPES.BYOCDN_OTHER]: CDN_TYPES.OTHER,
   [SERVICE_PROVIDER_TYPES.AMS_CLOUDFRONT]: CDN_TYPES.CLOUDFRONT,
   [SERVICE_PROVIDER_TYPES.AMS_FRONTDOOR]: CDN_TYPES.FRONTDOOR,
@@ -165,7 +168,9 @@ export async function resolveCdnBucketName(site, context) {
 
 async function bufferFromStream(stream) {
   const chunks = [];
-  for await (const c of stream) chunks.push(c);
+  for await (const c of stream) {
+    chunks.push(c);
+  }
   return Buffer.concat(chunks);
 }
 
@@ -174,7 +179,9 @@ export async function determineCdnProvider(s3, bucket, prefix) {
     Bucket: bucket, Prefix: prefix, MaxKeys: 1,
   }));
   const key = list.Contents?.[0]?.Key;
-  if (!key) return null;
+  if (!key) {
+    return null;
+  }
 
   let text;
   if (key.endsWith('.gz')) {
@@ -189,9 +196,15 @@ export async function determineCdnProvider(s3, bucket, prefix) {
   const first = text.split('\n').find((l) => l.trim());
   try {
     const rec = JSON.parse(first);
-    if (hasText(rec.reqPath)) return CDN_TYPES.AKAMAI;
-    if (hasText(rec.url)) return CDN_TYPES.FASTLY;
-    if (hasText(rec.ClientRequestURI)) return CDN_TYPES.CLOUDFLARE;
+    if (hasText(rec.reqPath)) {
+      return CDN_TYPES.AKAMAI;
+    }
+    if (hasText(rec.url)) {
+      return CDN_TYPES.FASTLY;
+    }
+    if (hasText(rec.ClientRequestURI)) {
+      return CDN_TYPES.CLOUDFLARE;
+    }
   } catch {
     // fall-through intended
   }
@@ -211,9 +224,13 @@ export function buildCdnPaths(bucketName, serviceProvider, timeParts, pathId = n
   } = timeParts;
 
   // New standardized bucket structure: cdn-logs-adobe-{env}/{pathId}/raw/{serviceProvider}/
+  // For byocdn-imperva, pathId, 'raw', and serviceProvider are joined with underscores
   if (isStandardAdobeCdnBucket(bucketName) && pathId) {
+    const rawLocation = serviceProvider.includes('byocdn-imperva')
+      ? `s3://${bucketName}/${pathId}_raw_${serviceProvider}/`
+      : `s3://${bucketName}/${pathId}/raw/${serviceProvider}/`;
     return {
-      rawLocation: `s3://${bucketName}/${pathId}/raw/${serviceProvider}/`,
+      rawLocation,
       aggregatedLocation: `s3://${bucketName}/${pathId}/aggregated/`,
       aggregatedOutput: `s3://${bucketName}/${pathId}/aggregated/${year}/${month}/${day}/${hour}/`,
       aggregatedReferralLocation: `s3://${bucketName}/${pathId}/aggregated-referral/`,
@@ -303,6 +320,24 @@ export async function getBucketInfo(s3Client, bucketName, pathId = null) {
       providers = (response.CommonPrefixes || [])
         .map((prefix) => prefix.Prefix.replace(`${pathId}/raw/`, '').replace('/', ''))
         .filter((provider) => provider && provider.length > 0);
+
+      // Also discover providers using the underscore layout: {pathId}_raw_{provider}/
+      // Imperva logs are delivered with pathId, "raw", and provider joined by underscores
+      // instead of slashes, so a separate listing is needed to find them.
+      const underscoreResponse = await s3Client.send(new ListObjectsV2Command({
+        Bucket: bucketName,
+        Prefix: `${pathId}_raw_`,
+        Delimiter: '/',
+        MaxKeys: 10,
+      }));
+
+      const underscorePrefix = `${pathId}_raw_`;
+      const underscoreProviders = (underscoreResponse.CommonPrefixes || [])
+        .filter((prefix) => prefix.Prefix.startsWith(underscorePrefix))
+        .map((prefix) => prefix.Prefix.slice(underscorePrefix.length).replace(/\/$/, ''))
+        .filter((provider) => provider && provider.length > 0);
+
+      providers = [...providers, ...underscoreProviders];
 
       return { isLegacy: isLegacyBucketStructure(providers), providers };
     }
@@ -437,7 +472,9 @@ export async function shouldRecreateTable(
     const createStatement = result?.map((row) => row.createtab_stmt).join('\n');
     const locationMatch = createStatement?.match(/LOCATION\s*['"]([^'"]+)['"]/i);
 
-    if (!locationMatch) return true;
+    if (!locationMatch) {
+      return true;
+    }
 
     const normalize = (loc) => (loc.endsWith('/') ? loc : `${loc}/`);
     if (normalize(locationMatch[1]) !== normalize(expectedLocation)) {

@@ -58,7 +58,9 @@ export async function fetchRobotsTxt(siteUrl, log) {
  * @returns {boolean}
  */
 export function isDisallowedByRobots(robots, url, userAgent = '*') {
-  if (!robots) return false;
+  if (!robots) {
+    return false;
+  }
   // robots-parser returns undefined when the URL cannot be matched to the robots.txt origin
   // (e.g. relative/malformed URLs). Treat undefined as "allowed" rather than "disallowed".
   return robots.isAllowed(url, userAgent) === false;

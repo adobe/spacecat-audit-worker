@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 /* eslint-disable no-use-before-define */
 
 import { expect, use as chaiUse } from 'chai';
@@ -4182,7 +4181,7 @@ describe('Headings Audit', () => {
   });
 
   describe('Athena/SEO fallback in headingsAuditRunner', () => {
-    it('should use Athena URLs when available and skip SEO', async () => {
+    it('should merge Athena URLs with other URL sources', async () => {
       const baseURL = 'https://example.com';
       const url = 'https://example.com/athena-page';
 
@@ -4249,8 +4248,8 @@ describe('Headings Audit', () => {
 
       // Verify Athena was called
       expect(mockGetTopAgenticUrlsFromAthena).to.have.been.calledOnce;
-      // Verify SEO was NOT called since Athena returned data
-      expect(mockSiteTopPage).to.not.have.been.called;
+      // All URL sources are now fetched in parallel via getMergedAuditInputUrls
+      expect(mockSiteTopPage).to.have.been.calledOnce;
       // Verify result
       expect(result.fullAuditRef).to.equal(baseURL);
     });

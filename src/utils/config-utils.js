@@ -62,7 +62,9 @@ export function deepMergeAll(...objects) {
  */
 export function isMultiLocaleConfig(configData, configSection = 'public') {
   const sectionData = configData?.[configSection];
-  if (!sectionData) return false;
+  if (!sectionData) {
+    return false;
+  }
 
   const paths = Object.keys(sectionData).filter((k) => k !== 'default');
   return paths.length > 0;
@@ -80,7 +82,9 @@ export function isMultiLocaleConfig(configData, configSection = 'public') {
  */
 export function getAvailablePaths(configData, configSection = 'public') {
   const sectionData = configData?.[configSection];
-  if (!sectionData) return [];
+  if (!sectionData) {
+    return [];
+  }
 
   return Object.keys(sectionData).filter((k) => k !== 'default');
 }
@@ -97,14 +101,20 @@ export function getAvailablePaths(configData, configSection = 'public') {
  */
 export function isLocaleSupported(configData, locale, configSection = 'public') {
   const sectionData = configData?.[configSection];
-  if (!sectionData) return false;
+  if (!sectionData) {
+    return false;
+  }
 
   // Check direct match
-  if (sectionData[locale]) return true;
+  if (sectionData[locale]) {
+    return true;
+  }
 
   // Check with leading/trailing slashes
   const localeWithSlashes = locale.startsWith('/') ? locale : `/${locale}/`;
-  if (sectionData[localeWithSlashes]) return true;
+  if (sectionData[localeWithSlashes]) {
+    return true;
+  }
 
   // Check if it matches via findBestMatchingPath
   const matchedPath = findBestMatchingPath(sectionData, locale);
@@ -149,7 +159,9 @@ export function validateLocales(configData, locales, configSection = 'public') {
  */
 export function getConfigForPath(configData, path, configSection = 'public') {
   const sectionData = configData?.[configSection];
-  if (!sectionData) return {};
+  if (!sectionData) {
+    return {};
+  }
 
   const defaultConfig = sectionData.default || {};
   const pathKey = findBestMatchingPath(sectionData, path);

@@ -10,15 +10,19 @@
  * governing permissions and limitations under the License.
  */
 
+import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import StoreClient, {
   StoreEmptyError, URL_TYPES, GUIDELINE_TYPES,
 } from '../utils/store-client.js';
 import {
+  DrsNoContentAvailableError,
   MYSTIQUE_URLS_LIMIT,
+  filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
 } from '../utils/offsite-audit-utils.js';
+import { OFFSITE_DOMAINS } from '../offsite-brand-presence/constants.js';
 import { computeTopicsFromBrandPresence } from '../utils/brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 
@@ -72,8 +76,13 @@ async function fetchStoreData(siteId, context) {
 
   log.info(`${LOG_PREFIX} Fetching data from stores for siteId: ${siteId}`);
 
-  const urls = await storeClient.getUrls(siteId, URL_TYPES.YOUTUBE);
-  log.info(`${LOG_PREFIX} Retrieved ${urls.length} YouTube URLs from URL Store`);
+  const rawUrls = await storeClient.getUrls(siteId, URL_TYPES.YOUTUBE, { sortBy: 'createdAt', sortOrder: 'desc' });
+  log.info(`${LOG_PREFIX} Retrieved ${rawUrls.length} YouTube URLs from URL Store`);
+
+  const drsClient = DrsClient.createFrom(context);
+  const { datasetIds } = OFFSITE_DOMAINS['youtube.com'];
+  const urls = await filterUrlsByDrsStatus(rawUrls, datasetIds, siteId, drsClient, log, LOG_PREFIX);
+  log.info(`${LOG_PREFIX} ${urls.length} YouTube URLs available in DRS`);
 
   const topics = await computeTopicsFromBrandPresence(siteId, context);
   log.info(`${LOG_PREFIX} Computed ${topics.length} topics from brand presence data`);
@@ -139,12 +148,15 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
 
     const urlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
 
+    const { slackContext } = auditContext;
+
     return {
       auditResult: {
         success: true,
         status: 'pending_analysis',
         config: { ...youtubeConfig, urlLimit },
         storeData,
+        ...(slackContext && { slackContext }),
       },
       fullAuditRef: url,
     };
@@ -156,6 +168,17 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
           success: false,
           error: error.message,
           storeName: error.storeName,
+        },
+        fullAuditRef: url,
+      };
+    }
+
+    if (error instanceof DrsNoContentAvailableError) {
+      log.error(`${LOG_PREFIX} No DRS content available yet: ${error.message}`);
+      return {
+        auditResult: {
+          success: false,
+          error: error.message,
         },
         fullAuditRef: url,
       };

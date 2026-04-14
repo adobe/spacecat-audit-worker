@@ -21,7 +21,9 @@ const RUNBOOK_URL = 'https://github.com/adobe/spacecat-audit-worker/blob/main/do
  */
 async function alertPromptGenerationFailure(context, siteId, drsJobId, reason) {
   const channelId = context.env?.SLACK_CHANNEL_LLMO_ONBOARDING_ID;
-  if (!channelId) return;
+  if (!channelId) {
+    return;
+  }
 
   await postMessageSafe(context, channelId, '', {
     attachments: [{

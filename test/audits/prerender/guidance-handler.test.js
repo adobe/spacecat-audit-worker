@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -753,6 +751,47 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       );
       expect(savedSuggestions[1].setData).to.have.been.calledWith(
         sinon.match({ aiSummary: '' }),
+      );
+    });
+
+    it('should preserve existing valuable flag when aiSummary is invalid', async () => {
+      // Suggestion already has valuable=false and a valid aiSummary from a previous run
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        aiSummary: 'Previous valid summary',
+        valuable: false,
+      });
+
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          {
+            url: 'https://example.com/page1',
+            aiSummary: null, // Invalid — should preserve existing
+            valuable: true, // New value — should NOT overwrite
+          },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(Suggestion.saveMany).to.have.been.calledOnce;
+      const savedSuggestions = Suggestion.saveMany.getCall(0).args[0];
+      expect(savedSuggestions[0].setData).to.have.been.calledWith(
+        sinon.match({
+          aiSummary: 'Previous valid summary', // Preserved
+          valuable: false, // Preserved (not overwritten with true)
+        }),
       );
     });
 

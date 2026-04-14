@@ -46,14 +46,15 @@ export const OFFSITE_DOMAINS = Object.freeze({
   },
 });
 
+export const CITED_ANALYSIS_DRS_CONFIG = Object.freeze({
+  auditType: Audit.AUDIT_TYPES.CITED_ANALYSIS,
+  datasetIds: [SCRAPE_DATASET_IDS.TOP_CITED],
+});
+
 export const DRS_URLS_LIMIT = 100;
 export const FETCH_PAGE_SIZE = 80000;
 export const FETCH_TIMEOUT_MS = 60000;
 export const INCLUDE_COLUMNS = ['Sources', 'Region', 'answer_contains_brandname', 'Mentions', 'Citations', 'Prompt', 'Topics', 'Category'].join(',');
 export const REDDIT_COMMENTS_DAYS_BACK = 30;
-export const CITED_ANALYSIS_DRS_CONFIG = Object.freeze({
-  auditType: Audit.AUDIT_TYPES.CITED_ANALYSIS,
-  datasetIds: [SCRAPE_DATASET_IDS.TOP_CITED],
-});
 export const YOUTUBE_URL_REGEX = /^(?:https?:\/\/)?(?:www\.)?(?:m\.)?(?:youtube(?:-nocookie)?\.com|youtu\.be)(?:[/?#]|$)/;
 export const REDDIT_URL_REGEX = /^https:\/\/(www)?\.?reddit\.com\/([rt]|user)\/[a-zA-Z0-9_/%-]+\/(comments\/[a-zA-Z0-9_-]+\/.+\/?|.*)$/;

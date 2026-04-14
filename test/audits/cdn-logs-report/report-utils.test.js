@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -141,10 +140,15 @@ describe('CDN Logs Report Utils', () => {
     it('validates valid country codes', () => {
       expect(reportUtils.validateCountryCode('US')).to.equal('US');
       expect(reportUtils.validateCountryCode('us')).to.equal('US');
+      expect(reportUtils.validateCountryCode('GB')).to.equal('GB');
+      expect(reportUtils.validateCountryCode('UK')).to.equal('UK');
     });
 
     it('returns GLOBAL for invalid codes', () => {
       expect(reportUtils.validateCountryCode('ABC')).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode('EU')).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode('EZ')).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode('XA')).to.equal('GLOBAL');
       expect(reportUtils.validateCountryCode(null)).to.equal('GLOBAL');
       expect(reportUtils.validateCountryCode('')).to.equal('GLOBAL');
     });

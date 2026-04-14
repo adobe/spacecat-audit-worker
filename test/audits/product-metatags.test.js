@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
@@ -642,14 +641,11 @@ describe('Product MetaTags', () => {
         dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
 
         const result = await submitForScraping(context);
+        // PDFs are pre-filtered by getMergedAuditInputUrls
         expect(result.urls).to.deep.equal([
           { url: 'http://example.com/product1' },
           { url: 'http://example.com/product2' },
         ]);
-
-        // Verify PDF files were logged as skipped
-        expect(context.log.info).to.have.been.calledWith('[PRODUCT-METATAGS] Skipping PDF file from scraping: http://example.com/catalog.pdf');
-        expect(context.log.info).to.have.been.calledWith('[PRODUCT-METATAGS] Skipping PDF file from scraping: http://example.com/guide.PDF');
       });
 
       it('should handle malformed URLs gracefully in isPdfUrl', async () => {

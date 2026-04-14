@@ -230,7 +230,9 @@ export async function updateCache(auditId, newBroken, newWorking, context, maxRe
       const brokenMap = new Map();
       [...currentCache.broken, ...newBroken].forEach((entry) => {
         if (typeof entry === 'string') {
-          if (!brokenMap.has(entry)) brokenMap.set(entry, {});
+          if (!brokenMap.has(entry)) {
+            brokenMap.set(entry, {});
+          }
         } else {
           brokenMap.set(entry.url, {
             httpStatus: entry.httpStatus,
@@ -415,8 +417,10 @@ async function loadExecutionLockWithETag(auditId, lockKey, context) {
     };
   /* c8 ignore next */
   } catch (error) {
-    /* c8 ignore next 3 - NoSuchKey when claim deleted between conflict and load */
-    if (error.name === 'NoSuchKey') return null;
+    /* c8 ignore next 5 - NoSuchKey when claim deleted between conflict and load */
+    if (error.name === 'NoSuchKey') {
+      return null;
+    }
     throw error;
   }
 }
@@ -431,10 +435,12 @@ function isClaimReclaimable(claimData) {
     return true;
   }
 
-  /* c8 ignore next 5 - Claim expiry branch; tested via TTL-based reclaim */
+  /* c8 ignore next 7 - Claim expiry branch; tested via TTL-based reclaim */
   if (claimData.expiresAt) {
     const expiresAtMs = Date.parse(claimData.expiresAt);
-    if (Number.isNaN(expiresAtMs)) return true;
+    if (Number.isNaN(expiresAtMs)) {
+      return true;
+    }
     return Date.now() > expiresAtMs;
   }
 
@@ -465,8 +471,10 @@ function isDispatchReservationStale(updatedAt, ttlMs = DISPATCH_RESERVATION_TTL_
 }
 
 function isDispatchReservationReclaimable(dispatchData, ttlMs = DISPATCH_RESERVATION_TTL_MS) {
-  /* c8 ignore next */
-  if (!dispatchData) return true;
+  /* c8 ignore next 3 */
+  if (!dispatchData) {
+    return true;
+  }
 
   if (dispatchData.status === 'cleared') {
     return true;
@@ -476,26 +484,36 @@ function isDispatchReservationReclaimable(dispatchData, ttlMs = DISPATCH_RESERVA
 }
 
 function isExecutionLockReclaimable(lockData, ttlMs = EXECUTION_LOCK_TTL_MS) {
-  /* c8 ignore next */
-  if (!lockData) return true;
+  /* c8 ignore next 3 */
+  if (!lockData) {
+    return true;
+  }
 
-  /* c8 ignore next */
-  if (lockData.status === 'released') return true;
+  /* c8 ignore next 3 */
+  if (lockData.status === 'released') {
+    return true;
+  }
 
   /* c8 ignore start - Execution lock expiresAt and lockStartedAt fallback branches */
   if (lockData.expiresAt) {
     const expiresAtMs = Date.parse(lockData.expiresAt);
-    if (Number.isNaN(expiresAtMs)) return true;
+    if (Number.isNaN(expiresAtMs)) {
+      return true;
+    }
     return Date.now() > expiresAtMs;
   }
 
   const { lockStartedAt } = lockData;
-  if (!lockStartedAt) return true;
+  if (!lockStartedAt) {
+    return true;
+  }
   /* c8 ignore stop */
 
   const startedAtMs = Date.parse(lockStartedAt);
-  /* c8 ignore next */
-  if (Number.isNaN(startedAtMs)) return true;
+  /* c8 ignore next 3 */
+  if (Number.isNaN(startedAtMs)) {
+    return true;
+  }
 
   return (Date.now() - startedAtMs) > ttlMs;
 }
@@ -698,13 +716,17 @@ export async function tryAcquireExecutionLock(
     log.debug(`[batch-state] Acquired execution lock ${lockKey}`);
     return response.ETag;
   } catch (error) {
-    /* c8 ignore next 2 - Non-conflict S3 errors during lock acquisition */
-    if (!isConditionalWriteConflict(error)) throw error;
+    /* c8 ignore next 3 - Non-conflict S3 errors during lock acquisition */
+    if (!isConditionalWriteConflict(error)) {
+      throw error;
+    }
   }
 
   const existingLock = await loadExecutionLockWithETag(auditId, lockKey, context);
-  /* c8 ignore next */
-  if (!existingLock) return null;
+  /* c8 ignore next 3 */
+  if (!existingLock) {
+    return null;
+  }
 
   if (!isExecutionLockReclaimable(existingLock, ttlMs)) {
     log.info(`[batch-state] Execution lock ${lockKey} already held`);
@@ -1070,21 +1092,32 @@ async function loadFinalizationLockWithETag(auditId, context) {
 }
 
 function isFinalizationLockReclaimable(lockData) {
-  /* c8 ignore next 2 - Defensive guards; callers always provide lockData */
-  if (!lockData) return true;
-  if (lockData.status === 'released') return true;
+  /* c8 ignore next 3 - Defensive guards; callers always provide lockData */
+  if (!lockData) {
+    return true;
+  }
+  /* c8 ignore next 3 */
+  if (lockData.status === 'released') {
+    return true;
+  }
 
   if (lockData.expiresAt) {
     const expiresAtMs = Date.parse(lockData.expiresAt);
-    /* c8 ignore next */
-    if (Number.isNaN(expiresAtMs)) return true;
+    /* c8 ignore next 3 */
+    if (Number.isNaN(expiresAtMs)) {
+      return true;
+    }
     return Date.now() > expiresAtMs;
   }
 
   const { acquiredAt } = lockData;
-  if (!acquiredAt) return true;
+  if (!acquiredAt) {
+    return true;
+  }
   const acquiredAtMs = Date.parse(acquiredAt);
-  if (Number.isNaN(acquiredAtMs)) return true;
+  if (Number.isNaN(acquiredAtMs)) {
+    return true;
+  }
   return (Date.now() - acquiredAtMs) > FINALIZATION_LOCK_TTL_MS;
 }
 

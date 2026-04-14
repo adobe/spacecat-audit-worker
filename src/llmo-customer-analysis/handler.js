@@ -153,7 +153,9 @@ export async function createAndTriggerBrandPresenceSchedule(context, siteId, dom
 
   // Strip trailing slashes from the API URL
   let baseUrl = drsApiUrl;
-  while (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
+  while (baseUrl.endsWith('/')) {
+    baseUrl = baseUrl.slice(0, -1);
+  }
 
   const headers = {
     'Content-Type': 'application/json',

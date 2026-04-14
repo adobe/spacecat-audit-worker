@@ -14,6 +14,7 @@ import { isoCalendarWeek, tracingFetch as fetch } from '@adobe/spacecat-shared-u
 import DrsClient, { SCRAPE_DATASET_IDS } from '@adobe/spacecat-shared-drs-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
+import { postMessageOptional } from '../utils/slack-utils.js';
 import {
   BRAND_PRESENCE_REGEX,
   DRS_URLS_LIMIT,
@@ -146,14 +147,20 @@ async function fetchBrandPresenceData(siteId, fileName, env, log) {
  * @returns {string|null} The matched file path, or null
  */
 function matchBrandPresenceEntry(entry, targetWeek, targetYear) {
-  if (!entry?.path) return null;
+  if (!entry?.path) {
+    return null;
+  }
 
   const bpIdx = entry.path.indexOf('brand-presence/');
-  if (bpIdx === -1) return null;
+  if (bpIdx === -1) {
+    return null;
+  }
 
   const filePath = entry.path.substring(bpIdx);
   const match = filePath.match(BRAND_PRESENCE_REGEX);
-  if (!match) return null;
+  if (!match) {
+    return null;
+  }
 
   const [, providerId, weekStr, yearStr] = match;
   const fileWeek = Number.parseInt(weekStr, 10);
@@ -666,8 +673,10 @@ function selectTopUrls(allUrls, maxUrlsPerBucket, excludedFromTopCited) {
  * @param {object} site - The site being audited
  * @returns {Promise<object>} Audit result
  */
-export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
+export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditContext) {
   const { dataAccess, env, log } = context;
+  const { slackContext } = auditContext || {};
+  const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
 
@@ -738,6 +747,20 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
 
   const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
   const drsResults = await triggerDrsScraping(storedByDomain, siteId, context);
+
+  if (drsResults.length > 0) {
+    const succeeded = drsResults.filter((r) => r.status === 'success');
+    const failed = drsResults.filter((r) => r.status === 'error');
+    const lines = [
+      `:white_check_mark: *offsite-brand-presence* DRS jobs for *${baseURL}*:`,
+      ...succeeded.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → job_id: \`${r.response.job_id}\``),
+      ...(failed.length > 0 ? [
+        `:x: *Failed (${failed.length}):*`,
+        ...failed.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → ${r.error}`),
+      ] : []),
+    ];
+    await postMessageOptional(context, channelId, lines.join('\n'), { threadTs });
+  }
 
   // TODO: temporarily disabled
   // if (topicMap.size > 0) {

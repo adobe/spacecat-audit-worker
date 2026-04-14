@@ -59,6 +59,7 @@ export function getJsonSummarySuggestion(suggestions) {
     if (hasSummaryText(pageSummaryText) && !pageSummaryAlreadyPresent) {
       suggestionValues.push({
         summarizationText: pageSummaryText,
+        aiGeneratedSummarizationText: pageSummaryText,
         fullPage: true,
         keyPoints: false,
         url: suggestion.pageUrl,
@@ -75,6 +76,7 @@ export function getJsonSummarySuggestion(suggestions) {
     if (hasSummaryText(keyPointsText) && !keyPointsAlreadyPresent) {
       suggestionValues.push({
         summarizationText: keyPointsText,
+        aiGeneratedSummarizationText: keyPointsText,
         fullPage: true,
         keyPoints: true,
         url: suggestion.pageUrl,

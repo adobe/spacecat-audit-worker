@@ -64,21 +64,37 @@ function isInternalAssetHost(hostname, baseHostname) {
 }
 
 function getSourceItemType(parentTag) {
-  if (parentTag === 'picture') return 'image';
-  if (parentTag === 'video') return 'video';
-  if (parentTag === 'audio') return 'audio';
+  if (parentTag === 'picture') {
+    return 'image';
+  }
+  if (parentTag === 'video') {
+    return 'video';
+  }
+  if (parentTag === 'audio') {
+    return 'audio';
+  }
   return 'media';
 }
 
 function getAssetTypeFromUrl(url, pageUrl = 'https://example.com') {
   try {
     const pathname = new URL(url, pageUrl).pathname.toLowerCase();
-    if (/\.(svg|png|jpe?g|gif|webp|avif)$/.test(pathname)) return 'image';
+    if (/\.(svg|png|jpe?g|gif|webp|avif)$/.test(pathname)) {
+      return 'image';
+    }
     /* c8 ignore start - Asset type branches covered by integration tests at extraction level */
-    if (/\.css$/.test(pathname)) return 'css';
-    if (/\.js$/.test(pathname)) return 'js';
-    if (/\.(mp4|webm)$/.test(pathname)) return 'video';
-    if (/\.(mp3|ogg)$/.test(pathname)) return 'audio';
+    if (/\.css$/.test(pathname)) {
+      return 'css';
+    }
+    if (/\.js$/.test(pathname)) {
+      return 'js';
+    }
+    if (/\.(mp4|webm)$/.test(pathname)) {
+      return 'video';
+    }
+    if (/\.(mp3|ogg)$/.test(pathname)) {
+      return 'audio';
+    }
     return 'media';
   } catch (error) {
     return 'media';
@@ -168,7 +184,9 @@ function pushResolvedReference({
   anchorText,
 }) {
   const normalizedUrl = normalizeDetectedUrlCandidate(rawUrl);
-  if (!normalizedUrl || normalizedUrl.startsWith('#')) return;
+  if (!normalizedUrl || normalizedUrl.startsWith('#')) {
+    return;
+  }
 
   try {
     const absoluteUrl = stripAbsoluteUrlHash(new URL(normalizedUrl, pageUrl).toString());
@@ -197,7 +215,9 @@ function pushResolvedSrcsetReferences({
   type,
   anchorText,
 }) {
-  if (!rawSrcset) return;
+  if (!rawSrcset) {
+    return;
+  }
 
   try {
     const candidates = resolveUrlCandidates(rawSrcset, pageUrl);
@@ -234,7 +254,9 @@ function extractInternalLinks($, pageUrl, baseHostname, log) {
   $('a[href]').each((_, el) => {
     const $a = $(el);
     const href = normalizeDetectedUrlCandidate($a.attr('href'));
-    if (!href || href.startsWith('#')) return;
+    if (!href || href.startsWith('#')) {
+      return;
+    }
 
     try {
       const absoluteUrl = stripAbsoluteUrlHash(new URL(href, pageUrl).toString());
@@ -256,7 +278,9 @@ function extractInternalLinks($, pageUrl, baseHostname, log) {
   $('area[href]').each((_, el) => {
     const $area = $(el);
     const href = normalizeDetectedUrlCandidate($area.attr('href'));
-    if (!href || href.startsWith('#')) return;
+    if (!href || href.startsWith('#')) {
+      return;
+    }
 
     try {
       const absoluteUrl = stripAbsoluteUrlHash(new URL(href, pageUrl).toString());
@@ -278,7 +302,9 @@ function extractInternalLinks($, pageUrl, baseHostname, log) {
   $('form[action]').each((_, el) => {
     const action = normalizeDetectedUrlCandidate($(el).attr('action'));
     // eslint-disable-next-line no-script-url
-    if (!action || action.startsWith('#') || action.startsWith('javascript:')) return;
+    if (!action || action.startsWith('#') || action.startsWith('javascript:')) {
+      return;
+    }
 
     try {
       const absoluteUrl = stripAbsoluteUrlHash(new URL(action, pageUrl).toString());
@@ -299,7 +325,9 @@ function extractInternalLinks($, pageUrl, baseHostname, log) {
   // Extract canonical URLs
   $('link[rel="canonical"]').each((_, el) => {
     const href = normalizeDetectedUrlCandidate($(el).attr('href'));
-    if (!href) return;
+    if (!href) {
+      return;
+    }
 
     try {
       const absoluteUrl = stripAbsoluteUrlHash(new URL(href, pageUrl).toString());
@@ -320,7 +348,9 @@ function extractInternalLinks($, pageUrl, baseHostname, log) {
   // Extract alternate language/locale links
   $('link[rel="alternate"][hreflang]').each((_, el) => {
     const href = normalizeDetectedUrlCandidate($(el).attr('href'));
-    if (!href) return;
+    if (!href) {
+      return;
+    }
 
     try {
       const absoluteUrl = stripAbsoluteUrlHash(new URL(href, pageUrl).toString());
@@ -356,7 +386,9 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
   // Images and SVGs
   $('img[src]').each((_, el) => {
     const src = normalizeDetectedUrlCandidate($(el).attr('src'));
-    if (!src || src.startsWith('data:') || src.startsWith('#')) return;
+    if (!src || src.startsWith('data:') || src.startsWith('#')) {
+      return;
+    }
 
     try {
       const absoluteUrl = stripAbsoluteUrlHash(new URL(src, pageUrl).toString());
@@ -618,7 +650,9 @@ async function validateLinksWithCache(
     links.map((link) => async () => {
       const isInScope = isWithinAuditScope(link.url, baseURL)
         || isSharedInternalResource(link.url, baseURL, link.type);
-      if (!isInScope) return { type: 'out-of-scope' };
+      if (!isInScope) {
+        return { type: 'out-of-scope' };
+      }
       const cacheKey = getUrlCacheKey(link.url);
 
       if (brokenUrlsCache.has(cacheKey)) {
@@ -687,7 +721,9 @@ function updateValidationStats(stats, validations) {
   const nextStats = { ...stats };
 
   validations.forEach((result) => {
-    if (!result || result.type === 'out-of-scope') return;
+    if (!result || result.type === 'out-of-scope') {
+      return;
+    }
 
     nextStats.totalLinksAnalyzed += 1;
 
@@ -865,7 +901,9 @@ export async function detectBrokenLinksFromCrawlBatch({
 
       brokenLinks.forEach((link) => {
         const key = buildBrokenLinkKey(link);
-        if (!brokenLinksMap.has(key)) brokenLinksMap.set(key, link);
+        if (!brokenLinksMap.has(key)) {
+          brokenLinksMap.set(key, link);
+        }
       });
     } catch (error) {
       log.error(`Error processing ${url}: ${error.message}`);

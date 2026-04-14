@@ -18,7 +18,9 @@ import { joinBaseAndPath } from '../../utils/url-utils.js';
 const HEADER_COLOR = 'FFE6E6FA';
 
 const capitalizeFirstLetter = (str) => {
-  if (!str || typeof str !== 'string') return str;
+  if (!str || typeof str !== 'string') {
+    return str;
+  }
   return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 };
 
@@ -40,7 +42,9 @@ export const SHEET_CONFIGS = {
     headerColor: HEADER_COLOR,
     numberColumns: [2, 3, 4],
     processData: async (data, site, dataAccess) => {
-      if (!data || !site || !dataAccess) return [];
+      if (!data || !site || !dataAccess) {
+        return [];
+      }
 
       const countryCodeIgnoreList = site.getConfig()?.getLlmoCountryCodeIgnoreList() || [];
 
@@ -105,7 +109,9 @@ export const SHEET_CONFIGS = {
     headerColor: HEADER_COLOR,
     numberColumns: [6],
     processData: (data, site) => {
-      if (!Array.isArray(data)) throw new Error(`Referral traffic postprocessing failed, provided data: ${data}`);
+      if (!Array.isArray(data)) {
+        throw new Error(`Referral traffic postprocessing failed, provided data: ${data}`);
+      }
 
       const countryCodeIgnoreList = site?.getConfig()?.getLlmoCountryCodeIgnoreList() || [];
       const grouped = {};
