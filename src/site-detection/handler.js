@@ -15,7 +15,6 @@ import {
   fetch,
   hasText,
   isObject,
-  isValidUrl,
 } from '@adobe/spacecat-shared-utils';
 import {
   AsyncJob, Site as SiteModel, SiteCandidate as SiteCandidateModel,
@@ -102,7 +101,9 @@ async function isHelixSite(url) {
  */
 function parseHlxRSO(domain) {
   const match = domain.match(/^([\w-]+)--([\w-]+)--([\w-]+)\.(hlx\.live|aem\.live)$/);
-  if (!match) return null;
+  if (!match) {
+    return null;
+  }
   return {
     ref: match[1], site: match[2], owner: match[3], tld: match[4],
   };
@@ -113,7 +114,9 @@ function parseHlxRSO(domain) {
  * Requires HLX_ADMIN_TOKEN in the worker environment.
  */
 async function fetchHlxConfig(rso, hlxAdminToken, log) {
-  if (!hasText(hlxAdminToken)) return null;
+  if (!hasText(hlxAdminToken)) {
+    return null;
+  }
 
   const { owner, site } = rso;
   const url = `https://admin.hlx.page/config/${owner}/aggregated/${site}.json`;
@@ -123,7 +126,9 @@ async function fetchHlxConfig(rso, hlxAdminToken, log) {
       headers: { Authorization: `token ${hlxAdminToken}` },
     });
 
-    if (response.status === 200) return response.json();
+    if (response.status === 200) {
+      return response.json();
+    }
     if (response.status === 404) {
       log.debug(`No hlx config found for ${owner}/${site}`);
       return null;
@@ -145,7 +150,9 @@ async function extractHlxConfig(domain, hlxVersion, hlxAdminToken, log) {
   const hlxConfig = { hlxVersion: hlxVersion ?? null, rso: {} };
 
   const rso = parseHlxRSO(domain);
-  if (!isObject(rso)) return hlxConfig;
+  if (!isObject(rso)) {
+    return hlxConfig;
+  }
 
   hlxConfig.rso = rso;
 
@@ -153,9 +160,9 @@ async function extractHlxConfig(domain, hlxVersion, hlxAdminToken, log) {
     const config = await fetchHlxConfig(rso, hlxAdminToken, log);
     if (isObject(config)) {
       const { cdn, code, content } = config;
-      if (isObject(cdn)) hlxConfig.cdn = cdn;
-      if (isObject(code)) hlxConfig.code = code;
-      if (isObject(content)) hlxConfig.content = content;
+      if (isObject(cdn)) { hlxConfig.cdn = cdn; }
+      if (isObject(code)) { hlxConfig.code = code; }
+      if (isObject(content)) { hlxConfig.content = content; }
       hlxConfig.hlxVersion = 5;
     }
   }
@@ -168,7 +175,8 @@ async function extractHlxConfig(domain, hlxVersion, hlxAdminToken, log) {
  */
 function buildSlackBlocks(baseURL, hlxConfig) {
   const rso = hlxConfig?.rso;
-  const rsoText = rso?.owner ? ` (_owner:_ *${rso.owner}/${rso.site}*` + (rso.ref ? `, _ref:_ ${rso.ref}` : '') + ')' : '';
+  const rsoRef = rso?.ref ? `, _ref:_ ${rso.ref}` : '';
+  const rsoText = rso?.owner ? ` (_owner:_ *${rso.owner}/${rso.site}*${rsoRef})` : '';
 
   return {
     channel: null, // set by caller
