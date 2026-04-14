@@ -1171,17 +1171,22 @@ export async function processOpportunityAndSuggestions(
   );
 
   // Diagnostic: SKIPPED + edgeDeployed should never coexist — log a warning if found.
-  const skippedEdgeDeployedCount = savedSuggestions.filter(
+  // Include suggestionIds so repeat occurrences of the same root cause can be correlated in Splunk.
+  const skippedEdgeDeployedSuggestions = savedSuggestions.filter(
     (s) => s.getStatus() === Suggestion.STATUSES.SKIPPED && s.getData()?.edgeDeployed,
-  ).length;
-  if (skippedEdgeDeployedCount > 0) {
-    log.warn(`${LOG_PREFIX} Unexpected SKIPPED suggestions with edgeDeployed set. baseUrl=${auditUrl}, siteId=${auditData.siteId}, skippedEdgeDeployedCount=${skippedEdgeDeployedCount}`);
+  );
+  if (skippedEdgeDeployedSuggestions.length > 0) {
+    const affectedIds = skippedEdgeDeployedSuggestions.map((s) => s.getId()).join(',');
+    log.warn(`${LOG_PREFIX} Unexpected SKIPPED suggestions with edgeDeployed set. baseUrl=${auditUrl}, siteId=${auditData.siteId}, skippedEdgeDeployedCount=${skippedEdgeDeployedSuggestions.length}, affectedSuggestionIds=${affectedIds}`);
   }
 
   // Build Mystique candidates directly from the URL list processed in this audit run.
   // Domain-wide suggestions are intentionally excluded; Mystique needs individual URLs.
   // Always send suggestionId (Mystique requires non-empty string). Use URL as fallback
   // when the exact suggestion ID isn't found (www/non-www URL mismatch between runs).
+  // NOTE: the guidance handler (guidance-handler.js) matches Mystique's response back to
+  // suggestions by URL, not by suggestionId — so the URL fallback does not break AI summary
+  // delivery for URLs that are correctly matched on the Mystique→handler return path.
   let missingSuggestionIdCount = 0;
   const auditRunCandidates = preRenderSuggestions.reduce((acc, s) => {
     try {

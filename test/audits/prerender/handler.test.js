@@ -3870,7 +3870,9 @@ describe('Prerender Audit', () => {
           log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub() },
           dataAccess: {
             Suggestion: {
-              STATUSES: { NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED' },
+              STATUSES: {
+                NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED', OUTDATED: 'OUTDATED',
+              },
             },
           },
           site: { getId: () => 'test-site-id' },
@@ -3931,7 +3933,9 @@ describe('Prerender Audit', () => {
           log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub() },
           dataAccess: {
             Suggestion: {
-              STATUSES: { NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED' },
+              STATUSES: {
+                NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED', OUTDATED: 'OUTDATED',
+              },
             },
           },
           site: { getId: () => 'test-site-id' },
@@ -3941,6 +3945,9 @@ describe('Prerender Audit', () => {
 
         expect(context.log.warn).to.have.been.calledWith(
           sinon.match(/Unexpected SKIPPED suggestions with edgeDeployed set/),
+        );
+        expect(context.log.warn).to.have.been.calledWith(
+          sinon.match(/affectedSuggestionIds=skipped-edge-id/),
         );
       });
     });
