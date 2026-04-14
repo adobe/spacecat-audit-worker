@@ -168,6 +168,15 @@ describe('[site-detection] runner tests', function () {
     expect(result.auditResult.action).to.equal('created');
   });
 
+  it('rejects a malformed / whitespace-padded domain without throwing', async () => {
+    mockJob.getMetadata.returns({ payload: { domain: '  not a domain  ' } });
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(mockJob.setResult).to.have.been.calledWith(sinon.match({ action: 'rejected' }));
+    expect(result.auditResult.action).to.equal('rejected');
+  });
+
   it('rejects domain containing a path segment', async () => {
     mockJob.getMetadata.returns({ payload: { domain: 'foo.example.com/path' } });
 

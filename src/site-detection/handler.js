@@ -36,7 +36,13 @@ const IP_ADDRESS_REGEX = /^\d{1,3}(\.\d{1,3}){3}$|^([0-9a-fA-F]{1,4}:){7}[0-9a-f
  * subdomain/domain, no port, no path/query).
  */
 function isValidCandidate(domain, config, log) {
-  const url = new URL(domain.startsWith('http') ? domain : `https://${domain}`);
+  let url;
+  try {
+    url = new URL(domain.startsWith('http') ? domain : `https://${domain}`);
+  } catch {
+    log.info(`Rejected ${domain} because it is not a valid hostname`);
+    return false;
+  }
 
   if (url.pathname !== '/' || url.search !== '') {
     log.info(`Rejected ${domain} because it contains path and/or search params`);
