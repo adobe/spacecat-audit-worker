@@ -1173,7 +1173,7 @@ export async function processOpportunityAndSuggestions(
     (s) => s.getStatus() === Suggestion.STATUSES.SKIPPED && s.getData()?.edgeDeployed,
   ).length;
   if (skippedEdgeDeployedCount > 0) {
-    log.warn(`${LOG_PREFIX} ${skippedEdgeDeployedCount} suggestion(s) have status=SKIPPED with edgeDeployed set — this should be 0. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
+    log.warn(`${LOG_PREFIX} Unexpected SKIPPED suggestions with edgeDeployed set. baseUrl=${auditUrl}, siteId=${auditData.siteId}, skippedEdgeDeployedCount=${skippedEdgeDeployedCount}`);
   }
 
   // Build Mystique candidates directly from the URL list processed in this audit run.

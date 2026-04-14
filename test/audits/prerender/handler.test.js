@@ -3940,7 +3940,7 @@ describe('Prerender Audit', () => {
         await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
 
         expect(context.log.warn).to.have.been.calledWith(
-          sinon.match(/suggestion\(s\) have status=SKIPPED with edgeDeployed set/),
+          sinon.match(/Unexpected SKIPPED suggestions with edgeDeployed set/),
         );
       });
     });
