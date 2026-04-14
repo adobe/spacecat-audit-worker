@@ -1587,7 +1587,7 @@ describe('LLMO Customer Analysis Handler', () => {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
             eq: sandbox.stub().resolves({
-              data: [{ id: 'brand-uuid-1', brand_sites: [{ site_id: 'site-123' }] }],
+              data: [{ id: 'brand-uuid-1', site_id: 'site-123', brand_sites: [{ site_id: 'site-123' }] }],
             }),
           }),
         }),
@@ -1652,7 +1652,7 @@ describe('LLMO Customer Analysis Handler', () => {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
             eq: sandbox.stub().resolves({
-              data: [{ id: 'brand-fb', brand_sites: [{ site_id: 'site-123' }] }],
+              data: [{ id: 'brand-fb', site_id: 'site-123', brand_sites: [{ site_id: 'site-123' }] }],
             }),
           }),
         }),
@@ -1694,7 +1694,7 @@ describe('LLMO Customer Analysis Handler', () => {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
             eq: sandbox.stub().resolves({
-              data: [{ id: 'brand-no-sites' }],
+              data: [{ id: 'brand-no-sites', site_id: null }],
             }),
           }),
         }),
@@ -1734,7 +1734,7 @@ describe('LLMO Customer Analysis Handler', () => {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
             eq: sandbox.stub().resolves({
-              data: [{ id: 'brand-other', brand_sites: [{ site_id: 'other-site' }] }],
+              data: [{ id: 'brand-other', site_id: 'other-site', brand_sites: [{ site_id: 'other-site' }] }],
             }),
           }),
         }),
@@ -1755,6 +1755,63 @@ describe('LLMO Customer Analysis Handler', () => {
       const body = JSON.parse(createCall.args[1].body);
       expect(body.brand_id).to.be.undefined;
       expect(log.warn).to.have.been.calledWith(sinon.match(/No brand found matching site/));
+    });
+
+    it('should prefer baseSiteId match over brand_sites match', async () => {
+      const auditContext = {};
+
+      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
+      context.env.SPACECAT_API_KEY = 'test-api-key';
+
+      mockFetch.reset();
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: async () => [{ flagName: 'brandalf', flagValue: true }],
+      });
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: async () => ({ schedule_id: 'sched-001' }),
+      });
+      mockFetch.onThirdCall().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      // Two brands: one with baseSiteId (site_id) match, one with only brand_sites match.
+      // The baseSiteId match should be preferred (it has the correct base URL).
+      const brandsQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().resolves({
+              data: [
+                { id: 'brand-sub', site_id: null, brand_sites: [{ site_id: 'site-123' }] },
+                { id: 'brand-base', site_id: 'site-123', brand_sites: [{ site_id: 'site-123' }] },
+              ],
+            }),
+          }),
+        }),
+      };
+      context.dataAccess.services = {
+        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis('https://example.com', context, site, auditContext);
+
+      // Should pick brand-base (baseSiteId match) over brand-sub (brand_sites only)
+      const createCall = mockFetch.getCalls().find((c) => c.args[0] === 'https://drs.example.com/api/schedules');
+      expect(createCall).to.exist;
+      const body = JSON.parse(createCall.args[1].body);
+      expect(body.brand_id).to.equal('brand-base');
     });
 
     it('should create BP schedule without brand_id when brand lookup fails', async () => {

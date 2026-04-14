@@ -339,18 +339,25 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
         try {
           const { postgrestClient } = context.dataAccess?.services || {};
           if (postgrestClient?.from) {
+            // Prefer the brand whose baseSiteId (site_id column) matches this
+            // site — this is the primary brand created during onboarding with
+            // the correct base URL.  Fall back to brand_sites join if no
+            // baseSiteId match exists (backward compat for brands created
+            // before baseSiteId was set during onboarding).
             const { data: brands } = await postgrestClient
               .from('brands')
-              .select('id, brand_sites(site_id)')
+              .select('id, site_id, brand_sites(site_id)')
               .eq('organization_id', organizationId)
               .eq('status', 'active');
 
-            const match = brands?.find(
+            const baseSiteMatch = brands?.find((b) => b.site_id === siteId);
+            const brandSiteMatch = !baseSiteMatch && brands?.find(
               (b) => b.brand_sites?.some((bs) => bs.site_id === siteId),
             );
+            const match = baseSiteMatch || brandSiteMatch;
             if (match) {
               brandId = match.id;
-              log.info(`Resolved brand ${brandId} for site ${siteId} (v2 onboarding)`);
+              log.info(`Resolved brand ${brandId} for site ${siteId} (v2 onboarding, via ${baseSiteMatch ? 'baseSiteId' : 'brand_sites'})`);
             } else {
               log.warn(`No brand found matching site ${siteId} in org ${organizationId} for v2 BP schedule`);
             }
