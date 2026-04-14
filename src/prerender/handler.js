@@ -1171,13 +1171,11 @@ export async function processOpportunityAndSuggestions(
   );
 
   // Diagnostic: SKIPPED + edgeDeployed should never coexist — log a warning if found.
-  // Include suggestionIds so repeat occurrences of the same root cause can be correlated in Splunk.
-  const skippedEdgeDeployedSuggestions = savedSuggestions.filter(
+  const skippedEdgeDeployedCount = savedSuggestions.filter(
     (s) => s.getStatus() === Suggestion.STATUSES.SKIPPED && s.getData()?.edgeDeployed,
-  );
-  if (skippedEdgeDeployedSuggestions.length > 0) {
-    const affectedIds = skippedEdgeDeployedSuggestions.map((s) => s.getId()).join(',');
-    log.warn(`${LOG_PREFIX} Unexpected SKIPPED suggestions with edgeDeployed set. baseUrl=${auditUrl}, siteId=${auditData.siteId}, skippedEdgeDeployedCount=${skippedEdgeDeployedSuggestions.length}, affectedSuggestionIds=${affectedIds}`);
+  ).length;
+  if (skippedEdgeDeployedCount > 0) {
+    log.warn(`${LOG_PREFIX} Unexpected SKIPPED suggestions with edgeDeployed set. baseUrl=${auditUrl}, siteId=${auditData.siteId}, skippedEdgeDeployedCount=${skippedEdgeDeployedCount}`);
   }
 
   // Build Mystique candidates directly from the URL list processed in this audit run.

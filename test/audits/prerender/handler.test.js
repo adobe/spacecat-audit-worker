@@ -3946,9 +3946,6 @@ describe('Prerender Audit', () => {
         expect(context.log.warn).to.have.been.calledWith(
           sinon.match(/Unexpected SKIPPED suggestions with edgeDeployed set/),
         );
-        expect(context.log.warn).to.have.been.calledWith(
-          sinon.match(/affectedSuggestionIds=skipped-edge-id/),
-        );
       });
     });
   });
