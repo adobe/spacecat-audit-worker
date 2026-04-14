@@ -1652,7 +1652,7 @@ describe('LLMO Customer Analysis Handler', () => {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
             eq: sandbox.stub().resolves({
-              data: [{ id: 'brand-fb', site_id: 'site-123', brand_sites: [{ site_id: 'site-123' }] }],
+              data: [{ id: 'brand-fb', site_id: null, brand_sites: [{ site_id: 'site-123' }] }],
             }),
           }),
         }),
