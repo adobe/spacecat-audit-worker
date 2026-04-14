@@ -114,6 +114,13 @@ describe('[site-detection] runner tests', function () {
 
   // ── Job lifecycle ──────────────────────────────────────────────────────────
 
+  it('returns error when jobId is missing from message', async () => {
+    const result = await siteDetectionRunner({}, context);
+
+    expect(result.auditResult.error).to.equal('Missing jobId');
+    expect(context.dataAccess.AsyncJob.findById).to.not.have.been.called;
+  });
+
   it('returns error when job not found', async () => {
     context.dataAccess.AsyncJob.findById.resolves(null);
 
@@ -210,6 +217,35 @@ describe('[site-detection] runner tests', function () {
     expect(mockJob.setResult).to.have.been.calledWith(sinon.match({ action: 'rejected' }));
   });
 
+  it('rejects apex domain (no subdomain)', async () => {
+    mockJob.getMetadata.returns({ payload: { domain: 'adobe.com' } });
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(mockJob.setResult).to.have.been.calledWith(sinon.match({ action: 'rejected' }));
+    expect(result.auditResult.action).to.equal('rejected');
+  });
+
+  it('strips www. prefix when composing baseURL (www.foo.example.com → https://foo.example.com)', async () => {
+    mockJob.getMetadata.returns({ payload: { domain: 'www.foo.example.com', hlxVersion: null } });
+    fetchStub.resolves(makeSiteResponse(HELIX_DOM));
+
+    await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(context.dataAccess.SiteCandidate.create).to.have.been.calledWith(
+      sinon.match({ baseURL: 'https://foo.example.com' }),
+    );
+  });
+
+  it('rejects www-only alias of an apex domain (www.adobe.com)', async () => {
+    mockJob.getMetadata.returns({ payload: { domain: 'www.adobe.com' } });
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(mockJob.setResult).to.have.been.calledWith(sinon.match({ action: 'rejected' }));
+    expect(result.auditResult.action).to.equal('rejected');
+  });
+
   it('uses custom subdomain tokens from SITE_DETECTION_IGNORED_SUBDOMAIN_TOKENS', async () => {
     context.env.SITE_DETECTION_IGNORED_SUBDOMAIN_TOKENS = 'custom,tokens';
     mockJob.getMetadata.returns({ payload: { domain: 'custom.example.com' } });
@@ -290,6 +326,18 @@ describe('[site-detection] runner tests', function () {
 
   it('marks FAILED/rejected when site fetch throws a network error', async () => {
     fetchStub.rejects(new Error('ECONNREFUSED'));
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(mockJob.setResult).to.have.been.calledWith(sinon.match({ action: 'rejected' }));
+    expect(result.auditResult.action).to.equal('rejected');
+  });
+
+  it('marks FAILED/rejected when resp.text() throws a stream error', async () => {
+    fetchStub.resolves({
+      status: 200,
+      text: () => Promise.reject(new Error('stream closed')),
+    });
 
     const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
 
@@ -487,10 +535,9 @@ describe('[site-detection] runner tests', function () {
     expect(context.log.error).to.have.been.calledWith(sinon.match(/Error fetching hlx config/));
   });
 
-  it('warns and continues when response.json() rejects (propagates through extractHlxConfig)', async () => {
-    // response.json() returns a rejected Promise → NOT caught by fetchHlxConfig's try/catch
-    // (because it's `return response.json()`, not `return await response.json()`)
-    // The rejection propagates to the runner's outer try/catch around extractHlxConfig.
+  it('logs error in fetchHlxConfig and continues when response.json() rejects', async () => {
+    // response.json() rejects → caught by fetchHlxConfig's own try/catch (returns null)
+    // → extractHlxConfig returns the default hlxConfig → runner proceeds and creates the candidate
     context.env.SITE_DETECTION_IGNORED_SUBDOMAIN_TOKENS = 'demo,dev,stg';
     mockJob.getMetadata.returns({ payload: { domain: 'main--mysite--myorg.aem.live', hlxVersion: null } });
     fetchStub.callsFake(makeDispatcher(
@@ -500,7 +547,7 @@ describe('[site-detection] runner tests', function () {
 
     const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
 
-    expect(context.log.warn).to.have.been.calledWith(sinon.match(/failed to extract hlxConfig/));
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/Error fetching hlx config/));
     expect(result.auditResult.action).to.equal('created');
   });
 
@@ -526,5 +573,16 @@ describe('[site-detection] runner tests', function () {
 
     expect(context.log.error).to.have.been.calledWith(sinon.match(/failed to save error state/));
     expect(result.auditResult.error).to.equal('DB error');
+  });
+
+  it('logs error when SiteCandidate.create fails and job.save() also fails', async () => {
+    fetchStub.resolves(makeSiteResponse(HELIX_DOM));
+    context.dataAccess.SiteCandidate.create.rejects(new Error('DB write failed'));
+    mockJob.save.rejects(new Error('Save failed'));
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/failed to save error state/));
+    expect(result.auditResult.error).to.equal('DB write failed');
   });
 });

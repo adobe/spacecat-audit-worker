@@ -23,6 +23,9 @@ import { BaseSlackClient, SLACK_TARGETS } from '@adobe/spacecat-shared-slack-cli
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopPersister, noopUrlResolver } from '../common/index.js';
 
+// '--' intentionally blocks RSO staging domains (ref--site--owner.hlx.live / .aem.live)
+// from being accepted as primary domains. If an operator needs to allow RSO domains
+// as primary hostnames, override via SITE_DETECTION_IGNORED_SUBDOMAIN_TOKENS (omitting '--').
 const DEFAULT_IGNORED_SUBDOMAIN_TOKENS = ['demo', 'dev', 'stag', 'stg', 'qa', '--', 'sitemap', 'test', 'preview', 'cm-verify', 'owa', 'mail', 'ssl', 'secure', 'publish', 'prod', 'proxy', 'muat', 'edge', 'eds', 'aem'];
 const DEFAULT_IGNORED_DOMAINS = [/helix3.dev/, /fastly.net/, /ngrok-free.app/, /oastify.co/, /fastly-aem.page/, /findmy.media/, /impactful-[0-9]+\.site/, /shuyi-guan/, /adobevipthankyou/, /alshayauat/, /caseytokarchuk/, /\.pfizer$/, /adobeaemcloud.com/, /sabya.xyz/, /magento.com/, /appsechcl.com/, /workers.dev/, /livereview.site/, /localhost/, /lean.delivery/, /kestrelone/];
 
@@ -46,6 +49,20 @@ function isValidCandidate(domain, config, log) {
   }
 
   const subdomain = url.hostname.split('.').slice(0, -2).join('.');
+
+  // Apex domains (e.g. "adobe.com") produce an empty subdomain string.
+  // These are rejected — they are unlikely to be customer-controlled EDS sites.
+  if (!subdomain) {
+    log.info(`Rejected ${domain} because it is an apex domain`);
+    return false;
+  }
+
+  // www-only subdomains (e.g. "www.adobe.com") normalise to an apex baseURL after
+  // composeBaseURL strips the www. prefix. Reject them for the same reason as apex domains.
+  if (subdomain === 'www') {
+    log.info(`Rejected ${domain} because it is a www-only alias of an apex domain`);
+    return false;
+  }
 
   if (config.ignoredSubdomains.some((token) => subdomain.includes(token))) {
     log.info(`Rejected ${domain} because it contains an ignored subdomain`);
@@ -78,21 +95,20 @@ async function isHelixSite(url) {
   let resp;
   try {
     resp = await fetch(url);
+    const dom = await resp.text();
+    const containsHelixDom = /<header><\/header>\s*<main>\s*<div>/.test(dom);
+
+    if (!containsHelixDom) {
+      return {
+        isHelix: false,
+        reason: `DOM is not in Helix format. Status: ${resp.status}`,
+      };
+    }
+
+    return { isHelix: true };
   } catch (e) {
     return { isHelix: false, reason: `Cannot fetch the site: ${e.message}` };
   }
-
-  const dom = await resp.text();
-  const containsHelixDom = /<header><\/header>\s*<main>\s*<div>/.test(dom);
-
-  if (!containsHelixDom) {
-    return {
-      isHelix: false,
-      reason: `DOM is not in Helix format. Status: ${resp.status}`,
-    };
-  }
-
-  return { isHelix: true };
 }
 
 /**
@@ -127,7 +143,7 @@ async function fetchHlxConfig(rso, hlxAdminToken, log) {
     });
 
     if (response.status === 200) {
-      return response.json();
+      return await response.json();
     }
     if (response.status === 404) {
       log.debug(`No hlx config found for ${owner}/${site}`);
@@ -262,8 +278,13 @@ export async function siteDetectionRunner(message, context) {
 
   const { jobId } = message;
 
+  if (!hasText(jobId)) {
+    log.error('[site-detection] Received message without jobId, skipping');
+    return { auditResult: { error: 'Missing jobId' }, fullAuditRef: 'site-detection' };
+  }
+
   // Load the job to get the payload
-  let job = await AsyncJobEntity.findById(jobId);
+  const job = await AsyncJobEntity.findById(jobId);
 
   if (!job) {
     log.error(`[site-detection] Job ${jobId} not found`);
@@ -367,7 +388,6 @@ export async function siteDetectionRunner(message, context) {
     }
 
     // Step 8: Mark job COMPLETED
-    job = await AsyncJobEntity.findById(jobId);
     job.setStatus(AsyncJob.Status.COMPLETED);
     job.setResult({ action: 'created', domain, baseURL });
     job.setEndedAt(new Date().toISOString());
