@@ -77,6 +77,8 @@ import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 import llmErrorPages from './llm-error-pages/handler.js';
 import llmErrorPagesGuidance from './llm-error-pages/guidance-handler.js';
 import paidTrafficAnalysis from './paid-traffic-analysis/handler.js';
+import emailTrafficAnalysis from './email-traffic-analysis/handler.js';
+import emailTrafficAnalysisGuidance from './email-traffic-analysis/guidance-handler.js';
 import pageTypeDetection from './page-type/handler.js';
 import pageTypeGuidance from './page-type/guidance-handler.js';
 import hreflang from './hreflang/handler.js';
@@ -134,6 +136,7 @@ const HANDLERS = {
   paid,
   'no-cta-above-the-fold': noCTAAboveTheFold,
   'paid-traffic-analysis': paidTrafficAnalysis,
+  'email-traffic-analysis': emailTrafficAnalysis,
   'page-type-detection': pageTypeDetection,
   canonical,
   'broken-backlinks': backlinks,
@@ -152,8 +155,7 @@ const HANDLERS = {
   'guidance:broken-links': brokenLinksGuidance,
   'guidance:metatags': metatagsGuidance,
   'alt-text': imageAltText,
-  'guidance:high-form-views-low-conversions':
-    highFormViewsLowConversionsGuidance,
+  'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
   'guidance:forms-a11y': formAccessibilityGuidance,
@@ -167,6 +169,7 @@ const HANDLERS = {
   'guidance:paid-ad-intent-gap': paidKeywordOptimizerGuidance,
   'guidance:no-cta-above-the-fold': noCTAAboveTheFoldGuidance,
   'guidance:traffic-analysis': paidTrafficAnalysisGuidance,
+  'guidance:email-traffic-analysis': emailTrafficAnalysisGuidance,
   'detect:page-types': pageTypeGuidance,
   'guidance:missing-alt-text': missingAltTextGuidance,
   'guidance:readability': unifiedReadabilityGuidance, // unified for both preflight and opportunities
@@ -276,14 +279,9 @@ async function run(message, context) {
     message = normalizeDrsMessage(message);
   }
 
-  const {
-    type, siteId, jobId,
-  } = message;
+  const { type, siteId, jobId } = message;
 
-  log.info(
-    `Received ${type} audit request for siteId=${siteId}, jobId=${jobId || 'none'}`,
-    message,
-  );
+  log.info(`Received ${type} audit request for siteId=${siteId}, jobId=${jobId || 'none'}`, message);
 
   const handler = HANDLERS[type];
   if (!handler) {
