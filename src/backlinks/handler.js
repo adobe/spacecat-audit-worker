@@ -162,6 +162,51 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
   const { log } = context;
   const siteId = site.getId();
 
+  // DEMO HACK: Skip Ahrefs API call and return hardcoded broken backlinks
+  const DEMO_SITE_ID = '9763ba2c-d78c-415d-8561-3e33ee6c1954';
+  if (siteId === DEMO_SITE_ID) {
+    const base = 'https://main--wknd-backlink-test-sharepoint-external--mimchome.aem.live';
+    log.info(`[broken-backlinks] DEMO HACK: Returning fake broken backlinks for site ${siteId}`);
+    return {
+      fullAuditRef: auditUrl,
+      auditResult: {
+        finalUrl: auditUrl,
+        brokenBacklinks: [
+          {
+            title: 'Outdoor Gear Guide 2024',
+            url_from: 'https://adventureblog.com/gear-reviews/top-picks',
+            url_to: `${base}/something-non-existent`,
+            traffic_domain: 8200,
+          },
+          {
+            title: 'Best Hiking Destinations',
+            url_from: 'https://trailmagazine.com/destinations/featured',
+            url_to: `${base}/and-another`,
+            traffic_domain: 6100,
+          },
+          {
+            title: 'Travel Essentials Checklist',
+            url_from: 'https://packingpro.com/checklists/adventure-travel',
+            url_to: `${base}/old-camping-page`,
+            traffic_domain: 4500,
+          },
+          {
+            title: 'Weekend Getaway Ideas',
+            url_from: 'https://weekendwanderer.net/ideas/spring-2024',
+            url_to: `${base}/removed-promo-offer`,
+            traffic_domain: 3200,
+          },
+          {
+            title: 'Sustainable Travel Tips',
+            url_from: 'https://greentravel.org/resources/eco-friendly',
+            url_to: `${base}/discontinued-eco-line`,
+            traffic_domain: 2800,
+          },
+        ],
+      },
+    };
+  }
+
   try {
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
     const {
