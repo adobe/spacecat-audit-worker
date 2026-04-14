@@ -7655,6 +7655,32 @@ describe('Prerender Audit', () => {
       expect(saveManyStub).to.have.been.calledOnceWith([deployedSuggestion]);
     });
 
+    it('should not set coveredByDomainWide on a suggestion that already has edgeDeployed set', async () => {
+      const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
+      // This suggestion's URL matches the deployed set but it already has edgeDeployed — should be excluded
+      const alreadyDeployedSuggestion = buildSuggestionWithSetData('s-already-deployed', { url: 'https://example.com/page1', edgeDeployed: 1234567890 });
+      // This suggestion matches and has no edgeDeployed — should be covered
+      const normalSuggestion = buildSuggestionWithSetData('s-normal', { url: 'https://example.com/page1' });
+
+      const saveManyStub = sandbox.stub().resolves();
+      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([alreadyDeployedSuggestion, normalSuggestion]);
+
+      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
+      const context = buildContext(sandbox, {
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
+        },
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(alreadyDeployedSuggestion.getData().coveredByDomainWide).to.be.undefined;
+      expect(normalSuggestion.getData().coveredByDomainWide).to.equal('dw-1');
+      expect(saveManyStub).to.have.been.calledOnceWith([normalSuggestion]);
+    });
+
     it('should skip saveMany when NEW suggestions exist but none match deployed URLs', async () => {
       const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
       // Suggestion URL does not match the scraped URL ('https://example.com/page1')

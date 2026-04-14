@@ -134,7 +134,8 @@ async function markDeployedUrlSuggestionsAsCovered(
   }
 
   const suggestionsToCover = deployedAtEdgeUrls?.size > 0
-    ? newSuggestions.filter((s) => deployedAtEdgeUrls.has(s.getData()?.url))
+    ? newSuggestions.filter((s) => deployedAtEdgeUrls.has(s.getData()?.url)
+      && !s.getData()?.edgeDeployed)
     : [];
 
   if (suggestionsToCover.length === 0) {
