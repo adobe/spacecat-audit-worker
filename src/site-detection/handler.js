@@ -160,9 +160,15 @@ async function extractHlxConfig(domain, hlxVersion, hlxAdminToken, log) {
     const config = await fetchHlxConfig(rso, hlxAdminToken, log);
     if (isObject(config)) {
       const { cdn, code, content } = config;
-      if (isObject(cdn)) { hlxConfig.cdn = cdn; }
-      if (isObject(code)) { hlxConfig.code = code; }
-      if (isObject(content)) { hlxConfig.content = content; }
+      if (isObject(cdn)) {
+        hlxConfig.cdn = cdn;
+      }
+      if (isObject(code)) {
+        hlxConfig.code = code;
+      }
+      if (isObject(content)) {
+        hlxConfig.content = content;
+      }
       hlxConfig.hlxVersion = 5;
     }
   }
@@ -173,13 +179,13 @@ async function extractHlxConfig(domain, hlxVersion, hlxAdminToken, log) {
 /**
  * Builds the Slack blocks for the site discovery notification.
  */
-function buildSlackBlocks(baseURL, hlxConfig) {
+function buildSlackBlocks(baseURL, hlxConfig, channel) {
   const rso = hlxConfig?.rso;
   const rsoRef = rso?.ref ? `, _ref:_ ${rso.ref}` : '';
   const rsoText = rso?.owner ? ` (_owner:_ *${rso.owner}/${rso.site}*${rsoRef})` : '';
 
   return {
-    channel: null, // set by caller
+    channel,
     text: `New site discovered: ${baseURL}`,
     blocks: [
       {
@@ -236,10 +242,15 @@ export async function siteDetectionRunner(message, context) {
   } = env;
 
   const ignoredDomains = rawIgnoredDomains
-    ? rawIgnoredDomains.split(',').map((d) => {
+    ? rawIgnoredDomains.split(',').flatMap((d) => {
       const t = d.trim();
       const body = t.startsWith('/') && t.endsWith('/') ? t.slice(1, -1) : t;
-      return new RegExp(body);
+      try {
+        return [new RegExp(body)];
+      } catch (e) {
+        log.warn(`[site-detection] Skipping invalid regex pattern "${t}": ${e.message}`);
+        return [];
+      }
     })
     : DEFAULT_IGNORED_DOMAINS;
 
@@ -345,8 +356,7 @@ export async function siteDetectionRunner(message, context) {
     if (hasText(slackChannel)) {
       try {
         const slackClient = BaseSlackClient.createFrom(context, SLACK_TARGETS.WORKSPACE_INTERNAL);
-        const messagePayload = buildSlackBlocks(baseURL, hlxConfig);
-        messagePayload.channel = slackChannel;
+        const messagePayload = buildSlackBlocks(baseURL, hlxConfig, slackChannel);
         await slackClient.postMessage(messagePayload);
         log.info(`[site-detection] Job ${jobId}: Slack notification sent for ${baseURL}`);
       } catch (e) {
