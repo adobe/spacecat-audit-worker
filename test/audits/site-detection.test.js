@@ -130,6 +130,15 @@ describe('[site-detection] runner tests', function () {
     expect(result.auditResult.skipped).to.be.true;
   });
 
+  it('marks job FAILED when metadata is null (null coalescing branch)', async () => {
+    mockJob.getMetadata.returns(null);
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(mockJob.setError).to.have.been.calledWith(sinon.match({ code: 'INVALID_PAYLOAD' }));
+    expect(result.auditResult.error).to.equal('Missing domain');
+  });
+
   it('marks job FAILED when domain is missing from payload', async () => {
     mockJob.getMetadata.returns({ payload: {} });
 
@@ -142,6 +151,15 @@ describe('[site-detection] runner tests', function () {
   });
 
   // ── Domain validation ──────────────────────────────────────────────────────
+
+  it('accepts domain already prefixed with https:// (startsWith branch)', async () => {
+    mockJob.getMetadata.returns({ payload: { domain: 'https://foo.example.com', hlxVersion: null } });
+    fetchStub.resolves(makeSiteResponse(HELIX_DOM));
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(result.auditResult.action).to.equal('created');
+  });
 
   it('rejects domain containing a path segment', async () => {
     mockJob.getMetadata.returns({ payload: { domain: 'foo.example.com/path' } });
