@@ -3945,7 +3945,7 @@ describe('Prerender Audit', () => {
         await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
 
         expect(context.log.warn).to.have.been.calledWith(
-          sinon.match(/Unexpected non-NEW suggestions with edgeDeployed set/),
+          sinon.match(/Unexpected non-NEW suggestions with edgeDeployed set \(post-sync\)/),
         );
       });
     });
