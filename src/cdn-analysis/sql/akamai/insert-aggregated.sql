@@ -24,7 +24,7 @@ WHERE year  = '{{year}}'
   {{hourFilter}}
 
   -- match known LLM-related user-agents
-  AND REGEXP_LIKE(ua, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot|Perplexity|Claude|Anthropic|Gemini|Copilot|MistralAI-User|Google-NotebookLM|Google-?Agent|Google-Extended|Googlebot|bingbot|Amzn-User|^Google$)')
+  AND REGEXP_LIKE(ua, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot|Perplexity|Claude|Anthropic|Gemini|Copilot|MistralAI-User|Google-NotebookLM|Google-Agent|Google-Extended|Googlebot|bingbot|Amzn-User|^Google$)')
 
   -- only count HTML/PDF/Markdown responses, plus .md paths, robots.txt and sitemaps
   AND (

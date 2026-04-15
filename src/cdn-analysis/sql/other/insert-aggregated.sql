@@ -21,7 +21,7 @@ WHERE year  = '{{year}}'
   AND day   = '{{day}}'
   
    -- match known LLM-related user-agents
-  AND REGEXP_LIKE(request_user_agent, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot|Perplexity|Claude|Anthropic|Gemini|Copilot|MistralAI-User|Google-NotebookLM|Google-?Agent|Google-Extended|Googlebot|bingbot|Amzn-User|^Google$)')
+  AND REGEXP_LIKE(request_user_agent, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot|Perplexity|Claude|Anthropic|Gemini|Copilot|MistralAI-User|Google-NotebookLM|Google-Agent|Google-Extended|Googlebot|bingbot|Amzn-User|^Google$)')
 
   -- prefer response content type when present, otherwise fall back to URL heuristics
   AND (

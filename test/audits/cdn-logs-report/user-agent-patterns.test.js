@@ -43,7 +43,7 @@ describe('User Agent Patterns', () => {
       expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Google$');
       expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Gemini-Deep-Research');
       expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Google-NotebookLM');
-      expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Google-?Agent');
+      expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Google-Agent');
 
       // Google searchbots
       expect(PROVIDER_USER_AGENT_PATTERNS).to.have.property('google');
@@ -72,7 +72,7 @@ describe('User Agent Patterns', () => {
       // Should include AI agents (googleai, not google)
       expect(filter).to.include('ChatGPT');
       expect(filter).to.include('Perplexity');
-      expect(filter).to.include('Google-?Agent');
+      expect(filter).to.include('Google-Agent');
       expect(filter).to.include('Gemini-Deep-Research');
       expect(filter).to.include('Google-NotebookLM');
       expect(filter).to.include('Claude');
