@@ -31,6 +31,7 @@ describe('User Agent Patterns', () => {
       expect(PROVIDER_USER_AGENT_PATTERNS).to.have.property('chatgpt');
       expect(PROVIDER_USER_AGENT_PATTERNS).to.have.property('perplexity');
       expect(PROVIDER_USER_AGENT_PATTERNS.chatgpt).to.include('ChatGPT');
+      expect(PROVIDER_USER_AGENT_PATTERNS.chatgpt).to.include('OAI-AdsBot');
       expect(PROVIDER_USER_AGENT_PATTERNS.perplexity).to.include('Perplexity');
     });
 
@@ -85,8 +86,10 @@ describe('User Agent Patterns', () => {
 
       expect(sql).to.include('CASE');
       expect(sql).to.include('Web search crawlers');
+      expect(sql).to.include('Ads bots');
       expect(sql).to.include('Chatbots');
       expect(sql).to.include('gptbot');
+      expect(sql).to.include('oai-adsbot');
       expect(sql).to.include('perplexity');
       expect(sql).to.include('Search Bots');
       expect(sql.toLowerCase()).to.include('googlebot');
@@ -103,6 +106,7 @@ describe('User Agent Patterns', () => {
       expect(sql).to.include('CASE');
       expect(sql).to.include('ChatGPT-User');
       expect(sql).to.include('GPTBot');
+      expect(sql).to.include('OAI-AdsBot');
       expect(sql).to.include('PerplexityBot');
       expect(sql).to.include('GoogleBot');
       expect(sql).to.include('BingBot');
@@ -115,6 +119,7 @@ describe('User Agent Patterns', () => {
       const { inferProviderFromUserAgent } = userAgentPatterns;
 
       expect(inferProviderFromUserAgent('ChatGPT-User/1.0')).to.equal('ChatGPT');
+      expect(inferProviderFromUserAgent('OAI-AdsBot/1.0')).to.equal('ChatGPT');
       expect(inferProviderFromUserAgent('PerplexityBot')).to.equal('Perplexity');
       expect(inferProviderFromUserAgent('ClaudeBot')).to.equal('Anthropic');
       expect(inferProviderFromUserAgent('Anthropic-SearchBot')).to.equal('Anthropic');
