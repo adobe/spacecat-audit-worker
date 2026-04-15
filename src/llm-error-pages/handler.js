@@ -143,20 +143,6 @@ export async function submitForScraping(context) {
 
 /**
  * Step 3: Run audit, write Opportunities to DB, and send 404s to Mystique.
- *
- * Replaces the legacy Excel/SharePoint output with DB-backed Opportunities and
- * Suggestions. Three Opportunities are created per audit run — one per HTTP status
- * code bucket (404, 403, 5xx). Each error URL becomes one Suggestion under the
- * matching Opportunity.
- *
- * Rolling 4-week data window: URLs that reappear across weeks accumulate hit counts
- * in a single Suggestion (no duplicate records). Suggestions not seen in any of the
- * last 4 weeks are marked OUTDATED. AI-enriched fields (suggestedUrls, aiRationale,
- * confidenceScore) written by guidance-handler.js are preserved when the same URL
- * reappears in a later week. Suggestions are ranked by current-week hit count —
- * decay-weighted ranking across weeks is a planned follow-up.
- *
- * Supports multiple weeks via auditContext.weekOffset for backfill.
  */
 /* eslint-disable no-await-in-loop */
 export async function runAuditAndSendToMystique(context) {
@@ -308,11 +294,6 @@ export async function runAuditAndSendToMystique(context) {
 
             // 4-week retention cleanup: OUTDATED Suggestions whose URL has not been seen
             // in any of the last RETENTION_WEEKS weeks.
-            //
-            // syncSuggestions updated periodIdentifier in-memory for every URL that
-            // reappeared, so existingSuggestions already reflects the current state.
-            // New Suggestions added this week (by addSuggestions) are not in this list
-            // and are therefore not at risk of false-outdating here.
             const toOutdate = existingSuggestions.filter((s) => {
               const lastSeen = s.getData()?.periodIdentifier;
               if (!lastSeen) {
