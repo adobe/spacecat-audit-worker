@@ -52,14 +52,6 @@ const RETENTION_WEEKS = 4;
 const RETENTION_MS = RETENTION_WEEKS * 7 * 24 * 60 * 60 * 1000;
 
 /**
- * Rolling history window stored in each Suggestion's weeklyData array.
- * Entries older than this are dropped on each merge to bound storage.
- * ~3 months of weekly audit runs at 7 days per week.
- */
-const HISTORY_WEEKS = 13;
-const HISTORY_MS = HISTORY_WEEKS * 7 * 24 * 60 * 60 * 1000;
-
-/**
  * Step 1: Import top pages and submit for scraping
  */
 export async function importTopPagesAndScrape(context) {
@@ -161,7 +153,8 @@ export async function submitForScraping(context) {
  * in a single Suggestion (no duplicate records). Suggestions not seen in any of the
  * last 4 weeks are marked OUTDATED. AI-enriched fields (suggestedUrls, aiRationale,
  * confidenceScore) written by guidance-handler.js are preserved when the same URL
- * reappears in a later week.
+ * reappears in a later week. Suggestions are ranked by current-week hit count —
+ * decay-weighted ranking across weeks is a planned follow-up.
  *
  * Supports multiple weeks via auditContext.weekOffset for backfill.
  */
@@ -275,63 +268,26 @@ export async function runAuditAndSendToMystique(context) {
               log,
               existingSuggestions,
               scrapedUrlsSet: new Set(groupedErrors.map((e) => e.url)),
-              mergeDataFunction: (existingData, newDataItem) => {
-                // Build this week's entry for the rolling history array.
-                const newWeekEntry = {
-                  periodIdentifier,
-                  hitCount: newDataItem.hitCount,
-                  agentTypes: newDataItem.agentTypes,
-                  avgTtfb: newDataItem.avgTtfb,
-                };
-
-                // Remove any same-week entry first so Monday's 2-week runs are
-                // idempotent — the second pass for the same periodIdentifier must
-                // not create a duplicate entry.
-                const existingWeeklyData = existingData.weeklyData || [];
-                const deduplicated = existingWeeklyData.filter(
-                  (w) => w.periodIdentifier !== periodIdentifier,
-                );
-
-                // Age-cap: drop entries older than HISTORY_WEEKS so the array
-                // stays bounded regardless of how long the URL keeps erroring.
-                // Using parsePeriodIdentifier (imported from utils.js).
-                const historyCutoff = new Date(Date.now() - HISTORY_MS);
-                const ageCapped = deduplicated.filter(
-                  (w) => parsePeriodIdentifier(w.periodIdentifier) >= historyCutoff,
-                );
-
-                // Count-cap as a safety net for backfill runs or any edge case
-                // where more than HISTORY_WEEKS entries slip through the age filter.
-                // Keep at most (HISTORY_WEEKS - 1) existing entries so the new entry
-                // always fits within the HISTORY_WEEKS total limit.
-                const trimmed = ageCapped.slice(-(HISTORY_WEEKS - 1));
-
-                const weeklyData = [...trimmed, newWeekEntry];
-
-                return {
-                  ...existingData,
-                  // Refresh top-level fields with current week's Athena metrics.
-                  // These drive rank and the 4-week retention cleanup.
-                  hitCount: newDataItem.hitCount,
-                  agentTypes: newDataItem.agentTypes,
-                  avgTtfb: newDataItem.avgTtfb,
-                  countryCode: newDataItem.countryCode,
-                  product: newDataItem.product,
-                  category: newDataItem.category,
-                  periodIdentifier,
-                  // Rolling ~3-month history (capped at HISTORY_WEEKS entries).
-                  // Supplementary — used by the UI to show weekly trends per URL.
-                  weeklyData,
-                  // Preserve AI-enriched fields from Mystique if already present.
-                  // Avoids redundant Mystique calls when the same URL reappears in a
-                  // later week — guidance-handler.js checks these fields before re-queuing.
-                  ...(existingData.suggestedUrls && { suggestedUrls: existingData.suggestedUrls }),
-                  ...(existingData.aiRationale && { aiRationale: existingData.aiRationale }),
-                  ...(existingData.confidenceScore !== undefined && {
-                    confidenceScore: existingData.confidenceScore,
-                  }),
-                };
-              },
+              mergeDataFunction: (existingData, newDataItem) => ({
+                ...existingData,
+                // Refresh top-level fields with current week's Athena metrics.
+                // These drive rank and the 4-week retention cleanup.
+                hitCount: newDataItem.hitCount,
+                agentTypes: newDataItem.agentTypes,
+                avgTtfb: newDataItem.avgTtfb,
+                countryCode: newDataItem.countryCode,
+                product: newDataItem.product,
+                category: newDataItem.category,
+                periodIdentifier,
+                // Preserve AI-enriched fields from Mystique if already present.
+                // Avoids redundant Mystique calls when the same URL reappears in a
+                // later week — guidance-handler.js checks these fields before re-queuing.
+                ...(existingData.suggestedUrls && { suggestedUrls: existingData.suggestedUrls }),
+                ...(existingData.aiRationale && { aiRationale: existingData.aiRationale }),
+                ...(existingData.confidenceScore !== undefined && {
+                  confidenceScore: existingData.confidenceScore,
+                }),
+              }),
               mapNewSuggestion: (error) => ({
                 opportunityId: opportunity.getId(),
                 type: suggestionType,
@@ -346,13 +302,6 @@ export async function runAuditAndSendToMystique(context) {
                   product: error.product,
                   category: error.category,
                   periodIdentifier,
-                  // Seed the rolling history with the first week's data.
-                  weeklyData: [{
-                    periodIdentifier,
-                    hitCount: error.hitCount,
-                    agentTypes: error.agentTypes,
-                    avgTtfb: error.avgTtfb,
-                  }],
                 },
               }),
             });

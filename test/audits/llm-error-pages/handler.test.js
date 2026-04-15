@@ -941,14 +941,7 @@ describe('LLM Error Pages Handler', function () {
       expect(suggestion.data.product).to.equal('Blog');
       expect(suggestion.data.category).to.equal('Tech');
       expect(suggestion.data.periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
-
-      // weeklyData seeded with one entry matching the current week
-      expect(suggestion.data.weeklyData).to.be.an('array').with.lengthOf(1);
-      const [firstEntry] = suggestion.data.weeklyData;
-      expect(firstEntry.hitCount).to.equal(42);
-      expect(firstEntry.agentTypes).to.deep.equal(['ChatGPT', 'Perplexity']);
-      expect(firstEntry.avgTtfb).to.equal(180);
-      expect(firstEntry.periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
+      expect(suggestion.data.weeklyData).to.be.undefined;
     });
 
     it('should skip suggestions already marked OUTDATED/FIXED in the 4-week cleanup', async () => {
@@ -1072,13 +1065,7 @@ describe('LLM Error Pages Handler', function () {
 
       // periodIdentifier stamped
       expect(merged.periodIdentifier).to.equal('w34-2025');
-
-      // weeklyData grows by one entry for this week
-      expect(merged.weeklyData).to.be.an('array');
-      expect(merged.weeklyData.length).to.be.greaterThan(0);
-      const latestEntry = merged.weeklyData[merged.weeklyData.length - 1];
-      expect(latestEntry.periodIdentifier).to.equal('w34-2025');
-      expect(latestEntry.hitCount).to.equal(12);
+      expect(merged.weeklyData).to.be.undefined;
     });
 
     it('should not carry forward AI fields that are absent from existingData', async () => {
@@ -1108,66 +1095,7 @@ describe('LLM Error Pages Handler', function () {
       expect(merged.suggestedUrls).to.be.undefined;
       expect(merged.aiRationale).to.be.undefined;
       expect(merged.confidenceScore).to.be.undefined;
-
-      // weeklyData initialises from empty when existingData has no weeklyData
-      expect(merged.weeklyData).to.be.an('array').with.lengthOf(1);
-    });
-
-    it('should cap weeklyData at 13 entries dropping the oldest when over the history window', async () => {
-      await runAuditAndSendToMystique(context);
-      const { mergeDataFunction } = mockSyncSuggestions.args[0][0];
-
-      // Seed existingData with 14 recent entries — all within the last 13 weeks
-      // so that the age-cap does NOT drop them, only the final slice to 13 does.
-      // Use recent week identifiers so parsePeriodIdentifier returns a fresh date.
-      const recentWeeks = Array.from({ length: 14 }, (_, i) => ({
-        periodIdentifier: `w${String(i + 1).padStart(2, '0')}-2099`, // far future → always recent
-        hitCount: i + 1,
-        agentTypes: ['Bot'],
-        avgTtfb: 100,
-      }));
-
-      const existingData = {
-        url: '/page1',
-        hitCount: 14,
-        agentTypes: ['Bot'],
-        periodIdentifier: 'w14-2099',
-        weeklyData: recentWeeks,
-      };
-      const newDataItem = {
-        url: '/page1', hitCount: 99, agentTypes: ['ChatGPT'],
-        avgTtfb: 200, countryCode: 'US', product: 'P', category: 'C',
-      };
-
-      const merged = mergeDataFunction(existingData, newDataItem);
-
-      // Should never exceed 13 entries (HISTORY_WEEKS cap)
-      expect(merged.weeklyData).to.have.lengthOf(13);
-      // The newest entry is the one just merged
-      const last = merged.weeklyData[merged.weeklyData.length - 1];
-      expect(last.hitCount).to.equal(99);
-    });
-
-    it('should not duplicate a weeklyData entry when the same week is processed twice (idempotent)', async () => {
-      await runAuditAndSendToMystique(context);
-      const { mergeDataFunction } = mockSyncSuggestions.args[0][0];
-
-      // existingData already has an entry for the current week (w34-2025 from beforeEach mock)
-      const existingData = {
-        url: '/page1', hitCount: 5, agentTypes: ['Claude'],
-        periodIdentifier: 'w34-2025',
-        weeklyData: [{ periodIdentifier: 'w34-2025', hitCount: 5, agentTypes: ['Claude'], avgTtfb: 100 }],
-      };
-      const newDataItem = {
-        url: '/page1', hitCount: 12, agentTypes: ['ChatGPT'],
-        avgTtfb: 200, countryCode: 'US', product: 'P', category: 'C',
-      };
-
-      const merged = mergeDataFunction(existingData, newDataItem);
-
-      // Still only one entry — the old w34-2025 was replaced, not duplicated
-      expect(merged.weeklyData).to.have.lengthOf(1);
-      expect(merged.weeklyData[0].hitCount).to.equal(12);
+      expect(merged.weeklyData).to.be.undefined;
     });
   });
 });
@@ -1639,7 +1567,6 @@ describe('LLM Error Pages Handler (isolated)', function () {
       suggestedUrls: ['https://example.com/alt'],
       aiRationale: 'Great match',
       confidenceScore: 0.9,
-      weeklyData: [{ periodIdentifier: 'w14-2026', hitCount: 5, agentTypes: ['Claude'], avgTtfb: 120 }],
     };
     const newItem = {
       url: '/a', hitCount: 42, agentTypes: ['ChatGPT'],
@@ -1660,12 +1587,8 @@ describe('LLM Error Pages Handler (isolated)', function () {
     expect(merged.aiRationale).to.equal('Great match');
     expect(merged.confidenceScore).to.equal(0.9);
 
-    // weeklyData has both the old w14 entry and the new w15 entry
-    expect(merged.weeklyData).to.have.lengthOf(2);
-    expect(merged.weeklyData[0].periodIdentifier).to.equal('w14-2026');
-    expect(merged.weeklyData[0].hitCount).to.equal(5);
-    expect(merged.weeklyData[1].periodIdentifier).to.equal('w15-2026');
-    expect(merged.weeklyData[1].hitCount).to.equal(42);
+    // No weeklyData — history array removed per design
+    expect(merged.weeklyData).to.be.undefined;
 
     sandbox.restore();
   });
