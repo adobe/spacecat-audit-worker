@@ -1,3 +1,10 @@
+# [1.415.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.9...v1.415.0) (2026-04-15)
+
+
+### Features
+
+* **llmo:** add OAI-AdsBot and Google-Agent classification ([#2390](https://github.com/adobe/spacecat-audit-worker/issues/2390)) ([8df40d6](https://github.com/adobe/spacecat-audit-worker/commit/8df40d6bea639a572da1d86875c0f1ca3d6d0769))
+
 ## [1.414.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.8...v1.414.9) (2026-04-15)
 
 
