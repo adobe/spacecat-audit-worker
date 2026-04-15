@@ -33,10 +33,14 @@ import {
   fetchWithHeadFallback,
   getBaseUrlPagesFromSitemaps,
   applyPageUrlProbeSampling,
-  MAX_PAGE_URLS_PROBED,
+  FAST_MAX_PAGE_URLS_PROBED,
+  PAGE_URL_TIMEOUT_MS,
+  slicePageUrlsForSlowProbeSampling,
   SITEMAP_XML_BATCH_SIZE,
-  PAGE_URL_BATCH_SIZE,
-  PAGE_URL_BATCH_DELAY_MS,
+  FAST_PAGE_URL_BATCH_SIZE,
+  FAST_PAGE_URL_BATCH_DELAY_MS,
+  SLOW_PAGE_URL_BATCH_SIZE,
+  SLOW_PAGE_URL_BATCH_DELAY_MS,
 } from '../../src/sitemap/common.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
@@ -775,6 +779,302 @@ describe('Sitemap Audit', () => {
       expect(result.success).to.equal(true);
       // The URLs from /en/ca and /fr should be filtered out, not audited
     });
+
+    describe('page URL otherStatus slowdown', () => {
+      const slowBatchOpts = {
+        pageUrlBatchSize: SLOW_PAGE_URL_BATCH_SIZE,
+        pageUrlBatchDelayMs: SLOW_PAGE_URL_BATCH_DELAY_MS,
+      };
+
+      it('re-probes with slow batching when otherStatus share is >= 60% with at least 10 URLs', async () => {
+        const esmock = (await import('esmock')).default;
+        const tenUrls = Array.from({ length: 10 }, (_, i) => `${url}/slow-p${i}`);
+        const sitemapA = `${url}/slow-a.xml`;
+        const getSitemapUrlsStub = sandbox.stub().resolves({
+          success: true,
+          reasons: [{ value: 'ok' }],
+          details: {
+            extractedPaths: { [sitemapA]: tenUrls },
+            filteredSitemapUrls: [],
+          },
+        });
+        const filterStub = sandbox.stub();
+        filterStub
+          .onFirstCall()
+          .resolves({
+            ok: ['a', 'b', 'c', 'd'],
+            notOk: [],
+            networkErrors: [],
+            otherStatusCodes: Array.from({ length: 6 }, (_, i) => ({ url: `o${i}`, statusCode: 503 })),
+          });
+        filterStub.onSecondCall().resolves({
+          ok: [tenUrls[0]],
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: [],
+        });
+
+        const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
+          '../../src/sitemap/common.js': {
+            applyPageUrlProbeSampling,
+            ERROR_CODES,
+            filterValidUrls: filterStub,
+            getSitemapUrls: getSitemapUrlsStub,
+            PAGE_URL_TIMEOUT_MS,
+            slicePageUrlsForSlowProbeSampling,
+            SLOW_PAGE_URL_BATCH_DELAY_MS,
+            SLOW_PAGE_URL_BATCH_SIZE,
+          },
+        });
+
+        const result = await findSitemapMocked(url, { info: () => {}, debug: () => {} });
+        expect(result.success).to.equal(true);
+        expect(filterStub).to.have.been.calledTwice;
+        expect(filterStub.firstCall.args[3]).to.equal(null);
+        expect(filterStub.secondCall.args[0]).to.deep.equal([tenUrls[0]]);
+        expect(filterStub.secondCall.args[3]).to.deep.equal(slowBatchOpts);
+      });
+
+      it('logs a warning when otherStatus stays high while already on slow batching', async () => {
+        const esmock = (await import('esmock')).default;
+        const tenUrlsA = Array.from({ length: 10 }, (_, i) => `${url}/w-a${i}`);
+        const hundredUrlsB = Array.from({ length: 100 }, (_, i) => `${url}/w-b${i}`);
+        const sitemapA = `${url}/warn-a.xml`;
+        const sitemapB = `${url}/warn-b.xml`;
+        const getSitemapUrlsStub = sandbox.stub().resolves({
+          success: true,
+          reasons: [{ value: 'ok' }],
+          details: {
+            extractedPaths: {
+              [sitemapA]: tenUrlsA,
+              [sitemapB]: hundredUrlsB,
+            },
+            filteredSitemapUrls: [],
+          },
+        });
+        const heavyOther = {
+          ok: ['a', 'b', 'c', 'd'],
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: Array.from({ length: 6 }, (_, i) => ({ url: `o${i}`, statusCode: 503 })),
+        };
+        const filterStub = sandbox.stub();
+        filterStub.onCall(0).resolves(heavyOther);
+        filterStub.onCall(1).resolves({
+          ok: [tenUrlsA[0]],
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: [],
+        });
+        filterStub.onCall(2).resolves(heavyOther);
+
+        const log = { info: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub(), error: sandbox.stub() };
+
+        const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
+          '../../src/sitemap/common.js': {
+            applyPageUrlProbeSampling,
+            ERROR_CODES,
+            filterValidUrls: filterStub,
+            getSitemapUrls: getSitemapUrlsStub,
+            PAGE_URL_TIMEOUT_MS,
+            slicePageUrlsForSlowProbeSampling,
+            SLOW_PAGE_URL_BATCH_DELAY_MS,
+            SLOW_PAGE_URL_BATCH_SIZE,
+          },
+        });
+
+        await findSitemapMocked(url, log);
+        expect(filterStub).to.have.been.calledThrice;
+        expect(filterStub.secondCall.args[0]).to.deep.equal([tenUrlsA[0]]);
+        expect(filterStub.thirdCall.args[0]).to.have.length(10);
+        expect(filterStub.thirdCall.args[3]).to.deep.equal(slowBatchOpts);
+        const summaryMsg = log.info.getCalls().map((c) => c.args[0]).find((m) => typeof m === 'string' && m.includes('slow page URL probing summary'));
+        expect(summaryMsg).to.include('otherStatus codes: 6 of 11 page URLs probed slowly (55%)');
+        expect(log.warn).to.have.been.calledOnce;
+        expect(log.warn.firstCall.args[0]).to.include(sitemapB);
+        expect(log.warn.firstCall.args[0]).to.include(`'otherStatus' count=6`);
+        expect(log.warn.firstCall.args[0]).to.include('total count=10');
+        expect(log.warn.firstCall.args[0]).to.include('(60%)');
+      });
+
+      it('does not switch to slow when fewer than 10 URLs are probed', async () => {
+        const esmock = (await import('esmock')).default;
+        const nineUrls = Array.from({ length: 9 }, (_, i) => `${url}/nine${i}`);
+        const getSitemapUrlsStub = sandbox.stub().resolves({
+          success: true,
+          reasons: [{ value: 'ok' }],
+          details: {
+            extractedPaths: { [`${url}/nine.xml`]: nineUrls },
+            filteredSitemapUrls: [],
+          },
+        });
+        const filterStub = sandbox.stub().resolves({
+          ok: ['a', 'b', 'c'],
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: Array.from({ length: 6 }, (_, i) => ({ url: `o${i}`, statusCode: 503 })),
+        });
+
+        const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
+          '../../src/sitemap/common.js': {
+            applyPageUrlProbeSampling,
+            ERROR_CODES,
+            filterValidUrls: filterStub,
+            getSitemapUrls: getSitemapUrlsStub,
+            PAGE_URL_TIMEOUT_MS,
+            slicePageUrlsForSlowProbeSampling,
+            SLOW_PAGE_URL_BATCH_DELAY_MS,
+            SLOW_PAGE_URL_BATCH_SIZE,
+          },
+        });
+
+        await findSitemapMocked(url, { info: () => {}, warn: sandbox.stub(), debug: () => {} });
+        expect(filterStub).to.have.been.calledOnce;
+      });
+
+      it('warns after slow re-probe when otherStatus remains >= 60%', async () => {
+        const esmock = (await import('esmock')).default;
+        const hundredUrls = Array.from({ length: 100 }, (_, i) => `${url}/still-bad${i}`);
+        const heavyOther10 = {
+          ok: ['a', 'b', 'c', 'd'],
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: Array.from({ length: 6 }, (_, i) => ({ url: `o${i}`, statusCode: 503 })),
+        };
+        const heavyOther100 = {
+          ok: Array.from({ length: 40 }, (_, i) => `ok${i}`),
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: Array.from({ length: 60 }, (_, i) => ({ url: `o${i}`, statusCode: 503 })),
+        };
+        const getSitemapUrlsStub = sandbox.stub().resolves({
+          success: true,
+          reasons: [{ value: 'ok' }],
+          details: {
+            extractedPaths: { [`${url}/still.xml`]: hundredUrls },
+            filteredSitemapUrls: [],
+          },
+        });
+        const filterStub = sandbox.stub();
+        filterStub.onFirstCall().resolves(heavyOther100);
+        filterStub.onSecondCall().resolves(heavyOther10);
+
+        const log = { info: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub(), error: sandbox.stub() };
+
+        const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
+          '../../src/sitemap/common.js': {
+            applyPageUrlProbeSampling,
+            ERROR_CODES,
+            filterValidUrls: filterStub,
+            getSitemapUrls: getSitemapUrlsStub,
+            PAGE_URL_TIMEOUT_MS,
+            slicePageUrlsForSlowProbeSampling,
+            SLOW_PAGE_URL_BATCH_DELAY_MS,
+            SLOW_PAGE_URL_BATCH_SIZE,
+          },
+        });
+
+        await findSitemapMocked(url, log);
+        expect(filterStub).to.have.been.calledTwice;
+        expect(filterStub.secondCall.args[0]).to.have.length(10);
+        expect(log.warn).to.have.been.calledOnce;
+        const summaryMsg = log.info.getCalls().map((c) => c.args[0]).find((m) => typeof m === 'string' && m.includes('slow page URL probing summary'));
+        expect(summaryMsg).to.include('otherStatus codes: 6 of 10 page URLs probed slowly (60%)');
+      });
+
+      it('slices sampled URLs on later sitemaps after slow mode using SLOW_MAX / FAST_MAX ratio', async () => {
+        const esmock = (await import('esmock')).default;
+        const tenUrlsA = Array.from({ length: 10 }, (_, i) => `${url}/cap-a${i}`);
+        const hundredUrlsB = Array.from({ length: 100 }, (_, i) => `${url}/cap-b${i}`);
+        const sitemapA = `${url}/cap-a.xml`;
+        const sitemapB = `${url}/cap-b.xml`;
+        const getSitemapUrlsStub = sandbox.stub().resolves({
+          success: true,
+          reasons: [{ value: 'ok' }],
+          details: {
+            extractedPaths: {
+              [sitemapA]: tenUrlsA,
+              [sitemapB]: hundredUrlsB,
+            },
+            filteredSitemapUrls: [],
+          },
+        });
+        const heavyOther = {
+          ok: ['a', 'b', 'c', 'd'],
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: Array.from({ length: 6 }, (_, i) => ({ url: `o${i}`, statusCode: 503 })),
+        };
+        const filterStub = sandbox.stub();
+        filterStub.onCall(0).resolves(heavyOther);
+        filterStub.onCall(1).resolves({
+          ok: [tenUrlsA[0]],
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: [],
+        });
+        filterStub.onCall(2).resolves({
+          ok: hundredUrlsB.slice(0, 10),
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: [],
+        });
+
+        const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
+          '../../src/sitemap/common.js': {
+            applyPageUrlProbeSampling,
+            ERROR_CODES,
+            filterValidUrls: filterStub,
+            getSitemapUrls: getSitemapUrlsStub,
+            PAGE_URL_TIMEOUT_MS,
+            slicePageUrlsForSlowProbeSampling,
+            SLOW_PAGE_URL_BATCH_DELAY_MS,
+            SLOW_PAGE_URL_BATCH_SIZE,
+          },
+        });
+
+        await findSitemapMocked(url, { info: () => {}, warn: sandbox.stub(), debug: () => {} });
+        expect(filterStub).to.have.been.calledThrice;
+        expect(filterStub.secondCall.args[0]).to.deep.equal([tenUrlsA[0]]);
+        expect(filterStub.thirdCall.args[0]).to.have.length(10);
+        expect(filterStub.thirdCall.args[0][0]).to.equal(`${url}/cap-b0`);
+      });
+
+      it('does not treat all-empty probe buckets as a slowdown signal when URL count >= 10', async () => {
+        const esmock = (await import('esmock')).default;
+        const tenUrls = Array.from({ length: 10 }, (_, i) => `${url}/empty${i}`);
+        const getSitemapUrlsStub = sandbox.stub().resolves({
+          success: true,
+          reasons: [{ value: 'ok' }],
+          details: {
+            extractedPaths: { [`${url}/empty.xml`]: tenUrls },
+            filteredSitemapUrls: [],
+          },
+        });
+        const filterStub = sandbox.stub().resolves({
+          ok: [],
+          notOk: [],
+          networkErrors: [],
+          otherStatusCodes: [],
+        });
+
+        const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
+          '../../src/sitemap/common.js': {
+            applyPageUrlProbeSampling,
+            ERROR_CODES,
+            filterValidUrls: filterStub,
+            getSitemapUrls: getSitemapUrlsStub,
+            PAGE_URL_TIMEOUT_MS,
+            slicePageUrlsForSlowProbeSampling,
+            SLOW_PAGE_URL_BATCH_DELAY_MS,
+            SLOW_PAGE_URL_BATCH_SIZE,
+          },
+        });
+
+        await findSitemapMocked(url, { info: () => {}, warn: sandbox.stub(), debug: () => {} });
+        expect(filterStub).to.have.been.calledOnce;
+      });
+    });
   });
 
   describe('classifySuggestions', () => {
@@ -1109,7 +1409,7 @@ describe('Sitemap Audit', () => {
 
     /** Mirrors production: proportional floor + at least 1, capped by sitemap size. */
     const expectedQuota = (sitemapUrlCount, grandTotal) => {
-      const floored = Math.floor((MAX_PAGE_URLS_PROBED * sitemapUrlCount) / grandTotal);
+      const floored = Math.floor((FAST_MAX_PAGE_URLS_PROBED * sitemapUrlCount) / grandTotal);
       return Math.min(sitemapUrlCount, Math.max(floored, 1));
     };
 
@@ -1122,7 +1422,7 @@ describe('Sitemap Audit', () => {
       expect(applyPageUrlProbeSampling({ 'https://ex.com/s.xml': undefined })).to.deep.equal({});
     });
 
-    it('probes every URL when total is at or below MAX_PAGE_URLS_PROBED', () => {
+    it('probes every URL when total is at or below FAST_MAX_PAGE_URLS_PROBED', () => {
       const paths = {
         'https://ex.com/a.xml': ['https://ex.com/1', 'https://ex.com/2'],
         'https://ex.com/b.xml': ['https://ex.com/3'],
@@ -1132,7 +1432,7 @@ describe('Sitemap Audit', () => {
       expect(totalProbed(out)).to.equal(3);
     });
 
-    it('allocates proportional floor counts matching 10/20/40/30% split of totals (derived from MAX_PAGE_URLS_PROBED)', () => {
+    it('allocates proportional floor counts matching 10/20/40/30% split of totals (derived from FAST_MAX_PAGE_URLS_PROBED)', () => {
       const mk = (n, prefix) => Array.from({ length: n }, (_, i) => `https://ex.com/${prefix}-${i}`);
       const counts = [1000, 2000, 4000, 3000];
       const keys = [
@@ -1156,22 +1456,22 @@ describe('Sitemap Audit', () => {
       expect(totalProbed(out)).to.equal(expectedLengths.reduce((a, b) => a + b, 0));
     });
 
-    it('keeps only the first MAX_PAGE_URLS_PROBED sitemaps when more sitemaps have URLs', function () {
+    it('keeps only the first FAST_MAX_PAGE_URLS_PROBED sitemaps when more sitemaps have URLs', function () {
       this.timeout(60000);
       const paths = {};
-      for (let i = 0; i < MAX_PAGE_URLS_PROBED + 1; i += 1) {
+      for (let i = 0; i < FAST_MAX_PAGE_URLS_PROBED + 1; i += 1) {
         paths[`https://ex.com/s${i}.xml`] = [`https://ex.com/p${i}`];
       }
       const out = applyPageUrlProbeSampling(paths);
-      expect(Object.keys(out).length).to.equal(MAX_PAGE_URLS_PROBED);
-      expect(totalProbed(out)).to.equal(MAX_PAGE_URLS_PROBED);
+      expect(Object.keys(out).length).to.equal(FAST_MAX_PAGE_URLS_PROBED);
+      expect(totalProbed(out)).to.equal(FAST_MAX_PAGE_URLS_PROBED);
     });
 
-    it('slices a single large sitemap using MAX_PAGE_URLS_PROBED when discovery exceeds the cap', () => {
+    it('slices a single large sitemap using FAST_MAX_PAGE_URLS_PROBED when discovery exceeds the cap', () => {
       const discovered = 10000;
       const urls = Array.from({ length: discovered }, (_, i) => `https://ex.com/u${i}`);
       const out = applyPageUrlProbeSampling({ 'https://ex.com/s.xml': urls });
-      const expectedLen = discovered <= MAX_PAGE_URLS_PROBED
+      const expectedLen = discovered <= FAST_MAX_PAGE_URLS_PROBED
         ? discovered
         : expectedQuota(discovered, discovered);
       expect(out['https://ex.com/s.xml'].length).to.equal(expectedLen);
@@ -1203,7 +1503,7 @@ describe('Sitemap Audit', () => {
       this.timeout(60000);
       const log = { info: sinon.spy() };
       const paths = {};
-      for (let i = 0; i < MAX_PAGE_URLS_PROBED + 1; i += 1) {
+      for (let i = 0; i < FAST_MAX_PAGE_URLS_PROBED + 1; i += 1) {
         paths[`https://ex.com/s${i}.xml`] = [`https://ex.com/p${i}`];
       }
       applyPageUrlProbeSampling(paths, log);
@@ -1211,7 +1511,7 @@ describe('Sitemap Audit', () => {
       expect(messages.some((m) => m.includes('abundance of sitemap'))).to.equal(true);
     });
 
-    it('warns when proportional quotas sum above MAX_PAGE_URLS_PROBED', function () {
+    it('warns when proportional quotas sum above FAST_MAX_PAGE_URLS_PROBED', function () {
       this.timeout(60000);
       const log = { warn: sinon.spy(), info: sinon.spy() };
       const paths = {
@@ -1224,6 +1524,26 @@ describe('Sitemap Audit', () => {
       expect(log.warn.calledOnce).to.equal(true);
       expect(String(log.warn.firstCall.args[0])).to.include('above the ');
       expect(log.info.called).to.equal(true);
+    });
+  });
+
+  describe('slicePageUrlsForSlowProbeSampling', () => {
+    it('returns first floor(n * SLOW_MAX / FAST_MAX) URLs, at least 1 when non-empty', () => {
+      const urls = Array.from({ length: 100 }, (_, i) => `https://ex.com/u${i}`);
+      const out = slicePageUrlsForSlowProbeSampling(urls);
+      expect(out).to.have.length(10);
+      expect(out[0]).to.equal('https://ex.com/u0');
+    });
+
+    it('keeps the single URL when only one was sampled', () => {
+      const out = slicePageUrlsForSlowProbeSampling(['https://ex.com/only']);
+      expect(out).to.deep.equal(['https://ex.com/only']);
+    });
+
+    it('returns empty array for empty or missing input', () => {
+      expect(slicePageUrlsForSlowProbeSampling([])).to.deep.equal([]);
+      expect(slicePageUrlsForSlowProbeSampling(undefined)).to.deep.equal([]);
+      expect(slicePageUrlsForSlowProbeSampling(null)).to.deep.equal([]);
     });
   });
 
@@ -1461,7 +1781,7 @@ describe('Sitemap Audit', () => {
       // Use sinon.match to match objects without caring about the status field
       const addSuggestionsCall = context.dataAccess.Opportunity.addSuggestions.getCall(0);
       expect(addSuggestionsCall).to.exist;
-      
+
       const actualArgs = addSuggestionsCall.args[0];
       const expectedArgs = auditDataWithSuggestions.suggestions.map((suggestion) => ({
         opportunityId: opptyId,
@@ -1469,7 +1789,7 @@ describe('Sitemap Audit', () => {
         rank: 0,
         data: suggestion,
       }));
-      
+
       // Verify that each suggestion has the expected properties plus status: 'PENDING_VALIDATION'
       expect(actualArgs.length).to.equal(expectedArgs.length);
       actualArgs.forEach((actual, i) => {
@@ -1532,7 +1852,7 @@ describe('Sitemap Audit', () => {
       // Use sinon.match to match objects without caring about the status field
       const addSuggestionsCall = context.dataAccess.Opportunity.addSuggestions.getCall(0);
       expect(addSuggestionsCall).to.exist;
-      
+
       const actualArgs = addSuggestionsCall.args[0];
       const expectedArgs = auditDataWithSuggestions.suggestions.map((suggestion) => ({
         opportunityId: opptyId,
@@ -1540,7 +1860,7 @@ describe('Sitemap Audit', () => {
         rank: 0,
         data: suggestion,
       }));
-      
+
       // Verify that each suggestion has the expected properties plus status: 'PENDING_VALIDATION'
       expect(actualArgs.length).to.equal(expectedArgs.length);
       actualArgs.forEach((actual, i) => {
@@ -1588,6 +1908,29 @@ describe('filterValidUrls with redirect handling', () => {
       networkErrors: [],
       otherStatusCodes: [],
     });
+  });
+
+  it('applies pageUrlBatchOptions when provided', async () => {
+    const urls = Array.from({ length: 3 }, (_, i) => `https://example.com/bopt${i}`);
+    urls.forEach((_, i) => {
+      nock('https://example.com').head(`/bopt${i}`).reply(200);
+    });
+    const result = await filterValidUrls(urls, undefined, PAGE_URL_TIMEOUT_MS, {
+      pageUrlBatchSize: 1,
+      pageUrlBatchDelayMs: 0,
+    });
+    expect(result.ok).to.have.lengthOf(3);
+  });
+
+  it('falls back to fast batch delay when pageUrlBatchOptions omits pageUrlBatchDelayMs', async () => {
+    const urls = Array.from({ length: 2 }, (_, i) => `https://example.com/bpartial${i}`);
+    urls.forEach((_, i) => {
+      nock('https://example.com').head(`/bpartial${i}`).reply(200);
+    });
+    const result = await filterValidUrls(urls, undefined, PAGE_URL_TIMEOUT_MS, {
+      pageUrlBatchSize: 1,
+    });
+    expect(result.ok).to.have.lengthOf(2);
   });
 
   it('should capture final redirect URLs for 301/302 responses', async () => {
@@ -1839,12 +2182,12 @@ describe('filterValidUrls with redirect handling', () => {
     });
   });
 
-  it('should add delay between batches when processing PAGE_URL_BATCH_SIZE + 1 URLs', async function () {
-    // Timeout must accommodate 751 requests + PAGE_URL_BATCH_DELAY_MS (runs once between batches) + buffer
-    this.timeout(15000 + PAGE_URL_BATCH_DELAY_MS);
-    // Create PAGE_URL_BATCH_SIZE + 1 URLs to trigger the batch delay
+  it('should add delay between batches when processing FAST_PAGE_URL_BATCH_SIZE + 1 URLs', async function () {
+    // Timeout must accommodate 751 requests + FAST_PAGE_URL_BATCH_DELAY_MS (runs once between batches) + buffer
+    this.timeout(15000 + FAST_PAGE_URL_BATCH_DELAY_MS);
+    // Create FAST_PAGE_URL_BATCH_SIZE + 1 URLs to trigger the batch delay
     const urls = Array.from(
-      { length: PAGE_URL_BATCH_SIZE + 1 },
+      { length: FAST_PAGE_URL_BATCH_SIZE + 1 },
       (_, i) => `https://example.com/url${i + 1}`,
     );
 
@@ -1856,7 +2199,7 @@ describe('filterValidUrls with redirect handling', () => {
 
     const result = await filterValidUrls(urls);
 
-    expect(result.ok).to.have.lengthOf(PAGE_URL_BATCH_SIZE + 1);
+    expect(result.ok).to.have.lengthOf(FAST_PAGE_URL_BATCH_SIZE + 1);
     expect(result.notOk).to.be.empty;
   });
 

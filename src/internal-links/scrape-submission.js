@@ -12,12 +12,12 @@
 
 import { createInternalLinksConfigResolver } from './config.js';
 import { createInternalLinksStepLogger } from './logging.js';
+import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 
 export function createSubmitForScraping({
   auditType,
   createContextLogger,
   isWithinAuditScope,
-  isUnscrapeable,
 }) {
   return async function submitForScraping(context) {
     const {
@@ -32,7 +32,6 @@ export function createSubmitForScraping({
       auditId: audit.getId(),
       step: 'submit-for-scraping',
     });
-    const { SiteTopPage } = dataAccess;
 
     const { success } = audit.getAuditResult();
 
@@ -43,22 +42,26 @@ export function createSubmitForScraping({
 
     log.info('====== Step 2: Submit For Scraping ======');
 
-    let topPagesUrls = [];
-    try {
-      const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
-      topPagesUrls = topPages.map((page) => page.getUrl());
-      log.info(`Found ${topPagesUrls.length} top pages from SEO provider`);
-    } catch (error) {
-      log.warn(`Failed to fetch SEO top pages from database: ${error.message}`);
-      topPagesUrls = [];
-    }
-
-    const includedURLs = site?.getConfig()?.getIncludedURLs?.('broken-internal-links') || [];
-    log.info(`Found ${includedURLs.length} includedURLs from siteConfig`);
+    const { urls: mergedUrls } = await getMergedAuditInputUrls({
+      site,
+      dataAccess,
+      auditType: 'broken-internal-links',
+      getAgenticUrls: () => Promise.resolve([]),
+      getTopPages: async () => {
+        try {
+          const { SiteTopPage } = dataAccess;
+          return await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
+        } catch (error) {
+          log.warn(`Failed to fetch SEO top pages from database: ${error.message}`);
+          return [];
+        }
+      },
+      log,
+    });
+    log.info(`Found ${mergedUrls.length} URLs after merging all sources`);
     const maxUrlsToProcess = config.getMaxUrlsToProcess();
 
-    let finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
-    log.info(`Merged URLs: ${topPagesUrls.length} (SEO) + ${includedURLs.length} (manual) = ${finalUrls.length} unique`);
+    let finalUrls = mergedUrls;
 
     const baseURL = site.getBaseURL();
     finalUrls = finalUrls.filter((url) => isWithinAuditScope(url, baseURL));
@@ -67,12 +70,6 @@ export function createSubmitForScraping({
     if (finalUrls.length > maxUrlsToProcess) {
       log.warn(`Capping URLs from ${finalUrls.length} to ${maxUrlsToProcess}`);
       finalUrls = finalUrls.slice(0, maxUrlsToProcess);
-    }
-
-    const beforeFilter = finalUrls.length;
-    finalUrls = finalUrls.filter((url) => !isUnscrapeable(url));
-    if (beforeFilter > finalUrls.length) {
-      log.info(`Filtered out ${beforeFilter - finalUrls.length} unscrape-able files`);
     }
 
     if (finalUrls.length === 0) {

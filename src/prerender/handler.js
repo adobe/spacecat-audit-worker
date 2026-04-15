@@ -487,8 +487,8 @@ async function fetchLatestScrapeJobId(siteId, context) {
  * @param {Object} auditData - Audit data used to build the message
  * @param {Object} opportunity - The prerender opportunity entity
  * @param {Object} context - Processing context
- * @param {Array|null} [preBuiltCandidates] - Pre-built candidate objects for normal audit runs
- *   (avoids a DB round-trip). Each entry is { url, originalHtmlMarkdownKey, markdownDiffKey }.
+ * @param {Array|null} [preBuiltCandidates] - Pre-built candidate objects for normal audit runs.
+ *   Each entry is { suggestionId, url, originalHtmlMarkdownKey, markdownDiffKey }.
  *   When null/omitted, candidates are derived from all DB suggestions (ai-only mode).
  * @returns {Promise<number>} - Number of suggestions sent to Mystique
  */
@@ -597,14 +597,12 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
     const deliveryType = site?.getDeliveryType?.() || 'unknown';
 
     // SQS has a 256 KB message size limit. Chunk suggestions into batches to stay safely under it.
-    const batches = [];
-    for (let i = 0; i < suggestionsPayload.length; i += MYSTIQUE_BATCH_SIZE) {
-      batches.push(suggestionsPayload.slice(i, i + MYSTIQUE_BATCH_SIZE));
-    }
+    // TODO: send all batches once Mystique multi-batch handling is fully deployed.
+    const firstBatch = suggestionsPayload.slice(0, MYSTIQUE_BATCH_SIZE);
 
     const time = new Date().toISOString();
     const queue = env.QUEUE_SPACECAT_TO_MYSTIQUE;
-    await Promise.all(batches.map((batch, index) => sqs.sendMessage(queue, {
+    await sqs.sendMessage(queue, {
       type: 'guidance:prerender',
       siteId,
       auditId,
@@ -612,15 +610,15 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
       time,
       data: {
         opportunityId,
-        suggestions: batch,
-        batchIndex: index,
-        totalBatches: batches.length,
+        suggestions: firstBatch,
+        batchIndex: 0,
+        totalBatches: 1,
       },
-    })));
+    });
 
     log.info(`${LOG_PREFIX} Queued guidance:prerender message to Mystique for baseUrl=${baseUrl}, `
-      + `siteId=${siteId}, opportunityId=${opportunityId}, suggestions=${suggestionsPayload.length}, batches=${batches.length}`);
-    return suggestionsPayload.length;
+      + `siteId=${siteId}, opportunityId=${opportunityId}, suggestions=${firstBatch.length} (capped to 1 batch of ${MYSTIQUE_BATCH_SIZE})`);
+    return firstBatch.length;
   /* c8 ignore next 8 - Error handling for SQS failures when sending to Mystique,
    * difficult to test reliably */
   } catch (error) {
@@ -1159,12 +1157,19 @@ export async function processOpportunityAndSuggestions(
     suggestions=${preRenderSuggestions.length},
     totalSuggestions=${allSuggestions.length},`);
 
+  // Fetch saved suggestions to map URL → suggestionId for Mystique payload.
+  // suggestionId is required by Mystique to correlate AI summaries back to the right suggestion.
+  const savedSuggestions = await opportunity.getSuggestions();
+  const urlToSuggestionId = new Map(
+    savedSuggestions.map((s) => [s.getData()?.url, s.getId()]),
+  );
+
   // Build Mystique candidates directly from the URL list processed in this audit run.
-  // This avoids a redundant DB round-trip — we have all the data needed to construct S3
-  // keys. Domain-wide suggestions are intentionally excluded; Mystique needs individual URLs.
+  // Domain-wide suggestions are intentionally excluded; Mystique needs individual URLs.
   const auditRunCandidates = preRenderSuggestions.reduce((acc, s) => {
     try {
       acc.push({
+        suggestionId: urlToSuggestionId.get(s.url),
         url: s.url,
         originalHtmlMarkdownKey: getS3Path(s.url, auditData.scrapeJobId, 'server-side-html.md'),
         markdownDiffKey: getS3Path(s.url, auditData.scrapeJobId, 'markdown-diff.md'),

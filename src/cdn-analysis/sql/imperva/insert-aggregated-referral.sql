@@ -1,18 +1,31 @@
 INSERT INTO {{database}}.{{aggregatedTable}}
--- first, identify the hosts from the cdn logs so that self-referrals can be filtered out later on
 WITH hosts AS (
-  SELECT DISTINCT host
+  -- first, identify the hosts from the cdn logs so that self-referrals can be filtered out later on
+  SELECT DISTINCT s_computername AS host
   FROM {{database}}.{{rawTable}}
-  WHERE year  = '{{year}}'
-    AND month = '{{month}}'
-    AND day   = '{{day}}'
+  WHERE date = '{{year}}-{{month}}-{{day}}'
+),
+
+base AS (
+  -- normalize key fields and construct a full URL from path + query
+  SELECT
+    CASE
+      WHEN cs_uri_query IS NOT NULL AND cs_uri_query <> ''
+        THEN CONCAT(cs_uri, '?', cs_uri_query)
+      ELSE cs_uri
+    END AS url,
+    s_computername AS host,
+    cs_referrer AS referer_raw,
+    cs_user_agent AS user_agent
+  FROM {{database}}.{{rawTable}}
+  WHERE date = '{{year}}-{{month}}-{{day}}'
 ),
 
 referrals_raw AS (
   SELECT
     url,
     host,
-    try(url_extract_host(request_referer)) AS referrer,
+    try(url_extract_host(referer_raw)) AS referrer,
     url_extract_parameter(url, 'utm_source') AS utm_source,
     url_extract_parameter(url, 'utm_medium') AS utm_medium,
 
@@ -33,27 +46,25 @@ referrals_raw AS (
     
     -- device bucket from User-Agent
     CASE
-      WHEN regexp_like(coalesce(request_user_agent, ''),
+      WHEN regexp_like(coalesce(user_agent, ''),
         '(?i)(mobi|iphone|ipod|ipad|android(?!.*tv)|windows phone|blackberry|bb10|opera mini|fennec|ucbrowser|silk|kindle|playbook|tablet)'
       )
         THEN 'mobile'
       ELSE 'desktop'
     END AS device,
     '{{serviceProvider}}' AS cdn_provider,
+
     CONCAT('{{year}}', '-', '{{month}}', '-', '{{day}}') as date
 
-  FROM {{database}}.{{rawTable}}
-  WHERE year  = '{{year}}'
-    AND month = '{{month}}'
-    AND day   = '{{day}}'
-    {{hourFilter}}
-
+  FROM base
+  WHERE
     -- referral traffic definition
-    AND (
+    (
       -- case 1: IF URL contains utm_source OR utm_medium
       (
         (url_extract_parameter(url, 'utm_source') IS NOT NULL AND url_extract_parameter(url, 'utm_source') <> '')
-        OR (url_extract_parameter(url, 'utm_medium') IS NOT NULL AND url_extract_parameter(url, 'utm_medium') <> '')
+        OR
+        (url_extract_parameter(url, 'utm_medium') IS NOT NULL AND url_extract_parameter(url, 'utm_medium') <> '')
       )
 
       -- case 2: IF URL contains a known tracking param
@@ -66,28 +77,20 @@ referrals_raw AS (
 
       -- case 3: IF cdn log contains external referrer (not one of first party hosts)
       OR (
-        request_referer IS NOT NULL AND try(url_extract_host(request_referer)) NOT IN (SELECT host FROM hosts)
+        referer_raw IS NOT NULL
+        AND try(url_extract_host(referer_raw)) NOT IN (SELECT host FROM hosts)
       )
     )
 
-    -- prefer response content type when present, otherwise fall back to URL heuristics
+    -- only count HTML page views with negative pattern matching on static assets
     AND (
-      (
-        NULLIF(trim(response_content_type), '') IS NOT NULL
-        AND lower(response_content_type) LIKE 'text/html%'
-      )
-      OR (
-        NULLIF(trim(response_content_type), '') IS NULL
-        AND (
-          NOT REGEXP_LIKE(url_extract_path(COALESCE(url, '')), '(?i)\.(css|js|mjs|png|jpg|jpeg|gif|webp|avif|php|svg|ico|woff|woff2|otf|ttf|eot|mp4|mp3|avi|mov|zip|tar|gz|json|xml|pdf|txt)(\?.*)?$')
-          OR url_extract_path(COALESCE(url, '')) LIKE '%.htm%'
-        )
-      )
+      NOT REGEXP_LIKE(url_extract_path(url), '(?i)\.(pdf|md|css|js|png|jpg|jpeg|gif|webp|php|svg|ico|woff|woff2|otf|ttf|eot|mp4|mp3|avi|mov|zip|tar|gz|json|xml|txt)$')
+      OR REGEXP_LIKE(url_extract_path(url), '(?i)(\.html?)$')
     )
 
     -- basic filtering on user_agent for bots, crawlers, programmatic clients
     AND NOT REGEXP_LIKE(
-      COALESCE(request_user_agent, ''),
+      COALESCE(user_agent, ''),
       '(?i)(
          bot|crawler|crawl|spider|slurp|archiver|fetch|monitor|pingdom|preview|scanner|scrapy|httpclient|urlgrabber|
          ahrefs|semrush|mj12bot|dotbot|rogerbot|seznambot|linkdex|blexbot|screaming frog|
@@ -109,7 +112,7 @@ SELECT
   device,
   date,
   cdn_provider,
-  '' as x_forwarded_host,
+  COALESCE(host, '') as x_forwarded_host,
   
   -- Add partition columns as regular columns
   '{{year}}' AS year,

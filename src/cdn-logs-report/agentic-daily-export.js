@@ -275,7 +275,7 @@ export async function runDailyAgenticExport({
     throw error;
   }
 
-  log.info(`[cdn-logs-report] Daily agentic export dispatched for ${site.getId()} on ${trafficDate}. Rows: ${trafficRows.length}, classifications: ${classificationRows.length}`);
+  log.info(`[cdn-logs-report] Daily agentic export dispatched for ${site.getId()} (${site.getBaseURL()}) on ${trafficDate}. batchId: ${batchId}, Rows: ${trafficRows.length}, classifications: ${classificationRows.length}`);
 
   return {
     enabled: true,

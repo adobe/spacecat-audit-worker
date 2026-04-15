@@ -27,6 +27,7 @@ import {
   TITLE,
 } from './constants.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { validateDetectedIssues } from './ssr-meta-validator.js';
 
@@ -490,45 +491,25 @@ export async function submitForScraping(context) {
     dataAccess,
     log,
   } = context;
-  const { SiteTopPage } = dataAccess;
-
   log.info(`[metatags] Start submitForScraping step for: ${site.getId()}`);
 
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
-
-  const topPagesUrls = topPages.map((page) => page.getUrl());
-  // Combine includedURLs and topPages URLs to scrape
-  const includedURLs = await site?.getConfig()?.getIncludedURLs('meta-tags') || [];
-
-  const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
-  log.debug(`Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
+  const { urls: finalUrls } = await getMergedAuditInputUrls({
+    site,
+    dataAccess,
+    auditType,
+    getAgenticUrls: () => Promise.resolve([]),
+    log,
+  });
+  log.debug(`Final URLs to scrape after merging and deduplication: ${finalUrls.length}`);
 
   if (finalUrls.length === 0) {
     throw new Error(`No URLs found for site neither top pages nor included URLs for ${site.getId()}`);
   }
 
-  // Filter out PDF files before scraping
-  const isPdfUrl = (url) => {
-    try {
-      const pathname = new URL(url).pathname.toLowerCase();
-      return pathname.endsWith('.pdf');
-    } catch {
-      return false;
-    }
-  };
-
-  const filteredUrls = finalUrls.filter((url) => {
-    if (isPdfUrl(url)) {
-      log.info(`[metatags] Skipping PDF file from scraping: ${url}`);
-      return false;
-    }
-    return true;
-  });
-
   log.info(`[metatags] Finish submitForScraping step for: ${site.getId()}`);
 
   return {
-    urls: filteredUrls.map((url) => ({ url })),
+    urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'default',
     allowCache: false,

@@ -19,6 +19,12 @@ import {
   ERROR_CODES,
   filterValidUrls,
   getSitemapUrls,
+  PAGE_URL_OTHER_STATUS_SLOWDOWN_MIN_URLS,
+  PAGE_URL_OTHER_STATUS_SLOWDOWN_RATIO,
+  PAGE_URL_TIMEOUT_MS,
+  SLOW_PAGE_URL_BATCH_DELAY_MS,
+  SLOW_PAGE_URL_BATCH_SIZE,
+  slicePageUrlsForSlowProbeSampling,
 } from './common.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/base-audit.js';
@@ -29,6 +35,40 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 const auditType = Audit.AUDIT_TYPES.SITEMAP;
 
 const TRACKED_STATUS_CODES = Object.freeze([301, 302, 404]);
+
+const SLOW_PAGE_URL_BATCH_OPTIONS = Object.freeze({
+  pageUrlBatchSize: SLOW_PAGE_URL_BATCH_SIZE,
+  pageUrlBatchDelayMs: SLOW_PAGE_URL_BATCH_DELAY_MS,
+});
+
+/**
+ * Only return the statistics if they justify slowing down our current rate of probing.
+ * Otherwise, return null.
+ *
+ * @param {number} urlsCount
+ * @param {{ ok: unknown[], notOk: unknown[],
+ *           networkErrors: unknown[], otherStatusCodes: unknown[] }} pages
+ * @returns {{ ratio: number, otherCount: number, total: number } | null}
+ */
+function getOtherStatusSlowdownStats(urlsCount, pages) {
+  // to avoid overreacting, we need to have a minimum number of probed URLs
+  if (urlsCount < PAGE_URL_OTHER_STATUS_SLOWDOWN_MIN_URLS) {
+    return null;
+  }
+  // compute the ratio of 'otherStatusCodes' vs the total
+  const {
+    ok, notOk, networkErrors, otherStatusCodes,
+  } = pages;
+  const total = ok.length + notOk.length + networkErrors.length + otherStatusCodes.length;
+  if (total === 0) {
+    return null;
+  }
+  const ratio = otherStatusCodes.length / total;
+  if (ratio < PAGE_URL_OTHER_STATUS_SLOWDOWN_RATIO) {
+    return null; // not enough of number of 'otherStatusCodes' to justify going slow
+  }
+  return { ratio, otherCount: otherStatusCodes.length, total };
+}
 
 /**
  * Main sitemap discovery and validation function
@@ -46,23 +86,71 @@ export async function findSitemap(inputUrl, log) {
     /* c8 ignore end */
     return siteMapUrlsResult;
   }
+  // The real purpose of this audit is to find any 'notOk' page URLs referenced in sitemap.xml files
+  const notOkPagesFromSitemap = {};
   // Of all the page URLs found, proportionally probe them (since we have time constraints)
   const extractedPathsRaw = siteMapUrlsResult.details?.extractedPaths || {};
-  const extractedPaths = applyPageUrlProbeSampling(extractedPathsRaw, log);
+  const extractedPaths = applyPageUrlProbeSampling(extractedPathsRaw, log); // "fast"
   const filteredSitemapUrls = siteMapUrlsResult.details?.filteredSitemapUrls || [];
-  const notOkPagesFromSitemap = {};
+  // Only needed when necessary, prepare for "slow probing"
+  let useSlowPageUrlProbing = false;
+  let slowProbeUrlsTotal = 0; // of all the page URLs probed slowly ...
+  let slowProbeOtherStatusTotal = 0; // ... how many of them still rejected our probing
 
   if (extractedPaths && Object.keys(extractedPaths).length > 0) {
     for (const sitemapUrl of Object.keys(extractedPaths)) {
-      const urlsToCheck = extractedPaths[sitemapUrl];
+      const urlsFromSampling = extractedPaths[sitemapUrl]; // "fast mode" proportioned
 
       /* c8 ignore next */
-      log?.info(`Number of URLs extracted from sitemap ${sitemapUrl}: ${urlsToCheck?.length ?? 0}`);
+      log?.info(`Number of URLs extracted from sitemap ${sitemapUrl}: ${urlsFromSampling?.length ?? 0}`);
 
-      if (urlsToCheck?.length) {
+      if (urlsFromSampling?.length) {
+        let urlsToProbe = urlsFromSampling;
+        if (useSlowPageUrlProbing) { // reduce the larger "fast" set to the smaller "slow" set
+          urlsToProbe = slicePageUrlsForSlowProbeSampling(urlsFromSampling);
+        }
+
         // eslint-disable-next-line no-await-in-loop
-        const existingPages = await filterValidUrls(urlsToCheck, log);
+        let existingPages = await filterValidUrls(
+          urlsToProbe,
+          log,
+          PAGE_URL_TIMEOUT_MS,
+          useSlowPageUrlProbing ? SLOW_PAGE_URL_BATCH_OPTIONS : null,
+        );
 
+        if (!useSlowPageUrlProbing) {
+          const slowdownStats = getOtherStatusSlowdownStats(urlsToProbe.length, existingPages);
+          if (slowdownStats) {
+            // from now on, switch to using the slower probing
+            useSlowPageUrlProbing = true;
+            // inform about this decision to slow down and echo the stats that triggered it
+            const pct = (slowdownStats.ratio * 100).toFixed(0);
+            log?.info(`* Sitemap: slowing down page URL probing starting with sitemap ${sitemapUrl} due to high count of 'otherStatus' codes: ${slowdownStats.otherCount} out of ${slowdownStats.total} (${pct}%)`);
+            urlsToProbe = slicePageUrlsForSlowProbeSampling(urlsFromSampling); // re-do current set
+            const slowCapRetainPct = urlsFromSampling.length > 0
+              ? ((100 * urlsToProbe.length) / urlsFromSampling.length).toFixed(0)
+              : '0';
+            log?.info(`* Sitemap: since we are going slower, the slow probe uses ~${slowCapRetainPct}% of our original "fast" sampled page URLs (${urlsToProbe.length} of ${urlsFromSampling.length})`);
+            // eslint-disable-next-line no-await-in-loop
+            existingPages = await filterValidUrls(
+              urlsToProbe, // now using the "slow probe" set
+              log,
+              PAGE_URL_TIMEOUT_MS,
+              SLOW_PAGE_URL_BATCH_OPTIONS,
+            );
+          }
+        }
+
+        // We hope slowing down made a difference. If not, log a warning for further investigation.
+        if (useSlowPageUrlProbing) {
+          const statsAfter = getOtherStatusSlowdownStats(urlsToProbe.length, existingPages);
+          if (statsAfter) {
+            const pct = (statsAfter.ratio * 100).toFixed(0);
+            log?.warn(`. Sitemap: count of 'otherStatus' codes remains high, although we are already using our slow page URL batching — sitemapUrl=${sitemapUrl} 'otherStatus' count=${statsAfter.otherCount} total count=${statsAfter.total} (${pct}%)`);
+          }
+        }
+
+        // Echo general statistics. Show details of what the 'otherStatusCodes' are.
         /* c8 ignore start */
         log?.info(`.. Sitemap: stats for ${sitemapUrl} - OK: ${existingPages.ok.length}, Not OK: ${existingPages.notOk.length}, Network Errors: ${existingPages.networkErrors.length}, Other Errors: ${existingPages.otherStatusCodes.length}`);
         if (existingPages.otherStatusCodes.length > 0) {
@@ -74,7 +162,7 @@ export async function findSitemap(inputUrl, log) {
         }
         /* c8 ignore end */
 
-        // Collect issues for tracked status codes only
+        // Collect issues only for the audit's tracked status codes (ex: 301, 302, 404)
         if (existingPages.notOk?.length > 0) {
           const trackedIssues = existingPages.notOk
             .filter((issue) => TRACKED_STATUS_CODES.includes(issue.statusCode));
@@ -82,13 +170,22 @@ export async function findSitemap(inputUrl, log) {
             notOkPagesFromSitemap[sitemapUrl] = trackedIssues;
           }
           /* c8 ignore next */
-          log?.debug(`Number of URLs with tracked status from sitemap ${sitemapUrl}: ${trackedIssues.length}`);
+          log?.debug(`Number of URLs with tracked status (ex: 301, 302, 404) from sitemap ${sitemapUrl}: ${trackedIssues.length}`);
+        }
+
+        // If applicable, keep track of how effective "slow probing" actually is
+        if (useSlowPageUrlProbing) {
+          // note that the 'slowProbeUrlsTotal' count will typically be less than all the
+          // page URLs probed depending on when we switched to slow probing.
+          const probedTotal = existingPages.ok.length + existingPages.notOk.length
+            + existingPages.networkErrors.length + existingPages.otherStatusCodes.length;
+          slowProbeUrlsTotal += probedTotal;
+          slowProbeOtherStatusTotal += existingPages.otherStatusCodes.length;
         }
 
         // Keep sitemap if it has valid URLs or acceptable redirects
         const hasValidUrls = existingPages.ok.length > 0
           || existingPages.notOk.some((issue) => [301, 302].includes(issue.statusCode));
-
         if (!hasValidUrls) {
           delete extractedPaths[sitemapUrl];
         } else {
@@ -96,9 +193,18 @@ export async function findSitemap(inputUrl, log) {
         }
       }
     }
+
+    if (slowProbeUrlsTotal > 0) {
+      const pct = ((slowProbeOtherStatusTotal / slowProbeUrlsTotal) * 100).toFixed(0);
+      log?.info(
+        `Sitemap: slow page URL probing summary — otherStatus codes: ${slowProbeOtherStatusTotal} of ${slowProbeUrlsTotal} page URLs probed slowly (${pct}%)`,
+      );
+    }
   }
 
-  // Return final result
+  // Return final result:
+  //   success if we have any sitemaps with valid URLs,
+  //   failure otherwise (with details on issues found)
   if (extractedPaths && Object.keys(extractedPaths).length > 0) {
     return {
       success: true,
@@ -107,7 +213,6 @@ export async function findSitemap(inputUrl, log) {
       details: { issues: notOkPagesFromSitemap },
     };
   }
-
   return {
     success: false,
     reasons: [{
