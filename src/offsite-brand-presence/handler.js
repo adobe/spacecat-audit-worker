@@ -14,6 +14,8 @@ import { isoCalendarWeek, tracingFetch as fetch } from '@adobe/spacecat-shared-u
 import DrsClient, { SCRAPE_DATASET_IDS } from '@adobe/spacecat-shared-drs-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
+import { isBrandalfEnabled, resolveOrganizationIdForSite } from '../utils/brandalf-utils.js';
+import { loadBrandPresenceDataFromPostgrest } from '../utils/offsite-brand-presence-postgrest.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import {
   BRAND_PRESENCE_REGEX,
@@ -679,41 +681,71 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
-
-  log.info(`${LOG_PREFIX} Starting audit for site: ${siteId} (${baseURL})`);
-
-  if (!env.SPACECAT_API_BASE_URL || !env.SPACECAT_API_KEY) {
-    log.error(`${LOG_PREFIX} SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured`);
-    return {
-      auditResult: { success: false, error: 'SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured' },
-      fullAuditRef: finalUrl,
-    };
-  }
-
-  // Fetch query-index.json
-  const queryIndex = await fetchQueryIndex(siteId, env, log);
-  if (!queryIndex) {
-    log.error(`${LOG_PREFIX} Failed to fetch query-index for site ${siteId}`);
-    return {
-      auditResult: { success: false, error: 'Failed to fetch query-index' },
-      fullAuditRef: finalUrl,
-    };
-  }
-
   const previousWeeks = getPreviousWeeks();
   const weekLabels = previousWeeks
     .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
     .join(', ');
 
+  log.info(`${LOG_PREFIX} Starting audit for site: ${siteId} (${baseURL})`);
+
   log.info(`${LOG_PREFIX} Processing weeks: ${weekLabels}`);
 
-  const matchedFiles = previousWeeks.flatMap(
-    ({ week, year }) => filterBrandPresenceFiles(queryIndex, week, year),
-  );
-  log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for weeks ${weekLabels}`);
+  let allUrls;
+  const organizationId = await resolveOrganizationIdForSite({
+    site,
+    siteId,
+    dataAccess,
+    log,
+  });
+  const postgrestClient = dataAccess?.services?.postgrestClient;
+  let dbBrandPresenceData = null;
+  const isBrandalfOrg = organizationId
+    ? await isBrandalfEnabled(organizationId, env, log)
+    : false;
 
-  // Fetch all matched files and collect source URLs + topic associations
-  const { allUrls } = await fetchAndAggregateData(siteId, matchedFiles, env, log);
+  if (isBrandalfOrg) {
+    dbBrandPresenceData = await loadBrandPresenceDataFromPostgrest({
+      siteId,
+      organizationId,
+      previousWeeks,
+      postgrestClient,
+      log,
+    });
+  }
+
+  if (dbBrandPresenceData) {
+    allUrls = new Map();
+    const topicMap = new Map();
+    extractUrlsAndTopics(dbBrandPresenceData, allUrls, topicMap, log);
+    log.info(`${LOG_PREFIX} Loaded brand presence data from PostgREST for site ${siteId}`);
+  } else {
+    if (!env.SPACECAT_API_BASE_URL || !env.SPACECAT_API_KEY) {
+      log.error(`${LOG_PREFIX} SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured`);
+      return {
+        auditResult: { success: false, error: 'SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured' },
+        fullAuditRef: finalUrl,
+      };
+    }
+
+    // Fetch query-index.json
+    const queryIndex = await fetchQueryIndex(siteId, env, log);
+    if (!queryIndex) {
+      log.error(`${LOG_PREFIX} Failed to fetch query-index for site ${siteId}`);
+      return {
+        auditResult: { success: false, error: 'Failed to fetch query-index' },
+        fullAuditRef: finalUrl,
+      };
+    }
+
+    const matchedFiles = previousWeeks.flatMap(
+      ({ week, year }) => filterBrandPresenceFiles(queryIndex, week, year),
+    );
+    log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for weeks ${weekLabels}`);
+
+    // Fetch all matched files and collect source URLs + topic associations
+    ({ allUrls } = await fetchAndAggregateData(siteId, matchedFiles, env, log));
+  }
+
   log.info(`${LOG_PREFIX} Total unique source URLs found: ${allUrls.size}`);
 
   // Compute per-domain counts for audit result

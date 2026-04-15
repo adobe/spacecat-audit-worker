@@ -23,7 +23,7 @@ import {
   resolveMystiqueUrlLimit,
 } from '../utils/offsite-audit-utils.js';
 import { OFFSITE_DOMAINS } from '../offsite-brand-presence/constants.js';
-import { computeTopicsFromBrandPresence } from '../utils/brand-presence-enrichment.js';
+import { computeTopicsFromBrandPresence } from '../utils/offsite-brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 
 const LOG_PREFIX = '[Reddit]';

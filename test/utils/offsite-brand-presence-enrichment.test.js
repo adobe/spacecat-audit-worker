@@ -27,7 +27,7 @@ use(sinonChai);
 /** Large enough that typical multi-row tests do not trigger a second pagination request. */
 const MOCK_FETCH_PAGE_SIZE = 100;
 
-describe('brand-presence-enrichment', () => {
+describe('offsite-brand-presence-enrichment', () => {
   let sandbox;
   let mockFetch;
   let mockIsoCalendarWeek;
@@ -62,7 +62,7 @@ describe('brand-presence-enrichment', () => {
       SPACECAT_API_KEY: 'test-api-key',
     };
 
-    const mod = await esmock('../../src/utils/brand-presence-enrichment.js', {
+    const mod = await esmock('../../src/utils/offsite-brand-presence-enrichment.js', {
       '@adobe/spacecat-shared-utils': {
         isoCalendarWeek: mockIsoCalendarWeek,
         tracingFetch: mockFetch,
@@ -218,6 +218,102 @@ describe('brand-presence-enrichment', () => {
   });
 
   describe('computeTopicsFromBrandPresence', () => {
+    it('uses PostgREST data before query-index/file fetches', async () => {
+      const resolveOrganizationIdForSite = sandbox.stub().resolves('org-123');
+      const isBrandalfEnabled = sandbox.stub().resolves(true);
+      const loadBrandPresenceDataFromPostgrest = sandbox.stub().resolves({
+        data: [{
+          Sources: 'https://www.reddit.com/r/test/comments/abc',
+          Region: 'US',
+          Topics: 'MyTopic',
+          Category: 'Insurance',
+          Prompt: 'Why choose us?',
+        }],
+      });
+      const mod = await esmock('../../src/utils/offsite-brand-presence-enrichment.js', {
+        '@adobe/spacecat-shared-utils': {
+          isoCalendarWeek: mockIsoCalendarWeek,
+          tracingFetch: mockFetch,
+        },
+        '../../src/offsite-brand-presence/constants.js': {
+          BRAND_PRESENCE_REGEX,
+          PROVIDERS_SET,
+          INCLUDE_COLUMNS,
+          FETCH_PAGE_SIZE: MOCK_FETCH_PAGE_SIZE,
+          FETCH_TIMEOUT_MS,
+          OFFSITE_DOMAINS,
+        },
+        '../../src/utils/brandalf-utils.js': {
+          isBrandalfEnabled,
+          resolveOrganizationIdForSite,
+        },
+        '../../src/utils/offsite-brand-presence-postgrest.js': {
+          loadBrandPresenceDataFromPostgrest,
+        },
+      });
+
+      const result = await mod.computeTopicsFromBrandPresence(SITE_ID, {
+        env: {},
+        log,
+        dataAccess: {},
+      });
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].name).to.equal('MyTopic');
+      expect(result[0].urls[0].url).to.equal('https://www.reddit.com/r/test/comments/abc');
+      expect(mockFetch).to.not.have.been.called;
+    });
+
+    it('falls back to query-index/file fetches when PostgREST returns no rows', async () => {
+      const resolveOrganizationIdForSite = sandbox.stub().resolves('org-123');
+      const isBrandalfEnabled = sandbox.stub().resolves(true);
+      const loadBrandPresenceDataFromPostgrest = sandbox.stub().resolves(null);
+      const mod = await esmock('../../src/utils/offsite-brand-presence-enrichment.js', {
+        '@adobe/spacecat-shared-utils': {
+          isoCalendarWeek: mockIsoCalendarWeek,
+          tracingFetch: mockFetch,
+        },
+        '../../src/offsite-brand-presence/constants.js': {
+          BRAND_PRESENCE_REGEX,
+          PROVIDERS_SET,
+          INCLUDE_COLUMNS,
+          FETCH_PAGE_SIZE: MOCK_FETCH_PAGE_SIZE,
+          FETCH_TIMEOUT_MS,
+          OFFSITE_DOMAINS,
+        },
+        '../../src/utils/brandalf-utils.js': {
+          isBrandalfEnabled,
+          resolveOrganizationIdForSite,
+        },
+        '../../src/utils/offsite-brand-presence-postgrest.js': {
+          loadBrandPresenceDataFromPostgrest,
+        },
+      });
+
+      mockFetch
+        .onFirstCall()
+        .resolves(okJsonResponse(makeQueryIndex(['copilot'])))
+        .onSecondCall()
+        .resolves(okJsonResponse({
+          data: [{
+            Sources: 'https://www.reddit.com/r/fallback',
+            Region: 'US',
+            Topics: 'Fallback Topic',
+            Category: 'Insurance',
+            Prompt: 'Fallback prompt',
+          }],
+        }));
+
+      const result = await mod.computeTopicsFromBrandPresence(
+        SITE_ID,
+        { env, log, dataAccess: {} },
+      );
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].name).to.equal('Fallback Topic');
+      expect(mockFetch.callCount).to.equal(2);
+    });
+
     it('returns empty array when SPACECAT_API_BASE_URL is missing', async () => {
       const result = await computeTopicsFromBrandPresence(SITE_ID, {
         env: { SPACECAT_API_KEY: 'k' },
@@ -405,7 +501,7 @@ describe('brand-presence-enrichment', () => {
       let computeTopicsPaginated;
 
       beforeEach(async () => {
-        const mod = await esmock('../../src/utils/brand-presence-enrichment.js', {
+        const mod = await esmock('../../src/utils/offsite-brand-presence-enrichment.js', {
           '@adobe/spacecat-shared-utils': {
             isoCalendarWeek: mockIsoCalendarWeek,
             tracingFetch: mockFetch,

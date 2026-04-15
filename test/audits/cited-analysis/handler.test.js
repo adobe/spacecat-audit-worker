@@ -125,7 +125,7 @@ describe('Cited Analysis Handler', () => {
       '../../../src/offsite-brand-presence/constants.js': {
         CITED_ANALYSIS_DRS_CONFIG,
       },
-      '../../../src/utils/brand-presence-enrichment.js': {
+      '../../../src/utils/offsite-brand-presence-enrichment.js': {
         computeTopicsFromBrandPresence: mockComputeTopicsFromBrandPresence,
       },
     });

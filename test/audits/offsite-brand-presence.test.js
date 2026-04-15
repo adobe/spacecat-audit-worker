@@ -242,6 +242,71 @@ describe('Offsite Brand Presence Handler', () => {
     });
   });
 
+  describe('PostgREST Fallback', () => {
+    it('uses PostgREST data before query-index/file fetches', async () => {
+      const resolveOrganizationIdForSite = sandbox.stub().resolves('org-123');
+      const isBrandalfEnabled = sandbox.stub().resolves(true);
+      const loadBrandPresenceDataFromPostgrest = sandbox.stub().resolves({
+        data: [{
+          Sources: 'https://www.youtube.com/watch?v=abc123',
+          Region: 'US',
+          Topics: 'Topic A',
+          Category: 'Category A',
+          Prompt: 'Prompt A',
+        }],
+      });
+      const mod = await esmock('../../src/offsite-brand-presence/handler.js', {
+        ...sharedMocks,
+        '../../src/utils/brandalf-utils.js': {
+          isBrandalfEnabled,
+          resolveOrganizationIdForSite,
+        },
+        '../../src/utils/offsite-brand-presence-postgrest.js': {
+          loadBrandPresenceDataFromPostgrest,
+        },
+      });
+
+      delete env.SPACECAT_API_BASE_URL;
+      delete env.SPACECAT_API_KEY;
+
+      const result = await mod.offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
+      expect(mockFetch).to.not.have.been.called;
+      expect(loadBrandPresenceDataFromPostgrest).to.have.been.calledOnce;
+    });
+
+    it('falls back to file-backed data when PostgREST returns no rows', async () => {
+      const resolveOrganizationIdForSite = sandbox.stub().resolves('org-123');
+      const isBrandalfEnabled = sandbox.stub().resolves(true);
+      const loadBrandPresenceDataFromPostgrest = sandbox.stub().resolves(null);
+      const mod = await esmock('../../src/offsite-brand-presence/handler.js', {
+        ...sharedMocks,
+        '../../src/utils/brandalf-utils.js': {
+          isBrandalfEnabled,
+          resolveOrganizationIdForSite,
+        },
+        '../../src/utils/offsite-brand-presence-postgrest.js': {
+          loadBrandPresenceDataFromPostgrest,
+        },
+      });
+      const queryIndex = makeQueryIndex(['chatgpt']);
+      stubFetchSequence([
+        okJsonResponse(queryIndex),
+        stubProviderData(['https://reddit.com/r/test']),
+      ]);
+
+      const result = await mod.offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(mockFetch.callCount).to.equal(2);
+      expect(mockFetch.firstCall.args[0]).to.equal(
+        `${env.SPACECAT_API_BASE_URL}/sites/${SITE_ID}/llmo/data/query-index.json`,
+      );
+    });
+  });
+
   describe('Query Index Fetch', () => {
     it('should return error when query-index fetch fails', async () => {
       mockFetch.resolves(failResponse(500, 'Internal Server Error'));

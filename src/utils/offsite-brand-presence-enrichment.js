@@ -16,6 +16,8 @@
  */
 
 import { isoCalendarWeek, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { isBrandalfEnabled, resolveOrganizationIdForSite } from './brandalf-utils.js';
+import { loadBrandPresenceDataFromPostgrest } from './offsite-brand-presence-postgrest.js';
 import {
   BRAND_PRESENCE_REGEX,
   FETCH_PAGE_SIZE,
@@ -393,6 +395,41 @@ export function formatTopicsForEnrichment(topicMap, allUrls) {
  */
 export async function computeTopicsFromBrandPresence(siteId, context) {
   const { env, log } = context;
+  const previousWeeks = getPreviousWeeks();
+  const weekLabels = previousWeeks
+    .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
+    .join(', ');
+
+  log.info(`${LOG_PREFIX} Processing weeks: ${weekLabels}`);
+
+  const organizationId = await resolveOrganizationIdForSite({
+    siteId,
+    dataAccess: context.dataAccess,
+    log,
+  });
+  const postgrestClient = context.dataAccess?.services?.postgrestClient;
+  let dbBrandPresenceData = null;
+  const isBrandalfOrg = organizationId
+    ? await isBrandalfEnabled(organizationId, env, log)
+    : false;
+
+  if (isBrandalfOrg) {
+    dbBrandPresenceData = await loadBrandPresenceDataFromPostgrest({
+      siteId,
+      organizationId,
+      previousWeeks,
+      postgrestClient,
+      log,
+    });
+  }
+
+  if (dbBrandPresenceData) {
+    const allUrls = new Map();
+    const topicMap = new Map();
+    extractUrlsAndTopics(dbBrandPresenceData, allUrls, topicMap, log);
+    log.info(`${LOG_PREFIX} Loaded brand presence data from PostgREST for site ${siteId}`);
+    return formatTopicsForEnrichment(topicMap, allUrls);
+  }
 
   if (!env?.SPACECAT_API_BASE_URL || !env?.SPACECAT_API_KEY) {
     log.warn(`${LOG_PREFIX} SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured`);
@@ -404,13 +441,6 @@ export async function computeTopicsFromBrandPresence(siteId, context) {
     log.warn(`${LOG_PREFIX} Failed to fetch query-index for site ${siteId}`);
     return [];
   }
-
-  const previousWeeks = getPreviousWeeks();
-  const weekLabels = previousWeeks
-    .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
-    .join(', ');
-
-  log.info(`${LOG_PREFIX} Processing weeks: ${weekLabels}`);
 
   const matchedFiles = previousWeeks.flatMap(
     ({ week, year }) => filterBrandPresenceFiles(queryIndex, week, year),
