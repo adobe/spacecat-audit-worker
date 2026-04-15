@@ -14,7 +14,7 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
   chatgpt: '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))',
   perplexity: '(?i)Perplexity',
   claude: '(?i)Claude(?!-web)',
-  googleai: '(?i)(^Google$|Gemini-Deep-Research|Google-NotebookLM|GoogleAgent)',
+  googleai: '(?i)(^Google$|Gemini-Deep-Research|Google-NotebookLM|Google-?Agent)',
   google: '(?i)(Google-Extended|Googlebot)',
   mistralai: '(?i)MistralAI-User',
   copilot: '(?i)Copilot',
@@ -47,6 +47,11 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   { pattern: '%googleagent-chrome%', displayName: 'GoogleAgent-Chrome' },
   { pattern: '%googleagent-shopping%', displayName: 'GoogleAgent-Shopping' },
   { pattern: '%googleagent-mariner%', displayName: 'GoogleAgent-Mariner' },
+  { pattern: '%google-agent-urlcontext%', displayName: 'Google-Agent-URLContext' },
+  { pattern: '%google-agent-chrome%', displayName: 'Google-Agent-Chrome' },
+  { pattern: '%google-agent-shopping%', displayName: 'Google-Agent-Shopping' },
+  { pattern: '%google-agent-mariner%', displayName: 'Google-Agent-Mariner' },
+  { pattern: '%google-agent%', displayName: 'Google-Agent' },
   { pattern: '%google-notebooklm%', displayName: 'Google-NotebookLM' },
   { pattern: '%googlebot%', displayName: 'GoogleBot' },
   { pattern: '%bingbot%', displayName: 'BingBot' },
@@ -97,6 +102,11 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%googleagent-chrome%', result: 'Action agents' },
     { pattern: '%googleagent-shopping%', result: 'Shopping agents' },
     { pattern: '%googleagent-mariner%', result: 'Action agents' },
+    { pattern: '%google-agent-urlcontext%', result: 'Chatbots' },
+    { pattern: '%google-agent-chrome%', result: 'Action agents' },
+    { pattern: '%google-agent-shopping%', result: 'Shopping agents' },
+    { pattern: '%google-agent-mariner%', result: 'Action agents' },
+    { pattern: '%google-agent%', result: 'Action agents' },
     { pattern: '%google-notebooklm%', result: 'Research' },
     // Bing
     { pattern: '%bingbot%', result: 'Search Bots' },
@@ -133,7 +143,7 @@ export function inferProviderFromUserAgent(userAgent = '') {
   if (/gemini/.test(ua)) {
     return 'Gemini';
   }
-  if (/(google|googlebot|googleagent|notebooklm)/.test(ua)) {
+  if (/(google|googlebot|googleagent|google-agent|notebooklm)/.test(ua)) {
     return 'Google';
   }
   if (/copilot/.test(ua)) {

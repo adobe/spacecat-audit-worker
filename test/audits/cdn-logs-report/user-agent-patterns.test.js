@@ -43,7 +43,7 @@ describe('User Agent Patterns', () => {
       expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Google$');
       expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Gemini-Deep-Research');
       expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Google-NotebookLM');
-      expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('GoogleAgent');
+      expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Google-?Agent');
 
       // Google searchbots
       expect(PROVIDER_USER_AGENT_PATTERNS).to.have.property('google');
@@ -72,7 +72,7 @@ describe('User Agent Patterns', () => {
       // Should include AI agents (googleai, not google)
       expect(filter).to.include('ChatGPT');
       expect(filter).to.include('Perplexity');
-      expect(filter).to.include('GoogleAgent');
+      expect(filter).to.include('Google-?Agent');
       expect(filter).to.include('Gemini-Deep-Research');
       expect(filter).to.include('Google-NotebookLM');
       expect(filter).to.include('Claude');
@@ -92,9 +92,11 @@ describe('User Agent Patterns', () => {
       expect(sql).to.include('oai-adsbot');
       expect(sql).to.include('perplexity');
       expect(sql).to.include('Search Bots');
+      expect(sql).to.include('Action agents');
       expect(sql.toLowerCase()).to.include('googlebot');
       expect(sql.toLowerCase()).to.include('bingbot');
       expect(sql.toLowerCase()).to.include('google-extended');
+      expect(sql.toLowerCase()).to.include('google-agent');
     });
   });
 
@@ -108,6 +110,7 @@ describe('User Agent Patterns', () => {
       expect(sql).to.include('GPTBot');
       expect(sql).to.include('OAI-AdsBot');
       expect(sql).to.include('PerplexityBot');
+      expect(sql).to.include('Google-Agent');
       expect(sql).to.include('GoogleBot');
       expect(sql).to.include('BingBot');
       expect(sql).to.include('Google-Extended');
@@ -125,6 +128,7 @@ describe('User Agent Patterns', () => {
       expect(inferProviderFromUserAgent('Anthropic-SearchBot')).to.equal('Anthropic');
       expect(inferProviderFromUserAgent('Gemini-Deep-Research')).to.equal('Gemini');
       expect(inferProviderFromUserAgent('GoogleAgent-Chrome')).to.equal('Google');
+      expect(inferProviderFromUserAgent('Google-Agent')).to.equal('Google');
       expect(inferProviderFromUserAgent('google-notebooklm')).to.equal('Google');
       expect(inferProviderFromUserAgent('CopilotBot')).to.equal('Copilot');
       expect(inferProviderFromUserAgent('BingBot')).to.equal('Bing');
