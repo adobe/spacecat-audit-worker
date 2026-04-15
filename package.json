@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.414.4",
+  "version": "1.414.5",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -81,7 +81,7 @@
     "@adobe/helix-shared-wrap": "2.0.2",
     "@adobe/helix-status": "10.1.5",
     "@adobe/helix-universal-logger": "3.0.29",
-    "@adobe/mysticat-shared-seo-client": "1.2.1",
+    "@adobe/mysticat-shared-seo-client": "1.2.2",
     "@adobe/spacecat-helix-content-sdk": "1.4.33",
     "@adobe/spacecat-shared-athena-client": "1.9.11",
     "@adobe/spacecat-shared-data-access": "3.52.0",
