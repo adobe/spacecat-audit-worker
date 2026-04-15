@@ -14,7 +14,7 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
   chatgpt: '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))',
   perplexity: '(?i)Perplexity',
   claude: '(?i)Claude(?!-web)',
-  googleai: '(?i)(^Google$|Gemini-Deep-Research|Google-NotebookLM|Google-Agent)',
+  googleai: '(?i)(^Google$|Gemini-Deep-Research|Google-NotebookLM|Google-?Agent)',
   google: '(?i)(Google-Extended|Googlebot)',
   mistralai: '(?i)MistralAI-User',
   copilot: '(?i)Copilot',

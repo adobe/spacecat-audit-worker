@@ -125,7 +125,7 @@ describe('LLM Error Pages Utils', () => {
       expect(result).to.include('(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))');
       expect(result).to.include('Perplexity');
       expect(result).to.include('Claude(?!-web)');
-      expect(result).to.include('Google-NotebookLM|Google-Agent');
+      expect(result).to.include('Google-NotebookLM|Google-?Agent');
       expect(result).to.include('Copilot');
     });
 
