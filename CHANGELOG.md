@@ -1,3 +1,10 @@
+## [1.414.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.8...v1.414.9) (2026-04-15)
+
+
+### Bug Fixes
+
+* **deps:** update dependency diff to v9 ([#2377](https://github.com/adobe/spacecat-audit-worker/issues/2377)) ([ee7fa21](https://github.com/adobe/spacecat-audit-worker/commit/ee7fa21212759b6d125d96d25f6315bd9ecf3a2c))
+
 ## [1.414.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.7...v1.414.8) (2026-04-15)
 
 
