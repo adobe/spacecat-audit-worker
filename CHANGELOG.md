@@ -1,3 +1,10 @@
+## [1.414.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.6...v1.414.7) (2026-04-15)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-vault-secrets to v1.3.3 ([#2386](https://github.com/adobe/spacecat-audit-worker/issues/2386)) ([46ba5f5](https://github.com/adobe/spacecat-audit-worker/commit/46ba5f5b403ae687303d3366f21ca71525f3fba5))
+
 ## [1.414.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.5...v1.414.6) (2026-04-15)
 
 
