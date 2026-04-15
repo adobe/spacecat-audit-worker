@@ -1051,26 +1051,6 @@ async function prepareDomainWideAggregateSuggestion(
 }
 
 /**
- * Clears the opportunity's accessor cache and fetches the latest suggestions from the DB.
- *
- * syncSuggestions() internally calls getSuggestions(), which populates the accessor cache.
- * addSuggestions() does not invalidate that cache, so a naive getSuggestions() call after sync
- * returns the pre-sync snapshot, missing any newly created suggestions. Clearing the cache
- * forces a fresh DB fetch with the full post-sync suggestion list.
- *
- * @param {Object} opportunity - Opportunity entity
- * @returns {Promise<Array>} Fresh suggestion list including any newly created suggestions
- */
-async function clearCacheAndGetSuggestions(opportunity) {
-  // eslint-disable-next-line no-underscore-dangle
-  if (opportunity._accessorCache) {
-    // eslint-disable-next-line no-underscore-dangle, no-param-reassign
-    opportunity._accessorCache = {};
-  }
-  return opportunity.getSuggestions();
-}
-
-/**
  * Processes opportunities and suggestions for prerender audit results.
  * Persists suggestions in the database so they can later be enriched
  * with AI guidance from Mystique.
@@ -1205,42 +1185,22 @@ export async function processOpportunityAndSuggestions(
     suggestions=${preRenderSuggestions.length},
     totalSuggestions=${allSuggestions.length},`);
 
-  // Fetch saved suggestions to map URL → suggestionId for Mystique payload.
-  // suggestionId is required by Mystique to correlate AI summaries back to the right suggestion.
-  const savedSuggestions = await clearCacheAndGetSuggestions(opportunity);
-
-  const urlToSuggestionId = new Map(
-    savedSuggestions
-      .filter((s) => s.getData()?.url && s.getStatus() !== Suggestion.STATUSES.OUTDATED)
-      .map((s) => [s.getData().url, s.getId()]),
-  );
-
   // Build Mystique candidates from individual URLs (domain-wide excluded).
-  // Falls back to URL string when suggestionId is not found (e.g. www/non-www mismatch).
-  let missingSuggestionIdCount = 0;
+  // The guidance handler matches Mystique responses back to suggestions by URL,
+  // so sending the URL as suggestionId is sufficient and avoids a post-sync DB fetch.
   const auditRunCandidates = preRenderSuggestions.reduce((acc, s) => {
     try {
-      const suggestionId = urlToSuggestionId.get(s.url);
       acc.push({
-        suggestionId: suggestionId || s.url,
+        suggestionId: s.url,
         url: s.url,
         originalHtmlMarkdownKey: getS3Path(s.url, auditData.scrapeJobId, 'server-side-html.md'),
         markdownDiffKey: getS3Path(s.url, auditData.scrapeJobId, 'markdown-diff.md'),
       });
-      if (!suggestionId) {
-        missingSuggestionIdCount += 1;
-      }
     } catch {
       // skip malformed URLs — getS3Path throws if new URL(url) fails
     }
     return acc;
   }, []);
-
-  if (missingSuggestionIdCount > 0) {
-    log.warn(`${LOG_PREFIX} ${missingSuggestionIdCount} suggestions missing suggestionId `
-      + `(using URL as fallback). baseUrl=${auditUrl}, siteId=${auditData.siteId}, `
-      + `savedSuggestions=${savedSuggestions.length}, candidates=${auditRunCandidates.length}`);
-  }
 
   return { opportunity, auditRunCandidates };
 }
