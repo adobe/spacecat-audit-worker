@@ -1,3 +1,10 @@
+## [1.414.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.7...v1.414.8) (2026-04-15)
+
+
+### Bug Fixes
+
+* **prerender:** fix suggestionId lookup, baseUrl in payload, and coveredByDomainWide guards ([#2373](https://github.com/adobe/spacecat-audit-worker/issues/2373)) ([001b563](https://github.com/adobe/spacecat-audit-worker/commit/001b563a66214b5842cba7f70e256c9c8df4c583)), closes [#2370](https://github.com/adobe/spacecat-audit-worker/issues/2370)
+
 ## [1.414.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.6...v1.414.7) (2026-04-15)
 
 
