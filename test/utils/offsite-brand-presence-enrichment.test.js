@@ -251,17 +251,23 @@ describe('offsite-brand-presence-enrichment', () => {
           loadBrandPresenceDataFromPostgrest,
         },
       });
+      const postgrestClient = { from: sandbox.stub() };
 
       const result = await mod.computeTopicsFromBrandPresence(SITE_ID, {
         env: {},
         log,
-        dataAccess: {},
+        dataAccess: {
+          services: { postgrestClient },
+        },
       });
 
       expect(result).to.have.lengthOf(1);
       expect(result[0].name).to.equal('MyTopic');
       expect(result[0].urls[0].url).to.equal('https://www.reddit.com/r/test/comments/abc');
       expect(mockFetch).to.not.have.been.called;
+      expect(
+        loadBrandPresenceDataFromPostgrest.firstCall.args[0].postgrestClient,
+      ).to.equal(postgrestClient);
     });
 
     it('falls back to query-index/file fetches when PostgREST returns no rows', async () => {

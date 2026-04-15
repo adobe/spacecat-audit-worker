@@ -265,6 +265,8 @@ describe('Offsite Brand Presence Handler', () => {
           loadBrandPresenceDataFromPostgrest,
         },
       });
+      const postgrestClient = { from: sandbox.stub() };
+      context.dataAccess.services = { postgrestClient };
 
       delete env.SPACECAT_API_BASE_URL;
       delete env.SPACECAT_API_KEY;
@@ -275,6 +277,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
       expect(mockFetch).to.not.have.been.called;
       expect(loadBrandPresenceDataFromPostgrest).to.have.been.calledOnce;
+      expect(loadBrandPresenceDataFromPostgrest.firstCall.args[0].postgrestClient).to.equal(postgrestClient);
     });
 
     it('falls back to file-backed data when PostgREST returns no rows', async () => {
