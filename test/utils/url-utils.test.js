@@ -332,6 +332,22 @@ describe('joinBaseAndPath', () => {
     expect(utils.joinBaseAndPath('https://example.com/base', '/page')).to.equal('https://example.com/base/page');
     expect(utils.joinBaseAndPath('https://example.com/base/', 'page')).to.equal('https://example.com/base/page');
   });
+
+  it('should avoid duplicating a base subpath when the joined path already includes it', () => {
+    expect(utils.joinBaseAndPath('https://example.com/us', '/us/page1')).to.equal('https://example.com/us/page1');
+    expect(utils.joinBaseAndPath('https://example.com/us/', 'us/page1')).to.equal('https://example.com/us/page1');
+    expect(utils.joinBaseAndPath('https://example.com/us', '/us')).to.equal('https://example.com/us');
+  });
+
+  it('should still append paths below a base subpath when they do not include the prefix', () => {
+    expect(utils.joinBaseAndPath('https://example.com/us', '/page1')).to.equal('https://example.com/us/page1');
+    expect(utils.joinBaseAndPath('https://example.com/us/', 'page1')).to.equal('https://example.com/us/page1');
+  });
+
+  it('should fall back to string joining when the base URL cannot be parsed', () => {
+    expect(utils.joinBaseAndPath('example.com/us', '/page1')).to.equal('example.com/us/page1');
+    expect(utils.joinBaseAndPath('example.com/us/', 'page1')).to.equal('example.com/us/page1');
+  });
 });
 
 describe('stripQueryString', () => {

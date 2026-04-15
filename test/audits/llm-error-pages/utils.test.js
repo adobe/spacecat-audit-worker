@@ -31,7 +31,7 @@ import {
   downloadExistingCdnSheet,
   matchErrorsWithCdnData,
 } from '../../../src/llm-error-pages/utils.js';
-import { extractCustomerDomain, getS3Config } from '../../../src/utils/cdn-utils.js';
+import { extractSiteKeyFromBaseURL, getS3Config } from '../../../src/utils/cdn-utils.js';
 
 use(sinonChai);
 
@@ -587,13 +587,13 @@ describe('LLM Error Pages Utils', () => {
   // SITE AND CONFIGURATION UTILITIES TESTS
   // ============================================================================
 
-  describe('extractCustomerDomain', () => {
+  describe('extractSiteKeyFromBaseURL', () => {
     it('should extract domain from base URL', () => {
       const mockSite = {
         getBaseURL: () => 'https://www.example.com',
       };
 
-      const result = extractCustomerDomain(mockSite);
+      const result = extractSiteKeyFromBaseURL(mockSite);
       expect(result).to.equal('example_com');
     });
 
@@ -602,7 +602,7 @@ describe('LLM Error Pages Utils', () => {
         getBaseURL: () => 'https://test-site.example.co.uk',
       };
 
-      const result = extractCustomerDomain(mockSite);
+      const result = extractSiteKeyFromBaseURL(mockSite);
       expect(result).to.equal('test_site_example_co_uk');
     });
   });
@@ -623,8 +623,8 @@ describe('LLM Error Pages Utils', () => {
 
       const result = getS3Config(mockSite, context);
       expect(result.bucket).to.equal('spacecat-test-cdn-logs-aggregates-us-east-1');
-      expect(result.customerName).to.equal('example');
-      expect(result.customerDomain).to.equal('example_com');
+      expect(result.siteName).to.equal('example');
+      expect(result.siteKey).to.equal('example_com');
       expect(result.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated/test-site-id/');
       expect(result.databaseName).to.equal('cdn_logs_example_com');
       expect(result.tableName).to.equal('aggregated_logs_example_com_consolidated');

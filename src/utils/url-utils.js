@@ -197,10 +197,23 @@ export function joinBaseAndPath(baseURL, path) {
     return baseURL.endsWith('/') ? baseURL : `${baseURL}/`;
   }
 
-  const normalizedBase = baseURL.endsWith('/') ? baseURL.slice(0, -1) : baseURL;
-  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  try {
+    // Prefer URL parsing when possible, but keep string-join fallback for invalid bases.
+    const base = new URL(baseURL);
+    const normalizedBasePath = base.pathname === '/' ? '' : base.pathname.replace(/\/$/, '');
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    const joinedPath = normalizedBasePath
+      && (normalizedPath === normalizedBasePath || normalizedPath.startsWith(`${normalizedBasePath}/`))
+      ? normalizedPath
+      : `${normalizedBasePath}${normalizedPath}`;
 
-  return `${normalizedBase}${normalizedPath}`;
+    return `${base.origin}${joinedPath}`;
+  } catch {
+    const normalizedBase = baseURL.endsWith('/') ? baseURL.slice(0, -1) : baseURL;
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+
+    return `${normalizedBase}${normalizedPath}`;
+  }
 }
 
 /**
