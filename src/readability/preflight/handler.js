@@ -27,6 +27,10 @@ import {
   MAX_CHARACTERS_DISPLAY,
 } from '../shared/constants.js';
 import { getDomElementSelector, toElementTargets } from '../../preflight/utils/dom-selector.js';
+import {
+  removeEmbeddedSocialHosts,
+  isEmbeddedSocialContentElement,
+} from '../shared/embed-content-utils.js';
 
 export const PREFLIGHT_READABILITY = 'readability';
 
@@ -177,6 +181,7 @@ export default async function readability(context, auditContext) {
     const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
 
     const $ = cheerioLoad(rawBody);
+    removeEmbeddedSocialHosts($);
 
     // Get all paragraph, div, and list item elements
     const textElements = $('p, div, li').toArray();
@@ -270,7 +275,8 @@ export default async function readability(context, auditContext) {
       .filter(({ element }) => {
         const textContent = $(element).text()?.trim();
         return textContent && textContent.length >= MIN_TEXT_LENGTH;
-      });
+      })
+      .filter(({ element }) => !isEmbeddedSocialContentElement($, element));
 
     // Process filtered elements
     elementsToProcess.forEach(({ element, index }) => {

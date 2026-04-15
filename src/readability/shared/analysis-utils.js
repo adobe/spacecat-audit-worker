@@ -25,6 +25,10 @@ import {
   MAX_CHARACTERS_DISPLAY,
 } from './constants.js';
 import { getElementSelector } from './selector-utils.js';
+import {
+  removeEmbeddedSocialHosts,
+  isEmbeddedSocialContentElement,
+} from './embed-content-utils.js';
 
 /**
  * Categorizes readability issues by severity and traffic impact
@@ -147,6 +151,7 @@ const collapseWhitespace = (text) => text.replace(/\s+/g, ' ');
  */
 const getMeaningfulElementsForReadability = ($) => {
   $('header, footer, style, script, noscript').remove();
+  removeEmbeddedSocialHosts($);
   return $('p, blockquote, li, div').toArray().filter((el) => {
     const text = $(el).text()?.trim();
     return text && collapseWhitespace(text).length >= MIN_TEXT_LENGTH;
@@ -215,7 +220,8 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log, scraped
         const textContent = $(element).text()?.trim();
         return textContent && collapseWhitespace(textContent).length >= MIN_TEXT_LENGTH
           && /\s/.test(textContent);
-      });
+      })
+      .filter(({ element }) => !isEmbeddedSocialContentElement($, element));
 
     // Process each element and collect analysis promises
     const analysisPromises = [];

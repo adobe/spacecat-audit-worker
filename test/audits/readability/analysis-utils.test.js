@@ -835,6 +835,47 @@ describe('Readability Analysis Utils', () => {
       expect(result.length).to.equal(0);
     });
 
+    it('should skip embedded social carousel captions (AEM / Instagram)', async () => {
+      const longSocialCaption = `"🏔️👀 Ordino hits different! Here are some of the top places you can’t miss in spring:
+• Ordino Old Town
+• Coll d’Ordino
+Save it for your next mountain escape!
+#nature #ordino #history #andorraworld #andorraELEVATESyou"`;
+      const authoredBody = makeLongText(
+        'This is authored marketing copy about visiting Andorra in the spring season with clear sentences.',
+      );
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <body>
+            <div class="cards-carousel-rrss">
+              <div class="card-carousel__card-description">
+                <p>${longSocialCaption}</p>
+              </div>
+            </div>
+            <p>${authoredBody}</p>
+          </body>
+        </html>
+      `;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(25);
+
+      const result = await analyzePageContent(
+        html,
+        'https://visitandorra.com/en/',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result).to.be.an('array');
+      expect(result.length).to.equal(1);
+      expect(result[0].textContent).to.include('authored marketing copy');
+    });
+
     it('should log debug message with detected languages', async () => {
       const text = 'This is a test sentence with enough words for proper language detection and analysis.';
       const html = createHtmlWithParagraph(text);
