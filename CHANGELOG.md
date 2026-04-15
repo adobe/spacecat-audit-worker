@@ -1,3 +1,10 @@
+## [1.415.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.415.0...v1.415.1) (2026-04-15)
+
+
+### Bug Fixes
+
+* **LLMO-4176:** skip brandalf check when onboardingMode is v1 in llmo-customer-analysis ([#2380](https://github.com/adobe/spacecat-audit-worker/issues/2380)) ([86e396a](https://github.com/adobe/spacecat-audit-worker/commit/86e396a1662239a998774f3f7defb808cd74e8a9))
+
 # [1.415.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.9...v1.415.0) (2026-04-15)
 
 
