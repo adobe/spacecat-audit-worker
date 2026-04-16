@@ -65,7 +65,7 @@ export default async function handler(message, context) {
     const sharepointClient = await createLLMOSharepointClient(context);
     const derivedPeriod = derivePeriodFromBrokenLinks(brokenLinks)
       || generateReportingPeriods(new Date(), [-1]).weeks[0].periodIdentifier;
-    const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.customerName;
+    const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.siteName;
     const outputDir = `${llmoFolder}/agentic-traffic`;
     const filename = `agentictraffic-errors-404-${derivedPeriod}.xlsx`;
 

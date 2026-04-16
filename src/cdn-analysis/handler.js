@@ -15,7 +15,7 @@ import { DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
   resolveCdnBucketName,
-  extractCustomerDomain,
+  extractSiteKeyFromBaseURL,
   buildConsolidatedPaths,
   getBucketInfo,
   discoverCdnProviders,
@@ -237,7 +237,7 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
     };
   }
 
-  const customerDomain = extractCustomerDomain(site);
+  const siteKey = extractSiteKeyFromBaseURL(site);
   const { year, month, day, hour } = getHourParts(auditContext);
   const { host } = new URL(site.getBaseURL());
   const { orgId } = site.getConfig()?.getLlmoCdnBucketConfig() || {};
@@ -355,7 +355,7 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
         pathId,
         siteId,
       );
-      const rawTable = `raw_logs_${customerDomain}_${serviceProvider.replace(/-/g, '_')}`;
+      const rawTable = `raw_logs_${siteKey}_${serviceProvider.replace(/-/g, '_')}`;
 
       if (!tablesCreated) {
         // eslint-disable-next-line no-await-in-loop

@@ -64,8 +64,8 @@ describe('CDN Logs Report Utils', () => {
 
       const config = getS3Config(mockSite, mockContext);
 
-      expect(config).to.have.property('customerName', 'example');
-      expect(config).to.have.property('customerDomain', 'example_com');
+      expect(config).to.have.property('siteName', 'example');
+      expect(config).to.have.property('siteKey', 'example_com');
       expect(config).to.have.property('bucket', 'spacecat-test-cdn-logs-aggregates-us-east-1');
       expect(config).to.have.property('region', 'us-east-1');
       expect(config).to.have.property('databaseName', 'cdn_logs_example_com');
@@ -79,8 +79,8 @@ describe('CDN Logs Report Utils', () => {
 
       const config = getS3Config(mockSite, mockContext);
 
-      expect(config).to.have.property('customerName', 'sub');
-      expect(config).to.have.property('customerDomain', 'sub_example_com');
+      expect(config).to.have.property('siteName', 'sub');
+      expect(config).to.have.property('siteKey', 'sub_example_com');
     });
 
     it('getAthenaTempLocation method works correctly', async () => {
