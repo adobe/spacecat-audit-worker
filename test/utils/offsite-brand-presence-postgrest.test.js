@@ -25,6 +25,7 @@ import {
 use(sinonChai);
 
 function createExecutionChain(capture, responses) {
+  const orderCapture = capture.order || [];
   const chain = {};
   chain.select = sinon.stub().returns(chain);
   chain.eq = sinon.stub().callsFake((field, value) => {
@@ -41,6 +42,10 @@ function createExecutionChain(capture, responses) {
   });
   chain.lte = sinon.stub().callsFake((field, value) => {
     capture.lte.push([field, value]);
+    return chain;
+  });
+  chain.order = sinon.stub().callsFake((field, options) => {
+    orderCapture.push([field, options]);
     return chain;
   });
   chain.range = sinon.stub().callsFake((start, end) => {
@@ -265,6 +270,7 @@ describe('offsite-brand-presence-postgrest', () => {
         in: [],
         gte: [],
         lte: [],
+        order: [],
         range: [],
       };
       const executionChain = createExecutionChain(executionCapture, [
@@ -382,6 +388,10 @@ describe('offsite-brand-presence-postgrest', () => {
         ['region_code', 'US'],
       ]);
       expect(executionCapture.in[0]).to.deep.equal(['model', getBrandPresenceDbModels()]);
+      expect(executionCapture.order).to.deep.equal([
+        ['execution_date', { ascending: false }],
+        ['id', { ascending: false }],
+      ]);
     });
 
     it('keeps paging execution rows until a batch is smaller than the configured limit', async () => {

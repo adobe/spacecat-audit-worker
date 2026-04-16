@@ -14,6 +14,7 @@ import { PROVIDERS } from '../offsite-brand-presence/constants.js';
 
 const EXECUTION_FETCH_BATCH_SIZE = 5000;
 const EXECUTION_ID_CHUNK_SIZE = 50;
+const DEFAULT_REGION_CODE = 'US';
 
 export const BRAND_PRESENCE_DB_MODEL_BY_PROVIDER = Object.freeze({
   'ai-mode': 'google-ai-mode',
@@ -94,6 +95,7 @@ async function fetchExecutionsBatched(postgrestClient, {
   startDate,
   endDate,
   models,
+  regionCode = DEFAULT_REGION_CODE,
   log,
 }) {
   const rows = [];
@@ -107,10 +109,12 @@ async function fetchExecutionsBatched(postgrestClient, {
       .select('id, execution_date, topics, prompt, category_name, region_code, model')
       .eq('organization_id', organizationId)
       .eq('site_id', siteId)
-      .eq('region_code', 'US')
+      .eq('region_code', regionCode)
       .in('model', models)
       .gte('execution_date', startDate)
       .lte('execution_date', endDate)
+      .order('execution_date', { ascending: false })
+      .order('id', { ascending: false })
       .range(offset, offset + EXECUTION_FETCH_BATCH_SIZE - 1);
 
     if (error) {
@@ -196,6 +200,7 @@ export async function loadBrandPresenceDataFromPostgrest({
   organizationId,
   previousWeeks,
   postgrestClient,
+  regionCode = DEFAULT_REGION_CODE,
   log,
 }) {
   if (!siteId || !organizationId || !postgrestClient?.from) {
@@ -217,6 +222,7 @@ export async function loadBrandPresenceDataFromPostgrest({
       startDate,
       endDate,
       models,
+      regionCode,
       log,
     });
 
