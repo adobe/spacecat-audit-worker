@@ -19,6 +19,7 @@ import {
   isExcludedReadabilityText,
   stripNonContent,
   collapseWhitespace,
+  analyzeTextReadability,
 } from '../../../src/readability/shared/analysis-utils.js';
 import { load as cheerioLoad } from 'cheerio';
 
@@ -1390,6 +1391,30 @@ describe('isExcludedReadabilityText', () => {
     it('should return false for whitespace-only string', () => {
       expect(isExcludedReadabilityText('   ')).to.equal(false);
     });
+  });
+});
+
+describe('analyzeTextReadability', () => {
+  it('returns null for excluded citation text without calling getSupportedLanguage (defense in depth)', async () => {
+    const mockLog = { error: sinon.stub(), debug: sinon.stub() };
+    const getSupportedLanguage = sinon.stub();
+    const detectedLanguages = new Set();
+    const excludedCitation = 'Whelton PK, et al. 2017 ACC/AHA guideline for high blood pressure in adults. Hypertension. 2018; doi:10.1161/HYP.0000000000000065.';
+
+    const result = await analyzeTextReadability(
+      excludedCitation,
+      'p',
+      'https://example.com/page',
+      0,
+      detectedLanguages,
+      getSupportedLanguage,
+      mockLog,
+      '2025-01-01T00:00:00.000Z',
+    );
+
+    expect(result).to.equal(null);
+    expect(getSupportedLanguage).to.not.have.been.called;
+    expect(detectedLanguages.size).to.equal(0);
   });
 });
 

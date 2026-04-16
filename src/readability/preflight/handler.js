@@ -206,6 +206,11 @@ export default async function readability(context, auditContext) {
     // Helper function to calculate readability score and create audit opportunity
     const analyzeReadability = async (text, element, elementIndex) => {
       try {
+        // Defense in depth: element / <br> filters above also exclude.
+        if (isExcludedReadabilityText(text)) {
+          return;
+        }
+
         // Check if text is in a supported language before analyzing readability
         const detectedLanguage = getSupportedLanguage(text);
         if (!detectedLanguage) {

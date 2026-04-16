@@ -62,75 +62,6 @@ function extractTrafficFromKey() {
 }
 
 /**
- * Analyzes readability for a single text block
- */
-async function analyzeTextReadability(
-  text,
-  selector,
-  pageUrl,
-  traffic,
-  detectedLanguages,
-  getSupportedLanguage,
-  log,
-  scrapedAt,
-) {
-  try {
-    // Check if text is in a supported language
-    const detectedLanguage = getSupportedLanguage(text);
-    if (!detectedLanguage) {
-      return null; // Skip unsupported languages
-    }
-
-    // Track detected language
-    detectedLanguages.add(detectedLanguage);
-
-    // Calculate readability score
-    let readabilityScore;
-    if (detectedLanguage === 'english') {
-      readabilityScore = rs.fleschReadingEase(text.trim());
-    } else {
-      readabilityScore = await calculateReadabilityScore(text.trim(), detectedLanguage);
-    }
-
-    // Check if readability is poor
-    if (readabilityScore < TARGET_READABILITY_SCORE) {
-      // Truncate text for display
-      const displayText = text.length > MAX_CHARACTERS_DISPLAY
-        ? `${text.substring(0, MAX_CHARACTERS_DISPLAY)}...`
-        : text;
-
-      // Calculate priority rank
-      const trafficWeight = traffic || 0;
-      const readabilityWeight = TARGET_READABILITY_SCORE - readabilityScore;
-      const contentLengthWeight = Math.min(text.length, 1000) / 1000;
-      const rank = (readabilityWeight * 0.5) + (trafficWeight * 0.0001)
-        + (contentLengthWeight * 0.1);
-
-      return {
-        pageUrl,
-        scrapedAt,
-        selector,
-        textContent: text,
-        displayText,
-        fleschReadingEase: Math.round(readabilityScore * 100) / 100,
-        language: detectedLanguage,
-        traffic,
-        rank: Math.round(rank),
-        category: categorizeReadabilityIssue(readabilityScore, traffic),
-        seoImpact: calculateSeoImpact(readabilityScore, traffic),
-        seoRecommendation:
-          'Improve readability by using shorter sentences, simpler words, and clearer structure',
-      };
-    }
-
-    return null;
-  } catch (error) {
-    log.error(`[ReadabilityAnalysis] Error analyzing text readability: ${error.message}`);
-    return null;
-  }
-}
-
-/**
  * Collapses runs of whitespace into single spaces.
  * Used to normalize text extracted from table/grid layouts before length checks.
  * Exported so preflight matches the opportunity path for MIN_TEXT_LENGTH checks.
@@ -254,6 +185,81 @@ export function isExcludedReadabilityText(text) {
 }
 
 /**
+ * Analyzes readability for a single text block.
+ * Exported for unit tests (defense-in-depth exclusion branch coverage).
+ */
+export async function analyzeTextReadability(
+  text,
+  selector,
+  pageUrl,
+  traffic,
+  detectedLanguages,
+  getSupportedLanguage,
+  log,
+  scrapedAt,
+) {
+  try {
+    // Defense in depth: filters above also exclude; callers may change over time.
+    if (isExcludedReadabilityText(text)) {
+      return null;
+    }
+
+    // Check if text is in a supported language
+    const detectedLanguage = getSupportedLanguage(text);
+    if (!detectedLanguage) {
+      return null; // Skip unsupported languages
+    }
+
+    // Track detected language
+    detectedLanguages.add(detectedLanguage);
+
+    // Calculate readability score
+    let readabilityScore;
+    if (detectedLanguage === 'english') {
+      readabilityScore = rs.fleschReadingEase(text.trim());
+    } else {
+      readabilityScore = await calculateReadabilityScore(text.trim(), detectedLanguage);
+    }
+
+    // Check if readability is poor
+    if (readabilityScore < TARGET_READABILITY_SCORE) {
+      // Truncate text for display
+      const displayText = text.length > MAX_CHARACTERS_DISPLAY
+        ? `${text.substring(0, MAX_CHARACTERS_DISPLAY)}...`
+        : text;
+
+      // Calculate priority rank
+      const trafficWeight = traffic || 0;
+      const readabilityWeight = TARGET_READABILITY_SCORE - readabilityScore;
+      const contentLengthWeight = Math.min(text.length, 1000) / 1000;
+      const rank = (readabilityWeight * 0.5) + (trafficWeight * 0.0001)
+        + (contentLengthWeight * 0.1);
+
+      return {
+        pageUrl,
+        scrapedAt,
+        selector,
+        textContent: text,
+        displayText,
+        fleschReadingEase: Math.round(readabilityScore * 100) / 100,
+        language: detectedLanguage,
+        traffic,
+        rank: Math.round(rank),
+        category: categorizeReadabilityIssue(readabilityScore, traffic),
+        seoImpact: calculateSeoImpact(readabilityScore, traffic),
+        seoRecommendation:
+          'Improve readability by using shorter sentences, simpler words, and clearer structure',
+      };
+    }
+
+    return null;
+  } catch (error) {
+    log.error(`[ReadabilityAnalysis] Error analyzing text readability: ${error.message}`);
+    return null;
+  }
+}
+
+/**
  * Returns an array of meaningful text elements from the provided document.
  * Selects <p>, <blockquote>, <div> and <li> elements, but excludes elements
  * that are descendants of <header> or <footer>.
@@ -325,9 +331,8 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log, scraped
 
         return !hasBlockChildren;
       })
-      // isExcludedReadabilityText is the single exclusion gate for this path;
-      // analyzeTextReadability does not repeat the check, so this filter must
-      // run before any call to that function.
+      // Exclude citation / attribution chunks before scoring; analyzeTextReadability
+      // repeats isExcludedReadabilityText for defense in depth.
       .filter(({ element }) => {
         const textContent = $(element).text()?.trim();
         return textContent && collapseWhitespace(textContent).length >= MIN_TEXT_LENGTH
