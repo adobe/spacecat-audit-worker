@@ -17,6 +17,11 @@ import esmock from 'esmock';
 
 use(sinonChai);
 
+const DEFAULT_ENV = Object.freeze({
+  SPACECAT_API_BASE_URL: 'https://spacecat.example.com',
+  SPACECAT_API_KEY: 'test-key',
+});
+
 describe('brandalf-utils', () => {
   let sandbox;
   let mockFetch;
@@ -34,9 +39,7 @@ describe('brandalf-utils', () => {
     };
 
     const mod = await esmock('../../src/utils/brandalf-utils.js', {
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: mockFetch,
-      },
+      '@adobe/spacecat-shared-utils': { tracingFetch: mockFetch },
     });
 
     isBrandalfEnabled = mod.isBrandalfEnabled;
@@ -47,17 +50,18 @@ describe('brandalf-utils', () => {
     sandbox.restore();
   });
 
+  function stubFeatureFlagsResponse(flags) {
+    mockFetch.resolves({
+      ok: true,
+      json: async () => flags,
+    });
+  }
+
   describe('isBrandalfEnabled', () => {
     it('returns true when the brandalf flag is enabled', async () => {
-      mockFetch.resolves({
-        ok: true,
-        json: async () => [{ flagName: 'brandalf', flagValue: true }],
-      });
+      stubFeatureFlagsResponse([{ flagName: 'brandalf', flagValue: true }]);
 
-      const result = await isBrandalfEnabled('org-123', {
-        SPACECAT_API_BASE_URL: 'https://spacecat.example.com',
-        SPACECAT_API_KEY: 'test-key',
-      }, log);
+      const result = await isBrandalfEnabled('org-123', DEFAULT_ENV, log);
 
       expect(result).to.equal(true);
       expect(mockFetch).to.have.been.calledWith(
@@ -67,10 +71,7 @@ describe('brandalf-utils', () => {
     });
 
     it('returns false without calling the API when organizationId is missing', async () => {
-      const result = await isBrandalfEnabled(null, {
-        SPACECAT_API_BASE_URL: 'https://spacecat.example.com',
-        SPACECAT_API_KEY: 'test-key',
-      }, log);
+      const result = await isBrandalfEnabled(null, DEFAULT_ENV, log);
 
       expect(result).to.equal(false);
       expect(mockFetch).to.not.have.been.called;
@@ -94,18 +95,12 @@ describe('brandalf-utils', () => {
     });
 
     it('encodes the org ID and returns false when brandalf is not enabled', async () => {
-      mockFetch.resolves({
-        ok: true,
-        json: async () => [
-          { flagName: 'brandalf', flagValue: false },
-          { flagName: 'different-flag', flagValue: true },
-        ],
-      });
+      stubFeatureFlagsResponse([
+        { flagName: 'brandalf', flagValue: false },
+        { flagName: 'different-flag', flagValue: true },
+      ]);
 
-      const result = await isBrandalfEnabled('org/with spaces', {
-        SPACECAT_API_BASE_URL: 'https://spacecat.example.com',
-        SPACECAT_API_KEY: 'test-key',
-      }, log);
+      const result = await isBrandalfEnabled('org/with spaces', DEFAULT_ENV, log);
 
       expect(result).to.equal(false);
       expect(mockFetch).to.have.been.calledWith(
@@ -115,15 +110,9 @@ describe('brandalf-utils', () => {
     });
 
     it('returns false when the feature-flags endpoint responds with a non-ok status', async () => {
-      mockFetch.resolves({
-        ok: false,
-        status: 503,
-      });
+      mockFetch.resolves({ ok: false, status: 503 });
 
-      const result = await isBrandalfEnabled('org-123', {
-        SPACECAT_API_BASE_URL: 'https://spacecat.example.com',
-        SPACECAT_API_KEY: 'test-key',
-      }, log);
+      const result = await isBrandalfEnabled('org-123', DEFAULT_ENV, log);
 
       expect(result).to.equal(false);
       expect(log.warn).to.have.been.calledWithMatch(
@@ -132,26 +121,15 @@ describe('brandalf-utils', () => {
     });
 
     it('returns false when the API payload is not an array', async () => {
-      mockFetch.resolves({
-        ok: true,
-        json: async () => ({ flagName: 'brandalf', flagValue: true }),
-      });
+      stubFeatureFlagsResponse({ flagName: 'brandalf', flagValue: true });
 
-      const result = await isBrandalfEnabled('org-123', {
-        SPACECAT_API_BASE_URL: 'https://spacecat.example.com',
-        SPACECAT_API_KEY: 'test-key',
-      }, log);
-
-      expect(result).to.equal(false);
+      expect(await isBrandalfEnabled('org-123', DEFAULT_ENV, log)).to.equal(false);
     });
 
     it('returns false and warns when the feature-flag request throws', async () => {
       mockFetch.rejects(new Error('network down'));
 
-      const result = await isBrandalfEnabled('org-123', {
-        SPACECAT_API_BASE_URL: 'https://spacecat.example.com',
-        SPACECAT_API_KEY: 'test-key',
-      }, log);
+      const result = await isBrandalfEnabled('org-123', DEFAULT_ENV, log);
 
       expect(result).to.equal(false);
       expect(log.warn).to.have.been.calledWithMatch(
@@ -161,47 +139,44 @@ describe('brandalf-utils', () => {
   });
 
   describe('resolveOrganizationIdForSite', () => {
-    it('prefers organization ID from the provided site object', async () => {
-      const site = {
-        getOrganizationId: sandbox.stub().returns('org-from-site'),
-      };
+    function resolve(overrides = {}) {
+      return resolveOrganizationIdForSite({ log, ...overrides });
+    }
 
-      const result = await resolveOrganizationIdForSite({
-        site,
+    function siteWithOrg(orgId) {
+      return { getOrganizationId: sandbox.stub().returns(orgId) };
+    }
+
+    function dataAccessWithFindById(findByIdStub) {
+      return { Site: { findById: findByIdStub } };
+    }
+
+    it('prefers organization ID from the provided site object', async () => {
+      const result = await resolve({
+        site: siteWithOrg('org-from-site'),
         siteId: 'site-123',
-        dataAccess: {
-          Site: {
-            findById: sandbox.stub().rejects(new Error('should not be called')),
-          },
-        },
+        dataAccess: dataAccessWithFindById(sandbox.stub().rejects(new Error('should not be called'))),
         fallbackOrganizationId: 'fallback-org',
-        log,
       });
 
       expect(result).to.equal('org-from-site');
     });
 
     it('falls back to explicit organizationId when site has none', async () => {
-      const result = await resolveOrganizationIdForSite({
-        site: { getOrganizationId: sandbox.stub().returns(null) },
+      const result = await resolve({
+        site: siteWithOrg(null),
         fallbackOrganizationId: 'fallback-org',
-        log,
       });
 
       expect(result).to.equal('fallback-org');
     });
 
     it('loads the site from dataAccess when only siteId is available', async () => {
-      const result = await resolveOrganizationIdForSite({
+      const result = await resolve({
         siteId: 'site-123',
-        dataAccess: {
-          Site: {
-            findById: sandbox.stub().resolves({
-              getOrganizationId: sandbox.stub().returns('org-from-lookup'),
-            }),
-          },
-        },
-        log,
+        dataAccess: dataAccessWithFindById(
+          sandbox.stub().resolves(siteWithOrg('org-from-lookup')),
+        ),
       });
 
       expect(result).to.equal('org-from-lookup');
@@ -209,57 +184,34 @@ describe('brandalf-utils', () => {
 
     it('returns null when there is no siteId to look up', async () => {
       const findById = sandbox.stub();
-
-      const result = await resolveOrganizationIdForSite({
-        dataAccess: {
-          Site: {
-            findById,
-          },
-        },
-        log,
-      });
+      const result = await resolve({ dataAccess: dataAccessWithFindById(findById) });
 
       expect(result).to.equal(null);
       expect(findById).to.not.have.been.called;
     });
 
     it('returns null when the Site lookup helper is unavailable', async () => {
-      const result = await resolveOrganizationIdForSite({
+      const result = await resolve({
         siteId: 'site-123',
-        dataAccess: {
-          Site: {},
-        },
-        log,
+        dataAccess: { Site: {} },
       });
 
       expect(result).to.equal(null);
     });
 
     it('returns null when the looked-up site has no organization ID', async () => {
-      const result = await resolveOrganizationIdForSite({
+      const result = await resolve({
         siteId: 'site-123',
-        dataAccess: {
-          Site: {
-            findById: sandbox.stub().resolves({
-              getOrganizationId: sandbox.stub().returns(null),
-            }),
-          },
-        },
-        log,
+        dataAccess: dataAccessWithFindById(sandbox.stub().resolves(siteWithOrg(null))),
       });
 
       expect(result).to.equal(null);
     });
 
     it('returns null and warns when Site.findById throws', async () => {
-      const result = await resolveOrganizationIdForSite({
+      const result = await resolve({
         siteId: 'site-123',
-        dataAccess: {
-          Site: {
-            findById: sandbox.stub().rejects(new Error('lookup failed')),
-          },
-        },
-        log,
+        dataAccess: dataAccessWithFindById(sandbox.stub().rejects(new Error('lookup failed'))),
       });
 
       expect(result).to.equal(null);

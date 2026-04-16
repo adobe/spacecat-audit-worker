@@ -24,63 +24,67 @@ import {
 
 use(sinonChai);
 
+const SITE_ID = 'site-123';
+const ORG_ID = 'org-123';
+const DEFAULT_PREVIOUS_WEEKS = [{ week: 11, year: 2026 }, { week: 10, year: 2026 }];
+const SINGLE_WEEK = [{ week: 11, year: 2026 }];
+
+function createCapture() {
+  return {
+    eq: [], in: [], gte: [], lte: [], order: [], range: [], select: [],
+  };
+}
+
+function capturingStub(capture, key, returnValue) {
+  return sinon.stub().callsFake((...args) => {
+    capture[key].push(args.length === 1 ? args[0] : args);
+    return returnValue;
+  });
+}
+
 function createExecutionChain(capture, responses) {
-  const orderCapture = capture.order || [];
   const chain = {};
   chain.select = sinon.stub().returns(chain);
-  chain.eq = sinon.stub().callsFake((field, value) => {
-    capture.eq.push([field, value]);
-    return chain;
-  });
-  chain.in = sinon.stub().callsFake((field, value) => {
-    capture.in.push([field, value]);
-    return chain;
-  });
-  chain.gte = sinon.stub().callsFake((field, value) => {
-    capture.gte.push([field, value]);
-    return chain;
-  });
-  chain.lte = sinon.stub().callsFake((field, value) => {
-    capture.lte.push([field, value]);
-    return chain;
-  });
-  chain.order = sinon.stub().callsFake((field, options) => {
-    orderCapture.push([field, options]);
-    return chain;
-  });
+  chain.eq = capturingStub(capture, 'eq', chain);
+  chain.in = capturingStub(capture, 'in', chain);
+  chain.gte = capturingStub(capture, 'gte', chain);
+  chain.lte = capturingStub(capture, 'lte', chain);
+  chain.order = capturingStub(capture, 'order', chain);
   chain.range = sinon.stub().callsFake((start, end) => {
     capture.range.push([start, end]);
     return Promise.resolve(responses.shift());
   });
-
   return chain;
 }
 
 function createSourceChain(capture, response) {
-  const chain = {
-    select: sinon.stub().callsFake((fields) => {
-      capture.select.push(fields);
-      return chain;
-    }),
-    eq: sinon.stub().callsFake((field, value) => {
-      capture.eq.push([field, value]);
-      return chain;
-    }),
-    gte: sinon.stub().callsFake((field, value) => {
-      capture.gte.push([field, value]);
-      return chain;
-    }),
-    lte: sinon.stub().callsFake((field, value) => {
-      capture.lte.push([field, value]);
-      return chain;
-    }),
-    in: sinon.stub().callsFake((field, value) => {
-      capture.in.push([field, value]);
-      return Promise.resolve(response);
-    }),
-  };
-
+  const chain = {};
+  chain.select = capturingStub(capture, 'select', chain);
+  chain.eq = capturingStub(capture, 'eq', chain);
+  chain.gte = capturingStub(capture, 'gte', chain);
+  chain.lte = capturingStub(capture, 'lte', chain);
+  chain.in = sinon.stub().callsFake((...args) => {
+    capture.in.push(args.length === 1 ? args[0] : args);
+    return Promise.resolve(response);
+  });
   return chain;
+}
+
+function makeExecution(overrides = {}) {
+  return {
+    id: 'exec-1',
+    execution_date: '2026-03-12',
+    region_code: 'US',
+    topics: '',
+    prompt: '',
+    category_name: '',
+    model: 'chatgpt-free',
+    ...overrides,
+  };
+}
+
+function makeSource(executionId, url) {
+  return { execution_id: executionId, source_urls: { url } };
 }
 
 describe('offsite-brand-presence-postgrest', () => {
@@ -138,10 +142,7 @@ describe('offsite-brand-presence-postgrest', () => {
 
   describe('getDateWindowForPreviousWeeks', () => {
     it('returns the min/max date window for the selected ISO weeks', () => {
-      const result = getDateWindowForPreviousWeeks([
-        { week: 11, year: 2026 },
-        { week: 10, year: 2026 },
-      ]);
+      const result = getDateWindowForPreviousWeeks(DEFAULT_PREVIOUS_WEEKS);
 
       expect(result).to.deep.equal({
         startDate: '2026-03-02',
@@ -155,31 +156,25 @@ describe('offsite-brand-presence-postgrest', () => {
     });
 
     it('returns null when every supplied ISO week is invalid', () => {
-      const result = getDateWindowForPreviousWeeks([
+      expect(getDateWindowForPreviousWeeks([
         { week: 0, year: 2026 },
         { week: 54, year: 2026 },
-      ]);
-
-      expect(result).to.equal(null);
+      ])).to.equal(null);
     });
 
     it('handles years where ISO week 1 starts in the previous calendar year', () => {
-      const result = getDateWindowForPreviousWeeks([
+      expect(getDateWindowForPreviousWeeks([
         { week: 1, year: 2015 },
-      ]);
-
-      expect(result).to.deep.equal({
+      ])).to.deep.equal({
         startDate: '2014-12-29',
         endDate: '2015-01-04',
       });
     });
 
     it('handles years where January 4th is not a Sunday', () => {
-      const result = getDateWindowForPreviousWeeks([
+      expect(getDateWindowForPreviousWeeks([
         { week: 1, year: 2021 },
-      ]);
-
-      expect(result).to.deep.equal({
+      ])).to.deep.equal({
         startDate: '2021-01-04',
         endDate: '2021-01-10',
       });
@@ -189,16 +184,10 @@ describe('offsite-brand-presence-postgrest', () => {
   describe('mapExecutionsToLegacyBrandPresenceRows', () => {
     it('maps executions and joined source rows back to the legacy row shape', () => {
       const result = mapExecutionsToLegacyBrandPresenceRows(
-        [{
-          id: 'exec-1',
-          region_code: 'US',
-          topics: 'Topic A',
-          prompt: 'Prompt A',
-          category_name: 'Category A',
-        }],
+        [makeExecution({ topics: 'Topic A', prompt: 'Prompt A', category_name: 'Category A' })],
         [
-          { execution_id: 'exec-1', source_urls: { url: 'https://a.example.com' } },
-          { execution_id: 'exec-1', source_urls: { url: 'https://b.example.com' } },
+          makeSource('exec-1', 'https://a.example.com'),
+          makeSource('exec-1', 'https://b.example.com'),
         ],
       );
 
@@ -213,13 +202,11 @@ describe('offsite-brand-presence-postgrest', () => {
 
     it('ignores malformed source rows and defaults missing execution fields to empty strings', () => {
       const result = mapExecutionsToLegacyBrandPresenceRows(
-        [{
-          id: 'exec-1',
-        }],
+        [{ id: 'exec-1' }],
         [
           { execution_id: 'exec-1', source_urls: {} },
           { source_urls: { url: 'https://missing-execution.example.com' } },
-          { execution_id: 'exec-1', source_urls: { url: 'https://valid.example.com' } },
+          makeSource('exec-1', 'https://valid.example.com'),
         ],
       );
 
@@ -234,29 +221,26 @@ describe('offsite-brand-presence-postgrest', () => {
   });
 
   describe('loadBrandPresenceDataFromPostgrest', () => {
-    it('returns null when required identifiers or the PostgREST client are missing', async () => {
-      const result = await loadBrandPresenceDataFromPostgrest({
-        siteId: null,
-        organizationId: 'org-123',
-        previousWeeks: [{ week: 11, year: 2026 }],
+    function loadWith(overrides = {}) {
+      return loadBrandPresenceDataFromPostgrest({
+        siteId: SITE_ID,
+        organizationId: ORG_ID,
+        previousWeeks: SINGLE_WEEK,
         postgrestClient: null,
         log,
+        ...overrides,
       });
+    }
 
-      expect(result).to.equal(null);
+    it('returns null when required identifiers or the PostgREST client are missing', async () => {
+      expect(await loadWith({ siteId: null, postgrestClient: null })).to.equal(null);
     });
 
     it('returns null when previousWeeks does not resolve to a valid date window', async () => {
-      const postgrestClient = {
-        from: sandbox.stub(),
-      };
-
-      const result = await loadBrandPresenceDataFromPostgrest({
-        siteId: 'site-123',
-        organizationId: 'org-123',
+      const postgrestClient = { from: sandbox.stub() };
+      const result = await loadWith({
         previousWeeks: [{ week: 0, year: 2026 }],
         postgrestClient,
-        log,
       });
 
       expect(result).to.equal(null);
@@ -264,97 +248,37 @@ describe('offsite-brand-presence-postgrest', () => {
     });
 
     it('returns null when no execution rows are found', async () => {
-      const executionCapture = {
-        select: null,
-        eq: [],
-        in: [],
-        gte: [],
-        lte: [],
-        order: [],
-        range: [],
-      };
-      const executionChain = createExecutionChain(executionCapture, [
-        { data: [], error: null },
-      ]);
-      const postgrestClient = {
-        from: sandbox.stub().returns(executionChain),
-      };
+      const capture = createCapture();
+      const executionChain = createExecutionChain(capture, [{ data: [], error: null }]);
+      const postgrestClient = { from: sandbox.stub().returns(executionChain) };
 
-      const result = await loadBrandPresenceDataFromPostgrest({
-        siteId: 'site-123',
-        organizationId: 'org-123',
-        previousWeeks: [{ week: 11, year: 2026 }, { week: 10, year: 2026 }],
+      const result = await loadWith({
+        previousWeeks: DEFAULT_PREVIOUS_WEEKS,
         postgrestClient,
-        log,
       });
 
       expect(result).to.equal(null);
-      expect(executionCapture.eq).to.deep.include(['region_code', 'US']);
-      expect(executionCapture.in[0][0]).to.equal('model');
+      expect(capture.eq).to.deep.include(['region_code', 'US']);
+      expect(capture.in[0][0]).to.equal('model');
     });
 
     it('treats null execution data as an empty result set', async () => {
-      const executionChain = createExecutionChain({
-        select: null,
-        eq: [],
-        in: [],
-        gte: [],
-        lte: [],
-        range: [],
-      }, [
-        { data: null, error: null },
-      ]);
-      const postgrestClient = {
-        from: sandbox.stub().returns(executionChain),
-      };
+      const executionChain = createExecutionChain(createCapture(), [{ data: null, error: null }]);
+      const postgrestClient = { from: sandbox.stub().returns(executionChain) };
 
-      const result = await loadBrandPresenceDataFromPostgrest({
-        siteId: 'site-123',
-        organizationId: 'org-123',
-        previousWeeks: [{ week: 11, year: 2026 }],
-        postgrestClient,
-        log,
-      });
-
-      expect(result).to.equal(null);
+      expect(await loadWith({ postgrestClient })).to.equal(null);
       expect(log.info).to.have.been.calledWithMatch('No execution rows found');
     });
 
     it('queries executions with the mapped models and region_code = US', async () => {
-      const executionCapture = {
-        select: null,
-        eq: [],
-        in: [],
-        gte: [],
-        lte: [],
-        range: [],
-      };
-      const sourceCapture = {
-        select: [],
-        eq: [],
-        gte: [],
-        lte: [],
-        in: [],
-      };
-      const executionChain = createExecutionChain(executionCapture, [
-        {
-          data: [{
-            id: 'exec-1',
-            execution_date: '2026-03-12',
-            region_code: 'US',
-            topics: 'Topic A',
-            prompt: 'Prompt A',
-            category_name: 'Category A',
-            model: 'chatgpt-free',
-          }],
-          error: null,
-        },
-      ]);
+      const capture = createCapture();
+      const sourceCapture = createCapture();
+      const executionChain = createExecutionChain(capture, [{
+        data: [makeExecution({ topics: 'Topic A', prompt: 'Prompt A', category_name: 'Category A' })],
+        error: null,
+      }]);
       const sourceChain = createSourceChain(sourceCapture, {
-        data: [{
-          execution_id: 'exec-1',
-          source_urls: { url: 'https://reddit.com/r/test' },
-        }],
+        data: [makeSource('exec-1', 'https://reddit.com/r/test')],
         error: null,
       });
       const postgrestClient = {
@@ -365,12 +289,9 @@ describe('offsite-brand-presence-postgrest', () => {
           .returns(sourceChain),
       };
 
-      const result = await loadBrandPresenceDataFromPostgrest({
-        siteId: 'site-123',
-        organizationId: 'org-123',
-        previousWeeks: [{ week: 11, year: 2026 }, { week: 10, year: 2026 }],
+      const result = await loadWith({
+        previousWeeks: DEFAULT_PREVIOUS_WEEKS,
         postgrestClient,
-        log,
       });
 
       expect(result).to.deep.equal({
@@ -382,33 +303,27 @@ describe('offsite-brand-presence-postgrest', () => {
           Category: 'Category A',
         }],
       });
-      expect(executionCapture.eq).to.deep.include.members([
-        ['organization_id', 'org-123'],
-        ['site_id', 'site-123'],
+      expect(capture.eq).to.deep.include.members([
+        ['organization_id', ORG_ID],
+        ['site_id', SITE_ID],
         ['region_code', 'US'],
       ]);
-      expect(executionCapture.in[0]).to.deep.equal(['model', getBrandPresenceDbModels()]);
-      expect(executionCapture.order).to.deep.equal([
+      expect(capture.in[0]).to.deep.equal(
+        ['model', getBrandPresenceDbModels()],
+      );
+      expect(capture.order).to.deep.equal([
         ['execution_date', { ascending: false }],
         ['id', { ascending: false }],
       ]);
     });
 
     it('keeps paging execution rows until a batch is smaller than the configured limit', async () => {
-      const executionCapture = {
-        select: null,
-        eq: [],
-        in: [],
-        gte: [],
-        lte: [],
-        range: [],
-      };
-      const firstBatch = new Array(5000).fill(null).map((_, index) => ({
-        id: `exec-${index + 1}`,
-        execution_date: '2026-03-12',
-        region_code: 'US',
-      }));
-      const executionChain = createExecutionChain(executionCapture, [
+      const capture = createCapture();
+      const firstBatch = Array.from(
+        { length: 5000 },
+        (_, i) => makeExecution({ id: `exec-${i + 1}` }),
+      );
+      const executionChain = createExecutionChain(capture, [
         { data: firstBatch, error: null },
         { data: null, error: { message: 'page 2 failed' } },
       ]);
@@ -416,71 +331,30 @@ describe('offsite-brand-presence-postgrest', () => {
         from: sandbox.stub().returns(executionChain),
       };
 
-      const result = await loadBrandPresenceDataFromPostgrest({
-        siteId: 'site-123',
-        organizationId: 'org-123',
-        previousWeeks: [{ week: 11, year: 2026 }],
-        postgrestClient,
-        log,
-      });
-
-      expect(result).to.equal(null);
-      expect(executionCapture.range).to.deep.equal([
-        [0, 4999],
-        [5000, 9999],
-      ]);
+      expect(await loadWith({ postgrestClient })).to.equal(null);
+      expect(capture.range).to.deep.equal([[0, 4999], [5000, 9999]]);
       expect(log.warn).to.have.been.calledOnce;
       expect(log.warn.firstCall.args[0]).to.include('page 2 failed');
     });
 
     it('batches source queries in chunks of 50 execution IDs', async () => {
-      const executions = new Array(51).fill(null).map((_, index) => ({
-        id: `exec-${index + 1}`,
-        execution_date: '2026-03-12',
-        region_code: 'US',
-        topics: `Topic ${index + 1}`,
-        prompt: `Prompt ${index + 1}`,
+      const executions = Array.from({ length: 51 }, (_, i) => makeExecution({
+        id: `exec-${i + 1}`,
+        topics: `Topic ${i + 1}`,
+        prompt: `Prompt ${i + 1}`,
         category_name: 'Category',
       }));
-      const executionCapture = {
-        select: null,
-        eq: [],
-        in: [],
-        gte: [],
-        lte: [],
-        range: [],
-      };
-      const sourceCaptures = [
-        {
-          select: [],
-          eq: [],
-          gte: [],
-          lte: [],
-          in: [],
-        },
-        {
-          select: [],
-          eq: [],
-          gte: [],
-          lte: [],
-          in: [],
-        },
-      ];
-      const executionChain = createExecutionChain(executionCapture, [
-        { data: executions, error: null },
-      ]);
-      const sourceChain1 = createSourceChain(sourceCaptures[0], {
-        data: executions.slice(0, 50).map((execution) => ({
-          execution_id: execution.id,
-          source_urls: { url: `https://example.com/${execution.id}` },
-        })),
+      const capture = createCapture();
+      const sourceCapture1 = createCapture();
+      const sourceCapture2 = createCapture();
+
+      const executionChain = createExecutionChain(capture, [{ data: executions, error: null }]);
+      const sourceChain1 = createSourceChain(sourceCapture1, {
+        data: executions.slice(0, 50).map((e) => makeSource(e.id, `https://example.com/${e.id}`)),
         error: null,
       });
-      const sourceChain2 = createSourceChain(sourceCaptures[1], {
-        data: executions.slice(50).map((execution) => ({
-          execution_id: execution.id,
-          source_urls: { url: `https://example.com/${execution.id}` },
-        })),
+      const sourceChain2 = createSourceChain(sourceCapture2, {
+        data: executions.slice(50).map((e) => makeSource(e.id, `https://example.com/${e.id}`)),
         error: null,
       });
       const postgrestClient = {
@@ -493,81 +367,38 @@ describe('offsite-brand-presence-postgrest', () => {
           .returns(sourceChain2),
       };
 
-      const result = await loadBrandPresenceDataFromPostgrest({
-        siteId: 'site-123',
-        organizationId: 'org-123',
-        previousWeeks: [{ week: 11, year: 2026 }, { week: 10, year: 2026 }],
+      const result = await loadWith({
+        previousWeeks: DEFAULT_PREVIOUS_WEEKS,
         postgrestClient,
-        log,
       });
 
       expect(result.data).to.have.lengthOf(51);
-      expect(sourceCaptures[0].in[0][1]).to.have.lengthOf(50);
-      expect(sourceCaptures[1].in[0][1]).to.have.lengthOf(1);
+      expect(sourceCapture1.in[0][1]).to.have.lengthOf(50);
+      expect(sourceCapture2.in[0][1]).to.have.lengthOf(1);
     });
 
     it('returns null when fetched execution rows do not include usable IDs', async () => {
-      const executionChain = createExecutionChain({
-        select: null,
-        eq: [],
-        in: [],
-        gte: [],
-        lte: [],
-        range: [],
-      }, [
-        {
-          data: [{
-            id: null,
-            execution_date: '2026-03-12',
-            region_code: 'US',
-          }],
-          error: null,
-        },
-      ]);
+      const executionChain = createExecutionChain(createCapture(), [{
+        data: [makeExecution({ id: null })],
+        error: null,
+      }]);
       const postgrestClient = {
         from: sandbox.stub().returns(executionChain),
       };
 
-      const result = await loadBrandPresenceDataFromPostgrest({
-        siteId: 'site-123',
-        organizationId: 'org-123',
-        previousWeeks: [{ week: 11, year: 2026 }],
-        postgrestClient,
-        log,
-      });
-
-      expect(result).to.equal(null);
+      expect(await loadWith({ postgrestClient })).to.equal(null);
       expect(postgrestClient.from).to.have.been.calledOnce;
     });
 
     it('returns null when execution rows exist but no source rows are found', async () => {
-      const executionChain = createExecutionChain({
-        select: null,
-        eq: [],
-        in: [],
-        gte: [],
-        lte: [],
-        range: [],
-      }, [
-        {
-          data: [{
-            id: 'exec-1',
-            execution_date: '2026-03-12',
-            region_code: 'US',
-          }],
-          error: null,
-        },
-      ]);
-      const sourceChain = createSourceChain({
-        select: [],
-        eq: [],
-        gte: [],
-        lte: [],
-        in: [],
-      }, {
-        data: [],
+      const executionChain = createExecutionChain(createCapture(), [{
+        data: [makeExecution()],
         error: null,
-      });
+      }]);
+      const sourceChain = createSourceChain(
+        createCapture(),
+        { data: [], error: null },
+      );
       const postgrestClient = {
         from: sandbox.stub()
           .onFirstCall()
@@ -576,46 +407,19 @@ describe('offsite-brand-presence-postgrest', () => {
           .returns(sourceChain),
       };
 
-      const result = await loadBrandPresenceDataFromPostgrest({
-        siteId: 'site-123',
-        organizationId: 'org-123',
-        previousWeeks: [{ week: 11, year: 2026 }],
-        postgrestClient,
-        log,
-      });
-
-      expect(result).to.equal(null);
+      expect(await loadWith({ postgrestClient })).to.equal(null);
       expect(log.info).to.have.been.calledWithMatch('No source rows found');
     });
 
     it('treats null source data as an empty source result set', async () => {
-      const executionChain = createExecutionChain({
-        select: null,
-        eq: [],
-        in: [],
-        gte: [],
-        lte: [],
-        range: [],
-      }, [
-        {
-          data: [{
-            id: 'exec-1',
-            execution_date: '2026-03-12',
-            region_code: 'US',
-          }],
-          error: null,
-        },
-      ]);
-      const sourceChain = createSourceChain({
-        select: [],
-        eq: [],
-        gte: [],
-        lte: [],
-        in: [],
-      }, {
-        data: null,
+      const executionChain = createExecutionChain(createCapture(), [{
+        data: [makeExecution()],
         error: null,
-      });
+      }]);
+      const sourceChain = createSourceChain(
+        createCapture(),
+        { data: null, error: null },
+      );
       const postgrestClient = {
         from: sandbox.stub()
           .onFirstCall()
@@ -624,47 +428,17 @@ describe('offsite-brand-presence-postgrest', () => {
           .returns(sourceChain),
       };
 
-      const result = await loadBrandPresenceDataFromPostgrest({
-        siteId: 'site-123',
-        organizationId: 'org-123',
-        previousWeeks: [{ week: 11, year: 2026 }],
-        postgrestClient,
-        log,
-      });
-
-      expect(result).to.equal(null);
+      expect(await loadWith({ postgrestClient })).to.equal(null);
       expect(log.info).to.have.been.calledWithMatch('No source rows found');
     });
 
     it('returns null when source rows are present but none can be mapped back to legacy rows', async () => {
-      const executionChain = createExecutionChain({
-        select: null,
-        eq: [],
-        in: [],
-        gte: [],
-        lte: [],
-        range: [],
-      }, [
-        {
-          data: [{
-            id: 'exec-1',
-            execution_date: '2026-03-12',
-            region_code: 'US',
-          }],
-          error: null,
-        },
-      ]);
-      const sourceChain = createSourceChain({
-        select: [],
-        eq: [],
-        gte: [],
-        lte: [],
-        in: [],
-      }, {
-        data: [{
-          execution_id: 'exec-1',
-          source_urls: {},
-        }],
+      const executionChain = createExecutionChain(createCapture(), [{
+        data: [makeExecution()],
+        error: null,
+      }]);
+      const sourceChain = createSourceChain(createCapture(), {
+        data: [{ execution_id: 'exec-1', source_urls: {} }],
         error: null,
       });
       const postgrestClient = {
@@ -675,43 +449,18 @@ describe('offsite-brand-presence-postgrest', () => {
           .returns(sourceChain),
       };
 
-      const result = await loadBrandPresenceDataFromPostgrest({
-        siteId: 'site-123',
-        organizationId: 'org-123',
-        previousWeeks: [{ week: 11, year: 2026 }],
-        postgrestClient,
-        log,
-      });
-
-      expect(result).to.equal(null);
-      expect(log.info).to.have.been.calledWithMatch('No usable source rows found');
+      expect(await loadWith({ postgrestClient })).to.equal(null);
+      expect(log.info).to.have.been.calledWithMatch(
+        'No usable source rows found',
+      );
     });
 
     it('returns null and warns when source fetching fails', async () => {
-      const executionChain = createExecutionChain({
-        select: null,
-        eq: [],
-        in: [],
-        gte: [],
-        lte: [],
-        range: [],
-      }, [
-        {
-          data: [{
-            id: 'exec-1',
-            execution_date: '2026-03-12',
-            region_code: 'US',
-          }],
-          error: null,
-        },
-      ]);
-      const sourceChain = createSourceChain({
-        select: [],
-        eq: [],
-        gte: [],
-        lte: [],
-        in: [],
-      }, {
+      const executionChain = createExecutionChain(createCapture(), [{
+        data: [makeExecution()],
+        error: null,
+      }]);
+      const sourceChain = createSourceChain(createCapture(), {
         data: null,
         error: { message: 'source query failed' },
       });
@@ -723,16 +472,10 @@ describe('offsite-brand-presence-postgrest', () => {
           .returns(sourceChain),
       };
 
-      const result = await loadBrandPresenceDataFromPostgrest({
-        siteId: 'site-123',
-        organizationId: 'org-123',
-        previousWeeks: [{ week: 11, year: 2026 }],
-        postgrestClient,
-        log,
-      });
-
-      expect(result).to.equal(null);
-      expect(log.warn).to.have.been.calledWithMatch('source query failed');
+      expect(await loadWith({ postgrestClient })).to.equal(null);
+      expect(log.warn).to.have.been.calledWithMatch(
+        'source query failed',
+      );
     });
   });
 });

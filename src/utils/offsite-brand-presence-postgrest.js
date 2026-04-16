@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { getDateRanges } from '@adobe/spacecat-shared-utils';
 import { PROVIDERS } from '../offsite-brand-presence/constants.js';
 
 const EXECUTION_FETCH_BATCH_SIZE = 5000;
@@ -34,27 +35,8 @@ export function getBrandPresenceDbModels(providers = PROVIDERS) {
   )];
 }
 
-function toYMD(date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function getIsoWeekDateRange(year, week) {
-  if (!Number.isInteger(year) || !Number.isInteger(week) || week < 1 || week > 53) {
-    return null;
-  }
-
-  const jan4 = new Date(Date.UTC(year, 0, 4));
-  const dayOfWeek = jan4.getUTCDay();
-  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  const week1MondayMs = jan4.getTime() + mondayOffset * 24 * 60 * 60 * 1000;
-  const targetMondayMs = week1MondayMs + (week - 1) * 7 * 24 * 60 * 60 * 1000;
-  const monday = new Date(targetMondayMs);
-  const sunday = new Date(targetMondayMs + 6 * 24 * 60 * 60 * 1000);
-
-  return {
-    startDate: toYMD(monday),
-    endDate: toYMD(sunday),
-  };
+function isValidIsoWeek(week, year) {
+  return Number.isInteger(year) && Number.isInteger(week) && week >= 1 && week <= 53;
 }
 
 export function getDateWindowForPreviousWeeks(previousWeeks) {
@@ -63,18 +45,19 @@ export function getDateWindowForPreviousWeeks(previousWeeks) {
   }
 
   const ranges = previousWeeks
-    .map(({ year, week }) => getIsoWeekDateRange(year, week))
-    .filter(Boolean);
+    .filter(({ year, week }) => isValidIsoWeek(week, year))
+    .map(({ year, week }) => getDateRanges(week, year))
+    .filter((r) => r?.length > 0);
 
   if (ranges.length === 0) {
     return null;
   }
 
   const startDate = ranges
-    .map((range) => range.startDate)
+    .map((r) => r[0].startTime.slice(0, 10))
     .sort()[0];
   const endDate = ranges
-    .map((range) => range.endDate)
+    .map((r) => r.at(-1).endTime.slice(0, 10))
     .sort()
     .at(-1);
 
