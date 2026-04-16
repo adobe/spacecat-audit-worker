@@ -70,19 +70,29 @@ export function mapServiceToCdnProvider(serviceProvider) {
   return SERVICE_TO_CDN_MAPPING[serviceProvider] || serviceProvider;
 }
 
+function normalizePathname(pathname, {
+  separator = '/',
+  transformSegment = (segment) => segment,
+} = {}) {
+  return pathname
+    .split('/')
+    .filter(Boolean)
+    .map(transformSegment)
+    .filter(Boolean)
+    .join(separator);
+}
+
 /**
  * Extracts and sanitizes a site-specific key from the base URL.
  */
 export function extractSiteKeyFromBaseURL(site) {
   const { host, pathname } = new URL(site.getBaseURL());
   const cleanHost = host.startsWith('www.') ? host.substring(4) : host;
-  const normalizedHost = cleanHost.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-  const normalizedPath = pathname
-    .split('/')
-    .filter(Boolean)
-    .map((segment) => segment.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase())
-    .filter(Boolean)
-    .join('_');
+  const normalizedHost = cleanHost.replace(/[^a-zA-Z0-9]+/g, '_').toLowerCase();
+  const normalizedPath = normalizePathname(pathname, {
+    separator: '__',
+    transformSegment: (segment) => segment.replace(/[^a-zA-Z0-9]+/g, '_').toLowerCase(),
+  });
 
   return normalizedPath ? `${normalizedHost}_${normalizedPath}` : normalizedHost;
 }
@@ -414,15 +424,19 @@ export function getS3Config(site, context) {
   const siteName = siteKeyParts[0] === 'www' && siteKeyParts.length > 1 ? siteKeyParts[1] : siteKeyParts[0];
   const bucket = resolveConsolidatedBucketName(context, region);
   const siteId = site?.getId?.();
+  const databaseName = `cdn_logs_${siteKey}`;
+  const tableName = `aggregated_logs_${siteKey}_consolidated`;
+  const referralTableName = `aggregated_referral_logs_${siteKey}_consolidated`;
+
   return {
     bucket,
     region,
     siteId,
     siteName,
     siteKey,
-    databaseName: `cdn_logs_${siteKey}`,
-    tableName: `aggregated_logs_${siteKey}_consolidated`,
-    referralTableName: `aggregated_referral_logs_${siteKey}_consolidated`,
+    databaseName,
+    tableName,
+    referralTableName,
     aggregatedLocation: siteId ? `s3://${bucket}/aggregated/${siteId}/` : undefined,
     aggregatedReferralLocation: siteId ? `s3://${bucket}/aggregated-referral/${siteId}/` : undefined,
     getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
@@ -513,10 +527,7 @@ export function buildSiteFilters(filters, site) {
     const { host, pathname } = new URL(baseURL);
     const rootHost = host.replace(/^www\./, '');
     const hostFilter = `(REGEXP_LIKE(host, '(?i)^(www.)?${rootHost}$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?${rootHost}$'))`;
-    const normalizedPath = pathname
-      .split('/')
-      .filter(Boolean)
-      .join('/');
+    const normalizedPath = normalizePathname(pathname);
 
     if (!normalizedPath) {
       return hostFilter;

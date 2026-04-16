@@ -202,11 +202,16 @@ export function joinBaseAndPath(baseURL, path) {
     const base = new URL(baseURL);
     const normalizedBasePath = base.pathname === '/' ? '' : base.pathname.replace(/\/$/, '');
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    const normalizedBasePathLower = normalizedBasePath.toLowerCase();
+    const normalizedPathLower = normalizedPath.toLowerCase();
     const joinedPath = normalizedBasePath
-      && (normalizedPath === normalizedBasePath || normalizedPath.startsWith(`${normalizedBasePath}/`))
+      && (normalizedPathLower === normalizedBasePathLower
+        || normalizedPathLower.startsWith(`${normalizedBasePathLower}/`))
       ? normalizedPath
       : `${normalizedBasePath}${normalizedPath}`;
 
+    // Rebuild from origin + path so joins stay path-focused.
+    // Any base query/hash is intentionally ignored.
     return `${base.origin}${joinedPath}`;
   } catch {
     const normalizedBase = baseURL.endsWith('/') ? baseURL.slice(0, -1) : baseURL;

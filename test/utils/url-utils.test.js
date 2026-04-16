@@ -339,6 +339,11 @@ describe('joinBaseAndPath', () => {
     expect(utils.joinBaseAndPath('https://example.com/us', '/us')).to.equal('https://example.com/us');
   });
 
+  it('should compare base subpaths case-insensitively before deciding whether to prepend them', () => {
+    expect(utils.joinBaseAndPath('https://example.com/US', '/us/page1')).to.equal('https://example.com/us/page1');
+    expect(utils.joinBaseAndPath('https://example.com/US/', 'us/page1')).to.equal('https://example.com/us/page1');
+  });
+
   it('should still append paths below a base subpath when they do not include the prefix', () => {
     expect(utils.joinBaseAndPath('https://example.com/us', '/page1')).to.equal('https://example.com/us/page1');
     expect(utils.joinBaseAndPath('https://example.com/us/', 'page1')).to.equal('https://example.com/us/page1');

@@ -80,6 +80,14 @@ describe('CDN Utils', () => {
       const site = { getBaseURL: () => 'https://test-site.example.com' };
       expect(extractSiteKeyFromBaseURL(site)).to.equal('test_site_example_com');
     });
+
+    it('uses a double underscore as an unambiguous path segment separator', () => {
+      const hyphenatedSite = { getBaseURL: () => 'https://www.example.com/us-en' };
+      const nestedSite = { getBaseURL: () => 'https://www.example.com/us/en' };
+
+      expect(extractSiteKeyFromBaseURL(hyphenatedSite)).to.equal('example_com_us_en');
+      expect(extractSiteKeyFromBaseURL(nestedSite)).to.equal('example_com_us__en');
+    });
   });
 
   describe('resolveCdnBucketName', () => {
@@ -408,6 +416,29 @@ describe('CDN Utils', () => {
       expect(config.databaseName).to.equal('cdn_logs_example_com_us');
       expect(config.tableName).to.equal('aggregated_logs_example_com_us_consolidated');
       expect(config.referralTableName).to.equal('aggregated_referral_logs_example_com_us_consolidated');
+    });
+
+    it('uses double underscores between nested path segments in derived names', () => {
+      const site = {
+        getBaseURL: () => 'https://www.example.com/us/en',
+        getId: () => 'site-123',
+        getConfig: () => ({
+          getLlmoCdnBucketConfig: () => ({ region: 'eu-west-1' }),
+        }),
+      };
+      const context = {
+        env: {
+          AWS_ENV: 'test',
+          AWS_REGION: 'us-east-1',
+        },
+      };
+
+      const config = getS3Config(site, context);
+
+      expect(config.siteKey).to.equal('example_com_us__en');
+      expect(config.databaseName).to.equal('cdn_logs_example_com_us__en');
+      expect(config.tableName).to.equal('aggregated_logs_example_com_us__en_consolidated');
+      expect(config.referralTableName).to.equal('aggregated_referral_logs_example_com_us__en_consolidated');
     });
   });
 
