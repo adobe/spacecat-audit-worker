@@ -1,3 +1,10 @@
+# [1.416.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.415.3...v1.416.0) (2026-04-16)
+
+
+### Features
+
+* Add source in URL when fetching brand presence files ([#2394](https://github.com/adobe/spacecat-audit-worker/issues/2394)) ([30ac0e4](https://github.com/adobe/spacecat-audit-worker/commit/30ac0e4f2dec023a516cb72ffd1d6289b4266388))
+
 ## [1.415.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.415.2...v1.415.3) (2026-04-16)
 
 
