@@ -185,9 +185,6 @@ export default async function readability(context, auditContext) {
     stripNonContent($);
 
     // Get all paragraph, div, and list item elements.
-    // Note: opportunities path also selects <blockquote>; citations in blockquotes
-    // are therefore only excluded on that path. Parity is a pre-existing gap; tracked
-    // separately from LLMO-3555.
     const textElements = $('p, div, li').toArray();
 
     let processedElements = 0;
