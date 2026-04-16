@@ -223,9 +223,6 @@ function isImageAttributionCreditLine(text) {
   if (slashCount >= 2 && hasVia && hasAgencyToken) {
     return true;
   }
-  if (slashCount >= 3 && hasVia) {
-    return true;
-  }
   return false;
 }
 
@@ -328,6 +325,9 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log, scraped
 
         return !hasBlockChildren;
       })
+      // isExcludedReadabilityText is the single exclusion gate for this path;
+      // analyzeTextReadability does not repeat the check, so this filter must
+      // run before any call to that function.
       .filter(({ element }) => {
         const textContent = $(element).text()?.trim();
         return textContent && collapseWhitespace(textContent).length >= MIN_TEXT_LENGTH

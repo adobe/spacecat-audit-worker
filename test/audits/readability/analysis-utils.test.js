@@ -1297,9 +1297,9 @@ describe('isExcludedReadabilityText', () => {
       )).to.equal(true);
     });
 
-    it('should exclude slash-heavy "via" line without agency token (slashCount >= 3 branch)', () => {
+    it('should exclude photo credit line with two slashes + via + agency token', () => {
       expect(isExcludedReadabilityText(
-        'John Smith / Senior Reporter / The Times via wire services, filed from London bureau offices.',
+        'John Smith / Reuters via AP Images, filed from London bureau offices on assignment.',
       )).to.equal(true);
     });
 
@@ -1362,6 +1362,14 @@ describe('isExcludedReadabilityText', () => {
     it('should not exclude prose that mentions "via" without agency credit pattern', () => {
       expect(isExcludedReadabilityText(
         'Many travelers reach the summit via the northern route, which offers better views during summer months and clearer trail markers for first-time visitors.',
+      )).to.equal(false);
+    });
+
+    it('should not exclude a journalism byline with slashes and "via" but no agency token', () => {
+      // Slash-heavy bylines like "Name / Role / Outlet via wire" are legitimate editorial
+      // copy; without an agency token the pattern intentionally does not exclude them.
+      expect(isExcludedReadabilityText(
+        'John Smith / Senior Reporter / The Times via wire services, filed from London bureau offices.',
       )).to.equal(false);
     });
   });
