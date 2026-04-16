@@ -66,12 +66,97 @@ describe('brandalf-utils', () => {
       );
     });
 
+    it('returns false without calling the API when organizationId is missing', async () => {
+      const result = await isBrandalfEnabled(null, {
+        SPACECAT_API_BASE_URL: 'https://spacecat.example.com',
+        SPACECAT_API_KEY: 'test-key',
+      }, log);
+
+      expect(result).to.equal(false);
+      expect(mockFetch).to.not.have.been.called;
+      expect(log.warn).to.not.have.been.called;
+    });
+
     it('returns false when API env is missing', async () => {
       const result = await isBrandalfEnabled('org-123', {}, log);
 
       expect(result).to.equal(false);
       expect(mockFetch).to.not.have.been.called;
       expect(log.warn).to.have.been.calledWithMatch(/cannot check brandalf flag/);
+    });
+
+    it('returns false when env is omitted entirely', async () => {
+      const result = await isBrandalfEnabled('org-123', undefined, log);
+
+      expect(result).to.equal(false);
+      expect(mockFetch).to.not.have.been.called;
+      expect(log.warn).to.have.been.calledWithMatch(/cannot check brandalf flag/);
+    });
+
+    it('encodes the org ID and returns false when brandalf is not enabled', async () => {
+      mockFetch.resolves({
+        ok: true,
+        json: async () => [
+          { flagName: 'brandalf', flagValue: false },
+          { flagName: 'different-flag', flagValue: true },
+        ],
+      });
+
+      const result = await isBrandalfEnabled('org/with spaces', {
+        SPACECAT_API_BASE_URL: 'https://spacecat.example.com',
+        SPACECAT_API_KEY: 'test-key',
+      }, log);
+
+      expect(result).to.equal(false);
+      expect(mockFetch).to.have.been.calledWith(
+        'https://spacecat.example.com/organizations/org%2Fwith%20spaces/feature-flags?product=LLMO',
+        sinon.match.hasNested('headers.x-api-key', 'test-key'),
+      );
+    });
+
+    it('returns false when the feature-flags endpoint responds with a non-ok status', async () => {
+      mockFetch.resolves({
+        ok: false,
+        status: 503,
+      });
+
+      const result = await isBrandalfEnabled('org-123', {
+        SPACECAT_API_BASE_URL: 'https://spacecat.example.com',
+        SPACECAT_API_KEY: 'test-key',
+      }, log);
+
+      expect(result).to.equal(false);
+      expect(log.warn).to.have.been.calledWithMatch(
+        /Failed to fetch feature flags for org org-123: 503/,
+      );
+    });
+
+    it('returns false when the API payload is not an array', async () => {
+      mockFetch.resolves({
+        ok: true,
+        json: async () => ({ flagName: 'brandalf', flagValue: true }),
+      });
+
+      const result = await isBrandalfEnabled('org-123', {
+        SPACECAT_API_BASE_URL: 'https://spacecat.example.com',
+        SPACECAT_API_KEY: 'test-key',
+      }, log);
+
+      expect(result).to.equal(false);
+    });
+
+    it('returns false and warns when the feature-flag request throws', async () => {
+      mockFetch.rejects(new Error('network down'));
+
+      const result = await isBrandalfEnabled('org-123', {
+        SPACECAT_API_BASE_URL: 'https://spacecat.example.com',
+        SPACECAT_API_KEY: 'test-key',
+      }, log);
+
+      expect(result).to.equal(false);
+      expect(log.warn).to.have.been.calledWithMatch(
+        /Error checking brandalf flag for org org-123: network down/,
+      );
     });
   });
 
@@ -120,6 +205,67 @@ describe('brandalf-utils', () => {
       });
 
       expect(result).to.equal('org-from-lookup');
+    });
+
+    it('returns null when there is no siteId to look up', async () => {
+      const findById = sandbox.stub();
+
+      const result = await resolveOrganizationIdForSite({
+        dataAccess: {
+          Site: {
+            findById,
+          },
+        },
+        log,
+      });
+
+      expect(result).to.equal(null);
+      expect(findById).to.not.have.been.called;
+    });
+
+    it('returns null when the Site lookup helper is unavailable', async () => {
+      const result = await resolveOrganizationIdForSite({
+        siteId: 'site-123',
+        dataAccess: {
+          Site: {},
+        },
+        log,
+      });
+
+      expect(result).to.equal(null);
+    });
+
+    it('returns null when the looked-up site has no organization ID', async () => {
+      const result = await resolveOrganizationIdForSite({
+        siteId: 'site-123',
+        dataAccess: {
+          Site: {
+            findById: sandbox.stub().resolves({
+              getOrganizationId: sandbox.stub().returns(null),
+            }),
+          },
+        },
+        log,
+      });
+
+      expect(result).to.equal(null);
+    });
+
+    it('returns null and warns when Site.findById throws', async () => {
+      const result = await resolveOrganizationIdForSite({
+        siteId: 'site-123',
+        dataAccess: {
+          Site: {
+            findById: sandbox.stub().rejects(new Error('lookup failed')),
+          },
+        },
+        log,
+      });
+
+      expect(result).to.equal(null);
+      expect(log.warn).to.have.been.calledWithMatch(
+        /Failed to resolve organization for site site-123: lookup failed/,
+      );
     });
   });
 });
