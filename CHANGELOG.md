@@ -1,3 +1,10 @@
+## [1.415.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.415.2...v1.415.3) (2026-04-16)
+
+
+### Bug Fixes
+
+* use pathname when building site keys and urls ([#2392](https://github.com/adobe/spacecat-audit-worker/issues/2392)) ([d026a31](https://github.com/adobe/spacecat-audit-worker/commit/d026a31f2c2a947708317b2dd05ae31c274adab2))
+
 ## [1.415.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.415.1...v1.415.2) (2026-04-16)
 
 
