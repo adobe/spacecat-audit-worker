@@ -94,7 +94,7 @@ async function fetchBrandPresenceData(siteId, fileName, env, log) {
   const apiBase = env.SPACECAT_API_BASE_URL;
   const apiKey = env.SPACECAT_API_KEY;
   const headers = { 'x-api-key': apiKey };
-  const baseUrl = `${apiBase}/sites/${siteId}/llmo/data/${fileName}?sheet=all&include=${INCLUDE_COLUMNS}`;
+  const baseUrl = `${apiBase}/sites/${siteId}/llmo/data/${fileName}?sheet=all&include=${INCLUDE_COLUMNS}&source=offsite-audits`;
 
   let allRows = [];
   let offset = 0;
