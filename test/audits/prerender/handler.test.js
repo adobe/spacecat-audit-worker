@@ -3289,6 +3289,7 @@ describe('Prerender Audit', () => {
           log: {
             info: sandbox.stub(),
             debug: sandbox.stub(),
+            warn: sandbox.stub(),
           },
         };
 
@@ -3760,6 +3761,53 @@ describe('Prerender Audit', () => {
         expect(domainWideSuggestion.data.wordCountBefore).to.equal(800); // 100+400+300+0+0
         expect(domainWideSuggestion.data.wordCountAfter).to.equal(1600); // 500+800+300+0+0
         expect(domainWideSuggestion.data.contentGainRatio).to.equal(7.5); // 2+3+1.5+0+1
+      });
+
+      it('should warn when a non-NEW suggestion has edgeDeployed set (via detectWrongEdgeDeployedStatus)', async () => {
+        // detectWrongEdgeDeployedStatus runs at the start of processContentAndGenerateOpportunities.
+        // Any non-NEW suggestion with edgeDeployed means the status was changed after edge
+        // deployment, which should not happen.
+        const skippedEdgeDeployedSuggestion = {
+          getId: sinon.stub().returns('skipped-edge-id'),
+          getData: sinon.stub().returns({ url: 'https://example.com/page1', edgeDeployed: 1234567890 }),
+          getStatus: sinon.stub().returns('SKIPPED'),
+        };
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getType: () => 'prerender',
+          getSuggestions: sandbox.stub().resolves([skippedEdgeDeployedSuggestion]),
+        };
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: sandbox.stub().resolves(),
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sandbox.stub().resolves(true),
+          },
+        });
+
+        const context = {
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            Opportunity: {
+              allBySiteIdAndStatus: sandbox.stub().resolves([mockOpportunity]),
+            },
+            ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves([]) },
+          },
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub() },
+          s3Client: { send: sandbox.stub().resolves({ Body: { transformToString: () => Promise.resolve('') } }) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'job-123' },
+          scrapeResultPaths: new Map([['https://example.com/page1', '/tmp/test']]),
+        };
+
+        await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(context.log.warn).to.have.been.calledWith(
+          sinon.match(/Unexpected non-NEW suggestions with edgeDeployed set/),
+        );
       });
     });
   });
@@ -7087,7 +7135,7 @@ describe('Prerender Audit', () => {
       expect(result).to.not.be.null;
       const { auditRunCandidates } = result;
       expect(auditRunCandidates).to.be.an('array').with.lengthOf(1);
-      expect(auditRunCandidates[0].suggestionId).to.equal('saved-suggestion-id');
+      expect(auditRunCandidates[0].suggestionId).to.equal('https://example.com/page1');
       expect(auditRunCandidates[0].url).to.equal('https://example.com/page1');
     });
   });
@@ -7528,6 +7576,32 @@ describe('Prerender Audit', () => {
       expect(deployedSuggestion.getData().coveredByDomainWide).to.equal('dw-1');
       expect(nonDeployedSuggestion.getData().coveredByDomainWide).to.be.undefined;
       expect(saveManyStub).to.have.been.calledOnceWith([deployedSuggestion]);
+    });
+
+    it('should not set coveredByDomainWide on a suggestion that already has edgeDeployed set', async () => {
+      const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
+      // This suggestion's URL matches the deployed set but it already has edgeDeployed — should be excluded
+      const alreadyDeployedSuggestion = buildSuggestionWithSetData('s-already-deployed', { url: 'https://example.com/page1', edgeDeployed: 1234567890 });
+      // This suggestion matches and has no edgeDeployed — should be covered
+      const normalSuggestion = buildSuggestionWithSetData('s-normal', { url: 'https://example.com/page1' });
+
+      const saveManyStub = sandbox.stub().resolves();
+      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([alreadyDeployedSuggestion, normalSuggestion]);
+
+      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
+      const context = buildContext(sandbox, {
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+          LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
+        },
+      });
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      expect(alreadyDeployedSuggestion.getData().coveredByDomainWide).to.be.undefined;
+      expect(normalSuggestion.getData().coveredByDomainWide).to.equal('dw-1');
+      expect(saveManyStub).to.have.been.calledOnceWith([normalSuggestion]);
     });
 
     it('should skip saveMany when NEW suggestions exist but none match deployed URLs', async () => {
