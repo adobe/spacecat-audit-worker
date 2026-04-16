@@ -17,6 +17,11 @@ import { saveIntermediateResults } from '../../preflight/utils.js';
 
 import { sendReadabilityToMystique } from '../shared/async-mystique.js';
 import {
+  stripNonContent,
+  isExcludedReadabilityText,
+  collapseWhitespace,
+} from '../shared/analysis-utils.js';
+import {
   calculateReadabilityScore,
   isSupportedLanguage,
   getLanguageName,
@@ -177,8 +182,12 @@ export default async function readability(context, auditContext) {
     const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
 
     const $ = cheerioLoad(rawBody);
+    stripNonContent($);
 
-    // Get all paragraph, div, and list item elements
+    // Get all paragraph, div, and list item elements.
+    // Note: opportunities path also selects <blockquote>; citations in blockquotes
+    // are therefore only excluded on that path. Parity is a pre-existing gap; tracked
+    // separately from LLMO-3555.
     const textElements = $('p, div, li').toArray();
 
     let processedElements = 0;
@@ -269,7 +278,10 @@ export default async function readability(context, auditContext) {
       })
       .filter(({ element }) => {
         const textContent = $(element).text()?.trim();
-        return textContent && textContent.length >= MIN_TEXT_LENGTH;
+        return textContent
+          && collapseWhitespace(textContent).length >= MIN_TEXT_LENGTH
+          && /\s/.test(textContent)
+          && !isExcludedReadabilityText(textContent);
       });
 
     // Process filtered elements
@@ -295,7 +307,9 @@ export default async function readability(context, auditContext) {
             return tempDiv.text();
           })
           .map((p) => p.trim())
-          .filter((p) => p.length >= MIN_TEXT_LENGTH);
+          .filter((p) => collapseWhitespace(p).length >= MIN_TEXT_LENGTH
+            && /\s/.test(p)
+            && !isExcludedReadabilityText(p));
 
         // Add promises for each paragraph
         paragraphs.forEach((paragraph) => {

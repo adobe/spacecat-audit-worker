@@ -15,6 +15,12 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import esmock from 'esmock';
+import {
+  isExcludedReadabilityText,
+  stripNonContent,
+  collapseWhitespace,
+} from '../../../src/readability/shared/analysis-utils.js';
+import { load as cheerioLoad } from 'cheerio';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -1208,6 +1214,335 @@ describe('Readability Analysis Utils', () => {
         });
       });
     });
+  });
+});
+
+describe('isExcludedReadabilityText', () => {
+  describe('citation patterns — should be excluded', () => {
+    it('should exclude DOI citation lines', () => {
+      expect(isExcludedReadabilityText(
+        'Whelton PK, et al. 2017 ACC/AHA guideline. Hypertension. 2018; doi:10.1161/HYP.0000000000000065.',
+      )).to.equal(true);
+    });
+
+    it('should exclude journal lines with year + semicolon + doi', () => {
+      expect(isExcludedReadabilityText(
+        'Smith J. Some study title. Journal of Medicine. 2021; doi:10.1001/jama.2021.12345.',
+      )).to.equal(true);
+    });
+
+    it('should exclude journal lines with year + semicolon + URL', () => {
+      expect(isExcludedReadabilityText(
+        'Physical Activity Guidelines. 2nd ed. 2018; https://health.gov/our-work/physical-activity.',
+      )).to.equal(true);
+    });
+
+    it('should exclude web citations with "Accessed" + date', () => {
+      expect(isExcludedReadabilityText(
+        'Physical Activity Guidelines for Americans. https://health.gov/our-work. Accessed June 15, 2022.',
+      )).to.equal(true);
+    });
+
+    it('should exclude web citations with "Retrieved" + date', () => {
+      expect(isExcludedReadabilityText(
+        'World Health Organization. Obesity and overweight. Retrieved March 1, 2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude URL-then-accessed pattern', () => {
+      expect(isExcludedReadabilityText(
+        'See https://example.org/study-findings. Accessed November 10, 2023.',
+      )).to.equal(true);
+    });
+
+    it('should exclude German retrieval line (abgerufen am)', () => {
+      expect(isExcludedReadabilityText(
+        'WHO. Fact sheet. https://who.int/news. Abgerufen am 15.06.2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude French retrieval line (Consulté le)', () => {
+      expect(isExcludedReadabilityText(
+        'OMS. Rapport sur la nutrition. https://who.int/fr. Consulté le 10 mars 2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude Spanish retrieval line (Consultado el)', () => {
+      expect(isExcludedReadabilityText(
+        'OMS. Informe sobre obesidad. https://who.int/es. Consultado el 12 abril 2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude Italian retrieval line (Consultato il)', () => {
+      expect(isExcludedReadabilityText(
+        'OMS. Rapporto. https://who.int/it. Consultato il 5 maggio 2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude Dutch retrieval line (Geraadpleegd op)', () => {
+      expect(isExcludedReadabilityText(
+        'RIVM. Richtlijn. https://rivm.nl. Geraadpleegd op 03-04-2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude Getty-style image credit in plain text', () => {
+      expect(isExcludedReadabilityText(
+        'Paras Griffin / Contributor via Getty Images, Kevin C. Cox / Staff via Getty Images, and Erika Goldring / Contributor via Getty Images.',
+      )).to.equal(true);
+    });
+
+    it('should exclude explicit photo credit intro line (hasCreditIntro branch)', () => {
+      expect(isExcludedReadabilityText(
+        'Photo credit: Jane Doe / Reuters — all rights reserved by the original photographers.',
+      )).to.equal(true);
+    });
+
+    it('should exclude slash-heavy "via" line without agency token (slashCount >= 3 branch)', () => {
+      expect(isExcludedReadabilityText(
+        'John Smith / Senior Reporter / The Times via wire services, filed from London bureau offices.',
+      )).to.equal(true);
+    });
+
+    it('should exclude Italian feminine retrieval line (consultata il)', () => {
+      expect(isExcludedReadabilityText(
+        'OMS. Pagina informativa sulla nutrizione. https://who.int/it. Consultata il 5 maggio 2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude French all-numeric date (DD/MM/YYYY)', () => {
+      expect(isExcludedReadabilityText(
+        'OMS. Rapport sur la santé. https://who.int/fr/news. Consulté le 01/04/2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude Spanish all-numeric date (DD/MM/YYYY)', () => {
+      expect(isExcludedReadabilityText(
+        'OMS. Informe de salud pública. https://who.int/es. Consultado el 12/04/2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude Italian all-numeric date (DD/MM/YYYY)', () => {
+      expect(isExcludedReadabilityText(
+        'OMS. Rapporto sulla salute. https://who.int/it. Consultato il 05/05/2024.',
+      )).to.equal(true);
+    });
+
+    it('should exclude German slash-separated date (DD/MM/YYYY)', () => {
+      expect(isExcludedReadabilityText(
+        'WHO. Informationsblatt Ernährung. https://who.int/de. Abgerufen am 15/06/2024.',
+      )).to.equal(true);
+    });
+  });
+
+  describe('normal body copy — should not be excluded', () => {
+    it('should not exclude a hard-to-read normal paragraph', () => {
+      expect(isExcludedReadabilityText(
+        'The epistemological ramifications of the aforementioned poststructuralist conceptualizations necessitate a comprehensive reevaluation of the phenomenological underpinnings.',
+      )).to.equal(false);
+    });
+
+    it('should not exclude a paragraph that mentions a single URL', () => {
+      expect(isExcludedReadabilityText(
+        'For more information visit https://example.com to learn about our products and services.',
+      )).to.equal(false);
+    });
+
+    it('should not exclude text with "et al." in a sentence without DOI', () => {
+      expect(isExcludedReadabilityText(
+        'Smith et al. found that regular exercise significantly reduces cardiovascular risk factors in adults.',
+      )).to.equal(false);
+    });
+
+    it('should not exclude a sentence that contains a year and semicolon for other reasons', () => {
+      expect(isExcludedReadabilityText(
+        'In 2018; the company launched its flagship product; revenue doubled within twelve months.',
+      )).to.equal(false);
+    });
+
+    it('should not exclude prose that mentions "via" without agency credit pattern', () => {
+      expect(isExcludedReadabilityText(
+        'Many travelers reach the summit via the northern route, which offers better views during summer months and clearer trail markers for first-time visitors.',
+      )).to.equal(false);
+    });
+  });
+
+  describe('edge cases', () => {
+    it('should return false for null', () => {
+      expect(isExcludedReadabilityText(null)).to.equal(false);
+    });
+
+    it('should return false for non-string value', () => {
+      expect(isExcludedReadabilityText(123)).to.equal(false);
+    });
+
+    it('should return false for empty string', () => {
+      expect(isExcludedReadabilityText('')).to.equal(false);
+    });
+
+    it('should return false for whitespace-only string', () => {
+      expect(isExcludedReadabilityText('   ')).to.equal(false);
+    });
+  });
+});
+
+describe('collapseWhitespace', () => {
+  it('normalizes runs of whitespace for length checks', () => {
+    expect(collapseWhitespace('  hello   \n\t  world  ')).to.equal(' hello world ');
+  });
+});
+
+describe('stripNonContent', () => {
+  it('should remove figcaption elements', () => {
+    const $ = cheerioLoad('<html><body><figure><img src="x.jpg"><figcaption>Photo credit: Getty Images</figcaption></figure><p>Body text.</p></body></html>');
+    stripNonContent($);
+    expect($('figcaption').length).to.equal(0);
+    expect($('p').length).to.equal(1);
+  });
+
+  it('should remove header, footer, style, script, noscript elements', () => {
+    const $ = cheerioLoad('<html><body><header>Nav</header><footer>Footer</footer><style>body{}</style><script>var x=1;</script><noscript>Enable JS</noscript><p>Content</p></body></html>');
+    stripNonContent($);
+    expect($('header').length).to.equal(0);
+    expect($('footer').length).to.equal(0);
+    expect($('style').length).to.equal(0);
+    expect($('script').length).to.equal(0);
+    expect($('noscript').length).to.equal(0);
+    expect($('p').length).to.equal(1);
+  });
+});
+
+describe('analyzePageContent — citation and figcaption exclusions (integration)', () => {
+  let analyzePageContent;
+  let mockLog;
+  let mockRs;
+  let mockFranc;
+  let mockIsSupportedLanguage;
+  let mockGetLanguageName;
+  let mockCalculateReadabilityScore;
+
+  beforeEach(async () => {
+    mockLog = {
+      info: sinon.stub(),
+      warn: sinon.stub(),
+      error: sinon.stub(),
+      debug: sinon.stub(),
+    };
+    mockRs = { fleschReadingEase: sinon.stub() };
+    mockFranc = sinon.stub();
+    mockCalculateReadabilityScore = sinon.stub();
+    mockIsSupportedLanguage = sinon.stub();
+    mockGetLanguageName = sinon.stub();
+
+    const module = await esmock(
+      '../../../src/readability/shared/analysis-utils.js',
+      {
+        '../../../src/utils/s3-utils.js': { getObjectFromKey: sinon.stub() },
+        'text-readability': mockRs,
+        'franc-min': { franc: mockFranc },
+        '../../../src/readability/shared/multilingual-readability.js': {
+          calculateReadabilityScore: mockCalculateReadabilityScore,
+          isSupportedLanguage: mockIsSupportedLanguage,
+          getLanguageName: mockGetLanguageName,
+        },
+      },
+    );
+    analyzePageContent = module.analyzePageContent;
+  });
+
+  afterEach(() => sinon.restore());
+
+  it('should not flag Getty-style credit in a plain p (no figcaption)', async () => {
+    const credit = 'Paras Griffin / Contributor via Getty Images, Kevin C. Cox / Staff via Getty Images, and Erika Goldring / Contributor via Getty Images.';
+    const html = `<!DOCTYPE html><html><body><p>${credit}</p><p>Body paragraph with a genuinely low readability score that should still be flagged by the analysis system for content improvement purposes overall.</p></body></html>`;
+
+    mockFranc.returns('eng');
+    mockIsSupportedLanguage.returns(true);
+    mockGetLanguageName.returns('english');
+    mockRs.fleschReadingEase.returns(15);
+
+    const result = await analyzePageContent(html, 'https://revolt.tv/article', 0, mockLog, '2025-01-01');
+    const texts = result.map((r) => r.textContent);
+    expect(texts.some((t) => t.includes('Getty Images'))).to.equal(false);
+    expect(result.length).to.be.greaterThan(0);
+  });
+
+  it('should not flag a figcaption image credit even with a low score', async () => {
+    const html = `
+      <!DOCTYPE html><html><body>
+        <figure>
+          <img src="photo.jpg" alt="Tallest rappers">
+          <figcaption>Photo credit: revolt.tv — all rights reserved by the respective photographers and agencies.</figcaption>
+        </figure>
+        <p>Body paragraph with a genuinely low readability score that should still be flagged by the analysis system for content improvement purposes overall.</p>
+      </body></html>`;
+
+    mockFranc.returns('eng');
+    mockIsSupportedLanguage.returns(true);
+    mockGetLanguageName.returns('english');
+    mockRs.fleschReadingEase.returns(20); // Poor score
+
+    const result = await analyzePageContent(html, 'https://revolt.tv/article', 0, mockLog, '2025-01-01');
+
+    // figcaption should be stripped, body paragraph should still be flagged
+    const texts = result.map((r) => r.textContent);
+    expect(texts.some((t) => t.includes('revolt.tv'))).to.equal(false);
+    expect(result.length).to.be.greaterThan(0); // body paragraph still flagged
+  });
+
+  it('should not flag a DOI citation block', async () => {
+    const doiCitation = 'Whelton PK, et al. 2017 ACC/AHA/AAPA guideline for prevention and management of high blood pressure in adults. Hypertension. 2018; doi:10.1161/HYP.0000000000000065.';
+    const html = `<!DOCTYPE html><html><body><p>${doiCitation}</p></body></html>`;
+
+    mockFranc.returns('eng');
+    mockIsSupportedLanguage.returns(true);
+    mockGetLanguageName.returns('english');
+    mockRs.fleschReadingEase.returns(10);
+
+    const result = await analyzePageContent(html, 'https://mayoclinic.org', 0, mockLog, '2025-01-01');
+    expect(result).to.deep.equal([]);
+  });
+
+  it('should not flag a web citation "Accessed" line', async () => {
+    const webCitation = 'Physical Activity Guidelines for Americans. 2nd ed. U.S. Department of Health and Human Services. https://health.gov/our-work/physical-activity/current-guidelines. Accessed June 15, 2022.';
+    const html = `<!DOCTYPE html><html><body><p>${webCitation}</p></body></html>`;
+
+    mockFranc.returns('eng');
+    mockIsSupportedLanguage.returns(true);
+    mockGetLanguageName.returns('english');
+    mockRs.fleschReadingEase.returns(5);
+
+    const result = await analyzePageContent(html, 'https://mayoclinic.org', 0, mockLog, '2025-01-01');
+    expect(result).to.deep.equal([]);
+  });
+
+  it('should still flag normal hard-to-read body copy (regression)', async () => {
+    const bodyText = 'The epistemological ramifications of poststructuralist conceptualizations necessitate a comprehensive reevaluation of phenomenological underpinnings that have heretofore characterized methodological frameworks in the operationalization of theoretical constructs.';
+    const html = `<!DOCTYPE html><html><body><p>${bodyText}</p></body></html>`;
+
+    mockFranc.returns('eng');
+    mockIsSupportedLanguage.returns(true);
+    mockGetLanguageName.returns('english');
+    mockRs.fleschReadingEase.returns(10);
+
+    const result = await analyzePageContent(html, 'https://example.com', 0, mockLog, '2025-01-01');
+    expect(result.length).to.be.greaterThan(0);
+  });
+
+  it('should skip only the citation chunk in a br-split element, not the body chunk', async () => {
+    const bodyChunk = 'The epistemological ramifications of poststructuralist conceptualizations necessitate a comprehensive reevaluation of phenomenological underpinnings employed in methodological frameworks.';
+    const citationChunk = 'Whelton PK, et al. 2017 ACC/AHA guideline for high blood pressure management in adults. Hypertension. 2018; doi:10.1161/HYP.0000000000000065.';
+    const html = `<!DOCTYPE html><html><body><p>${bodyChunk}<br>${citationChunk}</p></body></html>`;
+
+    mockFranc.returns('eng');
+    mockIsSupportedLanguage.returns(true);
+    mockGetLanguageName.returns('english');
+    mockRs.fleschReadingEase.returns(10);
+
+    const result = await analyzePageContent(html, 'https://example.com', 0, mockLog, '2025-01-01');
+    const texts = result.map((r) => r.textContent);
+    expect(texts.some((t) => t.includes('doi:10.1161'))).to.equal(false);
+    // body chunk meets MIN_TEXT_LENGTH and should still be flagged
+    expect(result.length).to.be.greaterThan(0);
   });
 });
 

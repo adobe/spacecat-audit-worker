@@ -133,8 +133,128 @@ async function analyzeTextReadability(
 /**
  * Collapses runs of whitespace into single spaces.
  * Used to normalize text extracted from table/grid layouts before length checks.
+ * Exported so preflight matches the opportunity path for MIN_TEXT_LENGTH checks.
+ *
+ * @param {string} text
+ * @returns {string}
  */
-const collapseWhitespace = (text) => text.replace(/\s+/g, ' ');
+export function collapseWhitespace(text) {
+  return text.replace(/\s+/g, ' ');
+}
+
+/**
+ * Strips non-content structural elements from the document before text extraction.
+ * Exported so both the opportunity and preflight paths share the same removal list.
+ *
+ * @param {Cheerio} $ - The Cheerio document object.
+ */
+export function stripNonContent($) {
+  $('header, footer, style, script, noscript, figcaption').remove();
+}
+
+/**
+ * Language-agnostic citation signals (DOI, journal line, URL + access verb).
+ */
+const CITATION_EXCLUSION_PATTERNS = [
+  /doi:\s*10\.\d{4,}/i,
+  /\d{4};\s*(doi:|https?:\/\/)/i,
+  /\b(accessed|retrieved)\s+\w+ \d{1,2},\s*\d{4}/i,
+  /https?:\/\/\S+[\s,.]*\s*(accessed|retrieved)\b/i,
+];
+
+/**
+ * "Last accessed" / retrieval lines in locales aligned with SUPPORTED_LANGUAGES
+ * (multilingual-readability.js): de, es, fr, it, nl, plus English patterns above.
+ */
+const MULTILINGUAL_RETRIEVAL_PATTERNS = [
+  // German — DD.MM.YYYY (dot) and DD/MM/YYYY (slash), plus written-out month
+  /\b(abgerufen|aufgerufen)\s+am\s+\d{1,2}\.\d{1,2}\.20\d{2}/i,
+  /\b(abgerufen|aufgerufen)\s+am\s+\d{1,2}\/\d{1,2}\/20\d{2}/i,
+  /\b(abgerufen|aufgerufen)\s+am\s+\d{1,2}\.\s*\w+\s+20\d{2}/i,
+  // French — written-out month and all-numeric DD/MM/YYYY or DD.MM.YYYY
+  /\b(consulté|consultée|accédé|accédée)\s+le\s+\d{1,2}\s+[^.]{2,50}20\d{2}/i,
+  /\b(consulté|consultée|accédé|accédée)\s+le\s+\d{1,2}[/.]\d{1,2}[/.]20\d{2}/i,
+  // Spanish — written-out month and all-numeric
+  /\b(consultado|consultada)\s+el\s+\d{1,2}\s+[^.]{2,50}20\d{2}/i,
+  /\b(consultado|consultada)\s+el\s+\d{1,2}[/.]\d{1,2}[/.]20\d{2}/i,
+  // Italian — both masculine (consultato) and feminine (consultata), written-out and numeric
+  /\b(consultato|consultata)\s+il\s+\d{1,2}\s+[^.]{2,50}20\d{2}/i,
+  /\b(consultato|consultata)\s+il\s+\d{1,2}[/.]\d{1,2}[/.]20\d{2}/i,
+  // Dutch — already covers [-./] separators
+  /\b(geraadpleegd|bekeken)\s+op\s+\d{1,2}[-./]\d{1,2}[-./]20\d{2}/i,
+  /\b(geraadpleegd|bekeken)\s+op\s+\d{1,2}\s+\w+\s+20\d{2}/i,
+  // URL then non-English access verb (same line as bibliography)
+  /https?:\/\/\S+[\s,.]*\s*(abgerufen|aufgerufen|consulté|consultée|consultado|consultata|consultato|geraadpleegd|bekeken)\b/i,
+];
+
+/**
+ * Removes http(s) URLs so slash counts reflect caption-style "Name / Role" lines,
+ * not path segments inside links.
+ * @param {string} text
+ * @returns {string}
+ */
+function textWithoutUrls(text) {
+  return text.replace(/https?:\/\/\S+/gi, '');
+}
+
+/**
+ * Getty-style and agency credit lines (often a plain &lt;p&gt; under an image).
+ * Uses composite signals only — not standalone "et al." or single slashes.
+ * Note: contributor is intentionally in the agency token list; it only fires when
+ * combined with via + 2+ slashes, so the false-positive risk on normal prose is low.
+ *
+ * @param {string} text - Trimmed text
+ * @returns {boolean}
+ */
+function isImageAttributionCreditLine(text) {
+  const normalized = collapseWhitespace(text).trim();
+  if (normalized.length < 45 || normalized.length > 520) {
+    return false;
+  }
+  const withoutUrls = textWithoutUrls(normalized);
+  const slashCount = (withoutUrls.match(/\//g) || []).length;
+  const hasVia = /\bvia\b/i.test(normalized);
+  const hasAgencyToken = /getty|reuters|afp|shutterstock|alamy|contributor|staff\s+via|photo\s*©|©\s*\w/i.test(normalized);
+  const hasCreditIntro = /\b(photo\s*credit|image\s*credit|crédit\s*photo|photo\s*:|foto\s*:|bildnachweis|imagen\s*:)\b/i.test(normalized);
+
+  if (hasCreditIntro && normalized.length < 220 && slashCount >= 1) {
+    return true;
+  }
+  if (slashCount >= 2 && hasVia && hasAgencyToken) {
+    return true;
+  }
+  if (slashCount >= 3 && hasVia) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Returns true if the text looks like a bibliographic citation, retrieval line,
+ * or image/agency credit rather than body prose — exclude from readability scoring.
+ *
+ * @param {string} text - Text content of an element or <br> segment.
+ * @returns {boolean}
+ */
+export function isExcludedReadabilityText(text) {
+  if (text == null || typeof text !== 'string') {
+    return false;
+  }
+  const t = text.trim();
+  if (t.length === 0) {
+    return false;
+  }
+  if (CITATION_EXCLUSION_PATTERNS.some((re) => re.test(t))) {
+    return true;
+  }
+  if (MULTILINGUAL_RETRIEVAL_PATTERNS.some((re) => re.test(t))) {
+    return true;
+  }
+  if (isImageAttributionCreditLine(t)) {
+    return true;
+  }
+  return false;
+}
 
 /**
  * Returns an array of meaningful text elements from the provided document.
@@ -146,16 +266,13 @@ const collapseWhitespace = (text) => text.replace(/\s+/g, ' ');
  * @returns {Element[]} Array of meaningful text elements for readability analysis and enhancement.
  */
 const getMeaningfulElementsForReadability = ($) => {
-  $('header, footer, style, script, noscript').remove();
+  stripNonContent($);
   return $('p, blockquote, li, div').toArray().filter((el) => {
     const text = $(el).text()?.trim();
     return text && collapseWhitespace(text).length >= MIN_TEXT_LENGTH;
   });
 };
 
-/**
- * Analyzes readability for a single page's content
- */
 /**
  * Analyzes the readability of HTML page content and returns an array of readability issue objects
  * for text elements with poor readability.
@@ -214,7 +331,8 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log, scraped
       .filter(({ element }) => {
         const textContent = $(element).text()?.trim();
         return textContent && collapseWhitespace(textContent).length >= MIN_TEXT_LENGTH
-          && /\s/.test(textContent);
+          && /\s/.test(textContent)
+          && !isExcludedReadabilityText(textContent);
       });
 
     // Process each element and collect analysis promises
@@ -235,7 +353,8 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log, scraped
           })
           .map((p) => p.trim())
           .filter((p) => collapseWhitespace(p).length >= MIN_TEXT_LENGTH
-            && /\s/.test(p));
+            && /\s/.test(p)
+            && !isExcludedReadabilityText(p));
 
         paragraphs.forEach((paragraph) => {
           const analysisPromise = analyzeTextReadability(
