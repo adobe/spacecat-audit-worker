@@ -42,7 +42,7 @@ export async function loadLatestAgenticSheet(site, context) {
   const { log } = context;
   const baseUrl = site.getBaseURL?.() || '';
   const s3Config = getS3Config(site, context);
-  const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.customerName;
+  const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.siteName;
   const outputLocation = `${llmoFolder}/agentic-traffic`;
   const { weeks } = generateReportingPeriods();
   const latestWeek = weeks[0];
