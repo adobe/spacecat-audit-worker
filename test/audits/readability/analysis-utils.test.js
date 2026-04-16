@@ -814,6 +814,28 @@ describe('Readability Analysis Utils', () => {
       expect(result.length).to.equal(0);
     });
 
+    it('should skip long text with no whitespace (second elementsToProcess filter)', async () => {
+      // Passes getMeaningfulElementsForReadability (length >= MIN_TEXT_LENGTH) but fails
+      // /\s/.test in the follow-up filter, covering the early return in analysis-utils.js.
+      const noWhitespaceBlock = 'x'.repeat(150);
+      const html = `<!DOCTYPE html><html><body><p>${noWhitespaceBlock}</p></body></html>`;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+
+      const result = await analyzePageContent(
+        html,
+        'https://example.com/page',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result).to.be.an('array');
+      expect(result.length).to.equal(0);
+    });
+
     it('should skip elements with excessive whitespace (table/grid content)', async () => {
       // Simulates text extracted from table layouts with lots of padding
       const paddedText = 'Feature                                          Our sustainability impact                                                                                                                                                                Feature                                          ';
@@ -1300,7 +1322,7 @@ describe('isExcludedReadabilityText', () => {
 
     it('should exclude photo credit line with two slashes + via + agency token', () => {
       expect(isExcludedReadabilityText(
-        'John Smith / Reuters via AP Images, filed from London bureau offices on assignment.',
+        'John Smith / Staff / Reuters via AP Images, filed from London bureau offices on assignment.',
       )).to.equal(true);
     });
 
@@ -1486,7 +1508,8 @@ describe('analyzePageContent — citation and figcaption exclusions (integration
 
   it('should not flag Getty-style credit in a plain p (no figcaption)', async () => {
     const credit = 'Paras Griffin / Contributor via Getty Images, Kevin C. Cox / Staff via Getty Images, and Erika Goldring / Contributor via Getty Images.';
-    const html = `<!DOCTYPE html><html><body><p>${credit}</p><p>Body paragraph with a genuinely low readability score that should still be flagged by the analysis system for content improvement purposes overall.</p></body></html>`;
+    const body = 'Body paragraph with a genuinely low readability score that should still be flagged by the analysis system for content improvement purposes overall. Additional wording ensures this block meets the minimum length threshold.';
+    const html = `<!DOCTYPE html><html><body><p>${credit}</p><p>${body}</p></body></html>`;
 
     mockFranc.returns('eng');
     mockIsSupportedLanguage.returns(true);
@@ -1506,7 +1529,7 @@ describe('analyzePageContent — citation and figcaption exclusions (integration
           <img src="photo.jpg" alt="Tallest rappers">
           <figcaption>Photo credit: revolt.tv — all rights reserved by the respective photographers and agencies.</figcaption>
         </figure>
-        <p>Body paragraph with a genuinely low readability score that should still be flagged by the analysis system for content improvement purposes overall.</p>
+        <p>Body paragraph with a genuinely low readability score that should still be flagged by the analysis system for content improvement purposes overall. Additional wording ensures this block meets the minimum length threshold.</p>
       </body></html>`;
 
     mockFranc.returns('eng');

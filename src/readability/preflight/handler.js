@@ -282,11 +282,17 @@ export default async function readability(context, auditContext) {
         return !hasBlockChildren;
       })
       .filter(({ element }) => {
-        const textContent = $(element).text()?.trim();
-        return textContent
-          && collapseWhitespace(textContent).length >= MIN_TEXT_LENGTH
-          && /\s/.test(textContent)
-          && !isExcludedReadabilityText(textContent);
+        const $el = $(element);
+        const textContent = $el.text()?.trim();
+        if (!textContent
+          || collapseWhitespace(textContent).length < MIN_TEXT_LENGTH
+          || !/\s/.test(textContent)) {
+          return false;
+        }
+        if ($el.html().includes('<br')) {
+          return true;
+        }
+        return !isExcludedReadabilityText(textContent);
       });
 
     // Process filtered elements

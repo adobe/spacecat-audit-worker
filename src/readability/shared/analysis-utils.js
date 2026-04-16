@@ -129,7 +129,7 @@ function textWithoutUrls(text) {
 }
 
 /**
- * Getty-style and agency credit lines (often a plain &lt;p&gt; under an image).
+ * Image and wire-service attribution lines (often a plain &lt;p&gt; under a photo).
  * Uses composite signals only — not standalone "et al." or single slashes.
  * Note: contributor is intentionally in the agency token list; it only fires when
  * combined with via + 2+ slashes, so the false-positive risk on normal prose is low.
@@ -334,10 +334,19 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log, scraped
       // Exclude citation / attribution chunks before scoring; analyzeTextReadability
       // repeats isExcludedReadabilityText for defense in depth.
       .filter(({ element }) => {
-        const textContent = $(element).text()?.trim();
-        return textContent && collapseWhitespace(textContent).length >= MIN_TEXT_LENGTH
-          && /\s/.test(textContent)
-          && !isExcludedReadabilityText(textContent);
+        const $el = $(element);
+        const textContent = $el.text()?.trim();
+        if (!textContent
+          || collapseWhitespace(textContent).length < MIN_TEXT_LENGTH
+          || !/\s/.test(textContent)) {
+          return false;
+        }
+        // <br>-split blocks: exclusion is applied per segment below. Combined text can
+        // include a citation tail (e.g. DOI) that would wrongly drop the whole element.
+        if ($el.html().includes('<br')) {
+          return true;
+        }
+        return !isExcludedReadabilityText(textContent);
       });
 
     // Process each element and collect analysis promises
