@@ -1743,20 +1743,14 @@ describe('LLMO Customer Analysis Handler', () => {
 
     it('should prefer baseSiteId match over brand_sites match', async () => {
       const auditContext = {};
-
-      context.env.SPACECAT_API_BASE_URL = 'https://spacecat.example.com';
-      context.env.SPACECAT_API_KEY = 'test-api-key';
+      mockIsBrandalfEnabled.resolves(true);
 
       mockFetch.reset();
       mockFetch.onFirstCall().resolves({
         ok: true,
-        json: async () => [{ flagName: 'brandalf', flagValue: true }],
-      });
-      mockFetch.onSecondCall().resolves({
-        ok: true,
         json: async () => ({ schedule_id: 'sched-001' }),
       });
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: async () => ({}),
       });
