@@ -1,3 +1,38 @@
+## [1.415.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.415.0...v1.415.1) (2026-04-15)
+
+
+### Bug Fixes
+
+* **LLMO-4176:** skip brandalf check when onboardingMode is v1 in llmo-customer-analysis ([#2380](https://github.com/adobe/spacecat-audit-worker/issues/2380)) ([86e396a](https://github.com/adobe/spacecat-audit-worker/commit/86e396a1662239a998774f3f7defb808cd74e8a9))
+
+# [1.415.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.9...v1.415.0) (2026-04-15)
+
+
+### Features
+
+* **llmo:** add OAI-AdsBot and Google-Agent classification ([#2390](https://github.com/adobe/spacecat-audit-worker/issues/2390)) ([8df40d6](https://github.com/adobe/spacecat-audit-worker/commit/8df40d6bea639a572da1d86875c0f1ca3d6d0769))
+
+## [1.414.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.8...v1.414.9) (2026-04-15)
+
+
+### Bug Fixes
+
+* **deps:** update dependency diff to v9 ([#2377](https://github.com/adobe/spacecat-audit-worker/issues/2377)) ([ee7fa21](https://github.com/adobe/spacecat-audit-worker/commit/ee7fa21212759b6d125d96d25f6315bd9ecf3a2c))
+
+## [1.414.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.7...v1.414.8) (2026-04-15)
+
+
+### Bug Fixes
+
+* **prerender:** fix suggestionId lookup, baseUrl in payload, and coveredByDomainWide guards ([#2373](https://github.com/adobe/spacecat-audit-worker/issues/2373)) ([001b563](https://github.com/adobe/spacecat-audit-worker/commit/001b563a66214b5842cba7f70e256c9c8df4c583)), closes [#2370](https://github.com/adobe/spacecat-audit-worker/issues/2370)
+
+## [1.414.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.6...v1.414.7) (2026-04-15)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-vault-secrets to v1.3.3 ([#2386](https://github.com/adobe/spacecat-audit-worker/issues/2386)) ([46ba5f5](https://github.com/adobe/spacecat-audit-worker/commit/46ba5f5b403ae687303d3366f21ca71525f3fba5))
+
 ## [1.414.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.5...v1.414.6) (2026-04-15)
 
 
