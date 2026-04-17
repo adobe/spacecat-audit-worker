@@ -16,20 +16,29 @@ function resolveSiteId(site) {
   return site?.getId?.();
 }
 
+function normalizeConfiguredCdnProvider(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value.trim().toLowerCase();
+}
+
 export async function getConfigCdnProvider(site, context) {
   const { log, s3Client, env = {} } = context;
   const siteId = resolveSiteId(site);
   const s3Bucket = env.S3_IMPORTER_BUCKET_NAME;
 
   if (!siteId || !s3Client || !s3Bucket) {
+    log?.debug?.(`Skipping config CDN provider lookup due to missing input for siteId=${siteId || 'unknown'}: hasS3Client=${Boolean(s3Client)}, s3Bucket=${s3Bucket || 'missing'}`);
     return '';
   }
 
   try {
     const { config } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket });
-    return config?.cdnBucketConfig?.cdnProvider?.trim?.() || '';
+    return normalizeConfiguredCdnProvider(config?.cdnBucketConfig?.cdnProvider);
   } catch (error) {
-    log?.warn?.(`Failed to fetch config CDN provider: ${error.message}`);
+    log?.warn?.(`Failed to fetch config CDN provider for siteId=${siteId}: ${error.message}`);
     return '';
   }
 }

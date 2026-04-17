@@ -157,9 +157,21 @@ describe('CDN Analysis Handler', () => {
   let sandbox;
   let context;
   let site;
+  let mockedHandlers;
+
+  async function loadMockedHandler(configuredCdnProvider) {
+    const mockedHandler = await esmock('../../../src/cdn-analysis/handler.js', {
+      '../../../src/utils/llmo-config-utils.js': {
+        getConfigCdnProvider: sandbox.stub().resolves(configuredCdnProvider),
+      },
+    });
+    mockedHandlers.push(mockedHandler);
+    return mockedHandler;
+  }
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
+    mockedHandlers = [];
 
     site = {
       getBaseURL: sandbox.stub().returns('https://example.com'),
@@ -205,7 +217,8 @@ describe('CDN Analysis Handler', () => {
       .build();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await Promise.all(mockedHandlers.map((handler) => esmock.purge(handler)));
     sandbox.restore();
   });
 
@@ -291,11 +304,7 @@ describe('CDN Analysis Handler', () => {
     });
 
     it('filters discovered service providers to the configured cdnProvider', async () => {
-      const mockedHandler = await esmock('../../../src/cdn-analysis/handler.js', {
-        '../../../src/utils/llmo-config-utils.js': {
-          getConfigCdnProvider: sandbox.stub().resolves('byocdn-akamai'),
-        },
-      });
+      const mockedHandler = await loadMockedHandler('byocdn-akamai');
       const auditContext = {
         year: 2025,
         month: 6,
@@ -319,14 +328,49 @@ describe('CDN Analysis Handler', () => {
         serviceProvider: 'byocdn-akamai',
         cdnType: 'akamai',
       });
+      expect(context.log.info).to.have.been.calledWith(
+        'Filtered discovered service providers to configured cdnProvider=byocdn-akamai for siteId=test-site-id, host=example.com',
+      );
+    });
+
+    it('filters legacy discovered CDN providers using the configured service-provider mapping', async () => {
+      const mockedHandler = await loadMockedHandler('byocdn-fastly');
+      const auditContext = {
+        year: 2025,
+        month: 6,
+        day: 15,
+        hour: 10,
+      };
+
+      context.s3Client.send.callsFake(
+        createS3MockForCdnType('fastly', {
+          isLegacy: true,
+          year: '2025',
+          month: '06',
+          day: '15',
+          hour: '10',
+        }),
+      );
+
+      const result = await mockedHandler.cdnLogsAnalysisRunner(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(result.auditResult.providers).to.be.an('array').with.length(1);
+      expect(result.auditResult.providers[0]).to.include({
+        serviceProvider: 'fastly',
+        cdnType: 'fastly',
+      });
+      expect(context.log.info).to.have.been.calledWith(
+        'Filtered discovered service providers to configured cdnProvider=byocdn-fastly for siteId=test-site-id, host=example.com',
+      );
     });
 
     it('warns and processes no providers when configured cdnProvider is not discovered', async () => {
-      const mockedHandler = await esmock('../../../src/cdn-analysis/handler.js', {
-        '../../../src/utils/llmo-config-utils.js': {
-          getConfigCdnProvider: sandbox.stub().resolves('byocdn-cloudflare'),
-        },
-      });
+      const mockedHandler = await loadMockedHandler('byocdn-cloudflare');
       const auditContext = {
         year: 2025,
         month: 6,
@@ -347,16 +391,12 @@ describe('CDN Analysis Handler', () => {
 
       expect(result.auditResult.providers).to.be.an('array').with.length(0);
       expect(context.log.warn).to.have.been.calledWith(
-        'Configured cdnProvider=byocdn-cloudflare was not found among discovered service providers: aem-cs-fastly, byocdn-akamai',
+        'Configured cdnProvider=byocdn-cloudflare was not found among discovered service providers: aem-cs-fastly, byocdn-akamai for siteId=test-site-id, host=example.com',
       );
     });
 
     it('warns with none when configured cdnProvider is set but discovery finds no providers', async () => {
-      const mockedHandler = await esmock('../../../src/cdn-analysis/handler.js', {
-        '../../../src/utils/llmo-config-utils.js': {
-          getConfigCdnProvider: sandbox.stub().resolves('byocdn-cloudflare'),
-        },
-      });
+      const mockedHandler = await loadMockedHandler('byocdn-cloudflare');
       const auditContext = {
         year: 2025,
         month: 6,
@@ -390,16 +430,44 @@ describe('CDN Analysis Handler', () => {
 
       expect(result.auditResult.providers).to.be.an('array').with.length(0);
       expect(context.log.warn).to.have.been.calledWith(
-        'Configured cdnProvider=byocdn-cloudflare was not found among discovered service providers: none',
+        'Configured cdnProvider=byocdn-cloudflare was not found among discovered service providers: none for siteId=test-site-id, host=example.com',
+      );
+    });
+
+    it('warns on legacy buckets when configured provider mapping does not match discovered CDN type', async () => {
+      const mockedHandler = await loadMockedHandler('byocdn-cloudflare');
+      const auditContext = {
+        year: 2025,
+        month: 6,
+        day: 15,
+        hour: 10,
+      };
+
+      context.s3Client.send.callsFake(
+        createS3MockForCdnType('fastly', {
+          isLegacy: true,
+          year: '2025',
+          month: '06',
+          day: '15',
+          hour: '10',
+        }),
+      );
+
+      const result = await mockedHandler.cdnLogsAnalysisRunner(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(result.auditResult.providers).to.be.an('array').with.length(0);
+      expect(context.log.warn).to.have.been.calledWith(
+        'Configured cdnProvider=byocdn-cloudflare was not found among discovered service providers: fastly for siteId=test-site-id, host=example.com',
       );
     });
 
     it('keeps all discovered service providers when config cdnProvider is empty', async () => {
-      const mockedHandler = await esmock('../../../src/cdn-analysis/handler.js', {
-        '../../../src/utils/llmo-config-utils.js': {
-          getConfigCdnProvider: sandbox.stub().resolves(''),
-        },
-      });
+      const mockedHandler = await loadMockedHandler('');
       const auditContext = {
         year: 2025,
         month: 6,

@@ -21,9 +21,11 @@ describe('llmo-config-utils', () => {
   let sandbox;
   let mockLlmoConfig;
   let llmoConfigUtils;
+  let mockedModules;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
+    mockedModules = [];
     mockLlmoConfig = {
       readConfig: sandbox.stub(),
     };
@@ -33,25 +35,27 @@ describe('llmo-config-utils', () => {
         llmoConfig: mockLlmoConfig,
       },
     });
+    mockedModules.push(llmoConfigUtils);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await Promise.all(mockedModules.map((module) => esmock.purge(module)));
     sandbox.restore();
   });
 
-  it('returns the trimmed configured cdn provider', async () => {
+  it('returns the normalized configured cdn provider', async () => {
     const site = {
       getId: sandbox.stub().returns('site-123'),
     };
     const context = {
-      log: { warn: sandbox.stub() },
+      log: { debug: sandbox.stub(), warn: sandbox.stub() },
       s3Client: {},
       env: { S3_IMPORTER_BUCKET_NAME: 'config-bucket' },
     };
     mockLlmoConfig.readConfig.resolves({
       config: {
         cdnBucketConfig: {
-          cdnProvider: ' byocdn-akamai ',
+          cdnProvider: ' ByOcDn-AkAmAi ',
         },
       },
     });
@@ -66,7 +70,26 @@ describe('llmo-config-utils', () => {
     );
   });
 
-  it('returns an empty string when required config lookup inputs are missing', async () => {
+  it('returns an empty string and logs debug when required config lookup inputs are missing', async () => {
+    const context = {
+      log: {
+        debug: sandbox.stub(),
+        warn: sandbox.stub(),
+      },
+      env: { S3_IMPORTER_BUCKET_NAME: 'config-bucket' },
+    };
+
+    const provider = await llmoConfigUtils.getConfigCdnProvider({}, context);
+
+    expect(provider).to.equal('');
+    expect(mockLlmoConfig.readConfig).not.to.have.been.called;
+    expect(context.log.debug).to.have.been.calledWith(
+      'Skipping config CDN provider lookup due to missing input for siteId=unknown: hasS3Client=false, s3Bucket=config-bucket',
+    );
+    expect(context.log.warn).not.to.have.been.called;
+  });
+
+  it('returns an empty string when required inputs are missing and logger is absent', async () => {
     const provider = await llmoConfigUtils.getConfigCdnProvider(
       {},
       { env: { S3_IMPORTER_BUCKET_NAME: 'config-bucket' } },
@@ -74,6 +97,41 @@ describe('llmo-config-utils', () => {
 
     expect(provider).to.equal('');
     expect(mockLlmoConfig.readConfig).not.to.have.been.called;
+  });
+
+  it('returns an empty string when required inputs are missing and debug logger is absent', async () => {
+    const provider = await llmoConfigUtils.getConfigCdnProvider(
+      {},
+      {
+        log: { warn: sandbox.stub() },
+        env: { S3_IMPORTER_BUCKET_NAME: 'config-bucket' },
+      },
+    );
+
+    expect(provider).to.equal('');
+    expect(mockLlmoConfig.readConfig).not.to.have.been.called;
+  });
+
+  it('returns an empty string and logs debug when bucket input is missing for a known site', async () => {
+    const site = {
+      getId: sandbox.stub().returns('site-123'),
+    };
+    const context = {
+      log: {
+        debug: sandbox.stub(),
+        warn: sandbox.stub(),
+      },
+      s3Client: {},
+      env: {},
+    };
+
+    const provider = await llmoConfigUtils.getConfigCdnProvider(site, context);
+
+    expect(provider).to.equal('');
+    expect(mockLlmoConfig.readConfig).not.to.have.been.called;
+    expect(context.log.debug).to.have.been.calledWith(
+      'Skipping config CDN provider lookup due to missing input for siteId=site-123: hasS3Client=true, s3Bucket=missing',
+    );
   });
 
   it('returns an empty string when cdn provider is missing from config', async () => {
@@ -87,7 +145,9 @@ describe('llmo-config-utils', () => {
     };
     mockLlmoConfig.readConfig.resolves({
       config: {
-        cdnBucketConfig: {},
+        cdnBucketConfig: {
+          cdnProvider: undefined,
+        },
       },
     });
 
@@ -111,7 +171,7 @@ describe('llmo-config-utils', () => {
 
     expect(provider).to.equal('');
     expect(context.log.warn).to.have.been.calledWith(
-      'Failed to fetch config CDN provider: lookup failed',
+      'Failed to fetch config CDN provider for siteId=site-123: lookup failed',
     );
   });
 
