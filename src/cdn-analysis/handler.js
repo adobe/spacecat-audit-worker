@@ -29,6 +29,7 @@ import {
 } from '../utils/cdn-utils.js';
 import { getImsOrgId } from '../utils/data-access.js';
 import { computeWeekOffset } from '../utils/date-utils.js';
+import { getConfigCdnProvider } from '../utils/llmo-config-utils.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -245,9 +246,21 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
   const pathId = orgId || await getImsOrgId(site, dataAccess, log);
 
   const { isLegacy, providers } = await getBucketInfo(s3Client, bucketName, pathId);
-  const serviceProviders = isLegacy
+  const discoveredServiceProviders = isLegacy
     ? await discoverCdnProviders(s3Client, bucketName, { year, month, day, hour })
     : providers;
+  const configuredCdnProvider = await getConfigCdnProvider(site, context);
+  const serviceProviders = configuredCdnProvider
+    ? discoveredServiceProviders.filter((provider) => provider === configuredCdnProvider)
+    : discoveredServiceProviders;
+
+  if (configuredCdnProvider) {
+    if (serviceProviders.length > 0) {
+      log.info(`Filtered discovered service providers to configured cdnProvider=${configuredCdnProvider}`);
+    } else {
+      log.warn(`Configured cdnProvider=${configuredCdnProvider} was not found among discovered service providers: ${discoveredServiceProviders.join(', ') || 'none'}`);
+    }
+  }
 
   log.info(`Processing ${serviceProviders.length} service provider(s) in bucket: ${bucketName}`);
 
