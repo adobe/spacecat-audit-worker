@@ -13,7 +13,7 @@
 import { llmoConfig } from '@adobe/spacecat-shared-utils';
 
 function resolveSiteId(site) {
-  return site?.getSiteId?.() || site?.getId?.();
+  return site?.getId?.();
 }
 
 export async function getConfigCdnProvider(site, context) {
