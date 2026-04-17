@@ -278,6 +278,7 @@ describe('Offsite Brand Presence Handler', () => {
       );
       expect(options.headers).to.deep.equal({
         'x-api-key': env.SPACECAT_API_KEY,
+        'User-Agent': 'Offsite Audits - Spacecat/1.0',
       });
     });
   });
