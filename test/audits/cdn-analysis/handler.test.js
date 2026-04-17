@@ -321,6 +321,79 @@ describe('CDN Analysis Handler', () => {
       });
     });
 
+    it('warns and processes no providers when configured cdnProvider is not discovered', async () => {
+      const mockedHandler = await esmock('../../../src/cdn-analysis/handler.js', {
+        '../../../src/utils/llmo-config-utils.js': {
+          getConfigCdnProvider: sandbox.stub().resolves('byocdn-cloudflare'),
+        },
+      });
+      const auditContext = {
+        year: 2025,
+        month: 6,
+        day: 15,
+        hour: 10,
+      };
+
+      context.s3Client.send.callsFake(
+        createS3MockForServiceProviders(['aem-cs-fastly', 'byocdn-akamai']),
+      );
+
+      const result = await mockedHandler.cdnLogsAnalysisRunner(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(result.auditResult.providers).to.be.an('array').with.length(0);
+      expect(context.log.warn).to.have.been.calledWith(
+        'Configured cdnProvider=byocdn-cloudflare was not found among discovered service providers: aem-cs-fastly, byocdn-akamai',
+      );
+    });
+
+    it('warns with none when configured cdnProvider is set but discovery finds no providers', async () => {
+      const mockedHandler = await esmock('../../../src/cdn-analysis/handler.js', {
+        '../../../src/utils/llmo-config-utils.js': {
+          getConfigCdnProvider: sandbox.stub().resolves('byocdn-cloudflare'),
+        },
+      });
+      const auditContext = {
+        year: 2025,
+        month: 6,
+        day: 15,
+        hour: 10,
+      };
+
+      context.s3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'HeadBucketCommand') {
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'ListObjectsV2Command') {
+          const { Prefix = '' } = command.input || {};
+          if (Prefix.includes('aggregated')) {
+            return Promise.resolve({ Contents: [] });
+          }
+          if (Prefix === 'test-ims-org-id/raw/' || Prefix === 'test-ims-org-id_raw_') {
+            return Promise.resolve({ Contents: [], CommonPrefixes: [] });
+          }
+          return Promise.resolve({ Contents: [], CommonPrefixes: [] });
+        }
+        return Promise.resolve({});
+      });
+
+      const result = await mockedHandler.cdnLogsAnalysisRunner(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(result.auditResult.providers).to.be.an('array').with.length(0);
+      expect(context.log.warn).to.have.been.calledWith(
+        'Configured cdnProvider=byocdn-cloudflare was not found among discovered service providers: none',
+      );
+    });
+
     it('keeps all discovered service providers when config cdnProvider is empty', async () => {
       const mockedHandler = await esmock('../../../src/cdn-analysis/handler.js', {
         '../../../src/utils/llmo-config-utils.js': {
