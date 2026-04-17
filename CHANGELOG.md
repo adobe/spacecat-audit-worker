@@ -1,3 +1,10 @@
+# [1.417.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.416.1...v1.417.0) (2026-04-17)
+
+
+### Features
+
+* add user agent when fetching brand presence files for offsite audits ([#2400](https://github.com/adobe/spacecat-audit-worker/issues/2400)) ([1e66791](https://github.com/adobe/spacecat-audit-worker/commit/1e667917d154f8b34b23fac51281d6d01675a825))
+
 ## [1.416.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.416.0...v1.416.1) (2026-04-17)
 
 
