@@ -17,6 +17,8 @@ import sinon from 'sinon';
 import esmock from 'esmock';
 import {
   isExcludedReadabilityText,
+  isEligibleTextElement,
+  isEligibleParagraphText,
   stripNonContent,
   collapseWhitespace,
   analyzeTextReadability,
@@ -1355,6 +1357,12 @@ describe('isExcludedReadabilityText', () => {
         'WHO. Informationsblatt Ernährung. https://who.int/de. Abgerufen am 15/06/2024.',
       )).to.equal(true);
     });
+
+    it('should exclude slash-free photo credit line with credit intro and agency token', () => {
+      expect(isExcludedReadabilityText(
+        'Photo credit: Jane Smith, Senior Photographer at Reuters, captured at the press conference.',
+      )).to.equal(true);
+    });
   });
 
   describe('normal body copy — should not be excluded', () => {
@@ -1393,6 +1401,18 @@ describe('isExcludedReadabilityText', () => {
       // copy; without an agency token the pattern intentionally does not exclude them.
       expect(isExcludedReadabilityText(
         'John Smith / Senior Reporter / The Times via wire services, filed from London bureau offices.',
+      )).to.equal(false);
+    });
+
+    it('should not exclude body prose where "retrieved" precedes a date mid-sentence', () => {
+      expect(isExcludedReadabilityText(
+        'The data was retrieved March 1, 2024 from our internal database for further analysis and processing.',
+      )).to.equal(false);
+    });
+
+    it('should not exclude body prose where a URL is followed by more text after the year+semicolon', () => {
+      expect(isExcludedReadabilityText(
+        'The platform launched in 2022; https://results.example.com/ published the first results.',
       )).to.equal(false);
     });
   });
@@ -1599,6 +1619,64 @@ describe('analyzePageContent — citation and figcaption exclusions (integration
     expect(texts.some((t) => t.includes('doi:10.1161'))).to.equal(false);
     // body chunk meets MIN_TEXT_LENGTH and should still be flagged
     expect(result.length).to.be.greaterThan(0);
+  });
+});
+
+describe('isEligibleTextElement', () => {
+  it('should return false for an element with no text', () => {
+    const $ = cheerioLoad('<html><body><p></p></body></html>');
+    expect(isEligibleTextElement($('p'))).to.equal(false);
+  });
+
+  it('should return false for an element whose collapsed text is below MIN_TEXT_LENGTH', () => {
+    const $ = cheerioLoad('<html><body><p>Short.</p></body></html>');
+    expect(isEligibleTextElement($('p'))).to.equal(false);
+  });
+
+  it('should return false for an element with no whitespace', () => {
+    const $ = cheerioLoad(`<html><body><p>${'x'.repeat(150)}</p></body></html>`);
+    expect(isEligibleTextElement($('p'))).to.equal(false);
+  });
+
+  it('should return true for a <br>-split element even when combined text matches a citation', () => {
+    const prose = 'The epistemological ramifications of poststructuralist conceptualizations necessitate a comprehensive reevaluation of all phenomenological underpinnings.';
+    const citation = 'Whelton PK, et al. 2017 ACC/AHA guideline. Hypertension. 2018; doi:10.1161/HYP.0000000000000065.';
+    const $ = cheerioLoad(`<html><body><p>${prose}<br>${citation}</p></body></html>`);
+    expect(isEligibleTextElement($('p'))).to.equal(true);
+  });
+
+  it('should return false for a citation-only element', () => {
+    const citation = 'Whelton PK, et al. 2017 ACC/AHA guideline. Hypertension. 2018; doi:10.1161/HYP.0000000000000065.';
+    const $ = cheerioLoad(`<html><body><p>${citation}</p></body></html>`);
+    expect(isEligibleTextElement($('p'))).to.equal(false);
+  });
+
+  it('should return true for a long enough normal prose element', () => {
+    const prose = 'The epistemological ramifications of poststructuralist conceptualizations necessitate a comprehensive reevaluation of the phenomenological underpinnings.';
+    const $ = cheerioLoad(`<html><body><p>${prose}</p></body></html>`);
+    expect(isEligibleTextElement($('p'))).to.equal(true);
+  });
+});
+
+describe('isEligibleParagraphText', () => {
+  it('should return false for text below MIN_TEXT_LENGTH', () => {
+    expect(isEligibleParagraphText('Too short.')).to.equal(false);
+  });
+
+  it('should return false for text with no whitespace', () => {
+    expect(isEligibleParagraphText('x'.repeat(150))).to.equal(false);
+  });
+
+  it('should return false for a citation paragraph', () => {
+    expect(isEligibleParagraphText(
+      'Whelton PK, et al. 2017 ACC/AHA guideline. Hypertension. 2018; doi:10.1161/HYP.0000000000000065.',
+    )).to.equal(false);
+  });
+
+  it('should return true for a normal long prose paragraph', () => {
+    expect(isEligibleParagraphText(
+      'The epistemological ramifications of poststructuralist conceptualizations necessitate a comprehensive reevaluation of the phenomenological underpinnings.',
+    )).to.equal(true);
   });
 });
 

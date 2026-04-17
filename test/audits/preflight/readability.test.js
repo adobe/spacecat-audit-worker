@@ -564,10 +564,14 @@ describe('Preflight Readability Audit', () => {
       mockedReadability = await esmock('../../../src/readability/preflight/handler.js', {
         '../../../src/readability/shared/analysis-utils.js': {
           stripNonContent: analysisUtils.stripNonContent,
-          collapseWhitespace: analysisUtils.collapseWhitespace,
+          // isEligibleTextElement is stubbed to always pass elements through so that
+          // isExcludedReadabilityText is only called from the defense-in-depth path
+          // inside analyzeReadability, which is what this test exercises.
+          isEligibleTextElement: () => true,
+          isEligibleParagraphText: analysisUtils.isEligibleParagraphText,
           isExcludedReadabilityText: sinon.stub().callsFake(() => {
             excludeCalls += 1;
-            return excludeCalls >= 2;
+            return true;
           }),
         },
       });
@@ -589,7 +593,7 @@ describe('Preflight Readability Audit', () => {
 
       const audit = auditsResult[0].audits.find((a) => a.name === PREFLIGHT_READABILITY);
       expect(audit.opportunities).to.have.lengthOf(0);
-      expect(excludeCalls).to.be.at.least(2);
+      expect(excludeCalls).to.be.at.least(1);
     });
 
     it('returns early when no supported language is detected for the text block', async () => {

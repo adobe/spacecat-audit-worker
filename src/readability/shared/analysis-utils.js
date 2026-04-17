@@ -85,11 +85,19 @@ export function stripNonContent($) {
 
 /**
  * Language-agnostic citation signals (DOI, journal line, URL + access verb).
+ *
+ * Pattern notes:
+ * - "year; doi:" is always a citation signal.
+ * - "year; https://..." is only a citation when the URL ends the text; body prose like
+ *   "launched in 2022; https://example.com/ published results" must not be excluded.
+ * - "accessed/retrieved Month D, YYYY" is only a citation when the date ends the text;
+ *   body prose like "retrieved March 1, 2024 from our database" must not be excluded.
  */
 const CITATION_EXCLUSION_PATTERNS = [
   /doi:\s*10\.\d{4,}/i,
-  /\d{4};\s*(doi:|https?:\/\/)/i,
-  /\b(accessed|retrieved)\s+\w+ \d{1,2},\s*\d{4}/i,
+  /\d{4};\s*doi:/i,
+  /\d{4};\s*https?:\/\/\S+[.,]?\s*$/i,
+  /\b(accessed|retrieved)\s+\w+ \d{1,2},\s*\d{4}[.,]?\s*$/i,
   /https?:\/\/\S+[\s,.]*\s*(accessed|retrieved)\b/i,
 ];
 
@@ -148,7 +156,9 @@ function isImageAttributionCreditLine(text) {
   const hasAgencyToken = /getty|reuters|afp|shutterstock|alamy|contributor|staff\s+via|photo\s*©|©\s*\w/i.test(normalized);
   const hasCreditIntro = /\b(photo\s*credit|image\s*credit|crédit\s*photo|photo\s*:|foto\s*:|bildnachweis|imagen\s*:)\b/i.test(normalized);
 
-  if (hasCreditIntro && normalized.length < 220 && slashCount >= 1) {
+  // Slash is required only when no agency token is present; "Photo credit: Jane Smith at Reuters"
+  // has no slash but is unambiguously a credit line.
+  if (hasCreditIntro && normalized.length < 220 && (slashCount >= 1 || hasAgencyToken)) {
     return true;
   }
   if (slashCount >= 2 && hasVia && hasAgencyToken) {
@@ -182,6 +192,41 @@ export function isExcludedReadabilityText(text) {
     return true;
   }
   return false;
+}
+
+/**
+ * Returns true if a Cheerio element wrapper should be processed for readability scoring.
+ * Shared between the opportunity path (analyzePageContent) and the preflight path so that
+ * adding a new exclusion signal only requires a change in one place.
+ *
+ * @param {CheerioElement} $el - Cheerio wrapper for the element.
+ * @returns {boolean}
+ */
+export function isEligibleTextElement($el) {
+  const textContent = $el.text()?.trim();
+  if (!textContent
+    || collapseWhitespace(textContent).length < MIN_TEXT_LENGTH
+    || !/\s/.test(textContent)) {
+    return false;
+  }
+  // <br>-split blocks: exclusion is applied per segment below.
+  if ($el.html().includes('<br')) {
+    return true;
+  }
+  return !isExcludedReadabilityText(textContent);
+}
+
+/**
+ * Returns true if a plain-text paragraph (from a <br>-split block) should be scored.
+ * Shared between the opportunity path and the preflight path.
+ *
+ * @param {string} text - Trimmed paragraph text.
+ * @returns {boolean}
+ */
+export function isEligibleParagraphText(text) {
+  return collapseWhitespace(text).length >= MIN_TEXT_LENGTH
+    && /\s/.test(text)
+    && !isExcludedReadabilityText(text);
 }
 
 /**
@@ -333,21 +378,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log, scraped
       })
       // Exclude citation / attribution chunks before scoring; analyzeTextReadability
       // repeats isExcludedReadabilityText for defense in depth.
-      .filter(({ element }) => {
-        const $el = $(element);
-        const textContent = $el.text()?.trim();
-        if (!textContent
-          || collapseWhitespace(textContent).length < MIN_TEXT_LENGTH
-          || !/\s/.test(textContent)) {
-          return false;
-        }
-        // <br>-split blocks: exclusion is applied per segment below. Combined text can
-        // include a citation tail (e.g. DOI) that would wrongly drop the whole element.
-        if ($el.html().includes('<br')) {
-          return true;
-        }
-        return !isExcludedReadabilityText(textContent);
-      });
+      .filter(({ element }) => isEligibleTextElement($(element)));
 
     // Process each element and collect analysis promises
     const analysisPromises = [];
@@ -366,9 +397,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log, scraped
             return tempDiv.text();
           })
           .map((p) => p.trim())
-          .filter((p) => collapseWhitespace(p).length >= MIN_TEXT_LENGTH
-            && /\s/.test(p)
-            && !isExcludedReadabilityText(p));
+          .filter(isEligibleParagraphText);
 
         paragraphs.forEach((paragraph) => {
           const analysisPromise = analyzeTextReadability(

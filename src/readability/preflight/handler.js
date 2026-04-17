@@ -19,7 +19,8 @@ import { sendReadabilityToMystique } from '../shared/async-mystique.js';
 import {
   stripNonContent,
   isExcludedReadabilityText,
-  collapseWhitespace,
+  isEligibleTextElement,
+  isEligibleParagraphText,
 } from '../shared/analysis-utils.js';
 import {
   calculateReadabilityScore,
@@ -28,7 +29,6 @@ import {
 } from '../shared/multilingual-readability.js';
 import {
   TARGET_READABILITY_SCORE,
-  MIN_TEXT_LENGTH,
   MAX_CHARACTERS_DISPLAY,
 } from '../shared/constants.js';
 import { getDomElementSelector, toElementTargets } from '../../preflight/utils/dom-selector.js';
@@ -278,19 +278,7 @@ export default async function readability(context, auditContext) {
         // Skip if it has block-level children (to avoid duplicate analysis)
         return !hasBlockChildren;
       })
-      .filter(({ element }) => {
-        const $el = $(element);
-        const textContent = $el.text()?.trim();
-        if (!textContent
-          || collapseWhitespace(textContent).length < MIN_TEXT_LENGTH
-          || !/\s/.test(textContent)) {
-          return false;
-        }
-        if ($el.html().includes('<br')) {
-          return true;
-        }
-        return !isExcludedReadabilityText(textContent);
-      });
+      .filter(({ element }) => isEligibleTextElement($(element)));
 
     // Process filtered elements
     elementsToProcess.forEach(({ element, index }) => {
@@ -315,9 +303,7 @@ export default async function readability(context, auditContext) {
             return tempDiv.text();
           })
           .map((p) => p.trim())
-          .filter((p) => collapseWhitespace(p).length >= MIN_TEXT_LENGTH
-            && /\s/.test(p)
-            && !isExcludedReadabilityText(p));
+          .filter(isEligibleParagraphText);
 
         // Add promises for each paragraph
         paragraphs.forEach((paragraph) => {
