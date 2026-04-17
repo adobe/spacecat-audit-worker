@@ -1,3 +1,10 @@
+## [1.416.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.416.0...v1.416.1) (2026-04-17)
+
+
+### Bug Fixes
+
+* CQ-4363335  CSP auto-identify: duplicate suggestions shown with same directive and description ([#2399](https://github.com/adobe/spacecat-audit-worker/issues/2399)) ([ce3adcd](https://github.com/adobe/spacecat-audit-worker/commit/ce3adcd4357e35040fc61d922cb5d80e107f5b0e))
+
 # [1.416.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.415.3...v1.416.0) (2026-04-16)
 
 
