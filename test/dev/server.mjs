@@ -18,14 +18,29 @@ import { main } from '../../src/index.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../../package.json');
-const DEV_SERVER_PORT = '3004';
 
 // eslint-disable-next-line no-underscore-dangle
 global.__rootdir = resolve(fileURLToPath(import.meta.url), '..', '..', '..');
 
+function resolveDevServerPort(args) {
+  const portFlagIndex = args.indexOf('--port');
+  const configuredPort = portFlagIndex >= 0
+    ? args[portFlagIndex + 1]
+    : process.env.WEBSERVER_PORT || process.env.PORT || '3000';
+  const port = Number(configuredPort);
+
+  if (!Number.isInteger(port) || port < 1) {
+    throw new Error(`Invalid dev server port: ${configuredPort}`);
+  }
+
+  return String(port);
+}
+
 async function run(args) {
-  process.env.WEBSERVER_PORT = DEV_SERVER_PORT;
-  process.env.HLX_DEV_SERVER_HOST = `localhost:${DEV_SERVER_PORT}`;
+  const port = resolveDevServerPort(args);
+
+  process.env.WEBSERVER_PORT = port;
+  process.env.HLX_DEV_SERVER_HOST = `localhost:${port}`;
   process.env.HLX_DEV_SERVER_SCHEME = 'http';
 
   let devServer;
