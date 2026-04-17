@@ -2741,6 +2741,72 @@ describe('Prerender Audit', () => {
         expect(mappedData.data.citabilityScore).to.be.null;
       });
 
+      it('should build suggestion key from pathname so domain shifts do not create duplicates', async () => {
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sinon.stub().resolves([]),
+        };
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sinon.stub().resolves(true),
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          scrapeJobId: 'job-123',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://www.example.com/some/page',
+                needsPrerender: true,
+                contentGainRatio: 2.0,
+                wordCountBefore: 100,
+                wordCountAfter: 200,
+              },
+            ],
+          },
+        };
+
+        const context = {
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+          dataAccess: {
+            Suggestion: {
+              STATUSES: {
+                NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED',
+              },
+            },
+          },
+          site: { getId: () => 'test-site-id' },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions(
+          'https://www.example.com',
+          auditData,
+          context,
+        );
+
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        const { buildKey } = syncSuggestionsStub.firstCall.args[0];
+
+        // Both domain variants of the same page must produce the same key
+        expect(buildKey({ url: 'https://www.example.com/some/page' })).to.equal('/some/page|prerender');
+        expect(buildKey({ url: 'https://example.com/some/page' })).to.equal('/some/page|prerender');
+
+        // Domain-wide suggestions (with a `key` field) pass through unchanged
+        expect(buildKey({ key: 'domain-wide-key' })).to.equal('domain-wide-key');
+      });
+
       it('should preserve existing domain-wide suggestion when it has edgeDeployed flag', async () => {
         const existingDomainWideSuggestion = {
           getId: () => 'existing-domain-wide-id',
