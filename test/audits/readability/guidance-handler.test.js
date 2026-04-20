@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
@@ -82,6 +80,7 @@ describe('Readability Opportunities Guidance Handler', () => {
     mockOpportunity = {
       getId: sinon.stub().returns('opp-1'),
       getAuditId: sinon.stub().returns('audit-123'),
+      getType: () => 'readability',
     };
 
     mockS3Client = {

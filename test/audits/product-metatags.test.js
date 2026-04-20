@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
@@ -642,14 +641,11 @@ describe('Product MetaTags', () => {
         dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
 
         const result = await submitForScraping(context);
+        // PDFs are pre-filtered by getMergedAuditInputUrls
         expect(result.urls).to.deep.equal([
           { url: 'http://example.com/product1' },
           { url: 'http://example.com/product2' },
         ]);
-
-        // Verify PDF files were logged as skipped
-        expect(context.log.info).to.have.been.calledWith('[PRODUCT-METATAGS] Skipping PDF file from scraping: http://example.com/catalog.pdf');
-        expect(context.log.info).to.have.been.calledWith('[PRODUCT-METATAGS] Skipping PDF file from scraping: http://example.com/guide.PDF');
       });
 
       it('should handle malformed URLs gracefully in isPdfUrl', async () => {
@@ -1427,6 +1423,7 @@ describe('Product MetaTags', () => {
           },
           Suggestion: {
             bulkUpdateStatus: sinon.stub(),
+            saveMany: sinon.stub().resolves(),
           },
         };
         context = {
@@ -1594,8 +1591,8 @@ describe('Product MetaTags', () => {
           toOverride: true,
         });
 
-        // Verify the suggestion was saved
-        expect(existingSuggestion.save).to.be.calledOnce;
+        // Verify the suggestions were saved via saveMany
+        expect(dataAccessStub.Suggestion.saveMany).to.be.calledOnce;
       });
 
       it('should throw error if suggestions fail to create', async () => {
@@ -3141,6 +3138,73 @@ describe('Product MetaTags', () => {
       expect(result).to.deep.equal({ status: 'complete' });
       // Verify the function executed successfully with site config handling
       expect(logStub.info).to.have.been.called;
+    });
+
+    it('should skip remote config when commerceLlmoConfig is set', async () => {
+      const siteWithManualConfig = {
+        getId: sinon.stub().returns('site123'),
+        getBaseURL: sinon.stub().returns('https://example.com'),
+        getDeliveryConfig: sinon.stub().returns({ useHostnameOnly: false }),
+        getConfig: sinon.stub().returns({
+          state: {
+            commerceLlmoConfig: {
+              'https://example.com': {
+                environmentId: 'env-1',
+                websiteCode: 'web-1',
+                storeCode: 'store-1',
+                storeViewCode: 'view-1',
+              },
+            },
+          },
+          getIncludedURLs: sinon.stub().returns([]),
+          getFetchConfig: sinon.stub().returns({ overrideBaseURL: null }),
+          getDeliveryConfig: sinon.stub().returns({}),
+          getHandlers: sinon.stub().returns({}),
+        }),
+      };
+
+      mockDataAccess.Site = {
+        findById: sinon.stub().resolves(siteWithManualConfig),
+      };
+
+      mockDataAccess.Opportunity.create.resolves({
+        getId: () => 'opportunity123',
+        getSiteId: () => 'site123',
+        addSuggestions: sinon.stub().resolves(),
+        getSuggestions: sinon.stub().resolves([]),
+      });
+
+      const mockRunAudit = esmock('../../src/product-metatags/handler.js', {
+        '../../src/canonical/handler.js': {
+          getTopPagesForSiteId: sinon.stub().resolves([]),
+        },
+        '../../src/product-metatags/product-metatags-auto-suggest.js': {
+          default: sinon.stub().resolves({}),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves({ errorItems: [], createdItems: [] }),
+        },
+        '@adobe/spacecat-shared-rum-api-client': {
+          default: {
+            createFrom: () => ({
+              query: sinon.stub().resolves([]),
+            }),
+          },
+        },
+        '../../src/support/utils.js': {
+          calculateCPCValue: sinon.stub().resolves(2.5),
+        },
+        '../../src/common/index.js': {
+          wwwUrlResolver: sinon.stub().resolves('https://example.com'),
+        },
+      });
+
+      const { runAuditAndGenerateSuggestions: mockedRunAudit } = await mockRunAudit;
+
+      const result = await mockedRunAudit(mockContext);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(logStub.info).to.have.been.calledWith('[PRODUCT-METATAGS] Audit completed successfully');
     });
 
     it('should handle missing site config', async function () {
@@ -4810,6 +4874,7 @@ describe('Product MetaTags', () => {
         },
         Suggestion: {
           bulkUpdateStatus: sinon.stub(),
+          saveMany: sinon.stub().resolves(),
         },
       };
       context = {
@@ -4893,7 +4958,7 @@ describe('Product MetaTags', () => {
             }),
           },
           Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]), create: sinon.stub() },
-          Suggestion: { bulkUpdateStatus: sinon.stub() },
+          Suggestion: { bulkUpdateStatus: sinon.stub(), saveMany: sinon.stub().resolves() },
         },
       };
     });
@@ -5039,7 +5104,7 @@ describe('Product MetaTags', () => {
           }),
         },
         Site: { findById: sinon.stub().resolves(null) },
-        Suggestion: { bulkUpdateStatus: sinon.stub() },
+        Suggestion: { bulkUpdateStatus: sinon.stub(), saveMany: sinon.stub().resolves() },
       };
       context = {
         log: logStub,

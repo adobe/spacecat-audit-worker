@@ -21,7 +21,9 @@ const RUNBOOK_URL = 'https://github.com/adobe/spacecat-audit-worker/blob/main/do
  */
 async function alertPromptGenerationFailure(context, siteId, drsJobId, reason) {
   const channelId = context.env?.SLACK_CHANNEL_LLMO_ONBOARDING_ID;
-  if (!channelId) return;
+  if (!channelId) {
+    return;
+  }
 
   await postMessageSafe(context, channelId, '', {
     attachments: [{
@@ -64,13 +66,13 @@ async function alertPromptGenerationFailure(context, siteId, drsJobId, reason) {
 
 /**
  * Downloads DRS result and writes prompts to the LLMO config as aiTopics.
- * Non-fatal — returns false on failure so the handler can continue.
+ * Non-fatal — returns a result object so the handler can continue even on failure.
  *
  * @param {string} resultLocation - Presigned URL to the DRS result JSON
  * @param {string} jobId - DRS job ID
  * @param {string} siteId - Site identifier
  * @param {object} context - Universal context (env, s3Client, log)
- * @returns {Promise<boolean>} true if prompts were written successfully
+ * @returns {Promise<{success: boolean, configVersion?: string}>}
  */
 async function processDrsResult(resultLocation, jobId, siteId, context) {
   const { env, s3Client, log } = context;
@@ -89,20 +91,24 @@ async function processDrsResult(resultLocation, jobId, siteId, context) {
 
     if (drsPrompts.length === 0) {
       log.warn(`DRS job ${jobId} returned no prompts for site ${siteId}`);
-      return false;
+      return { success: false };
     }
 
     const bucket = env.S3_IMPORTER_BUCKET_NAME;
-    await writeDrsPromptsToLlmoConfig({
+    const writeResult = await writeDrsPromptsToLlmoConfig({
       drsPrompts, siteId, s3Client, s3Bucket: bucket, log,
     });
 
     log.info(`Wrote ${drsPrompts.length} DRS prompts to LLMO config for site ${siteId}`);
-    return true;
+    return { success: true, configVersion: writeResult?.version };
   } catch (error) {
     log.error(`DRS result processing failed for job ${jobId}, site ${siteId}: ${error.message}`);
-    return false;
+    return { success: false };
   }
+}
+
+function resolveOnboardingMode(auditContext = {}) {
+  return auditContext.onboardingMode || auditContext.onboarding_mode || null;
 }
 
 /**
@@ -129,6 +135,7 @@ export default async function drsPromptGenerationHandler(message, context) {
   const {
     drsEventType, drsJobId, resultLocation, source,
   } = auditContext;
+  const onboardingMode = resolveOnboardingMode(auditContext);
 
   if (!siteId) {
     log.error('DRS prompt generation notification missing site_id in metadata');
@@ -148,16 +155,25 @@ export default async function drsPromptGenerationHandler(message, context) {
 
   log.info(`DRS prompt generation completed for site ${siteId}, job ${drsJobId}, result: ${resultLocation}`);
 
-  // Download DRS result and write prompts to LLMO config (non-fatal)
-  const success = await processDrsResult(resultLocation, drsJobId, siteId, context);
+  let configVersion;
+  const shouldWriteLegacyConfig = source !== 'onboarding' || onboardingMode !== 'v2';
 
-  if (!success) {
-    await alertPromptGenerationFailure(
-      context,
-      siteId,
-      drsJobId,
-      'Failed to download or write prompts to LLMO config',
-    );
+  if (shouldWriteLegacyConfig) {
+    // Download DRS result and write prompts to LLMO config (non-fatal)
+    const drsResult = await processDrsResult(resultLocation, drsJobId, siteId, context);
+    const { success } = drsResult;
+    configVersion = drsResult.configVersion;
+
+    if (!success) {
+      await alertPromptGenerationFailure(
+        context,
+        siteId,
+        drsJobId,
+        'Failed to download or write prompts to LLMO config',
+      );
+    }
+  } else {
+    log.info(`Skipping v1 LLMO config write for site ${siteId} because onboarding_mode is v2`);
   }
 
   if (source !== 'onboarding') {
@@ -174,6 +190,9 @@ export default async function drsPromptGenerationHandler(message, context) {
     auditContext: {
       drsJobId,
       resultLocation,
+      ...(configVersion && { configVersion }),
+      ...(onboardingMode && { onboardingMode }),
+      ...(auditContext.imsOrgId && { imsOrgId: auditContext.imsOrgId }),
     },
   });
 

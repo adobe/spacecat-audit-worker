@@ -1,0 +1,741 @@
+/*
+ * Copyright 2025 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ */
+
+import { expect } from 'chai';
+import { load as cheerioLoad } from 'cheerio';
+import { getDomElementSelector, toElementTargets } from '../../../src/preflight/utils/dom-selector.js';
+
+describe('dom-selector.js', () => {
+  let $;
+
+  beforeEach(() => {
+    $ = cheerioLoad(`
+      <html>
+        <body>
+          <header>
+            <h1 id="main-title" class="header-title">Main Title</h1>
+          </header>
+          <main>
+            <section class="content-section">
+              <h2 class="section-heading">Section 1</h2>
+              <p>Some text.</p>
+              <h2 class="section-heading">Section 2</h2>
+              <div>
+                <h3>Sub-section A</h3>
+                <h3>Sub-section B</h3>
+              </div>
+            </section>
+            <section>
+              <h2 id="unique-heading">Unique Section</h2>
+            </section>
+            <div class="parent-container">
+              <div class="child-container">
+                <p>Paragraph 1</p>
+                <p>Paragraph 2</p>
+                <p>Paragraph 3</p>
+              </div>
+              <div class="child-container">
+                <p>Another Paragraph</p>
+              </div>
+            </div>
+          </main>
+          <footer>
+            <p>Footer content</p>
+          </footer>
+        </body>
+      </html>
+    `);
+  });
+
+  describe('getDomElementSelector', () => {
+    it('should return null for invalid element', () => {
+      expect(getDomElementSelector(null)).to.be.null;
+      expect(getDomElementSelector(undefined)).to.be.null;
+      expect(getDomElementSelector({})).to.be.null;
+    });
+
+    it('should prioritize data-aue-resource attribute (Universal Editor)', () => {
+      const html = '<div data-aue-resource="urn:aemconnection:/content/test" id="test-id" class="test-class">Test</div>';
+      const $test = cheerioLoad(html);
+      const element = $test('div').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/test"]');
+    });
+
+    it('should fall back to structural selector when data-aue-prop has no data-aue-resource ancestor', () => {
+      const html = '<h1 data-aue-prop="title" class="heading">My Title</h1>';
+      const $test = cheerioLoad(html);
+      const element = $test('h1').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.equal('body > h1.heading');
+    });
+
+    it('should generate a selector with ID if available', () => {
+      const element = $('#main-title').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.equal('body > header > h1#main-title');
+    });
+
+    it('should generate a selector with classes if no ID', () => {
+      const element = $('h2.section-heading').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.include('h2.section-heading');
+    });
+
+    it('should generate a selector with nth-of-type for siblings of the same tag', () => {
+      const elements = $('h2.section-heading').get();
+      const selector2 = getDomElementSelector(elements[1]);
+      expect(selector2).to.include(':nth-of-type(2)');
+    });
+
+    it('should generate a selector with parent context up to 5 levels', () => {
+      const element = $('h3').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.include('main');
+      expect(selector).to.include('section.content-section');
+      expect(selector).to.include('h3:nth-of-type(1)');
+    });
+
+    it('should include parent context even when element has ID', () => {
+      const element = $('#unique-heading').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.equal('body > main > section:nth-of-type(2) > h2#unique-heading');
+    });
+
+    it('should handle elements without classes or ID', () => {
+      const element = $('footer > p').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.include('footer');
+      expect(selector).to.include('p');
+    });
+
+    it('should generate nth-of-type for parent when parent has siblings', () => {
+      // Get a paragraph inside the second child-container
+      const element = $('.child-container').eq(1).find('p').get(0);
+      const selector = getDomElementSelector(element);
+      // This should include :nth-of-type for both the parent div and the p element
+      expect(selector).to.include('div.child-container:nth-of-type(2)');
+    });
+
+    it('should handle deeply nested elements with multiple siblings at each level', () => {
+      // Get the second paragraph in the first child-container
+      const element = $('.child-container').eq(0).find('p').eq(1)
+        .get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.include(':nth-of-type');
+      expect(selector).to.include('p:nth-of-type(2)');
+    });
+
+    it('should limit classes to two for readability', () => {
+      $('h1').addClass('extra-class another-class');
+      const element = $('h1').get(0);
+      const selector = getDomElementSelector(element);
+      // ID takes precedence over classes, but parent chain is still included
+      expect(selector).to.equal('body > header > h1#main-title');
+    });
+
+    it('should stop at parent with data-aue-resource attribute', () => {
+      const html = `
+        <div data-aue-resource="urn:aemconnection:/content/test/section">
+          <div class="content">
+            <p class="text">Some paragraph text</p>
+          </div>
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const element = $test('p').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/test/section"] > div.content > p.text');
+    });
+
+    it('should work with nested Universal Editor components', () => {
+      const html = `
+        <section data-aue-resource="urn:aemconnection:/content/page/section">
+          <div data-aue-resource="urn:aemconnection:/content/page/section/block">
+            <h2 data-aue-type="text" data-aue-prop="title">Heading</h2>
+          </div>
+        </section>
+      `;
+      const $test = cheerioLoad(html);
+      const element = $test('h2').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/page/section/block"] h2[data-aue-type="text"][data-aue-prop="title"]');
+    });
+
+    it('should handle Universal Editor teaser component like in example', () => {
+      const html = `
+        <div data-aue-type="container" data-aue-resource="urn:aemconnection:/content/frescopa/en/index/jcr:content/root/section_0">
+          <div class="teaser-wrapper">
+            <div data-aue-resource="urn:aemconnection:/content/frescopa/en/index/jcr:content/root/section_0/block" class="teaser dark">
+              <div class="foreground">
+                <div class="text">
+                  <div class="title">
+                    <h3 data-aue-prop="title" data-aue-label="Heading" data-aue-type="text">Your perfect coffee!</h3>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const h3Element = $test('h3').get(0);
+      const selector = getDomElementSelector(h3Element);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/frescopa/en/index/jcr:content/root/section_0/block"] h3[data-aue-type="text"][data-aue-prop="title"]');
+    });
+
+    it('should produce Pattern B selector when element has both resource and prop', () => {
+      const html = `
+        <div data-aue-resource="urn:aemconnection:/content/page/jcr:content/root/section_0">
+          <h2 data-aue-resource="urn:aemconnection:/content/page/jcr:content/root/section_0/title"
+              data-aue-prop="jcr:title"
+              data-aue-type="text">Headline</h2>
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const element = $test('h2').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/page/jcr:content/root/section_0/title"][data-aue-prop="jcr:title"]');
+    });
+
+    it('should produce Pattern C selector with data-aue-type for descendant prop', () => {
+      const html = `
+        <div data-aue-resource="urn:aemconnection:/content/page/jcr:content/root/section/block">
+          <img data-aue-type="media" data-aue-prop="fileReference" src="/image.jpg">
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const element = $test('img').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/page/jcr:content/root/section/block"] img[data-aue-type="media"][data-aue-prop="fileReference"]');
+    });
+
+    it('should produce Pattern C selector for richtext prop', () => {
+      const html = `
+        <div data-aue-resource="urn:aemconnection:/content/page/jcr:content/root/section/block/item">
+          <div class="cards-card-body">
+            <div data-aue-type="richtext" data-aue-prop="text"><h5>House Blend</h5><p>$14.99</p></div>
+          </div>
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const element = $test('[data-aue-prop="text"]').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/page/jcr:content/root/section/block/item"] div[data-aue-type="richtext"][data-aue-prop="text"]');
+    });
+
+    it('should omit data-aue-type when not present on prop element', () => {
+      const html = `
+        <div data-aue-resource="urn:aemconnection:/content/page/block">
+          <a data-aue-prop="link" href="/page">Click</a>
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const element = $test('a').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/page/block"] a[data-aue-prop="link"]');
+    });
+
+    it('should resolve child of UE editable to the editable selector (heading inside richtext)', () => {
+      const html = `
+        <div data-aue-resource="urn:aemconnection:/content/frescopa/en/index/jcr:content/root/section_1209180770/block/item">
+          <div class="cards-card-body">
+            <div data-aue-prop="text" data-aue-label="Text" data-aue-filter="text" data-aue-type="richtext">
+              <h5>Coffee Machines</h5>
+            </div>
+          </div>
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const h5Element = $test('h5').get(0);
+      const selector = getDomElementSelector(h5Element);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/frescopa/en/index/jcr:content/root/section_1209180770/block/item"] div[data-aue-type="richtext"][data-aue-prop="text"]');
+    });
+
+    it('should resolve deeply nested child to nearest ancestor UE editable', () => {
+      const html = `
+        <div data-aue-resource="urn:aemconnection:/content/page/block">
+          <div data-aue-prop="description" data-aue-type="richtext">
+            <div class="wrapper">
+              <p><strong>Bold text</strong></p>
+            </div>
+          </div>
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const strongElement = $test('strong').get(0);
+      const selector = getDomElementSelector(strongElement);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/page/block"] div[data-aue-type="richtext"][data-aue-prop="description"]');
+    });
+
+    it('should not resolve to ancestor editable when element is outside UE context', () => {
+      const html = `
+        <body>
+          <div class="plain-container">
+            <p>No UE attributes anywhere</p>
+          </div>
+        </body>
+      `;
+      const $test = cheerioLoad(html);
+      const pElement = $test('p').get(0);
+      const selector = getDomElementSelector(pElement);
+      expect(selector).to.include('p');
+      expect(selector).to.not.include('data-aue');
+    });
+
+    it('should stop ancestor search at data-aue-resource and fall back to structural CSS', () => {
+      const html = `
+        <div data-aue-resource="urn:aemconnection:/content/page/block">
+          <div class="no-aue-prop">
+            <span>Text without editable wrapper</span>
+          </div>
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const spanElement = $test('span').get(0);
+      const selector = getDomElementSelector(spanElement);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/page/block"] > div.no-aue-prop > span');
+    });
+
+    it('should handle Universal Editor body tag with data-aue-resource', () => {
+      const html = `<body data-aue-resource="urn:aemconnection:/content/frescopa/en/index/jcr:content" data-aue-label="Page">
+        <main>
+          <div class="content">Lorem ipsum text here</div>
+        </main>
+      </body>`;
+      const $test = cheerioLoad(html);
+      const divElement = $test('div.content').get(0);
+      const selector = getDomElementSelector(divElement);
+      expect(selector).to.equal('[data-aue-resource="urn:aemconnection:/content/frescopa/en/index/jcr:content"] > main > div.content');
+    });
+  });
+
+  describe('CSS Escaping', () => {
+    it('should escape NULL character (U+0000) in class names - line 30', () => {
+      // NULL character should be replaced with U+FFFD (replacement character)
+      // Cheerio strips NULL chars during parsing, so we create a mock element directly
+      const mockElement = {
+        name: 'div',
+        type: 'tag',
+        attribs: { class: 'test\u0000class' },
+        parent: {
+          name: 'body',
+          type: 'tag',
+          attribs: {},
+          children: [],
+          parent: null,
+        },
+      };
+      mockElement.parent.children = [mockElement];
+      const selector = getDomElementSelector(mockElement);
+      // The NULL should be replaced with the replacement character
+      expect(selector).to.include('div.test\uFFFDclass');
+    });
+
+    it('should escape NULL character (U+0000) in ID - line 30', () => {
+      // Test NULL in ID as well
+      const mockElement = {
+        name: 'div',
+        type: 'tag',
+        attribs: { id: 'my\u0000id' },
+        parent: {
+          name: 'body',
+          type: 'tag',
+          attribs: {},
+          children: [],
+          parent: null,
+        },
+      };
+      mockElement.parent.children = [mockElement];
+      const selector = getDomElementSelector(mockElement);
+      // The NULL should be replaced with the replacement character
+      expect(selector).to.equal('body > div#my\uFFFDid');
+    });
+
+    it('should escape control characters (U+0001-U+001F) in IDs - line 35', () => {
+      // Control character U+001F (unit separator) should be escaped as hex
+      // Use mock element to ensure control char is preserved
+      const mockElement = {
+        name: 'div',
+        type: 'tag',
+        attribs: { id: 'test\u001Fid' },
+        parent: {
+          name: 'body',
+          type: 'tag',
+          attribs: {},
+          children: [],
+          parent: null,
+        },
+      };
+      mockElement.parent.children = [mockElement];
+      const selector = getDomElementSelector(mockElement);
+      // Control char 0x1F = 31 in decimal = "1f" in hex, escaped as \1f followed by space
+      expect(selector).to.equal('body > div#test\\1f id');
+    });
+
+    it('should escape DEL character (U+007F) in class names - line 35', () => {
+      // DEL character should be escaped as hex
+      // Use mock element to ensure DEL char is preserved
+      const mockElement = {
+        name: 'div',
+        type: 'tag',
+        attribs: { class: 'test\u007Fclass' },
+        parent: {
+          name: 'body',
+          type: 'tag',
+          attribs: {},
+          children: [],
+          parent: null,
+        },
+      };
+      mockElement.parent.children = [mockElement];
+      const selector = getDomElementSelector(mockElement);
+      // DEL char 0x7F = 127 in decimal = "7f" in hex
+      expect(selector).to.include('div.test\\7f class');
+    });
+
+    it('should escape single hyphen as identifier - line 40', () => {
+      // A single hyphen at the start (and only character) should be escaped
+      const html = '<body><div id="-">Content</div></body>';
+      const $test = cheerioLoad(html);
+      const element = $test('div').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.equal('body > div#\\-');
+    });
+
+    it('should escape special characters like @ and ! - lines 55-57', () => {
+      // Characters like @ and ! need to be escaped
+      const html = '<div class="test@class!name">Content</div>';
+      const $test = cheerioLoad(html);
+      const element = $test('div').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.include('div.test\\@class\\!name');
+    });
+
+    it('should escape dot in class name', () => {
+      const html = '<div class="version.1.0">Content</div>';
+      const $test = cheerioLoad(html);
+      const element = $test('div').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.include('div.version\\.1\\.0');
+    });
+
+    it('should escape colon in class name (Tailwind-style)', () => {
+      const html = '<div class="hover:bg-blue-500">Content</div>';
+      const $test = cheerioLoad(html);
+      const element = $test('div').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.include('div.hover\\:bg-blue-500');
+    });
+
+    it('should escape brackets in class name (Tailwind arbitrary values)', () => {
+      const html = '<div class="w-[200px]">Content</div>';
+      const $test = cheerioLoad(html);
+      const element = $test('div').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.include('div.w-\\[200px\\]');
+    });
+
+    it('should handle multiple special characters in parent classes', () => {
+      const html = `
+        <div class="container@main">
+          <p class="text!important">Content</p>
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const element = $test('p').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.include('div.container\\@main');
+      expect(selector).to.include('p.text\\!important');
+    });
+  });
+
+  describe('toElementTargets', () => {
+    it('should return an empty object for null or undefined input', () => {
+      expect(toElementTargets(null)).to.deep.equal({});
+      expect(toElementTargets(undefined)).to.deep.equal({});
+      expect(toElementTargets('')).to.deep.equal({});
+      expect(toElementTargets(false)).to.deep.equal({});
+      expect(toElementTargets(0)).to.deep.equal({});
+    });
+
+    it('should convert a single selector string to elements object', () => {
+      const selector = 'div.test';
+      expect(toElementTargets(selector)).to.deep.equal({
+        elements: [{ selector: 'div.test' }],
+      });
+    });
+
+    it('should convert an array of selector strings to elements object', () => {
+      const selectors = ['div.test1', 'span.test2'];
+      expect(toElementTargets(selectors)).to.deep.equal({
+        elements: [
+          { selector: 'div.test1' },
+          { selector: 'span.test2' },
+        ],
+      });
+    });
+
+    it('should filter out null or empty selectors', () => {
+      const selectors = ['div.test1', null, '', 'span.test2', undefined, false];
+      expect(toElementTargets(selectors)).to.deep.equal({
+        elements: [
+          { selector: 'div.test1' },
+          { selector: 'span.test2' },
+        ],
+      });
+    });
+
+    it('should apply limit correctly', () => {
+      const selectors = ['div.test1', 'span.test2', 'p.test3'];
+      expect(toElementTargets(selectors, 2)).to.deep.equal({
+        elements: [
+          { selector: 'div.test1' },
+          { selector: 'span.test2' },
+        ],
+      });
+    });
+
+    it('should handle duplicate selectors by returning unique ones', () => {
+      const selectors = ['div.test1', 'span.test2', 'div.test1', 'span.test2'];
+      expect(toElementTargets(selectors)).to.deep.equal({
+        elements: [
+          { selector: 'div.test1' },
+          { selector: 'span.test2' },
+        ],
+      });
+    });
+
+    it('should handle empty array', () => {
+      expect(toElementTargets([])).to.deep.equal({});
+    });
+
+    it('should handle single string selector', () => {
+      expect(toElementTargets('body > main')).to.deep.equal({
+        elements: [
+          { selector: 'body > main' },
+        ],
+      });
+    });
+  });
+
+  describe('Duplicate ID handling', () => {
+    it('should produce distinct selectors for elements under parents with duplicate IDs', () => {
+      const html = `
+        <body>
+          <div class="grid">
+            <div class="teaser-wrapper">
+              <div id="featured-teaser" class="cmp-teaser">
+                <div class="cmp-teaser__content">
+                  <h1>Lorem Ipsum</h1>
+                </div>
+              </div>
+            </div>
+            <div class="teaser-wrapper">
+              <div id="featured-teaser" class="cmp-teaser">
+                <div class="cmp-teaser__content">
+                  <h1>Lorem Ipsum</h1>
+                </div>
+              </div>
+            </div>
+          </div>
+        </body>
+      `;
+      const $dup = cheerioLoad(html);
+      const h1Elements = $dup('h1').get();
+      const selector1 = getDomElementSelector(h1Elements[0]);
+      const selector2 = getDomElementSelector(h1Elements[1]);
+
+      expect(selector1).to.not.equal(selector2);
+      expect(selector1).to.include('teaser-wrapper:nth-of-type(1)');
+      expect(selector2).to.include('teaser-wrapper:nth-of-type(2)');
+    });
+
+    it('should include parent chain even when element itself has an ID', () => {
+      const html = `
+        <body>
+          <div class="wrapper">
+            <h1 id="title">Title</h1>
+          </div>
+        </body>
+      `;
+      const $test = cheerioLoad(html);
+      const element = $test('h1').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.include('h1#title');
+      expect(selector).to.include('div.wrapper');
+    });
+  });
+
+  describe('Disambiguation of duplicate data-aue-prop without data-aue-resource ancestor', () => {
+    it('should produce distinct structural selectors for repeated data-aue-prop elements (EDS/Sidekick context)', () => {
+      const html = `
+        <body>
+          <main>
+            <div class="section offer-container">
+              <div class="offer-wrapper">
+                <div class="offer block" data-block-name="offer">
+                  <div class="offer-content">
+                    <div class="offer-left">
+                      <h4 data-aue-prop="headline" data-aue-type="text" class="headline">Fall in love with coffee.</h4>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="section reward-container">
+              <div class="reward-wrapper">
+                <div class="reward light left block" data-block-name="reward">
+                  <div class="reward-content">
+                    <div class="reward-left">
+                      <h4 data-aue-prop="headline" data-aue-type="text" class="headline"></h4>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </main>
+        </body>
+      `;
+      const $test = cheerioLoad(html);
+      const h4Elements = $test('h4').get();
+      const selector1 = getDomElementSelector(h4Elements[0]);
+      const selector2 = getDomElementSelector(h4Elements[1]);
+
+      expect(selector1).to.not.equal(selector2);
+      expect(selector1).to.include('offer-content');
+      expect(selector2).to.include('reward-content');
+      expect(selector1).to.not.include('data-aue-prop');
+      expect(selector2).to.not.include('data-aue-prop');
+    });
+  });
+
+  describe('AEM Cloud Service Context (cq elements ignored)', () => {
+    it('should return only CSS selector for element with ID near cq sibling', () => {
+      const html = `
+        <body>
+          <div class="container">
+            <cq data-path="/content/wknd/en/jcr:content/root/container/title" data-config="..."></cq>
+            <div class="title-wrapper">
+              <h1 id="page-title">Hello World</h1>
+            </div>
+          </div>
+        </body>
+      `;
+      const $cs = cheerioLoad(html);
+      const h1 = $cs('h1').get(0);
+      const result = getDomElementSelector(h1);
+
+      expect(result).to.be.a('string');
+      expect(result).to.equal('body > div.container > div.title-wrapper > h1#page-title');
+    });
+
+    it('should return only CSS selector even when cq siblings exist', () => {
+      const html = `
+        <body>
+          <div class="container">
+            <cq data-path="/content/wknd/en/jcr:content/root/container/breadcrumb" data-config="..."></cq>
+            <div class="breadcrumb">
+              <nav>
+                <ol>
+                  <li><a href="/adventures">Adventures</a></li>
+                </ol>
+              </nav>
+            </div>
+          </div>
+        </body>
+      `;
+      const $cs = cheerioLoad(html);
+      const link = $cs('a').get(0);
+      const result = getDomElementSelector(link);
+
+      expect(result).to.be.a('string');
+      expect(result).to.include('a');
+      expect(result).to.not.include('cq[data-path=');
+    });
+
+    it('should return only CSS selector for deeply nested element near cq', () => {
+      const html = `
+        <body>
+          <cq data-path="/content/wknd/en/jcr:content/root/container" data-config="..."></cq>
+          <div class="container">
+            <cq data-path="/content/wknd/en/jcr:content/root/container/carousel" data-config="..."></cq>
+            <div class="carousel">
+              <div class="carousel-item">
+                <img src="/image.jpg" alt="Image">
+              </div>
+            </div>
+          </div>
+        </body>
+      `;
+      const $cs = cheerioLoad(html);
+      const img = $cs('img').get(0);
+      const result = getDomElementSelector(img);
+
+      expect(result).to.be.a('string');
+      expect(result).to.include('img');
+      expect(result).to.not.include('cq[data-path=');
+    });
+
+    it('should return CSS selector when cq is an actual parent element', () => {
+      const html = `
+        <body>
+          <cq data-path="/content/wknd/en/jcr:content/root/container">
+            <div class="content">
+              <p>Some text</p>
+            </div>
+          </cq>
+        </body>
+      `;
+      const $cs = cheerioLoad(html);
+      const p = $cs('p').get(0);
+      const result = getDomElementSelector(p);
+
+      expect(result).to.be.a('string');
+      expect(result).to.include('p');
+      expect(result).to.not.include('cq[data-path=');
+    });
+
+    it('should produce CSS-only selector from real-world AEM CS HTML', () => {
+      const html = `
+        <body>
+          <div class="root container responsivegrid">
+            <div class="container responsivegrid">
+              <cq data-path="/content/wknd/language-masters/en/adventures/surf-camp-costa-rica/jcr:content/root/container/breadcrumb"></cq>
+              <div class="breadcrumb">
+                <nav class="cmp-breadcrumb">
+                  <ol class="cmp-breadcrumb__list">
+                    <li class="cmp-breadcrumb__item">
+                      <a class="cmp-breadcrumb__item-link" href="/adventures">Adventures</a>
+                    </li>
+                  </ol>
+                </nav>
+              </div>
+            </div>
+          </div>
+        </body>
+      `;
+
+      const $cs = cheerioLoad(html);
+      const breadcrumbLink = $cs('.cmp-breadcrumb__item-link').get(0);
+      const result = getDomElementSelector(breadcrumbLink);
+      const targets = toElementTargets(result);
+
+      expect(result).to.be.a('string');
+      expect(result).to.include('a.cmp-breadcrumb__item-link');
+      expect(result).to.not.include('cq[data-path=');
+      expect(targets).to.have.property('elements');
+      expect(targets.elements).to.be.an('array').with.lengthOf(1);
+      expect(targets.elements[0]).to.deep.equal({ selector: result });
+    });
+  });
+});

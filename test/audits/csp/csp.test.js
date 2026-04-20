@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
@@ -27,7 +25,7 @@ import {
 import { isIsoDate } from '@adobe/spacecat-shared-utils';
 import createLHSAuditRunner from '../../../src/lhs/lib.js';
 import { MockContextBuilder } from '../../shared.js';
-import { cspOpportunityAndSuggestions } from '../../../src/csp/csp.js';
+import { buildKey, cspOpportunityAndSuggestions } from '../../../src/csp/csp.js';
 import { cspAutoSuggest } from '../../../src/csp/csp-auto-suggest.js';
 import fs from 'fs';
 import path from 'path';
@@ -58,6 +56,47 @@ function assertAuditData(auditData) {
     seo: 0.5,
   });
 }
+
+describe('buildKey', () => {
+  it('lowercases and strips non-alphanumerics so identical descriptions produce identical keys', () => {
+    expect(buildKey({ description: 'No CSP found in enforcement mode', directive: 'default-src' }))
+      .to.equal('nocspfoundinenforcementmode_defaultsrc');
+  });
+
+  it('strips punctuation, backticks and quotes introduced by Lighthouse descriptions', () => {
+    expect(buildKey({
+      description: '`\'unsafe-inline\'` allows the execution of unsafe in-page scripts and event handlers. Consider using CSP nonces to allow scripts individually.',
+      directive: 'default-src',
+    })).to.equal('unsafeinlineallowstheexecutionofunsafeinpagescriptsandeventhandlersconsiderusingcspnoncestoallowscriptsindividually_defaultsrc');
+  });
+
+  it('yields identical keys for descriptions that differ only in whitespace or case', () => {
+    expect(buildKey({ description: 'Self seems to be an invalid keyword.', directive: 'default-src' }))
+      .to.equal(buildKey({ description: '  self seems to  be an invalid keyword.  ', directive: '  default src ' }));
+  });
+
+  it('yields distinct keys for distinct descriptions (no collisions on realistic CSP findings)', () => {
+    const a = buildKey({ description: 'self seems to be an invalid keyword.', directive: 'default-src' });
+    const b = buildKey({ description: 'unsafe-eval seems to be an invalid keyword.', directive: 'default-src' });
+    const c = buildKey({ description: 'unsafe-inline seems to be an invalid keyword.', directive: 'default-src' });
+    expect(new Set([a, b, c]).size).to.equal(3);
+  });
+
+  it('yields distinct keys for same descriptions on different directives (no collisions on realistic CSP findings)', () => {
+    const a = buildKey({ severity: 'Syntax', directive: 'default-src', description: 'self seems to be an invalid keyword.' });
+    const b = buildKey({ severity: 'Syntax', directive: 'style-src', description: 'self seems to be an invalid keyword.' });
+    const c = buildKey({ severity: 'Syntax', directive: 'img-src', description: 'self seems to be an invalid keyword.' });
+    expect(new Set([a, b, c]).size).to.equal(3);
+  });
+
+  it('returns empty string for a description with only non-alphanumeric characters', () => {
+    expect(buildKey({ description: '  !@#$ — " ` \'  ', directive: ' '})).to.equal('_');
+  });
+
+  it('throws if description is missing (contract: callers must supply one)', () => {
+    expect(() => buildKey({})).to.throw(TypeError);
+  });
+});
 
 describe('CSP Post-processor', () => {
   let context;
@@ -942,6 +981,60 @@ describe('CSP Post-processor', () => {
       expect(scope404.isDone()).to.equal(false);
 
       expect(context.log.info).to.have.been.calledWithMatch(sinon.match('auto-suggest is disabled for site'));
+    });
+
+    it('end-to-end: extracts opportunity and auto-suggest from real PSI csp-xss findings', async () => {
+      sinon.replace(configuration, 'isHandlerEnabledForSite', () => true);
+      auditData.auditResult.csp = JSON.parse(
+        fs.readFileSync(path.join(__dirname, 'testdata/psi-csp-xss.json'), 'utf8'),
+      );
+
+      nock('https://adobe.com').get('/head.html').reply(200, fs.readFileSync(path.join(__dirname, 'testdata/head-ok.html'), 'utf8'));
+      nock('https://adobe.com').get('/404.html').reply(200, fs.readFileSync(path.join(__dirname, 'testdata/head-ok.html'), 'utf8'));
+
+      const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
+      assertAuditData(cspAuditData);
+
+      // Flattened subItems (5) + 2 nonce items + 1 meta item = 8 suggestions.
+      expect(opportunityStub.create).to.have.been.calledWith(sinon.match({
+        data: sinon.match({
+          mainMetric: { name: 'Issues', value: 8 },
+          securityType: 'EDS-CSP',
+        }),
+      }));
+
+      expect(cspOpportunity.addSuggestions).to.have.been.calledOnce;
+      expect(cspOpportunity.addSuggestions).to.have.been.calledWith(sinon.match([
+        sinon.match({ data: { severity: 'Syntax', directive: 'default-src', description: 'self seems to be an invalid keyword.' } }),
+        sinon.match({ data: { severity: 'Syntax', directive: 'style-src', description: 'self seems to be an invalid keyword.' } }),
+        sinon.match({ data: { severity: 'Syntax', directive: 'img-src', description: 'self seems to be an invalid keyword.' } }),
+        sinon.match({ data: { severity: 'Syntax', directive: 'connect-src', description: 'self seems to be an invalid keyword.' } }),
+        sinon.match({ data: { severity: 'Syntax', directive: 'frame-src', description: 'self seems to be an invalid keyword.' } }),
+        // Auto-suggest attaches findings + patch to the FIRST nonce-related item.
+        sinon.match({
+          data: sinon.match({
+            severity: 'High',
+            directive: 'script-src',
+            description: 'Host allowlists can frequently be bypassed. Consider using CSP nonces instead, along with `\'strict-dynamic\'` if necessary.',
+          }),
+        }),
+        sinon.match({
+          data: sinon.match({
+            severity: 'High',
+            directive: 'script-src',
+            description: '`\'unsafe-inline\'` allows the execution of unsafe in-page scripts and event handlers. Consider using CSP nonces to allow scripts individually.',
+          }),
+        }),
+        sinon.match({
+          data: sinon.match({
+            severity: 'Medium',
+            description: 'The page contains a CSP defined in a `<meta>` tag. Consider moving the CSP to an HTTP header or defining another strict CSP in an HTTP header.',
+          }),
+        }),
+      ]));
+
+      expect(context.log.error).not.to.have.been.calledWithMatch(sinon.match('Error fetching one or more pages. Skipping CSP auto-suggest.'));
+      expect(context.log.info).to.have.been.calledWithMatch(sinon.match('Adding 8 new suggestions for siteId test-site-id'));
     });
   });
 });

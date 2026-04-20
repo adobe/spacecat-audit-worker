@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -242,6 +240,7 @@ describe('subpath-filter', () => {
       expect(extractPathPrefix('bulk.com/fr/page1')).to.equal('/fr');
       expect(extractPathPrefix('https://bulk.com/uk/page1')).to.equal('/uk');
       expect(extractPathPrefix('bulk.com/products/item')).to.equal('/products');
+      expect(extractPathPrefix('bulk.com/en-us/page1')).to.equal('/en-us');
     });
 
     it('should handle URLs with query parameters', () => {
@@ -287,4 +286,3 @@ describe('subpath-filter', () => {
     });
   });
 });
-

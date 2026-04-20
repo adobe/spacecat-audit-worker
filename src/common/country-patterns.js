@@ -26,6 +26,10 @@ export const DEFAULT_COUNTRY_PATTERNS = [
   // Matches countries/regions prefix: /countries/us/, /regions/fr/, https://example.com/country/de/
   { name: 'countries_prefix', regex: '(?i)^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)(?:countries?|regions?)/([a-z]{2})(?:/|$)' },
 
+  // Handle bare and slash-prefixed country/language paths before the
+  // host-aware matcher below so paths like `cz/cs/...` extract `CZ`, not `CS`.
+  { name: 'country_lang_bare', regex: '(?i)^/?([a-z]{2})/[a-z]{2}(?:/|$)' },
+
   // Matches country/language format: /us/en/, /ca/fr/, https://example.com/de/en/page
   { name: 'country_lang', regex: '(?i)^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)([a-z]{2})/[a-z]{2}(?:/|$)' },
 

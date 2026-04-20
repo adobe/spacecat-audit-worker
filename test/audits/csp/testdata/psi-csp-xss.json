@@ -1,0 +1,48 @@
+[
+  {
+    "severity": "Syntax",
+    "description": {
+      "type": "code",
+      "value": "default-src * self blob: data: gap:; style-src * self 'unsafe-inline' blob: data: gap:; script-src * 'self' 'unsafe-eval' 'unsafe-inline' blob: data: gap:; object-src * 'self' blob: data: gap:; img-src * self 'unsafe-inline' blob: data: gap:; connect-src self * 'unsafe-inline' blob: data: gap:; frame-src * self blob: data: gap:;"
+    },
+    "subItems": {
+      "type": "subitems",
+      "items": [
+        {
+          "directive": "default-src",
+          "description": "self seems to be an invalid keyword."
+        },
+        {
+          "directive": "style-src",
+          "description": "self seems to be an invalid keyword."
+        },
+        {
+          "directive": "img-src",
+          "description": "self seems to be an invalid keyword."
+        },
+        {
+          "directive": "connect-src",
+          "description": "self seems to be an invalid keyword."
+        },
+        {
+          "directive": "frame-src",
+          "description": "self seems to be an invalid keyword."
+        }
+      ]
+    }
+  },
+  {
+    "directive": "script-src",
+    "description": "Host allowlists can frequently be bypassed. Consider using CSP nonces or hashes instead, along with `'strict-dynamic'` if necessary.",
+    "severity": "High"
+  },
+  {
+    "directive": "script-src",
+    "description": "`'unsafe-inline'` allows the execution of unsafe in-page scripts and event handlers. Consider using CSP nonces or hashes to allow scripts individually.",
+    "severity": "High"
+  },
+  {
+    "severity": "Medium",
+    "description": "The page contains a CSP defined in a `<meta>` tag. Consider moving the CSP to an HTTP header or defining another strict CSP in an HTTP header."
+  }
+]

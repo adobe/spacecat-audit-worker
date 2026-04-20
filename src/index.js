@@ -24,6 +24,7 @@ import accessibilityDesktop from './accessibility/handler-desktop.js';
 import accessibilityMobile from './accessibility/handler-mobile.js';
 import apex from './apex/handler.js';
 import cwv from './cwv/handler.js';
+import cwvTrendsAudit from './cwv-trends-audit/handler.js';
 import lhsDesktop from './lhs/handler-desktop.js';
 import lhsMobile from './lhs/handler-mobile.js';
 import sitemap from './sitemap/handler.js';
@@ -44,10 +45,11 @@ import essExperimentationAll from './experimentation-ess/all.js';
 import experimentationOpportunities from './experimentation-opportunities/handler.js';
 import formsOpportunities from './forms-opportunities/handler.js';
 import metaTags from './metatags/handler.js';
-import costs from './costs/handler.js';
 import structuredData from './structured-data/handler.js';
 import structuredDataGuidance from './structured-data/guidance-handler.js';
 import siteDetection from './site-detection/handler.js';
+import detectCdn from './detect-cdn/handler.js';
+import deliveryConfigWriter from './delivery-config-writer/handler.js';
 import highFormViewsLowConversionsGuidance from './forms-opportunities/guidance-handlers/guidance-high-form-views-low-conversions.js';
 import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-nav.js';
 import highPageViewsLowFormViewsGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-views.js';
@@ -58,11 +60,6 @@ import paidTrafficAnalysisGuidance from './paid-traffic-analysis/guidance-handle
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
 import llmBlocked from './llm-blocked/handler.js';
-import geoBrandPresence from './geo-brand-presence/handler.js';
-import detectGeoBrandPresence from './geo-brand-presence/detect-geo-brand-presence-handler.js';
-import { handleCategorizationResponseHandler } from './geo-brand-presence/categorization-response-handler.js';
-import geoBrandPresenceDaily from './geo-brand-presence-daily/handler.js';
-import detectGeoBrandPresenceDaily from './geo-brand-presence-daily/detect-geo-brand-presence-handler.js';
 import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
 import detectFormDetails from './forms-opportunities/form-details-handler/detect-form-details.js';
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
@@ -84,6 +81,7 @@ import pageTypeDetection from './page-type/handler.js';
 import pageTypeGuidance from './page-type/guidance-handler.js';
 import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
+import llmoConfigDbSync from './llmo-config-db-sync/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import llmoOnboardingPublish from './llmo-onboarding-publish/handler.js';
 import headings from './headings/handler.js';
@@ -94,7 +92,6 @@ import prerender from './prerender/handler.js';
 import prerenderGuidance from './prerender/guidance-handler.js';
 import productMetatags from './product-metatags/handler.js';
 import { commerceProductEnrichments, commerceProductEnrichmentsYearly } from './commerce-product-enrichments/handler.js';
-import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import summarization from './summarization/handler.js';
 import summarizationGuidance from './summarization/guidance-handler.js';
 import accessibilityCodeFixHandler from './accessibility/auto-optimization-handlers/codefix-handler.js';
@@ -102,16 +99,24 @@ import permissions from './permissions/handler.js';
 import permissionsRedundant from './permissions/handler.redundant.js';
 import faqs from './faqs/handler.js';
 import faqsGuidance from './faqs/guidance-handler.js';
+import moneyPages from './money-pages/handler.js';
 import relatedUrls from './related-urls/handler.js';
 import relatedUrlsGuidance from './related-urls/guidance-handler.js';
 import pageCitability from './page-citability/handler.js';
 import healthCheck from './health-check/handler.js';
 import wikipediaAnalysis from './wikipedia-analysis/handler.js';
 import wikipediaAnalysisGuidance from './wikipedia-analysis/guidance-handler.js';
+import redditAnalysis from './reddit-analysis/handler.js';
+import redditAnalysisGuidance from './reddit-analysis/guidance-handler.js';
+import youtubeAnalysis from './youtube-analysis/handler.js';
+import youtubeAnalysisGuidance from './youtube-analysis/guidance-handler.js';
+import citedAnalysis from './cited-analysis/handler.js';
+import citedAnalysisGuidance from './cited-analysis/guidance-handler.js';
 import frescopaDataGeneration from './frescopa-data-generation/handler.js';
 import semanticValueVisibility from './semantic-value-visibility/handler.js';
 import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
 import drsPromptGeneration from './drs-prompt-generation/handler.js';
+import offsiteBrandPresence from './offsite-brand-presence/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -119,6 +124,7 @@ const HANDLERS = {
   'accessibility-mobile': accessibilityMobile,
   apex,
   cwv,
+  'cwv-trends-audit': cwvTrendsAudit,
   'lhs-mobile': lhsMobile,
   'lhs-desktop': lhsDesktop,
   sitemap,
@@ -136,7 +142,8 @@ const HANDLERS = {
   'experimentation-ess-all': essExperimentationAll,
   'experimentation-opportunities': experimentationOpportunities,
   'meta-tags': metaTags,
-  costs,
+  'detect-cdn': detectCdn,
+  'delivery-config-writer': deliveryConfigWriter,
   'structured-data': structuredData,
   'llm-blocked': llmBlocked,
   'forms-opportunities': formsOpportunities,
@@ -149,20 +156,6 @@ const HANDLERS = {
     highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
-  'geo-brand-presence': geoBrandPresence,
-  'geo-brand-presence-free': geoBrandPresence,
-  'geo-brand-presence-paid': geoBrandPresence,
-  // Splits of geo-brand-presence-free for staggered execution (max 40 sites each)
-  ...Object.fromEntries(
-    Array.from({ length: 23 }, (_, i) => [`geo-brand-presence-free-${i + 1}`, geoBrandPresence]),
-  ),
-  'category:geo-brand-presence': handleCategorizationResponseHandler,
-  'detect:geo-brand-presence': detectGeoBrandPresence,
-  'refresh:geo-brand-presence': detectGeoBrandPresence,
-  'geo-brand-presence-daily': geoBrandPresenceDaily,
-  'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,
-  'detect:geo-brand-presence-daily': detectGeoBrandPresenceDaily,
-  'refresh:geo-brand-presence-daily': detectGeoBrandPresenceDaily,
   'guidance:forms-a11y': formAccessibilityGuidance,
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,
@@ -189,6 +182,7 @@ const HANDLERS = {
   'llm-error-pages': llmErrorPages,
   'guidance:llm-error-pages': llmErrorPagesGuidance,
   'optimization-report-callback': optimizationReportCallback,
+  'llmo-config-db-sync': llmoConfigDbSync,
   'llmo-customer-analysis': llmoCustomerAnalysis,
   'trigger:llmo-onboarding-publish': llmoOnboardingPublish,
   summarization,
@@ -208,16 +202,24 @@ const HANDLERS = {
   'security-permissions-redundant': permissionsRedundant,
   faqs,
   'guidance:faqs': faqsGuidance,
+  'money-pages': moneyPages,
   'related-urls': relatedUrls,
   'guidance:related-urls': relatedUrlsGuidance,
   'page-citability': pageCitability,
   'health-check': healthCheck,
   'wikipedia-analysis': wikipediaAnalysis,
   'guidance:wikipedia-analysis': wikipediaAnalysisGuidance,
+  'reddit-analysis': redditAnalysis,
+  'guidance:reddit-analysis': redditAnalysisGuidance,
+  'youtube-analysis': youtubeAnalysis,
+  'guidance:youtube-analysis': youtubeAnalysisGuidance,
+  'cited-analysis': citedAnalysis,
+  'guidance:cited-analysis': citedAnalysisGuidance,
   'frescopa-data-generation': frescopaDataGeneration,
   'semantic-value-visibility': semanticValueVisibility,
   'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
   'drs:prompt_generation_base_url': drsPromptGeneration,
+  'offsite-brand-presence': offsiteBrandPresence,
   dummy: (message) => ok(message),
 };
 
@@ -241,6 +243,13 @@ function normalizeDrsMessage(message) {
       resultLocation: message.result_location,
       providerId,
       source: metadata.source,
+      ...(metadata.onboarding_mode && {
+        onboardingMode: metadata.onboarding_mode,
+      }),
+      ...(metadata.imsOrgId && { imsOrgId: metadata.imsOrgId }),
+      ...(metadata.brand_presence_batch_id && {
+        brandPresenceBatchId: metadata.brand_presence_batch_id,
+      }),
     },
   };
 }
@@ -279,7 +288,7 @@ async function run(message, context) {
   const handler = HANDLERS[type];
   if (!handler) {
     const msg = `no such audit type: ${type}`;
-    log.error(msg);
+    log.warn(msg);
     return notFound();
   }
 
@@ -290,12 +299,14 @@ async function run(message, context) {
       const site = await Site.findById(siteId);
       if (site) {
         // Set the requiresValidation flag on the site object
-        const requiresValidation = await checkSiteRequiresValidation(site, context);
+        const requiresValidation = await checkSiteRequiresValidation(site, context, type);
         site.requiresValidation = requiresValidation;
         context.site = site;
       }
     } catch (e) {
-      log.warn(`Failed to fetch site ${siteId}: ${e.message}`);
+      if (!siteId.startsWith('warmup-site-')) {
+        log.warn(`Failed to fetch site ${siteId}: ${e.message}`);
+      }
     }
   }
 

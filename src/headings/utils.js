@@ -21,6 +21,7 @@
  * excluding legitimate content.
  */
 export const TOC_EXCLUDED_CONTAINER_SELECTORS = [
+  // Cookie/consent/privacy UI
   '#onetrust-consent-sdk',
   '#onetrust-pc-sdk',
   '.ot-pc-sdk',
@@ -38,6 +39,18 @@ export const TOC_EXCLUDED_CONTAINER_SELECTORS = [
   '[class*="cookie-consent"]',
   '[class*="privacy-preference"]',
   '[class*="onetrust"]',
+
+  // Navigation panels — headings inside these are structural/UI, not content
+  'nav',
+  '[role="navigation"]',
+  'body > header',
+  'footer',
+  '[class*="nav-"]',
+  '[class*="navigation"]',
+  '[class*="sidebar"]',
+  '[id*="sidebar"]',
+  '[class*="menu"]',
+  '[id*="nav"]',
 ];
 
 /**
@@ -62,7 +75,9 @@ export const TOC_EXCLUDED_HEADING_PHRASES = [
  * @returns {string} Normalized text
  */
 export function normalizeHeadingTextForMatch(text) {
-  if (typeof text !== 'string') return '';
+  if (typeof text !== 'string') {
+    return '';
+  }
   return text.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
@@ -73,7 +88,9 @@ export function normalizeHeadingTextForMatch(text) {
  */
 export function isExcludedConsentHeadingText(text) {
   const normalized = normalizeHeadingTextForMatch(text);
-  if (!normalized) return false;
+  if (!normalized) {
+    return false;
+  }
   return TOC_EXCLUDED_HEADING_PHRASES.some(
     (phrase) => normalized.includes(phrase) || phrase.includes(normalized),
   );
@@ -86,7 +103,9 @@ export function isExcludedConsentHeadingText(text) {
  * @returns {boolean} True if heading is inside an excluded container
  */
 export function isHeadingInExcludedContainer(heading, $) {
-  if (!heading || !$) return false;
+  if (!heading || !$) {
+    return false;
+  }
   const $heading = $(heading);
   return TOC_EXCLUDED_CONTAINER_SELECTORS.some((selector) => $heading.closest(selector).length > 0);
 }
@@ -116,7 +135,9 @@ export function getSurroundingText(heading, $, charLimit = 150) {
     const text = $(nextSibling).text().trim();
     if (text) {
       afterText += `${text} `;
-      if (afterText.length >= charLimit) break;
+      if (afterText.length >= charLimit) {
+        break;
+      }
     }
     [nextSibling] = $(nextSibling).next();
   }
@@ -129,7 +150,9 @@ export function getSurroundingText(heading, $, charLimit = 150) {
     const text = $(prevSibling).text().trim();
     if (text) {
       beforeText = `${text} ${beforeText}`;
-      if (beforeText.length >= charLimit) break;
+      if (beforeText.length >= charLimit) {
+        break;
+      }
     }
     [prevSibling] = $(prevSibling).prev();
   }
@@ -286,8 +309,12 @@ export function extractTocData($, getHeadingSelectorFn) {
   return headings
     .filter((h) => {
       const text = $(h).text().trim();
-      if (isHeadingInExcludedContainer(h, $)) return false;
-      if (isExcludedConsentHeadingText(text)) return false;
+      if (isHeadingInExcludedContainer(h, $)) {
+        return false;
+      }
+      if (isExcludedConsentHeadingText(text)) {
+        return false;
+      }
       return true;
     })
     .map((h) => {

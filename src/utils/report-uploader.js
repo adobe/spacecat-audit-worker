@@ -87,7 +87,9 @@ async function fetchWithRetry(url, options, endpointName, log, maxRetries = 3) {
   async function attemptFetch(attemptNumber) {
     try {
       const response = await fetch(url, options);
-      if (response.ok) return response;
+      if (response.ok) {
+        return response;
+      }
 
       const error = new Error(`${response.status} ${response.statusText}`);
       error.status = response.status;
@@ -100,8 +102,9 @@ async function fetchWithRetry(url, options, endpointName, log, maxRetries = 3) {
         : null;
       const xErrorInfo = xError ? `, x-error: ${xError}` : '';
 
-      // Only retry on 503 and x-error contains "429"
-      const isRetryable = error.status === 503 && (xError && xError.includes('429'));
+      // Retry direct throttling, Helix throttling wrapped as 503.
+      const isRetryable = error.status === 429
+        || (error.status === 503 && xError && xError.includes('429'));
       const shouldRetry = isRetryable && attemptNumber <= maxRetries;
 
       if (!shouldRetry) {
@@ -244,11 +247,17 @@ export async function uploadAndPublishFile(
 async function runBulkJob(route, operation, paths, log) {
   const headers = { Cookie: `auth_token=${process.env.ADMIN_HLX_API_KEY}`, 'Content-Type': 'application/json' };
   const url = `https://admin.hlx.page/${route}/adobe/project-elmo-ui-data/main/*`;
-  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ paths }) });
-  if (!res.ok) throw new Error(`${operation} request failed: ${res.status} for url: ${url}`);
+  const res = await fetchWithRetry(
+    url,
+    { method: 'POST', headers, body: JSON.stringify({ paths }) },
+    `${operation} request`,
+    log,
+  );
   const data = await res.json();
   const jobUrl = data.links?.self;
-  if (!jobUrl) throw new Error(`No job URL from ${operation}`);
+  if (!jobUrl) {
+    throw new Error(`No job URL from ${operation}`);
+  }
   log.info(`%s: ${operation} job started for ${paths.length} paths: ${paths.join(', ')}, job URL: ${jobUrl}`, AUDIT_NAME);
 
   // Poll until complete for 10 minutes
@@ -256,13 +265,19 @@ async function runBulkJob(route, operation, paths, log) {
     // eslint-disable-next-line no-await-in-loop
     await sleep(5000);
     // eslint-disable-next-line no-await-in-loop
-    const statusRes = await fetch(jobUrl, { method: 'GET', headers });
-    if (!statusRes.ok) throw new Error(`${operation} status check failed: ${statusRes.status} for job URL: ${jobUrl}`);
+    const statusRes = await fetchWithRetry(
+      jobUrl,
+      { method: 'GET', headers },
+      `${operation} status check`,
+      log,
+    );
     // eslint-disable-next-line no-await-in-loop
     const status = await statusRes.json();
     const { state, progress } = status;
     log.info(`%s: ${operation} status: ${state} - ${progress?.success ?? 0} success, ${progress?.failed ?? 0} failed for job URL: ${jobUrl}`, AUDIT_NAME);
-    if (state === 'stopped') return;
+    if (state === 'stopped') {
+      return;
+    }
   }
   throw new Error(`${operation} timeout for job URL: ${jobUrl}`);
 }
@@ -273,7 +288,9 @@ async function runBulkJob(route, operation, paths, log) {
  * @param {object} log - Logger
  */
 export async function bulkPublishToAdminHlx(reports, log) {
-  if (!reports?.length) return;
+  if (!reports?.length) {
+    return;
+  }
 
   const paths = reports.map((r) => `/${r.outputLocation}/${r.filename.replace(/\.[^/.]+$/, '')}.json`);
   log.info(`%s: Starting bulk publish for ${paths.length} files`, AUDIT_NAME);

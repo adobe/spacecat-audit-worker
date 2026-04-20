@@ -330,7 +330,9 @@ ${JSON.stringify(paths, null, 2)}`;
 
 function groupPathsByProduct(pathProductArray) {
   return pathProductArray.reduce((acc, { path, product }) => {
-    if (!acc[product]) acc[product] = [];
+    if (!acc[product]) {
+      acc[product] = [];
+    }
     acc[product].push(path);
     return acc;
   }, {});

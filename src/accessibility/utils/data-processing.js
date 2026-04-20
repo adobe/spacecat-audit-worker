@@ -20,6 +20,7 @@ import {
 import { isoCalendarWeek } from '@adobe/spacecat-shared-utils';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../../utils/s3-utils.js';
 import { extractMainDomainName } from '../../support/utils.js';
+import { warnOnInvalidSuggestionData } from '../../utils/data-access.js';
 import {
   createReportOpportunitySuggestionInstance,
   createInDepthReportOpportunity,
@@ -358,16 +359,22 @@ export function mergeAccessibilityData(existingData, newData, log, logIdentifier
 
   // Process each URL's violations
   Object.entries(merged).forEach(([key, urlData]) => {
-    if (key === 'overall' || !urlData || !urlData.violations) return;
+    if (key === 'overall' || !urlData || !urlData.violations) {
+      return;
+    }
 
     // Process critical and serious violations
     ['critical', 'serious'].forEach((severity) => {
       const severityData = urlData.violations[severity];
-      if (!severityData?.items) return;
+      if (!severityData?.items) {
+        return;
+      }
 
       // Merge each rule's data
       Object.entries(severityData.items).forEach(([ruleId, ruleData]) => {
-        if (!ruleId || !ruleData || typeof ruleData !== 'object') return;
+        if (!ruleId || !ruleData || typeof ruleData !== 'object') {
+          return;
+        }
 
         const overallItems = recalculatedOverall.violations[severity].items;
 
@@ -652,6 +659,7 @@ export async function createOrUpdateDeviceSpecificSuggestion(
       // Update only the suggestionValue field to avoid ElectroDB timestamp conflicts
       const newData = { ...currentData, suggestionValue: suggestions[0].data.suggestionValue };
 
+      warnOnInvalidSuggestionData(newData, opportunity.getType(), log);
       existingSuggestion.setData(newData);
       await existingSuggestion.save();
 

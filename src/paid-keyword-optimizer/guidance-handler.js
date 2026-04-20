@@ -18,6 +18,78 @@ import {
 import { createPaidLogger } from '../paid/paid-log.js';
 
 const GUIDANCE_TYPE = 'ad-intent-mismatch';
+const MAX_OPPORTUNITIES_PER_TYPE = 4;
+
+/**
+ * Infers the recommendation type from an array of suggestion objects.
+ * - 'audit_required': at least one suggestion has a suggestionText field
+ * - 'modify_heading': at least one suggestion has a variationChanges field
+ * - 'unknown': neither field is present
+ * @param {Array} suggestions - Array of suggestion objects
+ * @returns {string} The inferred recommendation type
+ */
+function inferRecommendationType(suggestions) {
+  if (suggestions?.some((s) => s.suggestionText)) {
+    return 'audit_required';
+  }
+  if (suggestions?.some((s) => s.variationChanges)) {
+    return 'modify_heading';
+  }
+  return 'unknown';
+}
+
+/**
+ * Reconciles audit_required opportunities to stay within the per-site cap.
+ * modify_heading opportunities (those with variationChanges) are never removed.
+ * When audit_required count exceeds MAX_OPPORTUNITIES_PER_TYPE, the oldest
+ * excess opportunities and their suggestions are removed (newest are kept).
+ * @param {Array} activeOpportunities - Active (NEW, system) ad-intent-mismatch opportunities
+ * @param {Object} dataAccess - Data access object with Opportunity and Suggestion
+ * @param {Object} log - Logger
+ * @param {string} siteId - Site ID for logging
+ */
+async function reconcileOpportunities(activeOpportunities, dataAccess, log, siteId) {
+  const { Opportunity, Suggestion } = dataAccess;
+
+  // Classify each opportunity by loading its suggestions
+  const classified = await Promise.all(
+    activeOpportunities.map(async (oppty) => {
+      const suggestions = await oppty.getSuggestions();
+      const suggestionData = suggestions?.[0]?.getData();
+      const type = inferRecommendationType(suggestionData?.variations || []);
+      return { oppty, type, suggestions };
+    }),
+  );
+
+  // Only audit_required are capped; modify_heading are protected (never removed)
+  const auditRequired = classified.filter(({ type }) => type === 'audit_required');
+
+  if (auditRequired.length <= MAX_OPPORTUNITIES_PER_TYPE) {
+    return;
+  }
+
+  // Sort newest first (keep), oldest last (evict)
+  auditRequired.sort(
+    (a, b) => new Date(b.oppty.getUpdatedAt()) - new Date(a.oppty.getUpdatedAt()),
+  );
+
+  const excess = auditRequired.slice(MAX_OPPORTUNITIES_PER_TYPE);
+
+  const suggestionIdsToRemove = excess.flatMap(
+    ({ suggestions }) => suggestions.map((s) => s.getId()),
+  );
+  const opptyIdsToRemove = excess.map(({ oppty }) => oppty.getId());
+
+  if (suggestionIdsToRemove.length > 0) {
+    await Suggestion.removeByIds(suggestionIdsToRemove);
+  }
+  await Opportunity.removeByIds(opptyIdsToRemove);
+
+  log.info(
+    `[ad-intent-mismatch] Reconciliation: removed ${opptyIdsToRemove.length} excess `
+    + `audit_required opportunities for site ${siteId}`,
+  );
+}
 
 /**
  * Handler for ad intent mismatch guidance responses from mystique.
@@ -54,17 +126,23 @@ export default async function handler(message, context) {
     return notFound();
   }
 
+  const auditResult = audit.getAuditResult();
+  if (!auditResult) {
+    paidLog.failed('audit has no result data', siteId, url, auditId);
+    return ok();
+  }
+
   // Check for empty guidance or low severity and skip if so
   if (!guidance || guidance.length === 0 || isLowSeverityGuidanceBody(guidanceBody)) {
     paidLog.skipping('low issue severity or empty guidance', siteId, url, auditId);
     return ok();
   }
 
+  // Always create opportunity + suggestion first
   const entity = mapToKeywordOptimizerOpportunity(siteId, audit, message);
   const opportunity = await Opportunity.create(entity);
   paidLog.createdOpportunity(siteId, url, opportunity.getId());
 
-  // Create suggestion for the new opportunity
   const suggestionData = mapToKeywordOptimizerSuggestion(
     context,
     opportunity.getId(),
@@ -73,22 +151,39 @@ export default async function handler(message, context) {
   await Suggestion.create(suggestionData);
   paidLog.createdSuggestion(opportunity.getId(), siteId, url, auditId);
 
-  // Only after suggestion is successfully created,
-  // find and mark existing NEW system opportunities for the SAME URL as IGNORED
-  const existingOpportunities = await Opportunity.allBySiteId(siteId);
-  const existingMatches = existingOpportunities
+  // Re-read fresh state for same-URL marking and reconciliation
+  const newOpportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+  const sameTypeOpportunities = newOpportunities
     .filter((oppty) => oppty.getType() === 'ad-intent-mismatch')
-    .filter((oppty) => oppty.getStatus() === 'NEW' && oppty.getUpdatedBy() === 'system')
-    .filter((oppty) => oppty.getData()?.url === url) // Only match same URL
-    .filter((oppty) => oppty.getId() !== opportunity.getId()); // Exclude the newly created one
+    .filter((oppty) => oppty.getUpdatedBy() === 'system');
 
+  // Mark existing same-URL opportunities as IGNORED
+  const existingMatches = sameTypeOpportunities
+    .filter((oppty) => oppty.getData()?.url === url)
+    .filter((oppty) => oppty.getId() !== opportunity.getId());
+
+  const ignoredIds = new Set();
   if (existingMatches.length > 0) {
-    await Promise.all(existingMatches.map(async (oldOppty) => {
+    existingMatches.forEach((oldOppty) => {
       oldOppty.setStatus('IGNORED');
-      await oldOppty.save();
+      ignoredIds.add(oldOppty.getId());
+    });
+    await Opportunity.saveMany(existingMatches);
+    existingMatches.forEach((oldOppty) => {
       paidLog.markedIgnored(oldOppty.getId(), siteId, url, auditId);
-    }));
+    });
   }
+
+  // Reconcile: enforce cap on audit_required, never touch modify_heading
+  const activeOpportunities = sameTypeOpportunities
+    .filter((oppty) => !ignoredIds.has(oppty.getId()));
+  await reconcileOpportunities(activeOpportunities, dataAccess, log, siteId);
 
   return ok();
 }
+
+export {
+  inferRecommendationType,
+  reconcileOpportunities,
+  MAX_OPPORTUNITIES_PER_TYPE,
+};

@@ -10,12 +10,24 @@
  * governing permissions and limitations under the License.
  */
 
-import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
-import { resolveConsolidatedBucketName, extractCustomerDomain } from './cdn-utils.js';
+import {
+  getS3Config,
+  getCdnAwsRuntime,
+} from './cdn-utils.js';
 import { generateReportingPeriods } from '../cdn-logs-report/utils/report-utils.js';
 import { weeklyBreakdownQueries } from '../cdn-logs-report/utils/query-builder.js';
 
 const DEFAULT_TOP_AGENTIC_URLS_LIMIT = 200;
+
+export function getPreferredBaseUrl(site, context) {
+  const overrideBaseURL = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL;
+  if (overrideBaseURL && /^https?:\/\//.test(overrideBaseURL)) {
+    return overrideBaseURL;
+  }
+  return context.finalUrl && !/^https?:\/\//.test(context.finalUrl)
+    ? `https://${context.finalUrl}`
+    : context.finalUrl || site.getBaseURL();
+}
 
 // URL suffixes to exclude from agentic URL results
 export const EXCLUDED_URL_SUFFIXES = [
@@ -41,28 +53,6 @@ export const EXCLUDED_URL_SUFFIXES = [
 ];
 
 /**
- * Builds S3 config for Athena queries.
- * @param {Object} site - Site object
- * @param {Object} context - Context with env
- * @returns {Promise<Object>} S3 config object
- */
-async function getS3Config(site, context) {
-  const customerDomain = extractCustomerDomain(site);
-  const domainParts = customerDomain.split(/[._]/);
-  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const bucket = resolveConsolidatedBucketName(context);
-
-  return {
-    bucket,
-    customerName,
-    customerDomain,
-    databaseName: `cdn_logs_${customerDomain}`,
-    tableName: `aggregated_logs_${customerDomain}_consolidated`,
-    getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
-  };
-}
-
-/**
  * Fetch top Agentic URLs using Athena.
  * Find last week's top agentic URLs, filters out pooled 'Other',
  * groups by URL, and returns the top URLs by total hits.
@@ -77,17 +67,25 @@ export async function getTopAgenticUrlsFromAthena(
   limit = DEFAULT_TOP_AGENTIC_URLS_LIMIT,
 ) {
   const { log } = context;
-  // Use finalUrl from context if available (it's a hostname, so add https://),
-  // otherwise fall back to site.getBaseURL() which already includes the protocol
-  const baseUrl = context.finalUrl && !/^https?:\/\//.test(context.finalUrl)
-    ? `https://${context.finalUrl}`
-    : context.finalUrl || site.getBaseURL();
+  const baseUrl = getPreferredBaseUrl(site, context);
+
   try {
-    const s3Config = await getS3Config(site, context);
+    const configuration = await context.dataAccess.Configuration.findLatest();
+    if (!configuration) {
+      log.warn(`Agentic URLs - Skipping Athena query because no configuration was found for site ${site.getId()}`);
+      return [];
+    }
+    if (!configuration.isHandlerEnabledForSite('cdn-logs-analysis', site)) {
+      log.info(`Agentic URLs - Skipping Athena query because cdn-logs-analysis is disabled for site ${site.getId()}`);
+      return [];
+    }
+
+    const awsRuntime = getCdnAwsRuntime(site, context);
+    const s3Config = getS3Config(site, context);
     const periods = generateReportingPeriods();
     const recentWeeks = periods.weeks;
     const oneWeekPeriods = { weeks: [recentWeeks[0]] };
-    const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
+    const athenaClient = awsRuntime.createAthenaClient(s3Config.getAthenaTempLocation());
     const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit({
       periods: oneWeekPeriods,
       databaseName: s3Config.databaseName,

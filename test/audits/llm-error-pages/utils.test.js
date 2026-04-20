@@ -9,8 +9,6 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -33,7 +31,7 @@ import {
   downloadExistingCdnSheet,
   matchErrorsWithCdnData,
 } from '../../../src/llm-error-pages/utils.js';
-import { extractCustomerDomain } from '../../../src/utils/cdn-utils.js';
+import { extractSiteKeyFromBaseURL, getS3Config } from '../../../src/utils/cdn-utils.js';
 
 use(sinonChai);
 
@@ -77,7 +75,7 @@ describe('LLM Error Pages Utils', () => {
   describe('getLlmProviderPattern', () => {
     it('should return correct pattern for valid provider', () => {
       const result = getLlmProviderPattern('chatgpt');
-      expect(result).to.equal('(?i)ChatGPT|GPTBot|OAI-SearchBot');
+      expect(result).to.equal('(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))');
     });
 
     it('should return null for invalid provider', () => {
@@ -97,7 +95,7 @@ describe('LLM Error Pages Utils', () => {
 
     it('should be case insensitive', () => {
       const result = getLlmProviderPattern('CHATGPT');
-      expect(result).to.equal('(?i)ChatGPT|GPTBot|OAI-SearchBot');
+      expect(result).to.equal('(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))');
     });
   });
 
@@ -108,7 +106,7 @@ describe('LLM Error Pages Utils', () => {
       expect(providers).to.include('chatgpt');
       expect(providers).to.include('perplexity');
       expect(providers).to.include('claude');
-      expect(providers).to.include('gemini');
+      expect(providers).to.include('googleai');
       expect(providers).to.include('copilot');
     });
   });
@@ -117,17 +115,17 @@ describe('LLM Error Pages Utils', () => {
     it('should build filter for specific providers', () => {
       const result = buildLlmUserAgentFilter(['chatgpt', 'perplexity']);
       expect(result).to.include('REGEXP_LIKE(user_agent,');
-      expect(result).to.include('ChatGPT|GPTBot|OAI-SearchBot');
+      expect(result).to.include('(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))');
       expect(result).to.include('Perplexity');
     });
 
     it('should build filter for all providers when none specified', () => {
       const result = buildLlmUserAgentFilter();
       expect(result).to.include('REGEXP_LIKE(user_agent,');
-      expect(result).to.include('ChatGPT|GPTBot|OAI-SearchBot');
+      expect(result).to.include('(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))');
       expect(result).to.include('Perplexity');
-      expect(result).to.include('Claude|Anthropic');
-      expect(result).to.include('Gemini');
+      expect(result).to.include('Claude(?!-web)');
+      expect(result).to.include('Google-NotebookLM|Google-?Agent');
       expect(result).to.include('Copilot');
     });
 
@@ -147,6 +145,7 @@ describe('LLM Error Pages Utils', () => {
       expect(normalizeUserAgentToProvider('ChatGPT-User/1.0')).to.equal('ChatGPT');
       expect(normalizeUserAgentToProvider('GPTBot/1.0')).to.equal('ChatGPT');
       expect(normalizeUserAgentToProvider('OAI-SearchBot/1.0')).to.equal('ChatGPT');
+      expect(normalizeUserAgentToProvider('OAI-AdsBot/1.0')).to.equal('ChatGPT');
     });
 
     it('should normalize Perplexity user agents', () => {
@@ -216,7 +215,7 @@ describe('LLM Error Pages Utils', () => {
         sinon.match({
           databaseName: 'test_db',
           tableName: 'test_table',
-          whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+          whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
         }),
         './src/llm-error-pages/sql/llm-error-pages.sql',
       );
@@ -238,7 +237,7 @@ describe('LLM Error Pages Utils', () => {
         sinon.match({
           databaseName: 'test_db',
           tableName: 'test_table',
-          whereClause: 'WHERE REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+          whereClause: 'WHERE REGEXP_LIKE(user_agent, \'(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
         }),
         './src/llm-error-pages/sql/llm-error-pages.sql',
       );
@@ -270,7 +269,7 @@ describe('LLM Error Pages Utils', () => {
         sinon.match({
           databaseName: 'test_db',
           tableName: 'test_table',
-          whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+          whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))\') AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
         }),
         './src/llm-error-pages/sql/llm-error-pages.sql',
       );
@@ -588,13 +587,13 @@ describe('LLM Error Pages Utils', () => {
   // SITE AND CONFIGURATION UTILITIES TESTS
   // ============================================================================
 
-  describe('extractCustomerDomain', () => {
+  describe('extractSiteKeyFromBaseURL', () => {
     it('should extract domain from base URL', () => {
       const mockSite = {
         getBaseURL: () => 'https://www.example.com',
       };
 
-      const result = extractCustomerDomain(mockSite);
+      const result = extractSiteKeyFromBaseURL(mockSite);
       expect(result).to.equal('example_com');
     });
 
@@ -603,149 +602,80 @@ describe('LLM Error Pages Utils', () => {
         getBaseURL: () => 'https://test-site.example.co.uk',
       };
 
-      const result = extractCustomerDomain(mockSite);
+      const result = extractSiteKeyFromBaseURL(mockSite);
       expect(result).to.equal('test_site_example_co_uk');
     });
   });
 
   describe('getS3Config', () => {
-    it('should return config with resolved bucket name', async () => {
+    it('should return shared config with resolved bucket name', () => {
       const mockSite = {
         getConfig: () => ({}),
         getBaseURL: () => 'https://www.example.com',
         getId: () => 'test-site-id',
       };
-
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'resolved-bucket',
-          extractCustomerDomain: () => 'example_com',
+      const context = {
+        env: {
+          AWS_ENV: 'test',
+          AWS_REGION: 'us-east-1',
         },
-      });
+      };
 
-      const result = await mockedUtils.getS3Config(mockSite, {});
-      expect(result.bucket).to.equal('resolved-bucket');
-      expect(result.customerName).to.equal('example');
-      expect(result.customerDomain).to.equal('example_com');
-      expect(result.aggregatedLocation).to.equal('s3://resolved-bucket/aggregated/test-site-id/');
+      const result = getS3Config(mockSite, context);
+      expect(result.bucket).to.equal('spacecat-test-cdn-logs-aggregates-us-east-1');
+      expect(result.siteName).to.equal('example');
+      expect(result.siteKey).to.equal('example_com');
+      expect(result.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated/test-site-id/');
       expect(result.databaseName).to.equal('cdn_logs_example_com');
       expect(result.tableName).to.equal('aggregated_logs_example_com_consolidated');
+      expect(result.referralTableName).to.equal('aggregated_referral_logs_example_com_consolidated');
     });
 
-    it('should use resolveConsolidatedBucketName by default', async () => {
+    it('should use site region when configured', () => {
       const mockSite = {
-        getConfig: () => ({}),
+        getConfig: () => ({
+          getLlmoCdnBucketConfig: () => ({ region: 'eu-west-1' }),
+        }),
         getBaseURL: () => 'https://www.example.com',
         getId: () => 'test-site-id',
       };
-
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'resolved-bucket-name',
-          extractCustomerDomain: () => 'example_com',
+      const context = {
+        env: {
+          AWS_ENV: 'test',
+          AWS_REGION: 'us-east-1',
         },
-      });
-
-      const result = await mockedUtils.getS3Config(mockSite, {});
-      expect(result.bucket).to.equal('resolved-bucket-name');
-      expect(result.customerName).to.equal('example');
-      expect(result.customerDomain).to.equal('example_com');
-    });
-
-    it('should return config with callable getAthenaTempLocation function', async () => {
-      const mockSite = {
-        getBaseURL: () => 'https://test.example.com',
-        getConfig: () => ({}),
-        getId: () => 'test-site-id',
       };
 
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'custom-bucket',
-          extractCustomerDomain: () => 'test_example_com',
-        },
-      });
-
-      const result = await mockedUtils.getS3Config(mockSite, {});
-
-      expect(result.getAthenaTempLocation).to.be.a('function');
-      expect(result.getAthenaTempLocation()).to.equal('s3://custom-bucket/temp/athena-results/');
+      const result = getS3Config(mockSite, context);
+      expect(result.bucket).to.equal('spacecat-test-cdn-logs-aggregates-eu-west-1');
+      expect(result.region).to.equal('eu-west-1');
+      expect(result.getAthenaTempLocation()).to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/temp/athena-results/');
     });
 
-    it('should throw error when resolver fails', async () => {
-      const mockSite = {
-        getBaseURL: () => 'https://www.example.com',
-        getConfig: () => ({}),
-        getId: () => 'test-site-id',
-      };
-
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => { throw new Error('boom'); },
-          extractCustomerDomain: () => 'example_com',
-        },
-      });
-
-      try {
-        await mockedUtils.getS3Config(mockSite, {});
-        expect.fail('Should have thrown error');
-      } catch (error) {
-        expect(error.message).to.equal('boom');
-      }
-    });
-
-    it('should include siteId in aggregatedLocation for consolidated bucket', async () => {
-      const mockSite = {
-        getConfig: () => ({}),
-        getBaseURL: () => 'https://www.example.com',
-        getId: () => 'test-site-id',
-      };
-
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'spacecat-test-cdn-logs-aggregates-us-east-1',
-          extractCustomerDomain: () => 'example_com',
-        },
-      });
-
-      const result = await mockedUtils.getS3Config(mockSite, {});
-      expect(result.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated/test-site-id/');
-    });
-
-    it('should use siteId in aggregatedLocation regardless of config', async () => {
-      const mockSite = {
+    it('should include siteId in aggregatedLocation', () => {
+      const result = getS3Config({
         getConfig: () => ({}),
         getBaseURL: () => 'https://www.example.com',
         getId: () => 'another-site-id',
-      };
-
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'spacecat-test-cdn-logs-aggregates-us-east-1',
-          extractCustomerDomain: () => 'example_com',
+      }, {
+        env: {
+          AWS_ENV: 'test',
+          AWS_REGION: 'us-east-1',
         },
       });
 
-      const result = await mockedUtils.getS3Config(mockSite, {});
       expect(result.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated/another-site-id/');
+      expect(result.aggregatedReferralLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated-referral/another-site-id/');
     });
 
-    it('should always use siteId in aggregatedLocation', async () => {
-      const mockSite = {
+    it('should throw when site base URL resolution fails', () => {
+      const badSite = {
         getConfig: () => ({}),
-        getBaseURL: () => 'https://www.example.com',
-        getId: () => 'final-site-id',
+        getBaseURL: () => { throw new Error('boom'); },
+        getId: () => 'test-site-id',
       };
 
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          resolveConsolidatedBucketName: () => 'spacecat-test-cdn-logs-aggregates-us-east-1',
-          extractCustomerDomain: () => 'example_com',
-        },
-      });
-
-      const result = await mockedUtils.getS3Config(mockSite, {});
-      expect(result.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated/final-site-id/');
+      expect(() => getS3Config(badSite, {})).to.throw('boom');
     });
   });
 
@@ -856,8 +786,30 @@ describe('LLM Error Pages Utils', () => {
       expect(result.weeks[0]).to.have.property('startDate');
       expect(result.weeks[0]).to.have.property('endDate');
       expect(result.weeks[0]).to.have.property('dateRange');
+      expect(result.weeks[0]).to.have.property('periodIdentifier');
+      expect(result.weeks[0].periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
       expect(result.referenceDate).to.equal(referenceDate.toISOString());
       expect(result.columns).to.be.an('array');
+    });
+
+    it('should generate multiple weeks with weekOffsets array', () => {
+      const referenceDate = new Date('2024-01-15');
+      const result = generateReportingPeriods(referenceDate, [-2, -1, 0]);
+
+      expect(result.weeks).to.have.length(3);
+      result.weeks.forEach((week) => {
+        expect(week).to.have.property('periodIdentifier');
+        expect(week.periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
+      });
+      expect(result.columns).to.have.length(3);
+    });
+
+    it('should accept a single numeric weekOffset', () => {
+      const referenceDate = new Date('2024-01-15');
+      const result = generateReportingPeriods(referenceDate, -2);
+
+      expect(result.weeks).to.have.length(1);
+      expect(result.weeks[0]).to.have.property('periodIdentifier');
     });
   });
 

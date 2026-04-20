@@ -20,7 +20,8 @@ import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js
 import {
   getPrefixedPageAuthToken, isValidUrls, saveIntermediateResults,
 } from './utils.js';
-import { getDomElementSelector, toElementTargets } from '../utils/dom-selector.js';
+import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
+import { AUDIT_ALT_TEXT } from './audit-constants.js';
 import canonical from './canonical.js';
 import metatags from './metatags.js';
 import links from './links.js';
@@ -28,6 +29,7 @@ import readability from '../readability/preflight/handler.js';
 import accessibility from './accessibility.js';
 import headings from './headings.js';
 import formAccessibility from './form-accessibility.js';
+import altText from './alt-text.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const PREFLIGHT_STEP_IDENTIFY = 'identify';
@@ -51,6 +53,7 @@ export const AUDIT_ACCESSIBILITY = 'accessibility';
 export const AUDIT_READABILITY = 'readability';
 export const AUDIT_HEADINGS = 'headings';
 export const AUDIT_FORM_ACCESSIBILITY = 'form-accessibility';
+export { AUDIT_ALT_TEXT } from './audit-constants.js';
 
 const AVAILABLE_CHECKS = [
   AUDIT_CANONICAL,
@@ -63,6 +66,7 @@ const AVAILABLE_CHECKS = [
   AUDIT_READABILITY,
   AUDIT_HEADINGS,
   AUDIT_FORM_ACCESSIBILITY,
+  AUDIT_ALT_TEXT,
 ];
 
 export const PREFLIGHT_HANDLERS = {
@@ -73,6 +77,7 @@ export const PREFLIGHT_HANDLERS = {
   readability,
   accessibility,
   'form-accessibility': formAccessibility,
+  [AUDIT_ALT_TEXT]: altText,
 };
 
 export async function scrapePages(context) {
@@ -148,6 +153,8 @@ export const preflightAudit = async (context) => {
         return enabled ? audit : null;
       }),
     )).filter(Boolean);
+
+    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Enabled checks: ${JSON.stringify(enabledChecks)}`);
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
     const currentMetadata = jobEntity.getMetadata();
@@ -243,9 +250,26 @@ export const preflightAudit = async (context) => {
         }
 
         if (loremIpsumEnabled && /lorem ipsum/i.test(textContent)) {
-          const loremElements = $('p, div, span, li, section, article, h1, h2, h3, h4, h5, h6')
+          const allLoremElements = $('p, div, span, li, section, article, h1, h2, h3, h4, h5, h6')
             .toArray()
             .filter((el) => /lorem ipsum/i.test($(el).text()));
+          // Keep only innermost matches — discard ancestors whose text matched
+          // solely because a descendant contains "Lorem ipsum".
+          const loremElements = allLoremElements.filter(
+            (el) => !allLoremElements.some((other) => {
+              if (other === el) {
+                return false;
+              }
+              let cursor = other.parent;
+              while (cursor) {
+                if (cursor === el) {
+                  return true;
+                }
+                cursor = cursor.parent;
+              }
+              return false;
+            }),
+          );
           const loremSelectors = loremElements.map(
             (el) => getDomElementSelector(el),
           ).filter(Boolean);

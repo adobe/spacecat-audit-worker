@@ -17,7 +17,7 @@ import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/confi
 import { getWeekInfo, getTemporalCondition, getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getCPCData, calculateProjectedTrafficValue, DEFAULT_CPC } from './ahrefs-cpc.js';
+import { getCPCData, calculateProjectedTrafficValue, DEFAULT_CPC } from './seo-cpc.js';
 import { calculateBounceGapLoss as calculateGenericBounceGapLoss } from './bounce-gap-calculator.js';
 import {
   getTop3PagesWithTrafficLostTemplate,
@@ -221,7 +221,9 @@ export function calculateBounceGapLoss(bounceGapData, log) {
   // Result: { paid: { show: {...}, hidden: {...} }, earned: {...}, owned: {...} }
   const groupedByTrafficType = {};
   for (const row of bounceGapData) {
-    if (!groupedByTrafficType[row.trfType]) groupedByTrafficType[row.trfType] = {};
+    if (!groupedByTrafficType[row.trfType]) {
+      groupedByTrafficType[row.trfType] = {};
+    }
     groupedByTrafficType[row.trfType][row.consent] = {
       pageViews: row.pageViews,
       bounceRate: row.bounceRate,
@@ -383,10 +385,10 @@ export async function paidAuditRunner(auditUrl, context, site) {
       appliedCPC,
       cpcSource,
       defaultCPC: DEFAULT_CPC,
-      // Only include Ahrefs CPC values if available
-      ...(cpcSource === 'ahrefs' && {
-        ahrefsOrganicCPC: cpcData.organicCPC,
-        ahrefsPaidCPC: cpcData.paidCPC,
+      // Only include SEO CPC values if available
+      ...(cpcSource === 'seo' && {
+        seoOrganicCPC: cpcData.organicCPC,
+        seoPaidCPC: cpcData.paidCPC,
       }),
     };
     log.info(`[paid-audit] [Site: ${auditUrl}] Summary: pv=${totalPageViews}, lost=${projectedTrafficLost.toFixed(0)}, value=$${projectedTrafficValue.toFixed(2)}, top3=${top3Pages.length}`);

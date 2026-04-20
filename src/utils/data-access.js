@@ -32,6 +32,24 @@ export const AUTHOR_ONLY_OPPORTUNITY_TYPES = [
 ];
 
 /**
+ * Validates suggestion data against the Joi schema for the given opportunity type.
+ * Logs a warning if validation fails but does not block the operation.
+ *
+ * @param {Object} data - Suggestion data to validate.
+ * @param {string} opportunityType - The opportunity type from OPPORTUNITY_TYPES enum.
+ * @param {Object} log - Logger object.
+ */
+export function warnOnInvalidSuggestionData(data, opportunityType, log) {
+  try {
+    SuggestionDataAccess.validateData(data, opportunityType);
+  } catch (error) {
+    const msg = error.message.length > 500 ? `${error.message.slice(0, 500)}...[truncated]` : error.message;
+    const identifier = data?.aggregationKey || data?.url || data?.path || 'unknown';
+    log.warn(`Suggestion data validation warning [${opportunityType}] [${identifier}]: ${msg}`);
+  }
+}
+
+/**
  * Safely stringify an object for logging, truncating large arrays to prevent
  * exceeding JavaScript's maximum string length.
  *
@@ -104,6 +122,53 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
   }
 }
 
+const MANUAL_SOURCE = 'manual';
+const MONEY_PAGES_SOURCE = 'moneyPages';
+
+function isSourceIncluded(source, config) {
+  if (!source || source === MANUAL_SOURCE) {
+    return true;
+  }
+  if (source === MONEY_PAGES_SOURCE) {
+    return config?.isMoneyPageUrlsEnabled?.() !== false;
+  }
+  return false;
+}
+
+function customAuditTargetUrlsEnabled() {
+  const v = process.env.SPACECAT_ENABLE_CUSTOM_AUDIT_TARGET_URLS;
+  if (v === '0' || v === 'false') {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Extracts custom audit target URL strings from a site's configuration.
+ *
+ * @param {Object} site - The site object.
+ * @param {Object} log - The logging object.
+ * @returns {string[]} - Array of URL strings from config.auditTargetURLs.
+ */
+export function getAuditTargetUrls(site, log) {
+  if (!customAuditTargetUrlsEnabled()) {
+    return [];
+  }
+  try {
+    const config = site.getConfig?.();
+    const entries = config?.getAuditTargetURLs?.() || [];
+    const filtered = entries.filter(({ source }) => isSourceIncluded(source, config));
+    const urls = filtered.map(({ url }) => url).filter(Boolean);
+    if (urls.length > 0) {
+      log?.info(`Found ${urls.length} custom audit target URLs from site config`);
+    }
+    return urls;
+  } catch (e) {
+    log?.warn(`Failed to read audit target URLs: ${e.message}`);
+    return [];
+  }
+}
+
 /**
  * Retrieves the top pages for a given site.
  *
@@ -116,8 +181,8 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
 export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
   try {
     const { SiteTopPage } = dataAccess;
-    const result = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
-    log.info('Received top pages response:', JSON.stringify(result, null, 2));
+    const result = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'seo', 'global');
+    log.info('Received top pages response:', safeStringify(result));
 
     const topPages = result || [];
     if (topPages.length > 0) {
@@ -198,7 +263,6 @@ export const handleOutdatedSuggestions = async ({
       SuggestionDataAccess.STATUSES.REJECTED,
       SuggestionDataAccess.STATUSES.APPROVED,
       SuggestionDataAccess.STATUSES.IN_PROGRESS,
-      SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
     ].includes(existing.getStatus()))
     .filter((existing) => {
       // Preserve suggestions that have been deployed (tokowakaDeployed or edgeDeployed)
@@ -281,7 +345,8 @@ export const defaultMergeStatusFunction = (existing, newDataItem, context) => {
   if (currentStatus === SuggestionDataAccess.STATUSES.OUTDATED) {
     log.warn('Outdated suggestion found in audit. Possible regression.');
     const requiresValidation = Boolean(site?.requiresValidation);
-    return requiresValidation
+    const { isSummitPlg = false } = context;
+    return (requiresValidation && !isSummitPlg)
       ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
       : SuggestionDataAccess.STATUSES.NEW;
   }
@@ -324,11 +389,21 @@ export async function syncSuggestions({
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
   existingSuggestions: prefetchedSuggestions = null,
+  newSuggestionStatus = null,
+  bypassValidationForPlg = false,
 }) {
   if (!context) {
     return;
   }
   const { log } = context;
+
+  // Validate newSuggestionStatus if provided
+  if (newSuggestionStatus !== null) {
+    const validStatuses = Object.values(SuggestionDataAccess.STATUSES);
+    if (!validStatuses.includes(newSuggestionStatus)) {
+      throw new Error(`Invalid newSuggestionStatus: ${newSuggestionStatus}. Must be one of: ${validStatuses.join(', ')}`);
+    }
+  }
   const newDataKeys = new Set(newData.map(buildKey));
   // Use pre-fetched suggestions if provided, otherwise fetch from DB
   const existingSuggestions = prefetchedSuggestions ?? await opportunity.getSuggestions();
@@ -351,42 +426,68 @@ export async function syncSuggestions({
 
   log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
-  // Update existing suggestions - O(N) with Map lookup
-  await Promise.all(
-    existingSuggestions
-      .filter((existing) => {
-        const existingKey = buildKey(existing.getData());
-        return newDataKeys.has(existingKey);
-      })
-      .map((existing) => {
-        const existingKey = buildKey(existing.getData());
-        const newDataItem = newDataByKey.get(existingKey);
-        existing.setData(mergeDataFunction(existing.getData(), newDataItem));
-
-        // Use the merge status function to determine if status should change
-        const newStatus = mergeStatusFunction(existing, newDataItem, context);
-        // null indicates to keep existing status
-        if (newStatus !== null) {
-          existing.setStatus(newStatus);
-        }
-        existing.setUpdatedBy('system');
-        return existing.save();
-      }),
-  );
-  log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
+  const opportunityType = opportunity.getType();
 
   // Prepare new suggestions - O(N) with Set lookup
-  const { site } = context;
+  const { site, dataAccess } = context;
   const requiresValidation = Boolean(site?.requiresValidation);
+
+  // PLG/Freemium sites bypass manual validation — suggestions go directly to NEW status
+  // Compute isSummitPlg before the update loop so it can be used in mergeStatusFunction too
+  let isSummitPlg = false;
+  if (bypassValidationForPlg && requiresValidation && site) {
+    const { Configuration } = dataAccess;
+    const configuration = await Configuration.findLatest();
+    isSummitPlg = configuration.isHandlerEnabledForSite('summit-plg', site);
+    if (isSummitPlg) {
+      log.info(`[syncSuggestions] PLG site ${site.getId()} - skipping manual validation for suggestions`);
+    }
+  }
+
+  // Update existing suggestions - O(N) with Map lookup
+  const { Suggestion } = context.dataAccess;
+  const toUpdate = existingSuggestions
+    .filter((existing) => {
+      const existingKey = buildKey(existing.getData());
+      return newDataKeys.has(existingKey);
+    });
+
+  toUpdate.forEach((existing) => {
+    const existingKey = buildKey(existing.getData());
+    const newDataItem = newDataByKey.get(existingKey);
+    const mergedData = mergeDataFunction(existing.getData(), newDataItem);
+    warnOnInvalidSuggestionData(mergedData, opportunityType, log);
+    existing.setData(mergedData);
+
+    // Use the merge status function to determine if status should change
+    // Pass isSummitPlg in context so mergeStatusFunction can apply the PLG bypass
+    const newStatus = mergeStatusFunction(existing, newDataItem, { ...context, isSummitPlg });
+    // null indicates to keep existing status
+    if (newStatus !== null) {
+      existing.setStatus(newStatus);
+    }
+    existing.setUpdatedBy('system');
+  });
+
+  if (toUpdate.length > 0) {
+    await Suggestion.saveMany(toUpdate);
+  }
+  log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
+
   const newSuggestions = newData
     .filter((data) => !existingSuggestionKeys.has(buildKey(data)))
     .map((data) => {
       const suggestion = mapNewSuggestion(data);
-      return {
+      const result = {
         ...suggestion,
-        status: requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
-          : SuggestionDataAccess.STATUSES.NEW,
+        status: newSuggestionStatus || ((requiresValidation && !isSummitPlg)
+          ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+          : SuggestionDataAccess.STATUSES.NEW),
       };
+      if (result.data != null) {
+        warnOnInvalidSuggestionData(result.data, opportunityType, log);
+      }
+      return result;
     });
 
   // Add new suggestions if any
@@ -460,6 +561,7 @@ export async function reconcileDisappearedSuggestions({
   isIssueFixedWithAISuggestion,
   buildFixEntityPayload,
   isAuthorOnly = false,
+  Suggestion,
 }) {
   try {
     const newStatus = SuggestionDataAccess?.STATUSES?.NEW;
@@ -485,23 +587,28 @@ export async function reconcileDisappearedSuggestions({
     const checkResults = await limitConcurrencyAllSettled(checkTasks, MAX_CONCURRENT_CHECKS);
     const fixedSuggestions = checkResults.filter((r) => r?.isFixed).map((r) => r.suggestion);
 
-    const fixEntityObjects = [];
+    if (fixedSuggestions.length === 0) {
+      return;
+    }
 
-    // Process fixed suggestions (DB operations are fast, no concurrency limit needed)
-    for (const suggestion of fixedSuggestions) {
+    // Batch-save all fixed suggestions instead of individual saves
+    fixedSuggestions.forEach((suggestion) => {
       log.debug(`[reconcileDisappearedSuggestions] Marking suggestion ${suggestion?.getId?.()} as FIXED`);
-      let suggestionMarkedFixed = false;
-      try {
-        suggestion.setStatus?.(SuggestionDataAccess.STATUSES.FIXED);
-        suggestion.setUpdatedBy?.('system');
-        // eslint-disable-next-line no-await-in-loop
-        await suggestion.save?.();
-        suggestionMarkedFixed = true;
-      } catch (e) {
-        log.warn(`Failed to mark suggestion ${suggestion?.getId?.()} as FIXED: ${e.message}`);
-      }
+      suggestion.setStatus?.(SuggestionDataAccess.STATUSES.FIXED);
+      suggestion.setUpdatedBy?.('system');
+    });
 
-      if (suggestionMarkedFixed && typeof buildFixEntityPayload === 'function') {
+    try {
+      await Suggestion.saveMany(fixedSuggestions);
+    } catch (e) {
+      log.warn(`Failed to mark ${fixedSuggestions.length} suggestions as FIXED: ${e.message}`);
+      return;
+    }
+
+    // Build fix entities for all successfully saved suggestions
+    const fixEntityObjects = [];
+    if (typeof buildFixEntityPayload === 'function') {
+      for (const suggestion of fixedSuggestions) {
         try {
           const fixEntity = buildFixEntityPayload(suggestion, opportunity, isAuthorOnly);
           if (fixEntity) {
@@ -617,17 +724,22 @@ export async function publishDeployedFixEntities({
     const fixEntityTasks = deployedFixEntities.map((fe) => async () => checkFixEntity(fe));
     const results = await limitConcurrencyAllSettled(fixEntityTasks, MAX_CONCURRENT_CHECKS);
 
-    // Update resolved fix entities
-    for (const result of results) {
-      if (result?.allResolved) {
-        try {
-          result.fixEntity.setStatus?.(publishedStatus);
-          // eslint-disable-next-line no-await-in-loop
-          await result.fixEntity.save?.();
-          log.info(`Published fix entity ${result.fixEntity.getId?.()}`);
-        } catch (e) {
-          log.debug(`Failed to save fix entity: ${e.message}`);
-        }
+    // Batch-save all resolved fix entities instead of individual saves
+    const fixEntitiesToPublish = results
+      .filter((r) => r?.allResolved)
+      .map((r) => {
+        r.fixEntity.setStatus?.(publishedStatus);
+        return r.fixEntity;
+      });
+
+    if (fixEntitiesToPublish.length > 0) {
+      try {
+        await FixEntity.saveMany(fixEntitiesToPublish);
+        fixEntitiesToPublish.forEach((fe) => {
+          log.info(`Published fix entity ${fe.getId?.()}`);
+        });
+      } catch (e) {
+        log.debug(`Failed to save fix entities: ${e.message}`);
       }
     }
   } catch (e) {
@@ -670,8 +782,8 @@ export async function syncSuggestionsWithPublishDetection({
   }
   const { log } = context;
 
-  // Determine if this is an author-only opportunity type
-  const opportunityType = opportunity.getType?.();
+  // opportunity is always a valid DB entity passed by callers; getType() is guaranteed to exist.
+  const opportunityType = opportunity.getType();
   const isAuthorOnly = AUTHOR_ONLY_OPPORTUNITY_TYPES.includes(opportunityType);
 
   // Compute disappeared suggestions for reconcile step
@@ -693,6 +805,7 @@ export async function syncSuggestionsWithPublishDetection({
       isIssueFixedWithAISuggestion,
       buildFixEntityPayload,
       isAuthorOnly,
+      Suggestion: context.dataAccess?.Suggestion,
     });
   }
 

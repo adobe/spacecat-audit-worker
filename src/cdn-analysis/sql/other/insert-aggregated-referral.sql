@@ -70,8 +70,20 @@ referrals_raw AS (
       )
     )
 
-    -- only count HTML page views
-    AND response_content_type LIKE 'text/html%'
+    -- prefer response content type when present, otherwise fall back to URL heuristics
+    AND (
+      (
+        NULLIF(trim(response_content_type), '') IS NOT NULL
+        AND lower(response_content_type) LIKE 'text/html%'
+      )
+      OR (
+        NULLIF(trim(response_content_type), '') IS NULL
+        AND (
+          NOT REGEXP_LIKE(url_extract_path(COALESCE(url, '')), '(?i)\.(css|js|mjs|png|jpg|jpeg|gif|webp|avif|php|svg|ico|woff|woff2|otf|ttf|eot|mp4|mp3|avi|mov|zip|tar|gz|json|xml|pdf|txt)(\?.*)?$')
+          OR url_extract_path(COALESCE(url, '')) LIKE '%.htm%'
+        )
+      )
+    )
 
     -- basic filtering on user_agent for bots, crawlers, programmatic clients
     AND NOT REGEXP_LIKE(
@@ -111,4 +123,3 @@ WHERE COALESCE(
   NULLIF(referrer, ''),
   NULLIF(tracking_param, '')
 ) IS NOT NULL;
-

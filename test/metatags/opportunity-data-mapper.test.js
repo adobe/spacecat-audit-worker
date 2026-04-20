@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect } from 'chai';
 import { createOpportunityData } from '../../src/metatags/opportunity-data-mapper.js';
 import { DATA_SOURCES } from '../../src/common/constants.js';
@@ -29,19 +27,22 @@ describe('Meta Tags Opportunity Data Mapper', () => {
       expect(result.runbook).to.include('adobe.sharepoint.com');
     });
 
-    it('should include isElmo and tech-seo tags', () => {
+    it('should set tags for LLMO and ASO (Traffic acquisition, isElmo, isASO, tech-seo)', () => {
       const result = createOpportunityData();
 
-      expect(result.tags).to.be.an('array');
-      expect(result.tags).to.include('isElmo');
-      expect(result.tags).to.include('tech-seo');
+      expect(result.tags).to.deep.equal([
+        'Traffic acquisition',
+        'isElmo',
+        'isASO',
+        'tech-seo',
+      ]);
     });
 
     it('should include correct data sources', () => {
       const result = createOpportunityData();
 
       expect(result.data.dataSources).to.be.an('array');
-      expect(result.data.dataSources).to.include(DATA_SOURCES.AHREFS);
+      expect(result.data.dataSources).to.include(DATA_SOURCES.SEO);
       expect(result.data.dataSources).to.include(DATA_SOURCES.RUM);
       expect(result.data.dataSources).to.include(DATA_SOURCES.SITE);
     });

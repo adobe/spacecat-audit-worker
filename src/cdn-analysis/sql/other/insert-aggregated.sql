@@ -21,14 +21,26 @@ WHERE year  = '{{year}}'
   AND day   = '{{day}}'
   
    -- match known LLM-related user-agents
-  AND REGEXP_LIKE(request_user_agent, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|MistralAI-User|Google-NotebookLM|GoogleAgent|Google-Extended|Googlebot|bingbot|Amzn-User|^Google$)')
+  AND REGEXP_LIKE(request_user_agent, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot|Perplexity|Claude|Anthropic|Gemini|Copilot|MistralAI-User|Google-NotebookLM|Google-?Agent|Google-Extended|Googlebot|bingbot|Amzn-User|^Google$)')
 
-  -- only count HTML/PDF/Markdown responses, plus .md paths, robots.txt and sitemaps
+  -- prefer response content type when present, otherwise fall back to URL heuristics
   AND (
-    REGEXP_LIKE(lower(response_content_type), '^(text/html|application/pdf|text/markdown)')
-    OR REGEXP_LIKE(lower(url), '\.md(\?.*)?$')
-    OR url LIKE '%robots.txt' 
-    OR url LIKE '%sitemap%'
+    (
+      NULLIF(trim(response_content_type), '') IS NOT NULL
+      AND (
+        REGEXP_LIKE(lower(response_content_type), '^(text/html|application/pdf|text/markdown)')
+        OR REGEXP_LIKE(lower(url), '\.md(\?.*)?$')
+        OR url LIKE '%robots.txt'
+        OR url LIKE '%sitemap%'
+      )
+    )
+    OR (
+      NULLIF(trim(response_content_type), '') IS NULL
+      AND (
+        NOT REGEXP_LIKE(url_extract_path(COALESCE(url, '')), '(?i)\.(css|js|mjs|png|jpg|jpeg|gif|webp|avif|php|svg|ico|woff|woff2|otf|ttf|eot|mp4|mp3|avi|mov|zip|tar|gz|json|xml|txt)(\?.*)?$')
+        OR REGEXP_LIKE(url_extract_path(COALESCE(url, '')), '(?i)(\.htm|\.pdf|\.md|robots\.txt|sitemap)')
+      )
+    )
   )
 
   -- agentic and LLM-attributed traffic never has self-referer 

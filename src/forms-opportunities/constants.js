@@ -25,6 +25,7 @@ export const ORIGINS = {
 
 // Opportunity filtering constants
 export const OPPTY_OPTIONS_ALL = 'all';
+export const OPPTY_OPTIONS_SKIP_AUDIT = 'skipAudit';
 export const OPPORTUNITY_LIMIT = 2;
 
 // Page view threshold constants

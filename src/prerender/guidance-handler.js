@@ -12,6 +12,7 @@
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { isPaidLLMOCustomer } from './utils/utils.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 const LOG_PREFIX = 'Prerender -';
 
@@ -49,13 +50,11 @@ export default async function handler(message, context) {
   } = dataAccess;
   const { siteId, data } = message;
 
-  log.info(
-    `${LOG_PREFIX} Received Mystique guidance for prerender (presigned URL): ${JSON.stringify(
-      message,
-      null,
-      2,
-    )}`,
-  );
+  log.info(`${LOG_PREFIX} Received Mystique guidance for prerender (presigned URL): ${JSON.stringify(
+    message,
+    null,
+    2,
+  )}`);
 
   // Validate message structure early - fail fast
   if (!data) {
@@ -87,9 +86,7 @@ export default async function handler(message, context) {
     const aiSummariesData = await downloadFromPresignedUrl(presignedUrl, log);
 
     const { suggestions } = aiSummariesData;
-    log.info(
-      `${LOG_PREFIX} Successfully loaded ${suggestions.length} suggestions from presigned URL for opportunityId=${opportunityId}`,
-    );
+    log.info(`${LOG_PREFIX} Successfully loaded ${suggestions.length} suggestions from presigned URL for opportunityId=${opportunityId}`);
 
     // Validate site exists
     const site = await Site.findById(siteId);
@@ -109,9 +106,7 @@ export default async function handler(message, context) {
     // Load existing suggestions for this opportunity
     const existingSuggestions = await opportunity.getSuggestions();
     if (!existingSuggestions || existingSuggestions.length === 0) {
-      log.warn(
-        `${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, siteId=${siteId}`,
-      );
+      log.debug(`${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, siteId=${siteId}`);
       return ok();
     }
 
@@ -122,15 +117,11 @@ export default async function handler(message, context) {
     });
 
     if (updateableSuggestions.length === 0) {
-      log.info(
-        `${LOG_PREFIX} No updateable suggestions found (all are OUTDATED) for opportunityId=${opportunityId}, siteId=${siteId}`,
-      );
+      log.info(`${LOG_PREFIX} No updateable suggestions found (all are OUTDATED) for opportunityId=${opportunityId}, siteId=${siteId}`);
       return ok();
     }
 
-    log.info(
-      `${LOG_PREFIX} Found ${updateableSuggestions.length}/${existingSuggestions.length} updateable suggestions (excluding OUTDATED) for opportunityId=${opportunityId}`,
-    );
+    log.info(`${LOG_PREFIX} Found ${updateableSuggestions.length}/${existingSuggestions.length} updateable suggestions (excluding OUTDATED) for opportunityId=${opportunityId}`);
 
     // Index updateable suggestions by URL for quick lookup
     const suggestionsByUrl = new Map();
@@ -155,19 +146,15 @@ export default async function handler(message, context) {
       } = incoming || {};
 
       if (!url) {
-        log.warn(
-          `${LOG_PREFIX} Skipping Mystique suggestion without URL: ${JSON.stringify(
-            incoming,
-          )}`,
-        );
+        log.warn(`${LOG_PREFIX} Skipping Mystique suggestion without URL: ${JSON.stringify(
+          incoming,
+        )}`);
         return;
       }
 
       const existing = suggestionsByUrl.get(url);
       if (!existing) {
-        log.warn(
-          `${LOG_PREFIX} No existing suggestion found for URL=${url} on opportunityId=${opportunityId}`,
-        );
+        log.warn(`${LOG_PREFIX} No existing suggestion found for URL=${url} on opportunityId=${opportunityId}`);
         return;
       }
 
@@ -186,12 +173,13 @@ export default async function handler(message, context) {
 
       const updatedData = {
         ...currentData,
-        // Treat "Not available" (case-insensitive) as empty string for better UX
-        aiSummary: hasValidAiSummary ? aiSummary : '',
-        // Default to true if not provided, but respect explicit boolean from Mystique
-        valuable: isValuable,
+        // Use new summary if valid; otherwise preserve existing (don't overwrite with empty)
+        aiSummary: hasValidAiSummary ? aiSummary : (currentData.aiSummary ?? ''),
+        // Keep valuable in sync with aiSummary — only update when new AI response is valid
+        valuable: hasValidAiSummary ? isValuable : (currentData.valuable ?? true),
       };
 
+      warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
       existing.setData(updatedData);
       suggestionsToSave.push(existing);
     });
@@ -199,41 +187,31 @@ export default async function handler(message, context) {
     // 9. Batch save all suggestions using DynamoDB batch write
     if (suggestionsToSave.length > 0) {
       try {
-        // eslint-disable-next-line no-underscore-dangle
-        await Suggestion._saveMany(suggestionsToSave);
+        await Suggestion.saveMany(suggestionsToSave);
 
         // Check if this is a paid LLMO customer for quality tracking
         const isPaid = await isPaidLLMOCustomer(context);
 
         // Log comprehensive quality metrics with paid customer flag
-        log.info(
-          `${LOG_PREFIX} prerender_ai_summary_metrics:
+        log.info(`${LOG_PREFIX} prerender_ai_summary_metrics:
           siteId=${siteId},
           baseUrl=${site.getBaseURL()},
           opportunityId=${opportunityId},
           isPaidLLMOCustomer=${isPaid},
           totalSuggestions=${suggestionsToSave.length},
           valuableSuggestions=${valuableCount},
-          validAiSummaryCount=${validAiSummaryCount},`,
-        );
+          validAiSummaryCount=${validAiSummaryCount},`);
       } catch (error) {
-        log.error(
-          `${LOG_PREFIX} Error batch saving suggestions: ${error.message}`,
-        );
+        log.error(`${LOG_PREFIX} Error batch saving suggestions: ${error.message}`);
         throw error;
       }
     } else {
-      log.warn(
-        `${LOG_PREFIX} No valid suggestions to update for opportunityId=${opportunityId}, siteId=${siteId}`,
-      );
+      log.warn(`${LOG_PREFIX} No valid suggestions to update for opportunityId=${opportunityId}, siteId=${siteId}`);
     }
 
     return ok();
   } catch (error) {
-    log.error(
-      `${LOG_PREFIX} Error processing guidance for opportunityId=${opportunityId}, siteId=${siteId}: ${error.message}`,
-      error,
-    );
+    log.error(`${LOG_PREFIX} Error processing guidance for opportunityId=${opportunityId}, siteId=${siteId}: ${error.message}`, error);
     return badRequest(`Failed to process guidance: ${error.message}`);
   }
 }

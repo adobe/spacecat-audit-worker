@@ -18,7 +18,9 @@ import { joinBaseAndPath } from '../../utils/url-utils.js';
 const HEADER_COLOR = 'FFE6E6FA';
 
 const capitalizeFirstLetter = (str) => {
-  if (!str || typeof str !== 'string') return str;
+  if (!str || typeof str !== 'string') {
+    return str;
+  }
   return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 };
 
@@ -40,7 +42,11 @@ export const SHEET_CONFIGS = {
     headerColor: HEADER_COLOR,
     numberColumns: [2, 3, 4],
     processData: async (data, site, dataAccess) => {
-      if (!data || !site || !dataAccess) return [];
+      if (!data || !site || !dataAccess) {
+        return [];
+      }
+
+      const countryCodeIgnoreList = site.getConfig()?.getLlmoCountryCodeIgnoreList() || [];
 
       // Fetch citability scores and deployment status from database
       const { PageCitability } = dataAccess;
@@ -76,7 +82,7 @@ export const SHEET_CONFIGS = {
             Number(row.status) || 'N/A',
             Number(row.number_of_hits) || 0,
             Number(row.avg_ttfb_ms) || 0,
-            validateCountryCode(row.country_code),
+            validateCountryCode(row.country_code, countryCodeIgnoreList),
             urlPath,
             capitalizeFirstLetter(row.product) || 'Other',
             row.category || 'Uncategorized',
@@ -103,8 +109,11 @@ export const SHEET_CONFIGS = {
     headerColor: HEADER_COLOR,
     numberColumns: [6],
     processData: (data, site) => {
-      if (!Array.isArray(data)) throw new Error(`Referral traffic postprocessing failed, provided data: ${data}`);
+      if (!Array.isArray(data)) {
+        throw new Error(`Referral traffic postprocessing failed, provided data: ${data}`);
+      }
 
+      const countryCodeIgnoreList = site?.getConfig()?.getLlmoCountryCodeIgnoreList() || [];
       const grouped = {};
 
       data.forEach((row) => {
@@ -134,7 +143,7 @@ export const SHEET_CONFIGS = {
           vendor,
           device,
           date,
-          validateCountryCode(region),
+          validateCountryCode(region, countryCodeIgnoreList),
         ]);
 
         if (!grouped[key]) {
@@ -148,7 +157,7 @@ export const SHEET_CONFIGS = {
             0, // placeholder for aggregated pageviews
             '',
             '',
-            validateCountryCode(region),
+            validateCountryCode(region, countryCodeIgnoreList),
             '',
           ];
         }

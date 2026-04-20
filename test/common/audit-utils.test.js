@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -19,12 +17,20 @@ import chaiAsPromised from 'chai-as-promised';
 
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import {
-  isAuditEnabledForSite, loadExistingAudit, sendContinuationMessage, checkProductCodeEntitlements,
+  isAuditEnabledForSite,
+  loadExistingAudit,
+  sendContinuationMessage,
+  checkProductCodeEntitlements,
+  parseMessageDataForRunnerAudit,
+  preserveOnDemand,
+  preserveSlackContext,
 } from '../../src/common/audit-utils.js';
 import { MockContextBuilder } from '../shared.js';
 
 use(sinonChai);
 use(chaiAsPromised);
+
+const mockSiteEnrollment = { getId: () => 'site-enrollment-1' };
 
 describe('Audit Utils Tests', () => {
   const sandbox = sinon.createSandbox();
@@ -65,9 +71,8 @@ describe('Audit Utils Tests', () => {
       });
       configuration.isHandlerEnabledForSite.returns(true);
 
-      // Mock TierClient to return entitlement
       const mockTierClient = {
-        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: mockSiteEnrollment }),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -85,9 +90,8 @@ describe('Audit Utils Tests', () => {
       });
       configuration.isHandlerEnabledForSite.returns(false);
 
-      // Mock TierClient to return entitlement
       const mockTierClient = {
-        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: mockSiteEnrollment }),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -116,7 +120,7 @@ describe('Audit Utils Tests', () => {
       expect(context.log.error).to.have.been.calledWith('Handler test-handler has no product codes');
     });
 
-    it('returns false when handler has productCodes but no entitlement', async () => {
+    it('returns false when handler has productCodes but no site enrollment', async () => {
       configuration.getHandlers = () => ({
         'test-handler': {
           enabledByDefault: true,
@@ -125,9 +129,8 @@ describe('Audit Utils Tests', () => {
       });
       configuration.isHandlerEnabledForSite.returns(true);
 
-      // Mock TierClient to return no entitlement
       const mockTierClient = {
-        checkValidEntitlement: sandbox.stub().resolves({ entitlement: false }),
+        checkValidEntitlement: sandbox.stub().resolves({}),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -135,7 +138,7 @@ describe('Audit Utils Tests', () => {
       expect(result).to.be.false;
     });
 
-    it('returns true when handler has productCodes and entitlement', async () => {
+    it('returns true when handler has productCodes and site enrollment', async () => {
       configuration.getHandlers = () => ({
         'test-handler': {
           enabledByDefault: true,
@@ -144,12 +147,11 @@ describe('Audit Utils Tests', () => {
       });
       configuration.isHandlerEnabledForSite.returns(true);
 
-      // Mock TierClient to return entitlement for ASO
       const mockTierClient = {
         checkValidEntitlement: sandbox.stub()
-          .onFirstCall().resolves({ entitlement: true }) // ASO
+          .onFirstCall().resolves({ siteEnrollment: mockSiteEnrollment })
           .onSecondCall()
-          .resolves({ entitlement: false }), // LLMO
+          .resolves({}),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -169,13 +171,12 @@ describe('Audit Utils Tests', () => {
       expect(result).to.be.false;
     });
 
-    it('returns true when site has entitlement for any product code (OR logic)', async () => {
-      // Mock TierClient: ASO has entitlement, LLMO doesn't
+    it('returns true when site has enrollment for any product code (OR logic)', async () => {
       const mockTierClient = {
         checkValidEntitlement: sandbox.stub()
-          .onFirstCall().resolves({ entitlement: true }) // ASO
+          .onFirstCall().resolves({ siteEnrollment: mockSiteEnrollment })
           .onSecondCall()
-          .resolves({ entitlement: false }), // LLMO
+          .resolves({}),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -183,13 +184,12 @@ describe('Audit Utils Tests', () => {
       expect(result).to.be.true;
     });
 
-    it('returns true when site has entitlement for all product codes', async () => {
-      // Mock TierClient: Both ASO and LLMO have entitlement
+    it('returns true when site has enrollment for all product codes', async () => {
       const mockTierClient = {
         checkValidEntitlement: sandbox.stub()
-          .onFirstCall().resolves({ entitlement: true }) // ASO
+          .onFirstCall().resolves({ siteEnrollment: mockSiteEnrollment })
           .onSecondCall()
-          .resolves({ entitlement: true }), // LLMO
+          .resolves({ siteEnrollment: mockSiteEnrollment }),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -197,17 +197,38 @@ describe('Audit Utils Tests', () => {
       expect(result).to.be.true;
     });
 
-    it('returns false when site has no entitlement for any product code', async () => {
-      // Mock TierClient: Neither ASO nor LLMO has entitlement
+    it('returns false when site has no enrollment for any product code', async () => {
       const mockTierClient = {
         checkValidEntitlement: sandbox.stub()
-          .onFirstCall().resolves({ entitlement: false }) // ASO
+          .onFirstCall().resolves({})
           .onSecondCall()
-          .resolves({ entitlement: false }), // LLMO
+          .resolves({}),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
       const result = await checkProductCodeEntitlements(['ASO', 'LLMO'], site, context);
+      expect(result).to.be.false;
+    });
+
+    it('returns false when org has entitlement but site has no site enrollment', async () => {
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().resolves({
+          entitlement: { getId: () => 'ent-1' },
+        }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const result = await checkProductCodeEntitlements(['ASO'], site, context);
+      expect(result).to.be.false;
+    });
+
+    it('returns false when siteEnrollment is null', async () => {
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: null }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const result = await checkProductCodeEntitlements(['ASO'], site, context);
       expect(result).to.be.false;
     });
 
@@ -226,12 +247,11 @@ describe('Audit Utils Tests', () => {
     });
 
     it('returns true when one product code fails but another succeeds', async () => {
-      // Mock TierClient: ASO fails, LLMO succeeds
       const mockTierClient = {
         checkValidEntitlement: sandbox.stub()
           .onFirstCall().rejects(new Error('ASO check failed'))
           .onSecondCall()
-          .resolves({ entitlement: true }), // LLMO
+          .resolves({ siteEnrollment: mockSiteEnrollment }),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -241,7 +261,7 @@ describe('Audit Utils Tests', () => {
 
     it('handles single product code', async () => {
       const mockTierClient = {
-        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: mockSiteEnrollment }),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -250,19 +270,18 @@ describe('Audit Utils Tests', () => {
     });
 
     it('handles multiple product codes with mixed results', async () => {
-      // Mock TierClient: ASO fails, LLMO succeeds, CWV fails
       const mockTierClient = {
         checkValidEntitlement: sandbox.stub()
           .onFirstCall().rejects(new Error('ASO check failed'))
           .onSecondCall()
-          .resolves({ entitlement: true }) // LLMO
+          .resolves({ siteEnrollment: mockSiteEnrollment })
           .onThirdCall()
-          .resolves({ entitlement: false }), // CWV
+          .resolves({}),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
       const result = await checkProductCodeEntitlements(['ASO', 'LLMO', 'CWV'], site, context);
-      expect(result).to.be.true; // Should return true because LLMO succeeded
+      expect(result).to.be.true;
     });
 
     it('handles critical error in checkProductCodeEntitlements and returns false', async () => {
@@ -312,6 +331,60 @@ describe('Audit Utils Tests', () => {
     });
   });
 
+  describe('preserveOnDemand', () => {
+    it('extracts onDemand when boolean true', () => {
+      const result = preserveOnDemand({ onDemand: true, extra: 'ignored' });
+      expect(result).to.deep.equal({ onDemand: true });
+    });
+
+    it('normalizes string "true" to boolean true', () => {
+      expect(preserveOnDemand({ onDemand: 'true' })).to.deep.equal({ onDemand: true });
+    });
+
+    it('returns empty object when auditContext is undefined', () => {
+      expect(preserveOnDemand(undefined)).to.deep.equal({});
+    });
+
+    it('returns empty object when auditContext is null', () => {
+      expect(preserveOnDemand(null)).to.deep.equal({});
+    });
+
+    it('returns empty object when onDemand is not set', () => {
+      expect(preserveOnDemand({ extra: 'ignored' })).to.deep.equal({});
+    });
+
+    it('returns empty object when onDemand is false', () => {
+      expect(preserveOnDemand({ onDemand: false })).to.deep.equal({});
+    });
+
+    it('returns empty object when onDemand is string "false"', () => {
+      expect(preserveOnDemand({ onDemand: 'false' })).to.deep.equal({});
+    });
+  });
+
+  describe('preserveSlackContext', () => {
+    it('preserves slackContext when present', () => {
+      const slackContext = { channelId: 'C123', threadTs: '123.456' };
+      expect(preserveSlackContext({ slackContext })).to.deep.equal({ slackContext });
+    });
+
+    it('returns empty object when auditContext is undefined', () => {
+      expect(preserveSlackContext(undefined)).to.deep.equal({});
+    });
+
+    it('returns empty object when auditContext is null', () => {
+      expect(preserveSlackContext(null)).to.deep.equal({});
+    });
+
+    it('returns empty object when slackContext is not set', () => {
+      expect(preserveSlackContext({ onDemand: true })).to.deep.equal({});
+    });
+
+    it('returns empty object when slackContext is null', () => {
+      expect(preserveSlackContext({ slackContext: null })).to.deep.equal({});
+    });
+  });
+
   describe('sendContinuationMessage', () => {
     it('sends message successfully', async () => {
       const message = {
@@ -339,6 +412,33 @@ describe('Audit Utils Tests', () => {
         `Failed to send message to queue ${message.queueUrl}`,
         sinon.match.instanceOf(Error),
       );
+    });
+  });
+
+  describe('parseMessageDataForRunnerAudit', () => {
+    it('returns undefined when data is missing or null', () => {
+      expect(parseMessageDataForRunnerAudit(undefined)).to.equal(undefined);
+      expect(parseMessageDataForRunnerAudit(null)).to.equal(undefined);
+    });
+
+    it('returns object when data is a plain object', () => {
+      expect(parseMessageDataForRunnerAudit({ urlLimit: '10' })).to.deep.equal({ urlLimit: '10' });
+    });
+
+    it('parses JSON string data', () => {
+      expect(parseMessageDataForRunnerAudit('{"urlLimit":"5"}')).to.deep.equal({ urlLimit: '5' });
+    });
+
+    it('returns undefined when data string is invalid JSON', () => {
+      expect(parseMessageDataForRunnerAudit('{not-json')).to.equal(undefined);
+    });
+
+    it('returns undefined when data string is whitespace only', () => {
+      expect(parseMessageDataForRunnerAudit('   \n\t  ')).to.equal(undefined);
+    });
+
+    it('returns undefined when data is not a plain object', () => {
+      expect(parseMessageDataForRunnerAudit([1, 2])).to.equal(undefined);
     });
   });
 });

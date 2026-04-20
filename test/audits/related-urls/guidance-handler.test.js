@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -588,6 +586,43 @@ describe('Related URLs Guidance Handler', function testSuite() {
       fetchResponse: {
         ok: true,
         json: async () => ({ prompts: 'invalid' }),
+      },
+    });
+
+    const result = await handler({
+      siteId: 'site-1',
+      data: { presignedUrl: 'https://example.com/file.json' },
+    }, context);
+
+    expect(result.status).to.equal('noContent');
+  });
+
+  it('handles missing column headers when rows exist', async () => {
+    const rows = [createDataRow('Prompt 1', 'GLOBAL')];
+    const { worksheet } = createWorksheet(rows);
+    worksheet.getRow.withArgs(1).returns({
+      values: [undefined, 'UnknownCol1', 'UnknownCol2'],
+    });
+
+    const workbook = {
+      worksheets: [worksheet],
+      xlsx: {
+        load: sandbox.stub().resolves(),
+        writeBuffer: sandbox.stub().resolves(Buffer.from('xlsx')),
+      },
+    };
+
+    const { handler, context } = await loadHandler({
+      workbook,
+      fetchResponse: {
+        ok: true,
+        json: async () => ({
+          prompts: [{
+            prompt: 'Prompt 1',
+            input_region: 'GLOBAL',
+            related_urls: [{ url: 'https://example.com/page' }],
+          }],
+        }),
       },
     });
 

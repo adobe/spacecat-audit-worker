@@ -11,6 +11,7 @@
  */
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
@@ -58,31 +59,47 @@ export default async function handler(message, context) {
     return ok();
   }
 
-  await Promise.all(suggestions.map(async (suggestionUpdate) => {
-    const suggestion = await Suggestion.findById(suggestionUpdate.suggestionId);
+  // Batch-fetch all suggestions in a single query instead of N individual findById calls
+  const suggestionIds = suggestions
+    .map((s) => s.suggestionId)
+    .filter(Boolean);
+
+  const { data: existingSuggestions = [] } = suggestionIds.length > 0
+    ? await Suggestion.batchGetByKeys(suggestionIds.map((id) => ({ suggestionId: id })))
+    : { data: [] };
+
+  const suggestionMap = new Map(existingSuggestions.map((s) => [s.getId(), s]));
+
+  const toSave = [];
+  for (const suggestionUpdate of suggestions) {
+    const suggestion = suggestionMap.get(suggestionUpdate.suggestionId);
     if (!suggestion) {
       log.error(`[${opportunity.getType()}] Suggestion not found for ID: ${suggestionUpdate.suggestionId}`);
-      return {};
+    } else {
+      const { aiSuggestion, aiRationale } = suggestionUpdate;
+
+      // Validate that we have both suggestion and rationale
+      if (!aiSuggestion || !aiRationale) {
+        log.warn(
+          `[${opportunity.getType()}] Incomplete data for suggestion ${suggestionUpdate.suggestionId}. `
+          + `aiSuggestion: ${!!aiSuggestion}, aiRationale: ${!!aiRationale}`,
+        );
+      }
+
+      const updatedData = {
+        ...suggestion.getData(),
+        aiSuggestion: aiSuggestion || '',
+        aiRationale: aiRationale || '',
+      };
+      warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
+      suggestion.setData(updatedData);
+      toSave.push(suggestion);
     }
+  }
 
-    const { aiSuggestion, aiRationale } = suggestionUpdate;
-
-    // Validate that we have both suggestion and rationale
-    if (!aiSuggestion || !aiRationale) {
-      log.warn(
-        `[${opportunity.getType()}] Incomplete data for suggestion ${suggestionUpdate.suggestionId}. `
-        + `aiSuggestion: ${!!aiSuggestion}, aiRationale: ${!!aiRationale}`,
-      );
-    }
-
-    suggestion.setData({
-      ...suggestion.getData(),
-      aiSuggestion: aiSuggestion || '',
-      aiRationale: aiRationale || '',
-    });
-
-    return suggestion.save();
-  }));
+  if (toSave.length > 0) {
+    await Suggestion.saveMany(toSave);
+  }
 
   log.info(`[${opportunity.getType()} Guidance] Successfully updated ${suggestions.length} suggestions`);
   return ok();

@@ -20,18 +20,34 @@ import {
   getUrlWithoutPath,
 } from '../support/utils.js';
 
-// Performance tuning constants:
+// ----- performance tuning constants ------------------------------------------
+
 // GET timeout for robots.txt and each sitemap.xml file
 export const SITEMAP_GET_TIMEOUT_MS = 15000; // 15 seconds
 // Batching when fetching sitemap.xml files
 export const SITEMAP_XML_BATCH_SIZE = 10; // number to fetch in parallel
 export const SITEMAP_XML_BATCH_DELAY_MS = 500; // half of a second delay between batches
+
 // Timeout for HEAD (and GET fallback) when validating page URLs
 export const PAGE_URL_TIMEOUT_MS = 10000; // 10 seconds
-// Batching when fetching/validating page URLs
-export const PAGE_URL_BATCH_SIZE = 750; // must stay under 1000
-export const PAGE_URL_BATCH_DELAY_MS = 0; // none
 
+// "Fast" batching when fetching/validating page URLs
+export const FAST_MAX_PAGE_URLS_PROBED = 10000; // max total, proportioned across sitemaps
+export const FAST_PAGE_URL_BATCH_SIZE = 700; // must stay under 1000
+export const FAST_PAGE_URL_BATCH_DELAY_MS = 0; // none
+
+// Dynamic switch from fast → slow page-URL batching when 'otherStatus' dominates
+export const PAGE_URL_OTHER_STATUS_SLOWDOWN_MIN_URLS = 10; // min probes before evaluating the ratio
+export const PAGE_URL_OTHER_STATUS_SLOWDOWN_RATIO = 0.6; // once we hit 60%+ we switch
+
+// "Slow" batching when fetching/validating page URLs
+//   ex: approx 10 probes per second, and assuming 0.5 seconds per probe to complete,
+//       then 1000 probes will take about 8.3 minutes (which is 8 min and 20 sec)
+export const SLOW_MAX_PAGE_URLS_PROBED = 1000; // smaller set to use when running slow
+export const SLOW_PAGE_URL_BATCH_SIZE = 1; // must stay under 1000
+export const SLOW_PAGE_URL_BATCH_DELAY_MS = 100; // 0.1 of a second delay between batches
+
+// ----- internal constants ----------------------------------------------------
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID URL',
   NO_SITEMAP_IN_ROBOTS: 'NO SITEMAP FOUND IN ROBOTS',
@@ -59,6 +75,22 @@ function delay(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+/**
+ * After {@link applyPageUrlProbeSampling}, further cap how many page URLs we probe per sitemap
+ * while in slow mode: floor(length * SLOW_MAX / FAST_MAX), at least 1 when non-empty.
+ *
+ * @param {string[]} urls
+ * @returns {string[]}
+ */
+export function slicePageUrlsForSlowProbeSampling(urls) {
+  if (!urls?.length) {
+    return []; // if nothing was passed in, then we return an empty array
+  }
+  const ratio = SLOW_MAX_PAGE_URLS_PROBED / FAST_MAX_PAGE_URLS_PROBED; // ex: 0.1 == 10%
+  const n = Math.min(urls.length, Math.max(1, Math.floor(urls.length * ratio)));
+  return urls.slice(0, n); // minimally will have 1 element in the array
 }
 
 /**
@@ -113,7 +145,7 @@ export async function fetchWithHeadFallback(url, options = {}) {
 
 /**
  * Fetches content with timeout control.
- * Used only for robots.txt and sitemap.xml GET requests (SITEMAP_GET_TIMEOUT_MS).
+ * Used for robots.txt and sitemap.xml GET requests.
  */
 export async function fetchContent(targetUrl) {
   // note: this could throw an exception for network errors
@@ -138,8 +170,16 @@ export async function fetchContent(targetUrl) {
  * @param {Object} [log] - Logger
  * @param {number} [timeoutMs=PAGE_URL_TIMEOUT_MS] -
  *         Timeout for HEAD/GET (use SITEMAP_GET_TIMEOUT_MS for sitemap URL validation)
+ * @param {null} [pageUrlBatchOptions] - Optional page-URL probe batching parameters
+ * @param {number} [pageUrlBatchOptions.pageUrlBatchSize] - defaults to use "fast" value
+ * @param {number} [pageUrlBatchOptions.pageUrlBatchDelayMs] - defaults to use "fast" value
  */
-export async function filterValidUrls(urls, log, timeoutMs = PAGE_URL_TIMEOUT_MS) {
+export async function filterValidUrls(
+  urls,
+  log,
+  timeoutMs = PAGE_URL_TIMEOUT_MS,
+  pageUrlBatchOptions = null,
+) {
   if (!urls.length) {
     return {
       ok: [], notOk: [], networkErrors: [], otherStatusCodes: [],
@@ -245,9 +285,13 @@ export async function filterValidUrls(urls, log, timeoutMs = PAGE_URL_TIMEOUT_MS
     }
   };
 
+  // eslint-disable-next-line max-len
+  const pageUrlBatchDelayMs = pageUrlBatchOptions?.pageUrlBatchDelayMs ?? FAST_PAGE_URL_BATCH_DELAY_MS;
+  const pageUrlBatchSize = pageUrlBatchOptions?.pageUrlBatchSize ?? FAST_PAGE_URL_BATCH_SIZE;
+
   // Process URLs in batches with rate limiting (page URL batch size and delay)
-  for (let i = 0; i < urls.length; i += PAGE_URL_BATCH_SIZE) {
-    const batch = urls.slice(i, i + PAGE_URL_BATCH_SIZE);
+  for (let i = 0; i < urls.length; i += pageUrlBatchSize) {
+    const batch = urls.slice(i, i + pageUrlBatchSize);
     const batchPromises = batch.map(checkUrl);
 
     // eslint-disable-next-line no-await-in-loop
@@ -278,13 +322,94 @@ export async function filterValidUrls(urls, log, timeoutMs = PAGE_URL_TIMEOUT_MS
     }
 
     // Add delay between batches to avoid overwhelming servers
-    if (i + PAGE_URL_BATCH_SIZE < urls.length) {
+    if (i + pageUrlBatchSize < urls.length) {
       // eslint-disable-next-line no-await-in-loop
-      await delay(PAGE_URL_BATCH_DELAY_MS);
+      await delay(pageUrlBatchDelayMs);
     }
   }
 
   return results;
+}
+
+/**
+ * Limits which discovered page URLs are probed: at most {@link FAST_MAX_PAGE_URLS_PROBED} URLs,
+ * split across sitemaps in proportion to each sitemap's entry count.
+ *
+ * Rules (in order):
+ * 1. Non-empty sitemaps only. Keep existing order from `Object.keys(extractedPaths)`.
+ * 2. If there are more than FAST_MAX_PAGE_URLS_PROBED sitemap.xml files with URLs, keep only the
+ *    first FAST_MAX_PAGE_URLS_PROBED of them.  Note that, in practice, as long as
+ *    FAST_MAX_PAGE_URLS_PROBED is fairly large, we should never reach this condition.
+ * 3. If total URLs is <= FAST_MAX_PAGE_URLS_PROBED, probe every URL.
+ * 4. Otherwise, each sitemap.xml file gets floor(MAX * count / total) URLs, with a minimum of
+ *    1 URL probed per sitemap.xml file.  If the new grand total of probed page URLs exceeds
+ *    FAST_MAX_PAGE_URLS_PROBED, then we just log this as a warning -- since we assume it is a
+ *    very rare condition -- but we still attempt to probe this new total amount nonetheless.
+ *
+ * @param {Record<string, string[]>} extractedPaths - Output of discovery (sitemap URL -> page URLs)
+ * @param {Object} [log] - Optional logger
+ * @returns {Record<string, string[]>} Subset map; each value is a prefix slice (top of array)
+ */
+export function applyPageUrlProbeSampling(extractedPaths, log) {
+  // Get the initial set of sitemap.xml files we will be working with.
+  const keys = Object.keys(extractedPaths);
+  const entries = keys
+    .map((key) => [key, extractedPaths[key] ?? []])
+    .filter(([, urls]) => urls.length > 0); // keep non-empty sitemap.xml files
+  if (entries.length === 0) {
+    return {};
+  }
+  // Remember the grand total of all the page URLs we would like to probe.
+  const originalTotal = entries.reduce((sum, [, urls]) => sum + urls.length, 0);
+  // In the extreme condition that there are a zillion sitemap.xml files, reduce these.
+  let working = entries;
+  if (working.length > FAST_MAX_PAGE_URLS_PROBED) {
+    log?.info(
+      `Sitemap: ${working.length} sitemap(s) with page URLs exceed cap ${FAST_MAX_PAGE_URLS_PROBED}; `
+      + `only the first ${FAST_MAX_PAGE_URLS_PROBED} sitemap(s) will be probed.`,
+    );
+    working = working.slice(0, FAST_MAX_PAGE_URLS_PROBED);
+  }
+  // Re-compute the grand total of all the page URLs we would like to probe.
+  const totalAfterSitemapCap = working.reduce((sum, [, urls]) => sum + urls.length, 0);
+  if (totalAfterSitemapCap <= FAST_MAX_PAGE_URLS_PROBED) {
+    const out = Object.fromEntries(working);
+    if (log && originalTotal > totalAfterSitemapCap) {
+      log.info( // this is extremely unlikely ...
+        'Sitemap: Due to the abundance of sitemap.xml files, we had to reduce the number of these files inspected.'
+        + ` This resulted in reducing the discovered page URLs from ${originalTotal} to `
+        + `${totalAfterSitemapCap}. Consider reducing the number of sitemap.xml files.`,
+      );
+    }
+    return out; // since the number of page URLs is already at/under the cap, we return them all
+  }
+
+  // Goal: determine how many page URLs should be probed from each sitemap.xml file.
+  // * 'counts' array of the number of page URLs referenced per sitemap.xml file
+  // * 'quotas' array of the number of page URLs we will probe from each sitemap.xml file.  Min: 1
+  const counts = working.map(([, urls]) => urls.length);
+  const quotas = counts.map((c) => {
+    const floored = Math.floor((FAST_MAX_PAGE_URLS_PROBED * c) / totalAfterSitemapCap);
+    return Math.min(c, Math.max(floored, 1)); // at least 1 URL per sitemap.xml file
+  });
+  const sumQ = quotas.reduce((a, b) => a + b, 0); // actual total URLs to be probed
+  if (sumQ > FAST_MAX_PAGE_URLS_PROBED) {
+    log?.warn(
+      `Sitemap: Proportional quotas will actually probe ${sumQ} page URL(s), above the `
+      + `FAST_MAX_PAGE_URLS_PROBED (${FAST_MAX_PAGE_URLS_PROBED}) desired limit.`,
+    );
+  }
+
+  // Build the actual set of page URLs to be probed from each of the sitemap.xml files
+  const out = {};
+  working.forEach(([key, urls], i) => {
+    out[key] = urls.slice(0, quotas[i]); // quotas[i] is always >= 1
+  });
+  log?.info(
+    `Sitemap: Page URL probe sampling — ${originalTotal} page URL(s) discovered, ${sumQ} selected `
+    + `(target cap ${FAST_MAX_PAGE_URLS_PROBED}, with at least 1 probe per each sitemap.xml file).`,
+  );
+  return out;
 }
 
 /**
@@ -446,7 +571,7 @@ export async function getSitemapUrls(inputUrl, log) {
   } catch (error) {
     /* c8 ignore next */
     log?.error(`Sitemap: Error checking robots.txt for ${inputUrl}: ${error.message}`);
-    // If robots.txt fails, return error immediately (to match test expectations)
+    // If robots.txt fails, return error immediately (since something is horribly wrong)
     return {
       success: false,
       reasons: [{ value: `${error.message}`, error: ERROR_CODES.FETCH_ERROR }],
@@ -460,7 +585,11 @@ export async function getSitemapUrls(inputUrl, log) {
       `${protocol}://${domain}/sitemap.xml`,
       `${protocol}://${domain}/sitemap_index.xml`,
     ];
-    sitemapUrls = await filterValidUrls(commonSitemapUrls, log, SITEMAP_GET_TIMEOUT_MS);
+    // note: we are really using `filterValidUrls` for the side effect of checking their presence
+    sitemapUrls = await filterValidUrls(commonSitemapUrls, log, SITEMAP_GET_TIMEOUT_MS, {
+      pageUrlBatchSize: SITEMAP_XML_BATCH_SIZE,
+      pageUrlBatchDelayMs: SITEMAP_XML_BATCH_DELAY_MS,
+    });
 
     if (!sitemapUrls.ok?.length) {
       return {

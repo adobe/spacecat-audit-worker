@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
@@ -128,7 +126,7 @@ describe('Structured Data Libs', () => {
 
       const result = await getIssuesFromGSC('https://example.com', context, []);
       expect(result).to.deep.equal([]);
-      expect(context.log.warn.calledOnce).to.be.true;
+      expect(context.log.debug.calledOnce).to.be.true;
     });
 
     it('gets results from Google client without rich results', async () => {

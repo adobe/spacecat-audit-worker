@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
@@ -136,17 +134,17 @@ describe('Readability Opportunities Handler Tests', () => {
       );
     });
 
-    it('should return NO_OPPORTUNITIES when no top pages found', async () => {
+    it('should return NO_OPPORTUNITIES when no URLs are found', async () => {
       mockContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
 
       const result = await scrapeReadabilityData(mockContext);
 
       expect(result).to.deep.equal({
         status: 'NO_OPPORTUNITIES',
-        message: 'No top pages found, skipping audit',
+        message: 'No URLs found, skipping audit',
       });
       expect(mockContext.log.info).to.have.been.calledWith(
-        '[ReadabilityAudit] No top pages found for site test-site-id (https://example.com), skipping audit',
+        '[ReadabilityAudit] No URLs found for site test-site-id (https://example.com), skipping audit',
       );
     });
 
@@ -157,7 +155,7 @@ describe('Readability Opportunities Handler Tests', () => {
 
       expect(result).to.deep.equal({
         status: 'NO_OPPORTUNITIES',
-        message: 'No top pages found, skipping audit',
+        message: 'No URLs found, skipping audit',
       });
     });
 
@@ -610,4 +608,3 @@ describe('Readability Opportunities Handler Tests', () => {
     });
   });
 });
-

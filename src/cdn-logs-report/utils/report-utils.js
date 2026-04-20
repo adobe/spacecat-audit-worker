@@ -11,54 +11,64 @@
  */
 
 import { getStaticContent, isoCalendarWeek, llmoConfig } from '@adobe/spacecat-shared-utils';
-import {
-  extractCustomerDomain,
-  resolveConsolidatedBucketName,
-} from '../../utils/cdn-utils.js';
 import { uploadToSharePoint } from '../../utils/report-uploader.js';
 
-export async function getS3Config(site, context) {
-  const customerDomain = extractCustomerDomain(site);
-  const domainParts = customerDomain.split(/[._]/);
-  /* c8 ignore next */
-  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const bucket = resolveConsolidatedBucketName(context);
+const ISO_3166_ALPHA2_COUNTRY_CODES = new Set([
+  'AD', 'AE', 'AF', 'AG', 'AI', 'AL', 'AM', 'AO', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AW', 'AX', 'AZ',
+  'BA', 'BB', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BL', 'BM', 'BN', 'BO', 'BQ', 'BR', 'BS',
+  'BT', 'BV', 'BW', 'BY', 'BZ', 'CA', 'CC', 'CD', 'CF', 'CG', 'CH', 'CI', 'CK', 'CL', 'CM', 'CN',
+  'CO', 'CR', 'CU', 'CV', 'CW', 'CX', 'CY', 'CZ', 'DE', 'DJ', 'DK', 'DM', 'DO', 'DZ', 'EC', 'EE',
+  'EG', 'EH', 'ER', 'ES', 'ET', 'FI', 'FJ', 'FK', 'FM', 'FO', 'FR', 'GA', 'GB', 'GD', 'GE', 'GF',
+  'GG', 'GH', 'GI', 'GL', 'GM', 'GN', 'GP', 'GQ', 'GR', 'GS', 'GT', 'GU', 'GW', 'GY', 'HK', 'HM',
+  'HN', 'HR', 'HT', 'HU', 'ID', 'IE', 'IL', 'IM', 'IN', 'IO', 'IQ', 'IR', 'IS', 'IT', 'JE', 'JM',
+  'JO', 'JP', 'KE', 'KG', 'KH', 'KI', 'KM', 'KN', 'KP', 'KR', 'KW', 'KY', 'KZ', 'LA', 'LB', 'LC',
+  'LI', 'LK', 'LR', 'LS', 'LT', 'LU', 'LV', 'LY', 'MA', 'MC', 'MD', 'ME', 'MF', 'MG', 'MH', 'MK',
+  'ML', 'MM', 'MN', 'MO', 'MP', 'MQ', 'MR', 'MS', 'MT', 'MU', 'MV', 'MW', 'MX', 'MY', 'MZ', 'NA',
+  'NC', 'NE', 'NF', 'NG', 'NI', 'NL', 'NO', 'NP', 'NR', 'NU', 'NZ', 'OM', 'PA', 'PE', 'PF', 'PG',
+  'PH', 'PK', 'PL', 'PM', 'PN', 'PR', 'PS', 'PT', 'PW', 'PY', 'QA', 'RE', 'RO', 'RS', 'RU', 'RW',
+  'SA', 'SB', 'SC', 'SD', 'SE', 'SG', 'SH', 'SI', 'SJ', 'SK', 'SL', 'SM', 'SN', 'SO', 'SR', 'SS',
+  'ST', 'SV', 'SX', 'SY', 'SZ', 'TC', 'TD', 'TF', 'TG', 'TH', 'TJ', 'TK', 'TL', 'TM', 'TN', 'TO',
+  'TR', 'TT', 'TV', 'TW', 'TZ', 'UA', 'UG', 'UM', 'US', 'UY', 'UZ', 'VA', 'VC', 'VE', 'VG', 'VI',
+  'VN', 'VU', 'WF', 'WS', 'YE', 'YT', 'ZA', 'ZM', 'ZW',
+]);
 
-  return {
-    bucket,
-    customerName,
-    customerDomain,
-    databaseName: `cdn_logs_${customerDomain}`,
-    getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
-  };
+function fetchErrorResult(source, status) {
+  return status ? { error: true, status, source } : { error: true, source };
+}
+
+function isNotFoundError(error) {
+  return error?.status === 404 || error?.statusCode === 404;
 }
 
 export async function loadSql(filename, variables) {
   return getStaticContent(variables, `./src/cdn-logs-report/sql/${filename}.sql`);
 }
 
-export function validateCountryCode(code) {
+export function validateCountryCode(code, siteIgnoreList = []) {
   const DEFAULT_COUNTRY_CODE = 'GLOBAL';
   // these are codes that are not valid to be regions as these are small islands
-  const ignoreCountryCodes = ['TV', 'ST'];
-  if (!code || typeof code !== 'string') return DEFAULT_COUNTRY_CODE;
+  const globalIgnoreCodes = ['TV', 'ST'];
+  const countryAliases = {
+    UK: 'UK',
+  };
+  if (!code || typeof code !== 'string') {
+    return DEFAULT_COUNTRY_CODE;
+  }
 
   const upperCode = code.toUpperCase();
+  const upperSiteIgnoreList = siteIgnoreList.map((c) => c.toUpperCase());
+  const ignoreCountryCodes = [...globalIgnoreCodes, ...upperSiteIgnoreList];
 
   if (upperCode === DEFAULT_COUNTRY_CODE || ignoreCountryCodes.includes(upperCode)) {
     return DEFAULT_COUNTRY_CODE;
   }
 
-  try {
-    const displayNames = new Intl.DisplayNames(['en'], { type: 'region' });
-    const countryName = displayNames.of(upperCode);
+  if (countryAliases[upperCode]) {
+    return countryAliases[upperCode];
+  }
 
-    if (countryName && countryName !== upperCode) {
-      return upperCode;
-    }
-    /* c8 ignore next 3 */
-  } catch {
-    // Invalid country code
+  if (ISO_3166_ALPHA2_COUNTRY_CODES.has(upperCode)) {
+    return upperCode;
   }
 
   return DEFAULT_COUNTRY_CODE;
@@ -102,16 +112,17 @@ export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1)
 /**
  * Fetches remote patterns for a site
  */
-export async function fetchRemotePatterns(site) {
+export async function fetchRemotePatterns(site, log = console) {
   const dataFolder = site.getConfig()?.getLlmoDataFolder();
 
   if (!dataFolder) {
+    log.warn('fetchRemotePatterns: no dataFolder configured for site, skipping patterns fetch');
     return null;
   }
 
-  try {
-    const url = `https://main--project-elmo-ui-data--adobe.aem.live/${dataFolder}/agentic-traffic/patterns/patterns.json`;
+  const url = `https://main--project-elmo-ui-data--adobe.aem.live/${dataFolder}/agentic-traffic/patterns/patterns.json`;
 
+  try {
     const res = await fetch(url, {
       headers: {
         'User-Agent': 'spacecat-audit-worker',
@@ -120,17 +131,69 @@ export async function fetchRemotePatterns(site) {
     });
 
     if (!res.ok) {
+      if (res.status !== 404) {
+        log.error(`fetchRemotePatterns: failed to fetch patterns from ${url} — status ${res.status} ${res.statusText}`);
+        return fetchErrorResult('patterns', res.status);
+      }
       return null;
     }
 
     const data = await res.json();
 
+    log.info(`fetchRemotePatterns: successfully loaded patterns — ${data.pagetype?.data?.length || 0} page patterns, ${data.products?.data?.length || 0} topic patterns`);
+
     return {
       pagePatterns: data.pagetype?.data || [],
       topicPatterns: data.products?.data || [],
     };
-  } catch {
-    return null;
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return null;
+    }
+    log.error(`fetchRemotePatterns: error fetching patterns from ${url} — ${error.message}`);
+    return fetchErrorResult('patterns');
+  }
+}
+
+/**
+ * Checks query-index.json to confirm whether patterns.json already exists for a site.
+ */
+export async function queryIndexHasPatternsFile(site, log = console) {
+  const dataFolder = site.getConfig()?.getLlmoDataFolder();
+
+  if (!dataFolder) {
+    log.warn('queryIndexHasPatternsFile: no dataFolder configured for site, skipping query-index fetch');
+    return false;
+  }
+
+  const url = `https://main--project-elmo-ui-data--adobe.aem.live/${dataFolder}/query-index.json?limit=5000`;
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'spacecat-audit-worker',
+        Authorization: `token ${process.env.LLMO_HLX_API_KEY}`,
+      },
+    });
+
+    if (!res.ok) {
+      if (res.status !== 404) {
+        log.error(`queryIndexHasPatternsFile: failed to fetch query-index from ${url} — status ${res.status} ${res.statusText}`);
+        return fetchErrorResult('query-index', res.status);
+      }
+      return false;
+    }
+
+    const data = await res.json();
+    const paths = Array.isArray(data?.data) ? data.data : [];
+
+    return paths.some((entry) => entry?.path === `/${dataFolder}/agentic-traffic/patterns/patterns.json`);
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return false;
+    }
+    log.error(`queryIndexHasPatternsFile: error fetching query-index from ${url} — ${error.message}`);
+    return fetchErrorResult('query-index');
   }
 }
 

@@ -22,12 +22,13 @@ import {
   readFromSharePoint,
   uploadToSharePoint,
 } from '../utils/report-uploader.js';
-import { SPREADSHEET_COLUMNS } from '../faqs/utils.js';
+import {
+  RELATED_URLS_COLUMN_HEADER, RELATED_URLS_DELIMITER,
+  buildColumnMap, getColumn,
+} from '../faqs/utils.js';
 
 const WEEKS_TO_LOOK_BACK = 4;
 const MAX_URLS_TO_WRITE = 5;
-const CELL_DELIMITER = '; ';
-const RELATED_URLS_COLUMN_HEADER = 'Related URLs';
 
 function normalizeText(value) {
   return value
@@ -155,20 +156,19 @@ function updateWorksheetWithRelatedUrls(worksheet, promptRegionMap) {
 
   const totalDataRows = targetWorksheet.rowCount - 1;
   const rows = targetWorksheet.getRows(2, totalDataRows) || [];
-  const headerRow = targetWorksheet.getRow(1);
-  const headerValues = headerRow.values || [];
 
-  let relatedUrlsCol = 0;
-  for (let i = 1; i < headerValues.length; i += 1) {
-    const headerText = headerValues[i]?.toString?.().trim();
-    if (headerText && normalizeText(headerText) === normalizeText(RELATED_URLS_COLUMN_HEADER)) {
-      relatedUrlsCol = i;
-      break;
-    }
-  }
+  const colMap = buildColumnMap(targetWorksheet);
+  const promptCol = getColumn(colMap, 'Prompt');
+  const regionCol = getColumn(colMap, 'Region');
+  let relatedUrlsCol = getColumn(colMap, RELATED_URLS_COLUMN_HEADER);
 
   if (relatedUrlsCol === 0) {
-    relatedUrlsCol = Math.max(targetWorksheet.columnCount, headerValues.length - 1) + 1;
+    const headerRow = targetWorksheet.getRow(1);
+    const headerValues = headerRow?.values || [];
+    relatedUrlsCol = Math.max(
+      targetWorksheet.columnCount,
+      headerValues.length - 1,
+    ) + 1;
     targetWorksheet.getCell(1, relatedUrlsCol).value = RELATED_URLS_COLUMN_HEADER;
   }
 
@@ -178,8 +178,10 @@ function updateWorksheetWithRelatedUrls(worksheet, promptRegionMap) {
 
   rows.forEach((row) => {
     const targetRow = row;
-    const promptValue = targetRow.getCell(SPREADSHEET_COLUMNS.PROMPT).value;
-    const regionValue = targetRow.getCell(SPREADSHEET_COLUMNS.REGION).value;
+    const promptValue = promptCol
+      ? targetRow.getCell(promptCol).value : null;
+    const regionValue = regionCol
+      ? targetRow.getCell(regionCol).value : null;
     if (!promptValue) {
       return;
     }
@@ -195,7 +197,7 @@ function updateWorksheetWithRelatedUrls(worksheet, promptRegionMap) {
     }
 
     // Excel displays newlines in a single cell nicely across platforms.
-    targetRow.getCell(relatedUrlsCol).value = topUrls.join(CELL_DELIMITER);
+    targetRow.getCell(relatedUrlsCol).value = topUrls.join(RELATED_URLS_DELIMITER);
     updatedCount += 1;
   });
 

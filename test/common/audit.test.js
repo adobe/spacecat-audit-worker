@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -105,7 +103,7 @@ describe('Audit tests', () => {
 
     // Mock TierClient for entitlement checks
     const mockTierClient = {
-      checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+      checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: {} }),
     };
     sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
   });
@@ -239,7 +237,7 @@ describe('Audit tests', () => {
       const resp = await audit.run(message, context);
 
       expect(resp.status).to.equal(200);
-      expect(context.log.warn).to.have.been.calledWith('dummy audits disabled for site site-id, skipping...');
+      expect(context.log.debug).to.have.been.calledWith('dummy audits disabled for site site-id, skipping...');
     });
 
     it('audit runs as expected with post processors', async () => {

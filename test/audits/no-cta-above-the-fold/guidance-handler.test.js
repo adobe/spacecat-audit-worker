@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from "chai";
 import sinon from "sinon";
 import sinonChai from "sinon-chai";
@@ -105,6 +103,7 @@ describe("No CTA above the fold guidance handler", () => {
 
     Opportunity.create.resolves({
       getId: () => "oppty-123",
+      getType: () => "no-cta-above-the-fold",
     });
 
     const result = await handler(
@@ -141,6 +140,7 @@ describe("No CTA above the fold guidance handler", () => {
     Audit.findById.resolves(audit);
     Opportunity.create.resolves({
       getId: () => "oppty-123",
+      getType: () => "no-cta-above-the-fold",
     });
     context.site = { requiresValidation: true };
 
@@ -301,6 +301,7 @@ describe("No CTA above the fold guidance handler", () => {
 
     Opportunity.create.resolves({
       getId: () => "new-oppty",
+      getType: () => "no-cta-above-the-fold",
     });
 
     const result = await handler(

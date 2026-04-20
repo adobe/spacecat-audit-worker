@@ -20,7 +20,7 @@ import {
 import { getBrandGuidelines } from '../headings/shared-utils.js';
 import { saveIntermediateResults } from './utils.js';
 import SeoChecks from '../metatags/seo-checks.js';
-import { getDomElementSelector, toElementTargets } from '../utils/dom-selector.js';
+import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
 
 export const PREFLIGHT_HEADINGS = 'headings';
 
@@ -60,7 +60,9 @@ function getElementsFromCheck(scrapeJsonObject, check) {
       // Target the main content area where H1 should be added
       const mainElement = $('body > main').get(0) || $('body').get(0);
       const selector = getDomElementSelector(mainElement);
-      if (selector) selectors.push(selector);
+      if (selector) {
+        selectors.push(selector);
+      }
       break;
     }
 
@@ -78,7 +80,9 @@ function getElementsFromCheck(scrapeJsonObject, check) {
       const h1Element = $('h1').get(0);
       if (h1Element) {
         const selector = getDomElementSelector(h1Element);
-        if (selector) selectors.push(selector);
+        if (selector) {
+          selectors.push(selector);
+        }
       }
       break;
     }
@@ -97,29 +101,30 @@ function getElementsFromCheck(scrapeJsonObject, check) {
       break;
     }
 
+    // Resolve the element via its structural selector, disambiguate by text content,
+    // then re-generate a UE-aware selector
     case 'heading-order-invalid': {
-      // Use the selector from transformRules if available, otherwise find headings
-      if (check.transformRules?.selector) {
-        selectors.push(check.transformRules.selector);
-      } else {
-        // Find all headings and identify order violations
-        const allHeadings = $('h1, h2, h3, h4, h5, h6').toArray();
-        // For now, return all headings involved in order issues
-        // A more precise implementation could identify the specific violating heading
-        selectors = allHeadings
-          .map((h) => getDomElementSelector(h))
-          .filter(Boolean);
+      const oldSelector = check.transformRules?.selector;
+      if (oldSelector) {
+        let element = $(oldSelector).get(0);
+        const headingText = check.transformRules?.currValue?.trim();
+        if (element && headingText && $(element).text().trim() !== headingText) {
+          // Ambiguous selector matched the wrong element — find by text instead
+          const allMatches = $(oldSelector).toArray();
+          element = allMatches.find((h) => $(h).text().trim() === headingText) || element;
+        }
+        if (element) {
+          const selector = getDomElementSelector(element);
+          if (selector) {
+            selectors.push(selector);
+          }
+        }
       }
       break;
     }
 
     default:
-      // For other check types, try to extract from transformRules or selectors
-      if (check.selectors && Array.isArray(check.selectors)) {
-        selectors = check.selectors;
-      } else if (check.transformRules?.selector) {
-        selectors.push(check.transformRules.selector);
-      }
+      break;
   }
 
   return toElementTargets(selectors);
@@ -280,6 +285,11 @@ export default async function headings(context, auditContext) {
             if (elementData?.elements?.length > 0) {
               Object.assign(opportunity, elementData);
             }
+          }
+
+          const headingContent = check.transformRules?.currValue?.trim();
+          if (headingContent) {
+            opportunity.content = headingContent;
           }
 
           audit.opportunities.push(opportunity);

@@ -11,6 +11,7 @@ test-results.xml
 *.iml
 notes.loca.md
 .vscode/
+*.code-workspace
 .aws-sam/
 env.sh
 output.txt
@@ -31,3 +32,6 @@ credentials/
 
 # Claude local settings
 .claude/settings.local.json
+
+# Git worktrees
+.worktrees/

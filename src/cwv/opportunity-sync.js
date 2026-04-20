@@ -14,7 +14,20 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import calculateKpiDeltasForAudit from './kpi-metrics.js';
+import calculateKpiDeltasForAudit, { THRESHOLDS, METRICS, calculateConfidenceScore } from './kpi-metrics.js';
+
+/**
+ * Returns true if the CWV entry has at least one metric that exceeds the "good" threshold
+ * on any device type. Null/undefined metric values are treated as passing (no data = not failing).
+ * @param {Object} entry - CWV audit entry ({ metrics: [{lcp, cls, inp, ...}] })
+ * @returns {boolean}
+ */
+function hasFailingMetrics(entry) {
+  return entry.metrics.some((deviceMetrics) => METRICS.some((metric) => {
+    const value = deviceMetrics[metric];
+    return value !== null && value !== undefined && value > THRESHOLDS[metric];
+  }));
+}
 
 /**
  * Synchronizes opportunities and suggestions for a CWV audit
@@ -24,11 +37,17 @@ import calculateKpiDeltasForAudit from './kpi-metrics.js';
  */
 export async function syncOpportunitiesAndSuggestions(context) {
   const {
-    site, audit, finalUrl,
+    site, audit, finalUrl, log,
   } = context;
 
   const auditResult = audit.getAuditResult();
   const groupedURLs = site.getConfig().getGroupedURLs(Audit.AUDIT_TYPES.CWV);
+
+  // Only sync suggestions for pages where at least one CWV metric is failing.
+  // Pages where all metrics pass are not actionable. Data is already sorted by
+  // page views descending from step 1.
+  const cwvData = auditResult.cwv.filter(hasFailingMetrics);
+  log.info(`[syncOpportunitiesAndSuggestions] site ${site.getId()} - ${cwvData.length} of ${auditResult.cwv.length} CWV entries have failing metrics`);
 
   // Build minimal audit data object for opportunity creation
   const auditData = {
@@ -49,29 +68,37 @@ export async function syncOpportunitiesAndSuggestions(context) {
 
   // Sync suggestions
   const buildKey = (data) => (data.type === 'url' ? data.url : data.pattern);
-  const maxOrganicForUrls = Math.max(
-    ...auditResult.cwv.filter((entry) => entry.type === 'url').map((entry) => entry.pageviews),
+  const maxConfidenceForUrls = Math.max(
+    0,
+    ...cwvData.filter((entry) => entry.type === 'url').map((entry) => calculateConfidenceScore(entry)),
   );
 
   await syncSuggestions({
     opportunity,
-    newData: auditResult.cwv,
+    newData: cwvData,
     context,
     buildKey,
+    bypassValidationForPlg: true,
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
       type: 'CODE_CHANGE',
       // the rank logic for CWV is as follows:
-      // 1. if the entry is a group, then the rank is the max organic for URLs
-      //   plus the organic for the group
-      // 2. if the entry is a URL, then the rank is the max organic for URLs
-      // Reason is because UI first shows groups and then URLs
-      rank: entry.type === 'group' ? maxOrganicForUrls + entry.organic : entry.organic,
+      // 1. if the entry is a group, then the rank is the max confidence for URLs
+      //   plus the confidence for the group (ensures groups sort before URLs,
+      //   because the UI shows groups first)
+      // 2. if the entry is a URL, then the rank is the confidence score for that URL
+      rank: entry.type === 'group'
+        ? maxConfidenceForUrls + calculateConfidenceScore(entry)
+        : calculateConfidenceScore(entry),
       data: {
         ...entry,
+        jiraLink: '',
       },
     }),
   });
+
+  opportunity.setLastAuditedAt(new Date().toISOString());
+  await opportunity.save();
 
   return opportunity;
 }

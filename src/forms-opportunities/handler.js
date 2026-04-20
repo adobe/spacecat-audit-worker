@@ -16,13 +16,17 @@ import { FORMS_AUDIT_INTERVAL } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import {
-  checkDynamoItem, generateOpptyData, getUrlsDataForAccessibilityAudit,
+  checkDynamoItem,
+  generateOpptyData,
+  getUrlsDataForAccessibilityAudit,
+  sendMessageToMystiqueForGuidance,
 } from './utils.js';
 import { getScrapedDataForSiteId } from '../support/utils.js';
 import createLowConversionOpportunities from './oppty-handlers/low-conversion-handler.js';
 import createLowNavigationOpportunities from './oppty-handlers/low-navigation-handler.js';
 import createLowViewsOpportunities from './oppty-handlers/low-views-handler.js';
 import { createAccessibilityOpportunity } from './oppty-handlers/accessibility-handler.js';
+import { FORM_OPPORTUNITY_TYPES, OPPTY_OPTIONS_SKIP_AUDIT } from './constants.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const FORMS_OPPTY_QUERIES = [
@@ -52,10 +56,49 @@ export async function formsAuditRunner(auditUrl, context) {
   };
 }
 
+const EXPERIMENTAL_OPPORTUNITIES = new Set([
+  FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+  FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION,
+  FORM_OPPORTUNITY_TYPES.LOW_VIEWS,
+]);
+
+export async function sendExistingOpportunitiesToMystique(context) {
+  const {
+    site, log, dataAccess,
+  } = context;
+  const { Opportunity } = dataAccess;
+  const siteId = site.getId();
+
+  log.info(`[Form Opportunity] [Site Id: ${siteId}] skipAudit: fetching existing opportunities to send to Mystique`);
+
+  const opportunities = await Opportunity.allBySiteId(siteId);
+  const eligibleOpportunities = opportunities.filter(
+    (oppty) => EXPERIMENTAL_OPPORTUNITIES.has(oppty.getType()),
+  );
+
+  log.info(`[Form Opportunity] [Site Id: ${siteId}] skipAudit: found ${eligibleOpportunities.length} eligible opportunities to send`);
+
+  for (const opportunity of eligibleOpportunities) {
+    // eslint-disable-next-line no-await-in-loop
+    await sendMessageToMystiqueForGuidance(context, opportunity, { skipGuidance: true });
+    log.debug(`[Form Opportunity] [Site Id: ${siteId}] skipAudit: sent ${opportunity.getType()} opportunity ${opportunity.getId()} to Mystique`);
+  }
+
+  log.info(`[Form Opportunity] [Site Id: ${siteId}] skipAudit: finished sending ${eligibleOpportunities.length} opportunities to Mystique`);
+
+  return {
+    status: 'complete',
+  };
+}
+
 export async function runAuditAndSendUrlsForScrapingStep(context) {
   const {
     site, log, finalUrl, dataAccess, data,
   } = context;
+
+  if (data === OPPTY_OPTIONS_SKIP_AUDIT) {
+    return sendExistingOpportunitiesToMystique(context);
+  }
 
   const { SiteTopForm } = dataAccess;
   const topForms = await SiteTopForm.allBySiteId(site.getId());
@@ -73,10 +116,14 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     const formsourceGroups = {};
     formVitals.forEach((entry) => {
       const { formsource } = entry;
-      if (!formsource) return;
+      if (!formsource) {
+        return;
+      }
 
       const totalPageview = Object.values(entry.pageview).reduce((sum, val) => sum + val, 0);
-      if (!formsourceGroups[formsource]) formsourceGroups[formsource] = [];
+      if (!formsourceGroups[formsource]) {
+        formsourceGroups[formsource] = [];
+      }
       formsourceGroups[formsource].push({ entry, totalPageview });
     });
 

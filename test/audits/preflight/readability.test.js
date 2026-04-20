@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
@@ -108,7 +106,7 @@ describe('Preflight Readability Audit', () => {
       TierClient.createForSite.restore();
     }
     const mockTierClient = {
-      checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+      checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
     };
     sinon.stub(TierClient, 'createForSite').returns(mockTierClient);
   });
@@ -606,6 +604,7 @@ describe('Preflight Readability Audit', () => {
       // Mock existing opportunity with no suggestions
       const mockOpportunity = {
         getAuditId: () => 'job-123',
+        getType: () => 'readability',
         getData: () => ({ subType: 'readability' }),
         getSuggestions: sinon.stub().resolves([]),
       };
@@ -1317,6 +1316,7 @@ describe('Preflight Readability Audit', () => {
 
       const mockOpportunity = {
         getAuditId: () => 'job-123',
+        getType: () => 'readability',
         getData: () => ({ subType: 'readability' }),
         getSuggestions: sinon.stub().resolves([mockSuggestion]),
       };
@@ -1408,6 +1408,7 @@ describe('Preflight Readability Audit', () => {
 
       const mockOpportunity = {
         getAuditId: () => 'job-123',
+        getType: () => 'readability',
         getData: () => ({ subType: 'readability' }),
         getSuggestions: sinon.stub().resolves([mockSuggestion]),
       };
@@ -1578,6 +1579,7 @@ describe('Preflight Readability Audit', () => {
 
       const mockOpportunity = {
         getAuditId: () => 'job-123',
+        getType: () => 'readability',
         getData: () => ({ subType: 'readability' }),
         getSuggestions: sinon.stub().resolves([mockSuggestion]),
       };
@@ -1634,6 +1636,7 @@ describe('Preflight Readability Audit', () => {
 
       const mockOpportunity = {
         getAuditId: () => 'job-123',
+        getType: () => 'readability',
         getData: () => ({ subType: 'readability' }),
         getSuggestions: sinon.stub().resolves([mockSuggestion]),
       };
@@ -1694,6 +1697,7 @@ describe('Preflight Readability Audit', () => {
 
       const mockOpportunity = {
         getAuditId: () => 'job-123',
+        getType: () => 'readability',
         getData: () => ({ subType: 'readability' }),
         getSuggestions: sinon.stub().resolves([mockSuggestion]),
       };
@@ -1873,6 +1877,7 @@ describe('Preflight Readability Audit', () => {
       // Create a mock opportunity that exists so checkForExistingSuggestions runs
       const mockOpportunity = {
         getAuditId: () => 'job-123',
+        getType: () => 'readability',
         getData: () => ({ subType: 'readability' }),
         getSuggestions: sinon.stub().callsFake(async () => {
           // Mark some suggestions as processing to trigger Mystique call
@@ -1940,6 +1945,7 @@ describe('Preflight Readability Audit', () => {
       // Mock for checkForExistingSuggestions
       const mockOpportunity = {
         getAuditId: () => 'job-123',
+        getType: () => 'readability',
         getData: () => ({ subType: 'readability' }),
         getSuggestions: sinon.stub().resolves([]),
       };
@@ -2003,6 +2009,7 @@ describe('Preflight Readability Audit', () => {
       // Mock for checkForExistingSuggestions
       const mockOpportunity = {
         getAuditId: () => 'job-123',
+        getType: () => 'readability',
         getData: () => ({ subType: 'readability' }),
         getSuggestions: sinon.stub().resolves([]),
       };

@@ -11,118 +11,173 @@
  */
 /* eslint-disable no-await-in-loop */
 
-import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
-  getS3Config,
   loadSql,
   generateReportingPeriods,
   fetchRemotePatterns,
+  queryIndexHasPatternsFile,
   getConfigCategories,
 } from './utils/report-utils.js';
-import { pathHasData } from '../utils/cdn-utils.js';
+import {
+  pathHasData,
+  getS3Config,
+  getCdnAwsRuntime,
+} from '../utils/cdn-utils.js';
 import { runWeeklyReport } from './utils/report-runner.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 import { createLLMOSharepointClient, bulkPublishToAdminHlx } from '../utils/report-uploader.js';
 import { getConfigs } from './constants/report-configs.js';
 import { generatePatternsWorkbook } from './patterns/patterns-uploader.js';
+import {
+  runDailyAgenticExport,
+} from './agentic-daily-export.js';
 
 async function runCdnLogsReport(url, context, site, auditContext) {
   const { log } = context;
-  const s3Config = await getS3Config(site, context);
-  log.debug(`Starting CDN logs report audit for ${url}`);
+  const isDailyDateRun = Boolean(auditContext?.date);
+  const isWeeklyOnlyRun = auditContext?.weekOffset !== undefined;
 
-  const sharepointClient = await createLLMOSharepointClient(
-    context,
-    auditContext?.sharepointOptions,
+  const awsRuntime = getCdnAwsRuntime(site, context);
+  const { s3Client } = awsRuntime;
+  const s3Config = getS3Config(site, context);
+  log.debug(`Starting CDN logs report audit for ${url}`);
+  const sharepointClient = isDailyDateRun
+    ? null
+    : await createLLMOSharepointClient(
+      context,
+      auditContext?.sharepointOptions,
+    );
+  const athenaClient = awsRuntime.createAthenaClient(
+    s3Config.getAthenaTempLocation(),
+    {
+      pollIntervalMs: 3000,
+      maxPollAttempts: 250,
+    },
   );
-  const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation(), {
-    pollIntervalMs: 3000,
-    maxPollAttempts: 250,
-  });
   const siteId = site.getId();
-  const reportConfigs = getConfigs(s3Config.bucket, s3Config.customerDomain, siteId);
+  const reportConfigs = getConfigs(s3Config.bucket, s3Config.siteKey, siteId);
+  const agenticReportConfig = reportConfigs.find((config) => config.name === 'agentic');
 
   const results = [];
   const reportsToPublish = [];
-  for (const reportConfig of reportConfigs) {
-    // eslint-disable-next-line no-await-in-loop
-    if (!(await pathHasData(context.s3Client, reportConfig.aggregatedLocation))) {
-      log.info(`No data found for ${reportConfig.name} report - skipping`);
-      // eslint-disable-next-line no-continue
-      continue;
-    }
-
-    if (results.length === 0) {
+  if (!isDailyDateRun) {
+    for (const reportConfig of reportConfigs) {
       // eslint-disable-next-line no-await-in-loop
-      const sqlDb = await loadSql('create-database', { database: s3Config.databaseName });
-      // eslint-disable-next-line no-await-in-loop
-      await athenaClient.execute(sqlDb, s3Config.databaseName, `[Athena Query] Create database ${s3Config.databaseName}`);
-    }
+      if (!(await pathHasData(s3Client, reportConfig.aggregatedLocation))) {
+        log.info(`No data found for ${reportConfig.name} report - skipping`);
+        // eslint-disable-next-line no-continue
+        continue;
+      }
 
-    const isMonday = new Date().getUTCDay() === 1;
-    // If weekOffset is not provided, run for both week 0 and -1 on Monday and
-    // on non-Monday, run for current week. Otherwise, run for the provided weekOffset
-    let weekOffsets;
-    if (auditContext?.weekOffset !== undefined) {
-      weekOffsets = [auditContext.weekOffset];
-    } else if (isMonday) {
-      weekOffsets = [-1, 0];
-    } else {
-      weekOffsets = [0];
-    }
+      if (results.length === 0) {
+        // eslint-disable-next-line no-await-in-loop
+        const sqlDb = await loadSql('create-database', { database: s3Config.databaseName });
+        // eslint-disable-next-line no-await-in-loop
+        await athenaClient.execute(sqlDb, s3Config.databaseName, `[Athena Query] Create database ${s3Config.databaseName}`);
+      }
 
-    if (reportConfig.name === 'agentic') {
-      const existingPatterns = await fetchRemotePatterns(site);
+      const isMonday = new Date().getUTCDay() === 1;
+      // If weekOffset is not provided, run for both week 0 and -1 on Monday and
+      // on non-Monday, run for current week. Otherwise, run for the provided weekOffset
+      let weekOffsets;
+      if (auditContext?.weekOffset !== undefined) {
+        weekOffsets = [auditContext.weekOffset];
+      } else if (isMonday) {
+        weekOffsets = [-1, 0];
+      } else {
+        weekOffsets = [0];
+      }
 
-      if (!existingPatterns || auditContext?.categoriesUpdated) {
-        log.info('Patterns not found, generating patterns workbook...');
-        const periods = generateReportingPeriods(new Date(), weekOffsets[0]);
-        const configCategories = await getConfigCategories(site, context);
+      if (reportConfig.name === 'agentic') {
+        const dataFolder = site.getConfig()?.getLlmoDataFolder();
+        const existingPatterns = await fetchRemotePatterns(site, log);
+        const queryIndexPatternsExists = !existingPatterns
+          ? await queryIndexHasPatternsFile(site, log)
+          : false;
 
-        await generatePatternsWorkbook({
-          site,
-          context,
+        const shouldSkipGeneration = existingPatterns?.error
+          || queryIndexPatternsExists?.error
+          || (!existingPatterns && queryIndexPatternsExists);
+
+        if (shouldSkipGeneration) {
+          log.info(`Skipping fresh patterns generation for ${dataFolder}`);
+        } else if (!existingPatterns || auditContext?.categoriesUpdated) {
+          log.info('Patterns not found, generating patterns workbook...');
+          const periods = generateReportingPeriods(new Date(), weekOffsets[0]);
+          const configCategories = await getConfigCategories(site, context);
+
+          await generatePatternsWorkbook({
+            site,
+            context,
+            athenaClient,
+            s3Config: {
+              ...s3Config,
+              tableName: reportConfig.tableName,
+            },
+            periods,
+            sharepointClient,
+            configCategories,
+            existingPatterns,
+          });
+        }
+      }
+
+      log.debug(`Running weekly report: ${reportConfig.name}...`);
+
+      for (const weekOffset of weekOffsets) {
+        // eslint-disable-next-line no-await-in-loop
+        const result = await runWeeklyReport({
           athenaClient,
-          s3Config: {
-            ...s3Config,
-            tableName: reportConfig.tableName,
-          },
-          periods,
+          s3Config,
+          reportConfig,
+          log,
+          site,
           sharepointClient,
-          configCategories,
-          existingPatterns,
+          weekOffset,
+          context,
+        });
+
+        if (result.success && result.uploadResult) {
+          reportsToPublish.push(result.uploadResult);
+        }
+
+        results.push({
+          name: reportConfig.name,
+          table: reportConfig.tableName,
+          database: s3Config.databaseName,
+          customer: s3Config.siteName,
+          success: result.success,
+          weekOffset,
         });
       }
     }
+  }
 
-    log.debug(`Running weekly report: ${reportConfig.name}...`);
-
-    for (const weekOffset of weekOffsets) {
-      // eslint-disable-next-line no-await-in-loop
-      const result = await runWeeklyReport({
-        athenaClient,
-        s3Config,
-        reportConfig,
-        log,
-        site,
-        sharepointClient,
-        weekOffset,
-        context,
-      });
-
-      if (result.success && result.uploadResult) {
-        reportsToPublish.push(result.uploadResult);
+  let dailyAgenticExport;
+  if (!isWeeklyOnlyRun) {
+    if (!agenticReportConfig) {
+      log.debug(`Skipping daily agentic export for ${siteId}: agentic report config not found`);
+    } else {
+      try {
+        dailyAgenticExport = await runDailyAgenticExport({
+          athenaClient,
+          s3Client,
+          s3Config,
+          site,
+          context,
+          reportConfig: agenticReportConfig,
+          ...(auditContext?.date ? { referenceDate: new Date(auditContext.date) } : {}),
+        });
+      } catch (error) {
+        context.log.error(`Failed daily agentic export for site ${siteId}: ${error.message}`, error);
+        dailyAgenticExport = {
+          enabled: true,
+          success: false,
+          siteId,
+          error: error.message,
+        };
       }
-
-      results.push({
-        name: reportConfig.name,
-        table: reportConfig.tableName,
-        database: s3Config.databaseName,
-        customer: s3Config.customerName,
-        success: result.success,
-        weekOffset,
-      });
     }
   }
 
@@ -137,6 +192,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
 
   return {
     auditResult: results,
+    dailyAgenticExport,
     fullAuditRef: `${site.getConfig()?.getLlmoDataFolder()}`,
   };
 }

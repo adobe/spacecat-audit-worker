@@ -14,7 +14,12 @@ import { isNonEmptyObject, isValidUUID } from '@adobe/spacecat-shared-utils';
 import { AsyncJob, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { StepAudit } from './step-audit.js';
-import { sendContinuationMessage, isAuditEnabledForSite } from './audit-utils.js';
+import {
+  sendContinuationMessage,
+  isAuditEnabledForSite,
+  preserveOnDemand,
+  preserveSlackContext,
+} from './audit-utils.js';
 
 const { AUDIT_STEP_DESTINATION_CONFIGS } = AuditModel;
 
@@ -41,7 +46,10 @@ export class AsyncJobRunner extends StepAudit {
 
     const destination = AUDIT_STEP_DESTINATION_CONFIGS[step.destination];
     const nextStepName = this.getNextStepName(step.name);
+
     const auditContext = {
+      ...preserveOnDemand(context.auditContext),
+      ...preserveSlackContext(context.auditContext),
       next: nextStepName,
       jobId: job.getId(),
       auditType: type,
@@ -83,7 +91,7 @@ export class AsyncJobRunner extends StepAudit {
       const site = await this.siteProvider(siteId, context);
 
       if (!(await isAuditEnabledForSite(type, site, context))) {
-        log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
+        log.debug(`${type} audits disabled for site ${siteId}, skipping...`);
         job.setStatus(AsyncJob.Status.CANCELLED);
         job.setMetadata({
           payload: {
@@ -98,8 +106,9 @@ export class AsyncJobRunner extends StepAudit {
       const stepName = auditContext.next || stepNames[0];
       const isLastStep = stepName === stepNames[stepNames.length - 1];
       const step = this.getStep(stepName);
+
       const updatedStepContext = {
-        ...context, site, job, type,
+        ...context, site, job, type, auditContext,
       };
 
       updatedStepContext.finalUrl = await this.urlResolver(site, context);
