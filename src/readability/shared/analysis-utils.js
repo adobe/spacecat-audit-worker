@@ -124,10 +124,8 @@ async function analyzeTextReadability(
   scrapedAt,
 ) {
   try {
-    const normalized = normalizeReadabilityText(text);
-
     // Check if text is in a supported language
-    const detectedLanguage = getSupportedLanguage(normalized);
+    const detectedLanguage = getSupportedLanguage(text);
     if (!detectedLanguage) {
       return null; // Skip unsupported languages
     }
@@ -138,22 +136,22 @@ async function analyzeTextReadability(
     // Calculate readability score
     let readabilityScore;
     if (detectedLanguage === 'english') {
-      readabilityScore = rs.fleschReadingEase(normalized);
+      readabilityScore = rs.fleschReadingEase(text);
     } else {
-      readabilityScore = await calculateReadabilityScore(normalized, detectedLanguage);
+      readabilityScore = await calculateReadabilityScore(text, detectedLanguage);
     }
 
     // Check if readability is poor
     if (readabilityScore < TARGET_READABILITY_SCORE) {
       // Truncate text for display
-      const displayText = normalized.length > MAX_CHARACTERS_DISPLAY
-        ? `${normalized.substring(0, MAX_CHARACTERS_DISPLAY)}...`
-        : normalized;
+      const displayText = text.length > MAX_CHARACTERS_DISPLAY
+        ? `${text.substring(0, MAX_CHARACTERS_DISPLAY)}...`
+        : text;
 
       // Calculate priority rank
       const trafficWeight = traffic || 0;
       const readabilityWeight = TARGET_READABILITY_SCORE - readabilityScore;
-      const contentLengthWeight = Math.min(normalized.length, 1000) / 1000;
+      const contentLengthWeight = Math.min(text.length, 1000) / 1000;
       const rank = (readabilityWeight * 0.5) + (trafficWeight * 0.0001)
         + (contentLengthWeight * 0.1);
 
@@ -161,7 +159,7 @@ async function analyzeTextReadability(
         pageUrl,
         scrapedAt,
         selector,
-        textContent: normalized,
+        textContent: text,
         displayText,
         fleschReadingEase: Math.round(readabilityScore * 100) / 100,
         language: detectedLanguage,
@@ -201,9 +199,6 @@ const getMeaningfulElementsForReadability = ($) => {
   });
 };
 
-/**
- * Analyzes readability for a single page's content
- */
 /**
  * Analyzes the readability of HTML page content and returns an array of readability issue objects
  * for text elements with poor readability.

@@ -201,10 +201,8 @@ export default async function readability(context, auditContext) {
     // Helper function to calculate readability score and create audit opportunity
     const analyzeReadability = async (text, element, elementIndex) => {
       try {
-        const normalized = normalizeReadabilityText(text);
-
         // Check if text is in a supported language before analyzing readability
-        const detectedLanguage = getSupportedLanguage(normalized);
+        const detectedLanguage = getSupportedLanguage(text);
         if (!detectedLanguage) {
           return; // Skip unsupported languages
         }
@@ -215,18 +213,18 @@ export default async function readability(context, auditContext) {
         // Use text-readability library for English, custom function for other languages
         let readabilityScore;
         if (detectedLanguage === 'english') {
-          readabilityScore = rs.fleschReadingEase(normalized);
+          readabilityScore = rs.fleschReadingEase(text);
         } else {
-          readabilityScore = await calculateReadabilityScore(normalized, detectedLanguage);
+          readabilityScore = await calculateReadabilityScore(text, detectedLanguage);
         }
 
         if (readabilityScore < TARGET_READABILITY_SCORE) {
           poorReadabilityCount += 1;
 
           // Truncate text for display
-          const displayText = normalized.length > MAX_CHARACTERS_DISPLAY
-            ? `${normalized.substring(0, MAX_CHARACTERS_DISPLAY)}...`
-            : normalized;
+          const displayText = text.length > MAX_CHARACTERS_DISPLAY
+            ? `${text.substring(0, MAX_CHARACTERS_DISPLAY)}...`
+            : text;
 
           const issueText = `Text element is difficult to read: "${displayText}"`;
 
@@ -238,7 +236,7 @@ export default async function readability(context, auditContext) {
             fleschReadingEase: readabilityScore,
             language: detectedLanguage,
             seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
-            textContent: normalized, // Store normalized text for AI processing
+            textContent: text, // Store normalized text for AI processing
             ...toElementTargets(selector),
           });
         }
@@ -302,7 +300,7 @@ export default async function readability(context, auditContext) {
             return tempDiv.text();
           })
           .map((p) => normalizeReadabilityText(p))
-          .filter((p) => p.length >= MIN_TEXT_LENGTH);
+          .filter((p) => p.length >= MIN_TEXT_LENGTH && /\s/.test(p));
 
         // Add promises for each paragraph
         paragraphs.forEach((paragraph) => {
