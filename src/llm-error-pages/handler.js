@@ -154,7 +154,7 @@ export async function runAuditAndSendToMystique(context) {
     const filters = site.getConfig()?.getLlmoCdnlogsFilter?.() || [];
     const siteFilters = buildSiteFilters(filters, site);
     const sharepointClient = await createLLMOSharepointClient(context);
-    const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.customerName;
+    const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.siteName;
     const outputLocation = `${llmoFolder}/agentic-traffic`;
     const {
       dataAccess, sqs, env, audit,
@@ -303,7 +303,7 @@ export async function runAuditAndSendToMystique(context) {
           },
           database: s3Config.databaseName,
           table: s3Config.tableName,
-          customer: s3Config.customerName,
+          customer: s3Config.siteName,
           totalErrors: processedResults.totalErrors,
           summary: processedResults.summary,
           errorPages: processedResults.errorPages,
@@ -338,7 +338,7 @@ export async function runAuditAndSendToMystique(context) {
         error: error.message,
         database: s3Config?.databaseName,
         table: s3Config?.tableName,
-        customer: s3Config?.customerName,
+        customer: s3Config?.siteName,
       }],
       fullAuditRef: url,
     };

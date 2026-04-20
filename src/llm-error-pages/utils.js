@@ -69,7 +69,7 @@ export function normalizeUserAgentToProvider(rawUserAgent) {
     return 'Unknown';
   }
 
-  if (/chatgpt|gptbot|oai-searchbot/i.test(rawUserAgent)) {
+  if (/chatgpt|gptbot|oai-searchbot|oai-adsbot/i.test(rawUserAgent)) {
     return 'ChatGPT';
   }
   if (/perplexity/i.test(rawUserAgent)) {

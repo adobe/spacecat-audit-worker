@@ -81,6 +81,30 @@ function shouldPreserveDomainWideSuggestion(suggestion) {
 }
 
 /**
+ * Diagnostic: detects and warns if any non-NEW suggestions have edgeDeployed set.
+ * This should never happen — edgeDeployed is set when a URL is deployed at the CDN edge,
+ * and the suggestion status should not be changed away from NEW after that point.
+ * @param {Object} dataAccess - Data access layer
+ * @param {string} siteId - Site ID to look up the opportunity
+ * @param {string} auditUrl - Base URL for log context
+ * @param {Object} log - Logger
+ */
+async function detectWrongEdgeDeployedStatus(dataAccess, siteId, auditUrl, log) {
+  const opportunities = await dataAccess?.Opportunity?.allBySiteIdAndStatus?.(siteId, 'NEW') ?? [];
+  const opportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
+  if (!opportunity) {
+    return;
+  }
+  const suggestions = await opportunity.getSuggestions?.() ?? [];
+  const count = suggestions.filter(
+    (s) => s.getStatus() !== Suggestion.STATUSES.NEW && s.getData()?.edgeDeployed,
+  ).length;
+  if (count > 0) {
+    log.warn(`${LOG_PREFIX} Unexpected non-NEW suggestions with edgeDeployed set. baseUrl=${auditUrl}, siteId=${siteId}, nonNewEdgeDeployedCount=${count}`);
+  }
+}
+
+/**
  * Checks if the domain-wide suggestion (isDomainWide=true) has edgeDeployed set.
  * @param {Object} opportunity - The opportunity object
  * @returns {Promise<boolean>}
@@ -134,7 +158,10 @@ async function markDeployedUrlSuggestionsAsCovered(
   }
 
   const suggestionsToCover = deployedAtEdgeUrls?.size > 0
-    ? newSuggestions.filter((s) => deployedAtEdgeUrls.has(s.getData()?.url))
+    ? newSuggestions.filter((s) => {
+      const data = s.getData();
+      return deployedAtEdgeUrls.has(data?.url) && !data?.edgeDeployed;
+    })
     : [];
 
   if (suggestionsToCover.length === 0) {
@@ -604,6 +631,7 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
     const queue = env.QUEUE_SPACECAT_TO_MYSTIQUE;
     await sqs.sendMessage(queue, {
       type: 'guidance:prerender',
+      url: baseUrl,
       siteId,
       auditId,
       deliveryType,
@@ -1157,19 +1185,13 @@ export async function processOpportunityAndSuggestions(
     suggestions=${preRenderSuggestions.length},
     totalSuggestions=${allSuggestions.length},`);
 
-  // Fetch saved suggestions to map URL → suggestionId for Mystique payload.
-  // suggestionId is required by Mystique to correlate AI summaries back to the right suggestion.
-  const savedSuggestions = await opportunity.getSuggestions();
-  const urlToSuggestionId = new Map(
-    savedSuggestions.map((s) => [s.getData()?.url, s.getId()]),
-  );
-
-  // Build Mystique candidates directly from the URL list processed in this audit run.
-  // Domain-wide suggestions are intentionally excluded; Mystique needs individual URLs.
+  // Build Mystique candidates from individual URLs (domain-wide excluded).
+  // The guidance handler matches Mystique responses back to suggestions by URL,
+  // so sending the URL as suggestionId is sufficient and avoids a post-sync DB fetch.
   const auditRunCandidates = preRenderSuggestions.reduce((acc, s) => {
     try {
       acc.push({
-        suggestionId: urlToSuggestionId.get(s.url),
+        suggestionId: s.url,
         url: s.url,
         originalHtmlMarkdownKey: getS3Path(s.url, auditData.scrapeJobId, 'server-side-html.md'),
         markdownDiffKey: getS3Path(s.url, auditData.scrapeJobId, 'markdown-diff.md'),
@@ -1512,6 +1534,10 @@ export async function processContentAndGenerateOpportunities(context) {
   const siteId = site.getId();
   const startTime = process.hrtime();
   const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
+
+  // Diagnostic: detect non-NEW suggestions with edgeDeployed before syncing.
+  // Runs unconditionally so audits with no prerender findings still catch pre-existing issues.
+  await detectWrongEdgeDeployedStatus(dataAccess, siteId, site.getBaseURL(), log);
 
   // Check if this is a paid LLMO customer early so we can use it in all logs
   const isPaid = await isPaidLLMOCustomer(context);
