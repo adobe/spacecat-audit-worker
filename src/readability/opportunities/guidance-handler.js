@@ -74,6 +74,9 @@ function mapBatchResultToSuggestionData(item) {
     return null;
   }
   const { data } = item;
+  if (data.should_exclude) {
+    return null;
+  }
   if (!data.improved_paragraph || data.improved_paragraph.trim() === '') {
     return null;
   }

@@ -145,11 +145,30 @@ const collapseWhitespace = (text) => text.replace(/\s+/g, ' ');
  * @param {Cheerio} $ - The Cheerio object to search for text elements.
  * @returns {Element[]} Array of meaningful text elements for readability analysis and enhancement.
  */
+const NAV_CLASS_PATTERNS = ['nav', 'menu', 'breadcrumb', 'filter', 'pagination', 'sidebar', 'review', 'rating', 'promo', 'banner', 'cookie'];
+
 const getMeaningfulElementsForReadability = ($) => {
-  $('header, footer, style, script, noscript').remove();
+  $('header, footer, nav, aside, [role="navigation"], [role="complementary"], style, script, noscript').remove();
   return $('p, blockquote, li, div').toArray().filter((el) => {
     const text = $(el).text()?.trim();
-    return text && collapseWhitespace(text).length >= MIN_TEXT_LENGTH;
+    if (!text || collapseWhitespace(text).length < MIN_TEXT_LENGTH) {
+      return false;
+    }
+
+    const cls = (el.attribs?.class || '').toLowerCase();
+    const id = (el.attribs?.id || '').toLowerCase();
+    if (NAV_CLASS_PATTERNS.some((p) => cls.includes(p) || id.includes(p))) {
+      return false;
+    }
+
+    const $el = $(el);
+    const linkTextLength = collapseWhitespace($el.find('a').text().trim()).length;
+    const totalLength = collapseWhitespace(text).length;
+    if (totalLength > 0 && linkTextLength / totalLength > 0.5) {
+      return false;
+    }
+
+    return true;
   });
 };
 

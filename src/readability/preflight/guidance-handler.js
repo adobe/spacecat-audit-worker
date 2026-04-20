@@ -92,31 +92,37 @@ export default async function handler(message, context) {
   // Process different response formats from Mystique
   let mappedSuggestions = [];
 
-  // Check if we have direct improved paragraph data (single response)
-  if (data?.improved_paragraph && data?.improved_flesch_score) {
-    mappedSuggestions.push({
-      id: `readability-${auditId}-${messageId}`,
-      pageUrl: data.pageUrl || auditUrl,
-      originalText: data.original_paragraph,
-      improvedText: data.improved_paragraph,
-      originalFleschScore: data.current_flesch_score,
-      improvedFleschScore: data.improved_flesch_score,
-      seoRecommendation: data.seo_recommendation,
-      aiRationale: data.ai_rationale,
-      targetFleschScore: data.target_flesch_score,
+  // If AI classifier excluded this content, skip suggestion mapping but still count the response
+  const isAiExcluded = data?.should_exclude === true;
 
-    });
-  } else if (suggestions && suggestions.length > 0) {
-    // Check if we have suggestions array (batch response)
-    mappedSuggestions = mapMystiqueSuggestionsToOpportunityFormat(suggestions);
-  } else if (data?.guidance && data.guidance.length > 0) {
-    // Check if we have guidance array (alternative format)
-    mappedSuggestions = mapMystiqueSuggestionsToOpportunityFormat(data.guidance);
-  }
+  if (!isAiExcluded) {
+    // Check if we have direct improved paragraph data (single response)
+    if (data?.improved_paragraph && data?.improved_flesch_score) {
+      mappedSuggestions.push({
+        id: `readability-${auditId}-${messageId}`,
+        pageUrl: data.pageUrl || auditUrl,
+        originalText: data.original_paragraph,
+        improvedText: data.improved_paragraph,
+        originalFleschScore: data.current_flesch_score,
+        improvedFleschScore: data.improved_flesch_score,
+        seoRecommendation: data.seo_recommendation,
+        aiRationale: data.ai_rationale,
+        targetFleschScore: data.target_flesch_score,
+      });
+    } else if (suggestions && suggestions.length > 0) {
+      // Check if we have suggestions array (batch response)
+      mappedSuggestions = mapMystiqueSuggestionsToOpportunityFormat(suggestions);
+    } else if (data?.guidance && data.guidance.length > 0) {
+      // Check if we have guidance array (alternative format)
+      mappedSuggestions = mapMystiqueSuggestionsToOpportunityFormat(data.guidance);
+    }
 
-  if (mappedSuggestions.length === 0) {
-    log.warn(`[readability-suggest guidance]: No valid readability improvements found in Mystique response for siteId: ${siteId}`);
-    return ok();
+    if (mappedSuggestions.length === 0) {
+      log.warn(`[readability-suggest guidance]: No valid readability improvements found in Mystique response for siteId: ${siteId}`);
+      return ok();
+    }
+  } else {
+    log.info(`[readability-suggest guidance]: Content excluded by AI classifier for siteId: ${siteId}, reason: ${data.exclusion_reason}`);
   }
 
   // Update job metadata with response tracking (preflight audit pattern)
