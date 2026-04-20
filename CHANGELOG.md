@@ -1,3 +1,10 @@
+## [1.417.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.417.2...v1.417.3) (2026-04-20)
+
+
+### Bug Fixes
+
+* **deps:** update dependency uuid to v14 ([#2402](https://github.com/adobe/spacecat-audit-worker/issues/2402)) ([bb59b89](https://github.com/adobe/spacecat-audit-worker/commit/bb59b89241b885a2a3128e83fbd28e496ddbf273))
+
 ## [1.417.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.417.1...v1.417.2) (2026-04-20)
 
 
