@@ -13,7 +13,7 @@ import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { randomUUID } from 'crypto';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
-import { createPaidLogger } from '../paid/paid-log.js';
+import { createTrafficLogger } from '../common/traffic-log.js';
 import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 const GUIDANCE_TYPE = 'guidance:email-traffic-analysis';
@@ -101,7 +101,7 @@ export default async function handler(message, context) {
   const { Audit, Opportunity, Suggestion } = dataAccess;
   const { auditId, siteId, data } = message;
   const { url, guidance } = data;
-  const emailLog = createPaidLogger(log, GUIDANCE_TYPE);
+  const emailLog = createTrafficLogger(log, '[email-audit]', GUIDANCE_TYPE);
 
   emailLog.received(siteId, url, auditId);
 

@@ -18,7 +18,7 @@ import {
   getTrafficAnalysisQueryPlaceholdersFilled,
 } from '@adobe/spacecat-shared-athena-client';
 import crypto from 'crypto';
-import { fileExists, addResultJsonToCache } from '../paid-traffic-analysis/caching-helper.js';
+import { fileExists, addResultJsonToCache } from '../common/caching-helper.js';
 import { limitConcurrency } from '../support/utils.js';
 
 const EMAIL_DIMENSION_COMBOS = [
