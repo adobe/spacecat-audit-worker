@@ -26,7 +26,7 @@ import {
 } from './constants.js';
 import { getElementSelector } from './selector-utils.js';
 import {
-  removeEmbeddedSocialHosts,
+  removeEmbeddedSocialElements,
   isEmbeddedSocialContentElement,
 } from './embed-content-utils.js';
 
@@ -151,7 +151,7 @@ const collapseWhitespace = (text) => text.replace(/\s+/g, ' ');
  */
 const getMeaningfulElementsForReadability = ($) => {
   $('header, footer, style, script, noscript').remove();
-  removeEmbeddedSocialHosts($);
+  removeEmbeddedSocialElements($);
   return $('p, blockquote, li, div').toArray().filter((el) => {
     const text = $(el).text()?.trim();
     return text && collapseWhitespace(text).length >= MIN_TEXT_LENGTH;

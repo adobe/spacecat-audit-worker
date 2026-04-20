@@ -28,7 +28,7 @@ import {
 } from '../shared/constants.js';
 import { getDomElementSelector, toElementTargets } from '../../preflight/utils/dom-selector.js';
 import {
-  removeEmbeddedSocialHosts,
+  removeEmbeddedSocialElements,
   isEmbeddedSocialContentElement,
 } from '../shared/embed-content-utils.js';
 
@@ -181,7 +181,7 @@ export default async function readability(context, auditContext) {
     const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
 
     const $ = cheerioLoad(rawBody);
-    removeEmbeddedSocialHosts($);
+    removeEmbeddedSocialElements($);
 
     // Get all paragraph, div, and list item elements
     const textElements = $('p, div, li').toArray();

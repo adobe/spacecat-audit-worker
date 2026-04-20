@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Adobe. All rights reserved.
+ * Copyright 2026 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -16,7 +16,6 @@
  */
 const EMBEDDED_SOCIAL_REMOVE_SELECTORS = [
   '.cards-carousel-rrss',
-  '[data-social-media-size]',
   'blockquote.instagram-media',
   'blockquote.twitter-tweet',
   'blockquote.tiktok-embed',
@@ -70,8 +69,11 @@ const VIEW_ON_PLATFORM_SUBSTRINGS = [
   'view on linkedin',
   'view on twitter',
   'view post on twitter',
-  'view on x',
+  // 'view on x' is matched by VIEW_ON_X_RE below — needs word boundary to avoid
+  // false positives on substrings like "view on xero" or "view on xenial"
 ];
+
+const VIEW_ON_X_RE = /\bview on x\b/i;
 
 const SOCIAL_OUTBOUND_LINK_SELECTOR = [
   'a[href*="instagram.com"]',
@@ -82,14 +84,14 @@ const SOCIAL_OUTBOUND_LINK_SELECTOR = [
   'a[href*="threads.net"]',
   'a[href*="linkedin.com/posts"]',
   'a[href*="linkedin.com/feed"]',
-].join(',');
+].join(', ');
 
 /**
  * Removes known embedded social / feed regions from a Cheerio document (mutates the tree).
  *
  * @param {import('cheerio').CheerioAPI} $ - Cheerio root
  */
-export function removeEmbeddedSocialHosts($) {
+export function removeEmbeddedSocialElements($) {
   $(EMBEDDED_SOCIAL_REMOVE_SELECTORS).remove();
 }
 
@@ -107,9 +109,11 @@ export function isEmbeddedSocialContentElement($, element) {
     return true;
   }
   const text = $el.text().toLowerCase();
-  const matchesViewCta = VIEW_ON_PLATFORM_SUBSTRINGS.some((s) => text.includes(s));
+  const matchesViewCta = VIEW_ON_PLATFORM_SUBSTRINGS.some((s) => text.includes(s))
+    || VIEW_ON_X_RE.test(text);
   if (!matchesViewCta) {
     return false;
   }
-  return $el.find(SOCIAL_OUTBOUND_LINK_SELECTOR).length > 0;
+  return $el.is(SOCIAL_OUTBOUND_LINK_SELECTOR)
+    || $el.find(SOCIAL_OUTBOUND_LINK_SELECTOR).length > 0;
 }
