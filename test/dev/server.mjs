@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 Adobe. All rights reserved.
+ * Copyright 2025 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at https://www.apache.org/licenses/LICENSE-2.0
@@ -22,25 +22,8 @@ const { version } = require('../../package.json');
 // eslint-disable-next-line no-underscore-dangle
 global.__rootdir = resolve(fileURLToPath(import.meta.url), '..', '..', '..');
 
-function resolveDevServerPort(args) {
-  const portFlagIndex = args.indexOf('--port');
-  const configuredPort = portFlagIndex >= 0
-    ? args[portFlagIndex + 1]
-    : process.env.WEBSERVER_PORT || process.env.PORT || '3000';
-  const port = Number(configuredPort);
-
-  if (!Number.isInteger(port) || port < 1) {
-    throw new Error(`Invalid dev server port: ${configuredPort}`);
-  }
-
-  return String(port);
-}
-
 async function run(args) {
-  const port = resolveDevServerPort(args);
-
-  process.env.WEBSERVER_PORT = port;
-  process.env.HLX_DEV_SERVER_HOST = `localhost:${port}`;
+  process.env.HLX_DEV_SERVER_HOST = 'localhost:3000';
   process.env.HLX_DEV_SERVER_SCHEME = 'http';
 
   let devServer;
