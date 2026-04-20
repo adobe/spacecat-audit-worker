@@ -42,12 +42,6 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   const { s3Client } = awsRuntime;
   const s3Config = getS3Config(site, context);
   log.debug(`Starting CDN logs report audit for ${url}`);
-  const sharepointClient = isDailyDateRun
-    ? null
-    : await createLLMOSharepointClient(
-      context,
-      auditContext?.sharepointOptions,
-    );
   const athenaClient = awsRuntime.createAthenaClient(
     s3Config.getAthenaTempLocation(),
     {
@@ -61,7 +55,39 @@ async function runCdnLogsReport(url, context, site, auditContext) {
 
   const results = [];
   const reportsToPublish = [];
+  let dailyAgenticExport;
+  if (!isWeeklyOnlyRun) {
+    if (!agenticReportConfig) {
+      log.debug(`Skipping daily agentic export for ${siteId}: agentic report config not found`);
+    } else {
+      try {
+        dailyAgenticExport = await runDailyAgenticExport({
+          athenaClient,
+          s3Client,
+          s3Config,
+          site,
+          context,
+          reportConfig: agenticReportConfig,
+          ...(auditContext?.date ? { referenceDate: new Date(auditContext.date) } : {}),
+        });
+      } catch (error) {
+        context.log.error(`Failed daily agentic export for site ${siteId}: ${error.message}`, error);
+        dailyAgenticExport = {
+          enabled: true,
+          success: false,
+          siteId,
+          error: error.message,
+        };
+      }
+    }
+  }
+
   if (!isDailyDateRun) {
+    const sharepointClient = await createLLMOSharepointClient(
+      context,
+      auditContext?.sharepointOptions,
+    );
+
     for (const reportConfig of reportConfigs) {
       // eslint-disable-next-line no-await-in-loop
       if (!(await pathHasData(s3Client, reportConfig.aggregatedLocation))) {
@@ -150,34 +176,6 @@ async function runCdnLogsReport(url, context, site, auditContext) {
           success: result.success,
           weekOffset,
         });
-      }
-    }
-  }
-
-  let dailyAgenticExport;
-  if (!isWeeklyOnlyRun) {
-    if (!agenticReportConfig) {
-      log.debug(`Skipping daily agentic export for ${siteId}: agentic report config not found`);
-    } else {
-      // eslint-disable-next-line no-await-in-loop
-      try {
-        dailyAgenticExport = await runDailyAgenticExport({
-          athenaClient,
-          s3Client,
-          s3Config,
-          site,
-          context,
-          reportConfig: agenticReportConfig,
-          ...(auditContext?.date ? { referenceDate: new Date(auditContext.date) } : {}),
-        });
-      } catch (error) {
-        context.log.error(`Failed daily agentic export for site ${siteId}: ${error.message}`, error);
-        dailyAgenticExport = {
-          enabled: true,
-          success: false,
-          siteId,
-          error: error.message,
-        };
       }
     }
   }

@@ -491,6 +491,43 @@ describe('CDN Analysis Handler', () => {
         .to.deep.equal(['aem-cs-fastly', 'byocdn-akamai']);
     });
 
+    it('does not trigger scanAndTriggerOnly when byocdn-other is discovered alongside a different configured provider', async () => {
+      const mockedHandler = await loadMockedHandler('aem-cs-fastly');
+      const auditContext = {
+        year: 2025,
+        month: 6,
+        day: 15,
+        hour: 23,
+      };
+
+      context.s3Client.send.callsFake(
+        createS3MockForServiceProviders(['byocdn-other', 'aem-cs-fastly'], {
+          year: '2025',
+          month: '06',
+          day: '15',
+          hour: '23',
+        }),
+      );
+
+      const result = await mockedHandler.cdnLogsAnalysisRunner(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(result.auditResult).to.not.have.property('scanAndTriggerOnly');
+      expect(result.auditResult.providers).to.be.an('array').with.length(1);
+      expect(result.auditResult.providers[0]).to.include({
+        serviceProvider: 'aem-cs-fastly',
+        cdnType: 'fastly',
+      });
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        'Filtered discovered service providers to configured cdnProvider=aem-cs-fastly for siteId=test-site-id, host=example.com',
+      );
+    });
+
     it('dispatcher-scheduled byocdn-other run scans and triggers sub-audits', async () => {
       const auditContext = {
         year: 2025, month: 6, day: 15, hour: 23,
