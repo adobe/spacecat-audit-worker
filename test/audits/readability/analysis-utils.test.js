@@ -15,6 +15,11 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import esmock from 'esmock';
+import { load as cheerioLoad } from 'cheerio';
+import {
+  removeEmbeddedSocialElements,
+  isEmbeddedSocialContentElement,
+} from '../../../src/readability/shared/embed-content-utils.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -1248,6 +1253,61 @@ Save it for your next mountain escape!
           urlsProcessed: 0,
         });
       });
+    });
+  });
+});
+
+describe('embed-content-utils (unit)', () => {
+  describe('removeEmbeddedSocialElements', () => {
+    it('removes known social embed selectors and leaves unrelated content', () => {
+      const $ = cheerioLoad(`
+        <div>
+          <blockquote class="instagram-media"><p id="gone">Caption</p></blockquote>
+          <p id="stay">Authored body text that must remain in the document after removal.</p>
+        </div>
+      `);
+      removeEmbeddedSocialElements($);
+      expect($('#gone').length).to.equal(0);
+      expect($('#stay').length).to.equal(1);
+    });
+  });
+
+  describe('isEmbeddedSocialContentElement', () => {
+    it('returns true when element is inside a known social ancestor', () => {
+      const $ = cheerioLoad(`
+        <blockquote class="twitter-tweet">
+          <p id="t">Caption text inside a twitter oEmbed block.</p>
+        </blockquote>
+      `);
+      const el = $('#t').get(0);
+      expect(isEmbeddedSocialContentElement($, el)).to.equal(true);
+    });
+
+    it('returns true when element itself is a social outbound link with view-on CTA', () => {
+      const $ = cheerioLoad(`
+        <div>
+          <a id="lnk" href="https://www.instagram.com/p/ABC/">View on Instagram</a>
+        </div>
+      `);
+      const el = $('#lnk').get(0);
+      expect(isEmbeddedSocialContentElement($, el)).to.equal(true);
+    });
+
+    it('returns true when element contains view-on CTA and a social outbound descendant link', () => {
+      const $ = cheerioLoad(`
+        <p id="cap">
+          <a href="https://www.instagram.com/p/XYZ/">View on Instagram</a>
+          Continuing caption text that accompanies the social embed on the page.
+        </p>
+      `);
+      expect(isEmbeddedSocialContentElement($, $('#cap').get(0))).to.equal(true);
+    });
+
+    it('returns false for normal authored content', () => {
+      const $ = cheerioLoad(`
+        <p id="t">Standard authored paragraph without any social media references.</p>
+      `);
+      expect(isEmbeddedSocialContentElement($, $('#t').get(0))).to.equal(false);
     });
   });
 });
