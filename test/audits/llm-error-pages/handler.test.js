@@ -598,11 +598,36 @@ describe('LLM Error Pages Handler', function () {
       expect(mockConvertToOpportunity).to.have.been.calledOnce;
       expect(mockSyncSuggestions).to.have.been.calledOnce;
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/\[LLM-ERROR-PAGES\] No 403 errors for w34-2025, skipping bucket/),
+        sinon.match(/\[LLM-ERROR-PAGES\] No 403 errors for w34-2025, skipping sync/),
       );
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/\[LLM-ERROR-PAGES\] No 5xx errors for w34-2025, skipping bucket/),
+        sinon.match(/\[LLM-ERROR-PAGES\] No 5xx errors for w34-2025, skipping sync/),
       );
+    });
+
+    it('should run retention on existing opportunity even when bucket has no new errors', async () => {
+      // 403 bucket has no new errors, but an existing opportunity exists in the DB.
+      // Retention cleanup should still run against its suggestions.
+      const staleOpportunity = makeMockOpportunity('opp-403-existing', [], sandbox);
+      staleOpportunity.getType = () => 'llm-error-pages-403';
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus = sandbox.stub().resolves([staleOpportunity]);
+
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [{ user_agent: 'ChatGPT', agent_type: 'ChatGPT', url: '/page1', status: 404, total_requests: 10 }],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+      });
+      mockCategorizeErrorsByStatusCode.returns({
+        404: [{ user_agent: 'ChatGPT', agent_type: 'ChatGPT', url: '/page1', status: 404, total_requests: 10 }],
+        // 403 and 5xx empty — staleOpportunity found for 403
+      });
+
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(result.auditResult[0].success).to.be.true;
+      // getSuggestions called on the stale 403 opportunity for retention check
+      expect(staleOpportunity.getSuggestions).to.have.been.calledOnce;
     });
 
     it('should skip suggestions with no periodIdentifier in the 4-week cleanup', async () => {

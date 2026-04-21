@@ -175,7 +175,7 @@ export async function runAuditAndSendToMystique(context) {
     const {
       dataAccess, sqs, env, audit,
     } = context;
-    const { Suggestion } = dataAccess;
+    const { Suggestion, Opportunity } = dataAccess;
     const retentionCutoff = new Date(Date.now() - RETENTION_MS);
 
     for (const week of weeks) {
@@ -209,8 +209,15 @@ export async function runAuditAndSendToMystique(context) {
         // One Opportunity per status code bucket. One Suggestion per unique URL.
         const opportunityMap = {};
 
+        // Pre-fetch existing NEW opportunities once so the empty-bucket retention sweep
+        // can find a stale opportunity without creating one.
+        const existingOpportunities = await Opportunity.allBySiteIdAndStatus(
+          site.getId(), 'NEW',
+        );
+
         for (const { code, auditType, suggestionType } of STATUS_BUCKETS) {
           const rawErrors = categorizedResults[code] || [];
+          let existingSuggestions = [];
 
           if (rawErrors.length > 0) {
             // Group by URL: Athena returns one row per (url, user_agent) pair.
@@ -233,7 +240,7 @@ export async function runAuditAndSendToMystique(context) {
 
             // Pre-fetch suggestions once — reused by syncSuggestions (via existingSuggestions
             // param) and by the 4-week cleanup below to avoid a second DB round-trip.
-            const existingSuggestions = await opportunity.getSuggestions();
+            existingSuggestions = await opportunity.getSuggestions();
 
             // Sync current week's URLs as Suggestions.
             //
@@ -291,27 +298,35 @@ export async function runAuditAndSendToMystique(context) {
                 },
               }),
             });
-
-            // 4-week retention cleanup: OUTDATED Suggestions whose URL has not been seen
-            // in any of the last RETENTION_WEEKS weeks.
-            const toOutdate = existingSuggestions.filter((s) => {
-              const lastSeen = s.getData()?.periodIdentifier;
-              if (!lastSeen) {
-                return false; // no timestamp → skip (old data, handled separately)
-              }
-              const status = s.getStatus();
-              if (['OUTDATED', 'FIXED', 'RESOLVED', 'REJECTED', 'APPROVED'].includes(status)) {
-                return false;
-              }
-              return parsePeriodIdentifier(lastSeen) < retentionCutoff;
-            });
-
-            if (toOutdate.length > 0) {
-              await Suggestion.bulkUpdateStatus(toOutdate, 'OUTDATED');
-              log.info(`[LLM-ERROR-PAGES] Outdated ${toOutdate.length} stale suggestions for ${auditType} (older than ${RETENTION_WEEKS} weeks)`);
-            }
           } else {
-            log.info(`[LLM-ERROR-PAGES] No ${code} errors for ${periodIdentifier}, skipping bucket`);
+            log.info(`[LLM-ERROR-PAGES] No ${code} errors for ${periodIdentifier}, skipping sync`);
+            // Still run retention: find the existing opportunity (if any) so stale
+            // suggestions age out even when a bucket produces zero errors this week.
+            const staleOpportunity = existingOpportunities.find((o) => o.getType() === auditType);
+            if (staleOpportunity) {
+              opportunityMap[code] = staleOpportunity;
+              existingSuggestions = await staleOpportunity.getSuggestions();
+            }
+          }
+
+          // 4-week retention cleanup: runs regardless of whether new errors exist this
+          // week. Marks OUTDATED any suggestion whose URL has not been seen within the
+          // last RETENTION_WEEKS weeks so stale entries don't accumulate indefinitely.
+          const toOutdate = existingSuggestions.filter((s) => {
+            const lastSeen = s.getData()?.periodIdentifier;
+            if (!lastSeen) {
+              return false; // no timestamp → skip (old data, handled separately)
+            }
+            const status = s.getStatus();
+            if (['OUTDATED', 'FIXED', 'RESOLVED', 'REJECTED', 'APPROVED'].includes(status)) {
+              return false;
+            }
+            return parsePeriodIdentifier(lastSeen) < retentionCutoff;
+          });
+
+          if (toOutdate.length > 0) {
+            await Suggestion.bulkUpdateStatus(toOutdate, 'OUTDATED');
+            log.info(`[LLM-ERROR-PAGES] Outdated ${toOutdate.length} stale suggestions for ${auditType} (older than ${RETENTION_WEEKS} weeks)`);
           }
         }
 
