@@ -159,7 +159,6 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     if (!agenticReportConfig) {
       log.debug(`Skipping daily agentic export for ${siteId}: agentic report config not found`);
     } else {
-      // eslint-disable-next-line no-await-in-loop
       try {
         dailyAgenticExport = await runDailyAgenticExport({
           athenaClient,
