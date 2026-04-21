@@ -1,0 +1,455 @@
+/*
+ * Copyright 2025 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ */
+/**
+ * ============================================
+ * Geo Brand Presence Audit - workflow
+ * ============================================
+ * STEP 0: Unified Detection (loadPromptsAndSendDetection)
+ *   - Loads AI prompts (aiTopics) and human prompts (topics) from LLMO config
+ *   - Deduplicates all prompts
+ *   - Uploads combined prompts as JSON with presigned URL (24h expiry)
+ *   - Sends Detection messages directly to Mystique (one per web search provider)
+ *   - Mystique conditionally categorizes AI prompts if needed (inline)
+ *
+ * STEP 1: Receive Categorization Status (receiveCategorization)
+ *   - Receives categorization status message from Mystique via SQS
+ *   - Downloads categorized prompts from presigned URL
+ *   - Writes categorized prompts to aggregates parquet for analytics
+ *   - Returns (detection continues independently in Mystique)
+ */
+/* eslint-disable no-use-before-define */
+
+import {
+  isNonEmptyArray,
+  isNonEmptyObject,
+  isoCalendarWeek,
+  llmoConfig,
+} from '@adobe/spacecat-shared-utils';
+import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { randomUUID } from 'node:crypto';
+import { getSignedUrl } from '../utils/getPresignedUrl.js';
+import { transformWebSearchProviderForMystique } from './util.js';
+import { AuditBuilder } from '../common/audit-builder.js';
+import { wwwUrlResolver } from '../common/index.js';
+
+export const GEO_BRAND_PRESENCE_OPPTY_TYPE = 'detect:geo-brand-presence';
+export const GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE = 'detect:geo-brand-presence-daily';
+export const GEO_BRAND_CATEGORIZATION_OPPTY_TYPE = 'category:geo-brand-presence';
+export const GEO_FAQ_OPPTY_TYPE = 'guidance:geo-faq';
+export const OPPTY_TYPES = [
+  GEO_BRAND_PRESENCE_OPPTY_TYPE,
+  GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE,
+  GEO_BRAND_CATEGORIZATION_OPPTY_TYPE,
+];
+
+export const WEB_SEARCH_PROVIDERS = [
+  'all',
+  'chatgpt',
+  'gemini',
+  'google_ai_overviews',
+  'ai_mode',
+  'perplexity',
+  'copilot',
+];
+
+/**
+ * Removes duplicate prompts from AI-generated prompts based on region, topic, and prompt text.
+ * @param {Array<Object>} prompts - Array of prompt objects
+ * @param {string} siteId - Site id
+ * @param {Object} log - Logger instance
+ * @returns {Array<Object>} Deduplicated array of prompts
+ */
+function deduplicatePrompts(prompts, siteId, log) {
+  /* c8 ignore start */
+  if (!Array.isArray(prompts) || prompts.length === 0) {
+    return prompts;
+  }
+
+  const regionTopicGroups = new Map();
+  const deduplicatedPrompts = [];
+  let totalDuplicatesRemoved = 0;
+  let totalEmptyPromptsSkipped = 0;
+  let totalInvalidItemsSkipped = 0;
+  let totalErrorsRecovered = 0;
+  const originalCount = prompts.length;
+
+  for (let i = 0; i < prompts.length; i += 1) {
+    const item = prompts[i];
+
+    try {
+      if (!item || typeof item !== 'object') {
+        totalInvalidItemsSkipped += 1;
+        log.warn(`GEO BRAND PRESENCE: [DEDUP] Skipping non-object item at index ${i}: ${typeof item}`);
+      } else {
+        const prompt = item.prompt || '';
+        const region = (item.region || item.market || 'US').toLowerCase();
+        const topic = (item.topic || item.keyword || '').toLowerCase();
+
+        if (!prompt || prompt.trim().length === 0) {
+          totalEmptyPromptsSkipped += 1;
+          log.debug(`GEO BRAND PRESENCE: [DEDUP] Skipping empty prompt at index ${i}: region='${region}', topic='${topic}'`);
+        } else {
+          const regionTopicKey = `${region}:${topic}`;
+          const promptKey = prompt.toLowerCase().trim();
+
+          if (!regionTopicGroups.has(regionTopicKey)) {
+            regionTopicGroups.set(regionTopicKey, {
+              seenPrompts: new Set(),
+              originalCount: 0,
+            });
+          }
+
+          const group = regionTopicGroups.get(regionTopicKey);
+          group.originalCount += 1;
+
+          if (group.seenPrompts.has(promptKey)) {
+            totalDuplicatesRemoved += 1;
+            const truncatedPrompt = prompt.length > 50 ? `${prompt.substring(0, 50)}...` : prompt;
+            log.debug(`GEO BRAND PRESENCE: Skipping duplicate prompt at index ${i}: region='${region}', topic='${topic}', prompt='${truncatedPrompt}'`);
+          } else {
+            group.seenPrompts.add(promptKey);
+            deduplicatedPrompts.push(item);
+          }
+        }
+      }
+    } catch (error) {
+      totalErrorsRecovered += 1;
+      log.error(`GEO BRAND PRESENCE: Deduplication error processing item at index ${i}:`, error);
+      deduplicatedPrompts.push(item);
+    }
+  }
+
+  const finalCount = deduplicatedPrompts.length;
+  const totalSkipped = totalDuplicatesRemoved + totalEmptyPromptsSkipped + totalInvalidItemsSkipped;
+  const skipRate = originalCount > 0 ? ((totalSkipped / originalCount) * 100).toFixed(1) : 0;
+
+  log.info(
+    'GEO BRAND PRESENCE: Site %s: Processed %d prompts across %d region/topic groups. Skipped %d items (%s%%): %d duplicates, %d empty, %d invalid. Recovered from %d errors. Kept %d unique prompts.',
+    siteId,
+    originalCount,
+    regionTopicGroups.size,
+    totalSkipped,
+    skipRate,
+    totalDuplicatesRemoved,
+    totalEmptyPromptsSkipped,
+    totalInvalidItemsSkipped,
+    totalErrorsRecovered,
+    finalCount,
+  );
+
+  if (log.debug) {
+    regionTopicGroups.forEach((group, key) => {
+      const [region, topic] = key.split(':');
+      const keptCount = group.seenPrompts.size;
+      const removedCount = group.originalCount - keptCount;
+      if (removedCount > 0) {
+        log.debug(`GEO BRAND PRESENCE: Group '${region}/${topic}': ${group.originalCount} → ${keptCount} (removed ${removedCount})`);
+      }
+    });
+  }
+  /* c8 ignore end */
+  return deduplicatedPrompts;
+}
+
+/**
+ * Loads prompts and sends categorization messages for brand presence detection.
+ *
+ * @param {Object} context - The execution context including audit, logging, site info, etc.
+ * @param {Function} [getPresignedUrlOverride=getSignedUrl]
+ * - (Optional) Override for generating presigned URLs.
+ * @returns {Promise<void>}
+ */
+export async function loadPromptsAndSendDetection(
+  context,
+  getPresignedUrlOverride = getSignedUrl,
+) {
+  /* c8 ignore start */
+  const {
+    auditContext, log, sqs, env, site, audit, s3Client, brandPresenceCadence,
+  } = context;
+
+  const siteId = site.getId();
+  const baseURL = site.getBaseURL();
+  const isDaily = brandPresenceCadence === 'daily';
+
+  const { calendarWeek: providedCalendarWeek, success } = auditContext ?? /* c8 ignore next */ {};
+  const auditResult = audit?.getAuditResult();
+  const aiPlatform = auditResult?.aiPlatform;
+
+  let dailyDateContext;
+  if (isDaily) {
+    const referenceDate = auditResult?.referenceDate
+      || context.data?.referenceDate
+      || auditContext?.referenceDate
+      || new Date();
+    const date = new Date(referenceDate);
+    date.setUTCDate(date.getUTCDate() - 1);
+
+    const { week, year } = isoCalendarWeek(date);
+
+    dailyDateContext = {
+      date: date.toISOString().split('T')[0],
+      week,
+      year,
+    };
+  }
+
+  const providersToUse = WEB_SEARCH_PROVIDERS.includes(aiPlatform)
+    ? [aiPlatform]
+    : WEB_SEARCH_PROVIDERS;
+  log.info('GEO BRAND PRESENCE: aiPlatform: %s for site id %s (%s). Will use providers: %j', aiPlatform, siteId, baseURL, providersToUse);
+
+  if (success === false) {
+    log.warn('GEO BRAND PRESENCE: Import failed for site id %s (%s). Continuing with config prompts only.', siteId, baseURL);
+  }
+
+  // For weekly cadence, validate calendarWeek; for daily, use dailyDateContext
+  const dateContext = isDaily ? dailyDateContext : providedCalendarWeek;
+  if (!isNonEmptyObject(dateContext) || !dateContext.week || !dateContext.year) {
+    log.error('GEO BRAND PRESENCE: Invalid date context for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
+    return;
+  }
+
+  log.debug('GEO BRAND PRESENCE: Loading prompts from LLMO config for site id %s (%s)', siteId, baseURL);
+
+  const bucket = context.env?.S3_IMPORTER_BUCKET_NAME ?? /* c8 ignore next */ '';
+
+  // Load LLMO config to get prompts and config version
+  const {
+    config,
+    exists: configExists,
+    version: configVersion,
+  } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket: bucket });
+
+  // Load human prompts from config.topics
+  let humanPrompts = [];
+  if (configExists && config) {
+    humanPrompts = Object.values(config.topics || {}).flatMap((x) => {
+      const category = config.categories[x.category];
+      return x.prompts.flatMap((p) => p.regions.map((region) => ({
+        prompt: p.prompt,
+        region,
+        category: category.name,
+        topic: x.name,
+        url: '',
+        keyword: '',
+        keywordImportTime: -1,
+        volume: -1,
+        volumeImportTime: -1,
+        source: 'human',
+        market: p.regions.join(','),
+        origin: 'human',
+      })));
+    });
+    log.info('GEO BRAND PRESENCE: Loaded %d human prompts from config for site id %s (%s)', humanPrompts.length, siteId, baseURL);
+  }
+
+  // Load AI-generated prompts from config.aiTopics (written by DRS prompt generation)
+  let aiPrompts = [];
+  if (configExists && config) {
+    aiPrompts = Object.values(config.aiTopics || {}).flatMap((x) => {
+      const category = config.categories[x.category];
+      return x.prompts.flatMap((p) => (p.regions || []).map((region) => ({
+        prompt: p.prompt,
+        region,
+        category: category?.name || '',
+        topic: x.name,
+        url: '',
+        keyword: '',
+        keywordImportTime: -1,
+        volume: -1,
+        volumeImportTime: -1,
+        source: p.source || 'drs',
+        market: region,
+        origin: p.origin || 'ai',
+      })));
+    });
+    log.info('GEO BRAND PRESENCE: Loaded %d AI prompts from config for site id %s (%s)', aiPrompts.length, siteId, baseURL);
+  }
+
+  aiPrompts = deduplicatePrompts(aiPrompts, siteId, log);
+  log.info('GEO BRAND PRESENCE: Found %d AI prompts (after dedup) for site id %s (%s)', aiPrompts.length, siteId, baseURL);
+
+  // Combine human and AI prompts
+  const allPrompts = humanPrompts.concat(aiPrompts);
+  log.info(
+    'GEO BRAND PRESENCE: Combined %d human + %d AI prompts = %d total for site id %s (%s)',
+    humanPrompts.length,
+    aiPrompts.length,
+    allPrompts.length,
+    siteId,
+    baseURL,
+  );
+
+  if (allPrompts.length === 0) {
+    log.warn('GEO BRAND PRESENCE: No prompts found for site id %s (%s), skipping detection', siteId, baseURL);
+    return;
+  }
+
+  const s3Context = isDaily
+    ? {
+      ...context, getPresignedUrl: getPresignedUrlOverride, isDaily, dateContext,
+    }
+    : { ...context, getPresignedUrl: getPresignedUrlOverride };
+
+  const url = await asPresignedJsonUrl(allPrompts, bucket, s3Context);
+
+  log.info('GEO BRAND PRESENCE: Presigned URL for combined prompts for site id %s (%s): %s', siteId, baseURL, url);
+
+  if (!isNonEmptyArray(providersToUse)) {
+    log.warn('GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping message to mystique', siteId, baseURL);
+    return;
+  }
+
+  const opptyTypes = isDaily
+    ? [GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE]
+    : [GEO_BRAND_PRESENCE_OPPTY_TYPE];
+
+  const detectionMessages = opptyTypes.flatMap((opptyType) => providersToUse.map(
+    async (webSearchProvider) => {
+      const message = createMystiqueMessage({
+        type: opptyType,
+        siteId,
+        baseURL,
+        auditId: audit.getId(),
+        deliveryType: site.getDeliveryType(),
+        calendarWeek: dateContext,
+        url,
+        webSearchProvider: transformWebSearchProviderForMystique(webSearchProvider),
+        configVersion: /* c8 ignore next */ configExists ? configVersion : null,
+        ...(isDaily && { date: dateContext.date }),
+      });
+
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+      const cadenceLabel = isDaily ? ' DAILY' : '';
+      log.debug(
+        'GEO BRAND PRESENCE%s: %s detection message sent to Mystique for site id %s (%s) with provider %s',
+        cadenceLabel,
+        opptyType,
+        siteId,
+        baseURL,
+        webSearchProvider,
+      );
+    },
+  ));
+
+  await Promise.all(detectionMessages);
+
+  const cadenceLabel = isDaily ? ' DAILY' : '';
+  const stepCompleteMsg = 'GEO BRAND PRESENCE%s: Unified step complete - detection '
+    + 'messages sent directly to Mystique (categorization will happen internally if needed) for site id %s (%s)';
+  log.info(stepCompleteMsg, cadenceLabel, siteId, baseURL);
+  /* c8 ignore end */
+}
+
+/**
+ * Uploads arbitrary data as a JSON file to S3 and generates a presigned URL with 24h expiry.
+ *
+ * This utility is used to pass prompt data or structured JSON to Mystique by persisting it
+ * as a temporary JSON file in S3. The returned presigned URL allows Mystique to securely
+ * retrieve the JSON content within a limited time window.
+ *
+ * @param {Object} data - The data to serialize and upload as JSON.
+ * @param {string} bucketName - The name of the S3 bucket to use.
+ * @param {Object} context - Context object. Should contain:
+ *   - {AWS.S3Client} s3Client - AWS S3 client instance.
+ *   - {Function} getPresignedUrl - Function to generate S3 presigned URLs.
+ *   - {Object} log - Logger instance.
+ *   - {boolean} isDaily - Whether this is for daily cadence (affects S3 path).
+ *   - {Object} dateContext - The date context used for the file path.
+ * @returns {Promise<string>} - A promise that resolves to a presigned S3 URL (valid for 24 hours).
+ */
+export async function asPresignedJsonUrl(data, bucketName, context) {
+  const {
+    s3Client, log, getPresignedUrl: getPresignedUrlFn, isDaily, dateContext,
+  } = context;
+
+  const basePath = isDaily ? 'temp/audit-geo-brand-presence-daily' : 'temp/audit-geo-brand-presence';
+  const dateStr = isDaily ? dateContext.date : new Date().toISOString().split('T')[0];
+  const key = `${basePath}/${dateStr}-${randomUUID()}.json`;
+  await s3Client.send(new PutObjectCommand({
+    Bucket: bucketName,
+    Key: key,
+    Body: JSON.stringify(data),
+    ContentType: 'application/json',
+  }));
+
+  log.info('GEO BRAND PRESENCE: Data uploaded to S3 at s3://%s/%s', bucketName, key);
+  return getPresignedUrlFn(
+    s3Client,
+    new GetObjectCommand({ Bucket: bucketName, Key: key }),
+    { expiresIn: 86_400 },
+  );
+}
+
+/**
+ * Creates a standardized message for Mystique SQS queue.
+ *
+ * @param {Object} params - The parameters for the message.
+ * @param {string} params.type - The opportunity type for the message.
+ * @param {string} params.siteId - The unique identifier for the site.
+ * @param {string} params.baseURL - The base URL for the site.
+ * @param {string} params.auditId - The audit identifier.
+ * @param {string} params.deliveryType - The delivery type for the site.
+ * @param {Object} params.calendarWeek - The calendar week info (week, year).
+ * @param {string} params.url - The target URL for detection.
+ * @param {string} params.webSearchProvider - The search provider.
+ * @param {string|null} [params.configVersion=null] - The config version, if present.
+ * @param {string|null} [params.date=null] - The date for daily cadence (YYYY-MM-DD), if present.
+ * @param {string|undefined} [params.source] - Optional source for the message.
+ * @param {string|undefined} [params.initiator] - Optional initiator for the message.
+ * @returns {Object} - The formatted message payload for Mystique queue.
+ */
+export function createMystiqueMessage({
+  type,
+  siteId,
+  baseURL,
+  auditId,
+  deliveryType,
+  calendarWeek,
+  url,
+  webSearchProvider,
+  configVersion = null,
+  date = null,
+  source = undefined,
+  initiator = undefined,
+}) {
+  const data = {
+    url,
+    configVersion,
+    config_version: configVersion,
+    web_search_provider: webSearchProvider,
+  };
+
+  if (date) {
+    data.date = date;
+  }
+
+  return {
+    type,
+    siteId,
+    url: baseURL,
+    auditId,
+    deliveryType,
+    time: new Date().toISOString(),
+    week: calendarWeek.week,
+    year: calendarWeek.year,
+    data,
+    ...(source && { source }),
+    ...(initiator && { initiator }),
+  };
+}
+
+export default new AuditBuilder()
+  .withUrlResolver(wwwUrlResolver)
+  .addStep('loadPromptsAndSendDetectionStep', loadPromptsAndSendDetection)
+  .build();

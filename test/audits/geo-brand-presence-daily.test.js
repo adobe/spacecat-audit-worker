@@ -1,0 +1,256 @@
+/*
+ * Copyright 2025 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ */
+
+/* eslint-env mocha */
+/* eslint-disable no-use-before-define */
+
+import { expect, use } from 'chai';
+import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
+import {
+  loadPromptsAndSendDetection,
+  WEB_SEARCH_PROVIDERS,
+} from '../../src/geo-brand-presence/handler.js';
+import { receiveCategorization } from '../../src/geo-brand-presence/categorization-response-handler.js';
+import { llmoConfig } from '@adobe/spacecat-shared-utils';
+
+use(sinonChai);
+
+describe('Geo Brand Presence Daily Handler', () => {
+  let context;
+  let sandbox;
+  let site;
+  let audit;
+  let log;
+  let sqs;
+  let env;
+  let s3Client;
+  let getPresignedUrl;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    site = {
+      getBaseURL: () => 'https://adobe.com',
+      getId: () => 'site-id-123',
+      getDeliveryType: () => 'geo_edge',
+    };
+    audit = {
+      getId: () => 'audit-id-456',
+      getAuditType: () => 'geo-brand-presence-daily',
+      getFullAuditRef: () => 'https://adobe.com',
+      getAuditResult: () => ({ aiPlatform: 'chatgpt', cadence: 'daily' }),
+      setAuditResult: sandbox.stub(),
+    };
+    log = sinon.stub({ ...console });
+    sqs = {
+      sendMessage: sandbox.stub().resolves({}),
+    };
+    env = {
+      QUEUE_SPACECAT_TO_MYSTIQUE: 'spacecat-to-mystique',
+      S3_IMPORTER_BUCKET_NAME: 'bucket',
+    };
+    s3Client = {
+      send: sinon.stub()
+        .callsFake((cmd) => {
+          const { name } = cmd.constructor;
+          const input = JSON.stringify(cmd.input, null, 2).replace(/\n[ ]*/g, ' ');
+          throw new Error(`no stubbed response for ${name} ${input}`)
+        }),
+    };
+    getPresignedUrl = sandbox.stub();
+    context = {
+      log,
+      sqs,
+      env,
+      site,
+      audit,
+      s3Client,
+    };
+
+    fakeConfigS3Response();
+
+    s3Client.send
+      .withArgs(matchS3Cmd('PutObjectCommand', { Key: sinon.match(/^temp[/]audit-geo-brand-presence-daily[/]/) }))
+      .resolves({});
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should send daily detection message in step 1 with date field', async () => {
+    fakeConfigS3Response(fakeAiTopicsConfig());
+
+    getPresignedUrl.resolves('https://example.com/presigned-url');
+
+    const referenceDate = new Date('2025-10-02T12:00:00Z'); // October 2, 2025
+
+    await loadPromptsAndSendDetection({
+      ...context,
+      brandPresenceCadence: 'daily',
+      auditContext: {
+        referenceDate,
+      },
+    }, getPresignedUrl);
+
+    // Step 1 sends detection message directly
+    expect(sqs.sendMessage).to.have.been.calledOnce;
+
+    // Should be daily detection message
+    const [queue, message] = sqs.sendMessage.firstCall.args;
+    expect(queue).to.equal('spacecat-to-mystique');
+    expect(message).to.include({
+      type: 'detect:geo-brand-presence-daily',
+      siteId: site.getId(),
+      url: site.getBaseURL(),
+      auditId: audit.getId(),
+      deliveryType: site.getDeliveryType(),
+    });
+
+    // Verify daily-specific fields
+    expect(message.week).to.be.a('number');
+    expect(message.year).to.be.a('number');
+    expect(message.data.web_search_provider).to.equal('chatgpt'); // Single provider
+    expect(message.data.date).to.equal('2025-10-01'); // Yesterday from reference date
+  });
+
+  it('should calculate correct ISO week for dates at year boundaries in step 1', async () => {
+    fakeConfigS3Response(fakeAiTopicsConfig());
+    getPresignedUrl.resolves('https://example.com/presigned-url');
+
+    // Test December 30, 2024 (Monday of Week 1, 2025)
+    const referenceDate = new Date('2024-12-31T12:00:00Z');
+
+    await loadPromptsAndSendDetection({
+      ...context,
+      brandPresenceCadence: 'daily',
+      auditContext: {
+        referenceDate,
+      },
+    }, getPresignedUrl);
+
+    const [, message] = sqs.sendMessage.firstCall.args;
+    expect(message.data.date).to.equal('2024-12-30'); // Yesterday
+    expect(message.week).to.equal(1); // ISO week 1
+    expect(message.year).to.equal(2025); // ISO year 2025 (even though calendar year is 2024)
+  });
+
+  it('should NOT send detection message when no prompts available', async () => {
+    // Mock empty config (no prompts)
+    fakeConfigS3Response(llmoConfig.defaultConfig());
+
+    getPresignedUrl.resolves('https://example.com/presigned-url');
+
+    await loadPromptsAndSendDetection({
+      ...context,
+      brandPresenceCadence: 'daily',
+      auditContext: {
+        referenceDate: new Date('2025-10-02T12:00:00Z'),
+      },
+    }, getPresignedUrl);
+
+    // Should NOT send message when no prompts are available
+    expect(sqs.sendMessage).to.not.have.been.called;
+  });
+
+  it('should use current date when referenceDate is not provided in step 1', async () => {
+    fakeConfigS3Response(fakeAiTopicsConfig());
+    getPresignedUrl.resolves('https://example.com/presigned-url');
+
+    await loadPromptsAndSendDetection({
+      ...context,
+      brandPresenceCadence: 'daily',
+      auditContext: {},
+    }, getPresignedUrl);
+
+    // Step 1 should send only categorization message
+    expect(sqs.sendMessage).to.have.been.calledOnce;
+    const [, message] = sqs.sendMessage.firstCall.args;
+
+    // Verify date is yesterday's date
+    const yesterday = new Date();
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const expectedDate = yesterday.toISOString().split('T')[0];
+
+    expect(message.data.date).to.equal(expectedDate);
+    expect(message.week).to.be.a('number');
+    expect(message.year).to.be.a('number');
+  });
+
+  // Removed: "Step 2" tests - detection messages are now sent in step 1
+  // These scenarios are covered by existing step 1 tests
+
+  /**
+   * Mocks the S3 GetObjectCommand response for the LLMO config file
+   * @param {import('@adobe/spacecat-shared-utils/src/schemas.js').LLMOConfig} [config]
+   */
+  function fakeConfigS3Response(config = llmoConfig.defaultConfig()) {
+    s3Client.send.withArgs(
+      matchS3Cmd(
+        'GetObjectCommand',
+        { Key: llmoConfig.llmoConfigPath(site.getId()) },
+      ),
+    ).resolves({
+      Body: {
+        async transformToString() {
+          return JSON.stringify(config);
+        },
+      },
+    });
+  }
+
+  function fakeAiTopicsConfig() {
+    const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+    const cat2 = '2a2f9b39-126b-411e-af0b-ad2a48dfd9b1';
+    return {
+      ...llmoConfig.defaultConfig(),
+      categories: {
+        [cat1]: { name: 'adobe', region: ['us'] },
+        [cat2]: { name: 'photoshop', region: ['us'] },
+      },
+      aiTopics: {
+        'a1a1a1a1-1111-4111-a111-111111111111': {
+          name: 'general',
+          category: cat1,
+          prompts: [
+            { prompt: 'what is adobe?', regions: ['us'], origin: 'ai', source: 'drs' },
+          ],
+        },
+        'b2b2b2b2-2222-4222-a222-222222222222': {
+          name: 'pricing',
+          category: cat1,
+          prompts: [
+            { prompt: 'adobe pricing', regions: ['us'], origin: 'ai', source: 'drs' },
+          ],
+        },
+        'c3c3c3c3-3333-4333-a333-333333333333': {
+          name: 'usage',
+          category: cat2,
+          prompts: [
+            { prompt: 'how to use photoshop?', regions: ['us'], origin: 'ai', source: 'drs' },
+          ],
+        },
+      },
+    };
+  }
+});
+
+/**
+ * @param {"GetObjectCommand" | "PutObjectCommand"} name
+ * @param {Record<string, any>} input
+ */
+function matchS3Cmd(name, input) {
+  return sinon.match({
+    constructor: sinon.match({ name }),
+    input: sinon.match(input),
+  });
+}
