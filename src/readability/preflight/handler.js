@@ -26,6 +26,10 @@ import {
   MIN_TEXT_LENGTH,
   MAX_CHARACTERS_DISPLAY,
 } from '../shared/constants.js';
+import {
+  normalizeReadabilityText,
+  isLikelyNavigationElement,
+} from '../shared/analysis-utils.js';
 import { getDomElementSelector, toElementTargets } from '../../preflight/utils/dom-selector.js';
 
 export const PREFLIGHT_READABILITY = 'readability';
@@ -209,9 +213,9 @@ export default async function readability(context, auditContext) {
         // Use text-readability library for English, custom function for other languages
         let readabilityScore;
         if (detectedLanguage === 'english') {
-          readabilityScore = rs.fleschReadingEase(text.trim());
+          readabilityScore = rs.fleschReadingEase(text);
         } else {
-          readabilityScore = await calculateReadabilityScore(text.trim(), detectedLanguage);
+          readabilityScore = await calculateReadabilityScore(text, detectedLanguage);
         }
 
         if (readabilityScore < TARGET_READABILITY_SCORE) {
@@ -232,7 +236,7 @@ export default async function readability(context, auditContext) {
             fleschReadingEase: readabilityScore,
             language: detectedLanguage,
             seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
-            textContent: text, // Store full text for AI processing
+            textContent: text, // Store normalized text for AI processing
             ...toElementTargets(selector),
           });
         }
@@ -267,15 +271,16 @@ export default async function readability(context, auditContext) {
         // Skip if it has block-level children (to avoid duplicate analysis)
         return !hasBlockChildren;
       })
+      .filter(({ element }) => !isLikelyNavigationElement($, element))
       .filter(({ element }) => {
-        const textContent = $(element).text()?.trim();
-        return textContent && textContent.length >= MIN_TEXT_LENGTH;
+        const normalized = normalizeReadabilityText($(element).text());
+        return normalized.length >= MIN_TEXT_LENGTH;
       });
 
     // Process filtered elements
     elementsToProcess.forEach(({ element, index }) => {
       const $el = $(element);
-      const textContent = $el.text()?.trim();
+      const textContent = normalizeReadabilityText($el.text());
 
       // Check if the element contains <br> tags (indicating multiple paragraphs)
       if ($el.html().includes('<br')) {
@@ -294,8 +299,8 @@ export default async function readability(context, auditContext) {
             const tempDiv = cheerioLoad(`<div>${p}</div>`)('div');
             return tempDiv.text();
           })
-          .map((p) => p.trim())
-          .filter((p) => p.length >= MIN_TEXT_LENGTH);
+          .map((p) => normalizeReadabilityText(p))
+          .filter((p) => p.length >= MIN_TEXT_LENGTH && /\s/.test(p));
 
         // Add promises for each paragraph
         paragraphs.forEach((paragraph) => {

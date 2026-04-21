@@ -440,6 +440,68 @@ describe('Readability Analysis Utils', () => {
       });
     });
 
+    it('should exclude navigation-like elements and collapse padding for minimum length', async () => {
+      const poorNavText = makeLongText(
+        'This extraordinarily complex sentence that has multisyllabic constructions making it difficult.',
+      );
+      const spacedLabel = `Safeguard${'   '.repeat(80)}My${'   '.repeat(80)}Identity`;
+      const html = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <nav><p>${poorNavText}</p></nav>
+          <li role="listitem"><p class="navHdr">${spacedLabel}</p></li>
+        </body>
+      </html>
+    `;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(25);
+
+      const result = await analyzePageContent(
+        html,
+        'https://example.com/page',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result).to.be.an('array');
+      expect(result.length).to.equal(0);
+    });
+
+    it('should exclude elements with role menuitem (navigation)', async () => {
+      const longText = makeLongText(
+        'This extraordinarily complex sentence that has multisyllabic constructions making it difficult.',
+      );
+      const html = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <p role="menuitem">${longText}</p>
+        </body>
+      </html>
+    `;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(25);
+
+      const result = await analyzePageContent(
+        html,
+        'https://example.com/page',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result).to.be.an('array');
+      expect(result.length).to.equal(0);
+    });
+
     it('should handle errors in analyzeTextReadability gracefully', async () => {
       const text = makeLongText('Some text content for testing error handling in readability analysis functions.');
       const html = createHtmlWithParagraph(text);
@@ -1207,6 +1269,15 @@ describe('Readability Analysis Utils', () => {
           urlsProcessed: 0,
         });
       });
+    });
+  });
+
+  describe('normalizeReadabilityText (direct module import)', () => {
+    it('handles null, undefined, and non-string values', async () => {
+      const { normalizeReadabilityText } = await import('../../../src/readability/shared/analysis-utils.js');
+      expect(normalizeReadabilityText(null)).to.equal('');
+      expect(normalizeReadabilityText(undefined)).to.equal('');
+      expect(normalizeReadabilityText(123)).to.equal('');
     });
   });
 });

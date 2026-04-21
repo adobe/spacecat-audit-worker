@@ -172,6 +172,32 @@ describe('Preflight Readability Audit', () => {
       expect(log.debug).to.have.been.calledWithMatch('Processed 0 text element(s)');
     });
 
+    it('should skip navigation chrome and use collapsed whitespace for minimum length', async () => {
+      const poorNavText = 'This extraordinarily complex sentence that has multisyllabic constructions '
+        + 'making it extremely difficult for readers to comprehend without effort. '.repeat(3);
+      const spacedNavLabel = `Safeguard${'   '.repeat(80)}My${'   '.repeat(80)}Identity`;
+      const goodBodyText = 'This is simple text. It is easy to read. Short sentences help. Clear writing promotes understanding and increases reader engagement significantly.'.repeat(2);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body>
+              <nav><p>${poorNavText}</p></nav>
+              <ul><li role="listitem" aria-label="Safeguard My Identity"><p class="navHdr">${spacedNavLabel}</p></li></ul>
+              <p>${goodBodyText}</p>
+            </body></html>`,
+          },
+        },
+      }];
+
+      await readability(context, auditContext);
+
+      const audit = auditsResult[0].audits.find((a) => a.name === PREFLIGHT_READABILITY);
+      expect(audit.opportunities).to.have.lengthOf(0);
+      expect(log.debug).to.have.been.calledWithMatch('Processed 1 text element(s)');
+    });
+
     it('should process both paragraphs and divs', async () => {
       const goodText = 'This is simple text. It is easy to read. Short sentences help. Clear writing promotes understanding and increases reader engagement significantly.'.repeat(2);
       const poorText = 'This is an extraordinarily complex sentence that utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(2);
