@@ -23,7 +23,9 @@ import {
   VULNERABILITY_REPORT_NO_VULNERABILITIES,
   VULNERABILITY_REPORT_MULTIPLE_COMPONENTS,
 } from '../fixtures/vulnerabilities/vulnerability-reports.js';
-import { vulnerabilityAuditRunner, opportunityAndSuggestionsStep, extractCodeInfo } from '../../src/vulnerabilities/handler.js';
+import {
+  vulnerabilityAuditRunner, opportunityAndSuggestionsStep, extractCodeInfo, buildKey,
+} from '../../src/vulnerabilities/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -822,6 +824,119 @@ describe('extractCodeInfo', () => {
       expect(extractCodeInfo({
         importResults: [{ result: [{ codeBucket: 'my-bucket', codePath: '   ' }] }],
       })).to.be.null;
+    });
+  });
+
+  describe('buildKey', () => {
+    it('builds key from library name and dependency tree, stripping [root] and @version', () => {
+      const key = buildKey({
+        name: 'com.fasterxml.jackson.core:jackson-databind',
+        version: '2.12.3',
+        dependencyTree: [
+          '[root]',
+          'biz.netcentric.cq.tools.accesscontroltool/accesscontroltool-bundle@3.5.1',
+        ],
+      });
+      expect(key).to.equal(
+        'com.fasterxml.jackson.core:jackson-databind-biz.netcentric.cq.tools.accesscontroltool/accesscontroltool-bundle',
+      );
+    });
+
+    it('produces identical keys for raw component and stored suggestion data shapes', () => {
+      const rawComponent = {
+        name: 'com.fasterxml.jackson.core:jackson-databind',
+        version: '2.12.3',
+        recommendedVersion: '2.12.6.1',
+        vulnerabilities: [{ id: 'CVE-2020-36518', score: 7.5 }],
+        dependencyTree: [
+          '[root]',
+          'biz.netcentric.cq.tools.accesscontroltool/accesscontroltool-bundle@3.5.1',
+        ],
+      };
+      const storedData = {
+        library: 'com.fasterxml.jackson.core:jackson-databind',
+        current_version: '2.12.3',
+        recommended_version: '2.12.6.1',
+        cves: [{ cve_id: 'CVE-2020-36518', score: 7.5 }],
+        dependency_tree: [
+          '[root]',
+          'biz.netcentric.cq.tools.accesscontroltool/accesscontroltool-bundle@3.5.1',
+        ],
+      };
+      expect(buildKey(rawComponent)).to.equal(buildKey(storedData));
+    });
+
+    it('distinguishes same library reached via different dependency paths', () => {
+      const keyA = buildKey({
+        name: 'lib-x',
+        dependencyTree: ['[root]', 'parent-a@1.0.0'],
+      });
+      const keyB = buildKey({
+        name: 'lib-x',
+        dependencyTree: ['[root]', 'parent-b@1.0.0'],
+      });
+      expect(keyA).to.not.equal(keyB);
+    });
+
+    it('treats two entries that differ only by version as the same key', () => {
+      const keyOld = buildKey({
+        name: 'lib-x',
+        dependencyTree: ['[root]', 'parent-a@1.0.0'],
+      });
+      const keyNew = buildKey({
+        name: 'lib-x',
+        dependencyTree: ['[root]', 'parent-a@2.5.9'],
+      });
+      expect(keyOld).to.equal(keyNew);
+    });
+
+    it('handles missing dependencyTree by falling back to library name only', () => {
+      expect(buildKey({ name: 'lib-x' })).to.equal('lib-x');
+      expect(buildKey({ library: 'lib-x' })).to.equal('lib-x');
+    });
+
+    it('handles empty dependencyTree array', () => {
+      expect(buildKey({ name: 'lib-x', dependencyTree: [] })).to.equal('lib-x');
+    });
+
+    it('handles tree entries without any @version suffix', () => {
+      const key = buildKey({
+        name: 'lib-x',
+        dependencyTree: ['[root]', 'parent-with-no-version'],
+      });
+      expect(key).to.equal('lib-x-parent-with-no-version');
+    });
+
+    it('strips only the trailing @version when entry contains multiple "@"', () => {
+      const key = buildKey({
+        name: 'lib-x',
+        dependencyTree: ['@scope/pkg@1.0.0'],
+      });
+      expect(key).to.equal('lib-x-@scope/pkg');
+    });
+
+    it('preserves dependency tree ordering in the key', () => {
+      const keyAB = buildKey({
+        name: 'lib-x',
+        dependencyTree: ['parent-a@1', 'parent-b@1'],
+      });
+      const keyBA = buildKey({
+        name: 'lib-x',
+        dependencyTree: ['parent-b@1', 'parent-a@1'],
+      });
+      expect(keyAB).to.not.equal(keyBA);
+    });
+
+    it('matches on a real fixture entry across raw and mapped shapes', () => {
+      const raw = VULNERABILITY_REPORT_WITH_VULNERABILITIES.vulnerableComponents[0];
+      const mapped = {
+        library: raw.name,
+        current_version: raw.version,
+        recommended_version: raw.recommendedVersion,
+        cves: [],
+        dependency_tree: raw.dependencyTree,
+      };
+      expect(buildKey(raw)).to.equal(buildKey(mapped));
     });
   });
 });
