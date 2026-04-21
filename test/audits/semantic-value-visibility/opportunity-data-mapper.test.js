@@ -28,8 +28,8 @@ describe('Semantic Value Visibility Opportunity Data Mapper', () => {
       const result = createOpportunityData({ guidance: krisshopFixture.guidance });
 
       expect(result.origin).to.equal('AUTOMATION');
-      expect(result.title).to.equal('Improve image semantic visibility for LLMs');
-      expect(result.description).to.include('Marketing images on this site contain text');
+      expect(result.title).to.equal('Increase Image Readability for LLMs');
+      expect(result.description).to.include('Images on your page contain valuable text');
       expect(result.tags).to.deep.equal(['LLMO', 'SEO', 'Images']);
     });
 
