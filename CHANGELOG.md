@@ -1,3 +1,24 @@
+# [1.418.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.417.3...v1.418.0) (2026-04-20)
+
+
+### Features
+
+* add VPC configuration support via helix-deploy 13.4 ([#2102](https://github.com/adobe/spacecat-audit-worker/issues/2102)) ([d868035](https://github.com/adobe/spacecat-audit-worker/commit/d868035db94223d11bc9749112889cb53d329ea2)), closes [adobe/helix-deploy#898](https://github.com/adobe/helix-deploy/issues/898) [adobe/helix-deploy#897](https://github.com/adobe/helix-deploy/issues/897) [adobe/spacecat-infrastructure#375](https://github.com/adobe/spacecat-infrastructure/issues/375)
+
+## [1.417.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.417.2...v1.417.3) (2026-04-20)
+
+
+### Bug Fixes
+
+* **deps:** update dependency uuid to v14 ([#2402](https://github.com/adobe/spacecat-audit-worker/issues/2402)) ([bb59b89](https://github.com/adobe/spacecat-audit-worker/commit/bb59b89241b885a2a3128e83fbd28e496ddbf273))
+
+## [1.417.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.417.1...v1.417.2) (2026-04-20)
+
+
+### Bug Fixes
+
+* honor configured cdn provider in cdn analysis ([#2398](https://github.com/adobe/spacecat-audit-worker/issues/2398)) ([cbfd341](https://github.com/adobe/spacecat-audit-worker/commit/cbfd341dc7bd3283177cf6b31d583222807f4db8))
+
 ## [1.417.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.417.0...v1.417.1) (2026-04-18)
 
 

@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.417.1",
+  "version": "1.418.0",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -44,6 +44,13 @@
     "fastlyServiceId!important": "",
     "timeout": 900000,
     "nodeVersion": 24,
+    "awsVpcSubnetIds": [
+      "${env.VPC_SUBNET_1}",
+      "${env.VPC_SUBNET_2}"
+    ],
+    "awsVpcSecurityGroupIds": [
+      "${env.VPC_SG_ID}"
+    ],
     "static": [
       "static/prompts/broken-backlinks.prompt",
       "static/prompts/broken-backlinks-followup.prompt",
@@ -123,12 +130,12 @@
     "syllable": "5.0.1",
     "text-readability": "1.1.1",
     "urijs": "1.19.11",
-    "uuid": "13.0.0",
+    "uuid": "14.0.0",
     "zod": "4.3.6"
   },
   "devDependencies": {
     "@adobe/eslint-config-helix": "3.0.24",
-    "@adobe/helix-deploy": "13.5.8",
+    "@adobe/helix-deploy": "14.0.0",
     "@adobe/helix-universal": "5.4.1",
     "@adobe/helix-universal-devserver": "1.1.147",
     "@adobe/semantic-release-coralogix": "1.1.41",
