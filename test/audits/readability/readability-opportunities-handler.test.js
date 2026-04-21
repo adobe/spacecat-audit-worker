@@ -423,6 +423,9 @@ describe('Readability Opportunities Handler Tests', () => {
       expect(newData[0].textPreview.length).to.equal(500);
       // textContent should be removed from suggestion data
       expect(newData[0].textContent).to.be.undefined;
+      // category/seoImpact are not persisted on suggestions (UI badges were misleading)
+      expect(newData[0].category).to.be.undefined;
+      expect(newData[0].seoImpact).to.be.undefined;
     });
 
     it('should correctly call mapNewSuggestion callback', async () => {

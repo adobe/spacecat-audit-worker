@@ -632,9 +632,15 @@ describe('Readability Opportunities Guidance Handler', () => {
         scrapedAt: '2025-01-01T00:00:00.000Z',
         textPreview: 'Original complex text with many words.',
         fleschScore: 25.3,
+        category: 'Moderate',
+        seoImpact: 'High',
       };
 
       const merged = mergeDataFunction(existingData, newData[0]);
+
+      // Legacy category/seoImpact are dropped on merge (not shown in UI)
+      expect(merged.category).to.be.undefined;
+      expect(merged.seoImpact).to.be.undefined;
 
       // Preserves existing data
       expect(merged.textPreview).to.equal('Original complex text with many words.');
