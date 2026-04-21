@@ -179,21 +179,24 @@ export async function extractCodeBucket(context) {
 
 /**
  * Builds a stable key for a vulnerable component used to match new audit data against
- * previously-stored suggestions. Works on both raw components ({name, dependencyTree})
- * and stored suggestion data ({library, dependency_tree}), since syncSuggestions calls
- * buildKey against both shapes. The key is the library name joined with each
- * dependency-tree entry (excluding "[root]" and stripped of its "@version" suffix).
+ * previously-stored suggestions. Works on both raw components
+ * ({name, version, dependencyTree}) and stored suggestion data
+ * ({library, current_version, dependency_tree}), since syncSuggestions calls buildKey
+ * against both shapes. The key is "library@version" joined with each dependency-tree
+ * entry (excluding "[root]" and stripped of its "@version" suffix — we don't key on
+ * transitive parent versions, only on the vulnerable library's own version).
  *
  * @param {Object} item - Raw vulnerable component or stored suggestion data.
- * @returns {string} - A stable key derived from library name and dependency tree.
+ * @returns {string} - A stable key derived from library name/version and dependency tree.
  */
 export const buildKey = (item) => {
   const libName = item.library ?? item.name;
+  const libVersion = item.current_version ?? item.version;
   const tree = item.dependency_tree ?? item.dependencyTree ?? [];
   const parts = tree
     .filter((entry) => entry !== '[root]')
     .map((entry) => entry.replace(/@[^@]*$/, ''));
-  return [libName, ...parts].join('-');
+  return [`${libName}@${libVersion}`, ...parts].join('-');
 };
 
 export const extractCodeInfo = (data) => {

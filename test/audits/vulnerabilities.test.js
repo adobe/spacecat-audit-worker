@@ -828,7 +828,7 @@ describe('extractCodeInfo', () => {
   });
 
   describe('buildKey', () => {
-    it('builds key from library name and dependency tree, stripping [root] and @version', () => {
+    it('builds key from library@version and dependency tree, stripping [root] and parent @version', () => {
       const key = buildKey({
         name: 'com.fasterxml.jackson.core:jackson-databind',
         version: '2.12.3',
@@ -838,8 +838,22 @@ describe('extractCodeInfo', () => {
         ],
       });
       expect(key).to.equal(
-        'com.fasterxml.jackson.core:jackson-databind-biz.netcentric.cq.tools.accesscontroltool/accesscontroltool-bundle',
+        'com.fasterxml.jackson.core:jackson-databind@2.12.3-biz.netcentric.cq.tools.accesscontroltool/accesscontroltool-bundle',
       );
+    });
+
+    it('distinguishes the same library at different versions', () => {
+      const keyOld = buildKey({
+        name: 'lib-x',
+        version: '1.0.0',
+        dependencyTree: ['[root]', 'parent-a@1.0.0'],
+      });
+      const keyNew = buildKey({
+        name: 'lib-x',
+        version: '1.0.1',
+        dependencyTree: ['[root]', 'parent-a@1.0.0'],
+      });
+      expect(keyOld).to.not.equal(keyNew);
     });
 
     it('produces identical keys for raw component and stored suggestion data shapes', () => {
@@ -878,50 +892,56 @@ describe('extractCodeInfo', () => {
       expect(keyA).to.not.equal(keyB);
     });
 
-    it('treats two entries that differ only by version as the same key', () => {
+    it('ignores transitive parent versions in the dependency tree', () => {
       const keyOld = buildKey({
         name: 'lib-x',
+        version: '1.0.0',
         dependencyTree: ['[root]', 'parent-a@1.0.0'],
       });
       const keyNew = buildKey({
         name: 'lib-x',
+        version: '1.0.0',
         dependencyTree: ['[root]', 'parent-a@2.5.9'],
       });
       expect(keyOld).to.equal(keyNew);
     });
 
-    it('handles missing dependencyTree by falling back to library name only', () => {
-      expect(buildKey({ name: 'lib-x' })).to.equal('lib-x');
-      expect(buildKey({ library: 'lib-x' })).to.equal('lib-x');
+    it('handles missing dependencyTree by falling back to library@version only', () => {
+      expect(buildKey({ name: 'lib-x', version: '1.0.0' })).to.equal('lib-x@1.0.0');
+      expect(buildKey({ library: 'lib-x', current_version: '1.0.0' })).to.equal('lib-x@1.0.0');
     });
 
     it('handles empty dependencyTree array', () => {
-      expect(buildKey({ name: 'lib-x', dependencyTree: [] })).to.equal('lib-x');
+      expect(buildKey({ name: 'lib-x', version: '1.0.0', dependencyTree: [] })).to.equal('lib-x@1.0.0');
     });
 
     it('handles tree entries without any @version suffix', () => {
       const key = buildKey({
         name: 'lib-x',
+        version: '1.0.0',
         dependencyTree: ['[root]', 'parent-with-no-version'],
       });
-      expect(key).to.equal('lib-x-parent-with-no-version');
+      expect(key).to.equal('lib-x@1.0.0-parent-with-no-version');
     });
 
     it('strips only the trailing @version when entry contains multiple "@"', () => {
       const key = buildKey({
         name: 'lib-x',
+        version: '1.0.0',
         dependencyTree: ['@scope/pkg@1.0.0'],
       });
-      expect(key).to.equal('lib-x-@scope/pkg');
+      expect(key).to.equal('lib-x@1.0.0-@scope/pkg');
     });
 
     it('preserves dependency tree ordering in the key', () => {
       const keyAB = buildKey({
         name: 'lib-x',
+        version: '1.0.0',
         dependencyTree: ['parent-a@1', 'parent-b@1'],
       });
       const keyBA = buildKey({
         name: 'lib-x',
+        version: '1.0.0',
         dependencyTree: ['parent-b@1', 'parent-a@1'],
       });
       expect(keyAB).to.not.equal(keyBA);
@@ -937,6 +957,7 @@ describe('extractCodeInfo', () => {
         dependency_tree: raw.dependencyTree,
       };
       expect(buildKey(raw)).to.equal(buildKey(mapped));
+      expect(buildKey(raw)).to.include(`@${raw.version}`);
     });
   });
 });
