@@ -7138,6 +7138,191 @@ describe('Prerender Audit', () => {
       expect(auditRunCandidates[0].suggestionId).to.equal('https://example.com/page1');
       expect(auditRunCandidates[0].url).to.equal('https://example.com/page1');
     });
+
+    it('should exclude URLs with valid AI summary and valuable=true from auditRunCandidates', async () => {
+      const savedSuggestion = {
+        getStatus: () => 'NEW',
+        getId: () => 'saved-suggestion-id',
+        getData: () => ({
+          url: 'https://example.com/page1',
+          aiSummary: 'This page benefits greatly from prerendering.',
+          valuable: true,
+        }),
+      };
+
+      const mockOpportunity = {
+        getId: () => 'test-opp-id',
+        getSuggestions: sandbox.stub().resolves([savedSuggestion]),
+      };
+
+      const syncSuggestionsStub = sandbox.stub().resolves();
+      const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/common/opportunity.js': {
+          convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
+        },
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
+        },
+      });
+
+      const auditData = {
+        siteId: 'test-site',
+        auditId: 'audit-123',
+        scrapeJobId: 'job-123',
+        auditResult: {
+          urlsNeedingPrerender: 1,
+          results: [{
+            url: 'https://example.com/page1',
+            needsPrerender: true,
+            contentGainRatio: 2.5,
+            wordCountBefore: 100,
+            wordCountAfter: 250,
+          }],
+        },
+      };
+
+      const context = {
+        log: {
+          info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(),
+        },
+      };
+
+      const result = await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+      expect(result).to.not.be.null;
+      const { auditRunCandidates } = result;
+      expect(auditRunCandidates).to.be.an('array').with.lengthOf(0);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Skipping 1 suggestion\(s\) from Mystique request: already have a valid AI summary/),
+      );
+    });
+
+    it('should include URL with aiSummary "not available" in auditRunCandidates even if valuable', async () => {
+      const savedSuggestion = {
+        getStatus: () => 'NEW',
+        getId: () => 'saved-suggestion-id',
+        getData: () => ({
+          url: 'https://example.com/page1',
+          aiSummary: 'not available',
+          valuable: true,
+        }),
+      };
+
+      const mockOpportunity = {
+        getId: () => 'test-opp-id',
+        getSuggestions: sandbox.stub().resolves([savedSuggestion]),
+      };
+
+      const syncSuggestionsStub = sandbox.stub().resolves();
+      const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/common/opportunity.js': {
+          convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
+        },
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
+        },
+      });
+
+      const auditData = {
+        siteId: 'test-site',
+        auditId: 'audit-123',
+        scrapeJobId: 'job-123',
+        auditResult: {
+          urlsNeedingPrerender: 1,
+          results: [{
+            url: 'https://example.com/page1',
+            needsPrerender: true,
+            contentGainRatio: 2.5,
+            wordCountBefore: 100,
+            wordCountAfter: 250,
+          }],
+        },
+      };
+
+      const context = {
+        log: {
+          info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(),
+        },
+      };
+
+      const result = await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+      expect(result).to.not.be.null;
+      const { auditRunCandidates } = result;
+      expect(auditRunCandidates).to.be.an('array').with.lengthOf(1);
+      expect(auditRunCandidates[0].url).to.equal('https://example.com/page1');
+    });
+
+    it('should include URL with valid aiSummary but valuable=false in auditRunCandidates', async () => {
+      const savedSuggestion = {
+        getStatus: () => 'NEW',
+        getId: () => 'saved-suggestion-id',
+        getData: () => ({
+          url: 'https://example.com/page1',
+          aiSummary: 'Prerendering recommended.',
+          valuable: false,
+        }),
+      };
+
+      const mockOpportunity = {
+        getId: () => 'test-opp-id',
+        getSuggestions: sandbox.stub().resolves([savedSuggestion]),
+      };
+
+      const syncSuggestionsStub = sandbox.stub().resolves();
+      const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/common/opportunity.js': {
+          convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
+        },
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
+        },
+      });
+
+      const auditData = {
+        siteId: 'test-site',
+        auditId: 'audit-123',
+        scrapeJobId: 'job-123',
+        auditResult: {
+          urlsNeedingPrerender: 1,
+          results: [{
+            url: 'https://example.com/page1',
+            needsPrerender: true,
+            contentGainRatio: 2.5,
+            wordCountBefore: 100,
+            wordCountAfter: 250,
+          }],
+        },
+      };
+
+      const context = {
+        log: {
+          info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(),
+        },
+      };
+
+      const result = await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+      expect(result).to.not.be.null;
+      const { auditRunCandidates } = result;
+      expect(auditRunCandidates).to.be.an('array').with.lengthOf(1);
+      expect(auditRunCandidates[0].url).to.equal('https://example.com/page1');
+    });
   });
 
   describe('getScrapeJobStats', () => {

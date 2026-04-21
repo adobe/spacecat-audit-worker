@@ -581,6 +581,16 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
           return;
         }
 
+        // Skip suggestions that already have a valid AI summary and are marked as valuable —
+        // sending them to Mystique again would be wasteful with no benefit.
+        const hasValidAiSummary = data?.aiSummary
+          && data.aiSummary.toLowerCase() !== 'not available';
+        if (hasValidAiSummary && data?.valuable === true) {
+          log.debug(`${LOG_PREFIX} Skipping suggestion for url=${data.url}: already has a valid `
+            + `AI summary. baseUrl=${baseUrl}, siteId=${siteId}`);
+          return;
+        }
+
         const suggestionId = s.getId();
 
         // Resolve the scrapeJobId in priority order:
@@ -1185,10 +1195,31 @@ export async function processOpportunityAndSuggestions(
     suggestions=${preRenderSuggestions.length},
     totalSuggestions=${allSuggestions.length},`);
 
+  // Build a set of URLs whose suggestions already carry a valid AI summary marked as valuable.
+  // These do not need to be re-sent to Mystique — the summary is already present and useful.
+  const syncedSuggestions = await opportunity.getSuggestions();
+  const urlsWithValidAiSummary = new Set(
+    syncedSuggestions
+      .filter((s) => {
+        const d = s.getData();
+        const hasValidAiSummary = d?.aiSummary && d.aiSummary.toLowerCase() !== 'not available';
+        return hasValidAiSummary && d?.valuable === true;
+      })
+      .map((s) => s.getData()?.url)
+      .filter(Boolean),
+  );
+
+  if (urlsWithValidAiSummary.size > 0) {
+    log.info(`${LOG_PREFIX} Skipping ${urlsWithValidAiSummary.size} suggestion(s) from Mystique request: already have a valid AI summary. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
+  }
+
   // Build Mystique candidates from individual URLs (domain-wide excluded).
   // The guidance handler matches Mystique responses back to suggestions by URL,
   // so sending the URL as suggestionId is sufficient and avoids a post-sync DB fetch.
   const auditRunCandidates = preRenderSuggestions.reduce((acc, s) => {
+    if (urlsWithValidAiSummary.has(s.url)) {
+      return acc; // Already has a valid AI summary — skip re-generation
+    }
     try {
       acc.push({
         suggestionId: s.url,
