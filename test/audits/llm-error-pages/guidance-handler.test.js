@@ -10,1065 +10,436 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-disable max-len */
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import esmock from 'esmock';
-import ExcelJS from 'exceljs';
 
 use(sinonChai);
 
-describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
-  let guidanceHandler;
-  const sandbox = sinon.createSandbox();
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
 
-  let createLLMOSharepointClientStub;
-  let readFromSharePointStub;
-  let uploadToSharePointStub;
-  let publishToAdminHlxStub;
+/**
+ * Builds a minimal mock Suggestion with settable data.
+ */
+function makeSuggestion(url, extraData = {}) {
+  let data = { url, ...extraData };
+  return {
+    getData: () => data,
+    setData: sinon.spy((newData) => { data = newData; }),
+  };
+}
 
-  beforeEach(async () => {
-    // Mock all report-uploader functions
-    createLLMOSharepointClientStub = sandbox.stub().resolves({});
-    readFromSharePointStub = sandbox.stub();
-    uploadToSharePointStub = sandbox.stub().resolves();
-    publishToAdminHlxStub = sandbox.stub().resolves();
+/**
+ * Builds a minimal mock Opportunity that resolves its suggestions.
+ */
+function makeOpportunity(suggestions = []) {
+  return {
+    getSuggestions: sinon.stub().resolves(suggestions),
+  };
+}
 
-    guidanceHandler = await esmock('../../../src/llm-error-pages/guidance-handler.js', {
-      '../../../src/utils/report-uploader.js': {
-        createLLMOSharepointClient: createLLMOSharepointClientStub,
-        readFromSharePoint: readFromSharePointStub,
-        uploadToSharePoint: uploadToSharePointStub,
-        publishToAdminHlx: publishToAdminHlxStub,
+/**
+ * Builds the base Mystique message for the guidance handler.
+ */
+function makeMessage(overrides = {}) {
+  return {
+    siteId: 'site-123',
+    auditId: 'audit-456',
+    data: {
+      opportunityId: 'opp-789',
+      brokenLinks: [
+        {
+          urlTo: 'https://example.com/broken',
+          urlFrom: 'ChatGPT',
+          suggestedUrls: ['https://example.com/fix'],
+          aiRationale: 'Best match',
+          confidenceScore: 0.92,
+        },
+      ],
+    },
+    ...overrides,
+  };
+}
+
+/**
+ * Builds the minimal context required by the guidance handler.
+ */
+function makeContext(sandbox, overrides = {}) {
+  const site = {
+    getBaseURL: () => 'https://example.com',
+  };
+
+  const dataAccess = {
+    Site: { findById: sandbox.stub().resolves(site) },
+    Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-456' }) },
+    Opportunity: {
+      findById: sandbox.stub().resolves(makeOpportunity([
+        makeSuggestion('https://example.com/broken'),
+      ])),
+    },
+    Suggestion: { saveMany: sandbox.stub().resolves() },
+  };
+
+  const log = {
+    debug: sandbox.stub(),
+    info: sandbox.stub(),
+    warn: sandbox.stub(),
+    error: sandbox.stub(),
+  };
+
+  return {
+    log,
+    dataAccess,
+    ...overrides,
+    dataAccess: { ...dataAccess, ...(overrides.dataAccess || {}) },
+    log: { ...log, ...(overrides.log || {}) },
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('LLM Error Pages Guidance Handler', function () {
+  this.timeout(5000);
+  let sandbox;
+  let handler;
+
+  before(async () => {
+    const mod = await import('../../../src/llm-error-pages/guidance-handler.js');
+    handler = mod.default;
+  });
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  // ── Happy path ─────────────────────────────────────────────────────────────
+
+  it('should update matched suggestions and return ok()', async () => {
+    const suggestion = makeSuggestion('https://example.com/broken');
+    const saveManyStub = sandbox.stub().resolves();
+    const context = makeContext(sandbox, {
+      dataAccess: {
+        Site: { findById: sandbox.stub().resolves({ getBaseURL: () => 'https://example.com' }) },
+        Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-456' }) },
+        Opportunity: { findById: sandbox.stub().resolves(makeOpportunity([suggestion])) },
+        Suggestion: { saveMany: saveManyStub },
       },
     });
+
+    const result = await handler(makeMessage(), context);
+
+    expect(result.status).to.equal(200);
+    expect(suggestion.setData).to.have.been.calledOnce;
+
+    const updatedData = suggestion.setData.firstCall.args[0];
+    expect(updatedData.suggestedUrls).to.deep.equal(['https://example.com/fix']);
+    expect(updatedData.aiRationale).to.equal('Best match');
+    expect(updatedData.confidenceScore).to.equal(0.92);
+    expect(saveManyStub).to.have.been.calledOnce;
   });
 
-  afterEach(() => sandbox.restore());
-
-  it('successfully processes message and updates Excel file', async () => {
-    // Create existing Excel file with correct 11-column structure
-    const existingWorkbook = new ExcelJS.Workbook();
-    const sheet = existingWorkbook.addWorksheet('data');
-    sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
-    sheet.addRow(['Chatbots', 'ChatGPT', 150, 245.5, 'US', '/products/item', 'Adobe Creative', 'Product Page', '', '', '']);
-    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
-    readFromSharePointStub.resolves(existingBuffer);
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/products/item',
-          suggestedUrls: ['/products'],
-          aiRationale: 'Closest match',
-          suggestionId: 'llm-404-suggestion-w34-2025-0',
-        }],
+  it('should preserve existing suggestion data fields when merging AI enrichment', async () => {
+    const suggestion = makeSuggestion('https://example.com/broken', {
+      hitCount: 42,
+      agentTypes: ['ChatGPT'],
+      periodIdentifier: 'w10-2026',
+    });
+    const context = makeContext(sandbox, {
+      dataAccess: {
+        Site: { findById: sandbox.stub().resolves({ getBaseURL: () => 'https://example.com' }) },
+        Audit: { findById: sandbox.stub().resolves({}) },
+        Opportunity: { findById: sandbox.stub().resolves(makeOpportunity([suggestion])) },
+        Suggestion: { saveMany: sandbox.stub().resolves() },
       },
-    };
+    });
 
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'test-site-id',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({
-            getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => 'test-customer',
-            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
-      },
-      Audit: {
-        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
-      },
-    };
+    await handler(makeMessage(), context);
 
-    const logMock = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-      warn: sandbox.stub(),
-    };
-    const context = {
-      log: logMock,
-      dataAccess,
-      s3Client: {
-        send: sandbox.stub().resolves(),
-      },
-      env: {
-        AWS_ENV: 'test',
-        AWS_REGION: 'us-east-1',
-      },
-    };
-
-    const resp = await guidanceHandler.default(message, context);
-
-    expect(resp.status).to.equal(200);
-    expect(readFromSharePointStub.calledOnce).to.be.true;
-    expect(uploadToSharePointStub.calledOnce).to.be.true;
-    expect(publishToAdminHlxStub.calledOnce).to.be.true;
+    const updatedData = suggestion.setData.firstCall.args[0];
+    expect(updatedData.hitCount).to.equal(42);
+    expect(updatedData.agentTypes).to.deep.equal(['ChatGPT']);
+    expect(updatedData.periodIdentifier).to.equal('w10-2026');
+    expect(updatedData.suggestedUrls).to.deep.equal(['https://example.com/fix']);
   });
 
-  it('returns 404 when site is not found', async () => {
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'nonexistent-site',
-      data: { brokenLinks: [] },
-    };
-
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves(null),
+  it('should omit confidenceScore from data when not present in Mystique response', async () => {
+    const suggestion = makeSuggestion('https://example.com/broken');
+    const context = makeContext(sandbox, {
+      dataAccess: {
+        Site: { findById: sandbox.stub().resolves({ getBaseURL: () => 'https://example.com' }) },
+        Audit: { findById: sandbox.stub().resolves({}) },
+        Opportunity: { findById: sandbox.stub().resolves(makeOpportunity([suggestion])) },
+        Suggestion: { saveMany: sandbox.stub().resolves() },
       },
-      Audit: {
-        findById: sandbox.stub(),
-      },
-    };
+    });
 
-    const context = {
-      log: { error: sandbox.stub(), info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-      dataAccess,
-      s3Client: { send: sandbox.stub().resolves() },
-      env: {
-        AWS_ENV: 'test',
-        AWS_REGION: 'us-east-1',
-      },
-    };
+    const message = makeMessage();
+    delete message.data.brokenLinks[0].confidenceScore;
 
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(404);
+    await handler(message, context);
+
+    const updatedData = suggestion.setData.firstCall.args[0];
+    expect(updatedData).to.not.have.property('confidenceScore');
   });
 
-  it('returns 404 when audit is not found', async () => {
-    const message = {
-      auditId: 'nonexistent-audit',
-      siteId: 'site-1',
-      data: { brokenLinks: [] },
-    };
-
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'test-site-id',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({
-            getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => 'test-customer',
-            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
+  it('should default aiRationale to empty string when absent from Mystique response', async () => {
+    const suggestion = makeSuggestion('https://example.com/broken');
+    const context = makeContext(sandbox, {
+      dataAccess: {
+        Site: { findById: sandbox.stub().resolves({ getBaseURL: () => 'https://example.com' }) },
+        Audit: { findById: sandbox.stub().resolves({}) },
+        Opportunity: { findById: sandbox.stub().resolves(makeOpportunity([suggestion])) },
+        Suggestion: { saveMany: sandbox.stub().resolves() },
       },
-      Audit: {
-        findById: sandbox.stub().resolves(null),
-      },
-    };
+    });
 
-    const context = {
-      log: { error: sandbox.stub(), info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-      dataAccess,
-      s3Client: { send: sandbox.stub().resolves() },
-      env: {
-        AWS_ENV: 'test',
-        AWS_REGION: 'us-east-1',
-      },
-    };
+    const message = makeMessage();
+    delete message.data.brokenLinks[0].aiRationale;
 
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(404);
+    await handler(message, context);
+
+    const updatedData = suggestion.setData.firstCall.args[0];
+    expect(updatedData.aiRationale).to.equal('');
   });
 
-  it('returns 400 when Excel processing fails', async () => {
-    readFromSharePointStub.rejects(new Error('SharePoint error'));
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: { brokenLinks: [] },
-    };
-
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'test-site-id',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({
-            getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => 'test-customer',
-            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
+  it('should update multiple matched suggestions in a single saveMany call', async () => {
+    const s1 = makeSuggestion('https://example.com/page-a');
+    const s2 = makeSuggestion('https://example.com/page-b');
+    const saveManyStub = sandbox.stub().resolves();
+    const context = makeContext(sandbox, {
+      dataAccess: {
+        Site: { findById: sandbox.stub().resolves({ getBaseURL: () => 'https://example.com' }) },
+        Audit: { findById: sandbox.stub().resolves({}) },
+        Opportunity: { findById: sandbox.stub().resolves(makeOpportunity([s1, s2])) },
+        Suggestion: { saveMany: saveManyStub },
       },
-      Audit: {
-        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
-      },
-    };
+    });
 
-    const logMock = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-      warn: sandbox.stub(),
-    };
-    const context = {
-      log: logMock,
-      dataAccess,
-      s3Client: {
-        send: sandbox.stub().resolves(),
+    const message = makeMessage();
+    message.data.brokenLinks = [
+      {
+        urlTo: 'https://example.com/page-a',
+        suggestedUrls: ['https://example.com/fix-a'],
+        aiRationale: 'Rationale A',
+        confidenceScore: 0.8,
       },
-      env: {
-        AWS_ENV: 'test',
-        AWS_REGION: 'us-east-1',
+      {
+        urlTo: 'https://example.com/page-b',
+        suggestedUrls: ['https://example.com/fix-b'],
+        aiRationale: 'Rationale B',
+        confidenceScore: 0.9,
       },
-    };
+    ];
 
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(400);
-    expect(logMock.error.calledWith('Failed to update 404 Excel on Mystique callback: SharePoint error')).to.be.true;
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(200);
+    expect(saveManyStub).to.have.been.calledOnce;
+    const saved = saveManyStub.firstCall.args[0];
+    expect(saved).to.have.lengthOf(2);
   });
 
-  it('handles empty brokenLinks array', async () => {
-    const existingWorkbook = new ExcelJS.Workbook();
-    const sheet = existingWorkbook.addWorksheet('data');
-    sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
-    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
-    readFromSharePointStub.resolves(existingBuffer);
+  // ── Edge cases ────────────────────────────────────────────────────────────
 
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: { brokenLinks: [] },
-    };
-
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'test-site-id',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({
-            getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => 'test-customer',
-            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
+  it('should skip brokenLinks with empty suggestedUrls and still update others', async () => {
+    const s1 = makeSuggestion('https://example.com/page-a');
+    const s2 = makeSuggestion('https://example.com/page-b');
+    const saveManyStub = sandbox.stub().resolves();
+    const context = makeContext(sandbox, {
+      dataAccess: {
+        Site: { findById: sandbox.stub().resolves({ getBaseURL: () => 'https://example.com' }) },
+        Audit: { findById: sandbox.stub().resolves({}) },
+        Opportunity: { findById: sandbox.stub().resolves(makeOpportunity([s1, s2])) },
+        Suggestion: { saveMany: saveManyStub },
       },
-      Audit: {
-        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
-      },
-    };
+    });
 
-    const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-      dataAccess,
-      s3Client: { send: sandbox.stub().resolves() },
-      env: {
-        AWS_ENV: 'test',
-        AWS_REGION: 'us-east-1',
+    const message = makeMessage();
+    message.data.brokenLinks = [
+      { urlTo: 'https://example.com/page-a', suggestedUrls: [], aiRationale: 'None' },
+      {
+        urlTo: 'https://example.com/page-b',
+        suggestedUrls: ['https://example.com/fix-b'],
+        aiRationale: 'Good match',
       },
-    };
+    ];
 
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(200);
+    expect(s1.setData).to.not.have.been.called;
+    expect(s2.setData).to.have.been.calledOnce;
+    expect(saveManyStub).to.have.been.calledOnce;
   });
 
-  it('falls back to generateReportingPeriods when brokenLinks have no suggestionId', async () => {
-    const existingWorkbook = new ExcelJS.Workbook();
-    const sheet = existingWorkbook.addWorksheet('data');
-    sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
-    sheet.addRow(['Chatbots', 'ChatGPT', 150, 245.5, 'US', '/products/item', 'Adobe Creative', 'Product Page', '', '', '']);
-    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
-    readFromSharePointStub.resolves(existingBuffer);
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/products/item',
-          suggestedUrls: ['/products'],
-          aiRationale: 'Closest match',
-        }],
+  it('should skip brokenLinks with no matching suggestion in DB', async () => {
+    const suggestion = makeSuggestion('https://example.com/known-page');
+    const saveManyStub = sandbox.stub().resolves();
+    const context = makeContext(sandbox, {
+      dataAccess: {
+        Site: { findById: sandbox.stub().resolves({ getBaseURL: () => 'https://example.com' }) },
+        Audit: { findById: sandbox.stub().resolves({}) },
+        Opportunity: { findById: sandbox.stub().resolves(makeOpportunity([suggestion])) },
+        Suggestion: { saveMany: saveManyStub },
       },
-    };
+    });
 
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'test-site-id',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({
-            getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => 'test-customer',
-            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
+    const message = makeMessage();
+    message.data.brokenLinks = [
+      {
+        urlTo: 'https://example.com/unknown-page',
+        suggestedUrls: ['https://example.com/fix'],
+        aiRationale: 'Great',
       },
-      Audit: {
-        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
-      },
-    };
+    ];
 
-    const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-      dataAccess,
-      s3Client: { send: sandbox.stub().resolves() },
-      env: { AWS_ENV: 'test', AWS_REGION: 'us-east-1' },
-    };
+    const result = await handler(message, context);
 
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
-
-    const filenameArg = readFromSharePointStub.firstCall.args[0];
-    expect(filenameArg).to.match(/^agentictraffic-errors-404-w\d{2}-\d{4}\.xlsx$/);
+    expect(result.status).to.equal(200);
+    expect(suggestion.setData).to.not.have.been.called;
+    expect(saveManyStub).to.not.have.been.called;
   });
 
-  it('handles brokenLinks with actual URL matching and updates', async () => {
-    // Create existing Excel file with matching data
-    const existingWorkbook = new ExcelJS.Workbook();
-    const sheet = existingWorkbook.addWorksheet('data');
-    sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
-    sheet.addRow(['Chatbots', 'ChatGPT', 150, 245.5, 'US', '/products/item', 'Adobe Creative', 'Product Page', '', '', '']);
-    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
-    readFromSharePointStub.resolves(existingBuffer);
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/products/item',
-          suggestedUrls: ['/products', '/items'],
-          aiRationale: 'Best match found',
-        }],
+  it('should return ok() and warn when no suggestions match Mystique response', async () => {
+    const warnStub = sandbox.stub();
+    const saveManyStub = sandbox.stub().resolves();
+    const context = makeContext(sandbox, {
+      dataAccess: {
+        Site: { findById: sandbox.stub().resolves({ getBaseURL: () => 'https://example.com' }) },
+        Audit: { findById: sandbox.stub().resolves({}) },
+        Opportunity: { findById: sandbox.stub().resolves(makeOpportunity([])) },
+        Suggestion: { saveMany: saveManyStub },
       },
-    };
-
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'test-site-id',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({
-            getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => 'test-customer',
-            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
+      log: {
+        debug: sandbox.stub(),
+        info: sandbox.stub(),
+        warn: warnStub,
+        error: sandbox.stub(),
       },
-      Audit: {
-        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
-      },
-    };
+    });
 
-    const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-      dataAccess,
-      s3Client: { send: sandbox.stub().resolves() },
-      env: {
-        AWS_ENV: 'test',
-        AWS_REGION: 'us-east-1',
-      },
-    };
+    const result = await handler(makeMessage(), context);
 
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
+    expect(result.status).to.equal(200);
+    expect(saveManyStub).to.not.have.been.called;
+    expect(warnStub).to.have.been.called;
   });
 
-  it('handles comma-separated user agents from Mystique', async () => {
-    // Test the new comma-separated user agent matching logic
-    const existingWorkbook = new ExcelJS.Workbook();
-    const sheet = existingWorkbook.addWorksheet('data');
-    sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
-    sheet.addRow(['Chatbots', 'ChatGPT', 150, 245.5, 'US', '/test-page', 'Adobe Creative', 'Product Page', '', '', '']);
-    sheet.addRow(['Web search crawlers', 'Perplexity', 89, 189.2, 'GLOBAL', '/another-page', 'Support', 'Help Page', '', '', '']);
-    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
-    readFromSharePointStub.resolves(existingBuffer);
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT, Perplexity', // Comma-separated user agents like Mystique sends
-          urlTo: 'https://example.com/test-page',
-          suggestedUrls: ['/products', '/items'],
-          aiRationale: 'Best match found for multiple agents',
-        }],
+  it('should handle empty brokenLinks array gracefully', async () => {
+    const saveManyStub = sandbox.stub().resolves();
+    const context = makeContext(sandbox, {
+      dataAccess: {
+        Site: { findById: sandbox.stub().resolves({ getBaseURL: () => 'https://example.com' }) },
+        Audit: { findById: sandbox.stub().resolves({}) },
+        Opportunity: { findById: sandbox.stub().resolves(makeOpportunity([])) },
+        Suggestion: { saveMany: saveManyStub },
       },
-    };
+    });
 
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'test-site-id',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({
-            getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => 'test-customer',
-            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
-      },
-      Audit: {
-        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
-      },
-    };
+    const message = makeMessage();
+    message.data.brokenLinks = [];
 
-    const logMock = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-      warn: sandbox.stub(),
-    };
-    const context = {
-      log: logMock,
-      dataAccess,
-      s3Client: { send: sandbox.stub().resolves() },
-      env: {
-        AWS_ENV: 'test',
-        AWS_REGION: 'us-east-1',
-      },
-    };
+    const result = await handler(message, context);
 
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
-
-    // Verify that the debug logging was called
-    expect(logMock.debug.calledWith('Processing 1 broken links from Mystique')).to.be.true;
+    expect(result.status).to.equal(200);
+    expect(saveManyStub).to.not.have.been.called;
   });
 
-  it('handles empty suggestedUrls array from Mystique', async () => {
-    // Test handling of Mystique responses with empty suggestions
-    const existingWorkbook = new ExcelJS.Workbook();
-    const sheet = existingWorkbook.addWorksheet('data');
-    sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
-    sheet.addRow(['Chatbots', 'ChatGPT', 150, 245.5, 'US', '/test-page', 'Adobe Creative', 'Product Page', '', '', '']);
-    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
-    readFromSharePointStub.resolves(existingBuffer);
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/test-page',
-          suggestedUrls: [], // Empty suggestions like some Mystique responses
-          aiRationale: 'Analysis completed but unexpected output format',
-        }],
+  it('should fall back to empty string base URL when site has no getBaseURL method', async () => {
+    const suggestion = makeSuggestion('/broken');
+    const saveManyStub = sandbox.stub().resolves();
+    const context = makeContext(sandbox, {
+      dataAccess: {
+        Site: { findById: sandbox.stub().resolves({}) }, // no getBaseURL
+        Audit: { findById: sandbox.stub().resolves({}) },
+        Opportunity: { findById: sandbox.stub().resolves(makeOpportunity([suggestion])) },
+        Suggestion: { saveMany: saveManyStub },
       },
-    };
+    });
 
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'test-site-id',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({
-            getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => 'test-customer',
-            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
-      },
-      Audit: {
-        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
-      },
-    };
+    const message = makeMessage();
+    message.data.brokenLinks = [{
+      urlTo: '/broken',
+      suggestedUrls: ['https://example.com/fix'],
+      aiRationale: 'Match',
+    }];
 
-    const logMock = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-      warn: sandbox.stub(),
-    };
-    const context = {
-      log: logMock,
-      dataAccess,
-      s3Client: { send: sandbox.stub().resolves() },
-      env: {
-        AWS_ENV: 'test',
-        AWS_REGION: 'us-east-1',
-      },
-    };
+    const result = await handler(message, context);
 
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
-
-    // Verify that the warning about empty suggestions was logged
-    expect(logMock.warn.calledWith('No suggested URLs for broken link: https://example.com/test-page')).to.be.true;
+    expect(result.status).to.equal(200);
+    expect(saveManyStub).to.have.been.calledOnce;
   });
 
-  it('handles user agent mismatch scenario - now updates regardless', async () => {
-    // Test that URL matches update Excel regardless of user agent differences
-    const existingWorkbook = new ExcelJS.Workbook();
-    const sheet = existingWorkbook.addWorksheet('data');
-    sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
-    sheet.addRow(['Chatbots', 'Claude', 150, 245.5, 'US', '/test-page', 'Adobe Creative', 'Product Page', '', '', '']); // Different user agent
-    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
-    readFromSharePointStub.resolves(existingBuffer);
+  // ── Not-found / bad-request paths ─────────────────────────────────────────
 
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT', // Different from "Claude" in Excel, but should still update
-          urlTo: 'https://example.com/test-page',
-          suggestedUrls: ['/products'],
-          aiRationale: 'Test user agent mismatch - should still update',
-        }],
+  it('should return 404 when site is not found', async () => {
+    const context = makeContext(sandbox, {
+      dataAccess: {
+        Site: { findById: sandbox.stub().resolves(null) },
+        Audit: { findById: sandbox.stub().resolves({}) },
+        Opportunity: { findById: sandbox.stub().resolves(null) },
+        Suggestion: { saveMany: sandbox.stub().resolves() },
       },
-    };
+    });
 
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'test-site-id',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({
-            getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => 'test-customer',
-            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
-      },
-      Audit: {
-        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
-      },
-    };
+    const result = await handler(makeMessage(), context);
 
-    const logMock = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-      warn: sandbox.stub(),
-    };
-    const context = {
-      log: logMock,
-      dataAccess,
-      s3Client: { send: sandbox.stub().resolves() },
-      env: {
-        AWS_ENV: 'test',
-        AWS_REGION: 'us-east-1',
-      },
-    };
-
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
-
-    // Verify that the Excel was updated despite user agent mismatch
-    expect(logMock.debug.calledWith('Updated row 2 for URL: /test-page with 1 suggestions')).to.be.true;
+    expect(result.status).to.equal(404);
   });
 
-  it('covers workbook.worksheets[0] || addWorksheet fallback', async () => {
-    // Create workbook with no worksheets to test the || fallback
-    const emptyWorkbook = new ExcelJS.Workbook();
-    const emptyBuffer = await emptyWorkbook.xlsx.writeBuffer();
-    readFromSharePointStub.resolves(emptyBuffer);
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: { brokenLinks: [] },
-    };
-
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'test-site-id',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({
-            getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => 'test-customer',
-            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
+  it('should return 404 when audit is not found', async () => {
+    const context = makeContext(sandbox, {
+      dataAccess: {
+        Site: { findById: sandbox.stub().resolves({ getBaseURL: () => 'https://example.com' }) },
+        Audit: { findById: sandbox.stub().resolves(null) },
+        Opportunity: { findById: sandbox.stub().resolves(null) },
+        Suggestion: { saveMany: sandbox.stub().resolves() },
       },
-      Audit: {
-        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
-      },
-    };
+    });
 
-    const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-      dataAccess,
-      s3Client: { send: sandbox.stub().resolves() },
-      env: {
-        AWS_ENV: 'test',
-        AWS_REGION: 'us-east-1',
-      },
-    };
+    const result = await handler(makeMessage(), context);
 
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
+    expect(result.status).to.equal(404);
   });
 
-  it('covers optional chaining in getCell operations', async () => {
-    // Create workbook with problematic cell values to test optional chaining
-    const existingWorkbook = new ExcelJS.Workbook();
-    const sheet = existingWorkbook.addWorksheet('data');
-    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
-    // Add a row with a cell that doesn't have toString method
-    sheet.addRow(['ChatGPT', '/test', '', '', '']);
-    // Note: The optional chaining in the code handles cells without toString methods
-    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
-    readFromSharePointStub.resolves(existingBuffer);
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: { brokenLinks: [] },
-    };
-
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://example.com',
-          getId: () => 'site-1',
-          getConfig: () => ({
-            getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => 'test-customer',
-            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
+  it('should return 400 when opportunityId is missing from message', async () => {
+    const context = makeContext(sandbox, {
+      dataAccess: {
+        Site: { findById: sandbox.stub().resolves({ getBaseURL: () => 'https://example.com' }) },
+        Audit: { findById: sandbox.stub().resolves({}) },
+        Opportunity: { findById: sandbox.stub().resolves(null) },
+        Suggestion: { saveMany: sandbox.stub().resolves() },
       },
-      Audit: {
-        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
-      },
-    };
+    });
 
-    const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-      dataAccess,
-      s3Client: { send: sandbox.stub().resolves() },
-      env: {
-        AWS_ENV: 'test',
-        AWS_REGION: 'us-east-1',
-      },
-    };
+    const message = makeMessage();
+    delete message.data.opportunityId;
 
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(400);
   });
 
-  it('covers empty urlCell branch in Excel processing loop', async () => {
-    // Test the branch where urlCell is empty (if condition fails)
-    const existingWorkbook = new ExcelJS.Workbook();
-    const sheet = existingWorkbook.addWorksheet('data');
-    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
-    sheet.addRow(['ChatGPT', '', '', '', '']); // Empty URL cell
-    sheet.addRow(['Claude', null, '', '', '']); // Null URL cell
-    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
-    readFromSharePointStub.resolves(existingBuffer);
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/test',
-          suggestedUrls: ['/test'],
-          aiRationale: 'Test',
-        }],
+  it('should return 404 when opportunity is not found in DB', async () => {
+    const context = makeContext(sandbox, {
+      dataAccess: {
+        Site: { findById: sandbox.stub().resolves({ getBaseURL: () => 'https://example.com' }) },
+        Audit: { findById: sandbox.stub().resolves({}) },
+        Opportunity: { findById: sandbox.stub().resolves(null) },
+        Suggestion: { saveMany: sandbox.stub().resolves() },
       },
-    };
+    });
 
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'test-site-id',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({
-            getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => 'test-customer',
-            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
-      },
-      Audit: {
-        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
-      },
-    };
+    const result = await handler(makeMessage(), context);
 
-    const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-      dataAccess,
-      s3Client: { send: sandbox.stub().resolves() },
-      env: {
-        AWS_ENV: 'test',
-        AWS_REGION: 'us-east-1',
-      },
-    };
-
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
-  });
-
-  it('covers additional branches - null/undefined suggestedUrls and aiRationale', async () => {
-    // Test the || [] and || '' fallback branches in the brokenUrlsMap creation
-    const existingWorkbook = new ExcelJS.Workbook();
-    const sheet = existingWorkbook.addWorksheet('data');
-    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
-    sheet.addRow(['ChatGPT', '/test-path', '', '', '']);
-    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
-    readFromSharePointStub.resolves(existingBuffer);
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/test-path',
-          suggestedUrls: null, // This tests the || [] fallback
-          aiRationale: undefined, // This tests the || '' fallback
-        }],
-      },
-    };
-
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://example.com',
-          getId: () => 'site-1',
-          getConfig: () => ({
-            getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => 'test-customer',
-            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
-      },
-      Audit: {
-        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
-      },
-    };
-
-    const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-      dataAccess,
-      s3Client: { send: sandbox.stub().resolves() },
-      env: {
-        AWS_ENV: 'test',
-        AWS_REGION: 'us-east-1',
-      },
-    };
-
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
-  });
-
-  it('covers URL parsing with query parameters', async () => {
-    // Test the URL parsing logic that includes search parameters
-    const existingWorkbook = new ExcelJS.Workbook();
-    const sheet = existingWorkbook.addWorksheet('data');
-    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
-    sheet.addRow(['ChatGPT', '/search?q=test', '', '', '']);
-    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
-    readFromSharePointStub.resolves(existingBuffer);
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/search?q=test&param=value', // URL with query params
-          suggestedUrls: ['/search'],
-          aiRationale: 'Search page',
-        }],
-      },
-    };
-
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://example.com',
-          getId: () => 'site-1',
-          getConfig: () => ({
-            getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => 'test-customer',
-            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
-      },
-      Audit: {
-        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
-      },
-    };
-
-    const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-      dataAccess,
-      s3Client: { send: sandbox.stub().resolves() },
-      env: {
-        AWS_ENV: 'test',
-        AWS_REGION: 'us-east-1',
-      },
-    };
-
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
-  });
-
-  it('covers toPathOnly catch block with invalid URL characters', async () => {
-    // Test the catch block by using URLs with invalid characters
-    const existingWorkbook = new ExcelJS.Workbook();
-    const sheet = existingWorkbook.addWorksheet('data');
-    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
-    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
-    readFromSharePointStub.resolves(existingBuffer);
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'http://[invalid-ipv6-bracket', // Invalid URL that should cause URL constructor to throw
-          suggestedUrls: ['/fallback'],
-          aiRationale: 'Test catch block',
-        }],
-      },
-    };
-
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://example.com',
-          getId: () => 'site-1',
-          getConfig: () => ({
-            getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => 'test-customer',
-            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
-      },
-      Audit: {
-        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
-      },
-    };
-
-    const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-      dataAccess,
-      s3Client: { send: sandbox.stub().resolves() },
-      env: {
-        AWS_ENV: 'test',
-        AWS_REGION: 'us-east-1',
-      },
-    };
-
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
-  });
-
-  it('covers getLlmoDataFolder fallback to s3Config.siteName', async () => {
-    // Test the || s3Config.siteName fallback when getLlmoDataFolder returns null
-    const existingWorkbook = new ExcelJS.Workbook();
-    const sheet = existingWorkbook.addWorksheet('data');
-    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
-    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
-    readFromSharePointStub.resolves(existingBuffer);
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: { brokenLinks: [] },
-    };
-
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://example.com',
-          getId: () => 'site-1',
-          getConfig: () => ({
-            getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => null, // This will trigger the || s3Config.siteName fallback
-            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
-      },
-      Audit: {
-        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
-      },
-    };
-
-    const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-      dataAccess,
-      s3Client: { send: sandbox.stub().resolves() },
-      env: {
-        AWS_ENV: 'test',
-        AWS_REGION: 'us-east-1',
-      },
-    };
-
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
-  });
-
-  it('covers search parameter parsing in URL', async () => {
-    // Test the (parsed.search || '') part of the return statement in toPathOnly
-    const existingWorkbook = new ExcelJS.Workbook();
-    const sheet = existingWorkbook.addWorksheet('data');
-    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
-    sheet.addRow(['ChatGPT', '/search', '', '', '']); // URL without search params
-    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
-    readFromSharePointStub.resolves(existingBuffer);
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/search', // URL without search params - tests || '' branch
-          suggestedUrls: ['/search'],
-          aiRationale: 'Test search param fallback',
-        }],
-      },
-    };
-
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://example.com',
-          getId: () => 'site-1',
-          getConfig: () => ({
-            getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => 'test-customer',
-            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
-      },
-      Audit: {
-        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
-      },
-    };
-
-    const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-      dataAccess,
-      s3Client: { send: sandbox.stub().resolves() },
-      env: {
-        AWS_ENV: 'test',
-        AWS_REGION: 'us-east-1',
-      },
-    };
-
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
-  });
-
-  it('covers userAgent cell toString fallback', async () => {
-    // Test the || '' fallback when userAgent cell has no toString method
-    const existingWorkbook = new ExcelJS.Workbook();
-    const sheet = existingWorkbook.addWorksheet('data');
-    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
-    // Add row with problematic userAgent cell
-    sheet.addRow([null, '/test', '', '', '']); // null userAgent
-    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
-    readFromSharePointStub.resolves(existingBuffer);
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: { brokenLinks: [] },
-    };
-
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://example.com',
-          getId: () => 'site-1',
-          getConfig: () => ({
-            getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => 'test-customer',
-            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
-      },
-      Audit: {
-        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
-      },
-    };
-
-    const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-      dataAccess,
-      s3Client: { send: sandbox.stub().resolves() },
-      env: {
-        AWS_ENV: 'test',
-        AWS_REGION: 'us-east-1',
-      },
-    };
-
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
-  });
-
-  it('covers getBaseURL returning falsy value in toPathOnly', async () => {
-    // Test the fallback when getBaseURL returns empty string
-    const existingWorkbook = new ExcelJS.Workbook();
-    const sheet = existingWorkbook.addWorksheet('data');
-    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
-    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
-    readFromSharePointStub.resolves(existingBuffer);
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: '/test-path', // Relative URL
-          suggestedUrls: ['/test'],
-          aiRationale: 'Test',
-        }],
-      },
-    };
-
-    // Create a site mock that returns valid URL for utils.js but empty string for toPathOnly
-    let getBaseURLCallCount = 0;
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => {
-            getBaseURLCallCount += 1;
-            // Return valid URL for first call (utils.js), empty string for subsequent calls (toPathOnly)
-            return getBaseURLCallCount === 1 ? 'https://example.com' : '';
-          },
-          getId: () => 'site-1',
-          getConfig: () => ({
-            getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => 'test-customer',
-            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
-      },
-      Audit: {
-        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
-      },
-    };
-
-    const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-      dataAccess,
-      s3Client: { send: sandbox.stub().resolves() },
-      env: {
-        AWS_ENV: 'test',
-        AWS_REGION: 'us-east-1',
-      },
-    };
-
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
+    expect(result.status).to.equal(404);
   });
 });
