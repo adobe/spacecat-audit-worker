@@ -26,14 +26,14 @@ import {
   transformWebSearchProviderForMystique,
   writeSheetRefreshResultFailed,
   writeSheetRefreshResultSkipped,
-} from './util.js';
+} from '../geo-brand-presence/util.js';
 
 /**
  * @import { SharepointClient } from '@adobe/spacecat-helix-content-sdk/src/sharepoint/client.js';
- * @import { RefreshMetadata } from './util.js';
+ * @import { RefreshMetadata } from '../geo-brand-presence/util.js';
  */
 
-const AUDIT_NAME = 'GEO_BRAND_PRESENCE_REFRESH';
+const AUDIT_NAME = 'GEO_BRAND_PRESENCE_DAILY_REFRESH';
 const RE_SHEET_NAME = /^brandpresence-(?<webSearchProvider>.+?)-w(?<week>\d{2})-(?<year>\d{4})(?:-\d+)?$/;
 
 /* c8 ignore start */
@@ -85,7 +85,6 @@ async function fetchQueryIndexPaths(site, context, sharepointClient) {
 
   log.info(`%s: Starting query-index fetch for siteId: ${siteId}`, AUDIT_NAME);
 
-  // Get the site's LLMO data folder
   const dataFolder = site.getConfig()?.getLlmoDataFolder?.();
   if (!dataFolder) {
     throw new Error(`${AUDIT_NAME}:No LLMO data folder configured for site can't proceed with audit`);
@@ -93,14 +92,12 @@ async function fetchQueryIndexPaths(site, context, sharepointClient) {
 
   log.info(`%s: Reading query-index from SharePoint for siteId: ${siteId}, path: ${dataFolder}/query-index.xlsx`, AUDIT_NAME);
 
-  // Read the query-index.xlsx file from SharePoint
   const readStartTime = Date.now();
   const queryIndexBuffer = await readFromSharePoint('query-index.xlsx', dataFolder, sharepointClient, log);
   const readDuration = Date.now() - readStartTime;
 
   log.info(`%s: Query-index file downloaded for siteId: ${siteId} (${queryIndexBuffer.length} bytes in ${readDuration}ms)`, AUDIT_NAME);
 
-  // Parse the Excel file to extract paths
   log.debug(`%s: Parsing Excel workbook for siteId: ${siteId}`, AUDIT_NAME);
   const parseStartTime = Date.now();
   const workbook = new ExcelJS.Workbook();
@@ -115,25 +112,20 @@ async function fetchQueryIndexPaths(site, context, sharepointClient) {
 
   log.debug(`%s: Extracting paths from worksheets for siteId: ${siteId}`, AUDIT_NAME);
 
-  // Iterate through all worksheets to find path data
   workbook.worksheets.forEach((worksheet, worksheetIndex) => {
     log.debug(`%s: Processing worksheet ${worksheetIndex + 1}/${workbook.worksheets.length} for siteId: ${siteId}, name: ${worksheet.name}`, AUDIT_NAME);
 
     worksheet.eachRow((row, rowNumber) => {
-      // Skip header row
       if (rowNumber === 1) {
         return;
       }
 
-      // Look for path-like data in the first column or any column that contains path information
       row.eachCell((cell) => {
         const cellValue = cell.value;
         if (cellValue && typeof cellValue === 'string') {
-          // Check for brand-presence/latest/ first (priority)
           if (cellValue.includes('/brand-presence/latest/')) {
             const filename = cellValue.split('/').pop();
             if (filename) {
-              // Remove .json extension
               const filenameWithoutExt = filename.replace(/\.json$/i, '');
               if (!latestPaths.includes(filenameWithoutExt)) {
                 latestPaths.push(filenameWithoutExt);
@@ -141,10 +133,8 @@ async function fetchQueryIndexPaths(site, context, sharepointClient) {
               }
             }
           } else if (cellValue.includes('/brand-presence/') && !cellValue.includes('/brand-presence/latest/')) {
-            // Then check for regular brand-presence/ (fallback)
             const filename = cellValue.split('/').pop();
             if (filename) {
-              // Remove .json extension
               const filenameWithoutExt = filename.replace(/\.json$/i, '');
               if (!regularPaths.includes(filenameWithoutExt)) {
                 regularPaths.push(filenameWithoutExt);
@@ -157,14 +147,12 @@ async function fetchQueryIndexPaths(site, context, sharepointClient) {
     });
   });
 
-  // Use latest paths if available, otherwise fall back to regular paths
   const allPaths = latestPaths.length > 0 ? latestPaths : regularPaths;
   const brandPresenceFolder = latestPaths.length > 0 ? 'brand-presence/latest' : 'brand-presence';
   const sourceFolder = `${dataFolder}/${brandPresenceFolder}`;
 
   log.info(`%s: Path extraction complete for siteId: ${siteId}, latest: ${latestPaths.length}, regular: ${regularPaths.length}, using: ${allPaths.length} from ${brandPresenceFolder}`, AUDIT_NAME);
 
-  // Filter to only include paths from the last 4 weeks
   const paths = filterPathsByLastFourWeeks(allPaths, log);
 
   if (paths.length > 0) {
@@ -175,7 +163,7 @@ async function fetchQueryIndexPaths(site, context, sharepointClient) {
   throw new Error(`${AUDIT_NAME} No paths found in query-index file for the last 4 weeks`);
 }
 
-export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
+export async function refreshGeoBrandPresenceDailyHandler(message, context) {
   const { log, dataAccess } = context;
   const { Site } = dataAccess;
   const { siteId, auditContext } = message;
@@ -196,8 +184,6 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
     throw new Error(`${AUDIT_NAME}: Site not found for siteId: ${siteId}`);
   }
 
-  // fetch sheets that need to be refreshed from SharePoint
-  // Get the SharePoint client
   log.info(`%s: Creating SharePoint client for siteId: ${siteId}`, AUDIT_NAME);
   const sharepointClient = await createLLMOSharepointClient(context);
 
@@ -227,7 +213,6 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
   log.info(`%s: Source folder: ${sourceFolder}, Sheets to refresh: ${sheets.length} for siteId: ${siteId}`, AUDIT_NAME);
   log.debug(`%s: Sheet names for siteId: ${siteId}: ${sheets.join(', ')}`, AUDIT_NAME);
 
-  // Create S3 folder for audit tracking
   const { s3Client, env } = context;
   const bucketName = env?.S3_IMPORTER_BUCKET_NAME;
 
@@ -251,7 +236,6 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
   log.info(`%s: DRS is configured, routing refresh via DRS for siteId: ${siteId}`, AUDIT_NAME);
 
   try {
-    // Create a metadata file to establish the folder structure
     log.debug(`%s: Creating metadata for ${sheets.length} sheets, auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
 
     const files = sheets.map((sheetName) => ({
@@ -317,7 +301,7 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
           configVersion,
           week: +week,
           year: +year,
-          runFrequency: 'weekly',
+          runFrequency: 'daily',
         });
         log.info(
           `%s: DRS analyze triggered for sheet ${sheetName}, siteId: ${siteId}, jobId: ${jobId}`,

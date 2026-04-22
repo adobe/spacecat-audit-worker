@@ -117,12 +117,8 @@ import semanticValueVisibility from './semantic-value-visibility/handler.js';
 import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
 import drsPromptGeneration from './drs-prompt-generation/handler.js';
 import offsiteBrandPresence from './offsite-brand-presence/handler.js';
-import geoBrandPresence from './geo-brand-presence/handler.js';
-import detectGeoBrandPresence from './geo-brand-presence/detect-geo-brand-presence-handler.js';
-import { handleCategorizationResponseHandler } from './geo-brand-presence/categorization-response-handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
-import geoBrandPresenceDaily from './geo-brand-presence-daily/handler.js';
-import detectGeoBrandPresenceDaily from './geo-brand-presence-daily/detect-geo-brand-presence-handler.js';
+import { refreshGeoBrandPresenceDailyHandler } from './geo-brand-presence-daily/geo-brand-presence-refresh-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -226,20 +222,8 @@ const HANDLERS = {
   'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
   'drs:prompt_generation_base_url': drsPromptGeneration,
   'offsite-brand-presence': offsiteBrandPresence,
-  'geo-brand-presence': geoBrandPresence,
-  'geo-brand-presence-free': geoBrandPresence,
-  'geo-brand-presence-paid': geoBrandPresence,
-  // Splits of geo-brand-presence-free for staggered execution (max 40 sites each)
-  ...Object.fromEntries(
-    Array.from({ length: 23 }, (_, i) => [`geo-brand-presence-free-${i + 1}`, geoBrandPresence]),
-  ),
-  'geo-brand-presence-daily': geoBrandPresenceDaily,
   'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,
-  'category:geo-brand-presence': handleCategorizationResponseHandler,
-  'detect:geo-brand-presence': detectGeoBrandPresence,
-  'refresh:geo-brand-presence': detectGeoBrandPresence,
-  'detect:geo-brand-presence-daily': detectGeoBrandPresenceDaily,
-  'refresh:geo-brand-presence-daily': detectGeoBrandPresenceDaily,
+  'refresh:geo-brand-presence-daily': refreshGeoBrandPresenceDailyHandler,
   dummy: (message) => ok(message),
 };
 

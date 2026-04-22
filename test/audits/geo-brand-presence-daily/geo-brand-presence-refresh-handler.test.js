@@ -23,7 +23,7 @@ import esmock from 'esmock';
 use(sinonChai);
 use(chaiAsPromised);
 
-describe('Geo Brand Presence Refresh Handler', () => {
+describe('Geo Brand Presence Daily Refresh Handler', () => {
   let context;
   let sandbox;
   let site;
@@ -32,7 +32,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
   let dataAccess;
   let sharepointClient;
   let getLastNumberOfWeeksStub;
-  let refreshGeoBrandPresenceSheetsHandler;
+  let refreshGeoBrandPresenceDailyHandler;
   let createLLMOSharepointClientStub;
   let readFromSharePointStub;
   let uploadExcelToDrsStub;
@@ -40,7 +40,6 @@ describe('Geo Brand Presence Refresh Handler', () => {
   let drsClientStub;
   let drsCreateFromStub;
 
-  // last 4 weeks used across most tests
   const LAST_4_WEEKS = [
     { week: 44, year: 2025 },
     { week: 45, year: 2025 },
@@ -56,7 +55,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
     readFromSharePointStub = sandbox.stub();
 
     uploadExcelToDrsStub = sandbox.stub().resolves('s3://drs-bucket/external/spacecat/test-site-123/job-id/source.xlsx');
-    publishBrandPresenceAnalyzeStub = sandbox.stub().resolves('spacecat-job-123');
+    publishBrandPresenceAnalyzeStub = sandbox.stub().resolves('spacecat-job-daily-123');
 
     drsClientStub = {
       isConfigured: sandbox.stub().returns(true),
@@ -81,7 +80,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
       getDeliveryType: () => 'aem_edge',
       getConfig: () => ({
         getLlmoDataFolder: () => '/data/llmo',
-        getBrandPresenceCadence: () => 'weekly',
+        getBrandPresenceCadence: () => 'daily',
       }),
     };
 
@@ -107,20 +106,20 @@ describe('Geo Brand Presence Refresh Handler', () => {
       return Buffer.from('mock-sheet-data');
     });
 
-    const handlerModule = await esmock('../../src/geo-brand-presence/geo-brand-presence-refresh-handler.js', {
+    const handlerModule = await esmock('../../../src/geo-brand-presence-daily/geo-brand-presence-refresh-handler.js', {
       '@adobe/spacecat-shared-utils': {
         getLastNumberOfWeeks: getLastNumberOfWeeksStub,
       },
       '@adobe/spacecat-shared-drs-client': {
         default: { createFrom: drsCreateFromStub },
       },
-      '../../src/utils/report-uploader.js': {
+      '../../../src/utils/report-uploader.js': {
         createLLMOSharepointClient: createLLMOSharepointClientStub,
         readFromSharePoint: readFromSharePointStub,
       },
     });
 
-    refreshGeoBrandPresenceSheetsHandler = handlerModule.refreshGeoBrandPresenceSheetsHandler;
+    refreshGeoBrandPresenceDailyHandler = handlerModule.refreshGeoBrandPresenceDailyHandler;
   });
 
   afterEach(() => {
@@ -154,10 +153,10 @@ describe('Geo Brand Presence Refresh Handler', () => {
   // ─── DRS routing ─────────────────────────────────────────────────────────────
 
   describe('DRS routing', () => {
-    it('calls uploadExcelToDrs with correct siteId and auditId', async () => {
+    it('calls uploadExcelToDrs with correct siteId', async () => {
       withSheets([SHEET_W45]);
 
-      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+      await refreshGeoBrandPresenceDailyHandler(MESSAGE, context);
 
       expect(uploadExcelToDrsStub).to.have.been.calledOnce;
       expect(uploadExcelToDrsStub).to.have.been.calledWith(
@@ -167,26 +166,25 @@ describe('Geo Brand Presence Refresh Handler', () => {
       );
     });
 
-    it('calls publishBrandPresenceAnalyze with correct args', async () => {
+    it('calls publishBrandPresenceAnalyze with runFrequency daily', async () => {
       withSheets([SHEET_W45]);
 
-      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+      await refreshGeoBrandPresenceDailyHandler(MESSAGE, context);
 
       expect(publishBrandPresenceAnalyzeStub).to.have.been.calledOnce;
-      expect(publishBrandPresenceAnalyzeStub).to.have.been.calledWith('test-site-123', {
-        resultLocation: 's3://drs-bucket/external/spacecat/test-site-123/job-id/source.xlsx',
+      expect(publishBrandPresenceAnalyzeStub).to.have.been.calledWith('test-site-123', sinon.match({
         webSearchProvider: 'chatgpt',
         configVersion: 'abc123',
         week: 45,
         year: 2025,
-        runFrequency: 'weekly',
-      });
+        runFrequency: 'daily',
+      }));
     });
 
     it('sends one DRS call per sheet when multiple sheets exist', async () => {
       withSheets([SHEET_W45, SHEET_W46]);
 
-      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+      await refreshGeoBrandPresenceDailyHandler(MESSAGE, context);
 
       expect(uploadExcelToDrsStub).to.have.been.calledTwice;
       expect(publishBrandPresenceAnalyzeStub).to.have.been.calledTwice;
@@ -195,10 +193,10 @@ describe('Geo Brand Presence Refresh Handler', () => {
     it('logs the DRS jobId on success', async () => {
       withSheets([SHEET_W45]);
 
-      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+      await refreshGeoBrandPresenceDailyHandler(MESSAGE, context);
 
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/DRS analyze triggered.*spacecat-job-123/),
+        sinon.match(/DRS analyze triggered.*spacecat-job-daily-123/),
         sinon.match.any,
       );
     });
@@ -209,7 +207,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
         .onFirstCall().rejects(new Error('DRS S3 upload error'))
         .onSecondCall().resolves('s3://drs-bucket/external/spacecat/test-site-123/job-id/source.xlsx');
 
-      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+      await refreshGeoBrandPresenceDailyHandler(MESSAGE, context);
 
       expect(log.error).to.have.been.calledWith(sinon.match(/DRS triggerBrandPresenceAnalyze failed/), sinon.match.any);
       expect(uploadExcelToDrsStub).to.have.been.calledTwice;
@@ -219,7 +217,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
       drsClientStub.isConfigured.returns(false);
       withSheets([SHEET_W45]);
 
-      const result = await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+      const result = await refreshGeoBrandPresenceDailyHandler(MESSAGE, context);
 
       expect(result.status).to.equal(500);
       expect(uploadExcelToDrsStub).to.not.have.been.called;
@@ -233,16 +231,15 @@ describe('Geo Brand Presence Refresh Handler', () => {
     it('filters out sheets outside the last 4 weeks', async () => {
       withSheets([SHEET_W45, SHEET_OLD]);
 
-      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+      await refreshGeoBrandPresenceDailyHandler(MESSAGE, context);
 
-      // Only SHEET_W45 is within last 4 weeks
       expect(uploadExcelToDrsStub).to.have.been.calledOnce;
     });
 
     it('throws when no sheets match the last 4 weeks', async () => {
       withSheets([SHEET_OLD]);
 
-      await expect(refreshGeoBrandPresenceSheetsHandler(MESSAGE, context))
+      await expect(refreshGeoBrandPresenceDailyHandler(MESSAGE, context))
         .to.be.rejectedWith(/No paths found in query-index file for the last 4 weeks/);
     });
 
@@ -252,7 +249,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
         '/data/llmo/brand-presence/latest/invalid-name.json',
       ]);
 
-      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+      await refreshGeoBrandPresenceDailyHandler(MESSAGE, context);
 
       expect(uploadExcelToDrsStub).to.have.been.calledOnce;
     });
@@ -273,7 +270,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
         '/data/llmo/brand-presence/latest/brandpresence-chatgpt-w50-2024.json',
       ]);
 
-      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+      await refreshGeoBrandPresenceDailyHandler(MESSAGE, context);
 
       expect(uploadExcelToDrsStub).to.have.callCount(4);
     });
@@ -283,7 +280,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
         '/data/llmo/brand-presence/brandpresence-chatgpt-w45-2025.json',
       ]);
 
-      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+      await refreshGeoBrandPresenceDailyHandler(MESSAGE, context);
 
       expect(uploadExcelToDrsStub).to.have.been.calledOnce;
     });
@@ -295,7 +292,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
     it('throws when site is not found', async () => {
       dataAccess.Site.findById.resolves(null);
 
-      await expect(refreshGeoBrandPresenceSheetsHandler(MESSAGE, context))
+      await expect(refreshGeoBrandPresenceDailyHandler(MESSAGE, context))
         .to.be.rejectedWith(/Site not found/);
     });
 
@@ -303,28 +300,28 @@ describe('Geo Brand Presence Refresh Handler', () => {
       withSheets([SHEET_W45]);
       context.s3Client = null;
 
-      await expect(refreshGeoBrandPresenceSheetsHandler(MESSAGE, context))
+      await expect(refreshGeoBrandPresenceDailyHandler(MESSAGE, context))
         .to.be.rejectedWith(/S3 bucket name or client not available/);
     });
 
     it('throws when SharePoint query-index fetch fails', async () => {
       readFromSharePointStub.rejects(new Error('SharePoint unavailable'));
 
-      await expect(refreshGeoBrandPresenceSheetsHandler(MESSAGE, context))
+      await expect(refreshGeoBrandPresenceDailyHandler(MESSAGE, context))
         .to.be.rejectedWith(/Failed to read query-index from SharePoint/);
     });
 
     it('throws when site has no LLMO data folder configured', async () => {
-      site.getConfig = () => ({ getLlmoDataFolder: () => null, getBrandPresenceCadence: () => 'weekly' });
+      site.getConfig = () => ({ getLlmoDataFolder: () => null, getBrandPresenceCadence: () => 'daily' });
 
-      await expect(refreshGeoBrandPresenceSheetsHandler(MESSAGE, context))
+      await expect(refreshGeoBrandPresenceDailyHandler(MESSAGE, context))
         .to.be.rejectedWith(/No LLMO data folder/);
     });
 
     it('writes S3 metadata before processing sheets', async () => {
       withSheets([SHEET_W45]);
 
-      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+      await refreshGeoBrandPresenceDailyHandler(MESSAGE, context);
 
       expect(s3Client.send).to.have.been.calledWith(
         sinon.match.instanceOf(PutObjectCommand),
