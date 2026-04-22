@@ -1,3 +1,10 @@
+## [1.418.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.418.0...v1.418.1) (2026-04-22)
+
+
+### Bug Fixes
+
+* **vulnerabilities:** make buildKey shape-agnostic so sync updates existing suggestions (CQ-4363001) ([#2411](https://github.com/adobe/spacecat-audit-worker/issues/2411)) ([887962a](https://github.com/adobe/spacecat-audit-worker/commit/887962a13e272a0cf2e2da96e76ac32026bee740))
+
 # [1.418.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.417.3...v1.418.0) (2026-04-20)
 
 
