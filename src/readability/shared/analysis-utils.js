@@ -25,6 +25,10 @@ import {
   MAX_CHARACTERS_DISPLAY,
 } from './constants.js';
 import { getElementSelector } from './selector-utils.js';
+import {
+  removeEmbeddedSocialElements,
+  isEmbeddedSocialContentElement,
+} from './embed-content-utils.js';
 
 /**
  * Collapses runs of whitespace into single spaces.
@@ -190,6 +194,7 @@ async function analyzeTextReadability(
  */
 const getMeaningfulElementsForReadability = ($) => {
   $('header, footer, style, script, noscript').remove();
+  removeEmbeddedSocialElements($);
   return $('p, blockquote, li, div').toArray().filter((el) => {
     if (isLikelyNavigationElement($, el)) {
       return false;
@@ -257,7 +262,8 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log, scraped
       .filter(({ element }) => {
         const normalized = normalizeReadabilityText($(element).text());
         return normalized.length >= MIN_TEXT_LENGTH && /\s/.test(normalized);
-      });
+      })
+      .filter(({ element }) => !isEmbeddedSocialContentElement($, element));
 
     // Process each element and collect analysis promises
     const analysisPromises = [];

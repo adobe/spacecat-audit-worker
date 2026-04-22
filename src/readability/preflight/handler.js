@@ -31,6 +31,10 @@ import {
   isLikelyNavigationElement,
 } from '../shared/analysis-utils.js';
 import { getDomElementSelector, toElementTargets } from '../../preflight/utils/dom-selector.js';
+import {
+  removeEmbeddedSocialElements,
+  isEmbeddedSocialContentElement,
+} from '../shared/embed-content-utils.js';
 
 export const PREFLIGHT_READABILITY = 'readability';
 
@@ -181,6 +185,7 @@ export default async function readability(context, auditContext) {
     const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
 
     const $ = cheerioLoad(rawBody);
+    removeEmbeddedSocialElements($);
 
     // Get all paragraph, div, and list item elements
     const textElements = $('p, div, li').toArray();
@@ -275,7 +280,8 @@ export default async function readability(context, auditContext) {
       .filter(({ element }) => {
         const normalized = normalizeReadabilityText($(element).text());
         return normalized.length >= MIN_TEXT_LENGTH;
-      });
+      })
+      .filter(({ element }) => !isEmbeddedSocialContentElement($, element));
 
     // Process filtered elements
     elementsToProcess.forEach(({ element, index }) => {
