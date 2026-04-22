@@ -208,6 +208,8 @@ export default async function handler(message, context) {
         suggestionStatus: 'completed',
         mystiqueProcessingCompleted: new Date().toISOString(),
       };
+      delete merged.category;
+      delete merged.seoImpact;
       return enrichSuggestionDataForAutoOptimize(merged);
     },
   });

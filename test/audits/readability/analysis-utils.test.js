@@ -15,6 +15,11 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import esmock from 'esmock';
+import { load as cheerioLoad } from 'cheerio';
+import {
+  removeEmbeddedSocialElements,
+  isEmbeddedSocialContentElement,
+} from '../../../src/readability/shared/embed-content-utils.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -440,6 +445,68 @@ describe('Readability Analysis Utils', () => {
       });
     });
 
+    it('should exclude navigation-like elements and collapse padding for minimum length', async () => {
+      const poorNavText = makeLongText(
+        'This extraordinarily complex sentence that has multisyllabic constructions making it difficult.',
+      );
+      const spacedLabel = `Safeguard${'   '.repeat(80)}My${'   '.repeat(80)}Identity`;
+      const html = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <nav><p>${poorNavText}</p></nav>
+          <li role="listitem"><p class="navHdr">${spacedLabel}</p></li>
+        </body>
+      </html>
+    `;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(25);
+
+      const result = await analyzePageContent(
+        html,
+        'https://example.com/page',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result).to.be.an('array');
+      expect(result.length).to.equal(0);
+    });
+
+    it('should exclude elements with role menuitem (navigation)', async () => {
+      const longText = makeLongText(
+        'This extraordinarily complex sentence that has multisyllabic constructions making it difficult.',
+      );
+      const html = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <p role="menuitem">${longText}</p>
+        </body>
+      </html>
+    `;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(25);
+
+      const result = await analyzePageContent(
+        html,
+        'https://example.com/page',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result).to.be.an('array');
+      expect(result.length).to.equal(0);
+    });
+
     it('should handle errors in analyzeTextReadability gracefully', async () => {
       const text = makeLongText('Some text content for testing error handling in readability analysis functions.');
       const html = createHtmlWithParagraph(text);
@@ -835,6 +902,47 @@ describe('Readability Analysis Utils', () => {
       expect(result.length).to.equal(0);
     });
 
+    it('should skip embedded social carousel captions (AEM / Instagram)', async () => {
+      const longSocialCaption = `"🏔️👀 Ordino hits different! Here are some of the top places you can’t miss in spring:
+• Ordino Old Town
+• Coll d’Ordino
+Save it for your next mountain escape!
+#nature #ordino #history #andorraworld #andorraELEVATESyou"`;
+      const authoredBody = makeLongText(
+        'This is authored marketing copy about visiting Andorra in the spring season with clear sentences.',
+      );
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <body>
+            <div class="cards-carousel-rrss">
+              <div class="card-carousel__card-description">
+                <p>${longSocialCaption}</p>
+              </div>
+            </div>
+            <p>${authoredBody}</p>
+          </body>
+        </html>
+      `;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(25);
+
+      const result = await analyzePageContent(
+        html,
+        'https://visitandorra.com/en/',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result).to.be.an('array');
+      expect(result.length).to.equal(1);
+      expect(result[0].textContent).to.include('authored marketing copy');
+    });
+
     it('should log debug message with detected languages', async () => {
       const text = 'This is a test sentence with enough words for proper language detection and analysis.';
       const html = createHtmlWithParagraph(text);
@@ -1207,6 +1315,70 @@ describe('Readability Analysis Utils', () => {
           urlsProcessed: 0,
         });
       });
+    });
+  });
+
+  describe('normalizeReadabilityText (direct module import)', () => {
+    it('handles null, undefined, and non-string values', async () => {
+      const { normalizeReadabilityText } = await import('../../../src/readability/shared/analysis-utils.js');
+      expect(normalizeReadabilityText(null)).to.equal('');
+      expect(normalizeReadabilityText(undefined)).to.equal('');
+      expect(normalizeReadabilityText(123)).to.equal('');
+    });
+  });
+});
+
+describe('embed-content-utils (unit)', () => {
+  describe('removeEmbeddedSocialElements', () => {
+    it('removes known social embed selectors and leaves unrelated content', () => {
+      const $ = cheerioLoad(`
+        <div>
+          <blockquote class="instagram-media"><p id="gone">Caption</p></blockquote>
+          <p id="stay">Authored body text that must remain in the document after removal.</p>
+        </div>
+      `);
+      removeEmbeddedSocialElements($);
+      expect($('#gone').length).to.equal(0);
+      expect($('#stay').length).to.equal(1);
+    });
+  });
+
+  describe('isEmbeddedSocialContentElement', () => {
+    it('returns true when element is inside a known social ancestor', () => {
+      const $ = cheerioLoad(`
+        <blockquote class="twitter-tweet">
+          <p id="t">Caption text inside a twitter oEmbed block.</p>
+        </blockquote>
+      `);
+      const el = $('#t').get(0);
+      expect(isEmbeddedSocialContentElement($, el)).to.equal(true);
+    });
+
+    it('returns true when element itself is a social outbound link with view-on CTA', () => {
+      const $ = cheerioLoad(`
+        <div>
+          <a id="lnk" href="https://www.instagram.com/p/ABC/">View on Instagram</a>
+        </div>
+      `);
+      const el = $('#lnk').get(0);
+      expect(isEmbeddedSocialContentElement($, el)).to.equal(true);
+    });
+
+    it('returns true when element contains view-on CTA and a social outbound descendant link', () => {
+      const $ = cheerioLoad(`
+        <p id="cap">
+          <a href="https://www.instagram.com/p/XYZ/">View on Instagram</a>
+          Continuing caption text that accompanies the social embed on the page.
+        </p>
+      `);
+      expect(isEmbeddedSocialContentElement($, $('#cap').get(0))).to.equal(true);
+    });
+
+    it('returns false for normal authored content', () => {
+      const $ = cheerioLoad(`
+        <p id="t">Standard authored paragraph without any social media references.</p>
+      `);
+      expect(isEmbeddedSocialContentElement($, $('#t').get(0))).to.equal(false);
     });
   });
 });
