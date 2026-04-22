@@ -13,10 +13,11 @@
 import { expect, use as chaiUse } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import { load as cheerioLoad } from 'cheerio';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
-import { ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
 
 import { generateSuggestions, slimTocAuditResult, hasTocInDom } from '../../src/toc/handler.js';
 import {
@@ -38,6 +39,7 @@ import {
 import { getHeadingSelector } from '../../src/headings/shared-utils.js';
 
 chaiUse(sinonChai);
+chaiUse(chaiAsPromised);
 
 /** Stub that returns a simple selector for a heading (for extractTocData tests) */
 function stubGetHeadingSelector(h) {
@@ -50,7 +52,6 @@ describe('TOC (Table of Contents) Audit', () => {
   let log;
   let context;
   let site;
-  let allKeys;
   let s3Client;
 
   beforeEach(() => {
@@ -66,8 +67,6 @@ describe('TOC (Table of Contents) Audit', () => {
       },
     };
     site = { getId: () => 'site-1', getBaseURL: () => 'https://example.com', getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }) };
-    allKeys = [];
-    allKeys.push('scrapes/site-1/page/scrape.json');
     s3Client = {
       send: sinon.stub().resolves({
         Contents: [{ Key: 'scrapes/site-1/page/scrape.json' }],
@@ -109,28 +108,9 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
-      const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
-        },
-      });
-
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
+      const mockedHandler = await esmock('../../src/toc/handler.js', {});
 
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -155,16 +135,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
-
-      // Debug: Log the actual structure
-      if (!result.auditResult.toc || !result.auditResult.toc.toc) {
-        console.log('DEBUG Test 2: Full auditResult:', JSON.stringify(result.auditResult, null, 2));
-        console.log('DEBUG Test 2: TOC exists?', !!result.auditResult.toc);
-        console.log('DEBUG Test 2: TOC keys:', result.auditResult.toc ? Object.keys(result.auditResult.toc) : 'N/A');
-        console.log('DEBUG Test 2: AI calls made:', mockClient.fetchChatCompletion.callCount);
-        console.log('DEBUG Test 2: All AI call args:', mockClient.fetchChatCompletion.getCalls().map((c, i) => `Call ${i + 1}: ${c.args[0]?.substring(0, 100)}`));
-      }
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // TOC should be flagged as missing
       expect(result.auditResult).to.exist;
@@ -198,20 +171,8 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const mockedHandler = await esmock('../../src/toc/handler.js', {});
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
       // All headings are inside nav/header/footer — extractTocData will return []
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -231,7 +192,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // No suggestion should be created — result should show no toc issues
       expect(result.auditResult).to.exist;
@@ -256,19 +219,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const mockedHandler = await esmock('../../src/toc/handler.js', {});
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -288,7 +239,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       expect(result.auditResult).to.exist;
       // toc should be empty — no valid headings to build a TOC from
@@ -309,19 +262,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const mockedHandler = await esmock('../../src/toc/handler.js', {});
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -341,7 +282,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // A suggestion SHOULD be created since there are valid content headings
       expect(result.auditResult).to.exist;
@@ -376,28 +319,9 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
-      const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
-        },
-      });
-
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
+      const mockedHandler = await esmock('../../src/toc/handler.js', {});
 
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -422,15 +346,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
-
-      // Debug: Log the actual structure
-      if (!result.auditResult.toc || !result.auditResult.toc.toc) {
-        console.log('DEBUG: Full auditResult:', JSON.stringify(result.auditResult, null, 2));
-        console.log('DEBUG: TOC exists?', !!result.auditResult.toc);
-        console.log('DEBUG: TOC keys:', result.auditResult.toc ? Object.keys(result.auditResult.toc) : 'N/A');
-        console.log('DEBUG: AI calls made:', mockClient.fetchChatCompletion.callCount);
-      }
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       expect(result.auditResult).to.exist;
       expect(result.auditResult.toc, 'TOC should exist in audit result').to.exist;
@@ -460,28 +378,9 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
-      const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
-        },
-      });
-
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
+      const mockedHandler = await esmock('../../src/toc/handler.js', {});
 
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -506,15 +405,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
-
-      // Debug: Log the actual structure
-      if (!result.auditResult.toc || !result.auditResult.toc.toc) {
-        console.log('DEBUG: Full auditResult:', JSON.stringify(result.auditResult, null, 2));
-        console.log('DEBUG: TOC exists?', !!result.auditResult.toc);
-        console.log('DEBUG: TOC keys:', result.auditResult.toc ? Object.keys(result.auditResult.toc) : 'N/A');
-        console.log('DEBUG: AI calls made:', mockClient.fetchChatCompletion.callCount);
-      }
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       expect(result.auditResult).to.exist;
       expect(result.auditResult.toc, 'TOC should exist in audit result').to.exist;
@@ -543,28 +436,9 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
-      const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
-        },
-      });
-
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
+      const mockedHandler = await esmock('../../src/toc/handler.js', {});
 
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -589,7 +463,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       expect(result.auditResult).to.exist;
       expect(result.auditResult.toc).to.exist;
@@ -1012,28 +888,9 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
-      const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
-        },
-      });
-
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
+      const mockedHandler = await esmock('../../src/toc/handler.js', {});
 
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -1058,7 +915,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // Should use the AI-provided confidence score of 7
       expect(result.auditResult.toc.toc.urls[0].tocConfidence).to.equal(7);
@@ -1080,28 +939,9 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
-      const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
-        },
-      });
-
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
+      const mockedHandler = await esmock('../../src/toc/handler.js', {});
 
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -1126,7 +966,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // Should use default confidence of 5
       expect(result.auditResult.toc.toc.urls[0].tocConfidence).to.equal(5);
@@ -1150,28 +992,9 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
-      const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
-        },
-      });
-
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
+      const mockedHandler = await esmock('../../src/toc/handler.js', {});
 
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -1196,7 +1019,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // Should log warning and default to 5
       expect(logSpy.warn).to.have.been.calledWith(
@@ -1224,28 +1049,9 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
-      const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
-        },
-      });
-
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
+      const mockedHandler = await esmock('../../src/toc/handler.js', {});
 
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -1270,7 +1076,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // Should handle invalid response gracefully
       expect(logSpy.error).to.have.been.calledWith(
@@ -1297,28 +1105,9 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
-      const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
-        },
-      });
-
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
+      const mockedHandler = await esmock('../../src/toc/handler.js', {});
 
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -1343,7 +1132,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // Should default to 5 and log warning
       expect(logSpy.warn).to.have.been.calledWith(
@@ -1374,28 +1165,9 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
-      const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
-        },
-      });
-
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
+      const mockedHandler = await esmock('../../src/toc/handler.js', {});
 
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -1420,7 +1192,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // Should handle error gracefully
       expect(logSpy.error).to.have.been.called;
@@ -1443,28 +1217,9 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
-      const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
-        },
-      });
-
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
+      const mockedHandler = await esmock('../../src/toc/handler.js', {});
 
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -1489,7 +1244,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // JSDOM auto-creates a <body> element even when HTML doesn't have one
       // So the warning may not be logged, but the audit should complete successfully
@@ -1936,158 +1693,49 @@ describe('TOC (Table of Contents) Audit', () => {
       );
     });
 
-    it('covers lines 214-219: null/undefined URL in validatePageToc', async () => {
-      const { validatePageToc } = await import('../../src/toc/handler.js');
-      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
-
-      const result = await validatePageToc(
-        null,
-        logSpy,
-        site,
-        allKeys,
-        s3Client,
-        context.env.S3_SCRAPER_BUCKET_NAME,
-        context,
-      );
-
-      expect(result.url).to.be.null;
-      expect(result.tocDetails).to.be.null;
-      expect(logSpy.error).to.have.been.calledWith(
-        sinon.match(/URL is undefined or null/)
-      );
-    });
-
-    it('covers lines 224-225: null scrapeJsonObject returns null in validatePageToc', async () => {
-      const { validatePageToc } = await import('../../src/toc/handler.js');
-      const url = 'https://example.com/page';
-      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
-
-      // Mock S3 to return no data
-      const emptyS3Client = {
-        send: sinon.stub().resolves({
-          Contents: [],
-          NextContinuationToken: undefined,
-        }),
-      };
-
-      const result = await validatePageToc(
-        url,
-        logSpy,
-        site,
-        [],
-        emptyS3Client,
-        context.env.S3_SCRAPER_BUCKET_NAME,
-        context,
-      );
-
-      expect(result).to.be.null;
-    });
-
-    it('covers lines 228-233: error catch block in validatePageToc', async () => {
-      const { validatePageToc } = await import('../../src/toc/handler.js');
-      const url = 'https://example.com/page';
-      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
-
-      // Mock S3 to return malformed data that will cause validatePageTocFromScrapeJson to throw
-      s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-        if (command instanceof GetObjectCommand) {
-          return Promise.resolve({
-            Body: {
-              transformToString: () => JSON.stringify({
-                finalUrl: url,
-                scrapedAt: Date.now(),
-                scrapeResult: null, // This will cause an error when accessing rawBody
-              }),
-            },
-            ContentType: 'application/json',
-          });
-        }
-        throw new Error('Unexpected command');
-      });
-
-      const result = await validatePageToc(
-        url,
-        logSpy,
-        site,
-        allKeys,
-        s3Client,
-        context.env.S3_SCRAPER_BUCKET_NAME,
-        context,
-      );
-
-      // The catch block should return an error object
-      expect(result.url).to.equal(url);
-      expect(result.tocDetails).to.be.null;
-      expect(logSpy.error).to.have.been.calledWith(
-        sinon.match(/Error validating TOC for/)
-      );
-    });
-
-    it('covers lines 253-262: no top pages found in tocAuditRunner', async () => {
-      const baseURL = 'https://example.com';
+    it('returns early when no scrapeResultPaths available', async () => {
+      const { processTocResults } = await import('../../src/toc/handler.js');
       const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
       context.log = logSpy;
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
-        },
-      };
+      context.site = site;
+      context.scrapeResultPaths = new Map();
 
-      const { tocAuditRunner } = await import('../../src/toc/handler.js');
-      const result = await tocAuditRunner(baseURL, context, site);
+      const result = await processTocResults(context);
 
-      // The result structure is different when no top pages are found
-      expect(result.auditResult).to.exist;
       expect(result.auditResult.success).to.be.false;
-      expect(logSpy.warn).to.have.been.calledWith('[TOC Audit] No URLs found for audit, ending audit.');
+      expect(logSpy.warn).to.have.been.calledWith('[TOC Audit] No scrape results available, ending audit.');
     });
 
-    it('covers getTocInputUrls fallback: sortTopPagesByTraffic called with [] when allBySiteIdAndSourceAndGeo returns null', async () => {
-      const baseURL = 'https://example.com';
+    it('returns early when scrapeResultPaths is undefined', async () => {
+      const { processTocResults } = await import('../../src/toc/handler.js');
       const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
       context.log = logSpy;
-      // Returning null instead of [] exercises the `topPages || []` branch in getTocInputUrls
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves(null),
-        },
-      };
+      context.site = site;
+      context.scrapeResultPaths = undefined;
 
-      const { tocAuditRunner } = await import('../../src/toc/handler.js');
-      const result = await tocAuditRunner(baseURL, context, site);
+      const result = await processTocResults(context);
 
-      // With null top pages, agentic empty, and no included URLs → no audit URLs → early return
-      expect(result.auditResult).to.exist;
       expect(result.auditResult.success).to.be.false;
-      expect(logSpy.warn).to.have.been.calledWith('[TOC Audit] No URLs found for audit, ending audit.');
+      expect(logSpy.warn).to.have.been.calledWith('[TOC Audit] No scrape results available, ending audit.');
     });
 
-    it('covers lines 333-338: error catch block in tocAuditRunner', async () => {
-      const baseURL = 'https://example.com';
-      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+    it('covers error catch block in processTocResults', async () => {
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
       context.log = logSpy;
+      context.site = site;
 
-      // Mock getMergedAuditInputUrls to throw so the catch block in tocAuditRunner is exercised
-      const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/utils/audit-input-urls.js': {
-          getMergedAuditInputUrls: sinon.stub().rejects(new Error('Network error')),
-          sortTopPagesByTraffic: sinon.stub().returns([]),
-        },
-        '../../src/utils/agentic-urls.js': {
-          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
-        },
-      });
+      // Use a scrapeResultPaths that is iterable but throws during Array.from
+      const throwingMap = {
+        size: 1,
+        entries: () => { throw new Error('Map iteration error'); },
+      };
 
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      const { processTocResults } = await import('../../src/toc/handler.js');
+
+      context.scrapeResultPaths = throwingMap;
+      const result = await processTocResults(context);
 
       expect(result.auditResult.error).to.exist;
-      expect(result.auditResult.error).to.be.a('string');
       expect(result.auditResult.success).to.be.false;
       expect(logSpy.error).to.have.been.calledWith(sinon.match(/TOC audit failed/));
     });
@@ -2242,12 +1890,7 @@ describe('TOC (Table of Contents) Audit', () => {
         }),
       };
 
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
       const mockedHandler = await esmock('../../src/toc/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
-        },
         '@adobe/spacecat-shared-gpt-client': {
           AzureOpenAIClient: {
             createFrom: sinon.stub().returns(mockClient),
@@ -2255,22 +1898,8 @@ describe('TOC (Table of Contents) Audit', () => {
         },
       });
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
-            { getUrl: () => url },
-          ]),
-        },
-      };
-
       // Mock S3 to return data WITHOUT title (null/undefined)
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -2294,7 +1923,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       expect(result).to.have.property('auditResult');
     });
@@ -2451,19 +2082,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const mockedHandler = await esmock('../../src/toc/handler.js', {});
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -2491,7 +2110,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // AI should NOT have been called — DOM heuristic handled it
       expect(mockClient.fetchChatCompletion.callCount).to.equal(0);
@@ -2509,19 +2130,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const mockedHandler = await esmock('../../src/toc/handler.js', {});
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -2542,7 +2151,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       expect(mockClient.fetchChatCompletion.callCount).to.equal(0);
       expect(result.auditResult.toc).to.deep.equal({});
@@ -2569,19 +2180,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const mockedHandler = await esmock('../../src/toc/handler.js', {});
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -2601,7 +2200,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // AI was called (Phase 1 found nothing)
       expect(mockClient.fetchChatCompletion.callCount).to.be.at.least(1);
@@ -2627,19 +2228,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const mockedHandler = await esmock('../../src/toc/handler.js', {});
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -2660,7 +2249,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // AI was called — Phase 1 found nothing, Phase 2 used empty main (fallback to '')
       expect(mockClient.fetchChatCompletion.callCount).to.be.at.least(1);
@@ -2682,19 +2273,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const mockedHandler = await esmock('../../src/toc/handler.js', {});
 
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
       s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
         if (command instanceof GetObjectCommand) {
           return Promise.resolve({
             Body: {
@@ -2714,7 +2293,9 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
 
       // AI was called with body content (no main present)
       expect(mockClient.fetchChatCompletion.callCount).to.be.at.least(1);
@@ -3252,18 +2833,9 @@ describe('TOC (Table of Contents) Audit', () => {
 
   describe('URL Prioritization (getTocInputUrls)', () => {
     it('uses merged URL list from getMergedAuditInputUrls covering all three sources', async () => {
-      const baseURL = 'https://example.com';
       const agenticUrl = 'https://example.com/agentic-page';
       const includedUrl = 'https://example.com/customer-desired';
       const organicUrl = 'https://example.com/organic-page';
-
-      const mockClient = {
-        fetchChatCompletion: sinon.stub().resolves({
-          choices: [{ message: { content: '{"tocPresent":true,"confidence":9,"reasoning":"TOC found"}' } }],
-        }),
-      };
-      AzureOpenAIClient.createFrom.restore();
-      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
       const getMergedAuditInputUrlsStub = sinon.stub().resolves({
         urls: [includedUrl, agenticUrl, organicUrl],
@@ -3283,45 +2855,19 @@ describe('TOC (Table of Contents) Audit', () => {
         },
       });
 
-      s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-        if (command instanceof GetObjectCommand) {
-          return Promise.resolve({
-            Body: {
-              transformToString: () => JSON.stringify({
-                finalUrl: baseURL,
-                scrapedAt: Date.now(),
-                scrapeResult: {
-                  rawBody: '<nav class="toc"><ul><li><a href="#s1">S1</a></li><li><a href="#s2">S2</a></li></ul></nav><h1>Title</h1>',
-                  tags: { title: 'Page', description: 'Desc', h1: ['Title'] },
-                },
-              }),
-            },
-            ContentType: 'application/json',
-          });
-        }
-        throw new Error('Unexpected command');
-      });
-
-      context.s3Client = s3Client;
+      context.site = site;
+      context.audit = { getAuditResult: () => ({ success: true }) };
       context.dataAccess = {
         SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
       };
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      const result = await mockedHandler.submitForScraping(context);
 
       expect(getMergedAuditInputUrlsStub).to.have.been.calledOnce;
-      expect(result.auditResult).to.exist;
-      // TOC is present on all pages, so no issues
-      expect(result.auditResult.toc).to.deep.equal({});
+      expect(result.urls).to.have.lengthOf(3);
+      expect(result.urls[0].url).to.equal(includedUrl);
     });
 
     it('logs URL input source counts from getTocInputUrls', async () => {
-      const baseURL = 'https://example.com';
       const logSpy = {
         info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy(),
       };
@@ -3345,36 +2891,12 @@ describe('TOC (Table of Contents) Audit', () => {
         },
       });
 
-      s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-        if (command instanceof GetObjectCommand) {
-          return Promise.resolve({
-            Body: {
-              transformToString: () => JSON.stringify({
-                finalUrl: 'https://example.com/p1',
-                scrapedAt: Date.now(),
-                scrapeResult: {
-                  rawBody: '<nav class="toc"><ul><li><a href="#s1">S1</a></li><li><a href="#s2">S2</a></li></ul></nav>',
-                  tags: { title: 'Page', description: 'Desc', h1: [] },
-                },
-              }),
-            },
-            ContentType: 'application/json',
-          });
-        }
-        throw new Error('Unexpected command');
-      });
-
-      context.s3Client = s3Client;
+      context.site = site;
+      context.audit = { getAuditResult: () => ({ success: true }) };
       context.dataAccess = {
         SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
       };
-      await mockedHandler.tocAuditRunner(baseURL, context, site);
+      await mockedHandler.submitForScraping(context);
 
       expect(logSpy.info).to.have.been.calledWith(
         '[TOC] URL inputs: topPages=1, agentic=1, includedURLs=1, filteredOutUrls=2, finalUrls=1',
@@ -3382,16 +2904,7 @@ describe('TOC (Table of Contents) Audit', () => {
     });
 
     it('prioritizes customer desired URLs and passes auditType to getMergedAuditInputUrls', async () => {
-      const baseURL = 'https://example.com';
       const includedUrl = 'https://example.com/customer-desired';
-
-      const mockClient = {
-        fetchChatCompletion: sinon.stub().resolves({
-          choices: [{ message: { content: '{"tocPresent":false,"confidence":8,"reasoning":"No TOC"}' } }],
-        }),
-      };
-      AzureOpenAIClient.createFrom.restore();
-      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
       const getMergedAuditInputUrlsStub = sinon.stub().resolves({
         urls: [includedUrl],
@@ -3411,45 +2924,271 @@ describe('TOC (Table of Contents) Audit', () => {
         },
       });
 
-      allKeys = ['scrapes/site-1/customer-desired/scrape.json'];
-      s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-        if (command instanceof GetObjectCommand) {
-          return Promise.resolve({
-            Body: {
-              transformToString: () => JSON.stringify({
-                finalUrl: includedUrl,
-                scrapedAt: Date.now(),
-                scrapeResult: {
-                  rawBody: '<h1 id="t">Title</h1><h2 id="s1">Section 1</h2><h2 id="s2">Section 2</h2>',
-                  tags: { title: 'Customer Page', description: 'Desc', h1: ['Title'] },
-                },
-              }),
-            },
-            ContentType: 'application/json',
-          });
-        }
-        throw new Error('Unexpected command');
-      });
-
-      context.s3Client = s3Client;
+      context.site = site;
+      context.audit = { getAuditResult: () => ({ success: true }) };
       context.dataAccess = {
         SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
       };
-      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+      const result = await mockedHandler.submitForScraping(context);
 
       // getMergedAuditInputUrls was called with the correct auditType
       const callArgs = getMergedAuditInputUrlsStub.firstCall.args[0];
       expect(callArgs).to.have.property('auditType', 'toc');
-      // The customer desired URL was audited and produced a TOC issue
-      expect(result.auditResult.toc).to.exist;
-      expect(result.auditResult.toc.toc).to.exist;
-      expect(result.auditResult.toc.toc.urls[0].url).to.equal(includedUrl);
+      // The customer desired URL was included in scraping submission
+      expect(result.urls[0].url).to.equal(includedUrl);
+    });
+  });
+
+  describe('importTopPages', () => {
+    it('returns top pages when URLs are found', async () => {
+      const url = 'https://example.com/page';
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+      context.site = site;
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
+        },
+      };
+
+      const getMergedAuditInputUrlsStub = sinon.stub().resolves({
+        urls: [url],
+        topPagesUrls: [url],
+        agenticUrls: [],
+        includedURLs: [],
+        filteredCount: 0,
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/utils/audit-input-urls.js': {
+          getMergedAuditInputUrls: getMergedAuditInputUrlsStub,
+          sortTopPagesByTraffic: sinon.stub().returns([]),
+        },
+        '../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+        },
+      });
+
+      const result = await mockedHandler.importTopPages(context);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.topPages).to.include(url);
+      expect(result.siteId).to.equal(site.getId());
+    });
+
+    it('returns empty topPages when no URLs are found', async () => {
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+      context.site = site;
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
+        },
+      };
+
+      const getMergedAuditInputUrlsStub = sinon.stub().resolves({
+        urls: [],
+        topPagesUrls: [],
+        agenticUrls: [],
+        includedURLs: [],
+        filteredCount: 0,
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/utils/audit-input-urls.js': {
+          getMergedAuditInputUrls: getMergedAuditInputUrlsStub,
+          sortTopPagesByTraffic: sinon.stub().returns([]),
+        },
+        '../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+        },
+      });
+
+      const result = await mockedHandler.importTopPages(context);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.topPages).to.deep.equal([]);
+    });
+
+    it('returns failure when getTocInputUrls throws', async () => {
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+      context.site = site;
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/utils/audit-input-urls.js': {
+          getMergedAuditInputUrls: sinon.stub().rejects(new Error('DB error')),
+          sortTopPagesByTraffic: sinon.stub().returns([]),
+        },
+        '../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+        },
+      });
+
+      const result = await mockedHandler.importTopPages(context);
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.include('DB error');
+    });
+
+    it('invokes getTopPages callback using real getMergedAuditInputUrls (covers lines 56-61)', async () => {
+      const url = 'https://example.com/page';
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+
+      const mockPage = {
+        getUrl: () => url,
+        getTraffic: () => 100,
+      };
+      const siteWithConfig = {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://example.com',
+        getConfig: sinon.stub().resolves({
+          getIncludedURLs: sinon.stub().resolves([]),
+          getAuditTargetURLs: sinon.stub().returns([]),
+        }),
+      };
+      context.site = siteWithConfig;
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([mockPage]),
+        },
+      };
+
+      // Only mock getTopAgenticUrlsFromAthena — let the real getMergedAuditInputUrls run
+      // so the getTopPages callback (lines 56-61) is exercised
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+        },
+      });
+
+      const result = await mockedHandler.importTopPages(context);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith(
+        'site-1',
+        'seo',
+        'global',
+      );
+    });
+
+    it('invokes getTopPages callback with null result (covers topPages || [] branch in line 61)', async () => {
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+
+      const siteWithConfig = {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://example.com',
+        getConfig: sinon.stub().resolves({
+          getIncludedURLs: sinon.stub().resolves([]),
+          getAuditTargetURLs: sinon.stub().returns([]),
+        }),
+      };
+      context.site = siteWithConfig;
+      context.dataAccess = {
+        SiteTopPage: {
+          // returns null to exercise the `topPages || []` fallback branch
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves(null),
+        },
+      };
+
+      // Only mock getTopAgenticUrlsFromAthena — let real getMergedAuditInputUrls run
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+        },
+      });
+
+      const result = await mockedHandler.importTopPages(context);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.topPages).to.deep.equal([]);
+    });
+  });
+
+  describe('submitForScraping', () => {
+    it('returns scraping payload when URLs are found', async () => {
+      const url = 'https://example.com/page';
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+      context.site = site;
+      context.audit = { getAuditResult: () => ({ success: true }) };
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
+        },
+      };
+
+      const getMergedAuditInputUrlsStub = sinon.stub().resolves({
+        urls: [url],
+        topPagesUrls: [url],
+        agenticUrls: [],
+        includedURLs: [],
+        filteredCount: 0,
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/utils/audit-input-urls.js': {
+          getMergedAuditInputUrls: getMergedAuditInputUrlsStub,
+          sortTopPagesByTraffic: sinon.stub().returns([]),
+        },
+        '../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+        },
+      });
+
+      const result = await mockedHandler.submitForScraping(context);
+
+      expect(result.urls).to.deep.equal([{ url }]);
+      expect(result.processingType).to.equal('toc');
+      expect(result.options).to.deep.equal({ storagePrefix: 'toc' });
+      expect(result.maxScrapeAge).to.equal(24);
+    });
+
+    it('throws when previous audit step failed', async () => {
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+      context.site = site;
+      context.audit = { getAuditResult: () => ({ success: false }) };
+
+      const { submitForScraping } = await import('../../src/toc/handler.js');
+
+      await expect(submitForScraping(context)).to.be.rejectedWith('Audit failed, skipping scraping');
+      expect(logSpy.warn).to.have.been.calledWith('[TOC] Audit failed in previous step, skipping scraping');
+    });
+
+    it('throws when no URLs found', async () => {
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+      context.site = site;
+      context.audit = { getAuditResult: () => ({ success: true }) };
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
+        },
+      };
+
+      const getMergedAuditInputUrlsStub = sinon.stub().resolves({
+        urls: [],
+        topPagesUrls: [],
+        agenticUrls: [],
+        includedURLs: [],
+        filteredCount: 0,
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/utils/audit-input-urls.js': {
+          getMergedAuditInputUrls: getMergedAuditInputUrlsStub,
+          sortTopPagesByTraffic: sinon.stub().returns([]),
+        },
+        '../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+        },
+      });
+
+      await expect(mockedHandler.submitForScraping(context)).to.be.rejectedWith('No URLs to submit for scraping');
+      expect(logSpy.warn).to.have.been.calledWith('[TOC] No URLs to submit for scraping');
     });
   });
 });
