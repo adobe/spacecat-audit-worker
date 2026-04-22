@@ -45,95 +45,44 @@ SpaceCat refresh handler
 
 ## Repo 1: adobe-rnd/llmo-data-retrieval-service (PR A)
 
-### Goal
-- Extend `fargate_trigger.py` to handle direct SpaceCat SNS messages (no pre-existing job)
-- Delete the now-redundant `POST /brand-presence/analyze` HTTP endpoint
-- Update the design document
+### What needs to happen
 
-### `src/pipelines/brand_presence/handlers/fargate_trigger.py`
+**1. Handle direct SpaceCat SNS in the Fargate trigger**
 
-When `provider_id == "external_spacecat"` and the job is not found in DynamoDB,
-create the synthetic parent job inline using metadata from the SNS notification:
+The Fargate trigger handler must be extended to process `provider_id="external_spacecat"` SNS
+messages that arrive without a pre-existing DynamoDB job. When such a message is received and
+no job record is found, a synthetic job must be created inline from the SNS notification metadata
+(site_id, week, year, run_frequency, web_search_provider, config_version, result_location).
 
-```python
-job = await self._get_job(notification.job_id)
-if job is None and notification.provider_id == "external_spacecat":
-    job = await self._create_synthetic_job(
-        job_id=notification.job_id,
-        provider_id="external_spacecat",
-        result_location=notification.result_location,
-        site_id=notification.metadata.site_id,
-        brand=notification.metadata.brand,
-        ims_org_id=notification.metadata.ims_org_id,
-        week=notification.week,
-        year=notification.year,
-        run_frequency=notification.metadata.run_frequency,
-        web_search_provider=notification.metadata.web_search_provider,
-        config_version=notification.metadata.config_version,
-    )
-elif job is None:
-    log.warning("Job not found and not external_spacecat — skipping")
-    return
-```
+Note: the synthetic-job creation logic currently lives in `spacecat_resolver.py`, not in
+`fargate_trigger.py`. It must be **ported** into the Fargate trigger handler as part of this PR —
+it cannot simply be called from its current location.
 
-`_create_synthetic_job()` already exists (used by `SpaceCatResolver`). Reuse it.
+The notification model also needs to accept the new optional metadata fields
+(brand, ims_org_id, web_search_provider, config_version, run_frequency) that SpaceCat will
+include in the SNS message.
 
-### `src/common/models/notifications.py`
+**2. Remove the `POST /brand-presence/analyze` HTTP endpoint**
 
-Add optional fields to `JobNotificationMetadata`:
+Since the integration path is now S3 + SNS, the HTTP Lambda that previously accepted Excel
+uploads from SpaceCat is redundant and should be deleted. This includes the Lambda handler,
+its resolver, the CDK resources wiring it up, and its tests.
 
-```python
-brand: Optional[str] = None
-ims_org_id: Optional[str] = None
-web_search_provider: Optional[str] = None
-config_version: Optional[str] = None
-run_frequency: Optional[str] = None   # "daily" | "weekly"
-```
+Caution: `excel_ingestion.py` (or equivalent Excel-parsing service) cannot be fully deleted —
+`parse_excel_to_rows` (or similar) is imported by the Fargate prompt loader. Only remove
+functions that are exclusively used by the deleted HTTP endpoint; leave anything used by
+Fargate in place.
 
-### Delete: `POST /brand-presence/analyze` HTTP endpoint
+**3. Grant cross-account S3 write access**
 
-Since integration now goes through S3 + SNS, the HTTP Lambda is redundant.
+The DRS brand-presence S3 bucket policy must allow SpaceCat's Lambda execution role to
+`s3:PutObject` under the `external/spacecat/*` prefix.
 
-Files to delete:
-- `src/pipelines/brand_presence/handlers/brand_presence_analyze.py`
-- `src/pipelines/brand_presence/resolvers/spacecat_resolver.py`
-- `src/pipelines/brand_presence/services/excel_ingestion.py` (verify not used elsewhere first)
-- `tests/pipelines/brand_presence/handlers/test_brand_presence_analyze.py`
-- `tests/pipelines/brand_presence/resolvers/test_spacecat_resolver.py`
+**4. Update the design document**
 
-CDK changes:
-- `api_gateway_nested_stack.py` — remove `POST /sites/{siteId}/brand-presence/analyze` route
-- `brand_presence_nested_stack.py` — remove `AnalyzeBrandPresenceFunction` Lambda
-- `drs_v2_stack.py` — remove `analyze_brand_presence_function_arn` references
-
-### DRS S3 Bucket Policy
-
-Add cross-account write permission for SpaceCat's Lambda execution role:
-
-```python
-self.brand_presence_bucket.add_to_resource_policy(
-    iam.PolicyStatement(
-        effect=iam.Effect.ALLOW,
-        principals=[iam.ArnPrincipal(spacecat_lambda_role_arn)],
-        actions=["s3:PutObject"],
-        resources=[
-            self.brand_presence_bucket.arn_for_objects("external/spacecat/*")
-        ],
-    )
-)
-```
-
-### Update Design Document: `docs/design/reanalyze-brand-presence.md`
-
-Add new section describing Path B (revised) — Direct S3 + SNS, note removal of
-`POST /brand-presence/analyze` HTTP endpoint and `SpaceCatResolver`.
-Document that `JobNotificationMetadata` now carries additional fields for direct SpaceCat publishes.
-
-### Tests
-
-- `test_fargate_trigger.py`: add tests for `external_spacecat` SNS with no pre-existing job
-  — `_create_synthetic_job` called, Fargate launched; existing job path unchanged
-- Delete: `test_brand_presence_analyze.py`, `test_spacecat_resolver.py`
+`docs/design/reanalyze-brand-presence.md` should be updated to describe the new Path B
+(Direct S3 + SNS), document removal of the HTTP endpoint, and note the new metadata fields
+carried in the SNS notification.
 
 ---
 
