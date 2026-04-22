@@ -25,6 +25,59 @@ import {
   MAX_CHARACTERS_DISPLAY,
 } from './constants.js';
 import { getElementSelector } from './selector-utils.js';
+import {
+  removeEmbeddedSocialElements,
+  isEmbeddedSocialContentElement,
+} from './embed-content-utils.js';
+
+/**
+ * Collapses runs of whitespace into single spaces.
+ */
+export function collapseWhitespace(text) {
+  if (!text || typeof text !== 'string') {
+    return '';
+  }
+  return text.replace(/\s+/g, ' ');
+}
+
+/**
+ * Normalizes text extracted from the DOM before length checks and scoring
+ * (removes layout padding between inline nodes, etc.).
+ */
+export function normalizeReadabilityText(text) {
+  return collapseWhitespace(text ?? '').trim();
+}
+
+const NAV_ANCESTOR_SELECTORS = 'nav, [role="navigation"], [role="menubar"], [role="menu"]';
+
+const NAV_CLASS_OR_ID_RE = /\b(nav[Hh]dr|nav-hdr|navbar|main-nav|site-nav|primary-nav|global-nav|meta-nav|footer-nav|subnav|sub-nav|breadcrumb)\b/i;
+
+/**
+ * Heuristic: navigation / menu chrome should not be scored as body copy.
+ */
+export function isLikelyNavigationElement($, element) {
+  const $el = $(element);
+  if ($el.closest(NAV_ANCESTOR_SELECTORS).length > 0) {
+    return true;
+  }
+  const role = ($el.attr('role') || '').toLowerCase();
+  if (['menuitem', 'menuitemradio', 'menuitemcheckbox'].includes(role)) {
+    return true;
+  }
+  const nodesToCheck = [element, ...$el.parents().toArray()].slice(0, 24);
+  for (const node of nodesToCheck) {
+    const $node = $(node);
+    const cls = $node.attr('class') || '';
+    const id = $node.attr('id') || '';
+    if (NAV_CLASS_OR_ID_RE.test(cls) || NAV_CLASS_OR_ID_RE.test(id)) {
+      return true;
+    }
+  }
+  if ($el.find('p.navHdr, p[class*="navHdr"], p[class*="nav-hdr"]').length > 0) {
+    return true;
+  }
+  return false;
+}
 
 /**
  * Categorizes readability issues by severity and traffic impact
@@ -59,18 +112,6 @@ function extractTrafficFromKey() {
   // This would need to be implemented based on how traffic data is stored in the key
   // For now, return 0 as default
   return 0;
-}
-
-/**
- * Collapses runs of whitespace into single spaces.
- * Used to normalize text extracted from table/grid layouts before length checks.
- * Exported so preflight matches the opportunity path for MIN_TEXT_LENGTH checks.
- *
- * @param {string} text
- * @returns {string}
- */
-export function collapseWhitespace(text) {
-  return text.replace(/\s+/g, ' ');
 }
 
 /**
@@ -261,9 +302,9 @@ export async function analyzeTextReadability(
     // Calculate readability score
     let readabilityScore;
     if (detectedLanguage === 'english') {
-      readabilityScore = rs.fleschReadingEase(text.trim());
+      readabilityScore = rs.fleschReadingEase(text);
     } else {
-      readabilityScore = await calculateReadabilityScore(text.trim(), detectedLanguage);
+      readabilityScore = await calculateReadabilityScore(text, detectedLanguage);
     }
 
     // Check if readability is poor
@@ -315,9 +356,13 @@ export async function analyzeTextReadability(
  */
 const getMeaningfulElementsForReadability = ($) => {
   stripNonContent($);
+  removeEmbeddedSocialElements($);
   return $('p, blockquote, li, div').toArray().filter((el) => {
-    const text = $(el).text()?.trim();
-    return text && collapseWhitespace(text).length >= MIN_TEXT_LENGTH;
+    if (isLikelyNavigationElement($, el)) {
+      return false;
+    }
+    const normalized = normalizeReadabilityText($(el).text());
+    return normalized.length >= MIN_TEXT_LENGTH;
   });
 };
 
@@ -378,14 +423,15 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log, scraped
       })
       // Exclude citation / attribution chunks before scoring; analyzeTextReadability
       // repeats isExcludedReadabilityText for defense in depth.
-      .filter(({ element }) => isEligibleTextElement($(element)));
+      .filter(({ element }) => isEligibleTextElement($(element)))
+      .filter(({ element }) => !isEmbeddedSocialContentElement($, element));
 
     // Process each element and collect analysis promises
     const analysisPromises = [];
 
     elementsToProcess.forEach(({ element }) => {
       const $el = $(element);
-      const textContent = $el.text()?.trim();
+      const textContent = normalizeReadabilityText($el.text());
       const selector = getElementSelector(element);
 
       // Handle elements with <br> tags (multiple paragraphs)
@@ -396,7 +442,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log, scraped
             const tempDiv = cheerioLoad(`<div>${p}</div>`)('div');
             return tempDiv.text();
           })
-          .map((p) => p.trim())
+          .map((p) => normalizeReadabilityText(p))
           .filter(isEligibleParagraphText);
 
         paragraphs.forEach((paragraph) => {

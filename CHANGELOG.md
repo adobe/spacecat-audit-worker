@@ -1,3 +1,45 @@
+# [1.418.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.417.3...v1.418.0) (2026-04-20)
+
+
+### Features
+
+* add VPC configuration support via helix-deploy 13.4 ([#2102](https://github.com/adobe/spacecat-audit-worker/issues/2102)) ([d868035](https://github.com/adobe/spacecat-audit-worker/commit/d868035db94223d11bc9749112889cb53d329ea2)), closes [adobe/helix-deploy#898](https://github.com/adobe/helix-deploy/issues/898) [adobe/helix-deploy#897](https://github.com/adobe/helix-deploy/issues/897) [adobe/spacecat-infrastructure#375](https://github.com/adobe/spacecat-infrastructure/issues/375)
+
+## [1.417.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.417.2...v1.417.3) (2026-04-20)
+
+
+### Bug Fixes
+
+* **deps:** update dependency uuid to v14 ([#2402](https://github.com/adobe/spacecat-audit-worker/issues/2402)) ([bb59b89](https://github.com/adobe/spacecat-audit-worker/commit/bb59b89241b885a2a3128e83fbd28e496ddbf273))
+
+## [1.417.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.417.1...v1.417.2) (2026-04-20)
+
+
+### Bug Fixes
+
+* honor configured cdn provider in cdn analysis ([#2398](https://github.com/adobe/spacecat-audit-worker/issues/2398)) ([cbfd341](https://github.com/adobe/spacecat-audit-worker/commit/cbfd341dc7bd3283177cf6b31d583222807f4db8))
+
+## [1.417.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.417.0...v1.417.1) (2026-04-18)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2401](https://github.com/adobe/spacecat-audit-worker/issues/2401)) ([61b8a52](https://github.com/adobe/spacecat-audit-worker/commit/61b8a52d7626cf3795bcd202d260f91e492900d8))
+
+# [1.417.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.416.1...v1.417.0) (2026-04-17)
+
+
+### Features
+
+* add user agent when fetching brand presence files for offsite audits ([#2400](https://github.com/adobe/spacecat-audit-worker/issues/2400)) ([1e66791](https://github.com/adobe/spacecat-audit-worker/commit/1e667917d154f8b34b23fac51281d6d01675a825))
+
+## [1.416.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.416.0...v1.416.1) (2026-04-17)
+
+
+### Bug Fixes
+
+* CQ-4363335  CSP auto-identify: duplicate suggestions shown with same directive and description ([#2399](https://github.com/adobe/spacecat-audit-worker/issues/2399)) ([ce3adcd](https://github.com/adobe/spacecat-audit-worker/commit/ce3adcd4357e35040fc61d922cb5d80e107f5b0e))
+
 # [1.416.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.415.3...v1.416.0) (2026-04-16)
 
 

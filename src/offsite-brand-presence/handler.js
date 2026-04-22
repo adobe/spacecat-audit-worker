@@ -25,6 +25,7 @@ import {
   OFFSITE_DOMAINS,
   PROVIDERS_SET,
   CITED_ANALYSIS_DRS_CONFIG,
+  USER_AGENT,
   YOUTUBE_URL_REGEX,
   REDDIT_URL_REGEX,
 } from './constants.js';
@@ -63,7 +64,7 @@ async function fetchQueryIndex(siteId, env, log) {
   log.info(`${LOG_PREFIX} Fetching query-index from: ${url}`);
 
   try {
-    const headers = { 'x-api-key': apiKey };
+    const headers = { 'x-api-key': apiKey, 'User-Agent': USER_AGENT };
     const response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
 
     if (!response.ok) {
@@ -93,7 +94,7 @@ async function fetchQueryIndex(siteId, env, log) {
 async function fetchBrandPresenceData(siteId, fileName, env, log) {
   const apiBase = env.SPACECAT_API_BASE_URL;
   const apiKey = env.SPACECAT_API_KEY;
-  const headers = { 'x-api-key': apiKey };
+  const headers = { 'x-api-key': apiKey, 'User-Agent': USER_AGENT };
   const baseUrl = `${apiBase}/sites/${siteId}/llmo/data/${fileName}?sheet=all&include=${INCLUDE_COLUMNS}&source=offsite-audits`;
 
   let allRows = [];

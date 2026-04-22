@@ -21,6 +21,8 @@ import {
   isExcludedReadabilityText,
   isEligibleTextElement,
   isEligibleParagraphText,
+  normalizeReadabilityText,
+  isLikelyNavigationElement,
 } from '../shared/analysis-utils.js';
 import {
   calculateReadabilityScore,
@@ -32,6 +34,10 @@ import {
   MAX_CHARACTERS_DISPLAY,
 } from '../shared/constants.js';
 import { getDomElementSelector, toElementTargets } from '../../preflight/utils/dom-selector.js';
+import {
+  removeEmbeddedSocialElements,
+  isEmbeddedSocialContentElement,
+} from '../shared/embed-content-utils.js';
 
 export const PREFLIGHT_READABILITY = 'readability';
 
@@ -183,6 +189,7 @@ export default async function readability(context, auditContext) {
 
     const $ = cheerioLoad(rawBody);
     stripNonContent($);
+    removeEmbeddedSocialElements($);
 
     // Get all paragraph, div, and list item elements.
     const textElements = $('p, div, li').toArray();
@@ -220,9 +227,9 @@ export default async function readability(context, auditContext) {
         // Use text-readability library for English, custom function for other languages
         let readabilityScore;
         if (detectedLanguage === 'english') {
-          readabilityScore = rs.fleschReadingEase(text.trim());
+          readabilityScore = rs.fleschReadingEase(text);
         } else {
-          readabilityScore = await calculateReadabilityScore(text.trim(), detectedLanguage);
+          readabilityScore = await calculateReadabilityScore(text, detectedLanguage);
         }
 
         if (readabilityScore < TARGET_READABILITY_SCORE) {
@@ -243,7 +250,7 @@ export default async function readability(context, auditContext) {
             fleschReadingEase: readabilityScore,
             language: detectedLanguage,
             seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
-            textContent: text, // Store full text for AI processing
+            textContent: text, // Store normalized text for AI processing
             ...toElementTargets(selector),
           });
         }
@@ -278,12 +285,14 @@ export default async function readability(context, auditContext) {
         // Skip if it has block-level children (to avoid duplicate analysis)
         return !hasBlockChildren;
       })
-      .filter(({ element }) => isEligibleTextElement($(element)));
+      .filter(({ element }) => !isLikelyNavigationElement($, element))
+      .filter(({ element }) => isEligibleTextElement($(element)))
+      .filter(({ element }) => !isEmbeddedSocialContentElement($, element));
 
     // Process filtered elements
     elementsToProcess.forEach(({ element, index }) => {
       const $el = $(element);
-      const textContent = $el.text()?.trim();
+      const textContent = normalizeReadabilityText($el.text());
 
       // Check if the element contains <br> tags (indicating multiple paragraphs)
       if ($el.html().includes('<br')) {
@@ -302,7 +311,7 @@ export default async function readability(context, auditContext) {
             const tempDiv = cheerioLoad(`<div>${p}</div>`)('div');
             return tempDiv.text();
           })
-          .map((p) => p.trim())
+          .map((p) => normalizeReadabilityText(p))
           .filter(isEligibleParagraphText);
 
         // Add promises for each paragraph
