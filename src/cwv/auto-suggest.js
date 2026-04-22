@@ -115,6 +115,9 @@ export async function processAutoSuggest(context, opportunity, site) {
     const codeInfo = (isAutoFixEnabled && site) ? await getCodeInfo(site, 'cwv', context) : null;
     const hasCodeInfo = codeInfo && codeInfo.codeBucket && codeInfo.codePath && String(codeInfo.codePath).trim() !== '';
 
+    // Extract once; included in every SQS message so Mystique can route notifications back
+    const slackContext = context.auditContext?.slackContext;
+
     // Send one SQS message per suggestion that needs auto-suggest
     for (const suggestion of suggestions) {
       // Skip suggestions that don't need auto-suggest
@@ -156,6 +159,8 @@ export async function processAutoSuggest(context, opportunity, site) {
             codePath: codeInfo.codePath,
           }),
         },
+        // Propagate slack context so Mystique can route failure notifications back
+        ...(slackContext && { auditContext: { slackContext } }),
       };
 
       // eslint-disable-next-line no-await-in-loop

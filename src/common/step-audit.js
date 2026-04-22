@@ -23,6 +23,7 @@ import {
   sendContinuationMessage,
 } from './audit-utils.js';
 import { handleAbort } from './bot-detection.js';
+import { sendAuditFailureNotification } from '../utils/slack-utils.js';
 
 const { AUDIT_STEP_DESTINATION_CONFIGS } = AuditModel;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
@@ -109,9 +110,15 @@ export class StepAudit extends BaseAudit {
     const {
       type, data, siteId, auditContext = {}, abort, jobId,
     } = message;
+    let site;
+    let siteUrl = siteId;
 
     try {
-      const site = await this.siteProvider(siteId, context);
+      site = await this.siteProvider(siteId, context);
+      // Cache now so the catch block has it even if a later step throws
+      try {
+        siteUrl = site.getBaseURL();
+      } catch { /* keep siteId fallback */ }
       // Preserve requiresValidation from index.js - siteProvider returns a fresh site
       if (context.site?.requiresValidation !== undefined) {
         site.requiresValidation = context.site.requiresValidation;
@@ -137,7 +144,7 @@ export class StepAudit extends BaseAudit {
             log.warn(
               `[BOT-BLOCKED] All URLs blocked (${blockedUrlsCount}/${totalUrlsCount}), aborting audit for jobId=${jobId}`,
             );
-            return handleAbort(abort, jobId, type, site, siteId, log);
+            return handleAbort(abort, jobId, type, site, siteId, { ...context, auditContext });
           }
           // Some URLs blocked but not all - continue audit processing
           // blockedUrlsCount should be >= 1 if abortInfo exists, but check for safety
@@ -208,6 +215,12 @@ export class StepAudit extends BaseAudit {
       // Enhance error message with more context
       const errorMessage = `${type} audit failed for site ${siteId} at step ${auditContext.next || 'initial'}. Reason: ${e.message}`;
       log.error(errorMessage, { error: e });
+      await sendAuditFailureNotification(context, {
+        type,
+        siteUrl,
+        auditContext,
+        error: e,
+      });
       throw new Error(errorMessage, { cause: e });
     }
   }

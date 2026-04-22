@@ -16,6 +16,7 @@ import { sqsEventAdapter, logWrapper } from '@adobe/spacecat-shared-utils';
 import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import dataAccess from './support/data-access.js';
 import { checkSiteRequiresValidation } from './utils/site-validation.js';
+import { sendAuditFailureNotification } from './utils/slack-utils.js';
 
 import sqs from './support/sqs.js';
 import s3Client from './support/s3-client.js';
@@ -320,6 +321,12 @@ async function run(message, context) {
     return result;
   } catch (e) {
     log.error(`${type} audit for ${siteId} failed after ${getElapsedSeconds(startTime)} seconds. `, e);
+    await sendAuditFailureNotification(context, {
+      type,
+      siteUrl: context.site?.getBaseURL?.() || siteId,
+      auditContext: message.auditContext,
+      error: e,
+    });
     return internalServerError();
   }
 }

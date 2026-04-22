@@ -1166,13 +1166,20 @@ describe('Step-based Audit Tests', () => {
         details: null, // This will trigger || {} fallback on line 61
       };
 
-      const result = handleAbort(
+      // handleAbort now accepts context (with log + auditContext) instead of log directly
+      const mockContext = {
+        log: mockLog,
+        auditContext: {}, // no slackContext — sendAuditFailureNotification will return early
+        env: {},
+      };
+
+      const result = await handleAbort(
         abortWithNullDetails,
         'test-job-123',
         'cwv',
         mockSite,
         'test-site-456',
-        mockLog,
+        mockContext,
       );
 
       // Should return ok response
