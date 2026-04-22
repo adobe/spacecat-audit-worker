@@ -30,6 +30,23 @@ function hasFailingMetrics(entry) {
 }
 
 /**
+ * Returns a copy of the entry where the metrics array only contains device entries
+ * that have at least one metric above the "good" threshold. This prevents suggestions
+ * from containing green device-level data alongside failing ones.
+ * @param {Object} entry - CWV audit entry
+ * @returns {Object} Entry with metrics filtered to failing device types only
+ */
+function filterToFailingDeviceMetrics(entry) {
+  return {
+    ...entry,
+    metrics: entry.metrics.filter((deviceMetrics) => METRICS.some((metric) => {
+      const value = deviceMetrics[metric];
+      return value !== null && value !== undefined && value > THRESHOLDS[metric];
+    })),
+  };
+}
+
+/**
  * Synchronizes opportunities and suggestions for a CWV audit
  * Creates or updates opportunity and syncs suggestions
  * @param {Object} context - Context object containing site, audit, finalUrl, log, dataAccess
@@ -46,7 +63,13 @@ export async function syncOpportunitiesAndSuggestions(context) {
   // Only sync suggestions for pages where at least one CWV metric is failing.
   // Pages where all metrics pass are not actionable. Data is already sorted by
   // page views descending from step 1.
-  const cwvData = auditResult.cwv.filter(hasFailingMetrics);
+  // Additionally, strip device-level metrics that are all-green so that suggestions
+  // only contain data for device types with actual CWV issues. This prevents a page
+  // that is failing on one device but passing on another from surfacing green metric
+  // values in its suggestion, which would make it appear incorrectly resolved.
+  const cwvData = auditResult.cwv
+    .filter(hasFailingMetrics)
+    .map(filterToFailingDeviceMetrics);
   log.info(`[syncOpportunitiesAndSuggestions] site ${site.getId()} - ${cwvData.length} of ${auditResult.cwv.length} CWV entries have failing metrics`);
 
   // Build minimal audit data object for opportunity creation

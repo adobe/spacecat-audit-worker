@@ -436,6 +436,70 @@ describe('CWV Auto-Suggest', () => {
         expect(context.log.error.firstCall.args[0]).to.include('opportunityId: unknown');
       }
     });
+
+    it('should populate failing_metrics and cwv_metric_values for above-threshold metrics', async () => {
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{
+              deviceType: 'mobile',
+              lcp: 3500,   // above 2500 threshold
+              cls: 0.05,   // below 0.1 threshold
+              inp: 100,    // below 200 threshold
+            }],
+            issues: [],
+          }),
+        }]),
+      };
+
+      await processAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.calledOnce).to.be.true;
+      const message = sqsStub.firstCall.args[1];
+      expect(message.data.failing_metrics).to.deep.equal(['lcp']);
+      expect(message.data.cwv_metric_values).to.deep.equal({ lcp: 3500 });
+    });
+
+    it('should track worst-case metric value when the same metric exceeds threshold across multiple device rows', async () => {
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            // Three device rows: first sets the worst value, second is higher (covers
+            // the right-side branch of the || condition), third is lower (covers the
+            // false branch where the existing worst value is kept).
+            metrics: [
+              { deviceType: 'mobile', lcp: 3000, cls: null, inp: null },
+              { deviceType: 'desktop', lcp: 4500, cls: null, inp: null },
+              { deviceType: 'tablet', lcp: 3500, cls: null, inp: null },
+            ],
+            issues: [],
+          }),
+        }]),
+      };
+
+      await processAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.calledOnce).to.be.true;
+      const message = sqsStub.firstCall.args[1];
+      expect(message.data.failing_metrics).to.deep.equal(['lcp']);
+      expect(message.data.cwv_metric_values).to.deep.equal({ lcp: 4500 });
+    });
   });
 
   describe('shouldSendAutoSuggestForSuggestion', () => {
