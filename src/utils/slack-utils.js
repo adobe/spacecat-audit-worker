@@ -14,6 +14,50 @@ import { BaseSlackClient, SLACK_TARGETS } from '@adobe/spacecat-shared-slack-cli
 import { hasText } from '@adobe/spacecat-shared-utils';
 
 /**
+ * Sends a message to Slack using the provided context and slackContext.
+ * Mirrors the say() utility in spacecat-task-processor for consistent Slack messaging
+ * across audit-triggered flows. Only sends when both channelId and threadTs are present.
+ * @param {object} env - The environment variables
+ * @param {object} log - The logger
+ * @param {object} slackContext - The Slack context containing channelId and threadTs
+ * @param {string} message - The message text to send
+ * @returns {Promise<void>}
+ */
+export async function say(env, log, slackContext, message) {
+  try {
+    const slackClientContext = {
+      channelId: slackContext.channelId,
+      threadTs: slackContext.threadTs,
+      log,
+      env: {
+        SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
+        SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
+        SLACK_TOKEN_WORKSPACE_INTERNAL: env.SLACK_TOKEN_WORKSPACE_INTERNAL,
+        SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL: env.SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL,
+      },
+    };
+    const slackTarget = SLACK_TARGETS.WORKSPACE_INTERNAL;
+    const slackClient = BaseSlackClient.createFrom(slackClientContext, slackTarget);
+    if (hasText(slackContext.threadTs) && hasText(slackContext.channelId)) {
+      await slackClient.postMessage({
+        channel: slackContext.channelId,
+        thread_ts: slackContext.threadTs,
+        text: message,
+        unfurl_links: false,
+      });
+    }
+  } catch (error) {
+    if (log) {
+      log.error('Error sending Slack message:', {
+        error: error.message,
+        stack: error.stack,
+        errorType: error.name,
+      });
+    }
+  }
+}
+
+/**
  * Sends a message to a Slack channel.
  * @param {object} context - The context object
  * @param {string} channelId - The Slack channel ID (e.g., 'C1234567890')

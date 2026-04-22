@@ -18,6 +18,7 @@ import {
   postMessage,
   postMessageOptional,
   postMessageSafe,
+  say,
   SLACK_TARGETS,
 } from '../../src/utils/slack-utils.js';
 
@@ -145,6 +146,102 @@ describe('Slack Utils', () => {
 
       expect(result.success).to.be.false;
       expect(result.error).to.equal(error);
+    });
+  });
+
+  describe('say', () => {
+    let log;
+    let env;
+    let slackContext;
+
+    beforeEach(() => {
+      log = { error: sinon.stub() };
+      env = {
+        SLACK_BOT_TOKEN: 'test-bot-token',
+        SLACK_SIGNING_SECRET: 'test-signing-secret',
+        SLACK_TOKEN_WORKSPACE_INTERNAL: 'test-workspace-token',
+        SLACK_OPS_CHANNEL_WORKSPACE_INTERNAL: 'test-ops-channel',
+      };
+      slackContext = {
+        channelId: 'C12345678',
+        threadTs: '12345.67890',
+      };
+    });
+
+    it('sends message to Slack when channelId and threadTs are present', async () => {
+      await say(env, log, slackContext, 'Audit completed');
+
+      expect(mockSlackClient.postMessage.calledOnce).to.be.true;
+      const msg = mockSlackClient.postMessage.firstCall.args[0];
+      expect(msg.channel).to.equal('C12345678');
+      expect(msg.thread_ts).to.equal('12345.67890');
+      expect(msg.text).to.equal('Audit completed');
+      expect(msg.unfurl_links).to.be.false;
+    });
+
+    it('creates client with correct context derived from env and log', async () => {
+      await say(env, log, slackContext, 'Test');
+
+      expect(BaseSlackClient.createFrom.calledOnce).to.be.true;
+      const [clientCtx, target] = BaseSlackClient.createFrom.firstCall.args;
+      expect(clientCtx.channelId).to.equal('C12345678');
+      expect(clientCtx.threadTs).to.equal('12345.67890');
+      expect(clientCtx.log).to.equal(log);
+      expect(clientCtx.env.SLACK_BOT_TOKEN).to.equal('test-bot-token');
+      expect(clientCtx.env.SLACK_TOKEN_WORKSPACE_INTERNAL).to.equal('test-workspace-token');
+      expect(target).to.equal(SLACK_TARGETS.WORKSPACE_INTERNAL);
+    });
+
+    it('does not send message when threadTs is empty', async () => {
+      slackContext.threadTs = '';
+
+      await say(env, log, slackContext, 'Test');
+
+      expect(mockSlackClient.postMessage.called).to.be.false;
+    });
+
+    it('does not send message when channelId is empty', async () => {
+      slackContext.channelId = '';
+
+      await say(env, log, slackContext, 'Test');
+
+      expect(mockSlackClient.postMessage.called).to.be.false;
+    });
+
+    it('logs error and does not throw when slackContext is null', async () => {
+      await say(env, log, null, 'Test');
+
+      expect(log.error.calledOnce).to.be.true;
+      expect(log.error.firstCall.args[0]).to.equal('Error sending Slack message:');
+    });
+
+    it('logs error and does not throw when slackContext is undefined', async () => {
+      await say(env, log, undefined, 'Test');
+
+      expect(log.error.calledOnce).to.be.true;
+      expect(log.error.firstCall.args[0]).to.equal('Error sending Slack message:');
+    });
+
+    it('logs error and does not throw when postMessage rejects', async () => {
+      mockSlackClient.postMessage.rejects(new Error('Slack API down'));
+
+      await say(env, log, slackContext, 'Test');
+
+      expect(log.error.calledOnce).to.be.true;
+      const errArg = log.error.firstCall.args[1];
+      expect(errArg.error).to.equal('Slack API down');
+      expect(errArg.errorType).to.equal('Error');
+    });
+
+    it('logs error and does not throw when BaseSlackClient.createFrom throws', async () => {
+      mockSlackClient.postMessage.rejects(new Error('ignored'));
+      BaseSlackClient.createFrom.throws(new Error('Client init failed'));
+
+      await say(env, log, slackContext, 'Test');
+
+      expect(log.error.calledOnce).to.be.true;
+      const errArg = log.error.firstCall.args[1];
+      expect(errArg.error).to.equal('Client init failed');
     });
   });
 });
