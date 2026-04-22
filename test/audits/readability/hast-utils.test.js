@@ -69,4 +69,40 @@ describe('hast-utils', () => {
       });
     });
   });
+
+  describe('sanitization', () => {
+    it('should strip <script> tags', () => {
+      const result = htmlToHast('<p>Safe</p><script>alert(1)</script>');
+      const json = JSON.stringify(result);
+      expect(json).not.to.include('"script"');
+      expect(json).not.to.include('alert');
+    });
+
+    it('should strip event handler attributes (onerror, onclick)', () => {
+      const result = htmlToHast('<p onerror="alert(1)">Text</p>');
+      const json = JSON.stringify(result);
+      expect(json).not.to.include('onerror');
+      expect(json).not.to.include('alert');
+    });
+
+    it('should strip javascript: hrefs from <a> tags', () => {
+      const result = htmlToHast('<a href="javascript:alert(1)">Click</a>');
+      const json = JSON.stringify(result);
+      expect(json).not.to.include('javascript:');
+    });
+
+    it('should preserve safe <a href> links', () => {
+      const result = htmlToHast('<a href="https://example.com">Link</a>');
+      const json = JSON.stringify(result);
+      expect(json).to.include('"href"');
+      expect(json).to.include('example.com');
+    });
+
+    it('should unwrap disallowed tags but keep their text content', () => {
+      const result = htmlToHast('<div><p>Text inside div</p></div>');
+      const json = JSON.stringify(result);
+      expect(json).not.to.include('"tagName":"div"');
+      expect(json).to.include('Text inside div');
+    });
+  });
 });

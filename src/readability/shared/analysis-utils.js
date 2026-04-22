@@ -165,7 +165,7 @@ async function analyzeTextReadability(
         scrapedAt,
         selector,
         textContent: text,
-        htmlContent: htmlContent ?? null,
+        htmlContent: htmlContent || null,
         displayText,
         fleschReadingEase: Math.round(readabilityScore * 100) / 100,
         language: detectedLanguage,

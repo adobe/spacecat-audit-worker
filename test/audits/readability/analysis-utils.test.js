@@ -1070,7 +1070,7 @@ Save it for your next mountain escape!
       });
     });
 
-    it('should set htmlContent to null when element has no inner HTML', async () => {
+    it('should include htmlContent as plain text string for elements without markup', async () => {
       const text = makeLongText('Plain text paragraph without any HTML markup inside the element.');
       const html = `<!DOCTYPE html><html><body><p>${text}</p></body></html>`;
 
@@ -1082,8 +1082,8 @@ Save it for your next mountain escape!
       const result = await analyzePageContent(html, 'https://example.com', 100, mockLog, '2025-01-01T00:00:00.000Z');
 
       expect(result.length).to.be.greaterThan(0);
-      // htmlContent can be the raw inner HTML (equals textContent for plain text) or null
-      expect(result[0]).to.have.property('htmlContent');
+      // $el.html() returns plain text for elements without markup tags
+      expect(result[0].htmlContent).to.be.a('string');
     });
   });
 
