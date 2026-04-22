@@ -370,7 +370,11 @@ export async function filterValidUrls(
             results.ok.push(url);
             break;
           case 'notOk':
-            results.notOk.push({ url, statusCode, ...(urlsSuggested && { urlsSuggested }) });
+            results.notOk.push({
+              url,
+              statusCode,
+              ...(urlsSuggested != null && { urlsSuggested }), // will also keep an empty string
+            });
             break;
           case 'networkError':
             results.networkErrors.push({ url, error });
