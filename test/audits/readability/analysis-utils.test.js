@@ -699,6 +699,62 @@ describe('Readability Analysis Utils', () => {
       expect(mockIsSupportedLanguage).to.have.been.called;
     });
 
+    it('excludes paragraphs whose class matches nav chrome substring heuristics', async () => {
+      const body = makeLongText('Editorial copy that would be analyzed if the element were not filtered by class.');
+      const html = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <p class="region-sidebar-primary">${body}</p>
+        </body>
+      </html>`;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(15);
+
+      const result = await analyzePageContent(
+        html,
+        'https://example.com/page',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result).to.deep.equal([]);
+      expect(mockFranc).to.not.have.been.called;
+    });
+
+    it('excludes paragraphs where link text is most of the element text', async () => {
+      const filler = 'Lead in sentence text that is not inside any anchor tag at all. ';
+      const linkInner = Array.from({ length: 40 }, () => 'Linkedphrase ').join('');
+      const trailing = ' End tail words outside anchor.';
+      const html = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <p>${filler}<a href="https://example.com/list">${linkInner}</a>${trailing}</p>
+        </body>
+      </html>`;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(15);
+
+      const result = await analyzePageContent(
+        html,
+        'https://example.com/page',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result).to.deep.equal([]);
+      expect(mockFranc).to.not.have.been.called;
+    });
+
     it('should categorize issues as Important for poor readability with medium traffic', async () => {
       const text = makeLongText('This is a moderately complex sentence with some difficult vocabulary for readers to understand.');
       const html = createHtmlWithParagraph(text);
