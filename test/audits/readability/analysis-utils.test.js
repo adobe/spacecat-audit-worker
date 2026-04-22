@@ -1395,6 +1395,26 @@ Save it for your next mountain escape!
       const region = $('#region').get(0);
       expect(isLikelyNavigationElement($, region)).to.equal(true);
     });
+
+    it('returns true when element is inside a navigation landmark', async () => {
+      const { isLikelyNavigationElement } = await import('../../../src/readability/shared/analysis-utils.js');
+      const $ = cheerioLoad(`
+        <nav>
+          <p id="in-nav">Paragraph copy that lives under a nav landmark for site menus.</p>
+        </nav>
+      `);
+      expect(isLikelyNavigationElement($, $('#in-nav').get(0))).to.equal(true);
+    });
+
+    it('returns true when an ancestor id matches navigation class/id heuristics', async () => {
+      const { isLikelyNavigationElement } = await import('../../../src/readability/shared/analysis-utils.js');
+      const $ = cheerioLoad(`
+        <div id="primary-nav">
+          <p id="leaf">Body-looking paragraph nested under a bar whose id signals main navigation.</p>
+        </div>
+      `);
+      expect(isLikelyNavigationElement($, $('#leaf').get(0))).to.equal(true);
+    });
   });
 });
 
