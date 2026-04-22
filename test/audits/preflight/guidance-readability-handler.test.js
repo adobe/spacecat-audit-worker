@@ -309,6 +309,28 @@ describe('Guidance Readability Handler Tests', () => {
       expect(result).to.deep.equal({ ok: true });
       expect(logStub.warn).to.have.been.calledWithMatch('No valid readability improvements found');
     });
+
+    it('should log AI classifier exclusion and still persist job metadata', async () => {
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          should_exclude: true,
+          exclusion_reason: 'bibliography_or_attribution_block',
+        },
+        id: 'message-id-excluded',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.info).to.have.been.calledWith(
+        '[readability-suggest guidance]: Content excluded by AI classifier for siteId: test-site-id, '
+        + 'reason: bibliography_or_attribution_block',
+      );
+      expect(mockAsyncJob.setMetadata).to.have.been.called;
+      expect(mockAsyncJob.save).to.have.been.called;
+    });
   });
 
   describe('Job Metadata Updates', () => {

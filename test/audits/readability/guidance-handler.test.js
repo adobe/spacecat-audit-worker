@@ -370,6 +370,62 @@ describe('Readability Opportunities Guidance Handler', () => {
       expect(syncArgs.newData[0].selector).to.equal('#content p:nth-child(1)');
     });
 
+    it('should filter out batch items with should_exclude from Mystique classifier', async () => {
+      const mixedResults = [
+        {
+          status: 'success',
+          selector: '#citation',
+          data: {
+            should_exclude: true,
+            page_url: 'https://example.com/page1',
+            original_paragraph: 'Bibliographic line excluded by classifier.',
+            current_flesch_score: 18,
+            improved_paragraph: 'Improved citation text.',
+            improved_flesch_score: 72,
+            seo_recommendation: 'N/A',
+            ai_rationale: 'Excluded as non-body copy',
+          },
+        },
+        {
+          status: 'success',
+          selector: '#content p:nth-child(1)',
+          data: {
+            page_url: 'https://example.com/page1',
+            original_paragraph: 'Original complex text with many words.',
+            current_flesch_score: 25.3,
+            improved_paragraph: 'Simple clear text.',
+            improved_flesch_score: 75.5,
+            seo_recommendation: 'Simplify language',
+            ai_rationale: 'Use shorter sentences',
+          },
+        },
+      ];
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.input?.Key) {
+          return Promise.resolve({
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify(mixedResults)),
+            },
+          });
+        }
+        return Promise.resolve();
+      });
+
+      const message = {
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      };
+
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ ok: true });
+
+      const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+      expect(syncArgs.newData).to.have.length(1);
+      expect(syncArgs.newData[0].selector).to.equal('#content p:nth-child(1)');
+    });
+
     it('should handle all items failed', async () => {
       const allFailedResults = [
         {
