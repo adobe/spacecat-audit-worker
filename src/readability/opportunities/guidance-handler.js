@@ -16,17 +16,26 @@ import {
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { syncSuggestions } from '../../utils/data-access.js';
+import { htmlToHast } from '../shared/hast-utils.js';
 
 /**
  * Enriches suggestion data with fields required for auto-optimize.
+ * When improved HTML is available it is converted to HAST so Tokowaka can
+ * apply the patch while preserving semantic markup (strong, em, a, …).
  */
 function enrichSuggestionDataForAutoOptimize(data) {
+  const hasRichContent = !!data.improvedHtml;
+  const transformValue = hasRichContent
+    ? htmlToHast(data.improvedHtml)
+    : data.improvedText;
+
   return {
     ...data,
     url: data.pageUrl,
     scrapedAt: data.scrapedAt ? new Date(data.scrapedAt).toISOString() : undefined,
     transformRules: {
-      value: data.improvedText,
+      value: transformValue,
+      valueFormat: hasRichContent ? 'hast' : 'text',
       op: 'replace',
       selector: data.selector,
       target: 'ai-bots',
@@ -82,6 +91,7 @@ function mapBatchResultToSuggestionData(item) {
     selector: item.selector,
     originalText: data.original_paragraph,
     improvedText: data.improved_paragraph,
+    improvedHtml: data.improved_html ?? null,
     originalFleschScore: data.current_flesch_score,
     improvedFleschScore: data.improved_flesch_score,
     readabilityImprovement: data.improved_flesch_score - data.current_flesch_score,
@@ -198,6 +208,7 @@ export default async function handler(message, context) {
       const merged = {
         ...existingData,
         improvedText: newData.improvedText,
+        improvedHtml: newData.improvedHtml ?? null,
         improvedFleschScore: newData.improvedFleschScore,
         readabilityImprovement: newData.readabilityImprovement,
         aiSuggestion: newData.seoRecommendation,

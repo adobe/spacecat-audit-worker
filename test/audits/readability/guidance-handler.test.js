@@ -613,6 +613,92 @@ describe('Readability Opportunities Guidance Handler', () => {
     });
   });
 
+  describe('rich HTML (improved_html) → HAST conversion', () => {
+    const makeResultsWithHtml = (improvedHtml) => [
+      {
+        status: 'success',
+        selector: '#content p:nth-child(1)',
+        data: {
+          page_url: 'https://example.com/page1',
+          original_paragraph: 'Original complex text.',
+          current_flesch_score: 25.3,
+          improved_paragraph: 'Simple clear text.',
+          improved_html: improvedHtml,
+          improved_flesch_score: 75.5,
+          seo_recommendation: 'Simplify language',
+          ai_rationale: 'Use shorter sentences',
+        },
+      },
+    ];
+
+    const setupS3WithResults = (results) => {
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand' || command.input?.Key?.includes('results')) {
+          return Promise.resolve({
+            Body: { transformToString: sinon.stub().resolves(JSON.stringify(results)) },
+          });
+        }
+        return Promise.resolve();
+      });
+    };
+
+    it('should use HAST tree in transformRules.value when improved_html is present', async () => {
+      setupS3WithResults(makeResultsWithHtml('Simple <strong>clear</strong> text.'));
+
+      const message = { auditId: 'audit-123', siteId: 'site-1', data: { s3ResultsPath: 'results/path.json' } };
+      await handler.default(message, mockContext);
+
+      const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+      const suggestion = syncArgs.mapNewSuggestion(syncArgs.newData[0]);
+
+      expect(suggestion.data.transformRules.valueFormat).to.equal('hast');
+      expect(suggestion.data.transformRules.value).to.be.an('object');
+      expect(suggestion.data.transformRules.value.type).to.equal('root');
+      expect(suggestion.data.transformRules.value.children).to.be.an('array');
+    });
+
+    it('should use plain text in transformRules.value when improved_html is absent', async () => {
+      setupS3WithResults([{
+        status: 'success',
+        selector: '#content p:nth-child(1)',
+        data: {
+          page_url: 'https://example.com/page1',
+          original_paragraph: 'Original complex text.',
+          current_flesch_score: 25.3,
+          improved_paragraph: 'Simple clear text.',
+          improved_flesch_score: 75.5,
+          seo_recommendation: 'Simplify language',
+          ai_rationale: 'Use shorter sentences',
+        },
+      }]);
+
+      const message = { auditId: 'audit-123', siteId: 'site-1', data: { s3ResultsPath: 'results/path.json' } };
+      await handler.default(message, mockContext);
+
+      const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+      const suggestion = syncArgs.mapNewSuggestion(syncArgs.newData[0]);
+
+      expect(suggestion.data.transformRules.valueFormat).to.equal('text');
+      expect(suggestion.data.transformRules.value).to.equal('Simple clear text.');
+    });
+
+    it('mergeDataFunction should produce HAST transformRules when improved_html is present', async () => {
+      setupS3WithResults(makeResultsWithHtml('<p>Better <em>text</em>.</p>'));
+
+      const message = { auditId: 'audit-123', siteId: 'site-1', data: { s3ResultsPath: 'results/path.json' } };
+      await handler.default(message, mockContext);
+
+      const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+      const merged = syncArgs.mergeDataFunction(
+        { pageUrl: 'https://example.com/page1', selector: '#content p:nth-child(1)' },
+        syncArgs.newData[0],
+      );
+
+      expect(merged.transformRules.valueFormat).to.equal('hast');
+      expect(merged.transformRules.value).to.be.an('object').with.property('type', 'root');
+    });
+  });
+
   describe('mergeDataFunction', () => {
     it('should merge AI improvements into existing suggestion data with auto-optimize enrichment', async () => {
       const message = {

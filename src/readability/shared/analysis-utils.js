@@ -115,6 +115,7 @@ function extractTrafficFromKey() {
  */
 async function analyzeTextReadability(
   text,
+  htmlContent,
   selector,
   pageUrl,
   traffic,
@@ -160,6 +161,7 @@ async function analyzeTextReadability(
         scrapedAt,
         selector,
         textContent: text,
+        htmlContent: htmlContent ?? null,
         displayText,
         fleschReadingEase: Math.round(readabilityScore * 100) / 100,
         language: detectedLanguage,
@@ -265,6 +267,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log, scraped
     elementsToProcess.forEach(({ element }) => {
       const $el = $(element);
       const textContent = normalizeReadabilityText($el.text());
+      const htmlContent = $el.html();
       const selector = getElementSelector(element);
 
       // Handle elements with <br> tags (multiple paragraphs)
@@ -281,6 +284,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log, scraped
         paragraphs.forEach((paragraph) => {
           const analysisPromise = analyzeTextReadability(
             paragraph,
+            null, // <br>-split sub-paragraphs have no discrete HTML boundary
             selector,
             pageUrl,
             traffic,
@@ -294,6 +298,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log, scraped
       } else {
         const analysisPromise = analyzeTextReadability(
           textContent,
+          htmlContent,
           selector,
           pageUrl,
           traffic,
