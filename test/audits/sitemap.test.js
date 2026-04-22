@@ -42,6 +42,7 @@ import {
   SLOW_PAGE_URL_BATCH_SIZE,
   SLOW_PAGE_URL_BATCH_DELAY_MS,
   urlLooksLike404Page,
+  formatUrlProbeErrorDetail,
 } from '../../src/sitemap/common.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
@@ -325,6 +326,16 @@ describe('Sitemap Audit', () => {
       expect(urlLooksLike404Page('https://example.com/404.html')).to.be.true;
       expect(urlLooksLike404Page('https://example.com/blog/404/about')).to.be.true;
       expect(urlLooksLike404Page('https://example.com/ok/page')).to.be.false;
+    });
+  });
+
+  describe('formatUrlProbeErrorDetail', () => {
+    it('formats Error instances with name and message', () => {
+      expect(formatUrlProbeErrorDetail(new TypeError('bad'))).to.equal('TypeError: bad');
+    });
+
+    it('stringifies non-Error rejection values', () => {
+      expect(formatUrlProbeErrorDetail('plain-rejection')).to.equal('plain-rejection');
     });
   });
 
@@ -2003,7 +2014,7 @@ describe('filterValidUrls with redirect handling', () => {
     ]);
   });
 
-  it('should omit urlsSuggested when redirect target is invalid or 404-like; otherwise suggest terminal URL', async () => {
+  it('should set urlsSuggested to empty string when redirect target is invalid or 404-like; otherwise suggest terminal URL', async () => {
     const urls = [
       'https://example.com/redirect-to-404',
       'https://example.com/redirect-to-200',
@@ -2041,6 +2052,7 @@ describe('filterValidUrls with redirect handling', () => {
       {
         url: 'https://example.com/redirect-to-404',
         statusCode: 301,
+        urlsSuggested: '',
       },
       {
         url: 'https://example.com/redirect-to-200',
@@ -2050,10 +2062,12 @@ describe('filterValidUrls with redirect handling', () => {
       {
         url: 'https://example.com/redirect-to-404-custom-path',
         statusCode: 301,
+        urlsSuggested: '',
       },
       {
         url: 'https://subdomain.example.com/redirect-to-404',
         statusCode: 302,
+        urlsSuggested: '',
       },
     ]);
   });
@@ -2429,7 +2443,7 @@ describe('filterValidUrls with status code tracking', () => {
     expect(result.notOk.some((item) => item.statusCode === 403)).to.be.false;
   });
 
-  it('should omit urlsSuggested for redirects to 404 patterns and suggest terminal URL for normal redirects', async () => {
+  it('should set urlsSuggested to empty string for redirects to 404 patterns and suggest terminal URL for normal redirects', async () => {
     const urls = [
       'https://example.com/redirect-to-404-page',
       'https://example.com/redirect-to-404-path',
@@ -2472,7 +2486,7 @@ describe('filterValidUrls with status code tracking', () => {
 
     redirectsTo404.forEach((item) => {
       expect(item.statusCode).to.equal(301);
-      expect(item.urlsSuggested).to.equal(undefined);
+      expect(item.urlsSuggested).to.equal('');
     });
 
     const normalRedirect = result.notOk.find((item) => item.url.includes('normal-redirect'));
@@ -2650,7 +2664,18 @@ describe('filterValidUrls with HEAD to GET fallback', () => {
       {
         url: 'https://example.com/orig-301-404',
         statusCode: 301,
+        urlsSuggested: '',
       },
     ]);
+  });
+
+  it('calls log.debug on network error during URL probe', async () => {
+    nock('https://example.com').head('/network-err').replyWithError('ECONNRESET');
+    const log = { debug: sandbox.spy(), error: sandbox.spy() };
+
+    const result = await filterValidUrls(['https://example.com/network-err'], log);
+
+    expect(result.networkErrors).to.have.length(1);
+    expect(log.debug).to.have.been.calledWith(sinon.match(/network error/i));
   });
 });

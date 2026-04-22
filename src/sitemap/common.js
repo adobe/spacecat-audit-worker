@@ -165,6 +165,11 @@ export async function fetchContent(targetUrl) {
   };
 }
 
+// unit test-able function ... actual use is for debug logging
+export function formatUrlProbeErrorDetail(err) {
+  return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+}
+
 /**
  * Returns the results of validating all the URLs. Every URL is validated.
  * The returned structure filters each of these URLs into exactly one "bucket."
@@ -335,8 +340,7 @@ export async function filterValidUrls(
       return { type: 'otherStatus', url, statusCode: response.status };
     } catch (err) {
       // exception during the fetch (network error, timeout, etc.) is considered a network error
-      /* c8 ignore next 3 */
-      const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+      const detail = formatUrlProbeErrorDetail(err);
       log?.debug(`Sitemap: network error while probing URL ${url}: ${detail}`);
       return { type: 'networkError', url, error: 'NETWORK_ERROR' };
     }
