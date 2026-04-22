@@ -24,10 +24,18 @@ import { htmlToHast } from '../shared/hast-utils.js';
  * apply the patch while preserving semantic markup (strong, em, a, …).
  */
 function enrichSuggestionDataForAutoOptimize(data) {
-  const hasRichContent = !!data.improvedHtml;
-  const transformValue = hasRichContent
-    ? htmlToHast(data.improvedHtml)
-    : data.improvedText;
+  const hasRichContent = !!data.improvedHtml?.trim();
+  let transformValue = data.improvedText;
+  let valueFormat = 'text';
+
+  if (hasRichContent) {
+    try {
+      transformValue = htmlToHast(data.improvedHtml);
+      valueFormat = 'hast';
+    } catch {
+      // malformed HTML: keep plain-text fallback + text format for Tokowaka
+    }
+  }
 
   return {
     ...data,
@@ -35,7 +43,7 @@ function enrichSuggestionDataForAutoOptimize(data) {
     scrapedAt: data.scrapedAt ? new Date(data.scrapedAt).toISOString() : undefined,
     transformRules: {
       value: transformValue,
-      valueFormat: hasRichContent ? 'hast' : 'text',
+      valueFormat,
       op: 'replace',
       selector: data.selector,
       target: 'ai-bots',

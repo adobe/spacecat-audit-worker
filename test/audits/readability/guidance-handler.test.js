@@ -682,6 +682,62 @@ describe('Readability Opportunities Guidance Handler', () => {
       expect(suggestion.data.transformRules.value).to.equal('Simple clear text.');
     });
 
+    it('should fall back to plain text when improved_html is whitespace-only', async () => {
+      setupS3WithResults(makeResultsWithHtml('   '));
+
+      const message = { auditId: 'audit-123', siteId: 'site-1', data: { s3ResultsPath: 'results/path.json' } };
+      await handler.default(message, mockContext);
+
+      const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+      const suggestion = syncArgs.mapNewSuggestion(syncArgs.newData[0]);
+
+      expect(suggestion.data.transformRules.valueFormat).to.equal('text');
+      expect(suggestion.data.transformRules.value).to.equal('Simple clear text.');
+    });
+
+    it('should use text valueFormat when htmlToHast throws', async function htmlToHastThrows() {
+      this.timeout(5000);
+      const localSyncStub = sinon.stub().resolves();
+      const throwingHandler = await esmock('../../../src/readability/opportunities/guidance-handler.js', {
+        '@adobe/spacecat-shared-http-utils': {
+          ok: sinon.stub().returns({ ok: true }),
+          notFound: sinon.stub().returns({ notFound: true }),
+          badRequest: sinon.stub().returns({ badRequest: true }),
+          noContent: sinon.stub().returns({ noContent: true }),
+          internalServerError: sinon.stub().returns({ internalServerError: true }),
+        },
+        '@adobe/spacecat-shared-data-access': {
+          Suggestion: { TYPES: { CONTENT_UPDATE: 'CONTENT_UPDATE' } },
+        },
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: localSyncStub,
+        },
+        '../../../src/readability/shared/hast-utils.js': {
+          htmlToHast: sinon.stub().throws(new Error('parse')),
+        },
+      });
+
+      const s3ClientThrow = { send: sinon.stub() };
+      s3ClientThrow.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand' || command.input?.Key?.includes('results')) {
+          return Promise.resolve({
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify(makeResultsWithHtml('<p>x</p>'))),
+            },
+          });
+        }
+        return Promise.resolve();
+      });
+
+      const message = { auditId: 'audit-123', siteId: 'site-1', data: { s3ResultsPath: 'results/path.json' } };
+      await throwingHandler.default(message, { ...mockContext, s3Client: s3ClientThrow });
+
+      const syncArgs = localSyncStub.getCall(0).args[0];
+      const suggestion = syncArgs.mapNewSuggestion(syncArgs.newData[0]);
+      expect(suggestion.data.transformRules.valueFormat).to.equal('text');
+      expect(suggestion.data.transformRules.value).to.equal('Simple clear text.');
+    });
+
     it('mergeDataFunction should produce HAST transformRules when improved_html is present', async () => {
       setupS3WithResults(makeResultsWithHtml('<p>Better <em>text</em>.</p>'));
 
