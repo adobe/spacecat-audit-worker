@@ -1382,6 +1382,20 @@ Save it for your next mountain escape!
       expect(normalizeReadabilityText(123)).to.equal('');
     });
   });
+
+  describe('isLikelyNavigationElement (direct module import)', () => {
+    it('returns true when a descendant matches navHdr / nav-hdr paragraph selectors', async () => {
+      const { isLikelyNavigationElement } = await import('../../../src/readability/shared/analysis-utils.js');
+      const $ = cheerioLoad(`
+        <div id="region">
+          <p class="navHdr">Shop categories</p>
+          <p id="sibling">Other marketing copy in the same container as the nav header row.</p>
+        </div>
+      `);
+      const region = $('#region').get(0);
+      expect(isLikelyNavigationElement($, region)).to.equal(true);
+    });
+  });
 });
 
 describe('embed-content-utils (unit)', () => {
