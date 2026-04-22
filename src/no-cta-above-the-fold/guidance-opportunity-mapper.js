@@ -28,7 +28,8 @@ function sanitizeMarkdown(markdown) {
 }
 
 export function mapToOpportunity(siteId, url, audit, pageGuidance) {
-  const stats = audit.getAuditResult();
+  const raw = audit.getAuditResult();
+  const stats = Array.isArray(raw) ? raw : (raw?.rows ?? []);
   const urlPath = new URL(url).pathname;
   const pageData = stats.find((item) => item.path === urlPath) || {};
   const pageViews = Number(pageData.pageviews ?? 0);

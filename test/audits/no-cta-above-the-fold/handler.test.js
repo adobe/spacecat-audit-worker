@@ -105,7 +105,7 @@ describe("No CTA above the fold handler", () => {
       "test_rum_db",
       sinon.match.string
     );
-    expect(auditData.auditResult).to.deep.equal(athenaRows);
+    expect(auditData.auditResult).to.deep.equal({ rows: athenaRows });
     expect(auditData.fullAuditRef).to.equal(auditUrl);
     expect(sqsStub.sendMessage).not.to.have.been.called;
 
@@ -178,6 +178,41 @@ describe("No CTA above the fold handler", () => {
     expect(logStub.info).to.have.been.calledWithMatch(
       "[no-cta-above-the-fold] [Site: example.com] No messages to dispatch to Mystique"
     );
+  });
+
+  it("handles auditResult in object format with rows property", async () => {
+    const rows = [
+      {
+        path: "/pricing",
+        trf_channel: "search",
+        pageviews: "1500",
+        bounce_rate: 0.62,
+        projected_traffic_lost: 930,
+      },
+    ];
+    const auditData = {
+      auditResult: { rows },
+    };
+
+    await sendResultsToMystique(auditUrl, auditData, context, site);
+
+    expect(sqsStub.sendMessage).to.have.been.calledOnce;
+    expect(sqsStub.sendMessage.getCall(0).args[1]).to.deep.include({
+      type: "guidance:no-cta-above-the-fold",
+      siteId,
+      url: `${baseURL}/pricing`,
+    });
+  });
+
+  it("handles auditResult object without rows property gracefully", async () => {
+    const auditData = {
+      auditResult: { someOtherProp: true },
+    };
+
+    const result = await sendResultsToMystique(auditUrl, auditData, context, site);
+
+    expect(result).to.equal(auditData);
+    expect(sqsStub.sendMessage).not.to.have.been.called;
   });
 });
 

@@ -428,6 +428,7 @@ export default async function handler(message, context) {
     }
 
     log.info(`[FAQ] Successfully processed FAQ guidance for site: ${siteId}, ${totalSuitableFaqs} suitable FAQs`);
+
     return ok();
   } catch (error) {
     log.error(`[FAQ] Error processing FAQ guidance: ${error.message}`, error);

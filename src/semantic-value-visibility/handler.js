@@ -16,7 +16,11 @@ import { GUIDANCE_TYPE } from './constants.js';
 
 export async function auditRunner(auditUrl, context, site) {
   return {
-    auditResult: { siteId: site.getId(), url: auditUrl, status: 'pending-mystique' },
+    auditResult: {
+      siteId: site.getId(),
+      url: auditUrl,
+      status: 'pending-mystique',
+    },
     fullAuditRef: auditUrl,
   };
 }
@@ -46,4 +50,5 @@ export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(auditRunner)
   .withPostProcessors([sendToMystique])
+  .withSlackContext()
   .build();

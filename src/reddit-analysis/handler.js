@@ -148,15 +148,12 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
 
     const urlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
 
-    const { slackContext } = auditContext;
-
     return {
       auditResult: {
         success: true,
         status: 'pending_analysis',
         config: { ...redditConfig, urlLimit },
         storeData,
-        ...(slackContext && { slackContext }),
       },
       fullAuditRef: url,
     };
@@ -269,4 +266,5 @@ export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .withRunner(runRedditAnalysisAudit)
   .withPostProcessors([sendMystiqueMessagePostProcessor])
+  .withSlackContext()
   .build();

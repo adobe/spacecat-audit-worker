@@ -117,6 +117,7 @@ import semanticValueVisibility from './semantic-value-visibility/handler.js';
 import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
 import drsPromptGeneration from './drs-prompt-generation/handler.js';
 import offsiteBrandPresence from './offsite-brand-presence/handler.js';
+import { withSlackNotification } from './common/audit-notifier.js';
 
 const HANDLERS = {
   accessibility,
@@ -165,7 +166,7 @@ const HANDLERS = {
   'paid-keyword-optimizer': paidKeywordOptimizer,
   'ad-intent-mismatch': paidKeywordOptimizer,
   'guidance:paid-ad-intent-gap': paidKeywordOptimizerGuidance,
-  'guidance:no-cta-above-the-fold': noCTAAboveTheFoldGuidance,
+  'guidance:no-cta-above-the-fold': withSlackNotification('no-cta-above-the-fold', noCTAAboveTheFoldGuidance),
   'guidance:traffic-analysis': paidTrafficAnalysisGuidance,
   'detect:page-types': pageTypeGuidance,
   'guidance:missing-alt-text': missingAltTextGuidance,
@@ -201,23 +202,23 @@ const HANDLERS = {
   'security-permissions': permissions,
   'security-permissions-redundant': permissionsRedundant,
   faqs,
-  'guidance:faqs': faqsGuidance,
+  'guidance:faqs': withSlackNotification('faqs', faqsGuidance),
   'money-pages': moneyPages,
   'related-urls': relatedUrls,
   'guidance:related-urls': relatedUrlsGuidance,
   'page-citability': pageCitability,
   'health-check': healthCheck,
   'wikipedia-analysis': wikipediaAnalysis,
-  'guidance:wikipedia-analysis': wikipediaAnalysisGuidance,
+  'guidance:wikipedia-analysis': withSlackNotification('wikipedia-analysis', wikipediaAnalysisGuidance),
   'reddit-analysis': redditAnalysis,
-  'guidance:reddit-analysis': redditAnalysisGuidance,
+  'guidance:reddit-analysis': withSlackNotification('reddit-analysis', redditAnalysisGuidance),
   'youtube-analysis': youtubeAnalysis,
-  'guidance:youtube-analysis': youtubeAnalysisGuidance,
+  'guidance:youtube-analysis': withSlackNotification('youtube-analysis', youtubeAnalysisGuidance),
   'cited-analysis': citedAnalysis,
-  'guidance:cited-analysis': citedAnalysisGuidance,
+  'guidance:cited-analysis': withSlackNotification('cited-analysis', citedAnalysisGuidance),
   'frescopa-data-generation': frescopaDataGeneration,
   'semantic-value-visibility': semanticValueVisibility,
-  'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
+  'guidance:semantic-value-visibility': withSlackNotification('semantic-value-visibility', semanticValueVisibilityGuidance),
   'drs:prompt_generation_base_url': drsPromptGeneration,
   'offsite-brand-presence': offsiteBrandPresence,
   dummy: (message) => ok(message),

@@ -342,4 +342,5 @@ export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .withRunner(runFaqsAudit)
   .withPostProcessors([sendMystiqueMessagePostProcessor])
+  .withSlackContext()
   .build();

@@ -72,6 +72,11 @@ export class AuditBuilder {
     return this;
   }
 
+  withSlackContext() {
+    this.preserveSlackContext = true;
+    return this;
+  }
+
   withAsyncJob() {
     this.isAsyncJob = true;
     return this;
@@ -170,7 +175,7 @@ export class AuditBuilder {
       throw Error('Audit must have either steps or a runner defined');
     }
 
-    return new RunnerAudit(
+    const audit = new RunnerAudit(
       this.siteProvider,
       this.orgProvider,
       this.urlResolver,
@@ -179,5 +184,7 @@ export class AuditBuilder {
       this.messageSender,
       this.postProcessors,
     );
+    audit.preserveSlackContext = this.preserveSlackContext || false;
+    return audit;
   }
 }
