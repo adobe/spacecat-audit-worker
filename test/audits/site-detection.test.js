@@ -29,6 +29,7 @@ const TEST_BASE_URL = 'https://foo.example.com';
 const HELIX_DOM = '<header></header><main><div>content</div></main>';
 const NON_HELIX_DOM = '<div>not helix</div>';
 const JOB_ID = '11111111-1111-4111-8111-111111111111';
+const PUBLIC_IP = '93.184.216.34'; // example.com
 
 /** Minimal fetch response for isHelixSite (reads .text() and .status). */
 function makeSiteResponse(body, status = 200) {
@@ -64,16 +65,21 @@ describe('[site-detection] runner tests', function () {
   let context;
   let mockJob;
   let fetchStub;
+  let dnsLookupStub;
   let slackPostMessageStub;
   let siteDetectionRunner;
 
   beforeEach(async () => {
     fetchStub = sandbox.stub();
+    // Default DNS resolution to a public IP so isHelixSite's SSRF guard
+    // does not short-circuit tests that don't care about it.
+    dnsLookupStub = sandbox.stub().resolves([{ address: PUBLIC_IP, family: 4 }]);
     slackPostMessageStub = sandbox.stub().resolves();
     const mockSlackClient = { postMessage: slackPostMessageStub };
     const mockBaseSlackClient = { createFrom: sandbox.stub().returns(mockSlackClient) };
 
     ({ siteDetectionRunner } = await esmock('../../src/site-detection/handler.js', {
+      'dns/promises': { default: { lookup: dnsLookupStub }, lookup: dnsLookupStub },
       '@adobe/spacecat-shared-utils': { ...sharedUtils, fetch: fetchStub },
       '@adobe/spacecat-shared-slack-client': {
         BaseSlackClient: mockBaseSlackClient,
@@ -82,6 +88,7 @@ describe('[site-detection] runner tests', function () {
     }));
 
     mockJob = {
+      getId: sandbox.stub().returns(JOB_ID),
       getStatus: sandbox.stub().returns(AsyncJob.Status.IN_PROGRESS),
       getMetadata: sandbox.stub().returns({ payload: { domain: TEST_DOMAIN, hlxVersion: null } }),
       setStatus: sandbox.stub(),
@@ -129,8 +136,16 @@ describe('[site-detection] runner tests', function () {
     expect(result.auditResult.error).to.equal('Job not found');
   });
 
-  it('skips when job is not IN_PROGRESS', async () => {
+  it('skips when job is not IN_PROGRESS (COMPLETED)', async () => {
     mockJob.getStatus.returns(AsyncJob.Status.COMPLETED);
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(result.auditResult.skipped).to.be.true;
+  });
+
+  it('skips when job is not IN_PROGRESS (FAILED)', async () => {
+    mockJob.getStatus.returns(AsyncJob.Status.FAILED);
 
     const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
 
@@ -142,11 +157,24 @@ describe('[site-detection] runner tests', function () {
 
     const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
 
+    expect(mockJob.setStatus).to.have.been.calledWith(AsyncJob.Status.FAILED);
     expect(mockJob.setError).to.have.been.calledWith(sinon.match({ code: 'INVALID_PAYLOAD' }));
     expect(result.auditResult.error).to.equal('Missing domain');
   });
 
-  it('marks job FAILED when domain is missing from payload', async () => {
+  it('marks job FAILED when domain is missing from payload, and save is wrapped in try/catch', async () => {
+    mockJob.getMetadata.returns({ payload: {} });
+    mockJob.save.rejects(new Error('DB transient'));
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    // Runner completes successfully despite save() throwing (no poison pill).
+    expect(mockJob.setStatus).to.have.been.calledWith(AsyncJob.Status.FAILED);
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/failed to save error state/));
+    expect(result.auditResult.error).to.equal('Missing domain');
+  });
+
+  it('saves normally when domain is missing and save succeeds', async () => {
     mockJob.getMetadata.returns({ payload: {} });
 
     const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
@@ -157,7 +185,7 @@ describe('[site-detection] runner tests', function () {
     expect(result.auditResult.error).to.equal('Missing domain');
   });
 
-  // ── Domain validation ──────────────────────────────────────────────────────
+  // ── Domain validation → COMPLETED / rejected ──────────────────────────────
 
   it('accepts domain already prefixed with https:// (startsWith branch)', async () => {
     mockJob.getMetadata.returns({ payload: { domain: 'https://foo.example.com', hlxVersion: null } });
@@ -168,11 +196,12 @@ describe('[site-detection] runner tests', function () {
     expect(result.auditResult.action).to.equal('created');
   });
 
-  it('rejects a malformed / whitespace-padded domain without throwing', async () => {
+  it('marks COMPLETED/rejected for a malformed / whitespace-padded domain', async () => {
     mockJob.getMetadata.returns({ payload: { domain: '  not a domain  ' } });
 
     const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
 
+    expect(mockJob.setStatus).to.have.been.calledWith(AsyncJob.Status.COMPLETED);
     expect(mockJob.setResult).to.have.been.calledWith(sinon.match({ action: 'rejected' }));
     expect(result.auditResult.action).to.equal('rejected');
   });
@@ -294,15 +323,16 @@ describe('[site-detection] runner tests', function () {
     );
   });
 
-  // ── Duplicate detection ────────────────────────────────────────────────────
+  // ── Duplicate detection → COMPLETED / duplicate ────────────────────────────
 
-  it('marks FAILED/duplicate when site already exists as AEM_EDGE delivery type', async () => {
+  it('marks COMPLETED/duplicate when site already exists as AEM_EDGE delivery type', async () => {
     context.dataAccess.Site.findByBaseURL.resolves({
       getDeliveryType: () => SiteModel.DELIVERY_TYPES.AEM_EDGE,
     });
 
     const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
 
+    expect(mockJob.setStatus).to.have.been.calledWith(AsyncJob.Status.COMPLETED);
     expect(mockJob.setResult).to.have.been.calledWith(
       sinon.match({ action: 'duplicate', reason: 'Site already exists' }),
     );
@@ -318,31 +348,37 @@ describe('[site-detection] runner tests', function () {
     expect(result.auditResult.action).to.equal('created');
   });
 
-  it('marks FAILED/duplicate when a site candidate already exists', async () => {
+  it('marks COMPLETED/duplicate when a site candidate already exists', async () => {
     context.dataAccess.SiteCandidate.findByBaseURL.resolves({
       getBaseURL: () => TEST_BASE_URL,
     });
 
     const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
 
+    expect(mockJob.setStatus).to.have.been.calledWith(AsyncJob.Status.COMPLETED);
     expect(mockJob.setResult).to.have.been.calledWith(
       sinon.match({ action: 'duplicate', reason: 'Site candidate already evaluated' }),
     );
     expect(result.auditResult.action).to.equal('duplicate');
   });
 
-  // ── Helix verification ─────────────────────────────────────────────────────
+  // ── Helix verification & SSRF guard ────────────────────────────────────────
 
-  it('marks FAILED/rejected when site fetch throws a network error', async () => {
-    fetchStub.rejects(new Error('ECONNREFUSED'));
+  it('marks COMPLETED/rejected when site fetch throws a network error (generic reason)', async () => {
+    fetchStub.rejects(new Error('ECONNREFUSED 10.0.0.5:443'));
 
     const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
 
-    expect(mockJob.setResult).to.have.been.calledWith(sinon.match({ action: 'rejected' }));
+    expect(mockJob.setStatus).to.have.been.calledWith(AsyncJob.Status.COMPLETED);
+    const resultArg = mockJob.setResult.lastCall.args[0];
+    expect(resultArg.action).to.equal('rejected');
+    // Network error detail must not reach the caller.
+    expect(resultArg.reason).to.not.include('ECONNREFUSED');
+    expect(resultArg.reason).to.not.include('10.0.0.5');
     expect(result.auditResult.action).to.equal('rejected');
   });
 
-  it('marks FAILED/rejected when resp.text() throws a stream error', async () => {
+  it('marks COMPLETED/rejected when resp.text() throws a stream error', async () => {
     fetchStub.resolves({
       status: 200,
       text: () => Promise.reject(new Error('stream closed')),
@@ -354,14 +390,169 @@ describe('[site-detection] runner tests', function () {
     expect(result.auditResult.action).to.equal('rejected');
   });
 
-  it('marks FAILED/rejected when site returns non-Helix DOM', async () => {
-    fetchStub.resolves(makeSiteResponse(NON_HELIX_DOM));
+  it('marks COMPLETED/rejected when site returns non-Helix DOM (generic reason, no status leak)', async () => {
+    fetchStub.resolves(makeSiteResponse(NON_HELIX_DOM, 418));
 
     const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
 
-    expect(mockJob.setResult).to.have.been.calledWith(
-      sinon.match({ action: 'rejected', reason: sinon.match(/Not a Helix site/) }),
-    );
+    const resultArg = mockJob.setResult.lastCall.args[0];
+    expect(resultArg.action).to.equal('rejected');
+    expect(resultArg.reason).to.not.include('418');
+    expect(result.auditResult.action).to.equal('rejected');
+  });
+
+  it('treats a 302 redirect as non-Helix (does not follow into potentially internal host)', async () => {
+    fetchStub.resolves({ status: 302, text: async () => '' });
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(mockJob.setResult).to.have.been.calledWith(sinon.match({ action: 'rejected' }));
+    // redirect: 'manual' passed to fetch
+    expect(fetchStub.firstCall.args[1]).to.deep.include({ redirect: 'manual' });
+    expect(result.auditResult.action).to.equal('rejected');
+  });
+
+  it('SSRF: rejects hostname that resolves to RFC1918 (10/8) without calling fetch', async () => {
+    dnsLookupStub.resolves([{ address: '10.0.0.5', family: 4 }]);
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(fetchStub).to.not.have.been.called;
+    expect(mockJob.setResult).to.have.been.calledWith(sinon.match({ action: 'rejected' }));
+    expect(result.auditResult.action).to.equal('rejected');
+  });
+
+  it('SSRF: rejects hostname that resolves to AWS metadata (169.254.169.254)', async () => {
+    dnsLookupStub.resolves([{ address: '169.254.169.254', family: 4 }]);
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(fetchStub).to.not.have.been.called;
+    expect(mockJob.setResult).to.have.been.calledWith(sinon.match({ action: 'rejected' }));
+  });
+
+  it('SSRF: rejects hostname that resolves to loopback (127.0.0.1)', async () => {
+    dnsLookupStub.resolves([{ address: '127.0.0.1', family: 4 }]);
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(fetchStub).to.not.have.been.called;
+    expect(mockJob.setResult).to.have.been.calledWith(sinon.match({ action: 'rejected' }));
+  });
+
+  it('SSRF: rejects IPv6 loopback (::1)', async () => {
+    dnsLookupStub.resolves([{ address: '::1', family: 6 }]);
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(fetchStub).to.not.have.been.called;
+    expect(mockJob.setResult).to.have.been.calledWith(sinon.match({ action: 'rejected' }));
+  });
+
+  it('SSRF: rejects IPv6 link-local (fe80::)', async () => {
+    dnsLookupStub.resolves([{ address: 'fe80::1', family: 6 }]);
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(fetchStub).to.not.have.been.called;
+  });
+
+  it('SSRF: rejects IPv4-mapped IPv6 pointing at private v4', async () => {
+    dnsLookupStub.resolves([{ address: '::ffff:10.0.0.5', family: 6 }]);
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(fetchStub).to.not.have.been.called;
+    expect(mockJob.setResult).to.have.been.calledWith(sinon.match({ action: 'rejected' }));
+  });
+
+  it('SSRF: rejects when DNS lookup itself fails', async () => {
+    dnsLookupStub.rejects(new Error('ENOTFOUND'));
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(fetchStub).to.not.have.been.called;
+    expect(mockJob.setResult).to.have.been.calledWith(sinon.match({ action: 'rejected' }));
+  });
+
+  it('SSRF: rejects when DNS lookup resolves to empty list', async () => {
+    dnsLookupStub.resolves([]);
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(fetchStub).to.not.have.been.called;
+    expect(mockJob.setResult).to.have.been.calledWith(sinon.match({ action: 'rejected' }));
+  });
+
+  it('SSRF: rejects CGNAT range (100.64/10)', async () => {
+    dnsLookupStub.resolves([{ address: '100.64.0.1', family: 4 }]);
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(fetchStub).to.not.have.been.called;
+  });
+
+  it('SSRF: rejects 172.16/12 range', async () => {
+    dnsLookupStub.resolves([{ address: '172.20.0.1', family: 4 }]);
+
+    await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(fetchStub).to.not.have.been.called;
+  });
+
+  it('SSRF: rejects 192.168/16 range', async () => {
+    dnsLookupStub.resolves([{ address: '192.168.1.1', family: 4 }]);
+
+    // Note: hostname foo.example.com still passes isValidCandidate; the 192.168
+    // rejection happens inside isHelixSite via the DNS guard.
+    await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(fetchStub).to.not.have.been.called;
+  });
+
+  it('SSRF: rejects 0.0.0.0/8 range', async () => {
+    dnsLookupStub.resolves([{ address: '0.0.0.0', family: 4 }]);
+
+    await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(fetchStub).to.not.have.been.called;
+  });
+
+  it('SSRF: rejects multicast / reserved ranges (224+)', async () => {
+    dnsLookupStub.resolves([{ address: '224.0.0.1', family: 4 }]);
+
+    await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(fetchStub).to.not.have.been.called;
+  });
+
+  it('SSRF: rejects when any resolved address is private (mixed public + private)', async () => {
+    dnsLookupStub.resolves([
+      { address: PUBLIC_IP, family: 4 },
+      { address: '10.0.0.1', family: 4 },
+    ]);
+
+    await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(fetchStub).to.not.have.been.called;
+  });
+
+  it('SSRF: rejects when a resolved address field is not a string', async () => {
+    dnsLookupStub.resolves([{ address: null, family: 4 }]);
+
+    await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(fetchStub).to.not.have.been.called;
+  });
+
+  it('allows a public IPv6 address (v6 fallthrough)', async () => {
+    dnsLookupStub.resolves([{ address: '2606:4700:4700::1111', family: 6 }]);
+    fetchStub.resolves(makeSiteResponse(HELIX_DOM));
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(fetchStub).to.have.been.called;
+    expect(result.auditResult.action).to.equal('created');
   });
 
   // ── Happy path ─────────────────────────────────────────────────────────────
@@ -378,6 +569,18 @@ describe('[site-detection] runner tests', function () {
     expect(mockJob.setStatus).to.have.been.calledWith(AsyncJob.Status.COMPLETED);
     expect(mockJob.setResult).to.have.been.calledWith(
       sinon.match({ action: 'created', domain: TEST_DOMAIN }),
+    );
+    expect(result.auditResult.action).to.equal('created');
+  });
+
+  it('logs and swallows error when happy-path save() throws', async () => {
+    fetchStub.resolves(makeSiteResponse(HELIX_DOM));
+    mockJob.save.rejects(new Error('DB transient'));
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(context.log.error).to.have.been.calledWith(
+      sinon.match(/failed to save COMPLETED state/),
     );
     expect(result.auditResult.action).to.equal('created');
   });
@@ -474,6 +677,22 @@ describe('[site-detection] runner tests', function () {
 
     expect(result.auditResult.action).to.equal('created');
     const { hlxConfig } = context.dataAccess.SiteCandidate.create.firstCall.args[0];
+    expect(hlxConfig.hlxVersion).to.equal(5);
+  });
+
+  it('calls admin API for aem.live RSO even when hlxVersion < 5', async () => {
+    context.env.SITE_DETECTION_IGNORED_SUBDOMAIN_TOKENS = 'demo,dev,stg';
+    mockJob.getMetadata.returns({ payload: { domain: 'main--mysite--myorg.aem.live', hlxVersion: 4 } });
+    fetchStub.callsFake(makeDispatcher(
+      makeSiteResponse(HELIX_DOM),
+      makeAdminResponse(200, { cdn: {}, code: {}, content: {} }),
+    ));
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(result.auditResult.action).to.equal('created');
+    const { hlxConfig } = context.dataAccess.SiteCandidate.create.firstCall.args[0];
+    // aem.live branch forces admin enrichment → version bumped to 5
     expect(hlxConfig.hlxVersion).to.equal(5);
   });
 

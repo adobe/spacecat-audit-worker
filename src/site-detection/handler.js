@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import dns from 'dns/promises';
 import {
   composeBaseURL,
   fetch,
@@ -20,8 +21,6 @@ import {
   AsyncJob, Site as SiteModel, SiteCandidate as SiteCandidateModel,
 } from '@adobe/spacecat-shared-data-access';
 import { BaseSlackClient, SLACK_TARGETS } from '@adobe/spacecat-shared-slack-client';
-import { AuditBuilder } from '../common/audit-builder.js';
-import { noopPersister, noopUrlResolver } from '../common/index.js';
 
 // '--' intentionally blocks RSO staging domains (ref--site--owner.hlx.live / .aem.live)
 // from being accepted as primary domains. If an operator needs to allow RSO domains
@@ -30,6 +29,10 @@ const DEFAULT_IGNORED_SUBDOMAIN_TOKENS = ['demo', 'dev', 'stag', 'stg', 'qa', '-
 const DEFAULT_IGNORED_DOMAINS = [/helix3.dev/, /fastly.net/, /ngrok-free.app/, /oastify.co/, /fastly-aem.page/, /findmy.media/, /impactful-[0-9]+\.site/, /shuyi-guan/, /adobevipthankyou/, /alshayauat/, /caseytokarchuk/, /\.pfizer$/, /adobeaemcloud.com/, /sabya.xyz/, /magento.com/, /appsechcl.com/, /workers.dev/, /livereview.site/, /localhost/, /lean.delivery/, /kestrelone/];
 
 const IP_ADDRESS_REGEX = /^\d{1,3}(\.\d{1,3}){3}$|^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/;
+
+// Generic reason surfaced to callers when isHelixSite rejects a domain.
+// Specific detail (status, DNS error, resolved IP) is only ever logged.
+const NOT_HELIX_REASON = 'Site did not serve a Helix-format DOM';
 
 /**
  * Checks if the domain passes the basic validity rules (not an IP, not an ignored
@@ -94,27 +97,120 @@ function isValidCandidate(domain, config, log) {
 }
 
 /**
- * Verifies that the given URL is an AEM EDS (Helix) site by checking the DOM structure.
+ * Detects IP literals that point at private / loopback / link-local / CGNAT
+ * ranges, or at IPv6 equivalents. Used to block SSRF via hostnames that
+ * DNS-resolve to internal addresses (e.g. corp hosts, AWS metadata at
+ * 169.254.169.254, Docker bridge networks).
+ */
+function isPrivateIP(address) {
+  if (typeof address !== 'string') {
+    return true;
+  }
+
+  // IPv4
+  const v4 = address.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const a = Number(v4[1]);
+    const b = Number(v4[2]);
+    return a === 10
+      || a === 127
+      || a === 0
+      || (a === 169 && b === 254)
+      || (a === 172 && b >= 16 && b <= 31)
+      || (a === 192 && b === 168)
+      || (a === 100 && b >= 64 && b <= 127)
+      || a >= 224;
+  }
+
+  // IPv6 — reject loopback, link-local, ULA, and v4-mapped addresses whose
+  // embedded v4 is private.
+  const lower = address.toLowerCase();
+  if (lower === '::1' || lower === '::') {
+    return true;
+  }
+  if (lower.startsWith('fe80:') || lower.startsWith('fc') || lower.startsWith('fd')) {
+    return true;
+  }
+  const v4Mapped = lower.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (v4Mapped) {
+    return isPrivateIP(v4Mapped[1]);
+  }
+
+  return false;
+}
+
+/**
+ * Resolves all A/AAAA records for a hostname and returns true if every resolved
+ * address is public. Logs (but does not surface) the reason on rejection.
+ */
+async function resolvesToPublicAddress(hostname, log) {
+  let addresses;
+  try {
+    addresses = await dns.lookup(hostname, { all: true });
+  } catch (e) {
+    log.warn(`[site-detection] DNS lookup failed for ${hostname}: ${e.message}`);
+    return false;
+  }
+
+  if (!Array.isArray(addresses) || addresses.length === 0) {
+    log.warn(`[site-detection] No addresses resolved for ${hostname}`);
+    return false;
+  }
+
+  for (const { address } of addresses) {
+    if (isPrivateIP(address)) {
+      log.warn(`[site-detection] ${hostname} resolves to a non-public address; rejecting`);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Verifies that the given URL is an AEM EDS (Helix) site by checking the DOM
+ * structure. Blocks SSRF by rejecting hostnames whose DNS resolves to a private
+ * address and by disabling redirect following (a 30x response is treated as
+ * not-a-Helix-site). The reason returned to the caller is intentionally generic;
+ * detail stays in the log.
+ *
  * @returns {Promise<{isHelix: boolean, reason?: string}>}
  */
-async function isHelixSite(url) {
+async function isHelixSite(url, log) {
+  const { hostname } = new URL(url);
+
+  if (!await resolvesToPublicAddress(hostname, log)) {
+    return { isHelix: false, reason: NOT_HELIX_REASON };
+  }
+
   let resp;
   try {
-    resp = await fetch(url);
-    const dom = await resp.text();
-    const containsHelixDom = /<header><\/header>\s*<main>\s*<div>/.test(dom);
-
-    if (!containsHelixDom) {
-      return {
-        isHelix: false,
-        reason: `DOM is not in Helix format. Status: ${resp.status}`,
-      };
-    }
-
-    return { isHelix: true };
+    resp = await fetch(url, { redirect: 'manual' });
   } catch (e) {
-    return { isHelix: false, reason: `Cannot fetch the site: ${e.message}` };
+    log.warn(`[site-detection] fetch failed for ${url}: ${e.message}`);
+    return { isHelix: false, reason: NOT_HELIX_REASON };
   }
+
+  // A redirect could point at an internal host we did not validate; treat as non-Helix.
+  if (resp.status >= 300 && resp.status < 400) {
+    log.info(`[site-detection] ${url} returned redirect status ${resp.status}; treating as non-Helix`);
+    return { isHelix: false, reason: NOT_HELIX_REASON };
+  }
+
+  let dom;
+  try {
+    dom = await resp.text();
+  } catch (e) {
+    log.warn(`[site-detection] reading body failed for ${url}: ${e.message}`);
+    return { isHelix: false, reason: NOT_HELIX_REASON };
+  }
+
+  if (!/<header><\/header>\s*<main>\s*<div>/.test(dom)) {
+    log.info(`[site-detection] ${url} DOM did not match Helix shape (status ${resp.status})`);
+    return { isHelix: false, reason: NOT_HELIX_REASON };
+  }
+
+  return { isHelix: true };
 }
 
 /**
@@ -245,12 +341,49 @@ function buildSlackBlocks(baseURL, hlxConfig, channel) {
 }
 
 /**
+ * Finalises the job with a terminal COMPLETED state and the given result payload.
+ * Any save error is logged but swallowed — the return shape reflects the intended
+ * outcome regardless of DB transient failure.
+ */
+async function finalizeCompleted(job, result, log) {
+  job.setStatus(AsyncJob.Status.COMPLETED);
+  job.setResult(result);
+  job.setEndedAt(new Date().toISOString());
+  try {
+    await job.save();
+  } catch (e) {
+    log.error(`[site-detection] failed to save COMPLETED state for job ${job.getId()}: ${e.message}`);
+  }
+}
+
+/**
+ * Finalises the job with a terminal FAILED state. Reserved for unexpected
+ * exceptions — not for "evaluated and rejected/duplicate" outcomes.
+ */
+async function finalizeFailed(job, error, log) {
+  try {
+    job.setStatus(AsyncJob.Status.FAILED);
+    job.setError({ code: error.code ?? 'EXCEPTION', message: error.message, details: error.stack });
+    job.setEndedAt(new Date().toISOString());
+    await job.save();
+  } catch (saveErr) {
+    log.error(`[site-detection] failed to save error state: ${saveErr.message}`);
+  }
+}
+
+/**
  * Main handler for the 'site-detection' async job type.
  *
  * Receives an SQS message with { jobId, type: 'site-detection' }.
  * Reads the payload (domain, hlxVersion) from the AsyncJob metadata,
  * validates the domain, verifies it's a Helix site, creates a SiteCandidate,
  * sends a Slack notification, and marks the job COMPLETED.
+ *
+ * Terminal states:
+ *   COMPLETED + action=created    — SiteCandidate created
+ *   COMPLETED + action=duplicate  — already a Site or SiteCandidate
+ *   COMPLETED + action=rejected   — domain failed validation / not a Helix site
+ *   FAILED    + error             — unexpected exception; safe to retry
  */
 export async function siteDetectionRunner(message, context) {
   const { dataAccess, env, log } = context;
@@ -289,7 +422,6 @@ export async function siteDetectionRunner(message, context) {
     return { auditResult: { error: 'Missing jobId' }, fullAuditRef: 'site-detection' };
   }
 
-  // Load the job to get the payload
   const job = await AsyncJobEntity.findById(jobId);
 
   if (!job) {
@@ -306,10 +438,14 @@ export async function siteDetectionRunner(message, context) {
 
   if (!hasText(domain)) {
     log.error(`[site-detection] Job ${jobId}: missing domain in payload`);
-    job.setStatus(AsyncJob.Status.FAILED);
-    job.setError({ code: 'INVALID_PAYLOAD', message: 'Missing domain in job payload' });
-    job.setEndedAt(new Date().toISOString());
-    await job.save();
+    // Malformed payload is not a runtime failure — mark FAILED so a redelivery
+    // doesn't loop on the same bad message, but wrap the save so a DB transient
+    // cannot escape and poison-pill the queue.
+    await finalizeFailed(
+      job,
+      { code: 'INVALID_PAYLOAD', message: 'Missing domain in job payload' },
+      log,
+    );
     return { auditResult: { error: 'Missing domain' }, fullAuditRef: 'site-detection' };
   }
 
@@ -321,10 +457,11 @@ export async function siteDetectionRunner(message, context) {
     // Step 1: Domain validation
     if (!isValidCandidate(domain, config, log)) {
       log.info(`[site-detection] Job ${jobId}: domain ${domain} rejected by validation rules`);
-      job.setStatus(AsyncJob.Status.FAILED);
-      job.setResult({ action: 'rejected', domain, reason: 'Domain failed validation rules' });
-      job.setEndedAt(new Date().toISOString());
-      await job.save();
+      await finalizeCompleted(
+        job,
+        { action: 'rejected', domain, reason: 'Domain failed validation rules' },
+        log,
+      );
       return { auditResult: { action: 'rejected', domain }, fullAuditRef: 'site-detection' };
     }
 
@@ -332,10 +469,11 @@ export async function siteDetectionRunner(message, context) {
     const existingSite = await Site.findByBaseURL(baseURL);
     if (existingSite && existingSite.getDeliveryType() === SiteModel.DELIVERY_TYPES.AEM_EDGE) {
       log.info(`[site-detection] Job ${jobId}: site already exists for ${baseURL}`);
-      job.setStatus(AsyncJob.Status.FAILED);
-      job.setResult({ action: 'duplicate', domain, reason: 'Site already exists' });
-      job.setEndedAt(new Date().toISOString());
-      await job.save();
+      await finalizeCompleted(
+        job,
+        { action: 'duplicate', domain, reason: 'Site already exists' },
+        log,
+      );
       return { auditResult: { action: 'duplicate', domain }, fullAuditRef: 'site-detection' };
     }
 
@@ -343,27 +481,28 @@ export async function siteDetectionRunner(message, context) {
     const existingCandidate = await SiteCandidate.findByBaseURL(baseURL);
     if (existingCandidate !== null) {
       log.info(`[site-detection] Job ${jobId}: site candidate already exists for ${baseURL}`);
-      job.setStatus(AsyncJob.Status.FAILED);
-      job.setResult({ action: 'duplicate', domain, reason: 'Site candidate already evaluated' });
-      job.setEndedAt(new Date().toISOString());
-      await job.save();
+      await finalizeCompleted(
+        job,
+        { action: 'duplicate', domain, reason: 'Site candidate already evaluated' },
+        log,
+      );
       return { auditResult: { action: 'duplicate', domain }, fullAuditRef: 'site-detection' };
     }
 
     // Step 4: Verify Helix site
-    const { isHelix, reason: helixReason } = await isHelixSite(baseURL);
+    const { isHelix, reason: helixReason } = await isHelixSite(baseURL, log);
     if (!isHelix) {
       log.info(`[site-detection] Job ${jobId}: ${baseURL} is not a Helix site: ${helixReason}`);
-      job.setStatus(AsyncJob.Status.FAILED);
-      job.setResult({ action: 'rejected', domain, reason: `Not a Helix site: ${helixReason}` });
-      job.setEndedAt(new Date().toISOString());
-      await job.save();
+      await finalizeCompleted(
+        job,
+        { action: 'rejected', domain, reason: helixReason },
+        log,
+      );
       return { auditResult: { action: 'rejected', domain }, fullAuditRef: 'site-detection' };
     }
 
     // Step 5: Extract hlxConfig (best-effort; fetchHlxConfig handles errors internally)
-    let hlxConfig = { hlxVersion: hlxVersion ?? null, rso: {} };
-    hlxConfig = await extractHlxConfig(domain, hlxVersion, hlxAdminToken, log);
+    const hlxConfig = await extractHlxConfig(domain, hlxVersion, hlxAdminToken, log);
 
     // Step 6: Create SiteCandidate
     await SiteCandidate.create({
@@ -390,10 +529,7 @@ export async function siteDetectionRunner(message, context) {
     }
 
     // Step 8: Mark job COMPLETED
-    job.setStatus(AsyncJob.Status.COMPLETED);
-    job.setResult({ action: 'created', domain, baseURL });
-    job.setEndedAt(new Date().toISOString());
-    await job.save();
+    await finalizeCompleted(job, { action: 'created', domain, baseURL }, log);
 
     log.info(`[site-detection] Job ${jobId}: completed for ${baseURL}`);
 
@@ -403,23 +539,9 @@ export async function siteDetectionRunner(message, context) {
     };
   } catch (error) {
     log.error(`[site-detection] Job ${jobId}: unexpected error for ${domain}: ${error.message}`, error);
-
-    try {
-      job.setStatus(AsyncJob.Status.FAILED);
-      job.setError({ code: 'EXCEPTION', message: error.message, details: error.stack });
-      job.setEndedAt(new Date().toISOString());
-      await job.save();
-    } catch (saveErr) {
-      log.error(`[site-detection] Job ${jobId}: failed to save error state: ${saveErr.message}`);
-    }
-
+    await finalizeFailed(job, error, log);
     return { auditResult: { error: error.message }, fullAuditRef: 'site-detection' };
   }
 }
 
-export default new AuditBuilder()
-  .withUrlResolver(noopUrlResolver)
-  .withPersister(noopPersister)
-  .withMessageSender(() => ({}))
-  .withRunner(siteDetectionRunner)
-  .build();
+export default siteDetectionRunner;
