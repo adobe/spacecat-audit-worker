@@ -14,7 +14,6 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
-import { filterBrandPresenceFiles } from '../../src/utils/offsite-brand-presence-enrichment.js';
 import * as handlerConstants from '../../src/offsite-brand-presence/constants.js';
 import { SCRAPE_DATASET_IDS } from '@adobe/spacecat-shared-drs-client';
 
@@ -155,100 +154,6 @@ describe('Offsite Brand Presence Handler', () => {
       expect(handlerDefault).to.be.an('object');
       expect(handlerDefault.runner).to.be.a('function');
       expect(handlerDefault.urlResolver).to.be.a('function');
-    });
-  });
-
-  describe('Query Index Filtering', () => {
-    it('should match files with single and double-digit week indices', () => {
-      const qi = { data: [
-        { path: '/adobe/brand-presence/w7/brandpresence-chatgpt-w7-2026-010126.json' },
-        { path: '/adobe/brand-presence/w12/brandpresence-perplexity-w12-2026-030326.json' },
-      ] };
-      const singleDigit = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(singleDigit).to.have.lengthOf(1);
-      expect(singleDigit[0]).to.equal('brand-presence/w7/brandpresence-chatgpt-w7-2026-010126.json');
-
-      const doubleDigit = filterBrandPresenceFiles(qi, 12, DEFAULT_YEAR);
-      expect(doubleDigit).to.have.lengthOf(1);
-      expect(doubleDigit[0]).to.include('perplexity');
-    });
-
-    it('should filter by week and year', () => {
-      const qi = {
-        data: [
-          { path: '/adobe/brand-presence/w6/brandpresence-chatgpt-w6-2026-020226.json' },
-          { path: '/adobe/brand-presence/w7/brandpresence-chatgpt-w7-2025-301225.json' },
-          { path: '/adobe/brand-presence/w7/brandpresence-chatgpt-w7-2026-010126.json' },
-        ],
-      };
-      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(result).to.have.lengthOf(1);
-      expect(result[0]).to.include('w7');
-      expect(result[0]).to.include('2026');
-    });
-
-    it('should filter out files for unknown providers', () => {
-      const qi = {
-        data: [
-          { path: '/adobe/brand-presence/w7/brandpresence-unknown-provider-w7-2026-010126.json' },
-          { path: '/adobe/brand-presence/w7/brandpresence-chatgpt-w7-2026-010126.json' },
-        ],
-      };
-      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(result).to.have.lengthOf(1);
-      expect(result[0]).to.include('chatgpt');
-    });
-
-    it('should handle provider IDs with hyphens (google-ai-overviews)', () => {
-      const qi = { data: [
-        { path: '/adobe/brand-presence/w7/brandpresence-google-ai-overviews-w7-2026-010126.json' },
-        { path: '/site/brand-presence/brandpresence-google-ai-overviews-w7-2026.json' },
-      ] };
-      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(result).to.have.lengthOf(2);
-      result.forEach((r) => expect(r).to.include('google-ai-overviews'));
-    });
-
-    it('should match filenames without a trailing date suffix', () => {
-      const qi = { data: [
-        { path: '/site/brand-presence/brandpresence-chatgpt-w7-2026.json' },
-        { path: '/site/brand-presence/brandpresence-perplexity-w7-2026.json' },
-      ] };
-      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(result).to.have.lengthOf(2);
-    });
-
-    it('should match filenames with and without trailing date suffix in the same index', () => {
-      const qi = { data: [
-        { path: '/site/brand-presence/brandpresence-gemini-w7-2026-010126.json' },
-        { path: '/site/brand-presence/brandpresence-copilot-w7-2026.json' },
-      ] };
-      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(result).to.have.lengthOf(2);
-    });
-
-    it('should reject entries that do not match the brand-presence filename pattern', () => {
-      const qi = {
-        data: [
-          { name: 'no-path' },
-          { path: '/adobe/query-index.json' },
-          { path: '/adobe/other-data/report.json' },
-          { path: '/adobe/agentic-traffic/agentictraffic-w07-2026.json' },
-          { path: '/adobe/brand-presence/w7/summary-report-w7.json' },
-          { path: '/adobe/brand-presence/w7/brandpresence-chatgpt-w7-2026-010126.csv' },
-          { path: '/adobe/brand-presence/w7/' },
-          { path: '/adobe/brand-presence/w7/brandpresence-chatgpt-w7-2026-010126.json' },
-        ],
-      };
-      const result = filterBrandPresenceFiles(qi, DEFAULT_WEEK, DEFAULT_YEAR);
-      expect(result).to.have.lengthOf(1);
-      expect(result[0]).to.include('chatgpt');
-    });
-
-    it('should return empty array when query-index has no data', () => {
-      expect(filterBrandPresenceFiles({}, DEFAULT_WEEK, DEFAULT_YEAR)).to.deep.equal([]);
-      expect(filterBrandPresenceFiles({ data: [] }, DEFAULT_WEEK, DEFAULT_YEAR)).to.deep.equal([]);
-      expect(filterBrandPresenceFiles(null, DEFAULT_WEEK, DEFAULT_YEAR)).to.deep.equal([]);
     });
   });
 

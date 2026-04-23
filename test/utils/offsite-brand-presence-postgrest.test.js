@@ -346,32 +346,17 @@ describe('offsite-brand-presence-postgrest', () => {
           brand_presence_sources: [embeddedSource(`https://example.com/exec-${i + 1}`)],
         }),
       );
-      const secondBatch = [
-        makeExecution({
-          id: 'exec-5001',
+      const secondBatch = Array.from({ length: 3 }, (_, i) => {
+        const n = EXECUTION_FETCH_BATCH_SIZE + i + 1;
+        return makeExecution({
+          id: `exec-${n}`,
           execution_date: '2026-03-11',
-          topics: 'T5001',
-          prompt: 'P5001',
+          topics: `T${n}`,
+          prompt: `P${n}`,
           category_name: 'C',
-          brand_presence_sources: [embeddedSource('https://example.com/exec-5001')],
-        }),
-        makeExecution({
-          id: 'exec-5002',
-          execution_date: '2026-03-11',
-          topics: 'T5002',
-          prompt: 'P5002',
-          category_name: 'C',
-          brand_presence_sources: [embeddedSource('https://example.com/exec-5002')],
-        }),
-        makeExecution({
-          id: 'exec-5003',
-          execution_date: '2026-03-11',
-          topics: 'T5003',
-          prompt: 'P5003',
-          category_name: 'C',
-          brand_presence_sources: [embeddedSource('https://example.com/exec-5003')],
-        }),
-      ];
+          brand_presence_sources: [embeddedSource(`https://example.com/exec-${n}`)],
+        });
+      });
       const chain = createQueryChain(capture, [
         { data: firstBatch, error: null },
         { data: secondBatch, error: null },
