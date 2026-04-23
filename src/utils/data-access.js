@@ -795,18 +795,36 @@ export async function syncSuggestionsWithPublishDetection({
     buildKey,
   );
 
-  // Step 1: Reconcile disappeared suggestions
+  // Step 1: Reconcile disappeared suggestions (skip for TBYB sites)
   if (typeof isIssueFixedWithAISuggestion === 'function'
       && typeof buildFixEntityPayload === 'function') {
-    await reconcileDisappearedSuggestions({
-      opportunity,
-      disappearedSuggestions,
-      log,
-      isIssueFixedWithAISuggestion,
-      buildFixEntityPayload,
-      isAuthorOnly,
-      Suggestion: context.dataAccess?.Suggestion,
-    });
+    const { site } = context;
+    let isTbybSite = false;
+    if (site) {
+      const { Configuration } = context.dataAccess;
+      if (Configuration) {
+        try {
+          const configuration = await Configuration.findLatest();
+          isTbybSite = configuration.isHandlerEnabledForSite('summit-plg', site);
+        } catch (e) {
+          log.warn(`Failed to check TBYB status: ${e.message}`);
+        }
+      }
+    }
+
+    if (isTbybSite) {
+      log.debug('[syncSuggestionsWithPublishDetection] Skipping reconcile for TBYB site');
+    } else {
+      await reconcileDisappearedSuggestions({
+        opportunity,
+        disappearedSuggestions,
+        log,
+        isIssueFixedWithAISuggestion,
+        buildFixEntityPayload,
+        isAuthorOnly,
+        Suggestion: context.dataAccess?.Suggestion,
+      });
+    }
   }
 
   // Step 2: Publish deployed fix entities (skip for author-only)

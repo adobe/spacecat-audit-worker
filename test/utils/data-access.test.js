@@ -3023,6 +3023,118 @@ describe('data-access', () => {
       // (once in wrapper, passed to syncSuggestions to avoid double query)
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
     });
+
+    it('should skip reconcile step for TBYB sites', async () => {
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sinon.stub().returns(true),
+      };
+      context.dataAccess.Configuration = {
+        findLatest: sinon.stub().resolves(mockConfiguration),
+      };
+
+      const disappearedSuggestion = {
+        getId: sinon.stub().returns('sugg-1'),
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+      mockOpportunity.getSuggestions.resolves([disappearedSuggestion]);
+
+      const isIssueFixedStub = sinon.stub().resolves(true);
+      const buildFixEntityStub = sinon.stub().returns({});
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData: [],
+        buildKey,
+        mapNewSuggestion,
+        isIssueFixedWithAISuggestion: isIssueFixedStub,
+        buildFixEntityPayload: buildFixEntityStub,
+      });
+
+      expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith('summit-plg', context.site);
+      expect(isIssueFixedStub).to.not.have.been.called;
+      expect(mockLogger.debug).to.have.been.calledWith(
+        '[syncSuggestionsWithPublishDetection] Skipping reconcile for TBYB site',
+      );
+    });
+
+    it('should run reconcile step for non-TBYB sites', async () => {
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sinon.stub().returns(false),
+      };
+      context.dataAccess.Configuration = {
+        findLatest: sinon.stub().resolves(mockConfiguration),
+      };
+
+      const disappearedSuggestion = {
+        getId: sinon.stub().returns('sugg-1'),
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        getType: sinon.stub().returns('TEST'),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+      mockOpportunity.getSuggestions.resolves([disappearedSuggestion]);
+
+      const isIssueFixedStub = sinon.stub().resolves(true);
+      const buildFixEntityStub = sinon.stub().returns({
+        opportunityId: 'opp-id',
+        status: 'PUBLISHED',
+        suggestions: ['sugg-1'],
+      });
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData: [],
+        buildKey,
+        mapNewSuggestion,
+        isIssueFixedWithAISuggestion: isIssueFixedStub,
+        buildFixEntityPayload: buildFixEntityStub,
+      });
+
+      expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith('summit-plg', context.site);
+      expect(isIssueFixedStub).to.have.been.called;
+    });
+
+    it('should run reconcile step when Configuration.findLatest throws', async () => {
+      context.dataAccess.Configuration = {
+        findLatest: sinon.stub().rejects(new Error('DB error')),
+      };
+
+      const disappearedSuggestion = {
+        getId: sinon.stub().returns('sugg-1'),
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        getType: sinon.stub().returns('TEST'),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+      mockOpportunity.getSuggestions.resolves([disappearedSuggestion]);
+
+      const isIssueFixedStub = sinon.stub().resolves(true);
+      const buildFixEntityStub = sinon.stub().returns({
+        opportunityId: 'opp-id',
+        status: 'PUBLISHED',
+        suggestions: ['sugg-1'],
+      });
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData: [],
+        buildKey,
+        mapNewSuggestion,
+        isIssueFixedWithAISuggestion: isIssueFixedStub,
+        buildFixEntityPayload: buildFixEntityStub,
+      });
+
+      expect(mockLogger.warn).to.have.been.calledWith('Failed to check TBYB status: DB error');
+      expect(isIssueFixedStub).to.have.been.called;
+    });
   });
 
   describe('warnOnInvalidSuggestionData', () => {
