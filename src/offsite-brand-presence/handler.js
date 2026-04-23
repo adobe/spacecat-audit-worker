@@ -659,6 +659,33 @@ function selectTopUrls(allUrls, maxUrlsPerBucket, excludedFromTopCited) {
 }
 
 /**
+ * Sends a Slack notification summarizing DRS job results.
+ *
+ * @param {Array} drsResults - Array of DRS job result objects
+ * @param {string} baseURL - The site's base URL
+ * @param {object} context - The execution context
+ * @param {string} channelId - Slack channel ID
+ * @param {string} threadTs - Slack thread timestamp
+ */
+async function notifyDrsResults(drsResults, baseURL, context, channelId, threadTs) {
+  if (drsResults.length === 0) {
+    return;
+  }
+
+  const succeeded = drsResults.filter((r) => r.status === 'success');
+  const failed = drsResults.filter((r) => r.status === 'error');
+  const lines = [
+    `:white_check_mark: *offsite-brand-presence* DRS jobs for *${baseURL}*:`,
+    ...succeeded.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → job_id: \`${r.response.job_id}\``),
+    ...(failed.length > 0 ? [
+      `:x: *Failed (${failed.length}):*`,
+      ...failed.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → ${r.error}`),
+    ] : []),
+  ];
+  await postMessageOptional(context, channelId, lines.join('\n'), { threadTs });
+}
+
+/**
  * Main runner for the offsite-brand-presence audit.
  *
  * Workflow:
@@ -686,9 +713,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
     .join(', ');
 
-  log.info(`${LOG_PREFIX} Starting audit for site: ${siteId} (${baseURL})`);
-
-  log.info(`${LOG_PREFIX} Processing weeks: ${weekLabels}`);
+  log.info(`${LOG_PREFIX} Starting audit for site: ${siteId} (${baseURL}), weeks: ${weekLabels}`);
 
   let allUrls;
   const organizationId = await resolveOrganizationIdForSite({
@@ -698,22 +723,31 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     log,
   });
   const postgrestClient = dataAccess?.services?.postgrestClient;
-  let dbBrandPresenceData = null;
   const isBrandalfOrg = organizationId
     ? await isBrandalfEnabled(organizationId, env, log)
     : false;
 
   if (isBrandalfOrg) {
-    dbBrandPresenceData = await loadBrandPresenceDataFromPostgrest({
+    const dbBrandPresenceData = await loadBrandPresenceDataFromPostgrest({
       siteId,
       organizationId,
       previousWeeks,
       postgrestClient,
       log,
     });
-  }
 
-  if (dbBrandPresenceData) {
+    if (!dbBrandPresenceData) {
+      log.info(`${LOG_PREFIX} No PostgREST data for brandalf-enabled site ${siteId}, skipping legacy file fetch`);
+      return {
+        auditResult: {
+          success: true,
+          urlCounts: Object.fromEntries(Object.keys(OFFSITE_DOMAINS).map((d) => [d, 0])),
+          weeks: previousWeeks,
+        },
+        fullAuditRef: finalUrl,
+      };
+    }
+
     allUrls = new Map();
     const topicMap = new Map();
     extractUrlsAndTopics(dbBrandPresenceData, allUrls, topicMap, log);
@@ -780,19 +814,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
   const drsResults = await triggerDrsScraping(storedByDomain, siteId, context);
 
-  if (drsResults.length > 0) {
-    const succeeded = drsResults.filter((r) => r.status === 'success');
-    const failed = drsResults.filter((r) => r.status === 'error');
-    const lines = [
-      `:white_check_mark: *offsite-brand-presence* DRS jobs for *${baseURL}*:`,
-      ...succeeded.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → job_id: \`${r.response.job_id}\``),
-      ...(failed.length > 0 ? [
-        `:x: *Failed (${failed.length}):*`,
-        ...failed.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → ${r.error}`),
-      ] : []),
-    ];
-    await postMessageOptional(context, channelId, lines.join('\n'), { threadTs });
-  }
+  await notifyDrsResults(drsResults, baseURL, context, channelId, threadTs);
 
   // TODO: temporarily disabled
   // if (topicMap.size > 0) {

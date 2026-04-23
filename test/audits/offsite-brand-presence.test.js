@@ -280,7 +280,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(loadBrandPresenceDataFromPostgrest.firstCall.args[0].postgrestClient).to.equal(postgrestClient);
     });
 
-    it('falls back to file-backed data when PostgREST returns no rows', async () => {
+    it('returns empty result for brandalf-enabled site when PostgREST returns no rows', async () => {
       const resolveOrganizationIdForSite = sandbox.stub().resolves('org-123');
       const isBrandalfEnabled = sandbox.stub().resolves(true);
       const loadBrandPresenceDataFromPostgrest = sandbox.stub().resolves(null);
@@ -294,18 +294,15 @@ describe('Offsite Brand Presence Handler', () => {
           loadBrandPresenceDataFromPostgrest,
         },
       });
-      const queryIndex = makeQueryIndex(['chatgpt']);
-      stubFetchSequence([
-        okJsonResponse(queryIndex),
-        stubProviderData(['https://reddit.com/r/test']),
-      ]);
 
       const result = await mod.offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       expect(result.auditResult.success).to.be.true;
-      expect(mockFetch.callCount).to.equal(2);
-      expect(mockFetch.firstCall.args[0]).to.equal(
-        `${env.SPACECAT_API_BASE_URL}/sites/${SITE_ID}/llmo/data/query-index.json`,
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
+      expect(result.auditResult.urlCounts['reddit.com']).to.equal(0);
+      expect(mockFetch).to.not.have.been.called;
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/No PostgREST data for brandalf-enabled site/),
       );
     });
   });

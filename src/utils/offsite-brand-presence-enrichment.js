@@ -431,6 +431,11 @@ export async function computeTopicsFromBrandPresence(siteId, context) {
     return formatTopicsForEnrichment(topicMap, allUrls);
   }
 
+  if (isBrandalfOrg) {
+    log.info(`${LOG_PREFIX} No PostgREST data for brandalf-enabled site ${siteId}, skipping legacy file fetch`);
+    return [];
+  }
+
   if (!env?.SPACECAT_API_BASE_URL || !env?.SPACECAT_API_KEY) {
     log.warn(`${LOG_PREFIX} SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured`);
     return [];

@@ -252,24 +252,19 @@ describe('offsite-brand-presence-enrichment', () => {
       ).to.equal(postgrestClient);
     });
 
-    it('falls back to query-index/file fetches when PostgREST returns no rows', async () => {
+    it('returns empty array for brandalf-enabled site when PostgREST returns no rows', async () => {
       const mod = await esmockWithPostgrest();
-
-      const fallbackRow = makeBrandPresenceRow({ Topics: 'Fallback Topic' });
-      mockFetch
-        .onFirstCall()
-        .resolves(okJsonResponse(sandbox, makeQueryIndex()))
-        .onSecondCall()
-        .resolves(okJsonResponse(sandbox, { data: [fallbackRow] }));
 
       const result = await mod.computeTopicsFromBrandPresence(
         SITE_ID,
         { env, log, dataAccess: {} },
       );
 
-      expect(result).to.have.lengthOf(1);
-      expect(result[0].name).to.equal('Fallback Topic');
-      expect(mockFetch.callCount).to.equal(2);
+      expect(result).to.deep.equal([]);
+      expect(mockFetch).to.not.have.been.called;
+      expect(log.info).to.have.been.calledWithMatch(
+        /No PostgREST data for brandalf-enabled site/,
+      );
     });
 
     it('returns empty array when SPACECAT_API_BASE_URL is missing', async () => {
