@@ -17,19 +17,22 @@ import { saveIntermediateResults } from '../../preflight/utils.js';
 
 import { sendReadabilityToMystique } from '../shared/async-mystique.js';
 import {
+  stripNonContent,
+  isExcludedReadabilityText,
+  isEligibleTextElement,
+  isEligibleParagraphText,
+  normalizeReadabilityText,
+  isLikelyNavigationElement,
+} from '../shared/analysis-utils.js';
+import {
   calculateReadabilityScore,
   isSupportedLanguage,
   getLanguageName,
 } from '../shared/multilingual-readability.js';
 import {
   TARGET_READABILITY_SCORE,
-  MIN_TEXT_LENGTH,
   MAX_CHARACTERS_DISPLAY,
 } from '../shared/constants.js';
-import {
-  normalizeReadabilityText,
-  isLikelyNavigationElement,
-} from '../shared/analysis-utils.js';
 import { getDomElementSelector, toElementTargets } from '../../preflight/utils/dom-selector.js';
 import {
   removeEmbeddedSocialElements,
@@ -185,9 +188,10 @@ export default async function readability(context, auditContext) {
     const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
 
     const $ = cheerioLoad(rawBody);
+    stripNonContent($);
     removeEmbeddedSocialElements($);
 
-    // Get all paragraph, div, and list item elements
+    // Get all paragraph, div, and list item elements.
     const textElements = $('p, div, li').toArray();
 
     let processedElements = 0;
@@ -206,6 +210,11 @@ export default async function readability(context, auditContext) {
     // Helper function to calculate readability score and create audit opportunity
     const analyzeReadability = async (text, element, elementIndex) => {
       try {
+        // Defense in depth: element / <br> filters above also exclude.
+        if (isExcludedReadabilityText(text)) {
+          return;
+        }
+
         // Check if text is in a supported language before analyzing readability
         const detectedLanguage = getSupportedLanguage(text);
         if (!detectedLanguage) {
@@ -277,10 +286,7 @@ export default async function readability(context, auditContext) {
         return !hasBlockChildren;
       })
       .filter(({ element }) => !isLikelyNavigationElement($, element))
-      .filter(({ element }) => {
-        const normalized = normalizeReadabilityText($(element).text());
-        return normalized.length >= MIN_TEXT_LENGTH;
-      })
+      .filter(({ element }) => isEligibleTextElement($(element)))
       .filter(({ element }) => !isEmbeddedSocialContentElement($, element));
 
     // Process filtered elements
@@ -306,7 +312,7 @@ export default async function readability(context, auditContext) {
             return tempDiv.text();
           })
           .map((p) => normalizeReadabilityText(p))
-          .filter((p) => p.length >= MIN_TEXT_LENGTH && /\s/.test(p));
+          .filter(isEligibleParagraphText);
 
         // Add promises for each paragraph
         paragraphs.forEach((paragraph) => {
