@@ -37,7 +37,7 @@ const DOMAIN_ALIASES = Object.freeze({
  * Gets the ISO week number and year for the previous two weeks.
  * @returns {Array<{ week: number, year: number }>} Previous two weeks (most recent first)
  */
-function getPreviousWeeks() {
+export function getPreviousWeeks() {
   return [1, 2].map((i) => {
     const d = new Date();
     d.setUTCDate(d.getUTCDate() - (7 * i));
@@ -331,19 +331,70 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log) {
 }
 
 /**
- * Fetches matched brand presence files sequentially and aggregates
- * all source URLs and topic associations across files.
+ * Loads brand-presence data for the given site via PostgREST (brandalf orgs)
+ * or the legacy file-fetch path.  Returns raw rows wrapped in `{ data }` so
+ * callers can run their own extraction/aggregation.
  *
- * @param {string} siteId - The site ID
- * @param {string[]} matchedFiles - File paths to fetch
- * @param {object} env - Environment variables
- * @param {object} log - Logger instance
- * @returns {Promise<{allUrls: Map, topicMap: Map}>} Unified URL map and topic map
+ * @param {object} opts
+ * @param {string} opts.siteId - Site ID
+ * @param {object} [opts.site] - Site entity (optional fast-path for org resolution)
+ * @param {Array<{week: number, year: number}>} opts.previousWeeks - Weeks to load
+ * @param {object} opts.context - Lambda context (env, log, dataAccess)
+ * @returns {Promise<{data: object[]}|null>} Raw brand-presence rows or null
  */
-async function fetchAndAggregateData(siteId, matchedFiles, env, log) {
-  const allUrls = new Map();
-  const topicMap = new Map();
+export async function loadBrandPresenceData({
+  siteId, site, previousWeeks, context,
+}) {
+  const { env, log } = context;
 
+  const organizationId = await resolveOrganizationIdForSite({
+    site,
+    siteId,
+    dataAccess: context.dataAccess,
+    log,
+  });
+
+  const isBrandalfOrg = organizationId
+    ? await isBrandalfEnabled(organizationId, env, log)
+    : false;
+
+  if (isBrandalfOrg) {
+    const postgrestClient = context.dataAccess?.services?.postgrestClient;
+    const dbData = await loadBrandPresenceDataFromPostgrest({
+      siteId,
+      organizationId,
+      previousWeeks,
+      postgrestClient,
+      log,
+    });
+    if (dbData) return dbData;
+    log.info(`${LOG_PREFIX} No PostgREST data for brandalf-enabled site ${siteId}, skipping legacy file fetch`);
+    return null;
+  }
+
+  if (!env?.SPACECAT_API_BASE_URL || !env?.SPACECAT_API_KEY) {
+    log.warn(`${LOG_PREFIX} SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured`);
+    return null;
+  }
+
+  const weekLabels = previousWeeks
+    .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
+    .join(', ');
+
+  const queryIndex = await fetchQueryIndex(siteId, env, log);
+  if (!queryIndex) {
+    log.warn(`${LOG_PREFIX} Failed to fetch query-index for site ${siteId}`);
+    return null;
+  }
+
+  const matchedFiles = previousWeeks.flatMap(
+    ({ week, year }) => filterBrandPresenceFiles(queryIndex, week, year),
+  );
+  log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for weeks ${weekLabels}`);
+
+  if (matchedFiles.length === 0) return null;
+
+  const allRows = [];
   for (const filePath of matchedFiles) {
     try {
       // eslint-disable-next-line no-await-in-loop
@@ -352,15 +403,14 @@ async function fetchAndAggregateData(siteId, matchedFiles, env, log) {
         // eslint-disable-next-line no-continue
         continue;
       }
-
-      extractUrlsAndTopics(data, allUrls, topicMap, log);
+      allRows.push(...data.data);
     } catch (err) {
       log.error(`${LOG_PREFIX} Error fetching brand presence file ${filePath}: ${err.message}`);
     }
   }
 
-  log.info(`${LOG_PREFIX} Extracted ${topicMap.size} unique topics`);
-  return { allUrls, topicMap };
+  if (allRows.length === 0) return null;
+  return { data: allRows };
 }
 
 /**
@@ -394,68 +444,19 @@ export function formatTopicsForEnrichment(topicMap, allUrls) {
  * @returns {Promise<Array<{ name: string, urls: object[] }>>}
  */
 export async function computeTopicsFromBrandPresence(siteId, context) {
-  const { env, log } = context;
+  const { log } = context;
   const previousWeeks = getPreviousWeeks();
   const weekLabels = previousWeeks
     .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
     .join(', ');
-
   log.info(`${LOG_PREFIX} Processing weeks: ${weekLabels}`);
 
-  const organizationId = await resolveOrganizationIdForSite({
-    siteId,
-    dataAccess: context.dataAccess,
-    log,
-  });
-  const postgrestClient = context.dataAccess?.services?.postgrestClient;
-  let dbBrandPresenceData = null;
-  const isBrandalfOrg = organizationId
-    ? await isBrandalfEnabled(organizationId, env, log)
-    : false;
+  const brandPresenceData = await loadBrandPresenceData({ siteId, previousWeeks, context });
+  if (!brandPresenceData) return [];
 
-  if (isBrandalfOrg) {
-    dbBrandPresenceData = await loadBrandPresenceDataFromPostgrest({
-      siteId,
-      organizationId,
-      previousWeeks,
-      postgrestClient,
-      log,
-    });
-  }
-
-  if (dbBrandPresenceData) {
-    const allUrls = new Map();
-    const topicMap = new Map();
-    extractUrlsAndTopics(dbBrandPresenceData, allUrls, topicMap, log);
-    log.info(`${LOG_PREFIX} Loaded brand presence data from PostgREST for site ${siteId}`);
-    return formatTopicsForEnrichment(topicMap, allUrls);
-  }
-
-  if (isBrandalfOrg) {
-    log.info(`${LOG_PREFIX} No PostgREST data for brandalf-enabled site ${siteId}, skipping legacy file fetch`);
-    return [];
-  }
-
-  if (!env?.SPACECAT_API_BASE_URL || !env?.SPACECAT_API_KEY) {
-    log.warn(`${LOG_PREFIX} SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured`);
-    return [];
-  }
-
-  const queryIndex = await fetchQueryIndex(siteId, env, log);
-  if (!queryIndex) {
-    log.warn(`${LOG_PREFIX} Failed to fetch query-index for site ${siteId}`);
-    return [];
-  }
-
-  const matchedFiles = previousWeeks.flatMap(
-    ({ week, year }) => filterBrandPresenceFiles(queryIndex, week, year),
-  );
-  log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for weeks ${weekLabels}`);
-
-  if (matchedFiles.length === 0) {
-    return [];
-  }
-
-  const { allUrls, topicMap } = await fetchAndAggregateData(siteId, matchedFiles, env, log);
+  const allUrls = new Map();
+  const topicMap = new Map();
+  extractUrlsAndTopics(brandPresenceData, allUrls, topicMap, log);
+  log.info(`${LOG_PREFIX} Loaded brand presence data for site ${siteId}`);
   return formatTopicsForEnrichment(topicMap, allUrls);
 }

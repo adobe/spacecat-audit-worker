@@ -82,6 +82,8 @@ describe('offsite-brand-presence-enrichment', () => {
   let computeTopicsFromBrandPresence;
   let formatTopicsForEnrichment;
   let filterBrandPresenceFiles;
+  let loadBrandPresenceData;
+  let getPreviousWeeks;
   let log;
   let env;
 
@@ -115,6 +117,8 @@ describe('offsite-brand-presence-enrichment', () => {
     computeTopicsFromBrandPresence = mod.computeTopicsFromBrandPresence;
     formatTopicsForEnrichment = mod.formatTopicsForEnrichment;
     filterBrandPresenceFiles = mod.filterBrandPresenceFiles;
+    loadBrandPresenceData = mod.loadBrandPresenceData;
+    getPreviousWeeks = mod.getPreviousWeeks;
   });
 
   afterEach(() => {
@@ -542,6 +546,93 @@ describe('offsite-brand-presence-enrichment', () => {
 
       const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
       expect(result[0].urls[0].subPrompts.sort()).to.deep.equal(['a', 'b']);
+    });
+  });
+
+  describe('getPreviousWeeks', () => {
+    it('returns two week objects from the mocked isoCalendarWeek', () => {
+      const weeks = getPreviousWeeks();
+      expect(weeks).to.deep.equal([
+        { week: DEFAULT_WEEK, year: DEFAULT_YEAR },
+        { week: DEFAULT_WEEK_2, year: DEFAULT_YEAR },
+      ]);
+    });
+  });
+
+  describe('loadBrandPresenceData', () => {
+    const previousWeeks = [{ week: DEFAULT_WEEK, year: DEFAULT_YEAR }];
+
+    it('returns { data: rows } from PostgREST for brandalf org', async () => {
+      const rows = [makeBrandPresenceRow()];
+      const loadPostgrest = sandbox.stub().resolves({ data: rows });
+      const mod = await esmockWithPostgrest({
+        loadBrandPresenceDataFromPostgrest: loadPostgrest,
+      });
+
+      const result = await mod.loadBrandPresenceData({
+        siteId: SITE_ID,
+        previousWeeks,
+        context: { env, log, dataAccess: { services: { postgrestClient: {} } } },
+      });
+
+      expect(result).to.deep.equal({ data: rows });
+      expect(mockFetch).to.not.have.been.called;
+    });
+
+    it('returns null for brandalf org when PostgREST has no data', async () => {
+      const mod = await esmockWithPostgrest();
+
+      const result = await mod.loadBrandPresenceData({
+        siteId: SITE_ID,
+        previousWeeks,
+        context: { env, log, dataAccess: {} },
+      });
+
+      expect(result).to.be.null;
+      expect(log.info).to.have.been.calledWithMatch(
+        /No PostgREST data for brandalf-enabled site/,
+      );
+    });
+
+    it('returns { data: rows } from legacy file fetch for non-brandalf org', async () => {
+      const row = makeBrandPresenceRow();
+      setupQueryIndexAndData([row]);
+
+      const result = await loadBrandPresenceData({
+        siteId: SITE_ID,
+        previousWeeks,
+        context: { env, log },
+      });
+
+      expect(result).to.deep.equal({ data: [row] });
+    });
+
+    it('returns null when SPACECAT_API vars are missing (non-brandalf)', async () => {
+      const result = await loadBrandPresenceData({
+        siteId: SITE_ID,
+        previousWeeks,
+        context: { env: { SPACECAT_API_KEY: 'k' }, log },
+      });
+
+      expect(result).to.be.null;
+      expect(log.warn).to.have.been.calledWithMatch(
+        /SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured/,
+      );
+    });
+
+    it('returns null when query-index fetch fails (non-brandalf)', async () => {
+      mockFetch.resolves(failResponse(sandbox, 500));
+
+      const result = await loadBrandPresenceData({
+        siteId: SITE_ID,
+        previousWeeks,
+        context: { env, log },
+      });
+
+      expect(result).to.be.null;
+      expect(log.warn).to.have.been.calledWithMatch(
+        /Failed to fetch query-index for site/,
+      );
     });
   });
 });

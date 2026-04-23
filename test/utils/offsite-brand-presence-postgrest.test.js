@@ -16,6 +16,8 @@ import sinonChai from 'sinon-chai';
 
 import {
   BRAND_PRESENCE_DB_MODEL_BY_PROVIDER,
+  EXECUTION_FETCH_BATCH_SIZE,
+  SOURCE_FETCH_BATCH_SIZE,
   getBrandPresenceDbModels,
   getDateWindowForPreviousWeeks,
   loadBrandPresenceDataFromPostgrest,
@@ -320,13 +322,13 @@ describe('offsite-brand-presence-postgrest', () => {
         ['organization_id', ORG_ID],
         ['site_id', SITE_ID],
       ]);
-      expect(sourceCapture.range).to.deep.equal([[0, 4999]]);
+      expect(sourceCapture.range).to.deep.equal([[0, SOURCE_FETCH_BATCH_SIZE - 1]]);
     });
 
     it('keeps paging execution rows until a batch is smaller than the configured limit', async () => {
       const capture = createCapture();
       const firstBatch = Array.from(
-        { length: 5000 },
+        { length: EXECUTION_FETCH_BATCH_SIZE },
         (_, i) => makeExecution({ id: `exec-${i + 1}` }),
       );
       const executionChain = createExecutionChain(capture, [
@@ -338,9 +340,64 @@ describe('offsite-brand-presence-postgrest', () => {
       };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(capture.range).to.deep.equal([[0, 4999], [5000, 9999]]);
+      expect(capture.range).to.deep.equal([
+        [0, EXECUTION_FETCH_BATCH_SIZE - 1],
+        [EXECUTION_FETCH_BATCH_SIZE, EXECUTION_FETCH_BATCH_SIZE * 2 - 1],
+      ]);
       expect(log.warn).to.have.been.calledOnce;
       expect(log.warn.firstCall.args[0]).to.include('page 2 failed');
+    });
+
+    it('accumulates execution rows across two successful pages', async () => {
+      const execCapture = createCapture();
+      const sourceCapture = createCapture();
+      const firstBatch = Array.from(
+        { length: EXECUTION_FETCH_BATCH_SIZE },
+        (_, i) => makeExecution({
+          id: `exec-${i + 1}`, topics: `T${i + 1}`, prompt: `P${i + 1}`, category_name: 'C',
+        }),
+      );
+      const secondBatch = [
+        makeExecution({
+          id: 'exec-5001', topics: 'T5001', prompt: 'P5001', category_name: 'C',
+        }),
+        makeExecution({
+          id: 'exec-5002', topics: 'T5002', prompt: 'P5002', category_name: 'C',
+        }),
+        makeExecution({
+          id: 'exec-5003', topics: 'T5003', prompt: 'P5003', category_name: 'C',
+        }),
+      ];
+      const executionChain = createExecutionChain(execCapture, [
+        { data: firstBatch, error: null },
+        { data: secondBatch, error: null },
+      ]);
+      const allIds = [...firstBatch, ...secondBatch].map((e) => e.id);
+      const sourcePage1 = allIds.slice(0, SOURCE_FETCH_BATCH_SIZE).map((id) => makeSource(id, `https://example.com/${id}`));
+      const sourcePage2 = allIds.slice(SOURCE_FETCH_BATCH_SIZE).map((id) => makeSource(id, `https://example.com/${id}`));
+      const sourceChain = createSourceChain(sourceCapture, [
+        { data: sourcePage1, error: null },
+        { data: sourcePage2, error: null },
+      ]);
+      const fromStub = sandbox.stub();
+      fromStub.onCall(0).returns(executionChain);
+      fromStub.onCall(1).returns(executionChain);
+      fromStub.onCall(2).returns(sourceChain);
+      fromStub.onCall(3).returns(sourceChain);
+      const postgrestClient = { from: fromStub };
+
+      const result = await loadWith({
+        previousWeeks: DEFAULT_PREVIOUS_WEEKS,
+        postgrestClient,
+      });
+
+      expect(execCapture.range).to.deep.equal([
+        [0, EXECUTION_FETCH_BATCH_SIZE - 1],
+        [EXECUTION_FETCH_BATCH_SIZE, EXECUTION_FETCH_BATCH_SIZE * 2 - 1],
+      ]);
+      expect(result.data).to.have.lengthOf(EXECUTION_FETCH_BATCH_SIZE + 3);
+      expect(result.data[0].Sources).to.equal('https://example.com/exec-1');
+      expect(result.data[EXECUTION_FETCH_BATCH_SIZE + 2].Sources).to.equal(`https://example.com/exec-${EXECUTION_FETCH_BATCH_SIZE + 3}`);
     });
 
     it('fetches sources by date range and filters to valid execution IDs', async () => {
@@ -392,7 +449,7 @@ describe('offsite-brand-presence-postgrest', () => {
       const sourceCapture = createCapture();
       const executionChain = createExecutionChain(capture, [{ data: executions, error: null }]);
       const firstBatch = Array.from(
-        { length: 5000 },
+        { length: SOURCE_FETCH_BATCH_SIZE },
         (_, i) => makeSource('exec-1', `https://example.com/${i}`),
       );
       const sourceChain = createSourceChain(sourceCapture, [
@@ -409,7 +466,10 @@ describe('offsite-brand-presence-postgrest', () => {
       const result = await loadWith({ postgrestClient });
 
       expect(result.data).to.have.lengthOf(1);
-      expect(sourceCapture.range).to.deep.equal([[0, 4999], [5000, 9999]]);
+      expect(sourceCapture.range).to.deep.equal([
+        [0, SOURCE_FETCH_BATCH_SIZE - 1],
+        [SOURCE_FETCH_BATCH_SIZE, SOURCE_FETCH_BATCH_SIZE * 2 - 1],
+      ]);
     });
 
     it('returns null when fetched execution rows do not include usable IDs', async () => {

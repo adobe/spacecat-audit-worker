@@ -13,8 +13,8 @@
 import { getDateRanges } from '@adobe/spacecat-shared-utils';
 import { PROVIDERS } from '../offsite-brand-presence/constants.js';
 
-const EXECUTION_FETCH_BATCH_SIZE = 5000;
-const SOURCE_FETCH_BATCH_SIZE = 5000;
+export const EXECUTION_FETCH_BATCH_SIZE = 5000;
+export const SOURCE_FETCH_BATCH_SIZE = 5000;
 const DEFAULT_REGION_CODE = 'US';
 
 export const BRAND_PRESENCE_DB_MODEL_BY_PROVIDER = Object.freeze({
