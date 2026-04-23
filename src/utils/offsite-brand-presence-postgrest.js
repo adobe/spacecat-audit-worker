@@ -14,7 +14,6 @@ import { getDateRanges } from '@adobe/spacecat-shared-utils';
 import { PROVIDERS } from '../offsite-brand-presence/constants.js';
 
 export const EXECUTION_FETCH_BATCH_SIZE = 5000;
-export const SOURCE_FETCH_BATCH_SIZE = 5000;
 const DEFAULT_REGION_CODE = 'US';
 
 export const BRAND_PRESENCE_DB_MODEL_BY_PROVIDER = Object.freeze({
@@ -64,7 +63,7 @@ export function getDateWindowForPreviousWeeks(previousWeeks) {
   return { startDate, endDate };
 }
 
-async function fetchExecutionsBatched(postgrestClient, {
+async function fetchExecutionsWithSources(postgrestClient, {
   organizationId,
   siteId,
   startDate,
@@ -74,14 +73,14 @@ async function fetchExecutionsBatched(postgrestClient, {
   log,
 }) {
   const rows = [];
-  let offset = 0;
+  let lastDate = null;
+  let lastId = null;
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    // eslint-disable-next-line no-await-in-loop
-    const { data, error } = await postgrestClient
+    let query = postgrestClient
       .from('brand_presence_executions')
-      .select('id, execution_date, topics, prompt, category_name, region_code, model')
+      .select('id, execution_date, topics, prompt, category_name, region_code, model, brand_presence_sources(source_urls(url))')
       .eq('organization_id', organizationId)
       .eq('site_id', siteId)
       .eq('region_code', regionCode)
@@ -90,7 +89,17 @@ async function fetchExecutionsBatched(postgrestClient, {
       .lte('execution_date', endDate)
       .order('execution_date', { ascending: false })
       .order('id', { ascending: false })
-      .range(offset, offset + EXECUTION_FETCH_BATCH_SIZE - 1);
+      .limit(EXECUTION_FETCH_BATCH_SIZE);
+
+    if (lastDate !== null) {
+      // Keyset pagination: fetch rows after the last seen (date, id) pair
+      query = query.or(
+        `execution_date.lt.${lastDate},and(execution_date.eq.${lastDate},id.lt.${lastId})`,
+      );
+    }
+
+    // eslint-disable-next-line no-await-in-loop
+    const { data, error } = await query;
 
     if (error) {
       throw new Error(`Failed to fetch brand_presence_executions: ${error.message}`);
@@ -98,76 +107,26 @@ async function fetchExecutionsBatched(postgrestClient, {
 
     const batch = data || [];
     rows.push(...batch);
-    log?.info(`[BrandPresencePostgrest] Fetched executions batch: ${batch.length} rows (total: ${rows.length})`);
+    log?.info(`[BrandPresencePostgrest] Fetched batch: ${batch.length} rows (total: ${rows.length})`);
 
     if (batch.length < EXECUTION_FETCH_BATCH_SIZE) {
       break;
     }
 
-    offset += EXECUTION_FETCH_BATCH_SIZE;
+    const last = batch[batch.length - 1];
+    lastDate = last.execution_date;
+    lastId = last.id;
   }
 
   return rows;
 }
 
-async function fetchSourcesByDateRange(postgrestClient, {
-  organizationId,
-  siteId,
-  startDate,
-  endDate,
-  log,
-}) {
-  const rows = [];
-  let offset = 0;
-
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    // eslint-disable-next-line no-await-in-loop
-    const { data, error } = await postgrestClient
-      .from('brand_presence_sources')
-      .select('execution_id, source_urls(url)')
-      .eq('organization_id', organizationId)
-      .eq('site_id', siteId)
-      .gte('execution_date', startDate)
-      .lte('execution_date', endDate)
-      .range(offset, offset + SOURCE_FETCH_BATCH_SIZE - 1);
-
-    if (error) {
-      throw new Error(`Failed to fetch brand_presence_sources: ${error.message}`);
-    }
-
-    const batch = data || [];
-    rows.push(...batch);
-    log?.info(`[BrandPresencePostgrest] Fetched sources batch: ${batch.length} rows (total: ${rows.length})`);
-
-    if (batch.length < SOURCE_FETCH_BATCH_SIZE) {
-      break;
-    }
-
-    offset += SOURCE_FETCH_BATCH_SIZE;
-  }
-
-  return rows;
-}
-
-export function mapExecutionsToLegacyBrandPresenceRows(executions, sources) {
-  const sourceUrlsByExecutionId = new Map();
-
-  sources.forEach((sourceRow) => {
-    const url = sourceRow?.source_urls?.url;
-    const executionId = sourceRow?.execution_id;
-    if (!url || !executionId) {
-      return;
-    }
-
-    const existing = sourceUrlsByExecutionId.get(executionId) || [];
-    existing.push(url);
-    sourceUrlsByExecutionId.set(executionId, existing);
-  });
-
+export function mapExecutionsToLegacyBrandPresenceRows(executions) {
   return executions
     .map((execution) => {
-      const urls = sourceUrlsByExecutionId.get(execution.id) || [];
+      const urls = (execution.brand_presence_sources || [])
+        .map((s) => s?.source_urls?.url)
+        .filter(Boolean);
       return {
         Sources: urls.join(';\n'),
         Region: execution.region_code || '',
@@ -200,7 +159,7 @@ export async function loadBrandPresenceDataFromPostgrest({
   const { startDate, endDate } = dateWindow;
 
   try {
-    const executions = await fetchExecutionsBatched(postgrestClient, {
+    const executions = await fetchExecutionsWithSources(postgrestClient, {
       organizationId,
       siteId,
       startDate,
@@ -215,32 +174,9 @@ export async function loadBrandPresenceDataFromPostgrest({
       return null;
     }
 
-    const executionIds = new Set(
-      executions.map((e) => e.id).filter(Boolean),
-    );
-
-    if (executionIds.size === 0) {
-      return null;
-    }
-
-    const allSources = await fetchSourcesByDateRange(postgrestClient, {
-      organizationId,
-      siteId,
-      startDate,
-      endDate,
-      log,
-    });
-
-    const sources = allSources.filter((s) => executionIds.has(s.execution_id));
-
-    if (sources.length === 0) {
-      log?.info(`[BrandPresencePostgrest] No source rows found for site ${siteId}`);
-      return null;
-    }
-
-    const rows = mapExecutionsToLegacyBrandPresenceRows(executions, sources);
+    const rows = mapExecutionsToLegacyBrandPresenceRows(executions);
     if (rows.length === 0) {
-      log?.info(`[BrandPresencePostgrest] No usable source rows found for site ${siteId}`);
+      log?.info(`[BrandPresencePostgrest] No usable rows found for site ${siteId}`);
       return null;
     }
 

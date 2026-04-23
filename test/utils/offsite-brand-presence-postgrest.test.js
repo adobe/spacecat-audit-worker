@@ -17,7 +17,6 @@ import sinonChai from 'sinon-chai';
 import {
   BRAND_PRESENCE_DB_MODEL_BY_PROVIDER,
   EXECUTION_FETCH_BATCH_SIZE,
-  SOURCE_FETCH_BATCH_SIZE,
   getBrandPresenceDbModels,
   getDateWindowForPreviousWeeks,
   loadBrandPresenceDataFromPostgrest,
@@ -33,7 +32,7 @@ const SINGLE_WEEK = [{ week: 11, year: 2026 }];
 
 function createCapture() {
   return {
-    eq: [], in: [], gte: [], lte: [], order: [], range: [], select: [],
+    eq: [], in: [], gte: [], lte: [], order: [], limit: [], or: [], select: [],
   };
 }
 
@@ -44,32 +43,18 @@ function capturingStub(capture, key, returnValue) {
   });
 }
 
-function createExecutionChain(capture, responses) {
+function createQueryChain(capture, responses) {
+  const queue = [...responses];
   const chain = {};
-  chain.select = sinon.stub().returns(chain);
+  chain.select = capturingStub(capture, 'select', chain);
   chain.eq = capturingStub(capture, 'eq', chain);
   chain.in = capturingStub(capture, 'in', chain);
   chain.gte = capturingStub(capture, 'gte', chain);
   chain.lte = capturingStub(capture, 'lte', chain);
   chain.order = capturingStub(capture, 'order', chain);
-  chain.range = sinon.stub().callsFake((start, end) => {
-    capture.range.push([start, end]);
-    return Promise.resolve(responses.shift());
-  });
-  return chain;
-}
-
-function createSourceChain(capture, responses) {
-  const queue = Array.isArray(responses) ? [...responses] : [responses];
-  const chain = {};
-  chain.select = capturingStub(capture, 'select', chain);
-  chain.eq = capturingStub(capture, 'eq', chain);
-  chain.gte = capturingStub(capture, 'gte', chain);
-  chain.lte = capturingStub(capture, 'lte', chain);
-  chain.range = sinon.stub().callsFake((start, end) => {
-    capture.range.push([start, end]);
-    return Promise.resolve(queue.shift());
-  });
+  chain.limit = capturingStub(capture, 'limit', chain);
+  chain.or = capturingStub(capture, 'or', chain);
+  chain.then = (resolve) => resolve(queue.shift());
   return chain;
 }
 
@@ -82,12 +67,13 @@ function makeExecution(overrides = {}) {
     prompt: '',
     category_name: '',
     model: 'chatgpt-free',
+    brand_presence_sources: [],
     ...overrides,
   };
 }
 
-function makeSource(executionId, url) {
-  return { execution_id: executionId, source_urls: { url } };
+function embeddedSource(url) {
+  return { source_urls: { url } };
 }
 
 describe('offsite-brand-presence-postgrest', () => {
@@ -185,14 +171,18 @@ describe('offsite-brand-presence-postgrest', () => {
   });
 
   describe('mapExecutionsToLegacyBrandPresenceRows', () => {
-    it('maps executions and joined source rows back to the legacy row shape', () => {
-      const result = mapExecutionsToLegacyBrandPresenceRows(
-        [makeExecution({ topics: 'Topic A', prompt: 'Prompt A', category_name: 'Category A' })],
-        [
-          makeSource('exec-1', 'https://a.example.com'),
-          makeSource('exec-1', 'https://b.example.com'),
-        ],
-      );
+    it('maps executions with embedded sources to the legacy row shape', () => {
+      const result = mapExecutionsToLegacyBrandPresenceRows([
+        makeExecution({
+          topics: 'Topic A',
+          prompt: 'Prompt A',
+          category_name: 'Category A',
+          brand_presence_sources: [
+            embeddedSource('https://a.example.com'),
+            embeddedSource('https://b.example.com'),
+          ],
+        }),
+      ]);
 
       expect(result).to.deep.equal([{
         Sources: 'https://a.example.com;\nhttps://b.example.com',
@@ -203,15 +193,15 @@ describe('offsite-brand-presence-postgrest', () => {
       }]);
     });
 
-    it('ignores malformed source rows and defaults missing execution fields to empty strings', () => {
-      const result = mapExecutionsToLegacyBrandPresenceRows(
-        [{ id: 'exec-1' }],
-        [
-          { execution_id: 'exec-1', source_urls: {} },
-          { source_urls: { url: 'https://missing-execution.example.com' } },
-          makeSource('exec-1', 'https://valid.example.com'),
+    it('ignores malformed embedded sources and defaults missing execution fields to empty strings', () => {
+      const result = mapExecutionsToLegacyBrandPresenceRows([{
+        id: 'exec-1',
+        brand_presence_sources: [
+          { source_urls: {} },
+          { source_urls: null },
+          embeddedSource('https://valid.example.com'),
         ],
-      );
+      }]);
 
       expect(result).to.deep.equal([{
         Sources: 'https://valid.example.com',
@@ -252,8 +242,8 @@ describe('offsite-brand-presence-postgrest', () => {
 
     it('returns null when no execution rows are found', async () => {
       const capture = createCapture();
-      const executionChain = createExecutionChain(capture, [{ data: [], error: null }]);
-      const postgrestClient = { from: sandbox.stub().returns(executionChain) };
+      const chain = createQueryChain(capture, [{ data: [], error: null }]);
+      const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       const result = await loadWith({
         previousWeeks: DEFAULT_PREVIOUS_WEEKS,
@@ -266,31 +256,25 @@ describe('offsite-brand-presence-postgrest', () => {
     });
 
     it('treats null execution data as an empty result set', async () => {
-      const executionChain = createExecutionChain(createCapture(), [{ data: null, error: null }]);
-      const postgrestClient = { from: sandbox.stub().returns(executionChain) };
+      const chain = createQueryChain(createCapture(), [{ data: null, error: null }]);
+      const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
       expect(log.info).to.have.been.calledWithMatch('No execution rows found');
     });
 
-    it('queries executions with the mapped models and region_code = US', async () => {
+    it('queries executions with embedded sources, mapped models, and region_code = US', async () => {
       const capture = createCapture();
-      const sourceCapture = createCapture();
-      const executionChain = createExecutionChain(capture, [{
-        data: [makeExecution({ topics: 'Topic A', prompt: 'Prompt A', category_name: 'Category A' })],
+      const chain = createQueryChain(capture, [{
+        data: [makeExecution({
+          topics: 'Topic A',
+          prompt: 'Prompt A',
+          category_name: 'Category A',
+          brand_presence_sources: [embeddedSource('https://reddit.com/r/test')],
+        })],
         error: null,
       }]);
-      const sourceChain = createSourceChain(sourceCapture, {
-        data: [makeSource('exec-1', 'https://reddit.com/r/test')],
-        error: null,
-      });
-      const postgrestClient = {
-        from: sandbox.stub()
-          .onFirstCall()
-          .returns(executionChain)
-          .onSecondCall()
-          .returns(sourceChain),
-      };
+      const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       const result = await loadWith({
         previousWeeks: DEFAULT_PREVIOUS_WEEKS,
@@ -306,6 +290,8 @@ describe('offsite-brand-presence-postgrest', () => {
           Category: 'Category A',
         }],
       });
+      expect(postgrestClient.from).to.have.been.calledWith('brand_presence_executions');
+      expect(capture.select[0]).to.include('brand_presence_sources(source_urls(url))');
       expect(capture.eq).to.deep.include.members([
         ['organization_id', ORG_ID],
         ['site_id', SITE_ID],
@@ -318,278 +304,136 @@ describe('offsite-brand-presence-postgrest', () => {
         ['execution_date', { ascending: false }],
         ['id', { ascending: false }],
       ]);
-      expect(sourceCapture.eq).to.deep.include.members([
-        ['organization_id', ORG_ID],
-        ['site_id', SITE_ID],
-      ]);
-      expect(sourceCapture.range).to.deep.equal([[0, SOURCE_FETCH_BATCH_SIZE - 1]]);
+      expect(capture.limit).to.deep.equal([EXECUTION_FETCH_BATCH_SIZE]);
     });
 
-    it('keeps paging execution rows until a batch is smaller than the configured limit', async () => {
+    it('uses keyset pagination and re-fetches when a batch fills the limit', async () => {
       const capture = createCapture();
       const firstBatch = Array.from(
         { length: EXECUTION_FETCH_BATCH_SIZE },
-        (_, i) => makeExecution({ id: `exec-${i + 1}` }),
+        (_, i) => makeExecution({
+          id: `exec-${i + 1}`,
+          execution_date: '2026-03-12',
+          brand_presence_sources: [embeddedSource(`https://example.com/${i + 1}`)],
+        }),
       );
-      const executionChain = createExecutionChain(capture, [
+      const chain = createQueryChain(capture, [
         { data: firstBatch, error: null },
         { data: null, error: { message: 'page 2 failed' } },
       ]);
-      const postgrestClient = {
-        from: sandbox.stub().returns(executionChain),
-      };
+      const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(capture.range).to.deep.equal([
-        [0, EXECUTION_FETCH_BATCH_SIZE - 1],
-        [EXECUTION_FETCH_BATCH_SIZE, EXECUTION_FETCH_BATCH_SIZE * 2 - 1],
-      ]);
+
+      const lastExec = firstBatch.at(-1);
+      expect(capture.or).to.have.lengthOf(1);
+      expect(capture.or[0]).to.include(lastExec.execution_date);
+      expect(capture.or[0]).to.include(lastExec.id);
       expect(log.warn).to.have.been.calledOnce;
       expect(log.warn.firstCall.args[0]).to.include('page 2 failed');
     });
 
-    it('accumulates execution rows across two successful pages', async () => {
-      const execCapture = createCapture();
-      const sourceCapture = createCapture();
+    it('accumulates rows across two successful pages via keyset cursor', async () => {
+      const capture = createCapture();
       const firstBatch = Array.from(
         { length: EXECUTION_FETCH_BATCH_SIZE },
         (_, i) => makeExecution({
-          id: `exec-${i + 1}`, topics: `T${i + 1}`, prompt: `P${i + 1}`, category_name: 'C',
+          id: `exec-${i + 1}`,
+          execution_date: '2026-03-12',
+          topics: `T${i + 1}`,
+          prompt: `P${i + 1}`,
+          category_name: 'C',
+          brand_presence_sources: [embeddedSource(`https://example.com/exec-${i + 1}`)],
         }),
       );
       const secondBatch = [
         makeExecution({
-          id: 'exec-5001', topics: 'T5001', prompt: 'P5001', category_name: 'C',
+          id: 'exec-5001',
+          execution_date: '2026-03-11',
+          topics: 'T5001',
+          prompt: 'P5001',
+          category_name: 'C',
+          brand_presence_sources: [embeddedSource('https://example.com/exec-5001')],
         }),
         makeExecution({
-          id: 'exec-5002', topics: 'T5002', prompt: 'P5002', category_name: 'C',
+          id: 'exec-5002',
+          execution_date: '2026-03-11',
+          topics: 'T5002',
+          prompt: 'P5002',
+          category_name: 'C',
+          brand_presence_sources: [embeddedSource('https://example.com/exec-5002')],
         }),
         makeExecution({
-          id: 'exec-5003', topics: 'T5003', prompt: 'P5003', category_name: 'C',
+          id: 'exec-5003',
+          execution_date: '2026-03-11',
+          topics: 'T5003',
+          prompt: 'P5003',
+          category_name: 'C',
+          brand_presence_sources: [embeddedSource('https://example.com/exec-5003')],
         }),
       ];
-      const executionChain = createExecutionChain(execCapture, [
+      const chain = createQueryChain(capture, [
         { data: firstBatch, error: null },
         { data: secondBatch, error: null },
       ]);
-      const allIds = [...firstBatch, ...secondBatch].map((e) => e.id);
-      const sourcePage1 = allIds.slice(0, SOURCE_FETCH_BATCH_SIZE).map((id) => makeSource(id, `https://example.com/${id}`));
-      const sourcePage2 = allIds.slice(SOURCE_FETCH_BATCH_SIZE).map((id) => makeSource(id, `https://example.com/${id}`));
-      const sourceChain = createSourceChain(sourceCapture, [
-        { data: sourcePage1, error: null },
-        { data: sourcePage2, error: null },
-      ]);
-      const fromStub = sandbox.stub();
-      fromStub.onCall(0).returns(executionChain);
-      fromStub.onCall(1).returns(executionChain);
-      fromStub.onCall(2).returns(sourceChain);
-      fromStub.onCall(3).returns(sourceChain);
-      const postgrestClient = { from: fromStub };
+      const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       const result = await loadWith({
         previousWeeks: DEFAULT_PREVIOUS_WEEKS,
         postgrestClient,
       });
 
-      expect(execCapture.range).to.deep.equal([
-        [0, EXECUTION_FETCH_BATCH_SIZE - 1],
-        [EXECUTION_FETCH_BATCH_SIZE, EXECUTION_FETCH_BATCH_SIZE * 2 - 1],
-      ]);
+      expect(capture.or).to.have.lengthOf(1);
       expect(result.data).to.have.lengthOf(EXECUTION_FETCH_BATCH_SIZE + 3);
       expect(result.data[0].Sources).to.equal('https://example.com/exec-1');
-      expect(result.data[EXECUTION_FETCH_BATCH_SIZE + 2].Sources).to.equal(`https://example.com/exec-${EXECUTION_FETCH_BATCH_SIZE + 3}`);
+      expect(result.data[EXECUTION_FETCH_BATCH_SIZE + 2].Sources)
+        .to.equal(`https://example.com/exec-${EXECUTION_FETCH_BATCH_SIZE + 3}`);
     });
 
-    it('fetches sources by date range and filters to valid execution IDs', async () => {
-      const executions = [
-        makeExecution({
-          id: 'exec-1', topics: 'Topic 1', prompt: 'Prompt 1', category_name: 'Category',
-        }),
-        makeExecution({
-          id: 'exec-2', topics: 'Topic 2', prompt: 'Prompt 2', category_name: 'Category',
-        }),
-      ];
-      const capture = createCapture();
-      const sourceCapture = createCapture();
-      const executionChain = createExecutionChain(capture, [{ data: executions, error: null }]);
-      const sourceChain = createSourceChain(sourceCapture, {
-        data: [
-          makeSource('exec-1', 'https://example.com/a'),
-          makeSource('exec-2', 'https://example.com/b'),
-          makeSource('exec-other', 'https://example.com/filtered-out'),
-        ],
-        error: null,
-      });
-      const postgrestClient = {
-        from: sandbox.stub()
-          .onFirstCall()
-          .returns(executionChain)
-          .onSecondCall()
-          .returns(sourceChain),
-      };
-
-      const result = await loadWith({
-        previousWeeks: DEFAULT_PREVIOUS_WEEKS,
-        postgrestClient,
-      });
-
-      expect(result.data).to.have.lengthOf(2);
-      expect(result.data.map((r) => r.Sources)).to.deep.equal([
-        'https://example.com/a',
-        'https://example.com/b',
-      ]);
-      expect(sourceCapture.range).to.have.lengthOf(1);
-    });
-
-    it('paginates source fetches until a batch is smaller than the configured limit', async () => {
-      const executions = [makeExecution({
-        id: 'exec-1', topics: 'T', prompt: 'P', category_name: 'C',
-      })];
-      const capture = createCapture();
-      const sourceCapture = createCapture();
-      const executionChain = createExecutionChain(capture, [{ data: executions, error: null }]);
-      const firstBatch = Array.from(
-        { length: SOURCE_FETCH_BATCH_SIZE },
-        (_, i) => makeSource('exec-1', `https://example.com/${i}`),
-      );
-      const sourceChain = createSourceChain(sourceCapture, [
-        { data: firstBatch, error: null },
-        { data: [makeSource('exec-1', 'https://example.com/last')], error: null },
-      ]);
-      const postgrestClient = {
-        from: sandbox.stub()
-          .onFirstCall()
-          .returns(executionChain)
-          .returns(sourceChain),
-      };
-
-      const result = await loadWith({ postgrestClient });
-
-      expect(result.data).to.have.lengthOf(1);
-      expect(sourceCapture.range).to.deep.equal([
-        [0, SOURCE_FETCH_BATCH_SIZE - 1],
-        [SOURCE_FETCH_BATCH_SIZE, SOURCE_FETCH_BATCH_SIZE * 2 - 1],
-      ]);
-    });
-
-    it('returns null when fetched execution rows do not include usable IDs', async () => {
-      const executionChain = createExecutionChain(createCapture(), [{
-        data: [makeExecution({ id: null })],
-        error: null,
-      }]);
-      const postgrestClient = {
-        from: sandbox.stub().returns(executionChain),
-      };
-
-      expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(postgrestClient.from).to.have.been.calledOnce;
-    });
-
-    it('returns null when execution rows exist but no source rows are found', async () => {
-      const executionChain = createExecutionChain(createCapture(), [{
+    it('returns null when execution rows have no embedded sources', async () => {
+      const chain = createQueryChain(createCapture(), [{
         data: [makeExecution()],
         error: null,
       }]);
-      const sourceChain = createSourceChain(createCapture(), {
-        data: [], error: null,
-      });
-      const postgrestClient = {
-        from: sandbox.stub()
-          .onFirstCall()
-          .returns(executionChain)
-          .onSecondCall()
-          .returns(sourceChain),
-      };
+      const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(log.info).to.have.been.calledWithMatch('No source rows found');
+      expect(log.info).to.have.been.calledWithMatch('No usable rows found');
     });
 
-    it('treats null source data as an empty source result set', async () => {
-      const executionChain = createExecutionChain(createCapture(), [{
-        data: [makeExecution()],
+    it('returns null when embedded brand_presence_sources is null', async () => {
+      const chain = createQueryChain(createCapture(), [{
+        data: [makeExecution({ brand_presence_sources: null })],
         error: null,
       }]);
-      const sourceChain = createSourceChain(createCapture(), {
-        data: null, error: null,
-      });
-      const postgrestClient = {
-        from: sandbox.stub()
-          .onFirstCall()
-          .returns(executionChain)
-          .onSecondCall()
-          .returns(sourceChain),
-      };
+      const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(log.info).to.have.been.calledWithMatch('No source rows found');
+      expect(log.info).to.have.been.calledWithMatch('No usable rows found');
     });
 
-    it('returns null when all sources belong to non-matching executions', async () => {
-      const executionChain = createExecutionChain(createCapture(), [{
-        data: [makeExecution()],
+    it('returns null when embedded source_urls have no valid url', async () => {
+      const chain = createQueryChain(createCapture(), [{
+        data: [makeExecution({
+          brand_presence_sources: [{ source_urls: {} }],
+        })],
         error: null,
       }]);
-      const sourceChain = createSourceChain(createCapture(), {
-        data: [makeSource('exec-other', 'https://example.com/a')],
-        error: null,
-      });
-      const postgrestClient = {
-        from: sandbox.stub()
-          .onFirstCall()
-          .returns(executionChain)
-          .onSecondCall()
-          .returns(sourceChain),
-      };
+      const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(log.info).to.have.been.calledWithMatch('No source rows found');
+      expect(log.info).to.have.been.calledWithMatch('No usable rows found');
     });
 
-    it('returns null when source rows are present but none can be mapped back to legacy rows', async () => {
-      const executionChain = createExecutionChain(createCapture(), [{
-        data: [makeExecution()],
-        error: null,
-      }]);
-      const sourceChain = createSourceChain(createCapture(), {
-        data: [{ execution_id: 'exec-1', source_urls: {} }],
-        error: null,
-      });
-      const postgrestClient = {
-        from: sandbox.stub()
-          .onFirstCall()
-          .returns(executionChain)
-          .onSecondCall()
-          .returns(sourceChain),
-      };
-
-      expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(log.info).to.have.been.calledWithMatch(
-        'No usable source rows found',
-      );
-    });
-
-    it('returns null and warns when source fetching fails', async () => {
-      const executionChain = createExecutionChain(createCapture(), [{
-        data: [makeExecution()],
-        error: null,
-      }]);
-      const sourceChain = createSourceChain(createCapture(), {
+    it('returns null and warns when the query fails', async () => {
+      const chain = createQueryChain(createCapture(), [{
         data: null,
-        error: { message: 'source query failed' },
-      });
-      const postgrestClient = {
-        from: sandbox.stub()
-          .onFirstCall()
-          .returns(executionChain)
-          .onSecondCall()
-          .returns(sourceChain),
-      };
+        error: { message: 'query failed' },
+      }]);
+      const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(log.warn).to.have.been.calledWithMatch(
-        'source query failed',
-      );
+      expect(log.warn).to.have.been.calledWithMatch('query failed');
     });
   });
 });
