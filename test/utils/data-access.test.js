@@ -30,6 +30,8 @@ import {
   publishDeployedFixEntities,
   AUTHOR_ONLY_OPPORTUNITY_TYPES,
   warnOnInvalidSuggestionData,
+  isTBYBSite,
+  SUMMIT_PLG_HANDLER,
 } from '../../src/utils/data-access.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -591,7 +593,8 @@ describe('data-access', () => {
       });
 
       expect(context.dataAccess.Configuration.findLatest).to.have.been.calledOnce;
-      expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith('summit-plg', mockSite);
+      expect(mockConfiguration.isHandlerEnabledForSite)
+        .to.have.been.calledWith(SUMMIT_PLG_HANDLER, mockSite);
       expect(mockLogger.info).to.have.been.calledWith(
         '[syncSuggestions] PLG site plg-site-id - skipping manual validation for suggestions',
       );
@@ -627,7 +630,8 @@ describe('data-access', () => {
         bypassValidationForPlg: true,
       });
 
-      expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith('summit-plg', mockSite);
+      expect(mockConfiguration.isHandlerEnabledForSite)
+        .to.have.been.calledWith(SUMMIT_PLG_HANDLER, mockSite);
       expect(mockLogger.info).to.not.have.been.calledWith(
         sinon.match('skipping manual validation'),
       );
@@ -3024,6 +3028,44 @@ describe('data-access', () => {
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
     });
 
+    it('should return false when context.dataAccess is null', async () => {
+      const result = await isTBYBSite({ site: context.site, dataAccess: null, log: mockLogger });
+      expect(result).to.be.false;
+    });
+
+    it('should run reconcile step when context.site is absent', async () => {
+      context.site = undefined;
+
+      const disappearedSuggestion = {
+        getId: sinon.stub().returns('sugg-1'),
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        getType: sinon.stub().returns('TEST'),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+      mockOpportunity.getSuggestions.resolves([disappearedSuggestion]);
+
+      const isIssueFixedStub = sinon.stub().resolves(true);
+      const buildFixEntityStub = sinon.stub().returns({
+        opportunityId: 'opp-id',
+        status: 'PUBLISHED',
+        suggestions: ['sugg-1'],
+      });
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData: [],
+        buildKey,
+        mapNewSuggestion,
+        isIssueFixedWithAISuggestion: isIssueFixedStub,
+        buildFixEntityPayload: buildFixEntityStub,
+      });
+
+      expect(isIssueFixedStub).to.have.been.called;
+    });
+
     it('should skip reconcile step for TBYB sites', async () => {
       const mockConfiguration = {
         isHandlerEnabledForSite: sinon.stub().returns(true),
@@ -3054,7 +3096,8 @@ describe('data-access', () => {
         buildFixEntityPayload: buildFixEntityStub,
       });
 
-      expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith('summit-plg', context.site);
+      expect(mockConfiguration.isHandlerEnabledForSite)
+        .to.have.been.calledWith(SUMMIT_PLG_HANDLER, context.site);
       expect(isIssueFixedStub).to.not.have.been.called;
       expect(mockLogger.debug).to.have.been.calledWith(
         '[syncSuggestionsWithPublishDetection] Skipping reconcile for TBYB site',
@@ -3096,7 +3139,8 @@ describe('data-access', () => {
         buildFixEntityPayload: buildFixEntityStub,
       });
 
-      expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith('summit-plg', context.site);
+      expect(mockConfiguration.isHandlerEnabledForSite)
+        .to.have.been.calledWith(SUMMIT_PLG_HANDLER, context.site);
       expect(isIssueFixedStub).to.have.been.called;
     });
 
@@ -3132,7 +3176,7 @@ describe('data-access', () => {
         buildFixEntityPayload: buildFixEntityStub,
       });
 
-      expect(mockLogger.warn).to.have.been.calledWith('Failed to check TBYB status: DB error');
+      expect(mockLogger.warn).to.have.been.calledWith('Failed to check TBYB status', sinon.match.instanceOf(Error));
       expect(isIssueFixedStub).to.have.been.called;
     });
   });
