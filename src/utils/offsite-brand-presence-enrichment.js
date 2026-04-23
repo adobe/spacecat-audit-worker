@@ -441,9 +441,10 @@ export function formatTopicsForEnrichment(topicMap, allUrls) {
  *
  * @param {string} siteId - Site ID
  * @param {{ env: object, log: object }} context - Lambda context
+ * @param {object} [site] - Site entity; when provided, avoids an extra DB lookup for the org ID
  * @returns {Promise<Array<{ name: string, urls: object[] }>>}
  */
-export async function computeTopicsFromBrandPresence(siteId, context) {
+export async function computeTopicsFromBrandPresence(siteId, context, site) {
   const { log } = context;
   const previousWeeks = getPreviousWeeks();
   const weekLabels = previousWeeks
@@ -451,7 +452,9 @@ export async function computeTopicsFromBrandPresence(siteId, context) {
     .join(', ');
   log.info(`${LOG_PREFIX} Processing weeks: ${weekLabels}`);
 
-  const brandPresenceData = await loadBrandPresenceData({ siteId, previousWeeks, context });
+  const brandPresenceData = await loadBrandPresenceData({
+    siteId, site, previousWeeks, context,
+  });
   if (!brandPresenceData) return [];
 
   const allUrls = new Map();
