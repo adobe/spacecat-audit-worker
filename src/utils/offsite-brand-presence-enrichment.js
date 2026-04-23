@@ -367,7 +367,9 @@ export async function loadBrandPresenceData({
       postgrestClient,
       log,
     });
-    if (dbData) return dbData;
+    if (dbData) {
+      return dbData;
+    }
     log.info(`${LOG_PREFIX} No PostgREST data for brandalf-enabled site ${siteId}, skipping legacy file fetch`);
     return null;
   }
@@ -392,7 +394,9 @@ export async function loadBrandPresenceData({
   );
   log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for weeks ${weekLabels}`);
 
-  if (matchedFiles.length === 0) return null;
+  if (matchedFiles.length === 0) {
+    return null;
+  }
 
   const allRows = [];
   for (const filePath of matchedFiles) {
@@ -409,7 +413,9 @@ export async function loadBrandPresenceData({
     }
   }
 
-  if (allRows.length === 0) return null;
+  if (allRows.length === 0) {
+    return null;
+  }
   return { data: allRows };
 }
 
@@ -455,7 +461,9 @@ export async function computeTopicsFromBrandPresence(siteId, context, site) {
   const brandPresenceData = await loadBrandPresenceData({
     siteId, site, previousWeeks, context,
   });
-  if (!brandPresenceData) return [];
+  if (!brandPresenceData) {
+    return [];
+  }
 
   const allUrls = new Map();
   const topicMap = new Map();
