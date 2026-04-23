@@ -14,7 +14,7 @@ import { getDateRanges } from '@adobe/spacecat-shared-utils';
 import { PROVIDERS } from '../offsite-brand-presence/constants.js';
 
 const EXECUTION_FETCH_BATCH_SIZE = 5000;
-const EXECUTION_ID_CHUNK_SIZE = 50;
+const SOURCE_FETCH_BATCH_SIZE = 5000;
 const DEFAULT_REGION_CODE = 'US';
 
 export const BRAND_PRESENCE_DB_MODEL_BY_PROVIDER = Object.freeze({
@@ -64,14 +64,6 @@ export function getDateWindowForPreviousWeeks(previousWeeks) {
   return { startDate, endDate };
 }
 
-function chunk(array, size) {
-  const chunks = [];
-  for (let i = 0; i < array.length; i += size) {
-    chunks.push(array.slice(i, i + size));
-  }
-  return chunks;
-}
-
 async function fetchExecutionsBatched(postgrestClient, {
   organizationId,
   siteId,
@@ -118,17 +110,18 @@ async function fetchExecutionsBatched(postgrestClient, {
   return rows;
 }
 
-async function fetchSourcesForExecutionIds(postgrestClient, {
+async function fetchSourcesByDateRange(postgrestClient, {
   organizationId,
   siteId,
   startDate,
   endDate,
-  executionIds,
+  log,
 }) {
-  const executionIdChunks = chunk(executionIds, EXECUTION_ID_CHUNK_SIZE);
-  const sourceRows = [];
+  const rows = [];
+  let offset = 0;
 
-  for (const executionIdChunk of executionIdChunks) {
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
     // eslint-disable-next-line no-await-in-loop
     const { data, error } = await postgrestClient
       .from('brand_presence_sources')
@@ -137,16 +130,24 @@ async function fetchSourcesForExecutionIds(postgrestClient, {
       .eq('site_id', siteId)
       .gte('execution_date', startDate)
       .lte('execution_date', endDate)
-      .in('execution_id', executionIdChunk);
+      .range(offset, offset + SOURCE_FETCH_BATCH_SIZE - 1);
 
     if (error) {
       throw new Error(`Failed to fetch brand_presence_sources: ${error.message}`);
     }
 
-    sourceRows.push(...(data || []));
+    const batch = data || [];
+    rows.push(...batch);
+    log?.info(`[BrandPresencePostgrest] Fetched sources batch: ${batch.length} rows (total: ${rows.length})`);
+
+    if (batch.length < SOURCE_FETCH_BATCH_SIZE) {
+      break;
+    }
+
+    offset += SOURCE_FETCH_BATCH_SIZE;
   }
 
-  return sourceRows;
+  return rows;
 }
 
 export function mapExecutionsToLegacyBrandPresenceRows(executions, sources) {
@@ -214,21 +215,23 @@ export async function loadBrandPresenceDataFromPostgrest({
       return null;
     }
 
-    const executionIds = executions
-      .map((execution) => execution.id)
-      .filter(Boolean);
+    const executionIds = new Set(
+      executions.map((e) => e.id).filter(Boolean),
+    );
 
-    if (executionIds.length === 0) {
+    if (executionIds.size === 0) {
       return null;
     }
 
-    const sources = await fetchSourcesForExecutionIds(postgrestClient, {
+    const allSources = await fetchSourcesByDateRange(postgrestClient, {
       organizationId,
       siteId,
       startDate,
       endDate,
-      executionIds,
+      log,
     });
+
+    const sources = allSources.filter((s) => executionIds.has(s.execution_id));
 
     if (sources.length === 0) {
       log?.info(`[BrandPresencePostgrest] No source rows found for site ${siteId}`);
