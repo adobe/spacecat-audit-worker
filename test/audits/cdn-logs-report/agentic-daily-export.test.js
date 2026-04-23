@@ -166,6 +166,7 @@ describe('agentic daily export', () => {
       skipped: false,
       siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
       trafficDate: '2026-03-31',
+      batchId: 'batch-123',
       rowCount: 1,
       classificationCount: 1,
       bundleUri: 's3://spacecat-dev-importer/agentic-traffic-daily-export/9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/31/20260401T100000000Z/',
