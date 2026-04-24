@@ -15,6 +15,7 @@ import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/confi
 import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
+import { getImsOrgId } from '../utils/data-access.js';
 import { LOG_PREFIX, AUDIT_TYPE } from './constants.js';
 import { getCommerceConfig } from '../utils/saas.js';
 import { createMemoizedManualConfigResolver, configGroupKey } from '../utils/commerce-config-resolver.js';
@@ -309,16 +310,7 @@ export async function runAuditAndProcessResults(context) {
     site, audit, finalUrl, log, scrapeResultPaths, s3Client, env, dataAccess,
   } = context;
 
-  let imsOrgId = null;
-  const organizationId = site.getOrganizationId();
-  try {
-    const { Organization } = dataAccess;
-    const org = await Organization.findById(organizationId);
-    imsOrgId = org?.getImsOrgId() ?? null;
-    log.debug(`${LOG_PREFIX} Step 3: Resolved organization context for site ${site.getId()}: organizationId=${organizationId}, imsOrgId=${imsOrgId}`);
-  } catch (orgError) {
-    log.warn(`${LOG_PREFIX} Step 3: Failed to resolve IMS org ID for site ${site.getId()}: ${orgError.message}`);
-  }
+  const imsOrgId = await getImsOrgId(site, dataAccess, log);
 
   log.debug(`${LOG_PREFIX} Step 3: input:`, {
     siteId: site.getId(),

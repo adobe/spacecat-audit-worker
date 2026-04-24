@@ -1992,7 +1992,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
 
     await runAuditWithIms(context);
 
-    expect(log.warn).to.have.been.calledWith(sinon.match(/Failed to resolve IMS org ID/));
+    expect(log.warn).to.have.been.calledWith(sinon.match(/Failed to get IMS org ID/));
     const enrichmentCall = fetchStub.getCalls().find((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
     const payload = JSON.parse(enrichmentCall.args[1].body);
     expect(payload).to.have.property('organizationId', null);
