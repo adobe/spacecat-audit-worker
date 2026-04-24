@@ -301,8 +301,8 @@ describe('CDN Logs Report Handler', function test() {
           pathHasData: sandbox.stub().resolves(true),
           getS3Config: sandbox.stub().returns({
             bucket: 'test-bucket',
-            customerDomain: 'example_com',
-            customerName: 'example',
+            siteKey: 'example_com',
+            siteName: 'example',
             databaseName: 'cdn_logs_example_com',
             getAthenaTempLocation: () => 's3://temp',
           }),
@@ -372,8 +372,8 @@ describe('CDN Logs Report Handler', function test() {
           pathHasData: sandbox.stub().resolves(true),
           getS3Config: sandbox.stub().returns({
             bucket: 'test-bucket',
-            customerDomain: 'example_com',
-            customerName: 'example',
+            siteKey: 'example_com',
+            siteName: 'example',
             databaseName: 'cdn_logs_example_com',
             getAthenaTempLocation: () => 's3://temp',
           }),
@@ -443,8 +443,8 @@ describe('CDN Logs Report Handler', function test() {
           pathHasData: sandbox.stub().resolves(true),
           getS3Config: sandbox.stub().returns({
             bucket: 'test-bucket',
-            customerDomain: 'example_com',
-            customerName: 'example',
+            siteKey: 'example_com',
+            siteName: 'example',
             databaseName: 'cdn_logs_example_com',
             getAthenaTempLocation: () => 's3://temp',
           }),
@@ -634,8 +634,8 @@ describe('CDN Logs Report Handler', function test() {
           pathHasData: sandbox.stub().resolves(true),
           getS3Config: sandbox.stub().returns({
             bucket: 'test-bucket',
-            customerDomain: 'example_com',
-            customerName: 'example',
+            siteKey: 'example_com',
+            siteName: 'example',
             databaseName: 'cdn_logs_example_com',
             getAthenaTempLocation: () => 's3://temp',
           }),

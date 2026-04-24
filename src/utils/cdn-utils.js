@@ -70,13 +70,31 @@ export function mapServiceToCdnProvider(serviceProvider) {
   return SERVICE_TO_CDN_MAPPING[serviceProvider] || serviceProvider;
 }
 
+function normalizePathname(pathname, {
+  separator = '/',
+  transformSegment = (segment) => segment,
+} = {}) {
+  return pathname
+    .split('/')
+    .filter(Boolean)
+    .map(transformSegment)
+    .filter(Boolean)
+    .join(separator);
+}
+
 /**
- * Extracts and sanitizes customer domain from site
+ * Extracts and sanitizes a site-specific key from the base URL.
  */
-export function extractCustomerDomain(site) {
-  const { host } = new URL(site.getBaseURL());
+export function extractSiteKeyFromBaseURL(site) {
+  const { host, pathname } = new URL(site.getBaseURL());
   const cleanHost = host.startsWith('www.') ? host.substring(4) : host;
-  return cleanHost.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+  const normalizedHost = cleanHost.replace(/[^a-zA-Z0-9]+/g, '_').toLowerCase();
+  const normalizedPath = normalizePathname(pathname, {
+    separator: '__',
+    transformSegment: (segment) => segment.replace(/[^a-zA-Z0-9]+/g, '_').toLowerCase(),
+  });
+
+  return normalizedPath ? `${normalizedHost}_${normalizedPath}` : normalizedHost;
 }
 
 /**
@@ -401,20 +419,24 @@ export function resolveConsolidatedBucketName(context, region) {
 
 export function getS3Config(site, context) {
   const region = resolveSiteCdnRegion(site, context);
-  const customerDomain = extractCustomerDomain(site);
-  const domainParts = customerDomain.split(/[._]/);
-  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
+  const siteKey = extractSiteKeyFromBaseURL(site);
+  const siteKeyParts = siteKey.split(/[._]/);
+  const siteName = siteKeyParts[0] === 'www' && siteKeyParts.length > 1 ? siteKeyParts[1] : siteKeyParts[0];
   const bucket = resolveConsolidatedBucketName(context, region);
   const siteId = site?.getId?.();
+  const databaseName = `cdn_logs_${siteKey}`;
+  const tableName = `aggregated_logs_${siteKey}_consolidated`;
+  const referralTableName = `aggregated_referral_logs_${siteKey}_consolidated`;
+
   return {
     bucket,
     region,
     siteId,
-    customerName,
-    customerDomain,
-    databaseName: `cdn_logs_${customerDomain}`,
-    tableName: `aggregated_logs_${customerDomain}_consolidated`,
-    referralTableName: `aggregated_referral_logs_${customerDomain}_consolidated`,
+    siteName,
+    siteKey,
+    databaseName,
+    tableName,
+    referralTableName,
     aggregatedLocation: siteId ? `s3://${bucket}/aggregated/${siteId}/` : undefined,
     aggregatedReferralLocation: siteId ? `s3://${bucket}/aggregated-referral/${siteId}/` : undefined,
     getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
@@ -502,9 +524,17 @@ export async function shouldRecreateTable(
 export function buildSiteFilters(filters, site) {
   if (!filters || filters.length === 0) {
     const baseURL = site.getBaseURL();
-    const { host } = new URL(baseURL);
+    const { host, pathname } = new URL(baseURL);
     const rootHost = host.replace(/^www\./, '');
-    return `(REGEXP_LIKE(host, '(?i)^(www.)?${rootHost}$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?${rootHost}$'))`;
+    const hostFilter = `(REGEXP_LIKE(host, '(?i)^(www.)?${rootHost}$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?${rootHost}$'))`;
+    const normalizedPath = normalizePathname(pathname);
+
+    if (!normalizedPath) {
+      return hostFilter;
+    }
+
+    const escapedPath = normalizedPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return `(${hostFilter} AND REGEXP_LIKE(url, '(?i)^/?${escapedPath}(?:/|$)'))`;
   }
 
   const clauses = filters.map(({ key, value, type }) => {

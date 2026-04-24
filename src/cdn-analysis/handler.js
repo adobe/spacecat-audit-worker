@@ -15,7 +15,7 @@ import { DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
   resolveCdnBucketName,
-  extractCustomerDomain,
+  extractSiteKeyFromBaseURL,
   buildConsolidatedPaths,
   getBucketInfo,
   discoverCdnProviders,
@@ -29,6 +29,7 @@ import {
 } from '../utils/cdn-utils.js';
 import { getImsOrgId } from '../utils/data-access.js';
 import { computeWeekOffset } from '../utils/date-utils.js';
+import { getConfigCdnProvider } from '../utils/llmo-config-utils.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -237,17 +238,33 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
     };
   }
 
-  const customerDomain = extractCustomerDomain(site);
+  const siteKey = extractSiteKeyFromBaseURL(site);
   const { year, month, day, hour } = getHourParts(auditContext);
   const { host } = new URL(site.getBaseURL());
+  const siteId = site.getId();
   const { orgId } = site.getConfig()?.getLlmoCdnBucketConfig() || {};
   // for non-adobe customers, use the orgId from the config
   const pathId = orgId || await getImsOrgId(site, dataAccess, log);
 
   const { isLegacy, providers } = await getBucketInfo(s3Client, bucketName, pathId);
-  const serviceProviders = isLegacy
+  const discoveredServiceProviders = isLegacy
     ? await discoverCdnProviders(s3Client, bucketName, { year, month, day, hour })
     : providers;
+  const configuredCdnProvider = await getConfigCdnProvider(site, context);
+  const targetProvider = isLegacy
+    ? mapServiceToCdnProvider(configuredCdnProvider)
+    : configuredCdnProvider;
+  const serviceProviders = configuredCdnProvider
+    ? discoveredServiceProviders.filter((provider) => provider === targetProvider)
+    : discoveredServiceProviders;
+
+  if (configuredCdnProvider) {
+    if (serviceProviders.length > 0) {
+      log.info(`Filtered discovered service providers to configured cdnProvider=${configuredCdnProvider} for siteId=${siteId}, host=${host}`);
+    } else {
+      log.warn(`Configured cdnProvider=${configuredCdnProvider} was not found among discovered service providers: ${discoveredServiceProviders.join(', ') || 'none'} for siteId=${siteId}, host=${host}`);
+    }
+  }
 
   log.info(`Processing ${serviceProviders.length} service provider(s) in bucket: ${bucketName}`);
 
@@ -258,7 +275,6 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
     tableName: aggregatedTable,
     referralTableName: aggregatedReferralTable,
   } = s3Config;
-  const siteId = site.getId();
   const athenaClient = awsRuntime.createAthenaClient(
     s3Config.getAthenaTempLocation(),
     { maxPollAttempts: 500 },
@@ -355,7 +371,7 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
         pathId,
         siteId,
       );
-      const rawTable = `raw_logs_${customerDomain}_${serviceProvider.replace(/-/g, '_')}`;
+      const rawTable = `raw_logs_${siteKey}_${serviceProvider.replace(/-/g, '_')}`;
 
       if (!tablesCreated) {
         // eslint-disable-next-line no-await-in-loop
