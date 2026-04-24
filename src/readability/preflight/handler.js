@@ -25,6 +25,7 @@ import {
   TARGET_READABILITY_SCORE,
   MIN_TEXT_LENGTH,
   MAX_CHARACTERS_DISPLAY,
+  MAX_LINK_DENSITY_RATIO,
 } from '../shared/constants.js';
 import { getDomElementSelector, toElementTargets } from '../../preflight/utils/dom-selector.js';
 
@@ -178,10 +179,10 @@ export default async function readability(context, auditContext) {
 
     const $ = cheerioLoad(rawBody);
 
-    // Remove structural/navigation elements before analysis — they produce false positives
-    // because their concatenated link text scores poorly on Flesch despite being valid nav labels.
-    // The opportunity handler's getMeaningfulElementsForReadability() already does this;
-    // keeping parity here fixes SITES-43577 (Walmart nav links flagged as readability issues).
+    // Remove structural/navigation elements before analysis — their concatenated link text
+    // scores very poorly on Flesch despite not being readable prose (SITES-43577).
+    // Note: the shared getMeaningfulElementsForReadability() only removes header/footer/style/
+    // script/noscript; nav removal and the link-density filter below are preflight-only for now.
     $('header, footer, nav, [role="navigation"]').remove();
 
     // Get all paragraph, div, and list item elements
@@ -284,8 +285,8 @@ export default async function readability(context, auditContext) {
         // very poorly on Flesch despite not being readable prose. SITES-43577.
         const $el = $(element);
         const collapsed = $el.text().replace(/\s+/g, ' ').trim();
-        const anchorText = $el.find('a').map((_, a) => $(a).text().replace(/\s+/g, ' ').trim()).get().join('');
-        return (anchorText.length / collapsed.length) < 0.5;
+        const anchorText = $el.find('a').map((_, a) => $(a).text().replace(/\s+/g, ' ').trim()).get().join(' ');
+        return (anchorText.length / collapsed.length) < MAX_LINK_DENSITY_RATIO;
       });
 
     // Process filtered elements
