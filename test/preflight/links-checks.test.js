@@ -412,7 +412,7 @@ describe('preflight/links-checks - runLinksChecks', () => {
   it('skips links inside AEM experience-fragment header/footer wrappers', async () => {
     fetchStub.resolves(makeResponse(404));
 
-    await runLinksChecks(
+    const result = await runLinksChecks(
       [pageUrl],
       makeScrapedObjects(`
         <div class="cmp-experiencefragment cmp-experiencefragment--header">
@@ -433,5 +433,7 @@ describe('preflight/links-checks - runLinksChecks', () => {
     // Only the <main> content link should be fetched — XF header/footer links are skipped.
     expect(fetchStub.callCount).to.equal(1);
     expect(fetchStub.firstCall.args[0]).to.equal('https://other.com/article');
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
+    expect(result.auditResult.brokenExternalLinks[0].urlTo).to.equal('https://other.com/article');
   });
 });

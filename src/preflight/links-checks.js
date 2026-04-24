@@ -32,6 +32,11 @@ const HEAD_FALLBACK_STATUSES = new Set([400, 401, 403, 405, 429, 451]);
  *   - AEM Experience Fragment wrappers: `cmp-experiencefragment--header` /
  *     `cmp-experiencefragment--footer`, emitted by AEM XFs on many enterprise sites
  *     (including OneWalmart) that don't render semantic header/footer tags at all.
+ *
+ * Intentionally excluded: `<nav>` and `role="navigation"`. Navigation links point at real
+ * in-site destinations that we want to verify, so treating them as chrome would hide
+ * genuine broken links. Keep this list conservative — ambiguous wrappers like `.nav`,
+ * `.menu`, `.sidebar`, or generic `class*="header"` risk false-skipping content links.
  */
 const CHROME_ANCESTOR_SELECTOR = [
   'header',
@@ -40,6 +45,7 @@ const CHROME_ANCESTOR_SELECTOR = [
   '[role="contentinfo"]',
   '.cmp-experiencefragment--header',
   '.cmp-experiencefragment--footer',
+  // Do not add broader class-matchers here without evidence — see docblock above.
 ].join(', ');
 
 /**
