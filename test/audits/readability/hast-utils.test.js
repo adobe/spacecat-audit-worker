@@ -118,5 +118,19 @@ describe('hast-utils', () => {
       expect(json).not.to.include('hidden comment');
       expect(json).to.include('Visible');
     });
+
+    it('should handle disallowed void/childless elements gracefully', () => {
+      // <div> is disallowed → unwrap path; no children → hits `|| []` branch on line 34
+      const result = htmlToHast('<div></div>text after');
+      const json = JSON.stringify(result);
+      expect(json).not.to.include('"tagName":"div"');
+    });
+
+    it('should handle allowed void elements without children', () => {
+      // <br> is allowed but has no children → hits `|| []` branch on line 54
+      const result = htmlToHast('<br>');
+      const json = JSON.stringify(result);
+      expect(json).to.include('"tagName":"br"');
+    });
   });
 });
