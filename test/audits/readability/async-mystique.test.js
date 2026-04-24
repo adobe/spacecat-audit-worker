@@ -463,6 +463,76 @@ describe('async-mystique sendReadabilityToMystique', () => {
     });
   });
 
+  describe('rich HTML (htmlContent) propagation', () => {
+    it('should include originalHtml in S3 batch payload when htmlContent is present', async () => {
+      const readabilityIssues = [
+        {
+          textContent: 'Read this important paragraph about product features.',
+          htmlContent: 'Read <strong>this important</strong> paragraph about <a href="/products">product features</a>.',
+          fleschReadingEase: 20,
+          pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
+        },
+      ];
+
+      await sendReadabilityToMystique('https://example.com', readabilityIssues, 'site-123', 'audit-456', mockContext, 'opportunity');
+
+      const putCommand = mockContext.s3Client.send.getCall(0).args[0];
+      const s3Payload = JSON.parse(putCommand.input.Body);
+      expect(s3Payload[0].originalHtml).to.equal(readabilityIssues[0].htmlContent);
+    });
+
+    it('should set originalHtml to null in S3 batch payload when htmlContent is absent', async () => {
+      const readabilityIssues = [
+        {
+          textContent: 'Plain text paragraph without rich HTML markup content.',
+          fleschReadingEase: 20,
+          pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
+        },
+      ];
+
+      await sendReadabilityToMystique('https://example.com', readabilityIssues, 'site-123', 'audit-456', mockContext, 'opportunity');
+
+      const putCommand = mockContext.s3Client.send.getCall(0).args[0];
+      const s3Payload = JSON.parse(putCommand.input.Body);
+      expect(s3Payload[0].originalHtml).to.equal(null);
+    });
+
+    it('should include original_html in preflight SQS message when htmlContent is present', async () => {
+      const readabilityIssues = [
+        {
+          textContent: 'Read this important paragraph.',
+          htmlContent: 'Read <strong>this important</strong> paragraph.',
+          fleschReadingEase: 20,
+          pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
+        },
+      ];
+
+      await sendReadabilityToMystique('https://example.com', readabilityIssues, 'site-123', 'job-456', mockContext, 'preflight');
+
+      const sentMessage = mockContext.sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.original_html).to.equal(readabilityIssues[0].htmlContent);
+    });
+
+    it('should set original_html to null in preflight SQS message when htmlContent is absent', async () => {
+      const readabilityIssues = [
+        {
+          textContent: 'Paragraph without rich HTML content markup.',
+          fleschReadingEase: 20,
+          pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
+        },
+      ];
+
+      await sendReadabilityToMystique('https://example.com', readabilityIssues, 'site-123', 'job-456', mockContext, 'preflight');
+
+      const sentMessage = mockContext.sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.original_html).to.equal(null);
+    });
+  });
+
   describe('message structure', () => {
     it('should construct correct Mystique message for opportunity mode', async () => {
       const readabilityIssues = [

@@ -27,12 +27,12 @@ function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
       pageUrl: suggestion.pageUrl,
       originalText: suggestion.original_paragraph,
       improvedText: suggestion.improved_paragraph,
+      improvedHtml: suggestion.improved_html ?? null,
       originalFleschScore: suggestion.current_flesch_score,
       improvedFleschScore: suggestion.improved_flesch_score,
       seoRecommendation: suggestion.seo_recommendation,
       aiRationale: suggestion.ai_rationale,
       targetFleschScore: suggestion.target_flesch_score,
-
     };
   });
 }
@@ -99,12 +99,12 @@ export default async function handler(message, context) {
       pageUrl: data.pageUrl || auditUrl,
       originalText: data.original_paragraph,
       improvedText: data.improved_paragraph,
+      improvedHtml: data.improved_html ?? null,
       originalFleschScore: data.current_flesch_score,
       improvedFleschScore: data.improved_flesch_score,
       seoRecommendation: data.seo_recommendation,
       aiRationale: data.ai_rationale,
       targetFleschScore: data.target_flesch_score,
-
     });
   } else if (suggestions && suggestions.length > 0) {
     // Check if we have suggestions array (batch response)
@@ -270,6 +270,7 @@ export default async function handler(message, context) {
                         - (recommendation.originalFleschScore
                           || opportunity.fleschReadingEase)) * 100) / 100,
                       aiSuggestion: recommendation.improvedText,
+                      aiSuggestionHtml: recommendation.improvedHtml ?? null,
                       aiRationale: recommendation.aiRationale,
                       mystiqueProcessingCompleted: new Date().toISOString(),
                     };

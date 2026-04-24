@@ -120,6 +120,7 @@
     "exceljs": "4.4.0",
     "franc-min": "6.2.0",
     "get-xpath": "3.3.0",
+    "hast-util-from-html": "2.0.3",
     "hyparquet": "1.25.6",
     "hyparquet-writer": "0.13.0",
     "hyphen": "1.14.1",

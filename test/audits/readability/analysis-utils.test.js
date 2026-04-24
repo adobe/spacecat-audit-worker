@@ -1042,6 +1042,81 @@ Save it for your next mountain escape!
     });
   });
 
+  describe('htmlContent extraction', () => {
+    const makeLongText = (baseText) => {
+      const padding = ' This additional text ensures the content meets the minimum character length requirement for readability analysis testing.';
+      return baseText + padding;
+    };
+
+    it('should include htmlContent field in readability issues', async () => {
+      const text = makeLongText('This is a test paragraph for readability analysis.');
+      const html = `<!DOCTYPE html><html><body><p>${text}</p></body></html>`;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(20);
+
+      const result = await analyzePageContent(html, 'https://example.com', 100, mockLog, '2025-01-01T00:00:00.000Z');
+
+      expect(result.length).to.be.greaterThan(0);
+      expect(result[0]).to.have.property('htmlContent');
+    });
+
+    it('should preserve semantic markup (<strong>, <em>, <a>) in htmlContent', async () => {
+      const html = `<!DOCTYPE html><html><body>
+        <p>Read <strong>this important</strong> paragraph about <a href="/details">product details</a> and <em>features</em> that are difficult to understand due to convoluted sentence structures and complex vocabulary requiring simplification for better user comprehension and readability scores overall.</p>
+      </body></html>`;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(20);
+
+      const result = await analyzePageContent(html, 'https://example.com', 100, mockLog, '2025-01-01T00:00:00.000Z');
+
+      expect(result.length).to.be.greaterThan(0);
+      const { htmlContent } = result[0];
+      expect(htmlContent).to.include('<strong>');
+      expect(htmlContent).to.include('<em>');
+      expect(htmlContent).to.include('<a ');
+    });
+
+    it('should set htmlContent to null for <br>-split sub-paragraphs', async () => {
+      const para1 = 'This is the first paragraph with sufficient words for readability analysis and it contains complex vocabulary requiring simplification for better comprehension scores overall.';
+      const para2 = 'This is the second paragraph after the br tag with enough words for readability analysis requiring simplification for better comprehension and readability score improvement.';
+      const html = `<!DOCTYPE html><html><body><p>${para1}<br>${para2}</p></body></html>`;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(20);
+
+      const result = await analyzePageContent(html, 'https://example.com', 100, mockLog, '2025-01-01T00:00:00.000Z');
+
+      expect(result.length).to.be.greaterThan(0);
+      result.forEach((issue) => {
+        expect(issue.htmlContent).to.equal(null);
+      });
+    });
+
+    it('should include htmlContent as plain text string for elements without markup', async () => {
+      const text = makeLongText('Plain text paragraph without any HTML markup inside the element.');
+      const html = `<!DOCTYPE html><html><body><p>${text}</p></body></html>`;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(20);
+
+      const result = await analyzePageContent(html, 'https://example.com', 100, mockLog, '2025-01-01T00:00:00.000Z');
+
+      expect(result.length).to.be.greaterThan(0);
+      // $el.html() returns plain text for elements without markup tags
+      expect(result[0].htmlContent).to.be.a('string');
+    });
+  });
+
   describe('analyzePageReadability', () => {
     describe('empty scrapeResultPaths handling', () => {
       it('should return failure when scrapeResultPaths is undefined', async () => {

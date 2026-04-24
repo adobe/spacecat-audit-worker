@@ -85,6 +85,7 @@ async function sendPreflightMessages(
       data: {
         jobId,
         original_paragraph: issue.textContent,
+        original_html: issue.htmlContent ?? null,
         target_flesch_score: TARGET_READABILITY_SCORE,
         current_flesch_score: issue.fleschReadingEase,
         pageUrl: issue.pageUrl,
@@ -152,6 +153,7 @@ async function sendOpportunityBatch(
   // Build the S3 request payload
   const batchPayload = readabilityIssues.map((issue) => ({
     originalParagraph: issue.textContent,
+    originalHtml: issue.htmlContent ?? null,
     targetFleschScore: TARGET_READABILITY_SCORE,
     currentFleschScore: issue.fleschReadingEase,
     pageUrl: issue.pageUrl,
