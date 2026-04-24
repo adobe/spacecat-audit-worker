@@ -19,12 +19,16 @@ const ALLOWED_ATTRS = { a: ['href'] };
 const DROP_TAGS = new Set(['script', 'style', 'iframe', 'object', 'embed', 'form', 'input']);
 
 function sanitizeNode(node) {
-  if (node.type === 'text' || node.type === 'raw') return node;
+  if (node.type === 'text' || node.type === 'raw') {
+    return node;
+  }
   if (node.type === 'root') {
     return { ...node, children: node.children.flatMap(sanitizeNode).filter(Boolean) };
   }
   if (node.type === 'element') {
-    if (DROP_TAGS.has(node.tagName)) return [];
+    if (DROP_TAGS.has(node.tagName)) {
+      return [];
+    }
     if (!ALLOWED_TAGS.has(node.tagName)) {
       // Unwrap — keep children, drop the element itself
       return (node.children || []).flatMap(sanitizeNode).filter(Boolean);
@@ -37,7 +41,9 @@ function sanitizeNode(node) {
       allowedAttrs
         .filter((attr) => {
           const val = node.properties?.[attr];
-          if (typeof val !== 'string') return false;
+          if (typeof val !== 'string') {
+            return false;
+          }
           return !(attr === 'href' && val.trim().toLowerCase().startsWith(JS_SCHEME));
         })
         .map((attr) => [attr, node.properties[attr]]),
