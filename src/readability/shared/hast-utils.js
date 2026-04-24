@@ -17,6 +17,8 @@ const ALLOWED_TAGS = new Set(['p', 'strong', 'em', 'b', 'i', 'br', 'span', 'a', 
 const ALLOWED_ATTRS = { a: ['href'] };
 // These tags are dropped entirely including their children (no unwrap).
 const DROP_TAGS = new Set(['script', 'style', 'iframe', 'object', 'embed', 'form', 'input']);
+// eslint-disable-next-line no-script-url -- security comparison, never executed or evaluated
+const JS_SCHEME = 'javascript:';
 
 function sanitizeNode(node) {
   if (node.type === 'text' || node.type === 'raw') {
@@ -34,9 +36,6 @@ function sanitizeNode(node) {
       return node.children.flatMap(sanitizeNode).filter(Boolean);
     }
     const allowedAttrs = ALLOWED_ATTRS[node.tagName] || [];
-    // 'javascript:' scheme check encoded to avoid triggering the no-script-url lint rule:
-    // j=106 a=97 v=118 a=97 s=115 c=99 r=114 i=105 p=112 t=116 :=58
-    const JS_SCHEME = String.fromCharCode(106, 97, 118, 97, 115, 99, 114, 105, 112, 116, 58);
     const properties = Object.fromEntries(
       allowedAttrs
         .filter((attr) => {
