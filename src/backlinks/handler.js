@@ -294,11 +294,9 @@ export const generateSuggestionData = async (context) => {
     || !Array.isArray(auditResult.brokenBacklinks)
     || auditResult.brokenBacklinks.length === 0) {
     log.info(`No broken backlinks found for ${site.getId()}, skipping opportunity creation`);
-    /*
     return {
       status: 'complete',
     };
-    */
   }
 
   const kpiDeltas = await calculateKpiMetrics(audit, context, site);
