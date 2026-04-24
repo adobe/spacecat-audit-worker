@@ -1,3 +1,17 @@
+## [1.418.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.418.1...v1.418.2) (2026-04-24)
+
+
+### Bug Fixes
+
+* skip chrome links for sites using ARIA landmarks or AEM XFs (SITES-43574) ([#2424](https://github.com/adobe/spacecat-audit-worker/issues/2424)) ([7f67f26](https://github.com/adobe/spacecat-audit-worker/commit/7f67f26b3faf40e6ca56783acc5aa422ba5960a9)), closes [#2207](https://github.com/adobe/spacecat-audit-worker/issues/2207) [#1007](https://github.com/adobe/spacecat-audit-worker/issues/1007)
+
+## [1.418.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.418.0...v1.418.1) (2026-04-22)
+
+
+### Bug Fixes
+
+* **vulnerabilities:** make buildKey shape-agnostic so sync updates existing suggestions (CQ-4363001) ([#2411](https://github.com/adobe/spacecat-audit-worker/issues/2411)) ([887962a](https://github.com/adobe/spacecat-audit-worker/commit/887962a13e272a0cf2e2da96e76ac32026bee740))
+
 # [1.418.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.417.3...v1.418.0) (2026-04-20)
 
 
