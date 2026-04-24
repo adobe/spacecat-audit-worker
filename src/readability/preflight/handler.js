@@ -178,6 +178,12 @@ export default async function readability(context, auditContext) {
 
     const $ = cheerioLoad(rawBody);
 
+    // Remove structural/navigation elements before analysis — they produce false positives
+    // because their concatenated link text scores poorly on Flesch despite being valid nav labels.
+    // The opportunity handler's getMeaningfulElementsForReadability() already does this;
+    // keeping parity here fixes SITES-43577 (Walmart nav links flagged as readability issues).
+    $('header, footer, nav, [role="navigation"]').remove();
+
     // Get all paragraph, div, and list item elements
     const textElements = $('p, div, li').toArray();
 
@@ -270,6 +276,16 @@ export default async function readability(context, auditContext) {
       .filter(({ element }) => {
         const textContent = $(element).text()?.trim();
         return textContent && textContent.length >= MIN_TEXT_LENGTH;
+      })
+      .filter(({ element }) => {
+        // Skip elements where most of the meaningful text is inside links — navigation menus
+        // that use plain <div>s instead of semantic <nav> elements (e.g. AEM
+        // dynamic-vertical-navigation on Walmart pages) have ~100% link density and score
+        // very poorly on Flesch despite not being readable prose. SITES-43577.
+        const $el = $(element);
+        const collapsed = $el.text().replace(/\s+/g, ' ').trim();
+        const anchorText = $el.find('a').map((_, a) => $(a).text().replace(/\s+/g, ' ').trim()).get().join('');
+        return (anchorText.length / collapsed.length) < 0.5;
       });
 
     // Process filtered elements
