@@ -104,5 +104,19 @@ describe('hast-utils', () => {
       expect(json).not.to.include('"tagName":"div"');
       expect(json).to.include('Text inside div');
     });
+
+    it('should drop <a> with no href attribute', () => {
+      const result = htmlToHast('<a>anchor without href</a>');
+      const json = JSON.stringify(result);
+      expect(json).to.include('anchor without href');
+      expect(json).not.to.include('"href"');
+    });
+
+    it('should strip HTML comments', () => {
+      const result = htmlToHast('<p>Visible</p><!-- hidden comment -->');
+      const json = JSON.stringify(result);
+      expect(json).not.to.include('hidden comment');
+      expect(json).to.include('Visible');
+    });
   });
 });
