@@ -226,6 +226,7 @@ function buildCategoryPageScrapes(handlerConfig, scrapeResultPaths, log) {
 
 async function sendEnrichment(productPages, commerceConfig, site, env, log, {
   categoryPageScrapes = [],
+  imsOrgId = null,
 } = {}) {
   const allScrapes = [
     ...productPages.map((page) => {
@@ -246,6 +247,7 @@ async function sendEnrichment(productPages, commerceConfig, site, env, log, {
 
   const enrichmentPayload = {
     siteId: site.getId(),
+    organizationId: imsOrgId,
     storeViewUrl: commerceConfig.storeViewUrl,
     environmentId: commerceConfig.headers['Magento-Environment-Id'],
     websiteCode: commerceConfig.headers['Magento-Website-Code'],
@@ -304,8 +306,19 @@ async function sendEnrichment(productPages, commerceConfig, site, env, log, {
  */
 export async function runAuditAndProcessResults(context) {
   const {
-    site, audit, finalUrl, log, scrapeResultPaths, s3Client, env,
+    site, audit, finalUrl, log, scrapeResultPaths, s3Client, env, dataAccess,
   } = context;
+
+  let imsOrgId = null;
+  const organizationId = site.getOrganizationId();
+  try {
+    const { Organization } = dataAccess;
+    const org = await Organization.findById(organizationId);
+    imsOrgId = org?.getImsOrgId() ?? null;
+    log.debug(`${LOG_PREFIX} Step 3: Resolved organization context for site ${site.getId()}: organizationId=${organizationId}, imsOrgId=${imsOrgId}`);
+  } catch (orgError) {
+    log.warn(`${LOG_PREFIX} Step 3: Failed to resolve IMS org ID for site ${site.getId()}: ${orgError.message}`);
+  }
 
   log.debug(`${LOG_PREFIX} Step 3: input:`, {
     siteId: site.getId(),
@@ -503,7 +516,7 @@ export async function runAuditAndProcessResults(context) {
       site,
       env,
       log,
-      { categoryPageScrapes: groupCategoryScrapes },
+      { categoryPageScrapes: groupCategoryScrapes, imsOrgId },
     );
   });
   const settledResults = await Promise.allSettled(enrichmentPromises);
