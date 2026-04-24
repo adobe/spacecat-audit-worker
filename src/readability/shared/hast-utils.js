@@ -31,7 +31,7 @@ function sanitizeNode(node) {
     }
     if (!ALLOWED_TAGS.has(node.tagName)) {
       // Unwrap — keep children, drop the element itself
-      return (node.children || []).flatMap(sanitizeNode).filter(Boolean);
+      return node.children.flatMap(sanitizeNode).filter(Boolean);
     }
     const allowedAttrs = ALLOWED_ATTRS[node.tagName] || [];
     // 'javascript:' scheme check encoded to avoid triggering the no-script-url lint rule:
@@ -51,7 +51,7 @@ function sanitizeNode(node) {
     return [{
       ...node,
       properties,
-      children: (node.children || []).flatMap(sanitizeNode).filter(Boolean),
+      children: node.children.flatMap(sanitizeNode).filter(Boolean),
     }];
   }
   return [];
