@@ -1,3 +1,10 @@
+## [1.418.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.418.2...v1.418.3) (2026-04-24)
+
+
+### Bug Fixes
+
+* **readability:** skip nav elements and high link-density divs in preflight ([#2425](https://github.com/adobe/spacecat-audit-worker/issues/2425)) ([9c6a6fc](https://github.com/adobe/spacecat-audit-worker/commit/9c6a6fcfe73332b6c72af72caa60646821d20399))
+
 ## [1.418.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.418.1...v1.418.2) (2026-04-24)
 
 
