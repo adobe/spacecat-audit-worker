@@ -56,7 +56,6 @@ function makeCluster({
 function createClusterMessage({
   clusterResults = [makeCluster()],
   portfolioMetrics = { totalSpend: 1000 },
-  observability = null,
   langfuseTraceId = 'trace-123',
   langfuseTraceUrl = 'https://langfuse.example.com/trace/123',
 } = {}) {
@@ -69,9 +68,10 @@ function createClusterMessage({
         body: {
           clusterResults,
           portfolioMetrics,
-          langfuseTraceId,
-          langfuseTraceUrl,
-          ...(observability && { observability }),
+          observability: {
+            langfuseTraceId,
+            langfuseTraceUrl,
+          },
         },
       }],
     },
@@ -157,7 +157,7 @@ describe('Paid Keyword Optimizer Guidance Handler (cluster format)', () => {
           error: {
             type: 'GuidanceGenerationError',
             message: 'Analysis failed.',
-            traceId: 'test-trace-123',
+            langfuseTraceId: 'test-trace-123',
           },
         },
       };

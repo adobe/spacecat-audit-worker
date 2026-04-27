@@ -68,8 +68,10 @@ function createClusterMessage({
         body: {
           clusterResults,
           portfolioMetrics,
-          langfuseTraceId,
-          langfuseTraceUrl,
+          observability: {
+            langfuseTraceId,
+            langfuseTraceUrl,
+          },
         },
       }],
     },

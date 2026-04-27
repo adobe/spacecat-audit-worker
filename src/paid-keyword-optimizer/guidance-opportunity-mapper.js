@@ -80,9 +80,8 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
   const {
     clusterResults = [],
     portfolioMetrics = {},
-    langfuseTraceId,
-    langfuseTraceUrl,
   } = guidanceBody;
+  const { langfuseTraceId, langfuseTraceUrl } = guidanceBody?.observability || {};
 
   const hasConflictingHeadlineRecommendations = clusterResults.filter(
     (cr) => cr.recommendation?.type === 'modify_heading',
