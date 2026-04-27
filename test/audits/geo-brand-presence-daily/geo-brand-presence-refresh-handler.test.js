@@ -58,7 +58,7 @@ describe('Geo Brand Presence Daily Refresh Handler', () => {
     publishBrandPresenceAnalyzeStub = sandbox.stub().resolves('spacecat-job-daily-123');
 
     drsClientStub = {
-      isConfigured: sandbox.stub().returns(true),
+      isS3Configured: sandbox.stub().returns(true),
       uploadExcelToDrs: uploadExcelToDrsStub,
       publishBrandPresenceAnalyze: publishBrandPresenceAnalyzeStub,
     };
@@ -213,8 +213,8 @@ describe('Geo Brand Presence Daily Refresh Handler', () => {
       expect(uploadExcelToDrsStub).to.have.been.calledTwice;
     });
 
-    it('returns internalServerError when DRS is not configured', async () => {
-      drsClientStub.isConfigured.returns(false);
+    it('returns internalServerError when DRS S3 is not configured', async () => {
+      drsClientStub.isS3Configured.returns(false);
       withSheets([SHEET_W45]);
 
       const result = await refreshGeoBrandPresenceDailyHandler(MESSAGE, context);

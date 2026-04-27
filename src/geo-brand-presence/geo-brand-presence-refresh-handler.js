@@ -23,7 +23,7 @@ import {
   refreshDirectoryS3Key,
   refreshMetadataFileS3Key,
   refreshSheetResultFileName,
-  transformWebSearchProviderForMystique,
+  normalizeWebSearchProvider,
   writeSheetRefreshResultFailed,
   writeSheetRefreshResultSkipped,
 } from './util.js';
@@ -243,12 +243,12 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
   log.info(`%s: Created audit ID ${auditId} for siteId: ${siteId}, S3 folder: ${folderKey}`, AUDIT_NAME);
 
   const drsClient = DrsClient.createFrom(context);
-  if (!drsClient.isConfigured()) {
-    log.error(`%s: DRS not configured for siteId: ${siteId}`, AUDIT_NAME);
-    return internalServerError('DRS not configured');
+  if (!drsClient.isS3Configured()) {
+    log.error(`%s: DRS S3 not configured for siteId: ${siteId}`, AUDIT_NAME);
+    return internalServerError('DRS S3 not configured');
   }
 
-  log.info(`%s: DRS is configured, routing refresh via DRS for siteId: ${siteId}`, AUDIT_NAME);
+  log.info(`%s: DRS S3 is configured, routing refresh via DRS for siteId: ${siteId}`, AUDIT_NAME);
 
   try {
     // Create a metadata file to establish the folder structure
@@ -313,7 +313,7 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
 
         const jobId = await drsClient.publishBrandPresenceAnalyze(siteId, {
           resultLocation,
-          webSearchProvider: transformWebSearchProviderForMystique(webSearchProvider),
+          webSearchProvider: normalizeWebSearchProvider(webSearchProvider),
           configVersion,
           week: +week,
           year: +year,

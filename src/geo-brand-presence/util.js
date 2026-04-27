@@ -156,12 +156,12 @@ export const refreshMetadataSchema = z.object({
 });
 
 /**
- * Transforms webSearchProvider names for Mystique compatibility.
+ * Normalizes webSearchProvider names for DRS compatibility.
  * Converts hyphenated names to underscore format.
  * @param {string} webSearchProvider - The original webSearchProvider name
- * @returns {string} The transformed webSearchProvider name
+ * @returns {string} The normalized webSearchProvider name
  */
-export function transformWebSearchProviderForMystique(webSearchProvider) {
+export function normalizeWebSearchProvider(webSearchProvider) {
   // Define transformation patterns
   const transformations = {
     'google-ai-overviews': 'google_ai_overviews',
