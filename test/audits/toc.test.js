@@ -1901,6 +1901,62 @@ describe('TOC (Table of Contents) Audit', () => {
       // Should overwrite with new value since isEdited is undefined (falsy)
       expect(merged.transformRules.value).to.deep.equal([{ text: 'New Title', level: 1 }]);
     });
+
+    it('returns existing suggestion unchanged when edgeDeployed is true', async () => {
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id',
+      });
+
+      let capturedMergeDataFunction;
+      const syncSuggestionsStub = sinon.stub().callsFake((args) => {
+        capturedMergeDataFunction = args.mergeDataFunction;
+        return Promise.resolve();
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE',
+            checkType: 'toc',
+            url: 'https://example.com/page1',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const existingSuggestion = {
+        url: 'https://example.com/page1',
+        isEdited: true,
+        edgeDeployed: true,
+        transformRules: {
+          value: [{ text: 'Deployed Title', level: 1 }],
+        },
+      };
+      const newSuggestion = {
+        url: 'https://example.com/page1',
+        transformRules: {
+          value: [{ text: 'New Audit Title', level: 1 }],
+        },
+      };
+
+      const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
+
+      // Must return existing data unchanged — re-audit must not overwrite deployed suggestions
+      expect(merged.edgeDeployed).to.equal(true);
+      expect(merged.transformRules.value).to.deep.equal([{ text: 'Deployed Title', level: 1 }]);
+      expect(merged.isEdited).to.equal(true);
+    });
   });
 
   describe('Coverage Tests for Missing Lines', () => {

@@ -489,6 +489,10 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   );
 
   const mergeDataFunction = (existingSuggestion, newSuggestion) => {
+    // Do not overwrite data for suggestions already deployed to the edge CDN
+    if (existingSuggestion.edgeDeployed) {
+      return { ...existingSuggestion };
+    }
     const mergedSuggestion = {
       ...existingSuggestion,
       ...newSuggestion,
