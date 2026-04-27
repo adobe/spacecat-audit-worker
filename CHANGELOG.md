@@ -1,3 +1,10 @@
+# [1.419.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.418.4...v1.419.0) (2026-04-27)
+
+
+### Features
+
+* **AGENTCOM-597:** include IMS organizationId in CAS payload ([#2423](https://github.com/adobe/spacecat-audit-worker/issues/2423)) ([b9c0a91](https://github.com/adobe/spacecat-audit-worker/commit/b9c0a9149dfb9364d4a804702ea908f65ebd07a9))
+
 ## [1.418.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.418.3...v1.418.4) (2026-04-25)
 
 
