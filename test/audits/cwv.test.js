@@ -644,6 +644,14 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(/2 of 4 CWV entries have failing metrics/),
       );
+
+      // Both failing entries (group + /docs/) each had an all-green desktop row alongside
+      // a failing mobile row. filterToFailingDeviceMetrics must have stripped the desktop
+      // row from each — only the failing mobile row should survive in the suggestion data.
+      suggestionsArg.forEach((s) => {
+        expect(s.data.metrics).to.have.lengthOf(1);
+        expect(s.data.metrics[0].deviceType).to.equal('mobile');
+      });
     });
 
     it('stores no suggestions when all pages have passing metrics', async () => {
