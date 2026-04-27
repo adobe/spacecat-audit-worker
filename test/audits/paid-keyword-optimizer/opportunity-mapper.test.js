@@ -15,66 +15,78 @@ import sinon from 'sinon';
 import { describe } from 'mocha';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import {
-  isLowSeverityGuidanceBody,
+  assignClusterRanks,
   mapToKeywordOptimizerOpportunity,
-  mapToKeywordOptimizerSuggestion,
+  mapClusterToSuggestion,
 } from '../../../src/paid-keyword-optimizer/guidance-opportunity-mapper.js';
 
 const TEST_SITE_ID = 'some-id';
 const TEST_URL = 'https://sample-page/page1';
 
-// Helper to create a message in the GuidanceWithBody format
-function createMessage({ bodyOverrides, guidanceOverrides } = {}) {
+function makeCluster({
+  clusterId = 'cluster-1',
+  analysisStatus = 'ok',
+  recommendation = null,
+  clusterMisalignedSpend = 100,
+  clusterTraffic = 500,
+  clusterCpc = 2.0,
+  representativeKeyword = 'test keyword',
+  serpTitle = 'Test SERP Title',
+  keywords = [{ keyword: 'test', cpc: 2.0, traffic: 500 }],
+  gapAnalysis = { overallAlignment: 'fair' },
+  overallAlignmentScore = 'fair',
+  keywordAnalysis = [{ keyword: 'test', alignmentScore: 0.6 }],
+} = {}) {
+  return {
+    clusterId,
+    representativeKeyword,
+    serpTitle,
+    keywords,
+    clusterTraffic,
+    clusterCpc,
+    clusterMisalignedSpend,
+    analysisStatus,
+    gapAnalysis,
+    overallAlignmentScore,
+    keywordAnalysis,
+    ...(recommendation && { recommendation }),
+  };
+}
+
+function createClusterMessage({
+  clusterResults = [makeCluster()],
+  portfolioMetrics = { totalSpend: 1000 },
+  langfuseTraceId = 'trace-123',
+  langfuseTraceUrl = 'https://langfuse.example.com/trace/123',
+} = {}) {
   return {
     auditId: 'audit-id-123',
     siteId: TEST_SITE_ID,
     data: {
       url: TEST_URL,
       guidance: [{
-        insight: 'test insight',
-        rationale: 'test rationale',
-        recommendation: 'test recommendation',
-        type: 'guidance',
-        ...guidanceOverrides,
         body: {
-          issueSeverity: 'medium',
-          url: TEST_URL,
-          suggestions: [
-            { id: 'original', name: 'Original', screenshotUrl: 'https://example.com/original.png' },
-            { id: 'variation-0', name: 'Variation 0', screenshotUrl: 'https://example.com/var0.png' },
-          ],
-          cpc: 0.075,
-          sumTraffic: 23423.5,
-          ...bodyOverrides,
+          clusterResults,
+          portfolioMetrics,
+          langfuseTraceId,
+          langfuseTraceUrl,
         },
       }],
-      suggestions: [],
     },
   };
 }
 
-const DEFAULT_PAID_PAGES = [
-  {
-    url: TEST_URL,
-    bounceRate: 0.65,
-    pageViews: 5000,
-    trafficLoss: 2500,
-    clickRate: 0.1,
-    engagementRate: 0.3,
-    engagedScrollRate: 0.2,
-    trfType: 'paid',
-    trfChannel: 'search',
-  },
-];
-
-function createMockAudit(auditResult) {
+function createMockAudit() {
   return {
     getAuditId: () => 'audit-id-123',
-    getAuditResult: () => auditResult,
+    getAuditResult: () => ({
+      totalPageViews: 10000,
+      averageBounceRate: 0.45,
+    }),
   };
 }
 
-describe('Paid Keyword Optimizer opportunity mapper', () => {
+describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
   let sandbox;
 
   beforeEach(() => {
@@ -85,57 +97,249 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
     sandbox.restore();
   });
 
-  describe('isLowSeverityGuidanceBody', () => {
-    it('returns false for low severity (low now produces opportunities)', () => {
-      expect(isLowSeverityGuidanceBody({ issueSeverity: 'low' })).to.be.false;
-      expect(isLowSeverityGuidanceBody({ issueSeverity: 'Low' })).to.be.false;
-      expect(isLowSeverityGuidanceBody({ issueSeverity: 'LOW' })).to.be.false;
+  describe('assignClusterRanks', () => {
+    it('should assign rank 1 to mismatched cluster with highest misaligned spend', () => {
+      const clusters = [
+        makeCluster({ clusterId: 'c1', recommendation: { type: 'modify_heading' }, clusterMisalignedSpend: 200 }),
+        makeCluster({ clusterId: 'c2', recommendation: { type: 'modify_heading' }, clusterMisalignedSpend: 500 }),
+      ];
+
+      const ranked = assignClusterRanks(clusters);
+
+      expect(ranked[0].clusterId).to.equal('c2');
+      expect(ranked[0].rank).to.equal(1);
+      expect(ranked[1].clusterId).to.equal('c1');
+      expect(ranked[1].rank).to.equal(2);
     });
 
-    it('returns true for none severity', () => {
-      expect(isLowSeverityGuidanceBody({ issueSeverity: 'none' })).to.be.true;
-      expect(isLowSeverityGuidanceBody({ issueSeverity: 'None' })).to.be.true;
-      expect(isLowSeverityGuidanceBody({ issueSeverity: 'NONE' })).to.be.true;
+    it('should place mismatched (tier 0) before aligned (tier 1) before failed (tier 2)', () => {
+      const clusters = [
+        makeCluster({ clusterId: 'aligned', clusterTraffic: 1000 }),
+        makeCluster({ clusterId: 'failed', analysisStatus: 'failed', clusterTraffic: 2000 }),
+        makeCluster({ clusterId: 'mismatched', recommendation: { type: 'modify_heading' }, clusterMisalignedSpend: 50 }),
+      ];
+
+      const ranked = assignClusterRanks(clusters);
+
+      expect(ranked[0].clusterId).to.equal('mismatched');
+      expect(ranked[0].rank).to.equal(1);
+      expect(ranked[1].clusterId).to.equal('aligned');
+      expect(ranked[1].rank).to.equal(2);
+      expect(ranked[2].clusterId).to.equal('failed');
+      expect(ranked[2].rank).to.equal(3);
     });
 
-    it('returns false for medium severity', () => {
-      expect(isLowSeverityGuidanceBody({ issueSeverity: 'medium' })).to.be.false;
-      expect(isLowSeverityGuidanceBody({ issueSeverity: 'Medium' })).to.be.false;
+    it('should sort aligned clusters by clusterTraffic descending', () => {
+      const clusters = [
+        makeCluster({ clusterId: 'low', clusterTraffic: 100 }),
+        makeCluster({ clusterId: 'high', clusterTraffic: 1000 }),
+      ];
+
+      const ranked = assignClusterRanks(clusters);
+
+      expect(ranked[0].clusterId).to.equal('high');
+      expect(ranked[1].clusterId).to.equal('low');
     });
 
-    it('returns false for high severity', () => {
-      expect(isLowSeverityGuidanceBody({ issueSeverity: 'high' })).to.be.false;
-      expect(isLowSeverityGuidanceBody({ issueSeverity: 'High' })).to.be.false;
+    it('should sort failed clusters by clusterTraffic descending', () => {
+      const clusters = [
+        makeCluster({ clusterId: 'low-fail', analysisStatus: 'failed', clusterTraffic: 100 }),
+        makeCluster({ clusterId: 'high-fail', analysisStatus: 'failed', clusterTraffic: 1000 }),
+      ];
+
+      const ranked = assignClusterRanks(clusters);
+
+      expect(ranked[0].clusterId).to.equal('high-fail');
+      expect(ranked[1].clusterId).to.equal('low-fail');
     });
 
-    it('returns false for critical severity', () => {
-      expect(isLowSeverityGuidanceBody({ issueSeverity: 'critical' })).to.be.false;
+    it('should handle empty array', () => {
+      const ranked = assignClusterRanks([]);
+      expect(ranked).to.deep.equal([]);
     });
 
-    it('returns false when issueSeverity is not present', () => {
-      expect(isLowSeverityGuidanceBody({})).to.be.false;
-      expect(isLowSeverityGuidanceBody({ other: 'data' })).to.be.false;
+    it('should handle null/undefined input', () => {
+      expect(assignClusterRanks(null)).to.deep.equal([]);
+      expect(assignClusterRanks(undefined)).to.deep.equal([]);
     });
 
-    it('returns false when body is null or undefined', () => {
-      expect(isLowSeverityGuidanceBody(null)).to.be.false;
-      expect(isLowSeverityGuidanceBody(undefined)).to.be.false;
+    it('should handle clusters with missing optional fields', () => {
+      const clusters = [
+        { clusterId: 'minimal', analysisStatus: 'ok' },
+        {
+          clusterId: 'mismatched-minimal',
+          analysisStatus: 'ok',
+          recommendation: { type: 'modify_heading' },
+        },
+      ];
+
+      const ranked = assignClusterRanks(clusters);
+
+      // mismatched first (has recommendation), aligned second
+      expect(ranked[0].clusterId).to.equal('mismatched-minimal');
+      expect(ranked[0].rank).to.equal(1);
+      expect(ranked[1].clusterId).to.equal('minimal');
+      expect(ranked[1].rank).to.equal(2);
     });
 
-    it('rejects substring false positives (strict equality)', () => {
-      expect(isLowSeverityGuidanceBody({ issueSeverity: 'very-low' })).to.be.false;
-      expect(isLowSeverityGuidanceBody({ issueSeverity: 'none-detected' })).to.be.false;
+    it('should handle single cluster', () => {
+      const clusters = [makeCluster({ clusterId: 'only' })];
+      const ranked = assignClusterRanks(clusters);
+
+      expect(ranked).to.have.lengthOf(1);
+      expect(ranked[0].rank).to.equal(1);
+    });
+
+    it('should handle null clusterMisalignedSpend in mismatched tier (|| 0 fallback)', () => {
+      const clusters = [
+        {
+          clusterId: 'c1',
+          analysisStatus: 'ok',
+          recommendation: { type: 'modify_heading' },
+          clusterMisalignedSpend: null,
+        },
+        {
+          clusterId: 'c2',
+          analysisStatus: 'ok',
+          recommendation: { type: 'modify_heading' },
+          clusterMisalignedSpend: 100,
+        },
+      ];
+
+      const ranked = assignClusterRanks(clusters);
+
+      // c2 has spend=100, c1 has spend=null(->0), so c2 comes first
+      expect(ranked[0].clusterId).to.equal('c2');
+      expect(ranked[1].clusterId).to.equal('c1');
+    });
+
+    it('should handle null clusterTraffic in aligned tier (|| 0 fallback)', () => {
+      const clusters = [
+        { clusterId: 'c1', analysisStatus: 'ok', clusterTraffic: null },
+        { clusterId: 'c2', analysisStatus: 'ok', clusterTraffic: 500 },
+      ];
+
+      const ranked = assignClusterRanks(clusters);
+
+      // c2 has traffic=500, c1 has traffic=null(->0), so c2 comes first
+      expect(ranked[0].clusterId).to.equal('c2');
+      expect(ranked[1].clusterId).to.equal('c1');
+    });
+
+    it('should handle null clusterTraffic in failed tier (|| 0 fallback)', () => {
+      const clusters = [
+        { clusterId: 'f1', analysisStatus: 'failed', clusterTraffic: null },
+        { clusterId: 'f2', analysisStatus: 'failed', clusterTraffic: 300 },
+      ];
+
+      const ranked = assignClusterRanks(clusters);
+
+      // f2 has traffic=300, f1 has traffic=null(->0), so f2 comes first
+      expect(ranked[0].clusterId).to.equal('f2');
+      expect(ranked[1].clusterId).to.equal('f1');
+    });
+
+    it('should handle undefined clusterMisalignedSpend and clusterTraffic', () => {
+      const clusters = [
+        { clusterId: 'c1', analysisStatus: 'ok', recommendation: { type: 'modify_heading' } },
+        { clusterId: 'c2', analysisStatus: 'ok' },
+        { clusterId: 'c3', analysisStatus: 'failed' },
+      ];
+
+      const ranked = assignClusterRanks(clusters);
+
+      // Should not throw and should assign ranks
+      expect(ranked).to.have.lengthOf(3);
+      expect(ranked[0].clusterId).to.equal('c1'); // mismatched
+      expect(ranked[1].clusterId).to.equal('c2'); // aligned
+      expect(ranked[2].clusterId).to.equal('c3'); // failed
+    });
+
+    it('should cover || 0 both sides for mismatched tier: both null', () => {
+      const clusters = [
+        {
+          clusterId: 'c1',
+          analysisStatus: 'ok',
+          recommendation: { type: 'modify_heading' },
+          clusterMisalignedSpend: undefined,
+        },
+        {
+          clusterId: 'c2',
+          analysisStatus: 'ok',
+          recommendation: { type: 'modify_heading' },
+          clusterMisalignedSpend: undefined,
+        },
+      ];
+
+      const ranked = assignClusterRanks(clusters);
+      expect(ranked).to.have.lengthOf(2);
+    });
+
+    it('should cover || 0 both sides for aligned tier: both null', () => {
+      const clusters = [
+        { clusterId: 'c1', analysisStatus: 'ok', clusterTraffic: undefined },
+        { clusterId: 'c2', analysisStatus: 'ok', clusterTraffic: undefined },
+      ];
+
+      const ranked = assignClusterRanks(clusters);
+      expect(ranked).to.have.lengthOf(2);
+    });
+
+    it('should cover || 0 both sides for failed tier: both null', () => {
+      const clusters = [
+        { clusterId: 'f1', analysisStatus: 'failed', clusterTraffic: undefined },
+        { clusterId: 'f2', analysisStatus: 'failed', clusterTraffic: undefined },
+      ];
+
+      const ranked = assignClusterRanks(clusters);
+      expect(ranked).to.have.lengthOf(2);
+    });
+
+    it('should cover || 0 fallback: a has value, b null for mismatched tier', () => {
+      const clusters = [
+        {
+          clusterId: 'c1',
+          analysisStatus: 'ok',
+          recommendation: { type: 'modify_heading' },
+          clusterMisalignedSpend: 100,
+        },
+        {
+          clusterId: 'c2',
+          analysisStatus: 'ok',
+          recommendation: { type: 'modify_heading' },
+          clusterMisalignedSpend: undefined,
+        },
+      ];
+
+      const ranked = assignClusterRanks(clusters);
+      expect(ranked[0].clusterId).to.equal('c1');
+    });
+
+    it('should cover || 0 fallback: a has value, b null for aligned tier', () => {
+      const clusters = [
+        { clusterId: 'c1', analysisStatus: 'ok', clusterTraffic: 100 },
+        { clusterId: 'c2', analysisStatus: 'ok', clusterTraffic: undefined },
+      ];
+
+      const ranked = assignClusterRanks(clusters);
+      expect(ranked[0].clusterId).to.equal('c1');
+    });
+
+    it('should cover || 0 fallback: a has value, b null for failed tier', () => {
+      const clusters = [
+        { clusterId: 'f1', analysisStatus: 'failed', clusterTraffic: 100 },
+        { clusterId: 'f2', analysisStatus: 'failed', clusterTraffic: undefined },
+      ];
+
+      const ranked = assignClusterRanks(clusters);
+      expect(ranked[0].clusterId).to.equal('f1');
     });
   });
 
   describe('mapToKeywordOptimizerOpportunity', () => {
     it('creates opportunity with correct structure', () => {
-      const audit = createMockAudit({
-        totalPageViews: 10000,
-        averageBounceRate: 0.45,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
-      const message = createMessage();
+      const audit = createMockAudit();
+      const message = createClusterMessage();
 
       const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
@@ -147,482 +351,338 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
       expect(result.status).to.equal('NEW');
     });
 
-    it('creates correct title and description', () => {
-      const audit = createMockAudit({
-        totalPageViews: 10000,
-        averageBounceRate: 0.45,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
-      const message = createMessage();
+    it('creates correct title', () => {
+      const audit = createMockAudit();
+      const message = createClusterMessage();
 
       const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
-      expect(result.title).to.equal('Low-performing paid search page detected');
-      expect(result.description).to.include('45.0%');
-      expect(result.description).to.include('10.0K');
+      expect(result.title).to.equal('Ad intent mismatch detected across keyword clusters');
     });
 
-    it('includes guidance recommendations from message', () => {
-      const audit = createMockAudit({
-        totalPageViews: 10000,
-        averageBounceRate: 0.45,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
-      const message = createMessage({
-        guidanceOverrides: {
-          insight: 'custom insight',
-          rationale: 'custom rationale',
-          recommendation: 'custom recommendation',
-        },
-      });
+    it('creates description with cluster counts and estimated spend', () => {
+      const clusters = [
+        makeCluster({ clusterId: 'c1', recommendation: { type: 'modify_heading' }, clusterMisalignedSpend: 300 }),
+        makeCluster({ clusterId: 'c2', clusterMisalignedSpend: 0 }),
+        makeCluster({ clusterId: 'c3', recommendation: { type: 'audit_required' }, clusterMisalignedSpend: 700 }),
+      ];
+      const audit = createMockAudit();
+      const message = createClusterMessage({ clusterResults: clusters });
 
       const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
-      expect(result.guidance.recommendations).to.have.lengthOf(1);
-      expect(result.guidance.recommendations[0].insight).to.equal('custom insight');
-      expect(result.guidance.recommendations[0].rationale).to.equal('custom rationale');
-      expect(result.guidance.recommendations[0].recommendation).to.equal('custom recommendation');
-      expect(result.guidance.recommendations[0].type).to.equal('guidance');
+      expect(result.description).to.include('2 of 3 clusters show alignment gaps');
+      expect(result.description).to.include('~$1.0K/month');
     });
 
-    it('includes correct data sources', () => {
-      const audit = createMockAudit({
-        totalPageViews: 10000,
-        averageBounceRate: 0.45,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
-      const message = createMessage();
+    it('formats small spend values without K suffix', () => {
+      const clusters = [
+        makeCluster({ clusterId: 'c1', recommendation: { type: 'modify_heading' }, clusterMisalignedSpend: 50 }),
+      ];
+      const audit = createMockAudit();
+      const message = createClusterMessage({ clusterResults: clusters });
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.description).to.include('~$50/month');
+    });
+
+    it('includes correct data sources including SEO', () => {
+      const audit = createMockAudit();
+      const message = createClusterMessage();
 
       const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
       expect(result.data.dataSources).to.include('Site');
       expect(result.data.dataSources).to.include('RUM');
       expect(result.data.dataSources).to.include('Page');
+      expect(result.data.dataSources).to.include('SEO');
     });
 
-    it('includes single URL and metrics from guidance body', () => {
-      const audit = createMockAudit({
-        totalPageViews: 10000,
-        averageBounceRate: 0.45,
-        predominantlyPaidPages: DEFAULT_PAID_PAGES,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
-      const message = createMessage();
+    it('includes url and page fields', () => {
+      const audit = createMockAudit();
+      const message = createClusterMessage();
 
       const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
       expect(result.data.url).to.equal(TEST_URL);
       expect(result.data.page).to.equal(TEST_URL);
-      expect(result.data.cpc).to.equal(0.075);
-      expect(result.data.sumTraffic).to.equal(23423.5);
-      expect(result.data).to.not.have.property('opportunityType');
     });
 
-    it('includes audit result stats', () => {
-      const audit = createMockAudit({
-        totalPageViews: 10000,
-        averageBounceRate: 0.45,
-        predominantlyPaidPages: DEFAULT_PAID_PAGES,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
-      const message = createMessage();
+    it('includes portfolioMetrics in data', () => {
+      const audit = createMockAudit();
+      const portfolioMetrics = { totalSpend: 5000, avgCpc: 2.5 };
+      const message = createClusterMessage({ portfolioMetrics });
 
       const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
-      expect(result.data.totalPageViews).to.equal(10000);
-      expect(result.data.averageBounceRate).to.equal(0.45);
-      expect(result.data.temporalCondition).to.equal('(year=2025 AND week IN (1,2,3,4))');
+      expect(result.data.portfolioMetrics).to.deep.equal(portfolioMetrics);
     });
 
-    it('includes HOLCTR-compatible per-page fields from predominantlyPaidPages lookup', () => {
-      const audit = createMockAudit({
-        totalPageViews: 10000,
-        averageBounceRate: 0.45,
-        predominantlyPaidPages: DEFAULT_PAID_PAGES,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
-      const message = createMessage();
+    it('computes hasConflictingHeadlineRecommendations=true when multiple modify_heading clusters', () => {
+      const clusters = [
+        makeCluster({ clusterId: 'c1', recommendation: { type: 'modify_heading', changes: [] } }),
+        makeCluster({ clusterId: 'c2', recommendation: { type: 'modify_heading', changes: [] } }),
+      ];
+      const audit = createMockAudit();
+      const message = createClusterMessage({ clusterResults: clusters });
 
       const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
-      expect(result.data.page).to.equal(TEST_URL);
-      expect(result.data.pageViews).to.equal(5000);
-      expect(result.data.trackedPageKPIName).to.equal('Bounce Rate');
-      expect(result.data.trackedPageKPIValue).to.equal(0.65);
-      expect(result.data.trackedKPISiteAverage).to.equal(0.45);
-      expect(result.data.metrics).to.deep.equal([]);
-      expect(result.data.samples).to.equal(0);
+      expect(result.data.hasConflictingHeadlineRecommendations).to.be.true;
     });
 
-    it('calculates opportunityImpact as (pageBounce - siteAvgBounce) * pageViews when page bounce exceeds site avg', () => {
-      const audit = createMockAudit({
-        totalPageViews: 10000,
-        averageBounceRate: 0.45,
-        predominantlyPaidPages: DEFAULT_PAID_PAGES, // bounceRate: 0.65, pageViews: 5000
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
-      const message = createMessage();
+    it('computes hasConflictingHeadlineRecommendations=false when only one modify_heading cluster', () => {
+      const clusters = [
+        makeCluster({ clusterId: 'c1', recommendation: { type: 'modify_heading', changes: [] } }),
+        makeCluster({ clusterId: 'c2' }),
+      ];
+      const audit = createMockAudit();
+      const message = createClusterMessage({ clusterResults: clusters });
 
       const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
-      // (0.65 - 0.45) * 5000 = 1000
-      expect(result.data.opportunityImpact).to.equal((0.65 - 0.45) * 5000);
+      expect(result.data.hasConflictingHeadlineRecommendations).to.be.false;
     });
 
-    it('calculates opportunityImpact as pageViews when page bounce is below site avg', () => {
-      const audit = createMockAudit({
-        totalPageViews: 10000,
-        averageBounceRate: 0.70,
-        predominantlyPaidPages: [{ url: TEST_URL, bounceRate: 0.50, pageViews: 3000 }],
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
-      const message = createMessage();
+    it('computes hasConflictingHeadlineRecommendations=false when no modify_heading clusters', () => {
+      const clusters = [
+        makeCluster({ clusterId: 'c1', recommendation: { type: 'audit_required', changes: [] } }),
+        makeCluster({ clusterId: 'c2' }),
+      ];
+      const audit = createMockAudit();
+      const message = createClusterMessage({ clusterResults: clusters });
 
       const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
-      expect(result.data.opportunityImpact).to.equal(3000);
+      expect(result.data.hasConflictingHeadlineRecommendations).to.be.false;
+    });
+
+    it('includes langfuseTraceId and langfuseTraceUrl', () => {
+      const audit = createMockAudit();
+      const message = createClusterMessage({
+        langfuseTraceId: 'trace-abc',
+        langfuseTraceUrl: 'https://langfuse.example.com/trace/abc',
+      });
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.langfuseTraceId).to.equal('trace-abc');
+      expect(result.data.langfuseTraceUrl).to.equal('https://langfuse.example.com/trace/abc');
+    });
+
+    it('includes totalClusters and misalignedClusters counts', () => {
+      const clusters = [
+        makeCluster({ clusterId: 'c1', recommendation: { type: 'modify_heading' } }),
+        makeCluster({ clusterId: 'c2' }),
+        makeCluster({ clusterId: 'c3', analysisStatus: 'failed' }),
+      ];
+      const audit = createMockAudit();
+      const message = createClusterMessage({ clusterResults: clusters });
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.totalClusters).to.equal(3);
+      expect(result.data.misalignedClusters).to.equal(1);
+    });
+
+    it('includes correct tags', () => {
+      const audit = createMockAudit();
+      const message = createClusterMessage();
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.tags).to.deep.equal(['Paid', 'SEO']);
     });
 
     it('handles empty guidance array gracefully', () => {
-      const audit = createMockAudit({
-        totalPageViews: 10000,
-        averageBounceRate: 0.45,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
+      const audit = createMockAudit();
       const message = {
         auditId: 'audit-id-123',
         siteId: TEST_SITE_ID,
         data: {
           url: TEST_URL,
           guidance: [],
-          suggestions: [],
         },
       };
 
       const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
-      expect(result.data.url).to.be.undefined;
-      expect(result.data.cpc).to.be.undefined;
-      expect(result.data.sumTraffic).to.be.undefined;
-      expect(result.guidance.recommendations[0].insight).to.be.undefined;
+      expect(result.data.totalClusters).to.equal(0);
+      expect(result.data.misalignedClusters).to.equal(0);
+      expect(result.data.totalMisalignedSpend).to.equal(0);
     });
 
-    it('handles missing predominantlyPaidPages gracefully', () => {
-      const audit = createMockAudit({
-        totalPageViews: 10000,
-        averageBounceRate: 0.45,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-        // no predominantlyPaidPages
-      });
-      const message = createMessage();
-
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
-
-      expect(result.data.pageViews).to.equal(0);
-      expect(result.data.trackedPageKPIValue).to.equal(0);
-      expect(result.data.opportunityImpact).to.equal(0);
-    });
-
-    it('includes correct tags', () => {
-      const audit = createMockAudit({
-        totalPageViews: 10000,
-        averageBounceRate: 0.45,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
-      const message = createMessage();
-
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
-
-      expect(result.tags).to.include('Paid');
-      expect(result.tags).to.include('SEO');
-    });
-
-    it('handles null/undefined values in stats gracefully', () => {
-      const audit = createMockAudit({
-        totalPageViews: null,
-        averageBounceRate: undefined,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
-      const message = createMessage();
-
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
-
-      // Should handle null/undefined gracefully — uses avgBounceRate ?? 0 fallback
-      expect(result.description).to.include('0.0%');
-      expect(result.description).to.not.include('NaN');
-    });
-
-    it('does not produce NaN in description when averageBounceRate is undefined', () => {
-      const audit = createMockAudit({
-        totalPageViews: 10000,
-        averageBounceRate: undefined,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
-      const message = createMessage();
-
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
-
-      expect(result.description).to.include('0.0%');
-      expect(result.description).to.not.include('NaN');
-    });
-
-    it('passes gapAnalysis from guidance body to opportunity data', () => {
-      const audit = createMockAudit({
-        totalPageViews: 10000,
-        averageBounceRate: 0.45,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
-      const gapAnalysis = {
-        keywordToAdGap: { severity: 'medium', description: 'Mismatch found' },
-        overallAlignmentScore: 'fair',
-      };
-      const message = createMessage({ bodyOverrides: { gapAnalysis } });
-
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
-
-      expect(result.data.gapAnalysis).to.deep.equal(gapAnalysis);
-    });
-
-    it('defaults gapAnalysis to empty object when not in guidance body', () => {
-      const audit = createMockAudit({
-        totalPageViews: 10000,
-        averageBounceRate: 0.45,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
-      const message = createMessage();
-
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
-
-      expect(result.data.gapAnalysis).to.deep.equal({});
-    });
-
-    it('handles null audit result gracefully with || {} fallback', () => {
-      const audit = createMockAudit(null);
-      const message = createMessage();
-
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
-
-      // With || {} fallback, should not throw and should use defaults
-      expect(result.data.pageViews).to.equal(0);
-      expect(result.data.trackedPageKPIValue).to.equal(0);
-      expect(result.description).to.include('0.0%');
-      expect(result.description).to.not.include('NaN');
-    });
-
-    it('handles missing guidance body fields gracefully', () => {
-      const audit = createMockAudit({
-        totalPageViews: 10000,
-        averageBounceRate: 0.45,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
+    it('handles missing data.url gracefully', () => {
+      const audit = createMockAudit();
       const message = {
         auditId: 'audit-id-123',
         siteId: TEST_SITE_ID,
         data: {
-          url: TEST_URL,
           guidance: [{
-            insight: 'insight',
-            rationale: 'rationale',
-            recommendation: 'recommendation',
-            type: 'guidance',
-            body: {},
+            body: {
+              clusterResults: [],
+              portfolioMetrics: {},
+            },
           }],
-          suggestions: [],
         },
       };
 
       const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
       expect(result.data.url).to.be.undefined;
-      expect(result.data.cpc).to.be.undefined;
-      expect(result.data.sumTraffic).to.be.undefined;
+      expect(result.data.page).to.be.undefined;
     });
 
-    it('formats large numbers with K suffix in description', () => {
-      const audit = createMockAudit({
-        totalPageViews: 50000,
-        averageBounceRate: 0.55,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
-      const message = createMessage();
+    it('formats zero spend as $0', () => {
+      const clusters = [
+        makeCluster({ clusterId: 'c1', clusterMisalignedSpend: 0 }),
+      ];
+      const audit = createMockAudit();
+      const message = createClusterMessage({ clusterResults: clusters });
 
       const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
-      expect(result.description).to.include('50.0K');
+      expect(result.description).to.include('~$0/month');
     });
 
-    it('keeps small numbers unformatted in description', () => {
-      const audit = createMockAudit({
-        totalPageViews: 500,
-        averageBounceRate: 0.4,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
-      const message = createMessage();
+    it('excludes failed clusters from misaligned count', () => {
+      const clusters = [
+        makeCluster({ clusterId: 'c1', recommendation: { type: 'modify_heading' }, analysisStatus: 'failed' }),
+        makeCluster({ clusterId: 'c2', recommendation: { type: 'modify_heading' } }),
+      ];
+      const audit = createMockAudit();
+      const message = createClusterMessage({ clusterResults: clusters });
 
       const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
-      expect(result.description).to.include('500');
+      // c1 is failed so not counted as misaligned even though it has a recommendation
+      expect(result.data.misalignedClusters).to.equal(1);
     });
   });
 
-  describe('mapToKeywordOptimizerSuggestion', () => {
+  describe('mapClusterToSuggestion', () => {
     it('creates suggestion with correct structure', () => {
-      const context = {
-        site: { requiresValidation: false },
-      };
-      const message = createMessage();
+      const context = { site: { requiresValidation: false } };
+      const cluster = { ...makeCluster(), rank: 1 };
 
-      const result = mapToKeywordOptimizerSuggestion(
-        context,
-        'opportunity-id',
-        message,
-      );
+      const result = mapClusterToSuggestion(context, 'oppty-id', cluster);
 
-      expect(result.opportunityId).to.equal('opportunity-id');
+      expect(result.opportunityId).to.equal('oppty-id');
       expect(result.type).to.equal('CONTENT_UPDATE');
       expect(result.rank).to.equal(1);
       expect(result.status).to.equal(SuggestionDataAccess.STATUSES.NEW);
     });
 
     it('sets status to PENDING_VALIDATION when site requires validation', () => {
-      const context = {
-        site: { requiresValidation: true },
-      };
-      const message = createMessage();
+      const context = { site: { requiresValidation: true } };
+      const cluster = { ...makeCluster(), rank: 1 };
 
-      const result = mapToKeywordOptimizerSuggestion(
-        context,
-        'opportunity-id',
-        message,
-      );
+      const result = mapClusterToSuggestion(context, 'oppty-id', cluster);
 
       expect(result.status).to.equal(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
     });
 
-    it('sets status to NEW when site does not require validation', () => {
-      const context = {
-        site: { requiresValidation: false },
-      };
-      const message = createMessage();
-
-      const result = mapToKeywordOptimizerSuggestion(
-        context,
-        'opportunity-id',
-        message,
-      );
-
-      expect(result.status).to.equal(SuggestionDataAccess.STATUSES.NEW);
-    });
-
-    it('stores suggestions as variations from guidance body', () => {
-      const context = {
-        site: { requiresValidation: false },
-      };
-      const suggestions = [
-        { id: 'original', name: 'Original', screenshotUrl: 'https://example.com/original.png' },
-        { id: 'variation-0', name: 'Variation 0', screenshotUrl: 'https://example.com/var0.png' },
-        { id: 'variation-1', name: 'Variation 1', screenshotUrl: 'https://example.com/var1.png' },
-      ];
-      const message = createMessage({ bodyOverrides: { suggestions } });
-
-      const result = mapToKeywordOptimizerSuggestion(
-        context,
-        'opportunity-id',
-        message,
-      );
-
-      expect(result.data.variations).to.deep.equal(suggestions);
-    });
-
-    it('includes kpiDeltas with estimatedKPILift in suggestion data', () => {
-      const context = {
-        site: { requiresValidation: false },
-      };
-      const message = createMessage();
-
-      const result = mapToKeywordOptimizerSuggestion(
-        context,
-        'opportunity-id',
-        message,
-      );
-
-      expect(result.data.kpiDeltas).to.deep.equal({ estimatedKPILift: 0 });
-    });
-
-    it('handles missing message data gracefully', () => {
-      const context = {
-        site: { requiresValidation: false },
-      };
-      const message = {};
-
-      const result = mapToKeywordOptimizerSuggestion(
-        context,
-        'opportunity-id',
-        message,
-      );
-
-      expect(result.data.variations).to.deep.equal([]);
-    });
-
-    it('handles missing site in context', () => {
+    it('sets status to NEW when site is missing from context', () => {
       const context = {};
-      const message = createMessage();
+      const cluster = { ...makeCluster(), rank: 1 };
 
-      const result = mapToKeywordOptimizerSuggestion(
-        context,
-        'opportunity-id',
-        message,
-      );
+      const result = mapClusterToSuggestion(context, 'oppty-id', cluster);
 
       expect(result.status).to.equal(SuggestionDataAccess.STATUSES.NEW);
     });
 
-    it('handles empty suggestions array in guidance body', () => {
-      const context = {
-        site: { requiresValidation: false },
+    it('includes all cluster fields in suggestion data', () => {
+      const context = { site: { requiresValidation: false } };
+      const cluster = {
+        ...makeCluster({
+          clusterId: 'c1',
+          representativeKeyword: 'buy shoes',
+          serpTitle: 'Best Shoes 2025',
+          keywords: [{ keyword: 'buy shoes', cpc: 3.0, traffic: 1000 }],
+          clusterTraffic: 1000,
+          clusterCpc: 3.0,
+          clusterMisalignedSpend: 250,
+          analysisStatus: 'ok',
+          gapAnalysis: { severity: 'medium' },
+          overallAlignmentScore: 'fair',
+          keywordAnalysis: [{ keyword: 'buy shoes', score: 0.5 }],
+        }),
+        rank: 2,
       };
-      const message = createMessage({ bodyOverrides: { suggestions: [] } });
 
-      const result = mapToKeywordOptimizerSuggestion(
-        context,
-        'opportunity-id',
-        message,
-      );
+      const result = mapClusterToSuggestion(context, 'oppty-id', cluster);
 
-      expect(result.data.variations).to.deep.equal([]);
+      expect(result.data.cluster.clusterId).to.equal('c1');
+      expect(result.data.cluster.representativeKeyword).to.equal('buy shoes');
+      expect(result.data.cluster.serpTitle).to.equal('Best Shoes 2025');
+      expect(result.data.cluster.keywords).to.deep.equal([{ keyword: 'buy shoes', cpc: 3.0, traffic: 1000 }]);
+      expect(result.data.cluster.clusterTraffic).to.equal(1000);
+      expect(result.data.cluster.clusterCpc).to.equal(3.0);
+      expect(result.data.cluster.clusterMisalignedSpend).to.equal(250);
+      expect(result.data.cluster.analysisStatus).to.equal('ok');
+      expect(result.data.cluster.gapAnalysis).to.deep.equal({ severity: 'medium' });
+      expect(result.data.cluster.overallAlignmentScore).to.equal('fair');
+      expect(result.data.cluster.keywordAnalysis).to.deep.equal([{ keyword: 'buy shoes', score: 0.5 }]);
     });
 
-    it('handles undefined suggestions in guidance body', () => {
-      const context = {
-        site: { requiresValidation: false },
-      };
-      const message = {
-        data: {
-          url: TEST_URL,
-          guidance: [{
-            insight: 'test insight',
-            rationale: 'test rationale',
-            recommendation: 'test recommendation',
-            type: 'guidance',
-            body: {
-              issueSeverity: 'medium',
-              url: TEST_URL,
-              // suggestions is undefined
-              cpc: 0.075,
-              sumTraffic: 23423.5,
-            },
-          }],
-          suggestions: [],
-        },
+    it('lifts recommendation.type to recommendationType and removes type from nested object', () => {
+      const context = { site: { requiresValidation: false } };
+      const cluster = {
+        ...makeCluster({
+          recommendation: {
+            type: 'modify_heading',
+            changes: [{ tag: 'h1', newValue: 'New Title' }],
+            rationale: 'Better alignment',
+          },
+        }),
+        rank: 1,
       };
 
-      const result = mapToKeywordOptimizerSuggestion(
-        context,
-        'opportunity-id',
-        message,
-      );
+      const result = mapClusterToSuggestion(context, 'oppty-id', cluster);
 
-      expect(result.data.variations).to.deep.equal([]);
+      expect(result.data.recommendationType).to.equal('modify_heading');
+      expect(result.data.recommendation).to.deep.equal({
+        changes: [{ tag: 'h1', newValue: 'New Title' }],
+        rationale: 'Better alignment',
+      });
+      // Verify 'type' is not in nested recommendation
+      expect(result.data.recommendation).to.not.have.property('type');
+    });
+
+    it('omits recommendationType and recommendation when cluster has no recommendation', () => {
+      const context = { site: { requiresValidation: false } };
+      const cluster = { ...makeCluster(), rank: 1 };
+
+      const result = mapClusterToSuggestion(context, 'oppty-id', cluster);
+
+      expect(result.data).to.not.have.property('recommendationType');
+      expect(result.data).to.not.have.property('recommendation');
+    });
+
+    it('defaults missing optional fields', () => {
+      const context = { site: { requiresValidation: false } };
+      const cluster = { clusterId: 'minimal', rank: 1 };
+
+      const result = mapClusterToSuggestion(context, 'oppty-id', cluster);
+
+      expect(result.data.cluster.keywords).to.deep.equal([]);
+      expect(result.data.cluster.clusterTraffic).to.equal(0);
+      expect(result.data.cluster.clusterCpc).to.equal(0);
+      expect(result.data.cluster.clusterMisalignedSpend).to.equal(0);
+      expect(result.data.cluster.analysisStatus).to.equal('unknown');
+      expect(result.data.cluster.gapAnalysis).to.deep.equal({});
+      expect(result.data.cluster.overallAlignmentScore).to.be.null;
+      expect(result.data.cluster.keywordAnalysis).to.deep.equal([]);
+    });
+
+    it('uses rank from cluster', () => {
+      const context = { site: { requiresValidation: false } };
+      const cluster = { ...makeCluster(), rank: 5 };
+
+      const result = mapClusterToSuggestion(context, 'oppty-id', cluster);
+
+      expect(result.rank).to.equal(5);
     });
   });
 });
