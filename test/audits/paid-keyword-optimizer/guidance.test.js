@@ -354,6 +354,39 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
   });
 
   describe('handler', () => {
+    it('should return ok and log when receiving a failure envelope', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: {
+          status: 'failed',
+          url: TEST_URL,
+          error: {
+            type: 'GuidanceGenerationError',
+            message: 'Analysis failed. See server logs for details.',
+            traceId: 'test-trace-123',
+          },
+        },
+      };
+
+      const result = await handler(message, context);
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).not.to.have.been.called;
+      expect(Suggestion.create).not.to.have.been.called;
+      expect(Audit.findById).not.to.have.been.called;
+      expect(logStub.info).to.have.been.calledWith(
+        sinon.match({
+          trace_id: 'test-trace-123',
+          audit_id: 'auditId',
+          site_id: 'site',
+          url: TEST_URL,
+          error_type: 'GuidanceGenerationError',
+        }),
+        '[ad-intent-mismatch] URL-level failure from Mystique',
+      );
+    });
+
     it('should return notFound if no audit is found', async () => {
       Audit.findById.resolves(null);
       const message = createMessage();

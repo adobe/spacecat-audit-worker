@@ -113,6 +113,19 @@ export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Audit, Opportunity, Suggestion } = dataAccess;
   const { auditId, siteId, data } = message;
+
+  // Handle failure envelope from Mystique — URL-level analysis failed
+  if (data?.status === 'failed') {
+    log.info({
+      trace_id: data?.error?.traceId,
+      audit_id: auditId,
+      site_id: siteId,
+      url: data?.url,
+      error_type: data?.error?.type,
+    }, '[ad-intent-mismatch] URL-level failure from Mystique');
+    return ok();
+  }
+
   const { guidance } = data;
   const guidanceBody = guidance?.[0]?.body;
   const url = guidanceBody?.url || data?.url;
