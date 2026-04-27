@@ -71,6 +71,7 @@ class SeoChecks {
    * @param {object} pageTags - An object containing the tags of the page.
    */
   checkForTagsLength(urlPath, pageTags) {
+    const { language } = pageTags;
     const getLengthSuggestion = (tagName) => {
       if (TITLE === tagName.toLowerCase()) {
         return TITLE_LENGTH_SUGGESTION;
@@ -128,6 +129,7 @@ class SeoChecks {
           [ISSUE_DETAILS]: issueDetails,
           [SEO_RECOMMENDATION]: recommendation,
           ...(tagContent && { tagContent }),
+          ...(language && { language }),
         });
       } else {
         this.healthyTags[tagName].push(tagContent);

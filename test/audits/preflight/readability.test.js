@@ -172,6 +172,32 @@ describe('Preflight Readability Audit', () => {
       expect(log.debug).to.have.been.calledWithMatch('Processed 0 text element(s)');
     });
 
+    it('should skip navigation chrome and use collapsed whitespace for minimum length', async () => {
+      const poorNavText = 'This extraordinarily complex sentence that has multisyllabic constructions '
+        + 'making it extremely difficult for readers to comprehend without effort. '.repeat(3);
+      const spacedNavLabel = `Safeguard${'   '.repeat(80)}My${'   '.repeat(80)}Identity`;
+      const goodBodyText = 'This is simple text. It is easy to read. Short sentences help. Clear writing promotes understanding and increases reader engagement significantly.'.repeat(2);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body>
+              <nav><p>${poorNavText}</p></nav>
+              <ul><li role="listitem" aria-label="Safeguard My Identity"><p class="navHdr">${spacedNavLabel}</p></li></ul>
+              <p>${goodBodyText}</p>
+            </body></html>`,
+          },
+        },
+      }];
+
+      await readability(context, auditContext);
+
+      const audit = auditsResult[0].audits.find((a) => a.name === PREFLIGHT_READABILITY);
+      expect(audit.opportunities).to.have.lengthOf(0);
+      expect(log.debug).to.have.been.calledWithMatch('Processed 1 text element(s)');
+    });
+
     it('should process both paragraphs and divs', async () => {
       const goodText = 'This is simple text. It is easy to read. Short sentences help. Clear writing promotes understanding and increases reader engagement significantly.'.repeat(2);
       const poorText = 'This is an extraordinarily complex sentence that utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(2);
@@ -519,8 +545,10 @@ describe('Preflight Readability Audit', () => {
     });
 
     it('should skip unsupported language content (e.g. Chinese)', async () => {
-      // Create Chinese text that is long enough to be processed but in unsupported language
-      const chineseText = '这是一个非常复杂的中文文本，它使用许多多音节词汇和复杂的语法结构，这使得普通读者很难在没有相当努力和专注的情况下理解它。这个文本被重复多次以确保它足够长来进行处理。'.repeat(3);
+      // Create Chinese text that is long enough to be processed but in unsupported language.
+      // Include ASCII whitespace so the handler’s /\s/ gate (same as body prose filters) passes.
+      const chineseText = '这是一个非常复杂的中文文本，它使用许多多音节词汇和复杂的语法结构，这使得普通读者很难在没有相当努力和专注的情况下理解它。这个文本被重复多次以确保它足够长来进行处理。 '
+        .repeat(3);
 
       auditContext.scrapedObjects = [{
         data: {
@@ -682,6 +710,110 @@ describe('Preflight Readability Audit', () => {
       const opportunity = audit.opportunities[0];
       expect(opportunity.check).to.equal('poor-readability');
       expect(opportunity.fleschReadingEase).to.be.below(30);
+    });
+  });
+
+  describe('preflight analyzeReadability branches (esmock)', () => {
+    let mockedReadability;
+
+    afterEach(async () => {
+      if (mockedReadability) {
+        await esmock.purge(mockedReadability);
+        mockedReadability = undefined;
+      }
+    });
+
+    it('returns early when isExcludedReadabilityText is true inside analyzeReadability (defense in depth)', async () => {
+      const analysisUtils = await import('../../../src/readability/shared/analysis-utils.js');
+      let excludeCalls = 0;
+      mockedReadability = await esmock('../../../src/readability/preflight/handler.js', {
+        '../../../src/readability/shared/analysis-utils.js': {
+          stripNonContent: analysisUtils.stripNonContent,
+          // isEligibleTextElement is stubbed to always pass elements through so that
+          // isExcludedReadabilityText is only called from the defense-in-depth path
+          // inside analyzeReadability, which is what this test exercises.
+          isEligibleTextElement: () => true,
+          isEligibleParagraphText: analysisUtils.isEligibleParagraphText,
+          isExcludedReadabilityText: sinon.stub().callsFake(() => {
+            excludeCalls += 1;
+            return true;
+          }),
+        },
+      });
+
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic '
+        + `words and intricate grammatical constructions, making it extremely difficult for ${
+          'the average reader to comprehend without considerable effort and concentration.'.repeat(3)}`;
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      await mockedReadability.default(context, auditContext);
+
+      const audit = auditsResult[0].audits.find((a) => a.name === PREFLIGHT_READABILITY);
+      expect(audit.opportunities).to.have.lengthOf(0);
+      expect(excludeCalls).to.be.at.least(1);
+    });
+
+    it('drops link-density candidates when collapsed text is empty (defense in depth)', async () => {
+      const analysisUtils = await import('../../../src/readability/shared/analysis-utils.js');
+      mockedReadability = await esmock('../../../src/readability/preflight/handler.js', {
+        '../../../src/readability/shared/analysis-utils.js': {
+          ...analysisUtils,
+          // Stub passes elements the real eligibility check would reject (whitespace-only),
+          // so the preflight link-density filter still skips them without dividing by zero.
+          isEligibleTextElement: () => true,
+        },
+      });
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: '<html><body><div>   \t\n  </div></body></html>',
+          },
+        },
+      }];
+
+      await mockedReadability.default(context, auditContext);
+
+      const audit = auditsResult[0].audits.find((a) => a.name === PREFLIGHT_READABILITY);
+      expect(audit.opportunities).to.have.lengthOf(0);
+    });
+
+    it('returns early when no supported language is detected for the text block', async () => {
+      const multilingual = await import('../../../src/readability/shared/multilingual-readability.js');
+      mockedReadability = await esmock('../../../src/readability/preflight/handler.js', {
+        '../../../src/readability/shared/multilingual-readability.js': {
+          calculateReadabilityScore: multilingual.calculateReadabilityScore,
+          getLanguageName: multilingual.getLanguageName,
+          isSupportedLanguage: sinon.stub().returns(false),
+        },
+      });
+
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic '
+        + `words and intricate grammatical constructions, making it extremely difficult for ${
+          'the average reader to comprehend without considerable effort and concentration.'.repeat(3)}`;
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      await mockedReadability.default(context, auditContext);
+
+      const audit = auditsResult[0].audits.find((a) => a.name === PREFLIGHT_READABILITY);
+      expect(audit.opportunities).to.have.lengthOf(0);
     });
   });
 
