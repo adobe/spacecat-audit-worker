@@ -670,8 +670,8 @@ describe('Paid Keyword Optimizer opportunity mapper (cluster format)', () => {
 
       expect(result.data.cluster.keywords).to.deep.equal([]);
       expect(result.data.cluster.clusterTraffic).to.equal(0);
-      expect(result.data.cluster.clusterCpc).to.equal(0);
-      expect(result.data.cluster.clusterMisalignedSpend).to.equal(0);
+      expect(result.data.cluster.clusterCpc).to.be.null;
+      expect(result.data.cluster.clusterMisalignedSpend).to.be.null;
       expect(result.data.cluster.analysisStatus).to.equal('unknown');
       expect(result.data.cluster.gapAnalysis).to.deep.equal({});
       expect(result.data.cluster.overallAlignmentScore).to.be.null;

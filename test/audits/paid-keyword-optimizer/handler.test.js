@@ -165,6 +165,10 @@ describe('Paid Keyword Optimizer Audit', () => {
         cpc: 2.5,
         sum_traffic: 5000,
         topKeywordBestPositionTitle: 'SERP Title 1',
+        keywords: [
+          { keyword: 'keyword1', cpc: 2.5, traffic: 3000 },
+          { keyword: 'keyword1b', cpc: 1.0, traffic: 2000 },
+        ],
       },
       {
         url: 'https://example.com/page2',
@@ -172,6 +176,9 @@ describe('Paid Keyword Optimizer Audit', () => {
         cpc: 1.8,
         sum_traffic: 3000,
         topKeywordBestPositionTitle: 'SERP Title 2',
+        keywords: [
+          { keyword: 'keyword2', cpc: 1.8, traffic: 3000 },
+        ],
       },
     ];
 
@@ -359,7 +366,7 @@ describe('Paid Keyword Optimizer Audit', () => {
   });
 
   describe('fetchPaidPagesFromS3', () => {
-    it('should fetch and parse SEO data from S3', async () => {
+    it('should fetch and parse SEO data from S3 including keywords', async () => {
       const seoPages = [
         {
           url: 'https://example.com/page1',
@@ -367,6 +374,7 @@ describe('Paid Keyword Optimizer Audit', () => {
           cpc: 1.5,
           sum_traffic: 1000,
           topKeywordBestPositionTitle: 'Title 1',
+          keywords: [{ keyword: 'kw1', cpc: 1.5, traffic: 1000 }],
         },
         {
           url: 'https://example.com/page2',
@@ -374,6 +382,7 @@ describe('Paid Keyword Optimizer Audit', () => {
           cpc: 2.0,
           sum_traffic: 2000,
           topKeywordBestPositionTitle: 'Title 2',
+          keywords: [{ keyword: 'kw2', cpc: 2.0, traffic: 2000 }],
         },
       ];
       const mockS3 = createMockS3Client(sandbox, seoPages);
@@ -392,21 +401,24 @@ describe('Paid Keyword Optimizer Audit', () => {
         cpc: 1.5,
         sumTraffic: 1000,
         serpTitle: 'Title 1',
+        keywords: [{ keyword: 'kw1', cpc: 1.5, traffic: 1000 }],
       });
       expect(result.get('https://example.com/page2')).to.deep.equal({
         topKeyword: 'kw2',
         cpc: 2.0,
         sumTraffic: 2000,
         serpTitle: 'Title 2',
+        keywords: [{ keyword: 'kw2', cpc: 2.0, traffic: 2000 }],
       });
     });
 
-    it('should default cpc to 0 and sumTraffic to 0 when missing', async () => {
+    it('should default cpc to 0, sumTraffic to 0, and keywords to [] when missing', async () => {
       const seoPages = [
         {
           url: 'https://example.com/page1',
           topKeyword: 'kw1',
           topKeywordBestPositionTitle: 'Title',
+          keywords: [{ keyword: 'kw1', cpc: 0, traffic: 0 }],
         },
       ];
       const mockS3 = createMockS3Client(sandbox, seoPages);
@@ -420,6 +432,65 @@ describe('Paid Keyword Optimizer Audit', () => {
 
       expect(result.get('https://example.com/page1').cpc).to.equal(0);
       expect(result.get('https://example.com/page1').sumTraffic).to.equal(0);
+      expect(result.get('https://example.com/page1').keywords).to.deep.equal([{ keyword: 'kw1', cpc: 0, traffic: 0 }]);
+    });
+
+    it('should filter out pages without keywords data and log them', async () => {
+      const seoPages = [
+        {
+          url: 'https://example.com/page1',
+          topKeyword: 'kw1',
+          cpc: 1.5,
+          sum_traffic: 1000,
+          topKeywordBestPositionTitle: 'Title 1',
+          keywords: [{ keyword: 'kw1', cpc: 1.5, traffic: 1000 }],
+        },
+        {
+          url: 'https://example.com/page2',
+          topKeyword: 'kw2',
+          cpc: 2.0,
+          sum_traffic: 2000,
+          topKeywordBestPositionTitle: 'Title 2',
+          // no keywords field
+        },
+      ];
+      const mockS3 = createMockS3Client(sandbox, seoPages);
+      const ctx = {
+        s3Client: mockS3,
+        env: { S3_IMPORTER_BUCKET_NAME: 'test-bucket' },
+        log: logStub,
+      };
+
+      const result = await fetchPaidPagesFromS3(ctx, 'site-123');
+
+      expect(result).to.be.instanceOf(Map);
+      expect(result.size).to.equal(1);
+      expect(result.has('https://example.com/page1')).to.be.true;
+      expect(result.has('https://example.com/page2')).to.be.false;
+      expect(logStub.info).to.have.been.calledWithMatch(/Filtered out page without keywords data/);
+    });
+
+    it('should return null when all pages are filtered out due to empty keywords', async () => {
+      const seoPages = [
+        {
+          url: 'https://example.com/page1',
+          topKeyword: 'kw1',
+          cpc: 1.5,
+          sum_traffic: 1000,
+          topKeywordBestPositionTitle: 'Title 1',
+          // no keywords field => defaults to []
+        },
+      ];
+      const mockS3 = createMockS3Client(sandbox, seoPages);
+      const ctx = {
+        s3Client: mockS3,
+        env: { S3_IMPORTER_BUCKET_NAME: 'test-bucket' },
+        log: logStub,
+      };
+
+      const result = await fetchPaidPagesFromS3(ctx, 'site-123');
+
+      expect(result).to.be.null;
     });
 
     it('should throw when S3 request fails', async () => {
@@ -480,33 +551,64 @@ describe('Paid Keyword Optimizer Audit', () => {
   });
 
   describe('computePriorityScore', () => {
-    it('should compute WSIS score correctly', () => {
-      const page = { pageViews: 1000, bounceRate: 0.6, engagedScrollRate: 0.2 };
-      const seoData = { cpc: 2.0 };
-      // wastedSpend = 2.0 * 1000 * 0.6 = 1200
+    it('should compute aggregate WSIS score across keywords', () => {
+      const page = { bounceRate: 0.6, engagedScrollRate: 0.2 };
+      const seoData = {
+        keywords: [
+          { keyword: 'kw1', cpc: 2.0, traffic: 500 },
+          { keyword: 'kw2', cpc: 1.0, traffic: 300 },
+        ],
+      };
+      // aggSpend = (2.0 * 500) + (1.0 * 300) = 1000 + 300 = 1300
+      // wastedSpend = 1300 * 0.6 = 780
       // alignmentSignal = max(0.1, 1 - 0.2) = 0.8
-      // score = (1200 / 1000) * 0.8 = 0.96
+      // score = (780 / 1000) * 0.8 = 0.624
       const score = computePriorityScore(page, seoData);
-      expect(score).to.be.closeTo(0.96, 0.001);
+      expect(score).to.be.closeTo(0.624, 0.001);
     });
 
-    it('should handle zero CPC (score is 0)', () => {
-      const page = { pageViews: 1000, bounceRate: 0.6, engagedScrollRate: 0.2 };
-      const seoData = { cpc: 0 };
+    it('should handle empty keywords array (score is 0)', () => {
+      const page = { bounceRate: 0.6, engagedScrollRate: 0.2 };
+      const seoData = { keywords: [] };
       const score = computePriorityScore(page, seoData);
       expect(score).to.equal(0);
     });
 
-    it('should handle null seoData (cpc defaults to 0)', () => {
-      const page = { pageViews: 1000, bounceRate: 0.6, engagedScrollRate: 0.2 };
+    it('should handle null seoData (keywords defaults to [])', () => {
+      const page = { bounceRate: 0.6, engagedScrollRate: 0.2 };
       const score = computePriorityScore(page, null);
       expect(score).to.equal(0);
     });
 
+    it('should handle undefined seoData (keywords defaults to [])', () => {
+      const page = { bounceRate: 0.6, engagedScrollRate: 0.2 };
+      const score = computePriorityScore(page, undefined);
+      expect(score).to.equal(0);
+    });
+
+    it('should treat null CPC in keywords as zero (intentional)', () => {
+      const page = { bounceRate: 0.6, engagedScrollRate: 0.2 };
+      const seoData = {
+        keywords: [
+          { keyword: 'kw1', cpc: null, traffic: 500 },
+          { keyword: 'kw2', cpc: 2.0, traffic: 300 },
+        ],
+      };
+      // aggSpend = (0 * 500) + (2.0 * 300) = 0 + 600 = 600
+      // wastedSpend = 600 * 0.6 = 360
+      // alignmentSignal = max(0.1, 1 - 0.2) = 0.8
+      // score = (360 / 1000) * 0.8 = 0.288
+      const score = computePriorityScore(page, seoData);
+      expect(score).to.be.closeTo(0.288, 0.001);
+    });
+
     it('should handle null engagedScrollRate (defaults to 0.5 neutral)', () => {
-      const page = { pageViews: 1000, bounceRate: 0.6, engagedScrollRate: null };
-      const seoData = { cpc: 2.0 };
-      // wastedSpend = 2.0 * 1000 * 0.6 = 1200
+      const page = { bounceRate: 0.6, engagedScrollRate: null };
+      const seoData = {
+        keywords: [{ keyword: 'kw1', cpc: 2.0, traffic: 1000 }],
+      };
+      // aggSpend = 2.0 * 1000 = 2000
+      // wastedSpend = 2000 * 0.6 = 1200
       // alignmentSignal = max(0.1, 1 - 0.5) = 0.5
       // score = (1200 / 1000) * 0.5 = 0.6
       const score = computePriorityScore(page, seoData);
@@ -514,17 +616,20 @@ describe('Paid Keyword Optimizer Audit', () => {
     });
 
     it('should handle undefined engagedScrollRate (defaults to 0.5 neutral)', () => {
-      const page = { pageViews: 1000, bounceRate: 0.6 };
-      const seoData = { cpc: 2.0 };
+      const page = { bounceRate: 0.6 };
+      const seoData = {
+        keywords: [{ keyword: 'kw1', cpc: 2.0, traffic: 1000 }],
+      };
       const score = computePriorityScore(page, seoData);
-      // alignmentSignal = max(0.1, 1 - 0.5) = 0.5
       expect(score).to.be.closeTo(0.6, 0.001);
     });
 
     it('should handle engagedScrollRate=0 (alignmentSignal is 1.0)', () => {
-      const page = { pageViews: 1000, bounceRate: 0.6, engagedScrollRate: 0 };
-      const seoData = { cpc: 2.0 };
-      // wastedSpend = 1200
+      const page = { bounceRate: 0.6, engagedScrollRate: 0 };
+      const seoData = {
+        keywords: [{ keyword: 'kw1', cpc: 2.0, traffic: 1000 }],
+      };
+      // aggSpend = 2000, wastedSpend = 1200
       // alignmentSignal = max(0.1, 1 - 0) = 1.0
       // score = 1.2 * 1.0 = 1.2
       const score = computePriorityScore(page, seoData);
@@ -532,32 +637,55 @@ describe('Paid Keyword Optimizer Audit', () => {
     });
 
     it('should clamp engagedScrollRate=1.0 (alignmentSignal is 0.1)', () => {
-      const page = { pageViews: 1000, bounceRate: 0.6, engagedScrollRate: 1.0 };
-      const seoData = { cpc: 2.0 };
-      // wastedSpend = 1200
-      // alignmentSignal = max(0.1, 1 - 1.0) = max(0.1, 0) = 0.1
+      const page = { bounceRate: 0.6, engagedScrollRate: 1.0 };
+      const seoData = {
+        keywords: [{ keyword: 'kw1', cpc: 2.0, traffic: 1000 }],
+      };
+      // aggSpend = 2000, wastedSpend = 1200
+      // alignmentSignal = max(0.1, 1 - 1.0) = 0.1
       // score = 1.2 * 0.1 = 0.12
       const score = computePriorityScore(page, seoData);
       expect(score).to.be.closeTo(0.12, 0.001);
     });
 
-    it('should handle high engagement scenario', () => {
-      const page = { pageViews: 500, bounceRate: 0.8, engagedScrollRate: 0.9 };
-      const seoData = { cpc: 5.0 };
-      // wastedSpend = 5.0 * 500 * 0.8 = 2000
-      // alignmentSignal = max(0.1, 1 - 0.9) = max(0.1, 0.1) = 0.1
-      // score = (2000 / 1000) * 0.1 = 0.2
+    it('should handle multiple keywords with varying spend', () => {
+      const page = { bounceRate: 0.8, engagedScrollRate: 0.9 };
+      const seoData = {
+        keywords: [
+          { keyword: 'kw1', cpc: 5.0, traffic: 200 },
+          { keyword: 'kw2', cpc: 3.0, traffic: 100 },
+          { keyword: 'kw3', cpc: 1.0, traffic: 50 },
+        ],
+      };
+      // aggSpend = (5.0*200) + (3.0*100) + (1.0*50) = 1000+300+50 = 1350
+      // wastedSpend = 1350 * 0.8 = 1080
+      // alignmentSignal = max(0.1, 1 - 0.9) = 0.1
+      // score = (1080 / 1000) * 0.1 = 0.108
       const score = computePriorityScore(page, seoData);
-      expect(score).to.be.closeTo(0.2, 0.001);
+      expect(score).to.be.closeTo(0.108, 0.001);
+    });
+
+    it('should handle keyword with null traffic as zero', () => {
+      const page = { bounceRate: 0.5, engagedScrollRate: 0.2 };
+      const seoData = {
+        keywords: [{ keyword: 'kw1', cpc: 5.0, traffic: null }],
+      };
+      // aggSpend = 5.0 * 0 = 0
+      const score = computePriorityScore(page, seoData);
+      expect(score).to.equal(0);
     });
   });
 
   describe('buildMystiqueMessage', () => {
-    it('should include all enriched fields', () => {
+    it('should include all enriched fields including keywords', () => {
       const mockSite = {
         getId: () => 'site-1',
         getDeliveryType: () => 'aem-edge',
       };
+      const keywords = [
+        { keyword: 'keyword1', cpc: 2.5, traffic: 3000 },
+        { keyword: 'keyword1b', cpc: 1.0, traffic: 2000 },
+      ];
       const page = {
         url: 'https://example.com/page1',
         bounceRate: 0.6,
@@ -569,6 +697,7 @@ describe('Paid Keyword Optimizer Audit', () => {
         topKeyword: 'keyword1',
         serpTitle: 'SERP Title',
         engagedScrollRate: 0.15,
+        keywords,
       };
 
       const msg = buildMystiqueMessage(mockSite, 'audit-123', page);
@@ -590,6 +719,7 @@ describe('Paid Keyword Optimizer Audit', () => {
         topKeyword: 'keyword1',
         serpTitle: 'SERP Title',
         engagedScrollRate: 0.15,
+        keywords,
       });
     });
   });
@@ -930,6 +1060,8 @@ describe('Paid Keyword Optimizer Audit', () => {
       expect(message1.data).to.have.property('topKeyword');
       expect(message1.data).to.have.property('serpTitle');
       expect(message1.data).to.have.property('engagedScrollRate');
+      expect(message1.data).to.have.property('keywords');
+      expect(message1.data.keywords).to.be.an('array');
 
       // Messages must use the NEW audit ID
       expect(message1.auditId).to.equal('new-audit-id');
@@ -1018,6 +1150,7 @@ describe('Paid Keyword Optimizer Audit', () => {
           cpc: 2.0,
           sum_traffic: 1000,
           topKeywordBestPositionTitle: 'Title',
+          keywords: [{ keyword: 'kw1', cpc: 2.0, traffic: 1000 }],
         },
         {
           url: 'https://example.com/products/widget',
@@ -1025,6 +1158,7 @@ describe('Paid Keyword Optimizer Audit', () => {
           cpc: 2.0,
           sum_traffic: 1000,
           topKeywordBestPositionTitle: 'Title',
+          keywords: [{ keyword: 'kw2', cpc: 2.0, traffic: 1000 }],
         },
       ];
       stepContext.s3Client = createMockS3Client(sandbox, seoPages);
@@ -1066,6 +1200,7 @@ describe('Paid Keyword Optimizer Audit', () => {
           cpc: 2.0,
           sum_traffic: 1000,
           topKeywordBestPositionTitle: 'Title',
+          keywords: [{ keyword: 'kw1', cpc: 2.0, traffic: 1000 }],
         },
         {
           url: 'https://example.com/page-low-bounce',
@@ -1073,6 +1208,7 @@ describe('Paid Keyword Optimizer Audit', () => {
           cpc: 2.0,
           sum_traffic: 1000,
           topKeywordBestPositionTitle: 'Title',
+          keywords: [{ keyword: 'kw2', cpc: 2.0, traffic: 1000 }],
         },
       ];
       stepContext.s3Client = createMockS3Client(sandbox, seoPages);
@@ -1105,6 +1241,7 @@ describe('Paid Keyword Optimizer Audit', () => {
           cpc: 2.0 + i * 0.1,
           sum_traffic: 1000 + i * 100,
           topKeywordBestPositionTitle: `Title ${i}`,
+          keywords: [{ keyword: `kw${i}`, cpc: 2.0 + i * 0.1, traffic: 1000 + i * 100 }],
         });
       }
       context.athenaClient.query.resolves(athenaRows);
@@ -1143,6 +1280,7 @@ describe('Paid Keyword Optimizer Audit', () => {
           cpc: 0.001,
           sum_traffic: 10,
           topKeywordBestPositionTitle: 'Title',
+          keywords: [{ keyword: 'kw', cpc: 0.001, traffic: 10 }],
         },
       ];
       context.s3Client = createMockS3Client(sandbox, seoPages);
@@ -1183,6 +1321,7 @@ describe('Paid Keyword Optimizer Audit', () => {
           cpc: 1.0,
           sum_traffic: 500,
           topKeywordBestPositionTitle: 'Low CPC',
+          keywords: [{ keyword: 'kw1', cpc: 1.0, traffic: 500 }],
         },
         {
           url: 'https://example.com/high-cpc',
@@ -1190,6 +1329,7 @@ describe('Paid Keyword Optimizer Audit', () => {
           cpc: 10.0,
           sum_traffic: 5000,
           topKeywordBestPositionTitle: 'High CPC',
+          keywords: [{ keyword: 'kw2', cpc: 10.0, traffic: 5000 }],
         },
       ];
       stepContext.s3Client = createMockS3Client(sandbox, seoPages);
@@ -1225,13 +1365,14 @@ describe('Paid Keyword Optimizer Audit', () => {
           cpc: 2.0,
           sum_traffic: 1000,
           topKeywordBestPositionTitle: 'Title',
+          keywords: [{ keyword: 'kw', cpc: 2.0, traffic: 1000 }],
         },
       ];
       context.s3Client = createMockS3Client(sandbox, seoPages);
 
       await runPaidKeywordAnalysisStep(stepContext);
 
-      // Page with no seo data has cpc=0, so priorityScore=0 and gets filtered out
+      // Page with no seo data has empty keywords[], so priorityScore=0 and gets filtered out
       expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
@@ -1256,11 +1397,11 @@ describe('Paid Keyword Optimizer Audit', () => {
       ]);
 
       const seoPages = [
-        { url: 'https://example.com/help/article', topKeyword: 'kw', cpc: 3.0, sum_traffic: 2000, topKeywordBestPositionTitle: 'T' },
-        { url: 'https://example.com/low-bounce', topKeyword: 'kw', cpc: 2.0, sum_traffic: 1000, topKeywordBestPositionTitle: 'T' },
+        { url: 'https://example.com/help/article', topKeyword: 'kw', cpc: 3.0, sum_traffic: 2000, topKeywordBestPositionTitle: 'T', keywords: [{ keyword: 'kw', cpc: 3.0, traffic: 2000 }] },
+        { url: 'https://example.com/low-bounce', topKeyword: 'kw', cpc: 2.0, sum_traffic: 1000, topKeywordBestPositionTitle: 'T', keywords: [{ keyword: 'kw', cpc: 2.0, traffic: 1000 }] },
         // /no-seo is not in this list
-        { url: 'https://example.com/good-page1', topKeyword: 'kw1', cpc: 5.0, sum_traffic: 5000, topKeywordBestPositionTitle: 'Good 1' },
-        { url: 'https://example.com/good-page2', topKeyword: 'kw2', cpc: 3.0, sum_traffic: 3000, topKeywordBestPositionTitle: 'Good 2' },
+        { url: 'https://example.com/good-page1', topKeyword: 'kw1', cpc: 5.0, sum_traffic: 5000, topKeywordBestPositionTitle: 'Good 1', keywords: [{ keyword: 'kw1', cpc: 5.0, traffic: 5000 }] },
+        { url: 'https://example.com/good-page2', topKeyword: 'kw2', cpc: 3.0, sum_traffic: 3000, topKeywordBestPositionTitle: 'Good 2', keywords: [{ keyword: 'kw2', cpc: 3.0, traffic: 3000 }] },
       ];
       stepContext.s3Client = createMockS3Client(sandbox, seoPages);
 
