@@ -336,6 +336,13 @@ async function addSuggestions(
       rank: 10,
       data: suggestion,
     }),
+    mergeDataFunction: (existingData, newData) => {
+      // Do not overwrite data (including shouldOptimize) for suggestions already deployed to the edge CDN
+      if (existingData.edgeDeployed) {
+        return { ...existingData };
+      }
+      return { ...existingData, ...newData };
+    },
   });
 }
 
