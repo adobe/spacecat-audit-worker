@@ -379,6 +379,145 @@ describe('Preflight Readability Audit', () => {
       textReadability.default.fleschReadingEase = originalFleschReadingEase;
     });
 
+    it('should not flag navigation links inside <nav> elements as readability issues', async () => {
+      // Reproduces SITES-43577: nav links incorrectly flagged as readability issues.
+      // A <div> inside <nav> with inline-only children (all <a> tags) passes the
+      // block-children filter, its concatenated text exceeds MIN_TEXT_LENGTH, and the
+      // polysyllabic labels score far below TARGET_READABILITY_SCORE on Flesch.
+      const navHtml = `<html><body>
+        <nav role="navigation" aria-label="Main navigation">
+          <div>
+            <a href="/telecommunications">Telecommunications Administration</a> |
+            <a href="/pharmaceutical">Pharmaceutical Distribution</a> |
+            <a href="/environmental">Environmental Sustainability</a> |
+            <a href="/organizational">Organizational Development</a> |
+            <a href="/infrastructure">Infrastructure Management</a> |
+            <a href="/communications">Communications Strategy</a> |
+            <a href="/compliance">Compliance Administration</a>
+          </div>
+        </nav>
+        <main>
+          <p>Simple clear content that is easy to read and understand.</p>
+        </main>
+      </body></html>`;
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: { rawBody: navHtml },
+        },
+      }];
+
+      await readability(context, auditContext);
+
+      const audit = auditsResult[0].audits.find((a) => a.name === PREFLIGHT_READABILITY);
+      expect(audit.opportunities).to.have.lengthOf(0);
+    });
+
+    it('should not flag elements with role="navigation" as readability issues', async () => {
+      // Same bug via <div role="navigation"> instead of <nav> tag.
+      const navHtml = `<html><body>
+        <div role="navigation">
+          <a href="/telecommunications">Telecommunications Administration</a> |
+          <a href="/pharmaceutical">Pharmaceutical Distribution</a> |
+          <a href="/environmental">Environmental Sustainability</a> |
+          <a href="/organizational">Organizational Development</a> |
+          <a href="/infrastructure">Infrastructure Management</a> |
+          <a href="/communications">Communications Strategy</a> |
+          <a href="/compliance">Compliance Administration</a>
+        </div>
+      </body></html>`;
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: { rawBody: navHtml },
+        },
+      }];
+
+      await readability(context, auditContext);
+
+      const audit = auditsResult[0].audits.find((a) => a.name === PREFLIGHT_READABILITY);
+      expect(audit.opportunities).to.have.lengthOf(0);
+    });
+
+    it('should still flag poor readability in body content when nav is present', async () => {
+      // Ensures the nav fix does not suppress legitimate body-content issues.
+      const poorBodyText = 'This is an extraordinarily complex sentence that utilizes numerous '
+        + 'multisyllabic words and intricate grammatical constructions, making it extremely '
+        + `difficult for the average reader to comprehend without considerable effort and ${
+          'concentration.'.repeat(3)}`;
+
+      const html = `<html><body>
+        <nav>
+          <div>
+            <a href="/telecommunications">Telecommunications Administration</a> |
+            <a href="/pharmaceutical">Pharmaceutical Distribution</a> |
+            <a href="/environmental">Environmental Sustainability</a> |
+            <a href="/organizational">Organizational Development</a> |
+            <a href="/infrastructure">Infrastructure Management</a> |
+            <a href="/communications">Communications Strategy</a>
+          </div>
+        </nav>
+        <main>
+          <p>${poorBodyText}</p>
+        </main>
+      </body></html>`;
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: { rawBody: html },
+        },
+      }];
+
+      await readability(context, auditContext);
+
+      const audit = auditsResult[0].audits.find((a) => a.name === PREFLIGHT_READABILITY);
+      // Only the body paragraph should be flagged, not the nav
+      expect(audit.opportunities).to.have.lengthOf(1);
+      expect(audit.opportunities[0].check).to.equal('poor-readability');
+    });
+
+    it('should not flag AEM custom nav divs with high link density (SITES-43577)', async () => {
+      // AEM vertical navigation components use plain <div>s instead of <nav> tags.
+      // The inner div has a <span> as its only direct child (passes the block-children filter)
+      // but its full text is nearly 100% anchor text (link density ≈ 0.97).
+      const aemNavHtml = `<html><body>
+        <div class="dynamic-vertical-navigation-component">
+          <div class="vert-nav-mobile vert-nav-only">
+            <div class="mobile-nav-menu">
+              <span class="mobile-pane-header active-pane">
+                <a class="nav-toggle main-toggle active">Main navigation</a>
+                <a class="nav-toggle page-toggle">Page navigation</a>
+                <a href="/products" class="vert-nav-item fst-lvl current has-children">Products &amp; Services</a>
+                <a href="/products/associate-recognition" class="vert-nav-item snd-lvl no-child">Associate Recognition and Convenience</a>
+                <a href="/products/supplies" class="vert-nav-item snd-lvl no-child">Supplies &amp; Ordering</a>
+                <a href="/products/revamp" class="vert-nav-item snd-lvl no-child">Revamp of Products Page</a>
+                <a href="/products/compliance" class="vert-nav-item snd-lvl no-child">Products: Compliance and Regulatory State Requirements</a>
+                <a href="/products/regional" class="vert-nav-item snd-lvl no-child">Regional - Products: Compliance and Regulatory State Requirements</a>
+              </span>
+            </div>
+          </div>
+        </div>
+        <main>
+          <p>Simple clear content that is easy to read and understand.</p>
+        </main>
+      </body></html>`;
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: { rawBody: aemNavHtml },
+        },
+      }];
+
+      await readability(context, auditContext);
+
+      const audit = auditsResult[0].audits.find((a) => a.name === PREFLIGHT_READABILITY);
+      expect(audit.opportunities).to.have.lengthOf(0);
+    });
+
     it('should skip unsupported language content (e.g. Chinese)', async () => {
       // Create Chinese text that is long enough to be processed but in unsupported language
       const chineseText = '这是一个非常复杂的中文文本，它使用许多多音节词汇和复杂的语法结构，这使得普通读者很难在没有相当努力和专注的情况下理解它。这个文本被重复多次以确保它足够长来进行处理。'.repeat(3);
