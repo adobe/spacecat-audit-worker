@@ -32,6 +32,7 @@ import {
 import {
   TARGET_READABILITY_SCORE,
   MAX_CHARACTERS_DISPLAY,
+  MAX_LINK_DENSITY_RATIO,
 } from '../shared/constants.js';
 import { getDomElementSelector, toElementTargets } from '../../preflight/utils/dom-selector.js';
 import {
@@ -191,7 +192,13 @@ export default async function readability(context, auditContext) {
     stripNonContent($);
     removeEmbeddedSocialElements($);
 
-    // Get all paragraph, div, and list item elements.
+    // Remove structural/navigation elements before analysis — their concatenated link text
+    // scores very poorly on Flesch despite not being readable prose (SITES-43577).
+    // Note: the shared getMeaningfulElementsForReadability() only removes header/footer/style/
+    // script/noscript; nav removal and the link-density filter below are preflight-only for now.
+    $('header, footer, nav, [role="navigation"]').remove();
+
+    // Get all paragraph, div, and list item elements
     const textElements = $('p, div, li').toArray();
 
     let processedElements = 0;
@@ -287,6 +294,19 @@ export default async function readability(context, auditContext) {
       })
       .filter(({ element }) => !isLikelyNavigationElement($, element))
       .filter(({ element }) => isEligibleTextElement($(element)))
+      .filter(({ element }) => {
+        // Skip elements where most of the meaningful text is inside links — navigation menus
+        // that use plain <div>s instead of semantic <nav> elements (e.g. AEM
+        // dynamic-vertical-navigation on Walmart pages) have ~100% link density and score
+        // very poorly on Flesch despite not being readable prose. SITES-43577.
+        const $el = $(element);
+        const collapsed = $el.text().replace(/\s+/g, ' ').trim();
+        if (!collapsed.length) {
+          return false;
+        }
+        const anchorText = $el.find('a').map((_, a) => $(a).text().replace(/\s+/g, ' ').trim()).get().join(' ');
+        return (anchorText.length / collapsed.length) < MAX_LINK_DENSITY_RATIO;
+      })
       .filter(({ element }) => !isEmbeddedSocialContentElement($, element));
 
     // Process filtered elements

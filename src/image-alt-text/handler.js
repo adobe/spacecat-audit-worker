@@ -18,6 +18,7 @@ import {
   SCRAPE_MAX_AGE_HOURS, SCRAPE_PAGE_LOAD_TIMEOUT, ALT_TEXT_PROCESSING_ERROR_TAG,
 } from './constants.js';
 import { getTopPageUrls } from './url-utils.js';
+import { SUMMIT_PLG_HANDLER } from '../utils/data-access.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
@@ -49,7 +50,7 @@ async function getTopPagesLimit(site, context) {
   const onDemand = rawOnDemand === true || rawOnDemand === 'true';
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
-  const summitPlgFromConfig = configuration.isHandlerEnabledForSite('summit-plg', site);
+  const summitPlgFromConfig = configuration.isHandlerEnabledForSite(SUMMIT_PLG_HANDLER, site);
   const isSummitPlgEnabled = !onDemand && summitPlgFromConfig;
   const pageLimit = isSummitPlgEnabled ? SUMMIT_PLG_PAGE_LIMIT : DEFAULT_PAGE_LIMIT;
   log.debug(`[${AUDIT_TYPE}]: Page limit set to ${pageLimit} (summit-plg active: ${isSummitPlgEnabled}, onDemand: ${onDemand})`);
