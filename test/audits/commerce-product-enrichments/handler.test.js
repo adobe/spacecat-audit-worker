@@ -1865,7 +1865,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
     const payload = JSON.parse(enrichmentCall.args[1].body);
     expect(payload).to.deep.include({
       siteId: 'site-1',
-      organizationId: 'ims-org-1@AdobeOrg',
+      imsOrgId: 'ims-org-1@AdobeOrg',
       environmentId: 'env-123',
       websiteCode: 'website-code',
       storeCode: 'store-code',
@@ -1937,7 +1937,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
 
     const enrichmentCall = fetchStub.getCalls().find((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
     const payload = JSON.parse(enrichmentCall.args[1].body);
-    expect(payload).to.have.property('organizationId', null);
+    expect(payload).to.have.property('imsOrgId', null);
   });
 
   it('logs warning and sends null organizationId when Organization.findById throws', async () => {
@@ -1995,7 +1995,7 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
     expect(log.warn).to.have.been.calledWith(sinon.match(/Failed to get IMS org ID/));
     const enrichmentCall = fetchStub.getCalls().find((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
     const payload = JSON.parse(enrichmentCall.args[1].body);
-    expect(payload).to.have.property('organizationId', null);
+    expect(payload).to.have.property('imsOrgId', null);
   });
 
   it('attaches preFetch to product scrape when product URL matches categoryPages config', async () => {
