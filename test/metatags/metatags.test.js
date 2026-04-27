@@ -150,6 +150,29 @@ describe('Meta Tags', () => {
         expect(seoChecks.getDetectedTags()[url][TITLE].issueDetails)
           .to.equal(`${aboveIdealTitle.length - TAG_LENGTHS[TITLE].idealMaxLength} chars above ideal maximum`);
       });
+
+      it('should include page language on detected tag objects (seo-checks language spread)', () => {
+        const url = 'https://example.com';
+        const pageTags = {
+          language: 'es',
+          [TITLE]: '',
+          [DESCRIPTION]: 'x'.repeat(150),
+          [H1]: ['Fine'],
+        };
+        seoChecks.checkForTagsLength(url, pageTags);
+        expect(seoChecks.getDetectedTags()[url][TITLE].language).to.equal('es');
+      });
+
+      it('should not include page language on detected tag objects if not present', () => {
+        const url = 'https://example.com';
+        const pageTags = {
+          [TITLE]: '',
+          [DESCRIPTION]: 'x'.repeat(150),
+          [H1]: ['Fine'],
+        };
+        seoChecks.checkForTagsLength(url, pageTags);
+        expect(seoChecks.getDetectedTags()[url][TITLE].language).to.be.undefined;
+      });
     });
 
     // check disabled, to be included in later iterations
@@ -664,6 +687,84 @@ describe('Meta Tags', () => {
             description: 'Test Description',
             h1: ['Test H1'],
             s3key: 'scrapes/site-id/page1/scrape.json',
+          },
+        });
+      });
+
+      it('should include language when scrape tags include lang', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/page1',
+          scrapeResult: {
+            tags: {
+              title: 'Test Page',
+              description: 'Test Description',
+              h1: ['Test H1'],
+              lang: 'de',
+            },
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/page1',
+          'scrapes/site-id/page1/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.deep.equal({
+          '/page1': {
+            title: 'Test Page',
+            description: 'Test Description',
+            h1: ['Test H1'],
+            s3key: 'scrapes/site-id/page1/scrape.json',
+            language: 'de',
+          },
+        });
+      });
+
+      it('should use scrapeResult.language when tags.lang is absent', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/page1',
+          scrapeResult: {
+            language: 'fr',
+            tags: {
+              title: 'Test Page',
+              description: 'Test Description',
+              h1: ['Test H1'],
+            },
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/page1',
+          'scrapes/site-id/page1/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.deep.equal({
+          '/page1': {
+            title: 'Test Page',
+            description: 'Test Description',
+            h1: ['Test H1'],
+            s3key: 'scrapes/site-id/page1/scrape.json',
+            language: 'fr',
           },
         });
       });

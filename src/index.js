@@ -15,6 +15,7 @@ import vaultSecrets from '@adobe/spacecat-shared-vault-secrets';
 import { sqsEventAdapter, logWrapper } from '@adobe/spacecat-shared-utils';
 import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import dataAccess from './support/data-access.js';
+import postgrestSamTemplateOverride from './support/postgrest-sam-template-override.js';
 import { checkSiteRequiresValidation } from './utils/site-validation.js';
 
 import sqs from './support/sqs.js';
@@ -334,5 +335,6 @@ export const main = wrap(run)
   .with(logWrapper)
   .with(sqs)
   .with(s3Client)
+  .with(postgrestSamTemplateOverride)
   .with(vaultSecrets)
   .with(helixStatus);

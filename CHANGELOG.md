@@ -1,3 +1,18 @@
+# [1.420.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.419.1...v1.420.0) (2026-04-27)
+
+
+### Features
+
+* merge code freeze branch into main ([#2431](https://github.com/adobe/spacecat-audit-worker/issues/2431)) ([454118f](https://github.com/adobe/spacecat-audit-worker/commit/454118ffcc250c1ed1406b4fc379366a85580e1c))
+
+## [1.419.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.419.0...v1.419.1) (2026-04-27)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.53.0 ([#2428](https://github.com/adobe/spacecat-audit-worker/issues/2428)) ([99e579a](https://github.com/adobe/spacecat-audit-worker/commit/99e579a74a5469c73b908e45447ab923faa32a3e))
+* forward 100% BrightData-resolved backlinks to Mystique for bridge enrichment ([#2378](https://github.com/adobe/spacecat-audit-worker/issues/2378)) ([20e185c](https://github.com/adobe/spacecat-audit-worker/commit/20e185c1ed7d54d246126f6b96f0ee25a5561161)), closes [adobe/mystique#companion](https://github.com/adobe/mystique/issues/companion)
+
 # [1.419.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.418.4...v1.419.0) (2026-04-27)
 
 
