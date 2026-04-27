@@ -14,7 +14,7 @@ import { isValidUrl } from '@adobe/spacecat-shared-utils';
 
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { resolveBrandForSite, withBrandScope } from '../utils/brand-resolver.js';
+import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
 
 const LOG_PREFIX = '[Wikipedia]';
 
@@ -310,14 +310,14 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     };
 
     const brand = await resolveBrandForSite(context, site);
-    const message = withBrandScope(baseMessage, brand);
+    const message = applyBrandScope(baseMessage, brand);
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     const wikipediaUrlForLog = config.wikipediaUrl?.trim()
       ? config.wikipediaUrl
       : '(empty → auto-detect)';
     const scopeForLog = brand
-      ? ` scopeType=brand scopeId=${brand.brandId} siteId=${brand.brandSiteId}`
+      ? ` scopeType=brand scopeId=${brand.brandId}`
       : '';
 
     log.info(

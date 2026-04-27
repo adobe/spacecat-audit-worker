@@ -25,7 +25,7 @@ import {
 import { CITED_ANALYSIS_DRS_CONFIG } from '../offsite-brand-presence/constants.js';
 import { computeTopicsFromBrandPresence } from '../utils/brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
-import { resolveBrandForSite, withBrandScope } from '../utils/brand-resolver.js';
+import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
 
 const LOG_PREFIX = '[Cited]';
 
@@ -246,12 +246,12 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     };
 
     const brand = await resolveBrandForSite(context, site);
-    const message = withBrandScope(baseMessage, brand);
+    const message = applyBrandScope(baseMessage, brand);
 
     log.debug(`${LOG_PREFIX} Built Mystique message type ${message.type}`);
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     const scopeForLog = brand
-      ? ` scopeType=brand scopeId=${brand.brandId} siteId=${brand.brandSiteId}`
+      ? ` scopeType=brand scopeId=${brand.brandId}`
       : '';
     log.info(
       `${LOG_PREFIX} Queued Cited analysis request to Mystique for ${config.companyName} `

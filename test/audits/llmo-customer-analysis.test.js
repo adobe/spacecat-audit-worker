@@ -1754,7 +1754,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(createCall).to.exist;
       const body = JSON.parse(createCall.args[1].body);
       expect(body.brand_id).to.be.undefined;
-      expect(log.warn).to.have.been.calledWith(sinon.match(/No brand found matching site/));
+      expect(log.warn).to.have.been.calledWith(sinon.match(/No brand resolved for site/));
     });
 
     it('should prefer baseSiteId match over brand_sites match', async () => {
@@ -1999,7 +1999,7 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(log.warn).to.have.been.calledWith(sinon.match(/postgrestClient not available/));
+      expect(log.warn).to.have.been.calledWith(sinon.match(/No brand resolved for site/));
     });
 
     it('should handle network error when checking brandalf flag', async () => {

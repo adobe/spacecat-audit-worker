@@ -23,6 +23,7 @@ import {
 import { getRUMUrl } from '../support/utils.js';
 import { handleCdnBucketConfigChanges } from './cdn-config-handler.js';
 import { sendOnboardingNotification } from './onboarding-notifications.js';
+import { findActiveBrandForSite } from '../utils/brand-resolver.js';
 
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
@@ -336,36 +337,12 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       const isV2 = onboardingMode !== 'v1' && await isBrandalfEnabled(orgId, env, log);
       if (isV2) {
         organizationId = orgId;
-        try {
-          const { postgrestClient } = context.dataAccess?.services || {};
-          if (postgrestClient?.from) {
-            // Prefer the brand whose baseSiteId (site_id column) matches this
-            // site — this is the primary brand created during onboarding with
-            // the correct base URL.  Fall back to brand_sites join if no
-            // baseSiteId match exists (backward compat for brands created
-            // before baseSiteId was set during onboarding).
-            const { data: brands } = await postgrestClient
-              .from('brands')
-              .select('id, site_id, brand_sites(site_id)')
-              .eq('organization_id', organizationId)
-              .eq('status', 'active');
-
-            const baseSiteMatch = brands?.find((b) => b.site_id === siteId);
-            const brandSiteMatch = !baseSiteMatch && brands?.find(
-              (b) => b.brand_sites?.some((bs) => bs.site_id === siteId),
-            );
-            const match = baseSiteMatch || brandSiteMatch;
-            if (match) {
-              brandId = match.id;
-              log.info(`Resolved brand ${brandId} for site ${siteId} (v2 onboarding, via ${baseSiteMatch ? 'baseSiteId' : 'brand_sites'})`);
-            } else {
-              log.warn(`No brand found matching site ${siteId} in org ${organizationId} for v2 BP schedule`);
-            }
-          } else {
-            log.warn('postgrestClient not available; cannot resolve brand for v2 BP schedule');
-          }
-        } catch (error) {
-          log.warn(`Failed to resolve brand for v2 BP schedule: ${error.message}`);
+        const brand = await findActiveBrandForSite(context, { orgId, siteId });
+        if (brand) {
+          brandId = brand.brandId;
+          log.info(`Resolved brand ${brandId} for site ${siteId} (v2 onboarding, via ${brand.via})`);
+        } else {
+          log.warn(`No brand resolved for site ${siteId} in org ${organizationId} for v2 BP schedule`);
         }
       }
     }

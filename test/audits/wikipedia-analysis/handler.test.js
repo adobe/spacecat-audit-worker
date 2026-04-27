@@ -621,9 +621,9 @@ describe('Wikipedia Analysis Handler', () => {
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.scopeType).to.equal('brand');
       expect(sentMessage.scopeId).to.equal('brand-1');
-      expect(sentMessage.siteId).to.equal('brand-primary-site');
+      expect(sentMessage.siteId).to.equal(siteId);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/scopeType=brand scopeId=brand-1 siteId=brand-primary-site/),
+        sinon.match(/scopeType=brand scopeId=brand-1/).and(sinon.match((v) => !/siteId=/.test(v))),
       );
     });
 
