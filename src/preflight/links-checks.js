@@ -22,6 +22,33 @@ import { DEFAULT_USER_AGENT } from '../internal-links/helpers.js';
 const HEAD_FALLBACK_STATUSES = new Set([400, 401, 403, 405, 429, 451]);
 
 /**
+ * Ancestor selectors identifying page chrome (site header / footer). Anchors inside these
+ * are skipped because they are typically repeated across every page — checking them per
+ * page multiplies traffic to the same URLs and produces noisy, non-actionable findings.
+ *
+ * Covers three shapes seen in practice:
+ *   - Semantic HTML5 tags: `<header>`, `<footer>`
+ *   - ARIA landmarks: `role="banner"` (site header), `role="contentinfo"` (site footer)
+ *   - AEM Experience Fragment wrappers: `cmp-experiencefragment--header` /
+ *     `cmp-experiencefragment--footer`, emitted by AEM XFs on many enterprise sites
+ *     (including OneWalmart) that don't render semantic header/footer tags at all.
+ *
+ * Intentionally excluded: `<nav>` and `role="navigation"`. Navigation links point at real
+ * in-site destinations that we want to verify, so treating them as chrome would hide
+ * genuine broken links. Keep this list conservative — ambiguous wrappers like `.nav`,
+ * `.menu`, `.sidebar`, or generic `class*="header"` risk false-skipping content links.
+ */
+const CHROME_ANCESTOR_SELECTOR = [
+  'header',
+  'footer',
+  '[role="banner"]',
+  '[role="contentinfo"]',
+  '.cmp-experiencefragment--header',
+  '.cmp-experiencefragment--footer',
+  // Do not add broader class-matchers here without evidence — see docblock above.
+].join(', ');
+
+/**
  * Returns true only for status codes that definitively indicate a broken link.
  *
  * 404 (Not Found) and 410 (Gone) mean the content does not exist — unambiguously broken.
@@ -147,8 +174,8 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
 
         anchors.each((i, a) => {
           const $a = $(a);
-          // Skip links that are inside header or footer elements
-          if ($a.closest('header').length || $a.closest('footer').length) {
+          // Skip links inside page chrome (site header / footer). See CHROME_ANCESTOR_SELECTOR.
+          if ($a.closest(CHROME_ANCESTOR_SELECTOR).length) {
             return;
           }
 

@@ -68,6 +68,25 @@ const VALID_MIME_TYPES = Object.freeze([
   'text/plain',
 ]);
 
+/** HEAD responses that we will retry with a GET request. */
+const HEAD_FALLBACK_STATUSES = Object.freeze([403, 404, 405, 501]);
+
+/**
+ * Returns whether the URL path looks like a "not found" or error page (soft 404 style).
+ * @param {string} urlString
+ * @returns {boolean}
+ */
+export function urlLooksLike404Page(urlString) {
+  try {
+    const { pathname } = new URL(urlString);
+    return pathname.includes('/404/')
+      || pathname.includes('404.html')
+      || pathname.includes('/errors/404/');
+  } catch {
+    return false; // assume the URL is not a 404 page
+  }
+}
+
 /**
  * Utility function to add delay between batch processing
  */
@@ -94,30 +113,12 @@ export function slicePageUrlsForSlowProbeSampling(urls) {
 }
 
 /**
- * Validates if a suggested URL returns a 200 status code
- * @param {string} url - The URL to validate
- * @param {number} [timeoutMs=PAGE_URL_TIMEOUT_MS] - Timeout in ms for HEAD/GET
- * @returns {Promise<boolean>} - True if URL returns 200, false otherwise
- */
-async function isValidSuggestedUrl(url, timeoutMs = PAGE_URL_TIMEOUT_MS) {
-  try {
-    // eslint-disable-next-line no-use-before-define
-    const response = await fetchWithHeadFallback(url, {
-      redirect: 'follow',
-      timeout: timeoutMs,
-    });
-    return response.status === 200;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Helper function to try HEAD request first, then GET on 404
- * This handles cases where servers return 404 for HEAD but 200 for GET.
- * Uses `options.timeout` for both HEAD and GET fallback (default PAGE_URL_TIMEOUT_MS).
+ * Helper function to initially try a HEAD request.
+ * If HEAD returns a status code that is in our "fallback" list, then retry with GET.
+ * Uses `options.timeout` to bound these requests.
  */
 export async function fetchWithHeadFallback(url, options = {}) {
+  // Ensure we only wait a limited amount of time for the response to our request.
   const timeout = options.timeout ?? PAGE_URL_TIMEOUT_MS;
   const fetchOptions = { ...options, timeout };
 
@@ -127,16 +128,16 @@ export async function fetchWithHeadFallback(url, options = {}) {
     method: 'HEAD',
   });
 
-  // If HEAD returns 404, try GET as fallback
-  if (headResponse.status === 404) {
+  // If HEAD fails with a known "fallback" status code, retry with GET
+  if (HEAD_FALLBACK_STATUSES.includes(headResponse.status)) {
     try {
+      // return whatever we receive from GET
       return await fetch(url, {
         ...fetchOptions,
         method: 'GET',
       });
     } catch {
-      // If GET also fails, return the original HEAD response (which is a 404)
-      return headResponse;
+      return headResponse; // will have a status code in the list of HEAD_FALLBACK_STATUSES
     }
   }
 
@@ -164,8 +165,27 @@ export async function fetchContent(targetUrl) {
   };
 }
 
+// unit test-able function ... actual use is for debug logging
+export function formatUrlProbeErrorDetail(err) {
+  return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+}
+
 /**
- * Simplified URL validation with better performance and rate limiting.
+ * Returns the results of validating all the URLs. Every URL is validated.
+ * The returned structure filters each of these URLs into exactly one "bucket."
+ *
+ * Validation means performing a HEAD request on the URL and reacting on the returned
+ * HTTP status code. (If the web server rejects HEAD requests, we try with a GET.)
+ * * 200 -- valid URL; add to the `ok` bucket ... this is the preferred response
+ * * 301, 302 -- redirected; add to `notOk` bucket with a suggestion to replace the URL:
+ * * * we prefer to use the terminal "final" URL
+ * * * otherwise, we will use the "first hop" URL
+ * * * however, there are cases -- such as redirecting to a soft "404" page -- where we have
+ *      no suggested URL
+ * * 404 -- not found; add to `notOk` bucket with no explicit `urlsSuggested` value
+ * * network errors -- add to `networkErrors` bucket
+ * * (all other codes) -- such as 400, 401, 405, 500: add to `otherStatusCodes` bucket
+ *
  * @param {string[]} urls - URLs to validate (page URLs or sitemap URLs)
  * @param {Object} [log] - Logger
  * @param {number} [timeoutMs=PAGE_URL_TIMEOUT_MS] -
@@ -173,6 +193,13 @@ export async function fetchContent(targetUrl) {
  * @param {null} [pageUrlBatchOptions] - Optional page-URL probe batching parameters
  * @param {number} [pageUrlBatchOptions.pageUrlBatchSize] - defaults to use "fast" value
  * @param {number} [pageUrlBatchOptions.pageUrlBatchDelayMs] - defaults to use "fast" value
+ *
+ * @returns {Promise<{
+ *   ok: string[], // Array of URLs
+ *   notOk: Array<{ url: string, statusCode?: number, urlsSuggested?: string }>,
+ *   networkErrors: Array<{ url: string, error: string }>,
+ *   otherStatusCodes: Array<{ url: string, statusCode: number }>
+ *  }>}
  */
 export async function filterValidUrls(
   urls,
@@ -180,25 +207,32 @@ export async function filterValidUrls(
   timeoutMs = PAGE_URL_TIMEOUT_MS,
   pageUrlBatchOptions = null,
 ) {
-  if (!urls.length) {
-    return {
-      ok: [], notOk: [], networkErrors: [], otherStatusCodes: [],
-    };
-  }
-
+  // prep for our returned structure
   const results = {
     ok: [], notOk: [], networkErrors: [], otherStatusCodes: [],
   };
 
+  // sanity
+  if (!urls.length) {
+    return results; // empty
+  }
+
+  // callback to validate a specific URL
   const checkUrl = async (url) => {
     try {
       const response = await fetchWithHeadFallback(url, {
-        redirect: 'manual',
+        redirect: 'manual', // so we can watch if we go to an auth or a login page
         timeout: timeoutMs,
       });
 
       // Handle successful responses
       if (response.status === 200) {
+        // beware if we really have a soft 404
+        if (urlLooksLike404Page(url)) {
+          log?.debug(`Sitemap: URL seems to actually be a 'soft' 404 page: ${url}`);
+          return { type: 'notOk', url, statusCode: 404 };
+        }
+        // everything is A-OK
         log?.debug(`Sitemap: Valid URL found: ${url}`);
         return { type: 'ok', url };
       }
@@ -209,78 +243,105 @@ export async function filterValidUrls(
       // Handle redirects
       if (response.status === 301 || response.status === 302) {
         const redirectUrl = response.headers.get('location');
-        const finalUrl = redirectUrl ? new URL(redirectUrl, url).href : null;
+        const firstHopUrl = redirectUrl ? new URL(redirectUrl, url).href : null;
 
-        // Check if redirect leads to login page (treat as valid)
-        if (finalUrl && isAuthUrl(finalUrl)) {
+        // if redirect leads to an auth or a login page, then treat as valid
+        if (firstHopUrl && isAuthUrl(firstHopUrl)) {
           return { type: 'ok', url };
         }
 
-        // Try to check the final destination and validate it properly
-        if (finalUrl) {
-          let isValidSuggestion = false;
-          let is404 = false;
-
-          try {
-            const redirectResponse = await fetchWithHeadFallback(finalUrl, {
-              redirect: 'follow',
-              timeout: timeoutMs,
-            });
-
-            // Check if the suggested URL actually returns 200
-            isValidSuggestion = redirectResponse.status === 200;
-            is404 = redirectResponse.status === 404;
-          } catch {
-            // the fetch for the redirect URL can fail for various reasons (e.g. network error).
-            // intentionally ignore the error and proceed to check for 404 patterns in the URL
-            isValidSuggestion = false;
-          }
-
-          // Also check for 404 patterns in the URL itself, as a fallback or additional signal
-          if (!is404) {
-            is404 = finalUrl.includes('/404/')
-              || finalUrl.includes('404.html')
-              || finalUrl.includes('/errors/404/');
-          }
-
-          const originalUrl = new URL(url);
-          const homepageUrl = `${originalUrl.protocol}//${originalUrl.hostname}`;
-
-          // Only suggest the redirect URL if it's valid (returns 200), otherwise suggest homepage
-          const suggestedUrl = (isValidSuggestion && !is404) ? finalUrl : homepageUrl;
-
+        if (!firstHopUrl) {
+          // this is actually something that is wrong with the website itself
+          log?.error(
+            `Sitemap: redirect (${response.status}) for ${url} has no 'Location' header; `
+            + 'cannot suggest a replacement URL.',
+          );
           return {
             type: 'notOk',
             url,
             statusCode: response.status,
-            urlsSuggested: suggestedUrl,
           };
         }
 
-        // If no redirect URL, validate homepage before suggesting it
-        const originalUrl = new URL(url);
-        const homepageUrl = `${originalUrl.protocol}//${originalUrl.hostname}`;
+        let terminalValid = false;
+        let terminalUrl = firstHopUrl; // "final" URL after follow, when available
+        let redirectResponse = null;
+        try {
+          redirectResponse = await fetchWithHeadFallback(firstHopUrl, {
+            redirect: 'follow',
+            timeout: timeoutMs,
+          });
 
-        // Validate the homepage suggestion
-        const isHomepageValid = await isValidSuggestedUrl(homepageUrl, timeoutMs);
+          const resolvedUrl = redirectResponse.url?.trim();
+          if (resolvedUrl) {
+            terminalUrl = resolvedUrl;
+          }
 
+          const statusOk = redirectResponse.status === 200;
+          const looks404 = redirectResponse.status === 404
+            || urlLooksLike404Page(terminalUrl);
+          terminalValid = statusOk && !looks404;
+        } catch {
+          terminalValid = false;
+          redirectResponse = null;
+        }
+
+        if (terminalValid) {
+          return {
+            type: 'notOk',
+            url,
+            statusCode: response.status,
+            urlsSuggested: terminalUrl, // "final" URL
+          };
+        }
+
+        // Terminal could not be confirmed (e.g. WAF 403). Still suggest first Location when it
+        // differs from the probed URL and the failure is not a clear HTTP/path 404.
+        const terminalClearlyBad = redirectResponse
+          && (redirectResponse.status === 404 || urlLooksLike404Page(terminalUrl));
+        // firstHopUrl is always `new URL(Location, url).href` (already parsed above).
+        const probedHref = new URL(url).href;
+        const firstHopHref = new URL(firstHopUrl).href;
+        const firstHopDiffersFromProbed = firstHopHref !== probedHref;
+
+        if (firstHopDiffersFromProbed && !terminalClearlyBad) {
+          log?.debug(
+            `Sitemap: recommending first-hop redirect target instead of validated terminal URL for ${url}; `
+            + `first hop: ${firstHopUrl}, terminal candidate: ${terminalUrl}, `
+            + `terminal response status: ${redirectResponse?.status ?? 'error'}.`,
+          );
+          return {
+            type: 'notOk',
+            url,
+            statusCode: response.status,
+            urlsSuggested: firstHopUrl, // suggest a reasonable URL
+          };
+        }
+
+        // Unfortunately we have no URL suggestion for this redirected URL
+        log?.error(
+          `Sitemap: redirect (${response.status}) for ${url} does not resolve to a valid terminal page URL; `
+          + `first hop: ${firstHopUrl}, terminal URL: ${terminalUrl}. No urlsSuggested.`,
+        );
         return {
           type: 'notOk',
           url,
-          statusCode: response.status,
-          // Only suggest homepage if it's valid, otherwise provide no suggestion
-          ...(isHomepageValid && { urlsSuggested: homepageUrl }),
+          statusCode: response.status, // redirected
+          urlsSuggested: '', // no reasonable suggestion available
         };
       }
 
-      // Handle 404s and other status codes
+      // Handle 404s
       if (response.status === 404) {
         return { type: 'notOk', url, statusCode: response.status };
       }
 
+      // All remaining status codes
       return { type: 'otherStatus', url, statusCode: response.status };
-    } catch {
+    } catch (err) {
       // exception during the fetch (network error, timeout, etc.) is considered a network error
+      const detail = formatUrlProbeErrorDetail(err);
+      log?.debug(`Sitemap: network error while probing URL ${url}: ${detail}`);
       return { type: 'networkError', url, error: 'NETWORK_ERROR' };
     }
   };
@@ -309,7 +370,11 @@ export async function filterValidUrls(
             results.ok.push(url);
             break;
           case 'notOk':
-            results.notOk.push({ url, statusCode, ...(urlsSuggested && { urlsSuggested }) });
+            results.notOk.push({
+              url,
+              statusCode,
+              ...(urlsSuggested != null && { urlsSuggested }), // will also keep an empty string
+            });
             break;
           case 'networkError':
             results.networkErrors.push({ url, error });
@@ -611,7 +676,7 @@ export async function getSitemapUrls(inputUrl, log) {
 
   return {
     success: true,
-    reasons: [{ value: 'Urls are extracted from sitemap.' }],
+    reasons: [{ value: 'URLs are extracted from sitemap.' }],
     details: {
       extractedPaths,
       filteredSitemapUrls: sitemapUrls.ok, // Validated sitemap URLs
