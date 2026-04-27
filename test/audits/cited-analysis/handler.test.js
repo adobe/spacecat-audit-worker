@@ -635,5 +635,66 @@ describe('Cited Analysis Handler', () => {
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
       expect(context.log.error).to.have.been.calledWith('[Cited] Failed to send Mystique message: SQS Error');
     });
+
+    it('should include scope fields when a brand is resolved', async () => {
+      const queryChain = {
+        from: sandbox.stub().returnsThis(),
+        select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub(),
+      };
+      queryChain.eq.onFirstCall().returns(queryChain);
+      queryChain.eq.onSecondCall().resolves({
+        data: [{ id: 'brand-4', site_id: 'brand-primary-site', brand_sites: [{ site_id: siteId }] }],
+      });
+      context.dataAccess.services = { postgrestClient: queryChain };
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: { urls: mockUrls, sentimentConfig: expectedSentimentConfigForPostProcessor },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.scopeType).to.equal('brand');
+      expect(sentMessage.scopeId).to.equal('brand-4');
+      expect(sentMessage.siteId).to.equal('brand-primary-site');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/scopeType=brand scopeId=brand-4 siteId=brand-primary-site/),
+      );
+    });
+
+    it('should omit scope fields and preserve siteId when no brand is resolved', async () => {
+      const queryChain = {
+        from: sandbox.stub().returnsThis(),
+        select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub(),
+      };
+      queryChain.eq.onFirstCall().returns(queryChain);
+      queryChain.eq.onSecondCall().resolves({ data: [] });
+      context.dataAccess.services = { postgrestClient: queryChain };
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: { urls: mockUrls, sentimentConfig: expectedSentimentConfigForPostProcessor },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage).to.not.have.property('scopeType');
+      expect(sentMessage).to.not.have.property('scopeId');
+      expect(sentMessage.siteId).to.equal(siteId);
+    });
   });
 });
