@@ -1,3 +1,38 @@
+# [1.422.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.421.2...v1.422.0) (2026-04-28)
+
+
+### Features
+
+* ensure Sitemap audit can go gracefully into "slow mode" ([#2432](https://github.com/adobe/spacecat-audit-worker/issues/2432)) ([f5e695d](https://github.com/adobe/spacecat-audit-worker/commit/f5e695d1db86f48903cc81521809513c805eca29))
+
+## [1.421.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.421.1...v1.421.2) (2026-04-28)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2433](https://github.com/adobe/spacecat-audit-worker/issues/2433)) ([a73ee07](https://github.com/adobe/spacecat-audit-worker/commit/a73ee07dad31105f76bfd141ecaa684710a8ffc5))
+
+## [1.421.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.421.0...v1.421.1) (2026-04-28)
+
+
+### Bug Fixes
+
+* **svv:** update opportunity title and description for clarity ([#2409](https://github.com/adobe/spacecat-audit-worker/issues/2409)) ([af82e7d](https://github.com/adobe/spacecat-audit-worker/commit/af82e7de7dc3bb3f7a3da7b341f95cc6e3639639))
+
+# [1.421.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.420.1...v1.421.0) (2026-04-28)
+
+
+### Features
+
+* **cdn-logs-report:** expose batchId in runDailyAgenticExport return value ([#2420](https://github.com/adobe/spacecat-audit-worker/issues/2420)) ([17c9fdc](https://github.com/adobe/spacecat-audit-worker/commit/17c9fdcaa0ab76fdfb16d50fdfe2bf162b41fe5e))
+
+## [1.420.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.420.0...v1.420.1) (2026-04-28)
+
+
+### Bug Fixes
+
+* enable ahref-paid-pages import before triggering ([#2387](https://github.com/adobe/spacecat-audit-worker/issues/2387)) ([f1d4b22](https://github.com/adobe/spacecat-audit-worker/commit/f1d4b2271cb705effcc90aea6a6c1f3668276e10))
+
 # [1.420.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.419.1...v1.420.0) (2026-04-27)
 
 
