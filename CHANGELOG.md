@@ -1,3 +1,10 @@
+## [1.421.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.421.0...v1.421.1) (2026-04-28)
+
+
+### Bug Fixes
+
+* **svv:** update opportunity title and description for clarity ([#2409](https://github.com/adobe/spacecat-audit-worker/issues/2409)) ([af82e7d](https://github.com/adobe/spacecat-audit-worker/commit/af82e7de7dc3bb3f7a3da7b341f95cc6e3639639))
+
 # [1.421.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.420.1...v1.421.0) (2026-04-28)
 
 
