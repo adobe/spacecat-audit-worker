@@ -92,7 +92,18 @@ async function checkLinkStatus(href, pageUrl, context, options = {
   }
 
   // GET fallback — HEAD was inconclusive (broken status, fallback status, or network error).
-  const getOptions = { method: 'GET', decode: false, headers };
+  // Send `Range: bytes=0-0` so cooperating servers reply with 206 + 1 byte instead of
+  // streaming the full response body, since we only need the status code. Servers that
+  // ignore the header fall back to a normal 200 (or whatever error code applies). 206
+  // and 416 (Range Not Satisfiable) both fall outside `isBrokenStatus`, so they're
+  // correctly treated as healthy. Servers that genuinely 404/410/5xx do so regardless
+  // of the Range header — there's no way to skip those bodies without reading the
+  // status, but those response bodies are typically small.
+  const getOptions = {
+    method: 'GET',
+    decode: false,
+    headers: { ...headers, Range: 'bytes=0-0' },
+  };
   try {
     const res = await fetch(href, getOptions);
 

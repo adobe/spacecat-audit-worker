@@ -127,6 +127,8 @@ describe('preflight/links-checks - runLinksChecks', () => {
     expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
     expect(result.auditResult.brokenExternalLinks[0].status).to.equal(410);
     expect(fetchStub.callCount).to.equal(2);
+    expect(fetchStub.firstCall.args[1].method).to.equal('HEAD');
+    expect(fetchStub.secondCall.args[1].method).to.equal('GET');
   });
 
   it('does NOT flag as broken when HEAD returns 500 but GET returns 200', async () => {
@@ -140,6 +142,8 @@ describe('preflight/links-checks - runLinksChecks', () => {
     );
 
     expect(fetchStub.callCount).to.equal(2);
+    expect(fetchStub.firstCall.args[1].method).to.equal('HEAD');
+    expect(fetchStub.secondCall.args[1].method).to.equal('GET');
     expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
   });
 
@@ -155,6 +159,24 @@ describe('preflight/links-checks - runLinksChecks', () => {
     expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
     expect(result.auditResult.brokenExternalLinks[0].status).to.equal(500);
     expect(fetchStub.callCount).to.equal(2);
+    expect(fetchStub.firstCall.args[1].method).to.equal('HEAD');
+    expect(fetchStub.secondCall.args[1].method).to.equal('GET');
+  });
+
+  // ── Range header — only on the GET retry, never on HEAD ────────────────────
+
+  it('sends Range: bytes=0-0 only on the GET retry, not on HEAD', async () => {
+    fetchStub.onFirstCall().resolves(makeResponse(404)); // HEAD
+    fetchStub.onSecondCall().resolves(makeResponse(200)); // GET (sparkshop pattern)
+
+    await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="https://other.com/page">link</a>'),
+      context,
+    );
+
+    expect(fetchStub.firstCall.args[1].headers.Range).to.be.undefined;
+    expect(fetchStub.secondCall.args[1].headers.Range).to.equal('bytes=0-0');
   });
 
   // ── 405 — Method Not Allowed: HEAD unsupported, retry GET ─────────────────
