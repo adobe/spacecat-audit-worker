@@ -33,18 +33,17 @@ export const PAGE_URL_TIMEOUT_MS = 10000; // 10 seconds
 
 // "Fast" batching when fetching/validating page URLs
 export const FAST_MAX_PAGE_URLS_PROBED = 10000; // max total, proportioned across sitemaps
-export const FAST_PAGE_URL_BATCH_SIZE = 700; // must stay under 1000
+export const FAST_PAGE_URL_BATCH_SIZE = 700; // must stay under 1000 per SpaceCat arch
 export const FAST_PAGE_URL_BATCH_DELAY_MS = 0; // none
 
 // Dynamic switch from fast → slow page-URL batching when 'otherStatus' dominates
 export const PAGE_URL_OTHER_STATUS_SLOWDOWN_MIN_URLS = 10; // min probes before evaluating the ratio
 export const PAGE_URL_OTHER_STATUS_SLOWDOWN_RATIO = 0.6; // once we hit 60%+ we switch
+export const SLOW_MODE_ENTRY_DELAY_MS = 300_000; // long pause for WAF when switching into slow mode
 
 // "Slow" batching when fetching/validating page URLs
-//   ex: approx 10 probes per second, and assuming 0.5 seconds per probe to complete,
-//       then 1000 probes will take about 8.3 minutes (which is 8 min and 20 sec)
 export const SLOW_MAX_PAGE_URLS_PROBED = 1000; // smaller set to use when running slow
-export const SLOW_PAGE_URL_BATCH_SIZE = 1; // must stay under 1000
+export const SLOW_PAGE_URL_BATCH_SIZE = 4; // must stay under 1000 per SpaceCat arch
 export const SLOW_PAGE_URL_BATCH_DELAY_MS = 100; // 0.1 of a second delay between batches
 
 // ----- internal constants ----------------------------------------------------
@@ -97,6 +96,29 @@ function delay(ms) {
 }
 
 /**
+ * Returns a function that enforces a minimum interval between the start of consecutive requests.
+ * When in slowdown mode, this allows us to honor the slower rate of requests to the webserver.
+ * Note that a given probe of a page URL might use a HEAD request, followed by a GET request.
+ *
+ * @param {number} intervalMs
+ * @returns {(() => Promise<void>) | null}
+ */
+function createPageUrlHttpRequestThrottle(intervalMs) {
+  if (intervalMs == null || intervalMs <= 0) {
+    return null;
+  }
+  let nextAllowedAt = 0;
+  return async function beforeHttpRequest() {
+    const now = Date.now();
+    const waitMs = Math.max(0, nextAllowedAt - now);
+    if (waitMs > 0) {
+      await delay(waitMs);
+    }
+    nextAllowedAt = Date.now() + intervalMs;
+  };
+}
+
+/**
  * After {@link applyPageUrlProbeSampling}, further cap how many page URLs we probe per sitemap
  * while in slow mode: floor(length * SLOW_MAX / FAST_MAX), at least 1 when non-empty.
  *
@@ -115,14 +137,29 @@ export function slicePageUrlsForSlowProbeSampling(urls) {
 /**
  * Helper function to initially try a HEAD request.
  * If HEAD returns a status code that is in our "fallback" list, then retry with GET.
- * Uses `options.timeout` to bound these requests.
+ *
+ * `options`
+ * - `options.beforeRequest` if present, is invoked before each outbound request (HEAD, with a
+ *   possible GET fallback) so callers can enforce spacing between requests when probing page URLs.
+ * - `options.timeout` max wait for each request to finish (default {@link PAGE_URL_TIMEOUT_MS}).
+ *
+ * @returns {Promise<Response>} A promise that resolves to the Response from the HEAD request
+ *   unless the HEAD response status is in the configured fallback list (e.g. 403, 404, 405, 501),
+ *   in which case this function will attempt a GET and resolve with that GET Response instead.
+ *
+ *   Notes on what is returned:
+ *   - If the initial HEAD call throws (network error / timeout), the promise will reject with
+ *     that error (the error is not caught inside this function).
+ *   - If HEAD returns a fallback status but the GET attempt throws, this function will return
+ *     the original HEAD Response object (so callers can inspect the original status code).
  */
 export async function fetchWithHeadFallback(url, options = {}) {
-  // Ensure we only wait a limited amount of time for the response to our request.
-  const timeout = options.timeout ?? PAGE_URL_TIMEOUT_MS;
-  const fetchOptions = { ...options, timeout };
+  const { beforeRequest, ...rest } = options; // the `beforeRequest` function
+  const timeout = rest.timeout ?? PAGE_URL_TIMEOUT_MS;
+  const fetchOptions = { ...rest, timeout }; // ensure our `timeout` is used
 
-  // note: this could throw an exception for network errors
+  await beforeRequest?.(); // if present, deliberately wait before sending this request
+  // note: the `fetch` could throw an exception for network errors or for timing out
   const headResponse = await fetch(url, {
     ...fetchOptions,
     method: 'HEAD',
@@ -131,6 +168,7 @@ export async function fetchWithHeadFallback(url, options = {}) {
   // If HEAD fails with a known "fallback" status code, retry with GET
   if (HEAD_FALLBACK_STATUSES.includes(headResponse.status)) {
     try {
+      await beforeRequest?.(); // if present, deliberately wait before sending this request
       // return whatever we receive from GET
       return await fetch(url, {
         ...fetchOptions,
@@ -193,6 +231,8 @@ export function formatUrlProbeErrorDetail(err) {
  * @param {null} [pageUrlBatchOptions] - Optional page-URL probe batching parameters
  * @param {number} [pageUrlBatchOptions.pageUrlBatchSize] - defaults to use "fast" value
  * @param {number} [pageUrlBatchOptions.pageUrlBatchDelayMs] - defaults to use "fast" value
+ * @param {number} [pageUrlBatchOptions.pageUrlHttpRequestIntervalMs] - when set, minimum spacing
+ *        between each HTTP request made while probing (HEAD, GET fallback, redirect checks)
  *
  * @returns {Promise<{
  *   ok: string[], // Array of URLs
@@ -217,10 +257,17 @@ export async function filterValidUrls(
     return results; // empty
   }
 
+  // if specified, build the `beforeRequest` callback to force a delay between HTTP requests
+  const beforeRequest = createPageUrlHttpRequestThrottle(
+    pageUrlBatchOptions?.pageUrlHttpRequestIntervalMs,
+  );
+  const probeFetchOpts = beforeRequest ? { beforeRequest } : {};
+
   // callback to validate a specific URL
   const checkUrl = async (url) => {
     try {
       const response = await fetchWithHeadFallback(url, {
+        ...probeFetchOpts, // == beforeRequest: callbackFunction
         redirect: 'manual', // so we can watch if we go to an auth or a login page
         timeout: timeoutMs,
       });
@@ -259,7 +306,8 @@ export async function filterValidUrls(
           return {
             type: 'notOk',
             url,
-            statusCode: response.status,
+            statusCode: response.status, // redirected
+            urlsSuggested: '', // no reasonable suggestion available
           };
         }
 
@@ -270,6 +318,7 @@ export async function filterValidUrls(
           redirectResponse = await fetchWithHeadFallback(firstHopUrl, {
             redirect: 'follow',
             timeout: timeoutMs,
+            ...probeFetchOpts,
           });
 
           const resolvedUrl = redirectResponse.url?.trim();
@@ -306,14 +355,14 @@ export async function filterValidUrls(
 
         if (firstHopDiffersFromProbed && !terminalClearlyBad) {
           log?.debug(
-            `Sitemap: recommending first-hop redirect target instead of validated terminal URL for ${url}; `
+            `Sitemap: recommending first-hop redirect target instead of terminal URL for ${url}; `
             + `first hop: ${firstHopUrl}, terminal candidate: ${terminalUrl}, `
             + `terminal response status: ${redirectResponse?.status ?? 'error'}.`,
           );
           return {
             type: 'notOk',
             url,
-            statusCode: response.status,
+            statusCode: response.status, // redirected
             urlsSuggested: firstHopUrl, // suggest a reasonable URL
           };
         }
