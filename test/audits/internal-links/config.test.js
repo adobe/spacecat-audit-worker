@@ -14,6 +14,7 @@ import { expect } from 'chai';
 import {
   InternalLinksConfigResolver,
   createInternalLinksConfigResolver,
+  normalizeExcludedElementClasses,
 } from '../../../src/internal-links/config.js';
 
 function createSite(config = {}, deliveryConfig = {}) {
@@ -160,6 +161,19 @@ describe('internal-links config resolver', () => {
       clickLoadMore: true,
       hideConsentBanners: true,
     });
+    expect(resolver.getExcludedElementClasses()).to.deep.equal([]);
+  });
+
+  it('returns excludedElementClasses from handler config', () => {
+    const resolver = new InternalLinksConfigResolver(createSite({
+      excludedElementClasses: ['.no-audit', 'editorial'],
+    }), {});
+
+    expect(resolver.getExcludedElementClasses()).to.deep.equal(['no-audit', 'editorial']);
+  });
+
+  it('normalizeExcludedElementClasses parses comma-separated string', () => {
+    expect(normalizeExcludedElementClasses('foo, .bar')).to.deep.equal(['foo', 'bar']);
   });
 
   it('prefers site config over env overrides', () => {

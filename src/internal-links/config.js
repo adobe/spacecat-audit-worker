@@ -11,7 +11,7 @@
  */
 
 import { hasText } from '@adobe/spacecat-shared-utils';
-import { PAGES_PER_BATCH } from './crawl-detection.js';
+import { PAGES_PER_BATCH } from './constants.js';
 import { MAX_BROKEN_LINKS_REPORTED } from './result-utils.js';
 
 const MAX_URLS_TO_PROCESS = 100;
@@ -108,6 +108,20 @@ function getStringListConfig(value, fallback) {
   }
 
   return fallback;
+}
+
+/**
+ * Normalizes `excludedElementClasses` from site handler config.
+ * Links (and other extracted references) are skipped when their DOM node or any
+ * ancestor has a `class` containing one of these tokens (see crawl `isUnderExcludedElement`).
+ * @param {string[]|string|undefined} raw - Array of class names, or comma-separated string
+ * @returns {string[]} Trimmed class tokens (leading "." stripped per entry)
+ */
+export function normalizeExcludedElementClasses(raw) {
+  const list = getStringListConfig(raw, []);
+  return list
+    .map((t) => String(t).trim().replace(/^\./, ''))
+    .filter((t) => t.length > 0);
 }
 
 export class InternalLinksConfigResolver {
@@ -233,6 +247,15 @@ export class InternalLinksConfigResolver {
       this.handlerConfig.mystiqueItemTypes,
       DEFAULT_MYSTIQUE_ITEM_TYPES,
     );
+  }
+
+  /**
+   * HTML `class` tokens: a link or asset reference is ignored if its own element or any
+   * ancestor has a `class` list containing one of these tokens (all descendants of such a
+   * subtree are therefore skipped).
+   */
+  getExcludedElementClasses() {
+    return normalizeExcludedElementClasses(this.handlerConfig.excludedElementClasses);
   }
 
   getBrightDataConfig() {
