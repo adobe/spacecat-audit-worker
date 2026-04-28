@@ -17,19 +17,23 @@ import { saveIntermediateResults } from '../../preflight/utils.js';
 
 import { sendReadabilityToMystique } from '../shared/async-mystique.js';
 import {
+  stripNonContent,
+  isExcludedReadabilityText,
+  isEligibleTextElement,
+  isEligibleParagraphText,
+  normalizeReadabilityText,
+  isLikelyNavigationElement,
+} from '../shared/analysis-utils.js';
+import {
   calculateReadabilityScore,
   isSupportedLanguage,
   getLanguageName,
 } from '../shared/multilingual-readability.js';
 import {
   TARGET_READABILITY_SCORE,
-  MIN_TEXT_LENGTH,
   MAX_CHARACTERS_DISPLAY,
+  MAX_LINK_DENSITY_RATIO,
 } from '../shared/constants.js';
-import {
-  normalizeReadabilityText,
-  isLikelyNavigationElement,
-} from '../shared/analysis-utils.js';
 import { getDomElementSelector, toElementTargets } from '../../preflight/utils/dom-selector.js';
 import {
   removeEmbeddedSocialElements,
@@ -185,7 +189,13 @@ export default async function readability(context, auditContext) {
     const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
 
     const $ = cheerioLoad(rawBody);
+    stripNonContent($);
     removeEmbeddedSocialElements($);
+
+    // Remove navigation landmarks before analysis — concatenated link text scores very poorly
+    // on Flesch despite not being prose (SITES-43577). stripNonContent() already strips
+    // header/footer/figcaption.
+    $('nav, [role="navigation"]').remove();
 
     // Get all paragraph, div, and list item elements
     const textElements = $('p, div, li').toArray();
@@ -206,6 +216,11 @@ export default async function readability(context, auditContext) {
     // Helper function to calculate readability score and create audit opportunity
     const analyzeReadability = async (text, element, elementIndex) => {
       try {
+        // Defense in depth: element / <br> filters above also exclude.
+        if (isExcludedReadabilityText(text)) {
+          return;
+        }
+
         // Check if text is in a supported language before analyzing readability
         const detectedLanguage = getSupportedLanguage(text);
         if (!detectedLanguage) {
@@ -277,9 +292,19 @@ export default async function readability(context, auditContext) {
         return !hasBlockChildren;
       })
       .filter(({ element }) => !isLikelyNavigationElement($, element))
+      .filter(({ element }) => isEligibleTextElement($(element)))
       .filter(({ element }) => {
-        const normalized = normalizeReadabilityText($(element).text());
-        return normalized.length >= MIN_TEXT_LENGTH;
+        // Skip elements where most of the meaningful text is inside links — navigation menus
+        // that use plain <div>s instead of semantic <nav> elements (e.g. AEM
+        // dynamic-vertical-navigation on Walmart pages) have ~100% link density and score
+        // very poorly on Flesch despite not being readable prose. SITES-43577.
+        const $el = $(element);
+        const collapsed = $el.text().replace(/\s+/g, ' ').trim();
+        if (!collapsed.length) {
+          return false;
+        }
+        const anchorText = $el.find('a').map((_, a) => $(a).text().replace(/\s+/g, ' ').trim()).get().join(' ');
+        return (anchorText.length / collapsed.length) < MAX_LINK_DENSITY_RATIO;
       })
       .filter(({ element }) => !isEmbeddedSocialContentElement($, element));
 
@@ -306,7 +331,7 @@ export default async function readability(context, auditContext) {
             return tempDiv.text();
           })
           .map((p) => normalizeReadabilityText(p))
-          .filter((p) => p.length >= MIN_TEXT_LENGTH && /\s/.test(p));
+          .filter(isEligibleParagraphText);
 
         // Add promises for each paragraph
         paragraphs.forEach((paragraph) => {

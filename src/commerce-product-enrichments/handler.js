@@ -15,6 +15,7 @@ import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/confi
 import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
+import { getImsOrgId } from '../utils/data-access.js';
 import { LOG_PREFIX, AUDIT_TYPE } from './constants.js';
 import { getCommerceConfig } from '../utils/saas.js';
 import { createMemoizedManualConfigResolver, configGroupKey } from '../utils/commerce-config-resolver.js';
@@ -226,6 +227,7 @@ function buildCategoryPageScrapes(handlerConfig, scrapeResultPaths, log) {
 
 async function sendEnrichment(productPages, commerceConfig, site, env, log, {
   categoryPageScrapes = [],
+  imsOrgId = null,
 } = {}) {
   const allScrapes = [
     ...productPages.map((page) => {
@@ -246,6 +248,7 @@ async function sendEnrichment(productPages, commerceConfig, site, env, log, {
 
   const enrichmentPayload = {
     siteId: site.getId(),
+    imsOrgId,
     storeViewUrl: commerceConfig.storeViewUrl,
     environmentId: commerceConfig.headers['Magento-Environment-Id'],
     websiteCode: commerceConfig.headers['Magento-Website-Code'],
@@ -304,8 +307,10 @@ async function sendEnrichment(productPages, commerceConfig, site, env, log, {
  */
 export async function runAuditAndProcessResults(context) {
   const {
-    site, audit, finalUrl, log, scrapeResultPaths, s3Client, env,
+    site, audit, finalUrl, log, scrapeResultPaths, s3Client, env, dataAccess,
   } = context;
+
+  const imsOrgId = await getImsOrgId(site, dataAccess, log);
 
   log.debug(`${LOG_PREFIX} Step 3: input:`, {
     siteId: site.getId(),
@@ -503,7 +508,7 @@ export async function runAuditAndProcessResults(context) {
       site,
       env,
       log,
-      { categoryPageScrapes: groupCategoryScrapes },
+      { categoryPageScrapes: groupCategoryScrapes, imsOrgId },
     );
   });
   const settledResults = await Promise.allSettled(enrichmentPromises);
