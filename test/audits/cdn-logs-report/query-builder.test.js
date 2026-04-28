@@ -74,7 +74,7 @@ describe('CDN Logs Query Builder', () => {
     const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
 
     expect(query).to.be.a('string');
-    expect(query).to.include('ChatGPT|GPTBot|OAI-SearchBot');
+    expect(query).to.include('ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot');
     expect(query).to.include('Perplexity');
     expect(query).to.include('test_db.test_table');
     expect(query).to.include('agent_type');
@@ -232,7 +232,7 @@ describe('CDN Logs Query Builder', () => {
     const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
 
     expect(query).to.include('WHERE');
-    expect(query).to.include('(?i)(ChatGPT|GPTBot|OAI-SearchBot)(?!.*(Tokowaka|Spacecat))');
+    expect(query).to.include('(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)(?!.*(Tokowaka|Spacecat))');
     expect(query).to.include('(?i)Claude(?!-web)');
   });
 

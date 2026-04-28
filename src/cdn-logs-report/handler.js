@@ -56,7 +56,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     },
   );
   const siteId = site.getId();
-  const reportConfigs = getConfigs(s3Config.bucket, s3Config.customerDomain, siteId);
+  const reportConfigs = getConfigs(s3Config.bucket, s3Config.siteKey, siteId);
   const agenticReportConfig = reportConfigs.find((config) => config.name === 'agentic');
 
   const results = [];
@@ -146,7 +146,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
           name: reportConfig.name,
           table: reportConfig.tableName,
           database: s3Config.databaseName,
-          customer: s3Config.customerName,
+          customer: s3Config.siteName,
           success: result.success,
           weekOffset,
         });
@@ -159,7 +159,6 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     if (!agenticReportConfig) {
       log.debug(`Skipping daily agentic export for ${siteId}: agentic report config not found`);
     } else {
-      // eslint-disable-next-line no-await-in-loop
       try {
         dailyAgenticExport = await runDailyAgenticExport({
           athenaClient,

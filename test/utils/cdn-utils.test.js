@@ -16,7 +16,7 @@ import sinonChai from 'sinon-chai';
 import {
   CDN_TYPES,
   SERVICE_PROVIDER_TYPES,
-  extractCustomerDomain,
+  extractSiteKeyFromBaseURL,
   resolveCdnBucketName,
   buildCdnPaths,
   getBucketInfo,
@@ -65,20 +65,28 @@ describe('CDN Utils', () => {
     });
   });
 
-  describe('extractCustomerDomain', () => {
+  describe('extractSiteKeyFromBaseURL', () => {
     it('extracts and sanitizes domain from site', () => {
       const site = { getBaseURL: () => 'https://www.example.com' };
-      expect(extractCustomerDomain(site)).to.equal('example_com');
+      expect(extractSiteKeyFromBaseURL(site)).to.equal('example_com');
     });
 
     it('handles non-www domains', () => {
       const site = { getBaseURL: () => 'https://adobe.com' };
-      expect(extractCustomerDomain(site)).to.equal('adobe_com');
+      expect(extractSiteKeyFromBaseURL(site)).to.equal('adobe_com');
     });
 
     it('sanitizes special characters', () => {
       const site = { getBaseURL: () => 'https://test-site.example.com' };
-      expect(extractCustomerDomain(site)).to.equal('test_site_example_com');
+      expect(extractSiteKeyFromBaseURL(site)).to.equal('test_site_example_com');
+    });
+
+    it('uses a double underscore as an unambiguous path segment separator', () => {
+      const hyphenatedSite = { getBaseURL: () => 'https://www.example.com/us-en' };
+      const nestedSite = { getBaseURL: () => 'https://www.example.com/us/en' };
+
+      expect(extractSiteKeyFromBaseURL(hyphenatedSite)).to.equal('example_com_us_en');
+      expect(extractSiteKeyFromBaseURL(nestedSite)).to.equal('example_com_us__en');
     });
   });
 
@@ -377,14 +385,60 @@ describe('CDN Utils', () => {
 
       expect(config.region).to.equal('eu-west-1');
       expect(config.bucket).to.equal('spacecat-test-cdn-logs-aggregates-eu-west-1');
-      expect(config.customerName).to.equal('example');
-      expect(config.customerDomain).to.equal('example_com');
+      expect(config.siteName).to.equal('example');
+      expect(config.siteKey).to.equal('example_com');
       expect(config.databaseName).to.equal('cdn_logs_example_com');
       expect(config.tableName).to.equal('aggregated_logs_example_com_consolidated');
       expect(config.referralTableName).to.equal('aggregated_referral_logs_example_com_consolidated');
       expect(config.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/aggregated/site-123/');
       expect(config.aggregatedReferralLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/aggregated-referral/site-123/');
       expect(config.getAthenaTempLocation()).to.equal('s3://spacecat-test-cdn-logs-aggregates-eu-west-1/temp/athena-results/');
+    });
+
+    it('includes subpaths in site-key derived names', () => {
+      const site = {
+        getBaseURL: () => 'https://www.example.com/us',
+        getId: () => 'site-123',
+        getConfig: () => ({
+          getLlmoCdnBucketConfig: () => ({ region: 'eu-west-1' }),
+        }),
+      };
+      const context = {
+        env: {
+          AWS_ENV: 'test',
+          AWS_REGION: 'us-east-1',
+        },
+      };
+
+      const config = getS3Config(site, context);
+
+      expect(config.siteKey).to.equal('example_com_us');
+      expect(config.databaseName).to.equal('cdn_logs_example_com_us');
+      expect(config.tableName).to.equal('aggregated_logs_example_com_us_consolidated');
+      expect(config.referralTableName).to.equal('aggregated_referral_logs_example_com_us_consolidated');
+    });
+
+    it('uses double underscores between nested path segments in derived names', () => {
+      const site = {
+        getBaseURL: () => 'https://www.example.com/us/en',
+        getId: () => 'site-123',
+        getConfig: () => ({
+          getLlmoCdnBucketConfig: () => ({ region: 'eu-west-1' }),
+        }),
+      };
+      const context = {
+        env: {
+          AWS_ENV: 'test',
+          AWS_REGION: 'us-east-1',
+        },
+      };
+
+      const config = getS3Config(site, context);
+
+      expect(config.siteKey).to.equal('example_com_us__en');
+      expect(config.databaseName).to.equal('cdn_logs_example_com_us__en');
+      expect(config.tableName).to.equal('aggregated_logs_example_com_us__en_consolidated');
+      expect(config.referralTableName).to.equal('aggregated_referral_logs_example_com_us__en_consolidated');
     });
   });
 
@@ -514,6 +568,26 @@ describe('CDN Utils', () => {
       const result = buildSiteFilters([], mockSite);
 
       expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?adobe.com$'))");
+    });
+
+    it('adds an optional-leading-slash path filter for subpath sites when filters are empty', () => {
+      const mockSite = {
+        getBaseURL: () => 'https://www.example.com/us',
+      };
+
+      const result = buildSiteFilters([], mockSite);
+
+      expect(result).to.equal("((REGEXP_LIKE(host, '(?i)^(www.)?example.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?example.com$')) AND REGEXP_LIKE(url, '(?i)^/?us(?:/|$)'))");
+    });
+
+    it('builds nested path filters for multi-segment subpaths', () => {
+      const mockSite = {
+        getBaseURL: () => 'https://www.example.com/us/en',
+      };
+
+      const result = buildSiteFilters([], mockSite);
+
+      expect(result).to.equal("((REGEXP_LIKE(host, '(?i)^(www.)?example.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?example.com$')) AND REGEXP_LIKE(url, '(?i)^/?us/en(?:/|$)'))");
     });
 
     it('normalizes www prefix to optional pattern', () => {

@@ -392,4 +392,48 @@ describe('preflight/links-checks - runLinksChecks', () => {
     expect(fetchStub.callCount).to.equal(0);
     expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
   });
+
+  it('skips links inside ARIA banner and contentinfo landmarks', async () => {
+    fetchStub.resolves(makeResponse(404));
+
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects(`
+        <div role="banner"><a href="https://other.com/nav">nav</a></div>
+        <div role="contentinfo"><a href="https://other.com/footer">footer</a></div>
+      `),
+      context,
+    );
+
+    expect(fetchStub.callCount).to.equal(0);
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+  });
+
+  it('skips links inside AEM experience-fragment header/footer wrappers', async () => {
+    fetchStub.resolves(makeResponse(404));
+
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects(`
+        <div class="cmp-experiencefragment cmp-experiencefragment--header">
+          <div class="header">
+            <a href="https://outlook.example.com/owa/">email</a>
+          </div>
+        </div>
+        <div class="cmp-experiencefragment cmp-experiencefragment--footer">
+          <div class="footer">
+            <a href="https://x.com/example">social</a>
+          </div>
+        </div>
+        <main><a href="https://other.com/article">content</a></main>
+      `),
+      context,
+    );
+
+    // Only the <main> content link should be fetched — XF header/footer links are skipped.
+    expect(fetchStub.callCount).to.equal(1);
+    expect(fetchStub.firstCall.args[0]).to.equal('https://other.com/article');
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
+    expect(result.auditResult.brokenExternalLinks[0].urlTo).to.equal('https://other.com/article');
+  });
 });

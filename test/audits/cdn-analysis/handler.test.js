@@ -14,6 +14,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
+import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
 import { cdnLogsAnalysisRunner, findRecentUploads } from '../../../src/cdn-analysis/handler.js';
 import { computeWeekOffset } from '../../../src/utils/date-utils.js';
@@ -106,13 +107,71 @@ function createS3MockForCdnType(cdnType, options = {}) {
   };
 }
 
+function createS3MockForServiceProviders(serviceProviders, options = {}) {
+  const {
+    orgId = 'test-ims-org-id',
+    year = '2025',
+    month = '06',
+    day = '15',
+    hour = '10',
+  } = options;
+
+  const rawPathSuffixByProvider = {
+    'aem-cs-fastly': `${year}/${month}/${day}/${hour}/`,
+    'byocdn-fastly': `${year}/${month}/${day}/${hour}/`,
+    'byocdn-akamai': `${year}/${month}/${day}/${hour}/`,
+    'byocdn-cloudflare': `${year}${month}${day}/`,
+    'byocdn-other': `${year}/${month}/${day}/`,
+  };
+
+  return (command) => {
+    if (command.constructor.name === 'HeadBucketCommand') {
+      return Promise.resolve({});
+    }
+    if (command.constructor.name === 'ListObjectsV2Command') {
+      const { Prefix = '' } = command.input || {};
+      if (Prefix.includes('aggregated')) {
+        return Promise.resolve({ Contents: [] });
+      }
+      if (Prefix === `${orgId}/raw/`) {
+        return Promise.resolve({
+          Contents: [],
+          CommonPrefixes: serviceProviders.map((provider) => ({ Prefix: `${orgId}/raw/${provider}/` })),
+        });
+      }
+      if (Prefix === `${orgId}_raw_`) {
+        return Promise.resolve({ Contents: [], CommonPrefixes: [] });
+      }
+
+      const matchedProvider = serviceProviders.find((provider) => Prefix.includes(`/raw/${provider}/`));
+      if (matchedProvider && Prefix.endsWith(rawPathSuffixByProvider[matchedProvider])) {
+        return Promise.resolve({ Contents: [{ Key: `${Prefix}file1.log` }] });
+      }
+      return Promise.resolve({ Contents: [], CommonPrefixes: [] });
+    }
+    return Promise.resolve({});
+  };
+}
+
 describe('CDN Analysis Handler', () => {
   let sandbox;
   let context;
   let site;
+  let mockedHandlers;
+
+  async function loadMockedHandler(configuredCdnProvider) {
+    const mockedHandler = await esmock('../../../src/cdn-analysis/handler.js', {
+      '../../../src/utils/llmo-config-utils.js': {
+        getConfigCdnProvider: sandbox.stub().resolves(configuredCdnProvider),
+      },
+    });
+    mockedHandlers.push(mockedHandler);
+    return mockedHandler;
+  }
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
+    mockedHandlers = [];
 
     site = {
       getBaseURL: sandbox.stub().returns('https://example.com'),
@@ -158,7 +217,8 @@ describe('CDN Analysis Handler', () => {
       .build();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await Promise.all(mockedHandlers.map((handler) => esmock.purge(handler)));
     sandbox.restore();
   });
 
@@ -241,6 +301,231 @@ describe('CDN Analysis Handler', () => {
       // At hour 22: should skip (daily-only provider)
       const result22 = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext22);
       expect(result22.auditResult.providers).to.be.an('array').with.length(0);
+    });
+
+    it('filters discovered service providers to the configured cdnProvider', async () => {
+      const mockedHandler = await loadMockedHandler('byocdn-akamai');
+      const auditContext = {
+        year: 2025,
+        month: 6,
+        day: 15,
+        hour: 10,
+      };
+
+      context.s3Client.send.callsFake(
+        createS3MockForServiceProviders(['aem-cs-fastly', 'byocdn-akamai']),
+      );
+
+      const result = await mockedHandler.cdnLogsAnalysisRunner(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(result.auditResult.providers).to.be.an('array').with.length(1);
+      expect(result.auditResult.providers[0]).to.include({
+        serviceProvider: 'byocdn-akamai',
+        cdnType: 'akamai',
+      });
+      expect(context.log.info).to.have.been.calledWith(
+        'Filtered discovered service providers to configured cdnProvider=byocdn-akamai for siteId=test-site-id, host=example.com',
+      );
+    });
+
+    it('filters legacy discovered CDN providers using the configured service-provider mapping', async () => {
+      const mockedHandler = await loadMockedHandler('byocdn-fastly');
+      const auditContext = {
+        year: 2025,
+        month: 6,
+        day: 15,
+        hour: 10,
+      };
+
+      context.s3Client.send.callsFake(
+        createS3MockForCdnType('fastly', {
+          isLegacy: true,
+          year: '2025',
+          month: '06',
+          day: '15',
+          hour: '10',
+        }),
+      );
+
+      const result = await mockedHandler.cdnLogsAnalysisRunner(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(result.auditResult.providers).to.be.an('array').with.length(1);
+      expect(result.auditResult.providers[0]).to.include({
+        serviceProvider: 'fastly',
+        cdnType: 'fastly',
+      });
+      expect(context.log.info).to.have.been.calledWith(
+        'Filtered discovered service providers to configured cdnProvider=byocdn-fastly for siteId=test-site-id, host=example.com',
+      );
+    });
+
+    it('warns and processes no providers when configured cdnProvider is not discovered', async () => {
+      const mockedHandler = await loadMockedHandler('byocdn-cloudflare');
+      const auditContext = {
+        year: 2025,
+        month: 6,
+        day: 15,
+        hour: 10,
+      };
+
+      context.s3Client.send.callsFake(
+        createS3MockForServiceProviders(['aem-cs-fastly', 'byocdn-akamai']),
+      );
+
+      const result = await mockedHandler.cdnLogsAnalysisRunner(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(result.auditResult.providers).to.be.an('array').with.length(0);
+      expect(context.log.warn).to.have.been.calledWith(
+        'Configured cdnProvider=byocdn-cloudflare was not found among discovered service providers: aem-cs-fastly, byocdn-akamai for siteId=test-site-id, host=example.com',
+      );
+    });
+
+    it('warns with none when configured cdnProvider is set but discovery finds no providers', async () => {
+      const mockedHandler = await loadMockedHandler('byocdn-cloudflare');
+      const auditContext = {
+        year: 2025,
+        month: 6,
+        day: 15,
+        hour: 10,
+      };
+
+      context.s3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'HeadBucketCommand') {
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'ListObjectsV2Command') {
+          const { Prefix = '' } = command.input || {};
+          if (Prefix.includes('aggregated')) {
+            return Promise.resolve({ Contents: [] });
+          }
+          if (Prefix === 'test-ims-org-id/raw/' || Prefix === 'test-ims-org-id_raw_') {
+            return Promise.resolve({ Contents: [], CommonPrefixes: [] });
+          }
+          return Promise.resolve({ Contents: [], CommonPrefixes: [] });
+        }
+        return Promise.resolve({});
+      });
+
+      const result = await mockedHandler.cdnLogsAnalysisRunner(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(result.auditResult.providers).to.be.an('array').with.length(0);
+      expect(context.log.warn).to.have.been.calledWith(
+        'Configured cdnProvider=byocdn-cloudflare was not found among discovered service providers: none for siteId=test-site-id, host=example.com',
+      );
+    });
+
+    it('warns on legacy buckets when configured provider mapping does not match discovered CDN type', async () => {
+      const mockedHandler = await loadMockedHandler('byocdn-cloudflare');
+      const auditContext = {
+        year: 2025,
+        month: 6,
+        day: 15,
+        hour: 10,
+      };
+
+      context.s3Client.send.callsFake(
+        createS3MockForCdnType('fastly', {
+          isLegacy: true,
+          year: '2025',
+          month: '06',
+          day: '15',
+          hour: '10',
+        }),
+      );
+
+      const result = await mockedHandler.cdnLogsAnalysisRunner(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(result.auditResult.providers).to.be.an('array').with.length(0);
+      expect(context.log.warn).to.have.been.calledWith(
+        'Configured cdnProvider=byocdn-cloudflare was not found among discovered service providers: fastly for siteId=test-site-id, host=example.com',
+      );
+    });
+
+    it('keeps all discovered service providers when config cdnProvider is empty', async () => {
+      const mockedHandler = await loadMockedHandler('');
+      const auditContext = {
+        year: 2025,
+        month: 6,
+        day: 15,
+        hour: 10,
+      };
+
+      context.s3Client.send.callsFake(
+        createS3MockForServiceProviders(['aem-cs-fastly', 'byocdn-akamai']),
+      );
+
+      const result = await mockedHandler.cdnLogsAnalysisRunner(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(result.auditResult.providers).to.be.an('array').with.length(2);
+      expect(result.auditResult.providers.map((provider) => provider.serviceProvider))
+        .to.deep.equal(['aem-cs-fastly', 'byocdn-akamai']);
+    });
+
+    it('does not trigger scanAndTriggerOnly when byocdn-other is discovered alongside a different configured provider', async () => {
+      const mockedHandler = await loadMockedHandler('aem-cs-fastly');
+      const auditContext = {
+        year: 2025,
+        month: 6,
+        day: 15,
+        hour: 23,
+      };
+
+      context.s3Client.send.callsFake(
+        createS3MockForServiceProviders(['byocdn-other', 'aem-cs-fastly'], {
+          year: '2025',
+          month: '06',
+          day: '15',
+          hour: '23',
+        }),
+      );
+
+      const result = await mockedHandler.cdnLogsAnalysisRunner(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(result.auditResult).to.not.have.property('scanAndTriggerOnly');
+      expect(result.auditResult.providers).to.be.an('array').with.length(1);
+      expect(result.auditResult.providers[0]).to.include({
+        serviceProvider: 'aem-cs-fastly',
+        cdnType: 'fastly',
+      });
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        'Filtered discovered service providers to configured cdnProvider=aem-cs-fastly for siteId=test-site-id, host=example.com',
+      );
     });
 
     it('dispatcher-scheduled byocdn-other run scans and triggers sub-audits', async () => {

@@ -194,6 +194,17 @@ describe('cdn-detector', () => {
   });
 
   describe('detectCdnFromUrl', () => {
+    // Avoid mocha timeout by mocking instant DNS failure.
+    function mockDnsForFastFallback() {
+      return {
+        promises: {
+          resolve: sinon.stub().rejects(Object.assign(new Error('ENODATA'), { code: 'ENODATA' })),
+          resolve4: sinon.stub().resolves([]),
+          reverse: sinon.stub().resolves([]),
+        },
+      };
+    }
+
     it('returns CDN from response headers when fetch succeeds', async () => {
       const headers = new Map([
         ['cf-ray', 'abc123'],
@@ -219,6 +230,9 @@ describe('cdn-detector', () => {
     });
 
     it('returns error when both HEAD and GET throw', async () => {
+      const detector = await esmock('../../src/detect-cdn/cdn-detector.js', {
+        'node:dns': mockDnsForFastFallback(),
+      });
       let n = 0;
       const fetchFn = sinon.stub().callsFake(() => {
         n += 1;
@@ -227,7 +241,7 @@ describe('cdn-detector', () => {
         }
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ Answer: [] }) });
       });
-      const result = await detectCdnFromUrl('https://example.com', fetchFn);
+      const result = await detector.detectCdnFromUrl('https://example.com', fetchFn);
       expect(result.cdn).to.equal('unknown');
       expect(result.error).to.equal('network error');
       expect(fetchFn.firstCall.args[1].method).to.equal('HEAD');
@@ -275,6 +289,9 @@ describe('cdn-detector', () => {
     });
 
     it('returns error message as string when both HEAD and GET throw with no .message', async () => {
+      const detector = await esmock('../../src/detect-cdn/cdn-detector.js', {
+        'node:dns': mockDnsForFastFallback(),
+      });
       let n = 0;
       const fetchFn = sinon.stub().callsFake(() => {
         n += 1;
@@ -285,7 +302,7 @@ describe('cdn-detector', () => {
         }
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ Answer: [] }) });
       });
-      const result = await detectCdnFromUrl('https://example.com', fetchFn);
+      const result = await detector.detectCdnFromUrl('https://example.com', fetchFn);
       expect(result.cdn).to.equal('unknown');
       expect(result.error).to.equal('plain string error');
       expect(fetchFn.callCount).to.be.at.least(2);

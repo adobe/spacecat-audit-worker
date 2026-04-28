@@ -1,3 +1,144 @@
+# [1.420.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.419.1...v1.420.0) (2026-04-27)
+
+
+### Features
+
+* merge code freeze branch into main ([#2431](https://github.com/adobe/spacecat-audit-worker/issues/2431)) ([454118f](https://github.com/adobe/spacecat-audit-worker/commit/454118ffcc250c1ed1406b4fc379366a85580e1c))
+
+## [1.419.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.419.0...v1.419.1) (2026-04-27)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.53.0 ([#2428](https://github.com/adobe/spacecat-audit-worker/issues/2428)) ([99e579a](https://github.com/adobe/spacecat-audit-worker/commit/99e579a74a5469c73b908e45447ab923faa32a3e))
+* forward 100% BrightData-resolved backlinks to Mystique for bridge enrichment ([#2378](https://github.com/adobe/spacecat-audit-worker/issues/2378)) ([20e185c](https://github.com/adobe/spacecat-audit-worker/commit/20e185c1ed7d54d246126f6b96f0ee25a5561161)), closes [adobe/mystique#companion](https://github.com/adobe/mystique/issues/companion)
+
+# [1.419.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.418.4...v1.419.0) (2026-04-27)
+
+
+### Features
+
+* **AGENTCOM-597:** include IMS organizationId in CAS payload ([#2423](https://github.com/adobe/spacecat-audit-worker/issues/2423)) ([b9c0a91](https://github.com/adobe/spacecat-audit-worker/commit/b9c0a9149dfb9364d4a804702ea908f65ebd07a9))
+
+## [1.418.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.418.3...v1.418.4) (2026-04-25)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2426](https://github.com/adobe/spacecat-audit-worker/issues/2426)) ([aa76953](https://github.com/adobe/spacecat-audit-worker/commit/aa76953fb32599b7c9bcad1cea4ad3a34a17c731))
+
+## [1.418.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.418.2...v1.418.3) (2026-04-24)
+
+
+### Bug Fixes
+
+* **readability:** skip nav elements and high link-density divs in preflight ([#2425](https://github.com/adobe/spacecat-audit-worker/issues/2425)) ([9c6a6fc](https://github.com/adobe/spacecat-audit-worker/commit/9c6a6fcfe73332b6c72af72caa60646821d20399))
+
+## [1.418.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.418.1...v1.418.2) (2026-04-24)
+
+
+### Bug Fixes
+
+* skip chrome links for sites using ARIA landmarks or AEM XFs (SITES-43574) ([#2424](https://github.com/adobe/spacecat-audit-worker/issues/2424)) ([7f67f26](https://github.com/adobe/spacecat-audit-worker/commit/7f67f26b3faf40e6ca56783acc5aa422ba5960a9)), closes [#2207](https://github.com/adobe/spacecat-audit-worker/issues/2207) [#1007](https://github.com/adobe/spacecat-audit-worker/issues/1007)
+
+## [1.418.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.418.0...v1.418.1) (2026-04-22)
+
+
+### Bug Fixes
+
+* **vulnerabilities:** make buildKey shape-agnostic so sync updates existing suggestions (CQ-4363001) ([#2411](https://github.com/adobe/spacecat-audit-worker/issues/2411)) ([887962a](https://github.com/adobe/spacecat-audit-worker/commit/887962a13e272a0cf2e2da96e76ac32026bee740))
+
+# [1.418.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.417.3...v1.418.0) (2026-04-20)
+
+
+### Features
+
+* add VPC configuration support via helix-deploy 13.4 ([#2102](https://github.com/adobe/spacecat-audit-worker/issues/2102)) ([d868035](https://github.com/adobe/spacecat-audit-worker/commit/d868035db94223d11bc9749112889cb53d329ea2)), closes [adobe/helix-deploy#898](https://github.com/adobe/helix-deploy/issues/898) [adobe/helix-deploy#897](https://github.com/adobe/helix-deploy/issues/897) [adobe/spacecat-infrastructure#375](https://github.com/adobe/spacecat-infrastructure/issues/375)
+
+## [1.417.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.417.2...v1.417.3) (2026-04-20)
+
+
+### Bug Fixes
+
+* **deps:** update dependency uuid to v14 ([#2402](https://github.com/adobe/spacecat-audit-worker/issues/2402)) ([bb59b89](https://github.com/adobe/spacecat-audit-worker/commit/bb59b89241b885a2a3128e83fbd28e496ddbf273))
+
+## [1.417.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.417.1...v1.417.2) (2026-04-20)
+
+
+### Bug Fixes
+
+* honor configured cdn provider in cdn analysis ([#2398](https://github.com/adobe/spacecat-audit-worker/issues/2398)) ([cbfd341](https://github.com/adobe/spacecat-audit-worker/commit/cbfd341dc7bd3283177cf6b31d583222807f4db8))
+
+## [1.417.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.417.0...v1.417.1) (2026-04-18)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2401](https://github.com/adobe/spacecat-audit-worker/issues/2401)) ([61b8a52](https://github.com/adobe/spacecat-audit-worker/commit/61b8a52d7626cf3795bcd202d260f91e492900d8))
+
+# [1.417.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.416.1...v1.417.0) (2026-04-17)
+
+
+### Features
+
+* add user agent when fetching brand presence files for offsite audits ([#2400](https://github.com/adobe/spacecat-audit-worker/issues/2400)) ([1e66791](https://github.com/adobe/spacecat-audit-worker/commit/1e667917d154f8b34b23fac51281d6d01675a825))
+
+## [1.416.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.416.0...v1.416.1) (2026-04-17)
+
+
+### Bug Fixes
+
+* CQ-4363335  CSP auto-identify: duplicate suggestions shown with same directive and description ([#2399](https://github.com/adobe/spacecat-audit-worker/issues/2399)) ([ce3adcd](https://github.com/adobe/spacecat-audit-worker/commit/ce3adcd4357e35040fc61d922cb5d80e107f5b0e))
+
+# [1.416.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.415.3...v1.416.0) (2026-04-16)
+
+
+### Features
+
+* Add source in URL when fetching brand presence files ([#2394](https://github.com/adobe/spacecat-audit-worker/issues/2394)) ([30ac0e4](https://github.com/adobe/spacecat-audit-worker/commit/30ac0e4f2dec023a516cb72ffd1d6289b4266388))
+
+## [1.415.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.415.2...v1.415.3) (2026-04-16)
+
+
+### Bug Fixes
+
+* use pathname when building site keys and urls ([#2392](https://github.com/adobe/spacecat-audit-worker/issues/2392)) ([d026a31](https://github.com/adobe/spacecat-audit-worker/commit/d026a31f2c2a947708317b2dd05ae31c274adab2))
+
+## [1.415.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.415.1...v1.415.2) (2026-04-16)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2393](https://github.com/adobe/spacecat-audit-worker/issues/2393)) ([fdf7c51](https://github.com/adobe/spacecat-audit-worker/commit/fdf7c513b1772586de830d5c59a7115b8040b570))
+
+## [1.415.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.415.0...v1.415.1) (2026-04-15)
+
+
+### Bug Fixes
+
+* **LLMO-4176:** skip brandalf check when onboardingMode is v1 in llmo-customer-analysis ([#2380](https://github.com/adobe/spacecat-audit-worker/issues/2380)) ([86e396a](https://github.com/adobe/spacecat-audit-worker/commit/86e396a1662239a998774f3f7defb808cd74e8a9))
+
+# [1.415.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.9...v1.415.0) (2026-04-15)
+
+
+### Features
+
+* **llmo:** add OAI-AdsBot and Google-Agent classification ([#2390](https://github.com/adobe/spacecat-audit-worker/issues/2390)) ([8df40d6](https://github.com/adobe/spacecat-audit-worker/commit/8df40d6bea639a572da1d86875c0f1ca3d6d0769))
+
+## [1.414.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.8...v1.414.9) (2026-04-15)
+
+
+### Bug Fixes
+
+* **deps:** update dependency diff to v9 ([#2377](https://github.com/adobe/spacecat-audit-worker/issues/2377)) ([ee7fa21](https://github.com/adobe/spacecat-audit-worker/commit/ee7fa21212759b6d125d96d25f6315bd9ecf3a2c))
+
+## [1.414.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.7...v1.414.8) (2026-04-15)
+
+
+### Bug Fixes
+
+* **prerender:** fix suggestionId lookup, baseUrl in payload, and coveredByDomainWide guards ([#2373](https://github.com/adobe/spacecat-audit-worker/issues/2373)) ([001b563](https://github.com/adobe/spacecat-audit-worker/commit/001b563a66214b5842cba7f70e256c9c8df4c583)), closes [#2370](https://github.com/adobe/spacecat-audit-worker/issues/2370)
+
 ## [1.414.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.414.6...v1.414.7) (2026-04-15)
 
 
