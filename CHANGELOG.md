@@ -1,3 +1,53 @@
+## [1.420.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.420.0...v1.420.1) (2026-04-28)
+
+
+### Bug Fixes
+
+* enable ahref-paid-pages import before triggering ([#2387](https://github.com/adobe/spacecat-audit-worker/issues/2387)) ([f1d4b22](https://github.com/adobe/spacecat-audit-worker/commit/f1d4b2271cb705effcc90aea6a6c1f3668276e10))
+
+# [1.420.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.419.1...v1.420.0) (2026-04-27)
+
+
+### Features
+
+* merge code freeze branch into main ([#2431](https://github.com/adobe/spacecat-audit-worker/issues/2431)) ([454118f](https://github.com/adobe/spacecat-audit-worker/commit/454118ffcc250c1ed1406b4fc379366a85580e1c))
+
+## [1.419.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.419.0...v1.419.1) (2026-04-27)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.53.0 ([#2428](https://github.com/adobe/spacecat-audit-worker/issues/2428)) ([99e579a](https://github.com/adobe/spacecat-audit-worker/commit/99e579a74a5469c73b908e45447ab923faa32a3e))
+* forward 100% BrightData-resolved backlinks to Mystique for bridge enrichment ([#2378](https://github.com/adobe/spacecat-audit-worker/issues/2378)) ([20e185c](https://github.com/adobe/spacecat-audit-worker/commit/20e185c1ed7d54d246126f6b96f0ee25a5561161)), closes [adobe/mystique#companion](https://github.com/adobe/mystique/issues/companion)
+
+# [1.419.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.418.4...v1.419.0) (2026-04-27)
+
+
+### Features
+
+* **AGENTCOM-597:** include IMS organizationId in CAS payload ([#2423](https://github.com/adobe/spacecat-audit-worker/issues/2423)) ([b9c0a91](https://github.com/adobe/spacecat-audit-worker/commit/b9c0a9149dfb9364d4a804702ea908f65ebd07a9))
+
+## [1.418.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.418.3...v1.418.4) (2026-04-25)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2426](https://github.com/adobe/spacecat-audit-worker/issues/2426)) ([aa76953](https://github.com/adobe/spacecat-audit-worker/commit/aa76953fb32599b7c9bcad1cea4ad3a34a17c731))
+
+## [1.418.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.418.2...v1.418.3) (2026-04-24)
+
+
+### Bug Fixes
+
+* **readability:** skip nav elements and high link-density divs in preflight ([#2425](https://github.com/adobe/spacecat-audit-worker/issues/2425)) ([9c6a6fc](https://github.com/adobe/spacecat-audit-worker/commit/9c6a6fcfe73332b6c72af72caa60646821d20399))
+
+## [1.418.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.418.1...v1.418.2) (2026-04-24)
+
+
+### Bug Fixes
+
+* skip chrome links for sites using ARIA landmarks or AEM XFs (SITES-43574) ([#2424](https://github.com/adobe/spacecat-audit-worker/issues/2424)) ([7f67f26](https://github.com/adobe/spacecat-audit-worker/commit/7f67f26b3faf40e6ca56783acc5aa422ba5960a9)), closes [#2207](https://github.com/adobe/spacecat-audit-worker/issues/2207) [#1007](https://github.com/adobe/spacecat-audit-worker/issues/1007)
+
 ## [1.418.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.418.0...v1.418.1) (2026-04-22)
 
 

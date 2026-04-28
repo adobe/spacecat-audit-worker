@@ -527,12 +527,7 @@ export const generateSuggestionData = async (context) => {
 
   // Validate before sending to Mystique
   if (brokenLinksForMystique.length === 0) {
-    log.info('All broken links resolved via Bright Data. Skipping Mystique.');
-    opportunity.setLastAuditedAt(new Date().toISOString());
-    await opportunity.save();
-    return {
-      status: 'complete',
-    };
+    log.info('All broken links resolved via Bright Data. Forwarding to Mystique.');
   }
 
   if (alternativeUrls.length === 0) {
