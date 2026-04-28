@@ -528,6 +528,86 @@ describe('summarization guidance handler', () => {
     expect(log.error).to.have.been.calledWith(sinon.match(/\[Summarization\] Failed to save summarization opportunity on Mystique callback: Database connection failed/));
   });
 
+  it('should propagate claims from Mystique response to persisted summary suggestion', async () => {
+    const claimsFixture = [{ text: 'Important claim', type: 'core' }];
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().resolves({
+        guidance: [],
+        suggestions: [
+          {
+            pageUrl: 'https://adobe.com/page1',
+            pageSummary: {
+              title: 'Page Title',
+              formatted_summary: 'A summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: {
+              formatted_items: ['Key point 1'],
+            },
+            claims: claimsFixture,
+          },
+        ],
+      }),
+    });
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(dummyOpportunity);
+
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: { presignedUrl: 'https://s3.aws.com/summaries.json' },
+    };
+    await handler(message, context);
+
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
+    const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+    const summaryItem = syncArgs.newData.find((d) => d.keyPoints === false);
+    expect(summaryItem).to.exist;
+    expect(summaryItem.claims).to.deep.equal(claimsFixture);
+    const keyPointsItem = syncArgs.newData.find((d) => d.keyPoints === true);
+    expect(Object.hasOwn(keyPointsItem, 'claims')).to.be.false;
+  });
+
+  it('should not include claims key on summary item when Mystique response has no claims', async () => {
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().resolves({
+        guidance: [],
+        suggestions: [
+          {
+            pageUrl: 'https://adobe.com/page1',
+            pageSummary: {
+              title: 'Page Title',
+              formatted_summary: 'A summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: {
+              formatted_items: ['Key point 1'],
+            },
+          },
+        ],
+      }),
+    });
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(dummyOpportunity);
+
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: { presignedUrl: 'https://s3.aws.com/summaries.json' },
+    };
+    await handler(message, context);
+
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
+    const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+    const summaryItem = syncArgs.newData.find((d) => d.keyPoints === false);
+    expect(summaryItem).to.exist;
+    expect(Object.hasOwn(summaryItem, 'claims')).to.be.false;
+  });
+
   it('should call buildKey function for suggestions', async () => {
     const message = {
       siteId: dummySite.getId(),

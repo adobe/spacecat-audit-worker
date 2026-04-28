@@ -17,6 +17,7 @@ import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 import { getMergedAuditInputUrls, sortTopPagesByTraffic } from '../utils/audit-input-urls.js';
 import { detectExistingContent } from './existing-content-detector.js';
 import { filterOutDynamicUrls } from './dynamic-content-filter.js';
+import { SUMMARIZATION_MODE_CLAIM_BASED } from './constants.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE = 'summarization';
@@ -237,7 +238,10 @@ export async function sendToMystique(context) {
     auditId: audit.getId(),
     deliveryType: site.getDeliveryType(),
     time: new Date().toISOString(),
-    data: { pages: topPagesPayload },
+    data: {
+      summarizationMode: SUMMARIZATION_MODE_CLAIM_BASED,
+      pages: topPagesPayload,
+    },
   };
 
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);

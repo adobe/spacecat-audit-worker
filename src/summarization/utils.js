@@ -57,7 +57,7 @@ export function getJsonSummarySuggestion(suggestions) {
     const pageSummaryAlreadyPresent = suggestion.page_summary_present === true
       || suggestion.hasExistingSummary === true;
     if (hasSummaryText(pageSummaryText) && !pageSummaryAlreadyPresent) {
-      suggestionValues.push({
+      const summaryItem = {
         summarizationText: pageSummaryText,
         aiGeneratedSummarizationText: pageSummaryText,
         fullPage: true,
@@ -66,7 +66,11 @@ export function getJsonSummarySuggestion(suggestions) {
         title: suggestion.pageSummary?.title,
         transformRules: pageTransformRules,
         scrapedAt,
-      });
+      };
+      if (Object.hasOwn(suggestion, 'claims')) {
+        summaryItem.claims = suggestion.claims;
+      }
+      suggestionValues.push(summaryItem);
     }
 
     // handle key points summary - only add if there are key points and not already on page

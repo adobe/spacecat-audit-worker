@@ -20,6 +20,7 @@ import {
   submitForScraping,
   sendToMystique,
 } from '../../../src/summarization/handler.js';
+import { SUMMARIZATION_MODE_CLAIM_BASED } from '../../../src/summarization/constants.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -281,15 +282,17 @@ describe('Summarization Handler', () => {
       const result = await sendToMystique(context);
 
       expect(result).to.deep.equal({ status: 'complete' });
-      
+
       const sentMessage = sqs.sendMessage.getCall(0).args[1];
       expect(sentMessage.type).to.equal('guidance:summarization');
       expect(sentMessage.siteId).to.equal('site-id-123');
       expect(sentMessage.url).to.equal('https://adobe.com');
       expect(sentMessage.auditId).to.equal('audit-id-456');
       expect(sentMessage.deliveryType).to.equal('aem');
+      expect(sentMessage.data.summarizationMode).to.equal(SUMMARIZATION_MODE_CLAIM_BASED);
+      expect(sentMessage.data).to.not.have.property('claimOptions');
       expect(sentMessage.data.pages).to.have.lengthOf(3);
-      
+
       // Check that all pages are from the scraped URLs
       const pageUrls = sentMessage.data.pages.map((p) => p.page_url);
       expect(pageUrls).to.include.members([
@@ -297,7 +300,7 @@ describe('Summarization Handler', () => {
         'https://adobe.com/page2',
         'https://adobe.com/page3',
       ]);
-      
+
       expect(log.info).to.have.been.calledWith(
         '[SUMMARIZATION] Sent 3 pages to Mystique for site site-id-123',
       );

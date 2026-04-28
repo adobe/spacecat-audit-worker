@@ -366,6 +366,146 @@ describe('summarization utils', () => {
       expect(result[0].aiGeneratedSummarizationText).to.equal('Test summary');
     });
 
+    describe('claims pass-through', () => {
+      it('should include claims verbatim on summary item when claims is present', () => {
+        const claimsFixture = [{ foo: 'bar' }, { baz: 42 }];
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: {
+              formatted_items: ['Key point 1'],
+            },
+            claims: claimsFixture,
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(2);
+        expect(result[0].keyPoints).to.be.false;
+        expect(result[0].claims).to.deep.equal(claimsFixture);
+        expect(result[1].keyPoints).to.be.true;
+        expect(Object.hasOwn(result[1], 'claims')).to.be.false;
+      });
+
+      it('should include claims: [] on summary item when claims is an empty array', () => {
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: {
+              formatted_items: ['Key point 1'],
+            },
+            claims: [],
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(2);
+        expect(result[0].claims).to.deep.equal([]);
+        expect(Object.hasOwn(result[1], 'claims')).to.be.false;
+      });
+
+      it('should pass through claims of any shape (opaque pass-through)', () => {
+        const mixedClaims = ['plain string', 42, { nested: true }];
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: {
+              formatted_items: [],
+            },
+            claims: mixedClaims,
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(1);
+        expect(result[0].claims).to.deep.equal(mixedClaims);
+      });
+
+      it('should not include claims key on summary item when claims is absent', () => {
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: {
+              formatted_items: ['Key point 1'],
+            },
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(2);
+        expect(Object.hasOwn(result[0], 'claims')).to.be.false;
+        expect(Object.hasOwn(result[1], 'claims')).to.be.false;
+      });
+
+      it('should produce no items when pageSummary is absent, even when claims are present', () => {
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            keyPoints: {
+              formatted_items: [],
+            },
+            claims: [{ text: 'some claim', type: 'core' }],
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(0);
+      });
+
+      it('should never include claims on the key-points item', () => {
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: {
+              formatted_items: ['Key point 1', 'Key point 2'],
+            },
+            claims: [{ text: 'claim', type: 'core' }],
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(2);
+        const keyPointsItem = result.find((r) => r.keyPoints === true);
+        expect(Object.hasOwn(keyPointsItem, 'claims')).to.be.false;
+      });
+    });
+
     describe('already-present flags (page_summary_present, key_points_present)', () => {
       it('should exclude page summary when page_summary_present is true', () => {
         const suggestions = [
