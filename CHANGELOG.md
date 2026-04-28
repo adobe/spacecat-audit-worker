@@ -1,3 +1,10 @@
+# [1.422.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.421.2...v1.422.0) (2026-04-28)
+
+
+### Features
+
+* ensure Sitemap audit can go gracefully into "slow mode" ([#2432](https://github.com/adobe/spacecat-audit-worker/issues/2432)) ([f5e695d](https://github.com/adobe/spacecat-audit-worker/commit/f5e695d1db86f48903cc81521809513c805eca29))
+
 ## [1.421.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.421.1...v1.421.2) (2026-04-28)
 
 
