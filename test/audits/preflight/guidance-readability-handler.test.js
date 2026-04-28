@@ -310,13 +310,14 @@ describe('Guidance Readability Handler Tests', () => {
       expect(logStub.warn).to.have.been.calledWithMatch('No valid readability improvements found');
     });
 
-    it('should log AI classifier exclusion and still persist job metadata', async () => {
+    it('should log AI classifier exclusion and persist an excluded suggestion row in job metadata', async () => {
       const message = {
         auditId: 'test-audit-id',
         siteId: 'test-site-id',
         data: {
           should_exclude: true,
           exclusion_reason: 'bibliography_or_attribution_block',
+          original_paragraph: 'Attribution line content.',
         },
         id: 'message-id-excluded',
       };
@@ -330,6 +331,33 @@ describe('Guidance Readability Handler Tests', () => {
       );
       expect(mockAsyncJob.setMetadata).to.have.been.called;
       expect(mockAsyncJob.save).to.have.been.called;
+
+      const setMetadataCall = mockAsyncJob.setMetadata.getCall(0);
+      const updatedMetadata = setMetadataCall.args[0];
+      const suggestions = updatedMetadata.payload.readabilityMetadata.suggestions;
+      expect(suggestions).to.have.lengthOf(1);
+      expect(suggestions[0].suggestionStatus).to.equal('excluded');
+      expect(suggestions[0].shouldExclude).to.equal(true);
+      expect(suggestions[0].exclusionReason).to.equal('bibliography_or_attribution_block');
+    });
+
+    it('should warn when excluded response has no original_paragraph to attach', async () => {
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          should_exclude: true,
+          exclusion_reason: 'bibliography_or_attribution_block',
+        },
+        id: 'message-id-excluded-no-original',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.warn).to.have.been.calledWith(
+        '[readability-suggest guidance]: Excluded Mystique response missing original_paragraph; cannot attach excluded row for siteId: test-site-id',
+      );
     });
   });
 
@@ -471,6 +499,124 @@ describe('Guidance Readability Handler Tests', () => {
       expect(mockAsyncJob.setStatus).to.have.been.calledWith('COMPLETED');
       expect(mockAsyncJob.setEndedAt).to.have.been.called;
       expect(logStub.debug).to.have.been.calledWithMatch('All 2 Mystique responses received');
+    });
+
+    it('should mark opportunities excluded in job result when classifier excludes and job completes', async () => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [{ originalIndex: 0, textContent: 'Line to exclude.' }],
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0,
+            suggestions: [],
+            processedSuggestionIds: [],
+          },
+        },
+      });
+
+      mockAsyncJob.getResult.returns([
+        {
+          audits: [
+            {
+              name: 'readability',
+              opportunities: [
+                {
+                  textContent: 'Line to exclude.',
+                  fleschReadingEase: 22,
+                  check: 'poor-readability',
+                },
+              ],
+            },
+          ],
+        },
+      ]);
+
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
+
+      const freshJob = { ...mockAsyncJob };
+      freshJob.getStatus = sinon.stub().returns('IN_PROGRESS');
+      mockAsyncJobEntity.findById.onSecondCall().resolves(freshJob);
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          should_exclude: true,
+          exclusion_reason: 'test_exclusion_reason',
+          original_paragraph: 'Line to exclude.',
+        },
+        id: 'excluded-final-msg',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+
+      expect(freshJob.setResult).to.have.been.called;
+      const updated = freshJob.setResult.getCall(0).args[0];
+      const opportunity = updated[0].audits[0].opportunities[0];
+
+      expect(opportunity.suggestionStatus).to.equal('excluded');
+      expect(opportunity.exclusionReason).to.equal('test_exclusion_reason');
+      expect(opportunity.shouldExclude).to.equal(true);
+      expect(opportunity.suggestionMessage).to.equal(
+        'Excluded from AI readability improvement: test_exclusion_reason',
+      );
+    });
+
+    it('should use default exclusion message when classifier omits exclusion_reason', async () => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [{ originalIndex: 0, textContent: 'Solo line.' }],
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0,
+            suggestions: [],
+            processedSuggestionIds: [],
+          },
+        },
+      });
+
+      mockAsyncJob.getResult.returns([
+        {
+          audits: [
+            {
+              name: 'readability',
+              opportunities: [
+                {
+                  textContent: 'Solo line.',
+                  fleschReadingEase: 30,
+                  check: 'poor-readability',
+                },
+              ],
+            },
+          ],
+        },
+      ]);
+
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
+
+      const freshJob = { ...mockAsyncJob };
+      freshJob.getStatus = sinon.stub().returns('IN_PROGRESS');
+      mockAsyncJobEntity.findById.onSecondCall().resolves(freshJob);
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          should_exclude: true,
+          original_paragraph: 'Solo line.',
+        },
+        id: 'excluded-no-reason-msg',
+      };
+
+      await handler.default(message, mockContext);
+
+      const updated = freshJob.setResult.getCall(0).args[0];
+      const opportunity = updated[0].audits[0].opportunities[0];
+
+      expect(opportunity.suggestionMessage).to.equal('Excluded from AI readability improvement.');
+      expect(opportunity.exclusionReason).to.be.undefined;
     });
 
     it('should handle race condition when job is already completed', async () => {

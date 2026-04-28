@@ -15,7 +15,18 @@ import {
 } from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { syncSuggestions } from '../../utils/data-access.js';
+import { syncSuggestions, defaultMergeStatusFunction } from '../../utils/data-access.js';
+
+/**
+ * Enriches excluded readability rows (no transform rules — classifier skipped improvement).
+ */
+function enrichExcludedReadabilitySuggestionData(data) {
+  return {
+    ...data,
+    url: data.pageUrl,
+    scrapedAt: data.scrapedAt ? new Date(data.scrapedAt).toISOString() : undefined,
+  };
+}
 
 /**
  * Enriches suggestion data with fields required for auto-optimize.
@@ -67,7 +78,7 @@ async function deleteResponseFile(s3Client, bucketName, s3ResultsPath, log) {
 /**
  * Maps a single Mystique batch result item to the internal suggestion data format.
  * Batch result `data` dict uses snake_case field names from Mystique.
- * Returns null for failed items or items with empty improved text.
+ * Returns null for failed items or items with empty improved text (non-excluded only).
  */
 function mapBatchResultToSuggestionData(item) {
   if (item.status !== 'success' || !item.data) {
@@ -75,7 +86,17 @@ function mapBatchResultToSuggestionData(item) {
   }
   const { data } = item;
   if (data.should_exclude) {
-    return null;
+    if (!data.original_paragraph || String(data.original_paragraph).trim() === '') {
+      return null;
+    }
+    return {
+      pageUrl: data.page_url,
+      selector: item.selector,
+      originalText: data.original_paragraph,
+      shouldExclude: true,
+      exclusionReason: data.exclusion_reason,
+      suggestionStatus: 'excluded',
+    };
   }
   if (!data.improved_paragraph || data.improved_paragraph.trim() === '') {
     return null;
@@ -186,6 +207,19 @@ export default async function handler(message, context) {
     newData: mappedSuggestions,
     buildKey,
     mapNewSuggestion: (suggestionData) => {
+      if (suggestionData.shouldExclude) {
+        const enrichedData = enrichExcludedReadabilitySuggestionData({
+          ...suggestionData,
+          mystiqueProcessingCompleted: new Date().toISOString(),
+        });
+        return {
+          opportunityId: readabilityOpportunity.getId(),
+          type: SuggestionModel.TYPES.CONTENT_UPDATE,
+          rank: 10,
+          status: SuggestionModel.STATUSES.SKIPPED,
+          data: enrichedData,
+        };
+      }
       const enrichedData = enrichSuggestionDataForAutoOptimize({
         ...suggestionData,
         mystiqueProcessingCompleted: new Date().toISOString(),
@@ -198,6 +232,20 @@ export default async function handler(message, context) {
       };
     },
     mergeDataFunction: (existingData, newData) => {
+      if (newData.shouldExclude) {
+        const merged = {
+          ...existingData,
+          shouldExclude: true,
+          exclusionReason: newData.exclusionReason,
+          suggestionStatus: 'excluded',
+          mystiqueProcessingCompleted: new Date().toISOString(),
+        };
+        delete merged.category;
+        delete merged.seoImpact;
+        delete merged.transformRules;
+        delete merged.improvedText;
+        return enrichExcludedReadabilitySuggestionData(merged);
+      }
       const merged = {
         ...existingData,
         improvedText: newData.improvedText,
@@ -212,6 +260,10 @@ export default async function handler(message, context) {
       delete merged.seoImpact;
       return enrichSuggestionDataForAutoOptimize(merged);
     },
+    mergeStatusFunction: (existing, newDataItem, mergeCtx) => (
+      newDataItem.shouldExclude
+        ? SuggestionModel.STATUSES.SKIPPED
+        : defaultMergeStatusFunction(existing, newDataItem, mergeCtx)),
   });
 
   // Delete the S3 response file only after syncSuggestions succeeds

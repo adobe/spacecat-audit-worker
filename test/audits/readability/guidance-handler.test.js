@@ -26,6 +26,7 @@ describe('Readability Opportunities Guidance Handler', () => {
   let mockContext;
   let mockS3Client;
   let syncSuggestionsStub;
+  let defaultMergeStatusStub;
 
   const S3_RESULTS = [
     {
@@ -48,6 +49,7 @@ describe('Readability Opportunities Guidance Handler', () => {
     this.timeout(5000);
 
     syncSuggestionsStub = sinon.stub();
+    defaultMergeStatusStub = sinon.stub().callsFake(() => null);
 
     handler = await esmock('../../../src/readability/opportunities/guidance-handler.js', {
       '@adobe/spacecat-shared-http-utils': {
@@ -58,10 +60,14 @@ describe('Readability Opportunities Guidance Handler', () => {
         internalServerError: sinon.stub().returns({ internalServerError: true }),
       },
       '@adobe/spacecat-shared-data-access': {
-        Suggestion: { TYPES: { CONTENT_UPDATE: 'CONTENT_UPDATE' } },
+        Suggestion: {
+          TYPES: { CONTENT_UPDATE: 'CONTENT_UPDATE' },
+          STATUSES: { SKIPPED: 'SKIPPED' },
+        },
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: syncSuggestionsStub,
+        defaultMergeStatusFunction: defaultMergeStatusStub,
       },
     });
   });
@@ -69,6 +75,7 @@ describe('Readability Opportunities Guidance Handler', () => {
   beforeEach(() => {
     syncSuggestionsStub.reset();
     syncSuggestionsStub.resolves();
+    defaultMergeStatusStub.resetHistory();
 
     logStub = {
       info: sinon.stub(),
@@ -370,13 +377,14 @@ describe('Readability Opportunities Guidance Handler', () => {
       expect(syncArgs.newData[0].selector).to.equal('#content p:nth-child(1)');
     });
 
-    it('should filter out batch items with should_exclude from Mystique classifier', async () => {
+    it('should persist batch items with should_exclude as SKIPPED suggestions with metadata', async () => {
       const mixedResults = [
         {
           status: 'success',
           selector: '#citation',
           data: {
             should_exclude: true,
+            exclusion_reason: 'citation_block',
             page_url: 'https://example.com/page1',
             original_paragraph: 'Bibliographic line excluded by classifier.',
             current_flesch_score: 18,
@@ -419,6 +427,73 @@ describe('Readability Opportunities Guidance Handler', () => {
       };
 
       const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ ok: true });
+
+      const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+      expect(syncArgs.newData).to.have.length(2);
+      const excluded = syncArgs.newData.find((row) => row.shouldExclude);
+      expect(excluded.selector).to.equal('#citation');
+      expect(excluded.suggestionStatus).to.equal('excluded');
+
+      const excludedPayload = syncArgs.mapNewSuggestion(excluded);
+      expect(excludedPayload.status).to.equal('SKIPPED');
+      expect(excludedPayload.data.shouldExclude).to.be.true;
+      expect(excludedPayload.data.exclusionReason).to.equal('citation_block');
+    });
+
+    it('should drop excluded items when original_paragraph is missing or only whitespace', async () => {
+      const mixedResults = [
+        {
+          status: 'success',
+          selector: '#excluded-no-paragraph',
+          data: {
+            should_exclude: true,
+            page_url: 'https://example.com/page1',
+            current_flesch_score: 10,
+          },
+        },
+        {
+          status: 'success',
+          selector: '#excluded-blank-paragraph',
+          data: {
+            should_exclude: true,
+            original_paragraph: '   \t  ',
+            page_url: 'https://example.com/page1',
+            current_flesch_score: 10,
+          },
+        },
+        {
+          status: 'success',
+          selector: '#content p:nth-child(1)',
+          data: {
+            page_url: 'https://example.com/page1',
+            original_paragraph: 'Original complex text with many words.',
+            current_flesch_score: 25.3,
+            improved_paragraph: 'Simple clear text.',
+            improved_flesch_score: 75.5,
+            seo_recommendation: 'Simplify language',
+            ai_rationale: 'Use shorter sentences',
+          },
+        },
+      ];
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.input?.Key) {
+          return Promise.resolve({
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify(mixedResults)),
+            },
+          });
+        }
+        return Promise.resolve();
+      });
+
+      const result = await handler.default({
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      }, mockContext);
+
       expect(result).to.deep.equal({ ok: true });
 
       const syncArgs = syncSuggestionsStub.getCall(0).args[0];
@@ -721,6 +796,124 @@ describe('Readability Opportunities Guidance Handler', () => {
         target: 'ai-bots',
         prerenderRequired: true,
       });
+    });
+
+    it('should merge excluded batch rows by stripping replace-transform fields', async () => {
+      const mixedResults = [
+        {
+          status: 'success',
+          selector: '#citation',
+          data: {
+            should_exclude: true,
+            exclusion_reason: 'citation_block',
+            page_url: 'https://example.com/page1',
+            original_paragraph: 'Bibliographic line excluded by classifier.',
+            current_flesch_score: 18,
+          },
+        },
+      ];
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.input?.Key) {
+          return Promise.resolve({
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify(mixedResults)),
+            },
+          });
+        }
+        return Promise.resolve();
+      });
+
+      await handler.default({
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      }, mockContext);
+
+      const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+      const { mergeDataFunction, newData } = syncArgs;
+      const excluded = newData[0];
+
+      const merged = mergeDataFunction({
+        pageUrl: 'https://example.com/page1',
+        selector: '#citation',
+        scrapedAt: '2025-06-01T12:00:00.000Z',
+        category: 'Moderate',
+        seoImpact: 'High',
+        transformRules: { op: 'replace', value: 'x' },
+        improvedText: 'prior improved',
+        textPreview: 'Bibliographic line excluded by classifier.',
+      }, excluded);
+
+      expect(merged.suggestionStatus).to.equal('excluded');
+      expect(merged.shouldExclude).to.equal(true);
+      expect(merged.exclusionReason).to.equal('citation_block');
+      expect(merged.transformRules).to.be.undefined;
+      expect(merged.improvedText).to.be.undefined;
+      expect(merged.category).to.be.undefined;
+      expect(merged.seoImpact).to.be.undefined;
+      expect(merged.url).to.equal('https://example.com/page1');
+      expect(merged.scrapedAt).to.equal('2025-06-01T12:00:00.000Z');
+    });
+  });
+
+  describe('mergeStatusFunction', () => {
+    it('should return SKIPPED when newDataItem.shouldExclude is true', async () => {
+      const mixedResults = [
+        {
+          status: 'success',
+          selector: '#citation',
+          data: {
+            should_exclude: true,
+            page_url: 'https://example.com/page1',
+            original_paragraph: 'Excluded text.',
+            current_flesch_score: 10,
+          },
+        },
+      ];
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.input?.Key) {
+          return Promise.resolve({
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify(mixedResults)),
+            },
+          });
+        }
+        return Promise.resolve();
+      });
+
+      await handler.default({
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      }, mockContext);
+
+      const { mergeStatusFunction, newData } = syncSuggestionsStub.getCall(0).args[0];
+      const mockExisting = { getStatus: () => 'NEW' };
+      const mergeCtx = { log: logStub, site: {} };
+
+      expect(mergeStatusFunction(mockExisting, newData[0], mergeCtx)).to.equal('SKIPPED');
+      expect(defaultMergeStatusStub).to.not.have.been.called;
+    });
+
+    it('should delegate to defaultMergeStatusFunction when not excluded', async () => {
+      await handler.default({
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      }, mockContext);
+
+      const { mergeStatusFunction, newData } = syncSuggestionsStub.getCall(0).args[0];
+      const mockExisting = { getStatus: () => 'NEW' };
+      const mergeCtx = { log: logStub, site: {} };
+
+      const result = mergeStatusFunction(mockExisting, { ...newData[0], shouldExclude: false }, mergeCtx);
+
+      expect(defaultMergeStatusStub).to.have.been.calledOnce;
+      expect(defaultMergeStatusStub.firstCall.args[0]).to.equal(mockExisting);
+      expect(defaultMergeStatusStub.firstCall.args[2]).to.equal(mergeCtx);
+      expect(result).to.equal(null);
     });
   });
 });

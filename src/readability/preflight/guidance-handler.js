@@ -92,37 +92,46 @@ export default async function handler(message, context) {
   // Process different response formats from Mystique
   let mappedSuggestions = [];
 
-  // If AI classifier excluded this content, skip suggestion mapping but still count the response
+  // Classifier exclusions still produce a row so AsyncJob result merge can mark them excluded
   const isAiExcluded = data?.should_exclude === true;
 
-  if (!isAiExcluded) {
-    // Check if we have direct improved paragraph data (single response)
-    if (data?.improved_paragraph && data?.improved_flesch_score) {
+  if (isAiExcluded) {
+    log.info(`[readability-suggest guidance]: Content excluded by AI classifier for siteId: ${siteId}, reason: ${data.exclusion_reason}`);
+    const originalParagraph = data?.original_paragraph != null ? String(data.original_paragraph).trim() : '';
+    if (originalParagraph !== '') {
       mappedSuggestions.push({
         id: `readability-${auditId}-${messageId}`,
         pageUrl: data.pageUrl || auditUrl,
         originalText: data.original_paragraph,
-        improvedText: data.improved_paragraph,
-        originalFleschScore: data.current_flesch_score,
-        improvedFleschScore: data.improved_flesch_score,
-        seoRecommendation: data.seo_recommendation,
-        aiRationale: data.ai_rationale,
-        targetFleschScore: data.target_flesch_score,
+        shouldExclude: true,
+        exclusionReason: data.exclusion_reason,
+        suggestionStatus: 'excluded',
       });
-    } else if (suggestions && suggestions.length > 0) {
-      // Check if we have suggestions array (batch response)
-      mappedSuggestions = mapMystiqueSuggestionsToOpportunityFormat(suggestions);
-    } else if (data?.guidance && data.guidance.length > 0) {
-      // Check if we have guidance array (alternative format)
-      mappedSuggestions = mapMystiqueSuggestionsToOpportunityFormat(data.guidance);
+    } else {
+      log.warn(`[readability-suggest guidance]: Excluded Mystique response missing original_paragraph; cannot attach excluded row for siteId: ${siteId}`);
     }
+  } else if (data?.improved_paragraph && data?.improved_flesch_score) {
+    mappedSuggestions.push({
+      id: `readability-${auditId}-${messageId}`,
+      pageUrl: data.pageUrl || auditUrl,
+      originalText: data.original_paragraph,
+      improvedText: data.improved_paragraph,
+      originalFleschScore: data.current_flesch_score,
+      improvedFleschScore: data.improved_flesch_score,
+      seoRecommendation: data.seo_recommendation,
+      aiRationale: data.ai_rationale,
+      targetFleschScore: data.target_flesch_score,
+    });
+  } else if (suggestions && suggestions.length > 0) {
+    mappedSuggestions = mapMystiqueSuggestionsToOpportunityFormat(suggestions);
+  } else if (data?.guidance && data.guidance.length > 0) {
+    mappedSuggestions = mapMystiqueSuggestionsToOpportunityFormat(data.guidance);
+  }
 
-    if (mappedSuggestions.length === 0) {
-      log.warn(`[readability-suggest guidance]: No valid readability improvements found in Mystique response for siteId: ${siteId}`);
-      return ok();
-    }
-  } else {
-    log.info(`[readability-suggest guidance]: Content excluded by AI classifier for siteId: ${siteId}, reason: ${data.exclusion_reason}`);
+  // For classifier exclusions without attachable paragraph, still persist response counts below
+  if (mappedSuggestions.length === 0 && !isAiExcluded) {
+    log.warn(`[readability-suggest guidance]: No valid readability improvements found in Mystique response for siteId: ${siteId}`);
+    return ok();
   }
 
   // Update job metadata with response tracking (preflight audit pattern)
@@ -179,7 +188,7 @@ export default async function handler(message, context) {
           if (pageResult.audits) {
             const updatedAudits = pageResult.audits.map((auditItem) => {
               if (auditItem.name === 'readability') {
-                // Get all suggestions from job metadata e tests to (preflight audit pattern)
+                // Get all suggestions from job metadata for merge (preflight audit pattern)
                 const allSuggestions = updatedReadabilityMetadata.suggestions;
 
                 // The AsyncJob may have 0 opportunities if cleared during async processing
@@ -261,6 +270,28 @@ export default async function handler(message, context) {
                   if (matchingSuggestion) {
                     // Suggestions are stored directly as objects
                     const recommendation = matchingSuggestion;
+                    const isExcluded = recommendation.shouldExclude === true
+                      || recommendation.suggestionStatus === 'excluded';
+
+                    if (isExcluded) {
+                      const exclusionReason = recommendation.exclusionReason
+                        ?? recommendation.exclusion_reason;
+
+                      const updatedOpportunity = {
+                        ...opportunity,
+                        suggestionStatus: 'excluded',
+                        suggestionMessage: exclusionReason
+                          ? `Excluded from AI readability improvement: ${exclusionReason}`
+                          : 'Excluded from AI readability improvement.',
+                        exclusionReason,
+                        mystiqueProcessingCompleted: new Date().toISOString(),
+                        shouldExclude: true,
+                      };
+
+                      log.debug(`[readability-suggest guidance]: Updated opportunity with excluded readability row: ${JSON.stringify(updatedOpportunity, null, 2)}`);
+
+                      return updatedOpportunity;
+                    }
 
                     const updatedOpportunity = {
                       ...opportunity,

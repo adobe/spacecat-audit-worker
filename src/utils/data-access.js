@@ -500,15 +500,19 @@ export async function syncSuggestions({
   }
   log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
+  const defaultNewSuggestionStatus = newSuggestionStatus
+    ?? ((requiresValidation && !isTBYB)
+      ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+      : SuggestionDataAccess.STATUSES.NEW);
+
   const newSuggestions = newData
     .filter((data) => !existingSuggestionKeys.has(buildKey(data)))
     .map((data) => {
       const suggestion = mapNewSuggestion(data);
       const result = {
         ...suggestion,
-        status: newSuggestionStatus || ((requiresValidation && !isTBYB)
-          ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
-          : SuggestionDataAccess.STATUSES.NEW),
+        // Allow mapNewSuggestion to pin status (e.g. SKIPPED for readability exclusions)
+        status: suggestion.status ?? defaultNewSuggestionStatus,
       };
       if (result.data != null) {
         warnOnInvalidSuggestionData(result.data, opportunityType, log);
