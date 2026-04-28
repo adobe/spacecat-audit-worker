@@ -1,3 +1,10 @@
+# [1.421.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.420.1...v1.421.0) (2026-04-28)
+
+
+### Features
+
+* **cdn-logs-report:** expose batchId in runDailyAgenticExport return value ([#2420](https://github.com/adobe/spacecat-audit-worker/issues/2420)) ([17c9fdc](https://github.com/adobe/spacecat-audit-worker/commit/17c9fdcaa0ab76fdfb16d50fdfe2bf162b41fe5e))
+
 ## [1.420.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.420.0...v1.420.1) (2026-04-28)
 
 
