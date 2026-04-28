@@ -1,3 +1,10 @@
+## [1.420.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.420.0...v1.420.1) (2026-04-28)
+
+
+### Bug Fixes
+
+* enable ahref-paid-pages import before triggering ([#2387](https://github.com/adobe/spacecat-audit-worker/issues/2387)) ([f1d4b22](https://github.com/adobe/spacecat-audit-worker/commit/f1d4b2271cb705effcc90aea6a6c1f3668276e10))
+
 # [1.420.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.419.1...v1.420.0) (2026-04-27)
 
 
