@@ -195,14 +195,14 @@ export async function processReadabilityOpportunities(context) {
 
     // Prepare suggestions data for database (raw data format for syncSuggestions)
     const suggestionsData = readabilityIssues.map((issue, index) => {
-      // Extract only the fields needed for display (exclude full textContent)
-      const {
-        textContent,
-        ...issueWithoutFullText
-      } = issue;
+      const data = { ...issue };
+      const { textContent } = data;
+      delete data.textContent;
+      delete data.category;
+      delete data.seoImpact;
 
       return {
-        ...issueWithoutFullText,
+        ...data,
         scrapedAt: new Date(issue.scrapedAt).toISOString(),
         id: `readability-${siteId}-${index}`,
         textPreview: textContent?.substring(0, 500),
