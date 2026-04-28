@@ -283,6 +283,7 @@ export async function runDailyAgenticExport({
     skipped: false,
     siteId: site.getId(),
     trafficDate,
+    batchId,
     rowCount: trafficRows.length,
     classificationCount: classificationRows.length,
     bundleUri,
