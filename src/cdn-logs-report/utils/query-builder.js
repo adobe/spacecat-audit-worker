@@ -28,10 +28,6 @@ function buildWhereClause(conditions = [], siteFilters = []) {
   return allConditions.length > 0 ? `WHERE ${allConditions.join(' AND ')}` : '';
 }
 
-function escapeSqlLiteral(value) {
-  return String(value).replace(/'/g, "''");
-}
-
 // Page Type Classification
 function generatePageTypeClassification(remotePatterns = null) {
   const patterns = remotePatterns?.pagePatterns || [];
@@ -41,7 +37,7 @@ function generatePageTypeClassification(remotePatterns = null) {
   }
 
   const caseConditions = patterns
-    .map((pattern) => `      WHEN REGEXP_LIKE(url, '${escapeSqlLiteral(pattern.regex)}') THEN '${escapeSqlLiteral(pattern.name)}'`)
+    .map((pattern) => `      WHEN REGEXP_LIKE(url, '${pattern.regex}') THEN '${pattern.name}'`)
     .join('\n');
 
   return `CASE\n${caseConditions}\n      ELSE 'Other'\n    END`;
@@ -66,9 +62,9 @@ function buildTopicExtractionSQL(remotePatterns = null) {
 
     patterns.forEach(({ regex, name }) => {
       if (name) {
-        namedPatterns.push(`WHEN REGEXP_LIKE(url, '${escapeSqlLiteral(regex)}') THEN '${escapeSqlLiteral(name)}'`);
+        namedPatterns.push(`WHEN REGEXP_LIKE(url, '${regex}') THEN '${name}'`);
       } else {
-        extractPatterns.push(`NULLIF(REGEXP_EXTRACT(url, '${escapeSqlLiteral(regex)}', 1), '')`);
+        extractPatterns.push(`NULLIF(REGEXP_EXTRACT(url, '${regex}', 1), '')`);
       }
     });
 

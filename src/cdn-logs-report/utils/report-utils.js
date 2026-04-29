@@ -155,18 +155,12 @@ export async function fetchRemotePatterns(site, log = console) {
   }
 }
 
-function getPostgrestClient(context) {
-  return context?.dataAccess?.services?.postgrestClient;
-}
-
 function normalizeRuleRows(rows = []) {
-  return rows
-    .filter((row) => row?.name && row?.regex)
-    .map((row, index) => ({
-      name: row.name,
-      regex: row.regex,
-      sort_order: Number.isInteger(row.sort_order) ? row.sort_order : index,
-    }));
+  return (rows || []).map((row, index) => ({
+    name: row.name,
+    regex: row.regex,
+    sort_order: Number.isInteger(row.sort_order) ? row.sort_order : index,
+  }));
 }
 
 /**
@@ -175,15 +169,10 @@ function normalizeRuleRows(rows = []) {
  */
 export async function fetchAgenticUrlClassificationRules(site, context = {}) {
   const log = context?.log || console;
-  const siteId = site?.getId?.() || site?.getSiteId?.();
-  const postgrestClient = getPostgrestClient(context);
+  const postgrestClient = context?.dataAccess?.services?.postgrestClient;
+  const siteId = site.getId();
 
-  if (!siteId) {
-    log.warn('fetchAgenticUrlClassificationRules: no site id available, skipping DB rule fetch');
-    return null;
-  }
-
-  if (!postgrestClient) {
+  if (!postgrestClient?.from) {
     log.warn('fetchAgenticUrlClassificationRules: no PostgREST client available, skipping DB rule fetch');
     return null;
   }
@@ -194,14 +183,12 @@ export async function fetchAgenticUrlClassificationRules(site, context = {}) {
         .from('agentic_url_category_rules')
         .select('name,regex,sort_order')
         .eq('site_id', siteId)
-        .order('sort_order', { ascending: true })
-        .order('name', { ascending: true }),
+        .order('sort_order', { ascending: true }),
       postgrestClient
         .from('agentic_url_page_type_rules')
         .select('name,regex,sort_order')
         .eq('site_id', siteId)
-        .order('sort_order', { ascending: true })
-        .order('name', { ascending: true }),
+        .order('sort_order', { ascending: true }),
     ]);
 
     if (categoryResult.error) {
@@ -229,16 +216,6 @@ export async function fetchAgenticUrlClassificationRules(site, context = {}) {
   }
 }
 
-function normalizeRpcRules(rules = []) {
-  return rules
-    .filter((rule) => rule?.name && rule?.regex)
-    .map((rule, index) => ({
-      name: String(rule.name).trim(),
-      regex: String(rule.regex).trim(),
-      sort_order: Number.isInteger(rule.sort_order) ? rule.sort_order : index,
-    }));
-}
-
 /**
  * Atomically replaces site-scoped agentic URL classification rules via the
  * writer RPC. Reads continue to use native table endpoints.
@@ -250,13 +227,10 @@ export async function replaceAgenticUrlClassificationRules({
   pageTypeRules = [],
   updatedBy = 'audit-worker:agentic-patterns',
 }) {
-  const siteId = site?.getId?.() || site?.getSiteId?.();
-  const postgrestClient = getPostgrestClient(context);
+  const siteId = site.getId();
+  const postgrestClient = context?.dataAccess?.services?.postgrestClient;
 
-  if (!siteId) {
-    throw new Error('site id is required to replace agentic URL classification rules');
-  }
-  if (!postgrestClient) {
+  if (!postgrestClient?.rpc) {
     throw new Error('PostgREST client is required to replace agentic URL classification rules');
   }
 
@@ -264,8 +238,8 @@ export async function replaceAgenticUrlClassificationRules({
     'wrpc_replace_agentic_url_classification_rules',
     {
       p_site_id: siteId,
-      p_category_rules: normalizeRpcRules(categoryRules),
-      p_page_type_rules: normalizeRpcRules(pageTypeRules),
+      p_category_rules: categoryRules,
+      p_page_type_rules: pageTypeRules,
       p_updated_by: updatedBy,
     },
   );
