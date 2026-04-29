@@ -208,6 +208,34 @@ describe('Paid Keyword Optimizer Guidance Handler (cluster format)', () => {
     });
   });
 
+  describe('missing data guard', () => {
+    it('should return ok when message has no data', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+      };
+
+      const result = await handler(message, context);
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).not.to.have.been.called;
+      expect(logStub.warn).to.have.been.calledWithMatch(/no data/);
+    });
+
+    it('should return ok when data is null', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: null,
+      };
+
+      const result = await handler(message, context);
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).not.to.have.been.called;
+    });
+  });
+
   describe('clusterResults gate', () => {
     it('should skip when guidance body is null', async () => {
       const message = {
@@ -232,6 +260,22 @@ describe('Paid Keyword Optimizer Guidance Handler (cluster format)', () => {
         data: {
           url: TEST_URL,
           guidance: [{ body: { portfolioMetrics: {} } }],
+        },
+      };
+
+      const result = await handler(message, context);
+
+      expect(Opportunity.create).not.to.have.been.called;
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should skip when clusterResults is an empty array', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: {
+          url: TEST_URL,
+          guidance: [{ body: { clusterResults: [], portfolioMetrics: {} } }],
         },
       };
 
@@ -420,6 +464,37 @@ describe('Paid Keyword Optimizer Guidance Handler (cluster format)', () => {
       const result = await handler(message, context);
 
       expect(differentUrl.setStatus).not.to.have.been.called;
+      expect(Opportunity.saveMany).not.to.have.been.called;
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should NOT mark any opportunities as IGNORED when url is undefined', async () => {
+      const existingNoUrl = makeOppty({ id: 'no-url', url: undefined });
+      const existingWithUrl = makeOppty({ id: 'with-url', url: TEST_URL });
+      Opportunity.allBySiteIdAndStatus
+        .withArgs('site', 'NEW').resolves([existingNoUrl, existingWithUrl])
+        .withArgs('site', 'IN_PROGRESS').resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+
+      // Message with missing url
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: {
+          guidance: [{
+            body: {
+              clusterResults: [makeCluster()],
+              portfolioMetrics: { totalSpend: 1000 },
+              observability: { langfuseTraceId: 'trace-123', langfuseTraceUrl: 'https://example.com' },
+            },
+          }],
+        },
+      };
+
+      const result = await handler(message, context);
+
+      expect(existingNoUrl.setStatus).not.to.have.been.called;
+      expect(existingWithUrl.setStatus).not.to.have.been.called;
       expect(Opportunity.saveMany).not.to.have.been.called;
       expect(result.status).to.equal(ok().status);
     });

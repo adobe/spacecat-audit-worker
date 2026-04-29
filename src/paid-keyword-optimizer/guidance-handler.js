@@ -47,8 +47,13 @@ export default async function handler(message, context) {
   const { Audit, Opportunity, Suggestion } = dataAccess;
   const { auditId, siteId, data } = message;
 
+  if (!data) {
+    log.warn('[ad-intent-mismatch] Received message with no data, skipping');
+    return ok();
+  }
+
   // Handle failure envelope from Mystique — URL-level analysis failed
-  if (data?.status === 'failed') {
+  if (data.status === 'failed') {
     log.info({
       trace_id: data?.error?.langfuseTraceId,
       audit_id: auditId,
@@ -78,8 +83,8 @@ export default async function handler(message, context) {
     return ok();
   }
 
-  // Gate: skip when body is null or clusterResults absent
-  if (!guidanceBody || !guidanceBody.clusterResults) {
+  // Gate: skip when body is null, clusterResults absent, or clusterResults empty
+  if (!guidanceBody || !guidanceBody.clusterResults || guidanceBody.clusterResults.length === 0) {
     paidLog.skipping('no clusterResults in guidance body', siteId, url, auditId);
     return ok();
   }
@@ -105,7 +110,7 @@ export default async function handler(message, context) {
 
   const existingToIgnore = [...newOpportunities, ...inProgressOpportunities]
     .filter((oppty) => oppty.getType() === GUIDANCE_TYPE)
-    .filter((oppty) => oppty.getData()?.url === url);
+    .filter((oppty) => url && oppty.getData()?.url === url);
 
   if (existingToIgnore.length > 0) {
     existingToIgnore.forEach((oppty) => {
