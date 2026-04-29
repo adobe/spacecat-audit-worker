@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Adobe. All rights reserved.
+ * Copyright 2026 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -10,13 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
-import wikipediaAnalysisHandler from '../../../src/wikipedia-analysis/handler.js';
+import wikipediaAnalysisHandler, { extractBrandFromUrl } from '../../../src/wikipedia-analysis/handler.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
@@ -122,7 +120,7 @@ describe('Wikipedia Analysis Handler', () => {
       expect(result.fullAuditRef).to.equal(baseURL);
     });
 
-    it('should use baseURL even if it looks invalid', async () => {
+    it('should use baseURL as-is when it cannot be parsed as a URL', async () => {
       mockSite.getConfig.returns({
         getCompanyName: sandbox.stub().returns(''),
         getWikipediaUrl: sandbox.stub().returns(''),
@@ -133,7 +131,6 @@ describe('Wikipedia Analysis Handler', () => {
 
       const result = await wikipediaAnalysisHandler.runner('invalid-url', context, mockSite);
 
-      // Should succeed and use whatever baseURL is provided
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.config.companyName).to.equal('invalid-url');
     });
@@ -154,7 +151,7 @@ describe('Wikipedia Analysis Handler', () => {
       expect(context.log.warn).to.have.been.called;
     });
 
-    it('should use baseURL as companyName when company name is not configured', async () => {
+    it('should extract brand from URL when company name is not configured', async () => {
       mockSite.getConfig.returns({
         getCompanyName: sandbox.stub().returns(null),
         getWikipediaUrl: sandbox.stub().returns(''),
@@ -166,17 +163,32 @@ describe('Wikipedia Analysis Handler', () => {
       const result = await wikipediaAnalysisHandler.runner('https://bmw.com', context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.config.companyName).to.equal('https://bmw.com');
+      expect(result.auditResult.config.companyName).to.equal('bmw');
     });
 
-    it('should handle missing config gracefully and use baseURL', async () => {
+    it('should handle missing config gracefully and extract brand from URL', async () => {
       mockSite.getConfig.returns(null);
       mockSite.getBaseURL.returns('https://test-company.com');
 
       const result = await wikipediaAnalysisHandler.runner('https://test-company.com', context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.config.companyName).to.equal('https://test-company.com');
+      expect(result.auditResult.config.companyName).to.equal('test-company');
+    });
+
+    it('should extract brand from subdomain URL when company name is not configured', async () => {
+      mockSite.getConfig.returns({
+        getCompanyName: sandbox.stub().returns(null),
+        getWikipediaUrl: sandbox.stub().returns(''),
+        getCompetitors: sandbox.stub().returns([]),
+        getCompetitorRegion: sandbox.stub().returns(null),
+      });
+      mockSite.getBaseURL.returns('https://corporate.walmart.com');
+
+      const result = await wikipediaAnalysisHandler.runner('https://corporate.walmart.com', context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.config.companyName).to.equal('walmart');
     });
 
     it('should handle errors during execution', async () => {
@@ -187,6 +199,240 @@ describe('Wikipedia Analysis Handler', () => {
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.equal('Config error');
       expect(context.log.error).to.have.been.called;
+    });
+
+    it('should override wikipediaUrl from auditContext.messageData.wikiUrl', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Override_Article';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: override } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+      expect(context.log.info).to.have.been.calledWith(
+        `[Wikipedia] Using Wikipedia URL override from audit message: ${override}`,
+      );
+    });
+
+    it('should unwrap Slack mrkdwn wikiUrl <url> from messageData', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Slack_Wrapped';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: `  <${override}>  ` } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+    });
+
+    it('should unwrap Slack mrkdwn <url|label> from messageData', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Labeled';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikipediaUrl: `<${override}|Wikipedia page>` } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+    });
+
+    it('should unwrap outer ASCII double quotes around wikiUrl', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Quoted_Wrap';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: `  "${override}"  ` } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+    });
+
+    it('should unwrap outer escaped double quotes (\\") around wikiUrl', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Escaped_Quote_Wrap';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: `\\"${override}\\"` } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+    });
+
+    it('should unwrap quotes outside Slack mrkdwn link', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Both_Wrappers';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: `"<${override}|label>"` } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+    });
+
+    it('should reject Slack-style empty brackets for wikiUrl', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: '<>' } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/after Slack\/mrkdwn normalization/),
+      );
+    });
+
+    it('should use wikipediaUrl from messageData when wikiUrl is absent', async () => {
+      const override = 'https://en.wikipedia.org/wiki/Other';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikipediaUrl: override } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(override);
+    });
+
+    it('should prefer wikiUrl over wikipediaUrl in messageData', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        {
+          messageData: {
+            wikiUrl: 'https://en.wikipedia.org/wiki/First',
+            wikipediaUrl: 'https://en.wikipedia.org/wiki/Second',
+          },
+        },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/First');
+    });
+
+    it('should not use top-level wikiUrl without messageData (Slack/API use message.data only)', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { urlLimit: 10 }, wikiUrl: 'https://en.wikipedia.org/wiki/Top' },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
+    });
+
+    it('should ignore invalid override and keep site config', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: 'not-a-valid-url' } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
+      expect(context.log.warn).to.have.been.calledWith(
+        '[Wikipedia] Ignoring invalid wikipedia URL override: not-a-valid-url',
+      );
+    });
+
+    it('should trim wikiUrl override', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: '  https://en.wikipedia.org/wiki/Trimmed  ' } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Trimmed');
+    });
+
+    it('should treat null auditContext like no override', async () => {
+      const result = await wikipediaAnalysisHandler.runner(baseURL, context, mockSite, null);
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
+    });
+
+    it('should ignore whitespace-only override', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: '   ' } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
+    });
+
+    it('should ignore non-string wikiUrl in messageData', async () => {
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: 12345 } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
+    });
+
+    it('should use wikipediaUrl when wikiUrl is null in messageData', async () => {
+      const fallback = 'https://en.wikipedia.org/wiki/Fallback_From_Null_Wiki';
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: null, wikipediaUrl: fallback } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(fallback);
+    });
+
+    it('should accept a long valid wikiUrl override and log messageData fields', async () => {
+      const path = `https://en.wikipedia.org/wiki/${'x'.repeat(100)}`;
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { wikiUrl: path } },
+      );
+
+      expect(result.auditResult.config.wikipediaUrl).to.equal(path);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(
+          (msg) => typeof msg === 'string'
+            && msg.includes('Wikipedia URL override: messageData fields wikiUrl=')
+            && msg.includes(path)
+            && msg.includes('wikipediaUrl='),
+        ),
+      );
+    });
+
+    it('should include slackContext in auditResult when provided in auditContext', async () => {
+      const slackContext = { channelId: 'C-test', threadTs: '1700000000.123456' };
+      const result = await wikipediaAnalysisHandler.runner(
+        baseURL,
+        context,
+        mockSite,
+        { slackContext },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.slackContext).to.deep.equal(slackContext);
+    });
+
+    it('should not include slackContext in auditResult when not provided', async () => {
+      const result = await wikipediaAnalysisHandler.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.slackContext).to.be.undefined;
     });
   });
 
@@ -224,6 +470,33 @@ describe('Wikipedia Analysis Handler', () => {
             companyWebsite: baseURL,
           }),
         }),
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Queued Wikipedia analysis request to Mystique for companyName=Example Corp wikipediaUrl=https:\/\/en\.wikipedia\.org\/wiki\/Example_Corp/),
+      );
+    });
+
+    it('should log auto-detect when wikipediaUrl is blank in queued Mystique log', async () => {
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          status: 'pending_analysis',
+          config: {
+            companyName: 'Example Corp',
+            companyWebsite: baseURL,
+            wikipediaUrl: '   ',
+            competitors: [],
+            competitorRegion: null,
+          },
+        },
+      };
+
+      const postProcessor = wikipediaAnalysisHandler.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/wikipediaUrl=\(empty → auto-detect\)/),
       );
     });
 
@@ -298,7 +571,7 @@ describe('Wikipedia Analysis Handler', () => {
       expect(context.log.warn).to.have.been.calledWith('[Wikipedia] Site not found, skipping Mystique message');
     });
 
-    it('should handle SQS send errors gracefully', async () => {
+    it('should throw error when SQS send fails', async () => {
       context.sqs.sendMessage.rejects(new Error('SQS Error'));
 
       const auditData = {
@@ -310,10 +583,113 @@ describe('Wikipedia Analysis Handler', () => {
       };
 
       const postProcessor = wikipediaAnalysisHandler.postProcessors[0];
-      const result = await postProcessor(baseURL, auditData, context);
-
-      expect(result).to.deep.equal(auditData);
+      await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
       expect(context.log.error).to.have.been.calledWith('[Wikipedia] Failed to send Mystique message: SQS Error');
+    });
+  });
+
+  describe('extractBrandFromUrl', () => {
+    it('should strip protocol, www, and TLD from a full URL', () => {
+      expect(extractBrandFromUrl('https://www.landroverusa.com')).to.equal('landrover');
+    });
+
+    it('should strip TLD from a bare domain', () => {
+      expect(extractBrandFromUrl('allianz.fr')).to.equal('allianz');
+    });
+
+    it('should strip regional suffix "usa"', () => {
+      expect(extractBrandFromUrl('https://www.landroverusa.com')).to.equal('landrover');
+    });
+
+    it('should strip regional suffix "global"', () => {
+      expect(extractBrandFromUrl('https://www.toyotaglobal.com')).to.equal('toyota');
+    });
+
+    it('should strip regional suffix "international"', () => {
+      expect(extractBrandFromUrl('https://brandinternational.com')).to.equal('brand');
+    });
+
+    it('should strip regional suffix "worldwide"', () => {
+      expect(extractBrandFromUrl('https://brandworldwide.com')).to.equal('brand');
+    });
+
+    it('should strip country code suffixes', () => {
+      expect(extractBrandFromUrl('https://www.branduk.com')).to.equal('brand');
+      expect(extractBrandFromUrl('https://www.brandfr.com')).to.equal('brand');
+      expect(extractBrandFromUrl('https://www.brandde.com')).to.equal('brand');
+      expect(extractBrandFromUrl('https://www.brandau.com')).to.equal('brand');
+      expect(extractBrandFromUrl('https://www.brandca.com')).to.equal('brand');
+      expect(extractBrandFromUrl('https://www.brandjp.com')).to.equal('brand');
+    });
+
+    it('should preserve hyphens in brand names', () => {
+      expect(extractBrandFromUrl('https://www.mercedes-benz.ca')).to.equal('mercedes-benz');
+    });
+
+    it('should handle ccTLD-only domains', () => {
+      expect(extractBrandFromUrl('https://www.bmw.de')).to.equal('bmw');
+      expect(extractBrandFromUrl('https://allianz.fr')).to.equal('allianz');
+    });
+
+    it('should handle multi-part TLDs like .co.uk', () => {
+      expect(extractBrandFromUrl('https://www.brand.co.uk')).to.equal('brand');
+    });
+
+    it('should handle simple .com domains', () => {
+      expect(extractBrandFromUrl('https://nespresso.com')).to.equal('nespresso');
+      expect(extractBrandFromUrl('https://www.salesforce.com')).to.equal('salesforce');
+    });
+
+    it('should handle plain brand names as input', () => {
+      expect(extractBrandFromUrl('Nespresso')).to.equal('nespresso');
+      expect(extractBrandFromUrl('toyota')).to.equal('toyota');
+    });
+
+    it('should return original string for unparseable input', () => {
+      expect(extractBrandFromUrl('')).to.equal('');
+    });
+
+    it('should handle domains without www', () => {
+      expect(extractBrandFromUrl('https://landroverusa.com')).to.equal('landrover');
+    });
+
+    it('should handle domain-only input without protocol', () => {
+      expect(extractBrandFromUrl('landroverusa.com')).to.equal('landrover');
+    });
+
+    it('should keep the full name when stripping the region suffix would leave nothing', () => {
+      expect(extractBrandFromUrl('https://usa.com')).to.equal('usa');
+    });
+
+    it('should be case-insensitive for region suffixes', () => {
+      expect(extractBrandFromUrl('https://www.brandUSA.com')).to.equal('brand');
+      expect(extractBrandFromUrl('https://www.brandGlobal.com')).to.equal('brand');
+    });
+
+    it('should extract brand from subdomain URLs instead of subdomain name', () => {
+      expect(extractBrandFromUrl('https://corporate.walmart.com')).to.equal('walmart');
+      expect(extractBrandFromUrl('https://blog.google.com')).to.equal('google');
+      expect(extractBrandFromUrl('https://investor.apple.com')).to.equal('apple');
+      expect(extractBrandFromUrl('https://ir.company.com')).to.equal('company');
+      expect(extractBrandFromUrl('https://news.example.com')).to.equal('example');
+      expect(extractBrandFromUrl('https://shop.nespresso.com')).to.equal('nespresso');
+      expect(extractBrandFromUrl('https://press.bmw.de')).to.equal('bmw');
+    });
+
+    it('should extract brand from subdomain URLs with regional suffixes', () => {
+      expect(extractBrandFromUrl('https://corporate.landroverusa.com')).to.equal('landrover');
+      expect(extractBrandFromUrl('https://news.toyotaglobal.com')).to.equal('toyota');
+    });
+
+    it('should extract brand from subdomain URLs with multi-part TLDs', () => {
+      expect(extractBrandFromUrl('https://shop.brand.co.uk')).to.equal('brand');
+      expect(extractBrandFromUrl('https://investor.company.com.au')).to.equal('company');
+      expect(extractBrandFromUrl('https://news.brand.co.jp')).to.equal('brand');
+    });
+
+    it('should handle deeply nested subdomains by extracting the SLD', () => {
+      expect(extractBrandFromUrl('https://a.b.walmart.com')).to.equal('walmart');
+      expect(extractBrandFromUrl('https://dev.blog.google.com')).to.equal('google');
     });
   });
 });

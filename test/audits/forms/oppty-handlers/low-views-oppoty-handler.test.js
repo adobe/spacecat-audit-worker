@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -161,6 +160,18 @@ describe('createLowFormViewsOpportunities handler method', () => {
             type: 'traffic',
             value: {
               page: 0,
+            },
+          },
+          {
+            device: '*',
+            type: 'trafficAcquisitionSource',
+            value: {
+              page: [
+                { type: 'paid:search:google', views: 2000 },
+                { type: 'paid:display:google', views: 690 },
+                { type: 'earned:organic:google', views: 2000 },
+                { type: 'owned:direct', views: 2000 },
+              ],
             },
           },
         ],

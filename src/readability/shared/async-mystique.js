@@ -10,19 +10,184 @@
  * governing permissions and limitations under the License.
  */
 
-import { READABILITY_OBSERVATION, TARGET_READABILITY_SCORE } from './constants.js';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  READABILITY_GUIDANCE_TYPE,
+  READABILITY_OBSERVATION,
+  TARGET_READABILITY_SCORE,
+  READABILITY_BATCH_PREFIX,
+} from './constants.js';
 
 /**
- * Asynchronous Mystique integration for readability audit
- * Similar to how alt-text and accessibility audits work:
- * 1. Send messages to Mystique
- * 2. Return immediately
- * 3. Guidance handler processes responses later
+ * Asynchronous Mystique integration for readability audit.
+ *
+ * Preflight mode:  one SQS message per paragraph, data inline,
+ *                  type = guidance:readability, mode = preflight
+ *
+ * Opportunity mode: one S3 file with all paragraphs, one SQS message
+ *                   with s3BatchPath, type = guidance:readability, mode = opportunity
  */
 
 /**
- * Sends readability issues to Mystique for AI processing (asynchronous)
- * Follows the same pattern as alt-text and accessibility audits
+ * Preflight mode: sends one SQS message per issue with inline data.
+ * Unchanged from the original contract.
+ */
+async function sendPreflightMessages(
+  readabilityIssues,
+  siteId,
+  jobId,
+  auditUrl,
+  site,
+  context,
+) {
+  const {
+    sqs, env, log, dataAccess,
+  } = context;
+
+  // Store metadata in AsyncJob for preflight
+  const { AsyncJob: AsyncJobEntity } = dataAccess;
+  const originalOrderMapping = readabilityIssues.map((issue, index) => ({
+    textContent: issue.textContent,
+    originalIndex: index,
+  }));
+
+  const jobEntity = await AsyncJobEntity.findById(jobId);
+  const currentPayload = jobEntity.getMetadata()?.payload || {};
+  const readabilityMetadata = {
+    mystiqueResponsesReceived: 0,
+    mystiqueResponsesExpected: readabilityIssues.length,
+    totalReadabilityIssues: readabilityIssues.length,
+    lastMystiqueRequest: new Date().toISOString(),
+    originalOrderMapping,
+  };
+
+  jobEntity.setMetadata({
+    ...jobEntity.getMetadata(),
+    payload: {
+      ...currentPayload,
+      readabilityMetadata,
+    },
+  });
+  await jobEntity.save();
+  log.debug(`[readability-suggest async] Stored readability metadata in job ${jobId}`);
+
+  // Send each issue as a separate message
+  const messagePromises = readabilityIssues.map((issue, index) => {
+    const mystiqueMessage = {
+      type: READABILITY_GUIDANCE_TYPE,
+      siteId,
+      auditId: jobId,
+      mode: 'preflight',
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      url: auditUrl,
+      observation: READABILITY_OBSERVATION,
+      data: {
+        jobId,
+        original_paragraph: issue.textContent,
+        target_flesch_score: TARGET_READABILITY_SCORE,
+        current_flesch_score: issue.fleschReadingEase,
+        pageUrl: issue.pageUrl,
+        selector: issue.selector || issue.elements?.[0]?.selector || '',
+        issue_id: `readability-${Date.now()}-${index}`,
+      },
+    };
+
+    return sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage)
+      .then(() => {
+        log.debug(`[readability-suggest async] Sent preflight message ${index + 1}/${readabilityIssues.length} to Mystique`, {
+          pageUrl: issue.pageUrl,
+          textLength: issue.textContent.length,
+          fleschScore: issue.fleschReadingEase,
+        });
+        return { success: true, index, pageUrl: issue.pageUrl };
+      })
+      .catch((sqsError) => {
+        log.error(`[readability-suggest async] Failed to send SQS message ${index + 1}:`, {
+          error: sqsError.message,
+          queueUrl: env.QUEUE_SPACECAT_TO_MYSTIQUE,
+          pageUrl: issue.pageUrl,
+        });
+        return {
+          success: false, index, pageUrl: issue.pageUrl, error: sqsError,
+        };
+      });
+  });
+
+  const results = await Promise.all(messagePromises);
+  const failedMessages = results.filter((result) => !result.success);
+
+  if (failedMessages.length > 0) {
+    log.error(`[readability-suggest async] ${failedMessages.length} messages failed to send to Mystique`);
+    throw new Error(`Failed to send ${failedMessages.length} out of ${readabilityIssues.length} messages to Mystique`);
+  }
+
+  const successfulMessages = results.filter((result) => result.success);
+  log.debug(`[readability-suggest async] Successfully sent ${successfulMessages.length} preflight messages to Mystique for processing`);
+}
+
+/**
+ * Opportunity mode: writes all issues to S3 as a JSON array,
+ * then sends a single SQS message with s3BatchPath.
+ */
+async function sendOpportunityBatch(
+  readabilityIssues,
+  siteId,
+  jobId,
+  auditUrl,
+  site,
+  context,
+) {
+  const {
+    sqs, env, log, s3Client,
+  } = context;
+
+  const bucketName = env.S3_MYSTIQUE_BUCKET_NAME;
+  if (!bucketName) {
+    throw new Error('Missing S3_MYSTIQUE_BUCKET_NAME for readability batch');
+  }
+
+  log.debug(`[readability-suggest async] Sending ${readabilityIssues.length} readability issues for opportunity audit ${jobId}`);
+
+  // Build the S3 request payload
+  const batchPayload = readabilityIssues.map((issue) => ({
+    originalParagraph: issue.textContent,
+    targetFleschScore: TARGET_READABILITY_SCORE,
+    currentFleschScore: issue.fleschReadingEase,
+    pageUrl: issue.pageUrl,
+    selector: issue.selector || issue.elements?.[0]?.selector || '',
+  }));
+
+  // Write to S3
+  const s3Key = `${READABILITY_BATCH_PREFIX}/${siteId}/${jobId}.json`;
+  await s3Client.send(new PutObjectCommand({
+    Bucket: bucketName,
+    Key: s3Key,
+    Body: JSON.stringify(batchPayload),
+    ContentType: 'application/json',
+  }));
+  log.debug(`[readability-suggest async] Wrote ${readabilityIssues.length} issues to S3: ${s3Key}`);
+
+  // Send single SQS message with S3 key path
+  const mystiqueMessage = {
+    type: READABILITY_GUIDANCE_TYPE,
+    time: new Date().toISOString(),
+    deliveryType: site.getDeliveryType(),
+    siteId,
+    auditId: jobId,
+    url: auditUrl,
+    mode: 'opportunity',
+    data: {
+      s3BatchPath: s3Key,
+    },
+  };
+
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+  log.debug(`[readability-suggest async] Successfully sent batch message to Mystique for opportunity audit ${jobId}`);
+}
+
+/**
+ * Sends readability issues to Mystique for AI processing (asynchronous).
  *
  * @param {string} auditUrl - The base URL being audited
  * @param {Array} readabilityIssues - Array of readability issues to process
@@ -53,101 +218,27 @@ export async function sendReadabilityToMystique(
 
   try {
     const site = await dataAccess.Site.findById(siteId);
-
-    // Handle metadata storage differently for preflight vs opportunities
     const isPreflight = mode === 'preflight';
 
     if (isPreflight) {
-      // Preflight: Store metadata in AsyncJob
-      const { AsyncJob: AsyncJobEntity } = dataAccess;
-
-      // Store original order mapping in job metadata to preserve identify-step order
-      const originalOrderMapping = readabilityIssues.map((issue, index) => ({
-        textContent: issue.textContent,
-        originalIndex: index,
-      }));
-
-      // Update job with readability metadata for async processing
-      const jobEntity = await AsyncJobEntity.findById(jobId);
-      const currentPayload = jobEntity.getMetadata()?.payload || {};
-      const readabilityMetadata = {
-        mystiqueResponsesReceived: 0,
-        mystiqueResponsesExpected: readabilityIssues.length,
-        totalReadabilityIssues: readabilityIssues.length,
-        lastMystiqueRequest: new Date().toISOString(),
-        originalOrderMapping, // Store original order for reconstruction
-      };
-
-      // Store readability metadata in job payload
-      jobEntity.setMetadata({
-        ...jobEntity.getMetadata(),
-        payload: {
-          ...currentPayload,
-          readabilityMetadata,
-        },
-      });
-      await jobEntity.save();
-      log.debug(`[readability-suggest async] Stored readability metadata in job ${jobId}`);
-    } else {
-      // Opportunities: No need to store metadata in AsyncJob
-      log.debug(`[readability-suggest async] Sending ${readabilityIssues.length} readability issues for opportunity audit ${jobId}`);
-    }
-
-    // Send each readability issue as a separate message to Mystique
-    const messagePromises = readabilityIssues.map((issue, index) => {
-      const mystiqueMessage = {
-        type: 'guidance:readability', // Single unified type
+      await sendPreflightMessages(
+        readabilityIssues,
         siteId,
-        auditId: jobId,
-        mode, // Routing mode at top level (same as siteId, auditId)
-        deliveryType: site.getDeliveryType(),
-        time: new Date().toISOString(),
-        url: auditUrl,
-        observation: READABILITY_OBSERVATION,
-        data: {
-          // Use appropriate ID based on audit type
-          ...(isPreflight ? { jobId } : { auditId: jobId }),
-          original_paragraph: issue.textContent,
-          target_flesch_score: TARGET_READABILITY_SCORE,
-          current_flesch_score: issue.fleschReadingEase,
-          pageUrl: issue.pageUrl,
-          selector: issue.selector || issue.elements?.[0]?.selector || '',
-          issue_id: `readability-${Date.now()}-${index}`,
-        },
-      };
-
-      return sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage)
-        .then(() => {
-          log.debug(`[readability-suggest async] Sent message ${index + 1}/${readabilityIssues.length} to Mystique`, {
-            pageUrl: issue.pageUrl,
-            textLength: issue.textContent.length,
-            fleschScore: issue.fleschReadingEase,
-          });
-          return { success: true, index, pageUrl: issue.pageUrl };
-        })
-        .catch((sqsError) => {
-          log.error(`[readability-suggest async] Failed to send SQS message ${index + 1}:`, {
-            error: sqsError.message,
-            queueUrl: env.QUEUE_SPACECAT_TO_MYSTIQUE,
-            pageUrl: issue.pageUrl,
-          });
-          return {
-            success: false, index, pageUrl: issue.pageUrl, error: sqsError,
-          };
-        });
-    });
-
-    // Wait for all messages to be sent
-    const results = await Promise.all(messagePromises);
-    const successfulMessages = results.filter((result) => result.success);
-    const failedMessages = results.filter((result) => !result.success);
-
-    if (failedMessages.length > 0) {
-      log.error(`[readability-suggest async] ${failedMessages.length} messages failed to send to Mystique`);
-      throw new Error(`Failed to send ${failedMessages.length} out of ${readabilityIssues.length} messages to Mystique`);
+        jobId,
+        auditUrl,
+        site,
+        context,
+      );
+    } else {
+      await sendOpportunityBatch(
+        readabilityIssues,
+        siteId,
+        jobId,
+        auditUrl,
+        site,
+        context,
+      );
     }
-
-    log.debug(`[readability-suggest async] Successfully sent ${successfulMessages.length} messages to Mystique for processing`);
   } catch (error) {
     log.error(`[readability-suggest async] Failed to send readability issues to Mystique: ${error.message}`);
     throw error;

@@ -28,11 +28,49 @@ import {
   getHeadingSelector,
   cheerioLoad,
   loadScrapeJson,
-  getTopPages,
   initializeAuditContext,
 } from '../headings/shared-utils.js';
+import { getMergedAuditInputUrls, sortTopPagesByTraffic } from '../utils/audit-input-urls.js';
+import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 
 const auditType = Audit.AUDIT_TYPES.TOC;
+const MAX_TOP_PAGES = 200;
+
+/**
+ * Fetches and merges TOC audit input URLs from three sources in priority order:
+ * 1. Customer desired URLs (from site config)
+ * 2. Agentic traffic (Athena CDN logs)
+ * 3. Organic SEO top pages (DB)
+ * @param {Object} context - Audit context
+ * @param {Object} site - Site object
+ * @returns {Promise<Object>} Merged URL result from getMergedAuditInputUrls
+ */
+async function getTocInputUrls(context, site) {
+  const { dataAccess, log } = context;
+  const result = await getMergedAuditInputUrls({
+    site,
+    dataAccess,
+    auditType,
+    getAgenticUrls: () => getTopAgenticUrlsFromAthena(site, context, MAX_TOP_PAGES),
+    getTopPages: async () => {
+      const topPages = await dataAccess?.SiteTopPage?.allBySiteIdAndSourceAndGeo?.(
+        site.getId(),
+        'seo',
+        'global',
+      );
+      return sortTopPagesByTraffic(topPages || []);
+    },
+    topOrganicLimit: MAX_TOP_PAGES,
+  });
+
+  log.info(
+    `[TOC] URL inputs: topPages=${result.topPagesUrls.length}, `
+    + `agentic=${result.agenticUrls.length}, includedURLs=${result.includedURLs.length}, `
+    + `filteredOutUrls=${result.filteredCount}, finalUrls=${result.urls.length}`,
+  );
+
+  return result;
+}
 
 export const TOC_CHECK = {
   check: 'toc',
@@ -45,9 +83,45 @@ export const TOC_CHECK = {
 export const TOPPAGES_CHECK = {
   check: 'top-pages',
   title: 'Top Pages',
-  description: 'No top pages available for audit',
-  explanation: 'No top pages found',
+  description: 'No URLs available for audit',
+  explanation: 'No URLs found for audit',
 };
+
+/**
+ * Detect TOC presence in DOM using heuristic signals, without AI.
+ * Checks for:
+ * 1. A list (ul/ol) containing 2+ internal anchor links (href="#...")
+ * 2. Elements with TOC-related class or id names
+ * @param {CheerioAPI} $ - The Cheerio instance
+ * @returns {boolean} True if a TOC is detected in the DOM
+ */
+export function hasTocInDom($) {
+  // Signal 1: list (ul/ol) with 2+ internal anchor links (href="#...")
+  let anchorListFound = false;
+  $('ul, ol').each((_, listEl) => {
+    if ($(listEl).find('a[href^="#"]').length >= 2) {
+      anchorListFound = true;
+      return false; // break the each loop
+    }
+    return true; // continue
+  });
+  if (anchorListFound) {
+    return true;
+  }
+
+  // Signal 2: elements with TOC-related class or id names
+  const tocPatterns = [
+    'toc',
+    'table-of-contents',
+    'tableofcontents',
+    'anchor-list',
+    'anchor__list',
+    'cmp-toc__content',
+  ];
+  return tocPatterns.some(
+    (pattern) => $(`[class*="${pattern}"], [id*="${pattern}"]`).length > 0,
+  );
+}
 
 /**
  * Detect if a Table of Contents (TOC) is present in the document using LLM analysis
@@ -61,10 +135,23 @@ export const TOPPAGES_CHECK = {
  */
 async function getTocDetails($, url, pageTags, log, context, scrapedAt) {
   try {
-    // Extract first 3000 characters from body
-    const bodyElement = $('body')[0];
-    const bodyHTML = $(bodyElement).html() || '';
-    const bodyContent = bodyHTML.substring(0, 3000);
+    // Phase 1: DOM-based heuristic — fast, deterministic, no AI needed
+    if (hasTocInDom($)) {
+      log.debug(`[TOC Detection] TOC detected via DOM heuristic for ${url}`);
+      return {
+        tocPresent: true,
+        TOCCSSSelector: null,
+        confidence: 10,
+        reasoning: 'TOC detected via DOM heuristic (anchor link list or TOC class/id found)',
+      };
+    }
+
+    // Phase 2: AI-based detection using <main> content (or body fallback)
+    const mainEl = $('body > main');
+    const htmlToAnalyze = mainEl.length > 0
+      ? mainEl.html() || ''
+      : $('body').html() || '';
+    const bodyContent = htmlToAnalyze.substring(0, 8000);
 
     // Prepare prompt data
     const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
@@ -118,15 +205,19 @@ async function getTocDetails($, url, pageTags, log, context, scrapedAt) {
       const placement = determineTocPlacement($, getHeadingSelector);
       const headingsData = extractTocData($, getHeadingSelector);
 
-      result.suggestedPlacement = placement;
-      result.transformRules = {
-        action: placement.action,
-        selector: placement.selector,
-        value: headingsData,
-        valueFormat: 'html',
-        scrapedAt: new Date(scrapedAt).toISOString(),
-      };
-      log.debug(`[TOC Detection] Suggested TOC placement for ${url}: ${placement.reasoning}`);
+      if (headingsData.length === 0) {
+        log.debug(`[TOC Detection] No headings found for TOC suggestion for ${url}, skipping`);
+      } else {
+        result.suggestedPlacement = placement;
+        result.transformRules = {
+          action: placement.action,
+          selector: placement.selector,
+          value: headingsData,
+          valueFormat: 'html',
+          scrapedAt: new Date(scrapedAt).toISOString(),
+        };
+        log.debug(`[TOC Detection] Suggested TOC placement for ${url}: ${placement.reasoning}`);
+      }
     }
 
     return result;
@@ -238,16 +329,14 @@ export async function validatePageToc(
  * @returns {Promise<Object>}
  */
 export async function tocAuditRunner(baseURL, context, site) {
-  const siteId = site.getId();
-  const { log, dataAccess, s3Client } = context;
+  const { log, s3Client } = context;
   const { S3_SCRAPER_BUCKET_NAME } = context.env;
 
   try {
-    // Get top 200 pages
-    const topPages = await getTopPages(dataAccess, siteId, context, log, 200);
+    const { urls: auditUrls } = await getTocInputUrls(context, site);
 
-    if (topPages.length === 0) {
-      log.warn('[TOC Audit] No top pages found, ending audit.');
+    if (auditUrls.length === 0) {
+      log.warn('[TOC Audit] No URLs found for audit, ending audit.');
       return {
         fullAuditRef: baseURL,
         auditResult: {
@@ -260,9 +349,9 @@ export async function tocAuditRunner(baseURL, context, site) {
 
     const { allKeys } = await initializeAuditContext(context, site);
 
-    // Validate TOC for each page
-    const auditPromises = topPages.map(async (page) => validatePageToc(
-      page.url,
+    // Validate TOC for each URL
+    const auditPromises = auditUrls.map(async (url) => validatePageToc(
+      url,
       log,
       site,
       allKeys,
@@ -446,9 +535,55 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   return { ...auditData };
 }
 
+export function slimTocAuditResult(auditResult) {
+  if (!auditResult || typeof auditResult !== 'object') {
+    return auditResult;
+  }
+  const isEmptyToc = auditResult.toc && Object.keys(auditResult.toc).length === 0;
+  if (auditResult.error || auditResult.check || isEmptyToc) {
+    return { ...auditResult };
+  }
+  if (!auditResult.toc) {
+    return { ...auditResult };
+  }
+  const slimToc = {};
+  for (const [checkKey, checkResult] of Object.entries(auditResult.toc)) {
+    if (!checkResult || !Array.isArray(checkResult.urls)) {
+      slimToc[checkKey] = checkResult;
+    } else {
+      slimToc[checkKey] = {
+        ...checkResult,
+        urls: checkResult.urls.map((urlObj) => {
+          const { transformRules: _, ...rest } = urlObj;
+          return rest;
+        }),
+      };
+    }
+  }
+  return {
+    ...auditResult,
+    toc: slimToc,
+  };
+}
+
+export async function tocPersister(auditData, context) {
+  const { dataAccess, log } = context;
+  const { Audit: AuditCreate } = dataAccess;
+  const slimmedAuditData = {
+    ...auditData,
+    auditResult: slimTocAuditResult(auditData.auditResult),
+  };
+  if (log && typeof log.debug === 'function') {
+    const urlCount = slimmedAuditData.auditResult?.toc?.toc?.urls?.length ?? 0;
+    log.debug(`[TOC Persister] Persisting slimmed audit (transformRules stripped from ${urlCount} URLs)`);
+  }
+  return AuditCreate.create(slimmedAuditData);
+}
+
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(tocAuditRunner)
+  .withPersister(tocPersister)
   .withPostProcessors([
     generateSuggestions,
     opportunityAndSuggestions,

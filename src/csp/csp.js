@@ -47,6 +47,14 @@ function createOpportunityData(props) {
   };
 }
 
+export function buildKey(data) {
+  let key = data.description.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (data.directive) {
+    key += `_${data.directive.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+  }
+  return key;
+}
+
 function flattenCSP(csp) {
   return csp.flatMap((item) => {
     if (item.subItems?.items) {
@@ -169,8 +177,6 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
     AUDIT_TYPE,
     props,
   );
-
-  const buildKey = (data) => data.description.toLowerCase().replace(/[^a-z0-9]/g, '');
 
   await syncSuggestions({
     opportunity,

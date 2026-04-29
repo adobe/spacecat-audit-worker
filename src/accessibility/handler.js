@@ -66,9 +66,9 @@ export async function scrapeAccessibilityData(context, deviceType = 'desktop') {
   urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
 
   if (urlsToScrape.length === 0) {
-    log.info(`[A11yAudit] No URLs found in latest final-result.json for site ${siteId}, falling back to Ahrefs top pages`);
+    log.info(`[A11yAudit] No URLs found in latest final-result.json for site ${siteId}, falling back to SEO top pages`);
     const { SiteTopPage } = dataAccess;
-    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
     log.debug(`[A11yAudit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}: ${JSON.stringify(topPages || [], null, 2)}`);
     if (!isNonEmptyArray(topPages)) {
       log.info(`[A11yAudit] No top pages found for site ${siteId} (${site.getBaseURL()}), skipping audit`);
@@ -382,7 +382,9 @@ export function createProcessAccessibilityOpportunitiesWithDevice(deviceType) {
     let deviceSpecificIssues = 0;
 
     Object.entries(aggregationResult.finalResultFiles.current).forEach(([key, urlData]) => {
-      if (key === 'overall' || !urlData.violations) return;
+      if (key === 'overall' || !urlData.violations) {
+        return;
+      }
 
       ['critical', 'serious'].forEach((severity) => {
         if (urlData.violations[severity]?.items) {

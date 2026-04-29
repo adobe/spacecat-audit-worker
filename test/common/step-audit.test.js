@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
@@ -69,7 +67,7 @@ describe('Step-based Audit Tests', () => {
 
     // Mock TierClient for entitlement checks
     const mockTierClient = {
-      checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+      checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: {} }),
     };
     sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -162,6 +160,7 @@ describe('Step-based Audit Tests', () => {
       expect(result.status).to.equal(200);
       expect(context.log.warn).to.have.been.calledWith(sinon.match(/disabled for site.*skipping/));
       expect(context.dataAccess.Audit.create).not.to.have.been.called;
+      expect(context.sqs.sendMessage).not.to.have.been.called;
     });
 
     it('executes first step and creates audit record', async () => {
@@ -250,6 +249,59 @@ describe('Step-based Audit Tests', () => {
         year: 2025,
         customField: 'value',
       });
+    });
+
+    it('preserves passthrough keys from incoming auditContext', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      const messageWithPassthrough = {
+        type: 'content-audit',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        auditContext: {
+          onDemand: true,
+        },
+      };
+
+      await audit.run(messageWithPassthrough, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, payload] = context.sqs.sendMessage.firstCall.args;
+      expect(payload.auditContext).to.include({ onDemand: true });
+    });
+
+    it('preserves slackContext across step chain', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      const slackContext = { channelId: 'C123', threadTs: '123.456' };
+      const messageWithSlack = {
+        type: 'content-audit',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        auditContext: { slackContext },
+      };
+
+      await audit.run(messageWithSlack, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, payload] = context.sqs.sendMessage.firstCall.args;
+      expect(payload.auditContext).to.deep.include({ slackContext });
     });
 
     it('continues execution from specified step', async () => {
@@ -378,6 +430,34 @@ describe('Step-based Audit Tests', () => {
 
       await expect(audit.chainStep(step, {}, context))
         .to.be.rejectedWith('Invalid destination configuration for step test');
+    });
+
+    it('handles chainStep when context.auditContext is undefined', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      const stepContext = { ...context, audit: createdAudit };
+      // Explicitly remove auditContext to exercise the || {} fallback
+      delete stepContext.auditContext;
+
+      const step = {
+        name: 'prepare',
+        destination: AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+      };
+
+      await audit.chainStep(step, {}, stepContext);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, payload] = context.sqs.sendMessage.firstCall.args;
+      expect(payload.auditContext).to.not.have.property('onDemand');
     });
 
     it('handles SCRAPE_CLIENT destination by creating scrape job', async () => {
@@ -511,6 +591,126 @@ describe('Step-based Audit Tests', () => {
       expect(capturedScrapeResultPaths.get('https://space.cat/')).to.equal('s3://bucket/path1.json');
       expect(capturedScrapeResultPaths.get('https://space.cat/page1')).to.equal('s3://bucket/path2.json');
       expect(capturedScrapeResultPaths.get('https://space.cat/page2')).to.equal('s3://bucket/path3.json');
+    });
+
+    it('preserves requiresValidation from context.site onto site when defined (lines 113-115)', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      const siteFromProvider = {
+        getId: () => '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        getBaseURL: () => baseURL,
+        getIsLive: () => true,
+      };
+      context.dataAccess.Site.findById.resolves(siteFromProvider);
+
+      let capturedSite;
+      const requiresValidationAudit = new AuditBuilder()
+        .addStep('prepare', async (stepContext) => {
+          capturedSite = stepContext.site;
+          return {
+            auditResult: { status: 'preparing' },
+            fullAuditRef: 's3://test/123',
+            urls: [{ url: baseURL }],
+            siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+          };
+        }, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+        .addStep('final', async () => ({ status: 'complete' }))
+        .build();
+
+      context.site = { ...siteFromProvider, requiresValidation: true };
+
+      await requiresValidationAudit.run(message, context);
+
+      expect(capturedSite.requiresValidation).to.equal(true);
+    });
+
+    it('does not overwrite site when context.site.requiresValidation is undefined', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      const siteFromProvider = {
+        getId: () => '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        getBaseURL: () => baseURL,
+        getIsLive: () => true,
+      };
+      context.dataAccess.Site.findById.resolves(siteFromProvider);
+
+      let capturedSite;
+      const noRequiresValidationAudit = new AuditBuilder()
+        .addStep('prepare', async (stepContext) => {
+          capturedSite = stepContext.site;
+          return {
+            auditResult: { status: 'preparing' },
+            fullAuditRef: 's3://test/123',
+            urls: [{ url: baseURL }],
+            siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+          };
+        }, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+        .addStep('final', async () => ({ status: 'complete' }))
+        .build();
+
+      delete context.site;
+
+      await noRequiresValidationAudit.run(message, context);
+
+      expect(capturedSite.requiresValidation).to.be.undefined;
+    });
+
+    it('preserves requiresValidation false from context.site', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      const siteFromProvider = {
+        getId: () => '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        getBaseURL: () => baseURL,
+        getIsLive: () => true,
+      };
+      context.dataAccess.Site.findById.resolves(siteFromProvider);
+
+      let capturedSite;
+      const requiresValidationFalseAudit = new AuditBuilder()
+        .addStep('prepare', async (stepContext) => {
+          capturedSite = stepContext.site;
+          return {
+            auditResult: { status: 'preparing' },
+            fullAuditRef: 's3://test/123',
+            urls: [{ url: baseURL }],
+            siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+          };
+        }, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+        .addStep('final', async () => ({ status: 'complete' }))
+        .build();
+
+      context.site = { ...siteFromProvider, requiresValidation: false };
+
+      await requiresValidationFalseAudit.run(message, context);
+
+      expect(capturedSite.requiresValidation).to.equal(false);
     });
   });
 

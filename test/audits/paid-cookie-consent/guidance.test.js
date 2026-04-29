@@ -9,8 +9,6 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -77,6 +75,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     Opportunity = {
       allBySiteId: sandbox.stub(),
       create: sandbox.stub(),
+      saveMany: sandbox.stub().resolves(),
     };
     Site = {
       findById: sandbox.stub(),
@@ -202,11 +201,39 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     expect(logStub.error).to.have.been.calledWithMatch(/\[paid-audit\] Failed paid-cookie-consent: no audit data/);
   });
 
+  it('should return ok and skip when guidance is undefined', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE } };
+    const result = await handler(message, context);
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(logStub.info).to.have.been.calledWithMatch(/no guidance from guidance engine/);
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should return ok and skip when guidance is null', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance: null } };
+    const result = await handler(message, context);
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(logStub.info).to.have.been.calledWithMatch(/no guidance from guidance engine/);
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should return ok and skip when guidance is empty array', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance: [] } };
+    const result = await handler(message, context);
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(logStub.info).to.have.been.calledWithMatch(/no guidance from guidance engine/);
+    expect(result.status).to.equal(ok().status);
+  });
+
   it('should create a new opportunity and suggestion with plain markdown', async () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
     const guidance = [{
       body: {
+        issueSeverity: 'high',
         data: {
           mobile: 'mobile markdown',
           desktop: 'desktop markdown',
@@ -238,6 +265,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     Opportunity.create.resolves(opportunityInstance);
     const guidance = [{
       body: {
+        issueSeverity: 'high',
         data: {
           mobile: 'mobile markdown',
           desktop: 'desktop markdown',
@@ -270,7 +298,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     expect(data.temporalCondition).to.include('year=');
     expect(data.temporalCondition).to.include('week');
 
-    // CPC fields - DEFAULT_CPC is 0.80 in ahrefs-cpc.js
+    // CPC fields - DEFAULT_CPC is 0.80 in seo-cpc.js
     expect(data.appliedCPC).to.equal(0.8);
     expect(data.cpcSource).to.equal('default');
     expect(data.defaultCPC).to.equal(0.8);
@@ -309,7 +337,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
     const guidance = [{
-      body: { data: { mobile: 'mobile', desktop: 'desktop', impact: { business: 'biz', user: 'usr' } } },
+      body: { issueSeverity: 'high', data: { mobile: 'mobile', desktop: 'desktop', impact: { business: 'biz', user: 'usr' } } },
       insight: 'insight', rationale: 'rationale', recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
@@ -347,7 +375,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
     const guidance = [{
-      body: { data: { mobile: 'mobile', desktop: 'desktop', impact: { business: 'biz', user: 'usr' } } },
+      body: { issueSeverity: 'high', data: { mobile: 'mobile', desktop: 'desktop', impact: { business: 'biz', user: 'usr' } } },
       insight: 'insight', rationale: 'rationale', recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
@@ -359,22 +387,22 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     // The opportunity is created, meaning the ternary branches for 0 pageviews were exercised
   });
 
-  it('should include ahrefs CPC fields when cpcSource is ahrefs (line 229 branch)', async () => {
-    // Configure S3 to return valid ahrefs CPC data
-    const ahrefsCPCData = {
+  it('should include seo CPC fields when cpcSource is seo (line 229 branch)', async () => {
+    // Configure S3 to return valid seo CPC data
+    const seoCPCData = {
       organicTraffic: 10000,
       organicCost: 9500, // organicCPC = 9500/10000 = 0.95
       paidTraffic: 5000,
       paidCost: 6250, // paidCPC = 6250/5000 = 1.25
     };
     s3ClientMock.send.resolves({
-      Body: { transformToString: () => JSON.stringify(ahrefsCPCData) },
+      Body: { transformToString: () => JSON.stringify(seoCPCData) },
     });
 
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
     const guidance = [{
-      body: { data: { mobile: 'mobile', desktop: 'desktop', impact: { business: 'biz', user: 'usr' } } },
+      body: { issueSeverity: 'high', data: { mobile: 'mobile', desktop: 'desktop', impact: { business: 'biz', user: 'usr' } } },
       insight: 'insight', rationale: 'rationale', recommendation: 'rec',
       metadata: { scrape_job_id: 'test-job-id' },
     }];
@@ -383,10 +411,10 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
     expect(Opportunity.create).to.have.been.called;
     const opportunityData = Opportunity.create.getCall(0).args[0];
-    // Verify ahrefs-specific fields are included (line 229 conditional spread)
-    expect(opportunityData.data.cpcSource).to.equal('ahrefs');
-    expect(opportunityData.data.ahrefsOrganicCPC).to.equal(0.95);
-    expect(opportunityData.data.ahrefsPaidCPC).to.equal(1.25);
+    // Verify seo-specific fields are included (line 229 conditional spread)
+    expect(opportunityData.data.cpcSource).to.equal('seo');
+    expect(opportunityData.data.seoOrganicCPC).to.equal(0.95);
+    expect(opportunityData.data.seoPaidCPC).to.equal(1.25);
     expect(opportunityData.data.appliedCPC).to.equal(1.25);
   });
 
@@ -395,6 +423,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     Opportunity.create.resolves(opportunityInstance);
     const guidance = [{
       body: {
+        issueSeverity: 'high',
         data: {
           mobile: 'mobile markdown',
           desktop: 'desktop markdown',
@@ -451,6 +480,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     Opportunity.create.resolves(opportunityInstance);
     const guidance = [{
       body: {
+        issueSeverity: 'high',
         data: {
           mobile: 'mobile markdown',
           desktop: 'desktop markdown',
@@ -476,9 +506,10 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
     // The consent-banner opportunities should be marked as IGNORED
     expect(consentBannerOppty1.setStatus).to.have.been.calledWith('IGNORED');
-    expect(consentBannerOppty1.save).to.have.been.called;
     expect(consentBannerOppty2.setStatus).to.have.been.calledWith('IGNORED');
-    expect(consentBannerOppty2.save).to.have.been.called;
+    expect(Opportunity.saveMany).to.have.been.calledWith(
+      sinon.match((arr) => arr.length === 2),
+    );
 
     // The non-matching type should not be touched
     expect(wrongTypeOppty.setStatus).to.not.have.been.called;
@@ -508,6 +539,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     Opportunity.create.resolves(opportunityInstance);
     const guidance = [{
       body: {
+        issueSeverity: 'high',
         data: {
           mobile: 'mobile markdown',
           desktop: 'desktop markdown',
@@ -532,11 +564,10 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
     // Only system opportunity should be marked as IGNORED
     expect(systemOppty.setStatus).to.have.been.calledWith('IGNORED');
-    expect(systemOppty.save).to.have.been.called;
+    expect(Opportunity.saveMany).to.have.been.calledWith([systemOppty]);
 
     // The user opportunity should not be touched
     expect(userOppty.setStatus).to.not.have.been.called;
-    expect(userOppty.save).to.not.have.been.called;
 
     expect(result.status).to.equal(ok().status);
   });
@@ -583,11 +614,11 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     const result = await handler(message, context);
     expect(Opportunity.create).not.to.have.been.called;
     expect(Suggestion.create).not.to.have.been.called;
-    expect(logStub.info).to.have.been.calledWithMatch(/\[paid-audit\] Skipping paid-cookie-consent: low issue severity/);
+    expect(logStub.info).to.have.been.calledWithMatch(/severity not high enough/);
     expect(result.status).to.equal(ok().status);
   });
 
-  it('should create opportunity if severity is medium', async () => {
+  it('should skip opportunity creation if severity is medium', async () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
     const body = { issueSeverity: 'Medium', data: {
@@ -598,8 +629,20 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     const guidance = [{ body, metadata: { scrape_job_id: 'test-job-id' } }];
     const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
     const result = await handler(message, context);
-    expect(Opportunity.create).to.have.been.called;
-    expect(Suggestion.create).to.have.been.called;
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(Suggestion.create).not.to.have.been.called;
+    expect(logStub.info).to.have.been.calledWithMatch(/severity not high enough/);
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should skip opportunity creation when body has no issueSeverity field', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    const body = { data: { mobile: 'mobile markdown', desktop: 'desktop markdown' } };
+    const guidance = [{ body, metadata: { scrape_job_id: 'test-job-id' } }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const result = await handler(message, context);
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(logStub.info).to.have.been.calledWithMatch(/severity not high enough/);
     expect(result.status).to.equal(ok().status);
   });
 
@@ -612,6 +655,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     const result = await handler(message, context);
 
     expect(Opportunity.create).not.to.have.been.called;
+    expect(logStub.info).to.have.been.calledWithMatch(/severity not high enough/);
     expect(result.status).to.equal(ok().status);
   });
 
@@ -622,6 +666,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
     const guidance = [{
       body: {
+        issueSeverity: 'high',
         data: {
           mobile: 'mobile markdown',
           desktop: 'desktop markdown',
@@ -652,6 +697,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     Opportunity.create.resolves(opportunityInstance);
     const guidance = [{
       body: {
+        issueSeverity: 'high',
         data: {
           mobile: 'mobile markdown',
           desktop: 'desktop markdown',
@@ -687,6 +733,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     Opportunity.create.resolves(opportunityInstance);
     const guidance = [{
       body: {
+        issueSeverity: 'high',
         data: {
           mobile: 'mobile markdown',
           desktop: 'desktop markdown',
@@ -704,7 +751,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
     // Only the existing opportunity should be marked as IGNORED, not the newly created one
     expect(existingConsentBannerOppty.setStatus).to.have.been.calledWith('IGNORED');
-    expect(existingConsentBannerOppty.save).to.have.been.called;
+    expect(Opportunity.saveMany).to.have.been.calledWith([existingConsentBannerOppty]);
     expect(result.status).to.equal(ok().status);
   });
 
@@ -720,6 +767,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       const jobId = 'test-job-123';
       const guidance = [{
         body: {
+          issueSeverity: 'high',
           data: {
             mobile: 'mobile markdown with MOBILE_BANNER_SUGGESTION',
             desktop: 'desktop markdown with DESKTOP_BANNER_SUGGESTION',
@@ -778,6 +826,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
       const guidance = [{
         body: {
+          issueSeverity: 'high',
           data: {
             mobile: 'mobile markdown with MOBILE_BANNER_SUGGESTION',
             desktop: 'desktop markdown with DESKTOP_BANNER_SUGGESTION',
@@ -820,6 +869,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
       const guidance = [{
         body: {
+          issueSeverity: 'high',
           data: {
             mobile: 'mobile markdown with MOBILE_BANNER_SUGGESTION',
             desktop: 'desktop markdown with DESKTOP_BANNER_SUGGESTION',
@@ -851,6 +901,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
       const guidance = [{
         body: {
+          issueSeverity: 'high',
           data: {
             mobile: 'mobile markdown with MOBILE_BANNER_SUGGESTION',
             desktop: 'desktop markdown with DESKTOP_BANNER_SUGGESTION',
@@ -895,6 +946,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
       const guidance = [{
         body: {
+          issueSeverity: 'high',
           data: {
             mobile: 'mobile markdown with MOBILE_BANNER_SUGGESTION',
             desktop: 'desktop markdown with DESKTOP_BANNER_SUGGESTION',

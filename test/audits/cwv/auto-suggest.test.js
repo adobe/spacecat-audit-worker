@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect } from 'chai';
 import sinon from 'sinon';
 import esmock from 'esmock';
@@ -68,6 +67,7 @@ describe('CWV Auto-Suggest', () => {
         getSiteId: () => 'site-123',
         getAuditId: () => 'audit-456',
         getId: () => 'oppty-789',
+        getType: () => 'cwv',
         getSuggestions: () => Promise.resolve([{
           getId: () => 'sugg-001',
           getStatus: () => 'NEW',
@@ -139,6 +139,7 @@ describe('CWV Auto-Suggest', () => {
         getSiteId: () => 'site-123',
         getAuditId: () => 'audit-456',
         getId: () => 'oppty-789',
+        getType: () => 'cwv',
         getSuggestions: () => Promise.resolve([{
           getId: () => 'sugg-001',
           getStatus: () => 'NEW',
@@ -192,6 +193,7 @@ describe('CWV Auto-Suggest', () => {
         getSiteId: () => 'site-123',
         getAuditId: () => 'audit-456',
         getId: () => 'oppty-789',
+        getType: () => 'cwv',
         getSuggestions: () => Promise.resolve([{
           getId: () => 'sugg-001',
           getStatus: () => 'NEW',
@@ -220,6 +222,7 @@ describe('CWV Auto-Suggest', () => {
         getSiteId: () => 'site-123',
         getAuditId: () => 'audit-456',
         getId: () => 'oppty-789',
+        getType: () => 'cwv',
         getSuggestions: () => Promise.resolve([
           {
             getId: () => 'sugg-group',
@@ -258,6 +261,7 @@ describe('CWV Auto-Suggest', () => {
         getSiteId: () => 'site-123',
         getAuditId: () => 'audit-456',
         getId: () => 'oppty-789',
+        getType: () => 'cwv',
         getSuggestions: () => Promise.resolve([{
           getId: () => 'sugg-001',
           getStatus: () => 'NEW',
@@ -280,6 +284,7 @@ describe('CWV Auto-Suggest', () => {
         getSiteId: () => 'site-123',
         getAuditId: () => 'audit-456',
         getId: () => 'oppty-789',
+        getType: () => 'cwv',
         getSuggestions: () => Promise.resolve([{
           getId: () => 'sugg-001',
           getStatus: () => 'NEW',
@@ -302,6 +307,7 @@ describe('CWV Auto-Suggest', () => {
         getSiteId: () => 'site-123',
         getAuditId: () => 'audit-456',
         getId: () => 'oppty-789',
+        getType: () => 'cwv',
         getSuggestions: () => Promise.resolve([{
           getId: () => 'sugg-001',
           getStatus: () => 'APPROVED',
@@ -324,6 +330,7 @@ describe('CWV Auto-Suggest', () => {
         getSiteId: () => 'site-123',
         getAuditId: () => 'audit-456',
         getId: () => 'oppty-789',
+        getType: () => 'cwv',
         getSuggestions: () => Promise.resolve([
           {
             getId: () => 'sugg-001',
@@ -362,6 +369,7 @@ describe('CWV Auto-Suggest', () => {
         getSiteId: () => 'site-123',
         getAuditId: () => 'audit-456',
         getId: () => 'oppty-789',
+        getType: () => 'cwv',
         getSuggestions: () => Promise.resolve([{
           getId: () => 'sugg-001',
           getStatus: () => 'NEW',
@@ -388,6 +396,7 @@ describe('CWV Auto-Suggest', () => {
         getSiteId: () => 'site-123',
         getAuditId: () => 'audit-456',
         getId: () => 'oppty-789',
+        getType: () => 'cwv',
         getSuggestions: () => Promise.resolve([{
           getId: () => 'sugg-001',
           getStatus: () => 'NEW',

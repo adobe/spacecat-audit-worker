@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -328,7 +326,7 @@ describe('LLM Blocked Audit', () => {
     expect(context.dataAccess.Opportunity.getSuggestions).to.have.been.calledOnce;
     expect(existingSuggestions[0].setData).to.have.been.calledOnce;
     expect(existingSuggestions[0].setUpdatedBy).to.have.been.calledWith('system');
-    expect(existingSuggestions[0].save).to.have.been.calledOnce;
+    expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
 
     // Verify that no new suggestions were added
     expect(context.dataAccess.Opportunity.addSuggestions).to.not.have.been.called;
@@ -439,7 +437,7 @@ describe('LLM Blocked Audit', () => {
   });
 });
 
-describe('LLM Blocked Audit - Athena/Ahrefs fallback', () => {
+describe('LLM Blocked Audit - Athena/SEO fallback', () => {
   let sandbox;
   let mockGetTopAgenticUrlsFromAthena;
   let checkLLMBlockedWithMocks;
@@ -494,11 +492,11 @@ describe('LLM Blocked Audit - Athena/Ahrefs fallback', () => {
     expect(result.auditResult).to.equal('[]');
     // Athena was called
     expect(mockGetTopAgenticUrlsFromAthena).to.have.been.calledOnce;
-    // Ahrefs was NOT called because Athena returned data
-    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
+    // All URL sources are now fetched in parallel via getMergedAuditInputUrls
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledOnce;
   });
 
-  it('should fall back to Ahrefs when Athena returns empty array', async () => {
+  it('should fall back to SEO when Athena returns empty array', async () => {
     mockGetTopAgenticUrlsFromAthena.resolves([]);
 
     nock('https://example.com')
@@ -506,7 +504,7 @@ describe('LLM Blocked Audit - Athena/Ahrefs fallback', () => {
       .reply(200, 'User-Agent: *\nAllow: /');
 
     const mockTopPages = [
-      { getUrl: () => 'https://example.com/ahrefs-page1' },
+      { getUrl: () => 'https://example.com/seo-page1' },
     ];
 
     const context = new MockContextBuilder()
@@ -531,17 +529,12 @@ describe('LLM Blocked Audit - Athena/Ahrefs fallback', () => {
     const result = await checkLLMBlockedWithMocks(context);
 
     expect(result.auditResult).to.equal('[]');
-    // Athena was called first
+    // Both sources are fetched in parallel via getMergedAuditInputUrls
     expect(mockGetTopAgenticUrlsFromAthena).to.have.been.calledOnce;
-    // Ahrefs was called as fallback
     expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledOnce;
-    // Log should indicate fallback
-    expect(context.log.info).to.have.been.calledWith(
-      '[LLM-BLOCKED] No agentic URLs from Athena, falling back to Ahrefs',
-    );
   });
 
-  it('should fall back to Ahrefs when Athena returns null', async () => {
+  it('should fall back to SEO when Athena returns null', async () => {
     mockGetTopAgenticUrlsFromAthena.resolves(null);
 
     nock('https://example.com')
@@ -549,7 +542,7 @@ describe('LLM Blocked Audit - Athena/Ahrefs fallback', () => {
       .reply(200, 'User-Agent: *\nAllow: /');
 
     const mockTopPages = [
-      { getUrl: () => 'https://example.com/ahrefs-page1' },
+      { getUrl: () => 'https://example.com/seo-page1' },
     ];
 
     const context = new MockContextBuilder()
@@ -577,7 +570,7 @@ describe('LLM Blocked Audit - Athena/Ahrefs fallback', () => {
     expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledOnce;
   });
 
-  it('should throw error when both Athena and Ahrefs return no pages', async () => {
+  it('should throw error when both Athena and SEO return no pages', async () => {
     mockGetTopAgenticUrlsFromAthena.resolves([]);
 
     const context = new MockContextBuilder()

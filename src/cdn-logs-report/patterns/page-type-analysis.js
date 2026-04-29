@@ -202,7 +202,9 @@ ${JSON.stringify(paths, null, 2)}`;
 
 function groupPathsByPageType(pathTypeArray) {
   return pathTypeArray.reduce((acc, { path, pageType }) => {
-    if (!acc[pageType]) acc[pageType] = [];
+    if (!acc[pageType]) {
+      acc[pageType] = [];
+    }
     acc[pageType].push(path);
     return acc;
   }, {});

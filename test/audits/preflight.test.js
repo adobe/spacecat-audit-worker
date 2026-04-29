@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
@@ -719,7 +717,7 @@ describe('Preflight Audit', () => {
         TierClient.createForSite.restore();
       }
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       sinon.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -763,6 +761,12 @@ describe('Preflight Audit', () => {
               transformToString: sinon.stub().resolves(JSON.stringify({
                 scrapeResult: {
                   rawBody: html.replaceAll('https://example.com', 'https://main--example--page.aem.page'),
+                  canonical: {
+                    exists: true,
+                    count: 1,
+                    href: 'https://main--example--page.aem.page/wrong',
+                    inHead: true,
+                  },
                   tags: {
                     title: 'Page 1 Title',
                     description: 'Page 1 Description',
@@ -1312,6 +1316,12 @@ describe('Preflight Audit', () => {
               transformToString: sinon.stub().resolves(JSON.stringify({
                 scrapeResult: {
                   rawBody: html,
+                  canonical: {
+                    exists: true,
+                    count: 1,
+                    href: 'https://main--example--page.aem.page/readability-test',
+                    inHead: true,
+                  },
                   tags: {
                     title: 'Readability Test Page',
                     description: 'Test page for readability',
@@ -1426,7 +1436,7 @@ describe('Preflight Audit', () => {
 
         // Verify breakdown structure
         const { breakdown } = pageResult.profiling;
-        const expectedChecks = ['dom', 'canonical', 'metatags', 'links', 'headings', 'readability'];
+        const expectedChecks = ['dom', 'canonical', 'metatags', 'links', 'headings', 'readability', 'alt-text'];
 
         expect(breakdown).to.be.an('array');
         expect(breakdown).to.have.lengthOf(expectedChecks.length);
@@ -1445,9 +1455,9 @@ describe('Preflight Audit', () => {
       await preflightAuditFunction(context);
 
       // Verify that AsyncJob.findById was called for job metadata update, each intermediate save and final save
-      // (total of 7 times: 1 metadata update + 6 intermediate + 1 final)
+      // (1 metadata update + 7 intermediate incl. alt-text + 1 final)
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
-      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(8);
+      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(9);
     });
 
     it('handles errors during intermediate saves gracefully', async () => {
@@ -1578,6 +1588,63 @@ describe('Preflight Audit', () => {
       expect(loremIpsumAudit).to.exist;
       expect(loremIpsumAudit.opportunities).to.have.lengthOf(1);
       expect(loremIpsumAudit.opportunities[0].check).to.equal('placeholder-text');
+    });
+
+    it('lorem ipsum filter keeps only innermost elements when nested', async () => {
+      job.getMetadata = () => ({
+        payload: {
+          step: PREFLIGHT_STEP_IDENTIFY,
+          urls: ['https://main--example--page.aem.page/page1'],
+        },
+      });
+
+      const nestedHtml = '<body>'
+        + '<div id="outer">Lorem ipsum dolor sit amet'
+        + '<p id="inner">Lorem ipsum nested text</p>'
+        + '</div>'
+        + '</body>';
+
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({
+            Contents: [
+              { Key: 'scrapes/site-123/page1/scrape.json' },
+            ],
+            IsTruncated: false,
+          });
+        }
+        return Promise.resolve({
+          ContentType: 'application/json',
+          Body: {
+            transformToString: sinon.stub().resolves(JSON.stringify({
+              scrapeResult: {
+                rawBody: nestedHtml,
+              },
+              finalUrl: 'https://main--example--page.aem.page/page1',
+            })),
+          },
+        });
+      });
+
+      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_LOREM_IPSUM}-preflight`, site).returns(true);
+
+      await preflightAuditFunction(context);
+
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+      const result = finalJobEntity.setResult.getCall(0).args[0];
+
+      const { audits } = result[0];
+      const loremIpsumAudit = audits.find((a) => a.name === AUDIT_LOREM_IPSUM);
+      expect(loremIpsumAudit).to.exist;
+      expect(loremIpsumAudit.opportunities).to.have.lengthOf(1);
+      expect(loremIpsumAudit.opportunities[0].check).to.equal('placeholder-text');
+
+      const { elements } = loremIpsumAudit.opportunities[0];
+      expect(elements).to.be.an('array');
+      expect(elements).to.have.lengthOf(1);
+      expect(elements[0].selector).to.include('p#inner');
+      expect(elements[0].selector).to.not.match(/^(body > )?div#outer$/);
     });
 
     it('handles individual AUDIT_H1_COUNT check', async () => {
@@ -1991,7 +2058,7 @@ describe('Preflight Audit', () => {
 
       // Ensure entitlement checks pass for accessibility
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       if (TierClient.createForSite && TierClient.createForSite.restore) {
         TierClient.createForSite.restore();
@@ -3129,7 +3196,7 @@ describe('Preflight Audit', () => {
 
         // Ensure entitlement checks pass for polling tests; avoid double-stubbing
         const mockTierClient = {
-          checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+          checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
         };
         if (TierClient.createForSite && TierClient.createForSite.restore) {
           TierClient.createForSite.restore();
@@ -3393,7 +3460,7 @@ describe('Preflight Audit', () => {
 
       // Ensure entitlement checks pass for coverage tests
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -4703,7 +4770,7 @@ describe('Preflight Audit', () => {
 
       // Ensure entitlement checks pass for enabled checks calculation
       const mockTierClient = {
-        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sinon.stub().resolves({ siteEnrollment: {} }),
       };
       if (TierClient.createForSite && TierClient.createForSite.restore) {
         TierClient.createForSite.restore();

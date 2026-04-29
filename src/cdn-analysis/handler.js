@@ -12,23 +12,24 @@
 /* eslint-disable object-curly-newline */
 import { getStaticContent, isInteger, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
-import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
   resolveCdnBucketName,
-  extractCustomerDomain,
+  extractSiteKeyFromBaseURL,
   buildConsolidatedPaths,
   getBucketInfo,
   discoverCdnProviders,
   mapServiceToCdnProvider,
   CDN_TYPES,
   SERVICE_PROVIDER_TYPES,
-  resolveConsolidatedBucketName,
+  getS3Config,
+  getCdnAwsRuntime,
   pathHasData,
   shouldRecreateTable,
 } from '../utils/cdn-utils.js';
 import { getImsOrgId } from '../utils/data-access.js';
 import { computeWeekOffset } from '../utils/date-utils.js';
+import { getConfigCdnProvider } from '../utils/llmo-config-utils.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -36,7 +37,9 @@ const ONE_HOUR_MS = 60 * 60 * 1000;
 const pad2 = (n) => String(n).padStart(2, '0');
 
 function isValidAuditContext(auditContext) {
-  if (!isNonEmptyObject(auditContext)) return false;
+  if (!isNonEmptyObject(auditContext)) {
+    return false;
+  }
   return ['year', 'month', 'day', 'hour'].every((k) => isInteger(auditContext[k]));
 }
 
@@ -76,16 +79,6 @@ async function ensureTable(client, database, table, location, sql, log) {
   }
 }
 
-/**
- * Returns aggregated table names based on customer domain and mode.
- */
-function getAggregatedTableNames(customerDomain) {
-  return {
-    aggregatedTable: `aggregated_logs_${customerDomain}_consolidated`,
-    aggregatedReferralTable: `aggregated_referral_logs_${customerDomain}_consolidated`,
-  };
-}
-
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -94,14 +87,29 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
  * do not support SQL DELETE.
  */
 async function clearS3Partition(s3Client, bucket, prefix, log) {
+  const isNoSuchBucket = (error) => error?.name === 'NoSuchBucket'
+    /* c8 ignore next 2 */
+    || error?.Code === 'NoSuchBucket'
+    || error?.code === 'NoSuchBucket';
+
   let continuationToken;
   do {
-    // eslint-disable-next-line no-await-in-loop
-    const response = await s3Client.send(new ListObjectsV2Command({
-      Bucket: bucket,
-      Prefix: prefix,
-      ContinuationToken: continuationToken,
-    }));
+    let response;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      response = await s3Client.send(new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      }));
+    } catch (error) {
+      if (isNoSuchBucket(error)) {
+        log.info(`Skipping partition cleanup for s3://${bucket}/${prefix} because bucket does not exist yet.`);
+        return;
+      }
+      /* c8 ignore next 2 */
+      throw error;
+    }
     /* c8 ignore next */
     const keys = (response.Contents || []).map((obj) => ({ Key: obj.Key }));
     if (keys.length > 0) {
@@ -211,10 +219,15 @@ async function triggerSubAudits(context, site, detectedDays) {
 }
 
 export async function processCdnLogs(auditUrl, context, site, auditContext) {
-  const { log, s3Client, dataAccess } = context;
+  const { log, dataAccess } = context;
   const auditType = 'cdn-logs-analysis';
+  const awsRuntime = getCdnAwsRuntime(site, context);
+  const { s3Client } = awsRuntime;
 
-  const bucketName = await resolveCdnBucketName(site, context);
+  const bucketName = await resolveCdnBucketName(site, {
+    ...context,
+    s3Client,
+  });
   if (!bucketName) {
     return {
       auditResult: {
@@ -225,26 +238,47 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
     };
   }
 
-  const customerDomain = extractCustomerDomain(site);
+  const siteKey = extractSiteKeyFromBaseURL(site);
   const { year, month, day, hour } = getHourParts(auditContext);
   const { host } = new URL(site.getBaseURL());
+  const siteId = site.getId();
   const { orgId } = site.getConfig()?.getLlmoCdnBucketConfig() || {};
   // for non-adobe customers, use the orgId from the config
   const pathId = orgId || await getImsOrgId(site, dataAccess, log);
 
   const { isLegacy, providers } = await getBucketInfo(s3Client, bucketName, pathId);
-  const serviceProviders = isLegacy
+  const discoveredServiceProviders = isLegacy
     ? await discoverCdnProviders(s3Client, bucketName, { year, month, day, hour })
     : providers;
+  const configuredCdnProvider = await getConfigCdnProvider(site, context);
+  const targetProvider = isLegacy
+    ? mapServiceToCdnProvider(configuredCdnProvider)
+    : configuredCdnProvider;
+  const serviceProviders = configuredCdnProvider
+    ? discoveredServiceProviders.filter((provider) => provider === targetProvider)
+    : discoveredServiceProviders;
 
-  log.debug(`Processing ${serviceProviders.length} service provider(s) in bucket: ${bucketName}`);
+  if (configuredCdnProvider) {
+    if (serviceProviders.length > 0) {
+      log.info(`Filtered discovered service providers to configured cdnProvider=${configuredCdnProvider} for siteId=${siteId}, host=${host}`);
+    } else {
+      log.warn(`Configured cdnProvider=${configuredCdnProvider} was not found among discovered service providers: ${discoveredServiceProviders.join(', ') || 'none'} for siteId=${siteId}, host=${host}`);
+    }
+  }
 
-  const database = `cdn_logs_${customerDomain}`;
-  const { aggregatedTable, aggregatedReferralTable } = getAggregatedTableNames(
-    customerDomain,
+  log.info(`Processing ${serviceProviders.length} service provider(s) in bucket: ${bucketName}`);
+
+  const s3Config = getS3Config(site, context);
+  const {
+    bucket: consolidatedBucket,
+    databaseName: database,
+    tableName: aggregatedTable,
+    referralTableName: aggregatedReferralTable,
+  } = s3Config;
+  const athenaClient = awsRuntime.createAthenaClient(
+    s3Config.getAthenaTempLocation(),
+    { maxPollAttempts: 500 },
   );
-  const consolidatedBucket = resolveConsolidatedBucketName(context);
-  const siteId = site.getId();
 
   // byocdn-other files arrive on unpredictable schedules, so the dispatcher-scheduled
   // daily run (isSubAudit is absent, hour=23) doesn't process logs itself. Instead it
@@ -283,9 +317,12 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
   // Check if aggregated data already exists for this hour
   const hasAggregatedData = await pathHasData(s3Client, `s3://${consolidatedBucket}/aggregated/${siteId}/${year}/${month}/${day}/${hour}/`);
   const hasAggregatedReferralData = await pathHasData(s3Client, `s3://${consolidatedBucket}/aggregated-referral/${siteId}/${year}/${month}/${day}/${hour}/`);
+  const hasPartialAggregates = hasAggregatedData !== hasAggregatedReferralData;
+  const aggregatedPrefix = `aggregated/${siteId}/${year}/${month}/${day}/${hour}/`;
+  const aggregatedReferralPrefix = `aggregated-referral/${siteId}/${year}/${month}/${day}/${hour}/`;
 
   if (hasAggregatedData && hasAggregatedReferralData && !auditContext?.forceReprocess) {
-    log.info(`${auditType} aggregated data already exists for siteId=${siteId} at path=s3://${consolidatedBucket}/aggregated/${siteId}/${year}/${month}/${day}/${hour}/ Skipping processing.`);
+    log.info(`${auditType} aggregated data already exists for siteId=${siteId} at path=s3://${consolidatedBucket}/${aggregatedPrefix} Skipping processing.`);
     return {
       auditResult: {
         database,
@@ -297,6 +334,15 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
     };
   }
 
+  if (hasPartialAggregates) {
+    log.warn(`${auditType} found partial aggregates for siteId=${siteId}. Rebuilding s3://${consolidatedBucket}/${aggregatedPrefix} and s3://${consolidatedBucket}/${aggregatedReferralPrefix}.`);
+  }
+
+  if (auditContext?.forceReprocess || hasPartialAggregates) {
+    await clearS3Partition(s3Client, consolidatedBucket, aggregatedPrefix, log);
+    await clearS3Partition(s3Client, consolidatedBucket, aggregatedReferralPrefix, log);
+  }
+
   // Create database and aggregated tables once
   let tablesCreated = false;
 
@@ -305,7 +351,11 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
     const cdnType = mapServiceToCdnProvider(serviceProvider);
 
     const cdnTypeLower = cdnType.toLowerCase();
-    const hasDailyPartitioningOnly = [CDN_TYPES.CLOUDFLARE, CDN_TYPES.OTHER].includes(cdnTypeLower);
+    const hasDailyPartitioningOnly = [
+      CDN_TYPES.CLOUDFLARE,
+      CDN_TYPES.IMPERVA,
+      CDN_TYPES.OTHER,
+    ].includes(cdnTypeLower);
 
     // Skip providers with daily partitioning only (no hourly partitions) unless hour=23
     if (hasDailyPartitioningOnly && hour !== '23') {
@@ -321,10 +371,7 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
         pathId,
         siteId,
       );
-      const rawTable = `raw_logs_${customerDomain}_${serviceProvider.replace(/-/g, '_')}`;
-      const athenaClient = AWSAthenaClient.fromContext(context, paths.tempLocation, {
-        maxPollAttempts: 500,
-      });
+      const rawTable = `raw_logs_${siteKey}_${serviceProvider.replace(/-/g, '_')}`;
 
       if (!tablesCreated) {
         // eslint-disable-next-line no-await-in-loop
@@ -378,14 +425,18 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
         if (cdnTypeLower === CDN_TYPES.OTHER) {
           return `${paths.rawLocation}${year}/${month}/${day}/`;
         }
+        if (cdnTypeLower === CDN_TYPES.IMPERVA) {
+          // Imperva raw files are delivered flat at the rawLocation prefix (no date/hour subdirs)
+          return paths.rawLocation;
+        }
         return `${paths.rawLocation}${year}/${month}/${day}/${hour}/`;
       })();
 
       // eslint-disable-next-line no-await-in-loop
-      const hasRawData = await pathHasData(context.s3Client, rawDataPath);
+      const hasRawData = await pathHasData(s3Client, rawDataPath);
 
       if (!hasRawData) {
-        log.info(`${auditType} no raw logs found for siteId=${siteId}, serviceProvider=${serviceProvider}, cdnType=${cdnType} at path=${rawDataPath}`);
+        log.info(`${auditType} no raw logs found for siteId=${siteId}, siteUrl=${host}, serviceProvider=${serviceProvider}, cdnType=${cdnType} at path=${rawDataPath}`);
         // eslint-disable-next-line no-continue
         continue;
       }
@@ -422,13 +473,6 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
           serviceProvider,
         }),
       ]);
-
-      if (auditContext?.forceReprocess) {
-        // eslint-disable-next-line no-await-in-loop
-        await clearS3Partition(s3Client, consolidatedBucket, `aggregated/${siteId}/${year}/${month}/${day}/`, log);
-        // eslint-disable-next-line no-await-in-loop
-        await clearS3Partition(s3Client, consolidatedBucket, `aggregated-referral/${siteId}/${year}/${month}/${day}/`, log);
-      }
 
       // eslint-disable-next-line no-await-in-loop
       await athenaClient.execute(sqlInsert, database, `[Athena Query] Insert aggregated data for ${serviceProvider} into ${database}.${aggregatedTable}`);

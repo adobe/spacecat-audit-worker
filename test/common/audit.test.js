@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -105,7 +103,7 @@ describe('Audit tests', () => {
 
     // Mock TierClient for entitlement checks
     const mockTierClient = {
-      checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+      checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: {} }),
     };
     sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
   });

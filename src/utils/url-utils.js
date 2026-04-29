@@ -60,7 +60,9 @@ export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL) {
  * @returns {string} - The country code.
  */
 export function getCountryCodeFromLang(lang, defaultCountry = 'us') {
-  if (!hasText(lang)) return defaultCountry;
+  if (!hasText(lang)) {
+    return defaultCountry;
+  }
   // Split on hyphen or underscore (both are used in the wild)
   const parts = lang.split(/[-_]/);
   if (parts.length === 2 && parts[1].length === 2) {
@@ -165,7 +167,7 @@ export function isPdfUrl(url) {
 
 /**
  * File types that cannot be scraped by Puppeteer but may appear in search results.
- * These are file types that Google indexes and may appear in Ahrefs top pages.
+ * These are file types that Google indexes and may appear in SEO top pages.
  * @see https://github.com/adobe/spacecat-audit-worker/blob/main/src/structured-data/handler.js#L203-L205
  */
 const UNSCRAPE_ABLE_FILE_TYPES = [
@@ -195,10 +197,28 @@ export function joinBaseAndPath(baseURL, path) {
     return baseURL.endsWith('/') ? baseURL : `${baseURL}/`;
   }
 
-  const normalizedBase = baseURL.endsWith('/') ? baseURL.slice(0, -1) : baseURL;
-  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  try {
+    // Prefer URL parsing when possible, but keep string-join fallback for invalid bases.
+    const base = new URL(baseURL);
+    const normalizedBasePath = base.pathname === '/' ? '' : base.pathname.replace(/\/$/, '');
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    const normalizedBasePathLower = normalizedBasePath.toLowerCase();
+    const normalizedPathLower = normalizedPath.toLowerCase();
+    const joinedPath = normalizedBasePath
+      && (normalizedPathLower === normalizedBasePathLower
+        || normalizedPathLower.startsWith(`${normalizedBasePathLower}/`))
+      ? normalizedPath
+      : `${normalizedBasePath}${normalizedPath}`;
 
-  return `${normalizedBase}${normalizedPath}`;
+    // Rebuild from origin + path so joins stay path-focused.
+    // Any base query/hash is intentionally ignored.
+    return `${base.origin}${joinedPath}`;
+  } catch {
+    const normalizedBase = baseURL.endsWith('/') ? baseURL.slice(0, -1) : baseURL;
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+
+    return `${normalizedBase}${normalizedPath}`;
+  }
 }
 
 /**
@@ -238,7 +258,9 @@ export function normalizeUrlForComparison(url) {
 export function urlsMatch(url1, url2) {
   const norm1 = normalizeUrlForComparison(url1);
   const norm2 = normalizeUrlForComparison(url2);
-  if (norm1 === norm2) return true;
+  if (norm1 === norm2) {
+    return true;
+  }
 
   // Also try without query strings
   const stripped1 = normalizeUrlForComparison(stripQueryString(url1));

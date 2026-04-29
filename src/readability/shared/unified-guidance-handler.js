@@ -14,13 +14,22 @@ import preflightGuidanceHandler from '../preflight/guidance-handler.js';
 import opportunityGuidanceHandler from '../opportunities/guidance-handler.js';
 
 /**
- * Unified guidance handler for readability suggestions from Mystique.
- * Routes to appropriate handler based on the 'mode' parameter at the top level of the message.
+ * Determines whether this is a batch (opportunity) message by inspecting the payload.
+ * A batch response always carries `data.s3ResultsPath`.
+ */
+function isBatchMessage(message) {
+  return Boolean(message.data?.s3ResultsPath);
+}
+
+/**
+ * Unified guidance handler for readability responses from Mystique.
  *
- * This handler supports:
- * - mode: 'preflight' → Routes to preflight guidance handler (AsyncJob-based)
- * - mode: 'opportunity' → Routes to opportunity guidance handler (Audit/Opportunity-based)
- * - missing mode → Defaults to 'preflight' for backward compatibility
+ * Routes incoming messages to the correct handler by inspecting the payload:
+ * - If `data.s3ResultsPath` is present → S3-based batch opportunity handler
+ * - Otherwise → inline single-item preflight handler
+ *
+ * The `mode` field is logged for observability but is NOT used for routing,
+ * because Mystique may not echo it back in batch responses.
  *
  * @param {Object} message - The Mystique callback message
  * @param {Object} context - The audit context
@@ -28,27 +37,20 @@ import opportunityGuidanceHandler from '../opportunities/guidance-handler.js';
  */
 export default async function unifiedReadabilityGuidanceHandler(message, context) {
   const { log } = context;
+  const mode = message.mode || 'unknown';
 
-  // Extract mode from top level of message (same level as siteId, auditId)
-  // Default to 'preflight' for backward compatibility
-  const mode = message.mode || 'preflight';
-
-  log.info(`[unified-readability-guidance] Processing Mystique response with mode: ${mode}`);
+  log.info(`[unified-readability-guidance] Processing Mystique response (mode: ${mode})`);
 
   try {
-    if (mode === 'preflight') {
-      log.info('[unified-readability-guidance] Routing to preflight guidance handler');
-      return await preflightGuidanceHandler(message, context);
-    } else if (mode === 'opportunity') {
-      log.info('[unified-readability-guidance] Routing to opportunity guidance handler');
+    if (isBatchMessage(message)) {
+      log.info('[unified-readability-guidance] Detected s3ResultsPath — routing to opportunity guidance handler');
       return await opportunityGuidanceHandler(message, context);
-    } else {
-      // Unknown mode, default to preflight for safety and backward compatibility
-      log.warn(`[unified-readability-guidance] Unknown mode: '${mode}', defaulting to preflight for safety`);
-      return await preflightGuidanceHandler(message, context);
     }
+
+    log.info('[unified-readability-guidance] Routing to preflight guidance handler');
+    return await preflightGuidanceHandler(message, context);
   } catch (error) {
-    log.error(`[unified-readability-guidance] Error processing Mystique response with mode '${mode}': ${error.message}`, error);
+    log.error(`[unified-readability-guidance] Error processing Mystique response (mode: ${mode}): ${error.message}`, error);
     throw error;
   }
 }

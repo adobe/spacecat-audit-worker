@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
@@ -150,6 +149,29 @@ describe('Meta Tags', () => {
         expect(seoChecks.getDetectedTags()[url][TITLE][SEO_IMPACT]).to.equal(LOW);
         expect(seoChecks.getDetectedTags()[url][TITLE].issueDetails)
           .to.equal(`${aboveIdealTitle.length - TAG_LENGTHS[TITLE].idealMaxLength} chars above ideal maximum`);
+      });
+
+      it('should include page language on detected tag objects (seo-checks language spread)', () => {
+        const url = 'https://example.com';
+        const pageTags = {
+          language: 'es',
+          [TITLE]: '',
+          [DESCRIPTION]: 'x'.repeat(150),
+          [H1]: ['Fine'],
+        };
+        seoChecks.checkForTagsLength(url, pageTags);
+        expect(seoChecks.getDetectedTags()[url][TITLE].language).to.equal('es');
+      });
+
+      it('should not include page language on detected tag objects if not present', () => {
+        const url = 'https://example.com';
+        const pageTags = {
+          [TITLE]: '',
+          [DESCRIPTION]: 'x'.repeat(150),
+          [H1]: ['Fine'],
+        };
+        seoChecks.checkForTagsLength(url, pageTags);
+        expect(seoChecks.getDetectedTags()[url][TITLE].language).to.be.undefined;
       });
     });
 
@@ -477,6 +499,7 @@ describe('Meta Tags', () => {
               }),
             },
           ]),
+          saveMany: sinon.stub().resolves(),
           STATUSES: {
             NEW: 'NEW',
           },
@@ -605,14 +628,11 @@ describe('Meta Tags', () => {
         dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
 
         const result = await submitForScraping(context);
+        // PDFs are pre-filtered by getMergedAuditInputUrls
         expect(result.urls).to.deep.equal([
           { url: 'http://example.com/page1' },
           { url: 'http://example.com/page2' },
         ]);
-
-        // Verify PDF files were logged as skipped
-        expect(context.log.info).to.have.been.calledWith('[metatags] Skipping PDF file from scraping: http://example.com/document.pdf');
-        expect(context.log.info).to.have.been.calledWith('[metatags] Skipping PDF file from scraping: http://example.com/guide.PDF');
       });
 
       it('should handle malformed URLs gracefully in isPdfUrl', async () => {
@@ -667,6 +687,84 @@ describe('Meta Tags', () => {
             description: 'Test Description',
             h1: ['Test H1'],
             s3key: 'scrapes/site-id/page1/scrape.json',
+          },
+        });
+      });
+
+      it('should include language when scrape tags include lang', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/page1',
+          scrapeResult: {
+            tags: {
+              title: 'Test Page',
+              description: 'Test Description',
+              h1: ['Test H1'],
+              lang: 'de',
+            },
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/page1',
+          'scrapes/site-id/page1/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.deep.equal({
+          '/page1': {
+            title: 'Test Page',
+            description: 'Test Description',
+            h1: ['Test H1'],
+            s3key: 'scrapes/site-id/page1/scrape.json',
+            language: 'de',
+          },
+        });
+      });
+
+      it('should use scrapeResult.language when tags.lang is absent', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/page1',
+          scrapeResult: {
+            language: 'fr',
+            tags: {
+              title: 'Test Page',
+              description: 'Test Description',
+              h1: ['Test H1'],
+            },
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/page1',
+          'scrapes/site-id/page1/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.deep.equal({
+          '/page1': {
+            title: 'Test Page',
+            description: 'Test Description',
+            h1: ['Test H1'],
+            s3key: 'scrapes/site-id/page1/scrape.json',
+            language: 'fr',
           },
         });
       });
@@ -928,6 +1026,115 @@ describe('Meta Tags', () => {
         });
         expect(logStub.error).to.not.have.been.called;
       });
+
+      it('should skip page when statusCode is 404 (new scrape with HTTP status)', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/missing',
+          statusCode: 404,
+          scrapeResult: {
+            tags: {
+              title: 'Page Not Found',
+              description: 'The page you requested was not found',
+              h1: ['Not Found'],
+            },
+            rawBody: '<html><body><h1>Not Found</h1><p>Content here to exceed 300 chars.</p></body></html>'.repeat(5),
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/missing',
+          'scrapes/site-id/missing/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.info).to.have.been.calledWith(
+          '[metatags] Skipping page with HTTP 404 for http://example.com/missing',
+        );
+      });
+
+      it('should skip page when statusCode is 4xx (e.g. 403)', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/forbidden',
+          statusCode: 403,
+          scrapeResult: {
+            tags: {
+              title: 'Access Denied',
+              description: 'You do not have permission',
+              h1: ['Forbidden'],
+            },
+            rawBody: 'A'.repeat(400),
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/forbidden',
+          'scrapes/site-id/forbidden/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.info).to.have.been.calledWith(
+          '[metatags] Skipping page with HTTP 403 for http://example.com/forbidden',
+        );
+      });
+
+      it('should process page when statusCode is 200 (new scrape)', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/ok',
+          statusCode: 200,
+          scrapeResult: {
+            tags: {
+              title: 'OK Page',
+              description: 'A valid page',
+              h1: ['OK'],
+            },
+            rawBody: 'A'.repeat(300),
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/ok',
+          'scrapes/site-id/ok/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.deep.equal({
+          '/ok': {
+            title: 'OK Page',
+            description: 'A valid page',
+            h1: ['OK'],
+            s3key: 'scrapes/site-id/ok/scrape.json',
+          },
+        });
+      });
     });
 
     describe('opportunities handler method', () => {
@@ -969,6 +1176,7 @@ describe('Meta Tags', () => {
           },
           Suggestion: {
             bulkUpdateStatus: sinon.stub(),
+            saveMany: sinon.stub().resolves(),
           },
         };
         context = {
@@ -1136,8 +1344,8 @@ describe('Meta Tags', () => {
           toOverride: true,
         });
 
-        // Verify the suggestion was saved
-        expect(existingSuggestion.save).to.be.calledOnce;
+        // Verify the suggestions were saved via saveMany
+        expect(dataAccessStub.Suggestion.saveMany).to.be.calledOnce;
       });
 
       it('should throw error if suggestions fail to create', async () => {
@@ -1376,6 +1584,7 @@ describe('Meta Tags', () => {
                 }),
               },
             ]),
+            saveMany: sinon.stub().resolves(),
             STATUSES: {
               NEW: 'NEW',
             },
@@ -1594,6 +1803,96 @@ describe('Meta Tags', () => {
         expect(mockSyncSuggestions).to.have.been.called;
         // Verify SQS messages were sent
         expect(context.sqs.sendMessage).to.have.been.called;
+      });
+
+      it('when site.requiresValidation is true, fetches suggestions for both NEW and PENDING_VALIDATION and sends combined list to Mystique', async () => {
+        site.requiresValidation = true;
+        const pendingSuggestions = [
+          {
+            getId: sinon.stub().returns('sugg-pending-1'),
+            getData: sinon.stub().returns({
+              url: 'http://example.com/blog/page1',
+              tagName: 'title',
+            }),
+          },
+          {
+            getId: sinon.stub().returns('sugg-pending-2'),
+            getData: sinon.stub().returns({
+              url: 'http://example.com/blog/page2',
+              tagName: 'description',
+            }),
+          },
+        ];
+        dataAccessStub.Suggestion.allByOpportunityIdAndStatus
+          .onFirstCall()
+          .resolves([])
+          .onSecondCall()
+          .resolves(pendingSuggestions);
+
+        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub().resolves(5000);
+        const mockValidateDetectedIssues = sinon.stub().callsFake(
+          async (detectedTags) => detectedTags,
+        );
+        const mockConvertToOpportunity = sinon.stub().resolves(metatagsOppty);
+        const mockSyncSuggestions = sinon.stub().resolves();
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
+          '../../src/utils/data-access.js': { syncSuggestions: mockSyncSuggestions },
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
+        });
+
+        const result = await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(result).to.deep.equal({ status: 'complete' });
+        expect(dataAccessStub.Suggestion.allByOpportunityIdAndStatus).to.have.been.calledTwice;
+        expect(dataAccessStub.Suggestion.allByOpportunityIdAndStatus.firstCall.args[1]).to.equal('NEW');
+        expect(dataAccessStub.Suggestion.allByOpportunityIdAndStatus.secondCall.args[1]).to.equal('PENDING_VALIDATION');
+        const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+        expect(sentMessage.data.suggestionMap).to.have.lengthOf(2);
+        expect(sentMessage.data.pageUrls).to.have.lengthOf(2);
+      });
+
+      it('when site.requiresValidation is false, fetches suggestions only for NEW status', async () => {
+        site.requiresValidation = false;
+        dataAccessStub.Suggestion.allByOpportunityIdAndStatus.resetHistory();
+        dataAccessStub.Suggestion.allByOpportunityIdAndStatus.resolves([
+          {
+            getId: sinon.stub().returns('sugg-001'),
+            getData: sinon.stub().returns({
+              url: 'http://example.com/blog/page1',
+              tagName: 'title',
+            }),
+          },
+        ]);
+
+        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub().resolves(5000);
+        const mockValidateDetectedIssues = sinon.stub().callsFake(
+          async (detectedTags) => detectedTags,
+        );
+        const mockConvertToOpportunity = sinon.stub().resolves(metatagsOppty);
+        const mockSyncSuggestions = sinon.stub().resolves();
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
+          '../../src/utils/data-access.js': { syncSuggestions: mockSyncSuggestions },
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
+        });
+
+        await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(dataAccessStub.Suggestion.allByOpportunityIdAndStatus).to.have.been.calledOnce;
+        expect(dataAccessStub.Suggestion.allByOpportunityIdAndStatus.firstCall.args[1]).to.equal('NEW');
       });
 
       it('should handle case when no tags are extracted', async () => {

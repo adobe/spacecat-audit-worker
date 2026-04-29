@@ -16,6 +16,7 @@ import { Suggestion } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../../src/utils/data-access.js';
 
 describe('Suggestion Validation Tests', () => {
+  let sandbox;
   let context;
   let opportunity;
   let buildKey;
@@ -23,37 +24,43 @@ describe('Suggestion Validation Tests', () => {
   let newData;
 
   beforeEach(() => {
-    // Mock opportunity
+    sandbox = sinon.createSandbox();
+
     opportunity = {
-      getId: sinon.stub().returns('opportunity-id'),
-      getSiteId: sinon.stub().returns('site-id'),
-      getSuggestions: sinon.stub().resolves([]),
-      addSuggestions: sinon.stub().resolves({
+      getId: sandbox.stub().returns('opportunity-id'),
+      getType: sandbox.stub().returns('test-type'),
+      getSiteId: sandbox.stub().returns('site-id'),
+      getSuggestions: sandbox.stub().resolves([]),
+      addSuggestions: sandbox.stub().resolves({
         createdItems: [{ id: 'suggestion-id' }],
         errorItems: [],
       }),
     };
 
-    // Mock context
     context = {
       log: {
-        debug: sinon.spy(),
-        info: sinon.spy(),
-        warn: sinon.spy(),
-        error: sinon.spy(),
+        debug: sandbox.stub(),
+        info: sandbox.stub(),
+        warn: sandbox.stub(),
+        error: sandbox.stub(),
       },
       site: {
-        getId: sinon.stub().returns('site-id'),
+        getId: sandbox.stub().returns('site-id'),
         requiresValidation: false,
       },
       dataAccess: {
         Suggestion: {
-          bulkUpdateStatus: sinon.stub().resolves(),
+          bulkUpdateStatus: sandbox.stub().resolves(),
+          saveMany: sandbox.stub().resolves(),
+        },
+        Configuration: {
+          findLatest: sinon.stub().resolves({
+            isHandlerEnabledForSite: sinon.stub().returns(false),
+          }),
         },
       },
     };
 
-    // Mock functions
     buildKey = (data) => data.id;
     mapNewSuggestion = (data) => ({
       opportunityId: opportunity.getId(),
@@ -62,7 +69,6 @@ describe('Suggestion Validation Tests', () => {
       data: { ...data },
     });
 
-    // Mock data
     newData = [
       { id: 'item1', value: 'test1', rank: 1 },
       { id: 'item2', value: 'test2', rank: 2 },
@@ -70,11 +76,10 @@ describe('Suggestion Validation Tests', () => {
   });
 
   afterEach(() => {
-    sinon.restore();
+    sandbox.restore();
   });
 
   it('should set status to NEW for sites without requiresValidation flag', async () => {
-    // Site without requiresValidation flag
     context.site.requiresValidation = false;
 
     await syncSuggestions({
@@ -85,7 +90,6 @@ describe('Suggestion Validation Tests', () => {
       mapNewSuggestion,
     });
 
-    // Check if addSuggestions was called with correct status
     const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
     expect(addSuggestionsCall).to.exist;
 
@@ -96,7 +100,6 @@ describe('Suggestion Validation Tests', () => {
   });
 
   it('should set status to PENDING_VALIDATION for sites with requiresValidation flag', async () => {
-    // Site with requiresValidation flag
     context.site.requiresValidation = true;
 
     await syncSuggestions({
@@ -107,7 +110,6 @@ describe('Suggestion Validation Tests', () => {
       mapNewSuggestion,
     });
 
-    // Check if addSuggestions was called with correct status
     const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
     expect(addSuggestionsCall).to.exist;
 
@@ -117,5 +119,55 @@ describe('Suggestion Validation Tests', () => {
     expect(suggestions[1].status).to.equal(Suggestion.STATUSES.PENDING_VALIDATION);
   });
 
-  // Removed legacy list test; relies on entitlement-driven requiresValidation only
+  it('should set OUTDATED suggestion to PENDING_VALIDATION when requiresValidation is true', async () => {
+    context.site.requiresValidation = true;
+
+    const existingSuggestion = {
+      getId: sandbox.stub().returns('existing-suggestion-id'),
+      getData: sandbox.stub().returns({ id: 'item1', value: 'existing' }),
+      setData: sandbox.stub(),
+      getStatus: sandbox.stub().returns(Suggestion.STATUSES.OUTDATED),
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+    };
+    opportunity.getSuggestions.resolves([existingSuggestion]);
+
+    await syncSuggestions({
+      context,
+      opportunity,
+      newData: [{ id: 'item1', value: 'updated', rank: 1 }],
+      buildKey,
+      mapNewSuggestion,
+    });
+
+    sinon.assert.calledOnceWithExactly(
+      existingSuggestion.setStatus,
+      Suggestion.STATUSES.PENDING_VALIDATION,
+    );
+    sinon.assert.calledOnce(context.dataAccess.Suggestion.saveMany);
+  });
+
+  it('should set OUTDATED suggestion to NEW when requiresValidation is false', async () => {
+    context.site.requiresValidation = false;
+
+    const existingSuggestion = {
+      getId: sandbox.stub().returns('existing-suggestion-id'),
+      getData: sandbox.stub().returns({ id: 'item1', value: 'existing' }),
+      setData: sandbox.stub(),
+      getStatus: sandbox.stub().returns(Suggestion.STATUSES.OUTDATED),
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+    };
+    opportunity.getSuggestions.resolves([existingSuggestion]);
+
+    await syncSuggestions({
+      context,
+      opportunity,
+      newData: [{ id: 'item1', value: 'updated', rank: 1 }],
+      buildKey,
+      mapNewSuggestion,
+    });
+
+    sinon.assert.calledOnceWithExactly(existingSuggestion.setStatus, Suggestion.STATUSES.NEW);
+  });
 });

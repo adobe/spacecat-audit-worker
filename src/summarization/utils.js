@@ -26,42 +26,62 @@ function hasSummaryText(text) {
   return typeof text === 'string' && text.trim().length > 0;
 }
 
+/**
+ * Page summaries should always appear at the top of the page so they are noticed by LLMs early.
+ * When no h1 is found, the fallback is body + appendChild (content at bottom). We override
+ * to body > :first-child + insertBefore so content is prepended to the page.
+ */
+function getPageSummaryTransformRules(pageSummary) {
+  const selector = pageSummary?.heading_selector || 'body';
+  const action = pageSummary?.insertion_method || 'appendChild';
+  const isBodyFallback = !selector || selector === 'body';
+
+  if (isBodyFallback) {
+    return {
+      selector: 'body > :first-child',
+      action: 'insertBefore',
+    };
+  }
+  return { selector, action };
+}
+
 export function getJsonSummarySuggestion(suggestions) {
   const suggestionValues = [];
   suggestions.forEach((suggestion) => {
     // Get scrapedAt once for all suggestion values from this suggestion
     const scrapedAt = suggestion.scrapedAt || new Date().toISOString();
+    const pageTransformRules = getPageSummaryTransformRules(suggestion.pageSummary);
 
-    // handle page level summary - only add if summary text is present
+    // handle page level summary - only add if summary text is present and not already on page
     const pageSummaryText = suggestion.pageSummary?.formatted_summary;
-    if (hasSummaryText(pageSummaryText)) {
+    const pageSummaryAlreadyPresent = suggestion.page_summary_present === true
+      || suggestion.hasExistingSummary === true;
+    if (hasSummaryText(pageSummaryText) && !pageSummaryAlreadyPresent) {
       suggestionValues.push({
         summarizationText: pageSummaryText,
+        aiGeneratedSummarizationText: pageSummaryText,
         fullPage: true,
         keyPoints: false,
         url: suggestion.pageUrl,
         title: suggestion.pageSummary?.title,
-        transformRules: {
-          selector: suggestion.pageSummary?.heading_selector || 'body',
-          action: suggestion.pageSummary?.insertion_method || 'appendChild',
-        },
+        transformRules: pageTransformRules,
         scrapedAt,
       });
     }
 
-    // handle key points summary - only add if there are key points
+    // handle key points summary - only add if there are key points and not already on page
     const keyPointsText = joinKeyPoints(suggestion.keyPoints?.formatted_items);
-    if (hasSummaryText(keyPointsText)) {
+    const keyPointsAlreadyPresent = suggestion.key_points_present === true
+      || suggestion.hasExistingKeyPoints === true;
+    if (hasSummaryText(keyPointsText) && !keyPointsAlreadyPresent) {
       suggestionValues.push({
         summarizationText: keyPointsText,
+        aiGeneratedSummarizationText: keyPointsText,
         fullPage: true,
         keyPoints: true,
         url: suggestion.pageUrl,
         title: suggestion.pageSummary?.title,
-        transformRules: {
-          selector: suggestion.pageSummary?.heading_selector || 'body',
-          action: suggestion.pageSummary?.insertion_method || 'appendChild',
-        },
+        transformRules: pageTransformRules,
         scrapedAt,
       });
     }

@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -22,11 +20,12 @@ use(sinonChai);
 describe('agentic-urls', () => {
   let sandbox;
   let mockAthenaClient;
-  let mockResolveConsolidatedBucketName;
-  let mockExtractCustomerDomain;
+  let mockGetS3Config;
+  let mockGetCdnAwsRuntime;
   let mockGenerateReportingPeriods;
   let mockWeeklyBreakdownQueries;
   let getTopAgenticUrlsFromAthena;
+  let getPreferredBaseUrl;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -35,8 +34,18 @@ describe('agentic-urls', () => {
       query: sandbox.stub(),
     };
 
-    mockResolveConsolidatedBucketName = sandbox.stub().returns('test-bucket');
-    mockExtractCustomerDomain = sandbox.stub().returns('example_com');
+    mockGetS3Config = sandbox.stub().returns({
+      region: 'us-east-1',
+      bucket: 'test-bucket',
+      siteName: 'example',
+      siteKey: 'example_com',
+      databaseName: 'cdn_logs_example_com',
+      getAthenaTempLocation: () => 's3://test-bucket/temp/athena-results/',
+    });
+    mockGetCdnAwsRuntime = sandbox.stub().returns({
+      region: 'us-east-1',
+      createAthenaClient: sandbox.stub().returns(mockAthenaClient),
+    });
 
     mockGenerateReportingPeriods = sandbox.stub().returns({
       weeks: [
@@ -54,14 +63,9 @@ describe('agentic-urls', () => {
     };
 
     const module = await esmock('../../src/utils/agentic-urls.js', {
-      '@adobe/spacecat-shared-athena-client': {
-        AWSAthenaClient: {
-          fromContext: sandbox.stub().returns(mockAthenaClient),
-        },
-      },
       '../../src/utils/cdn-utils.js': {
-        resolveConsolidatedBucketName: mockResolveConsolidatedBucketName,
-        extractCustomerDomain: mockExtractCustomerDomain,
+        getS3Config: mockGetS3Config,
+        getCdnAwsRuntime: mockGetCdnAwsRuntime,
       },
       '../../src/cdn-logs-report/utils/report-utils.js': {
         generateReportingPeriods: mockGenerateReportingPeriods,
@@ -72,6 +76,7 @@ describe('agentic-urls', () => {
     });
 
     getTopAgenticUrlsFromAthena = module.getTopAgenticUrlsFromAthena;
+    getPreferredBaseUrl = module.getPreferredBaseUrl;
   });
 
   afterEach(() => {
@@ -93,12 +98,61 @@ describe('agentic-urls', () => {
       error: sandbox.stub(),
       debug: sandbox.stub(),
     },
+    dataAccess: {
+      Configuration: {
+        findLatest: sandbox.stub().resolves({
+          isHandlerEnabledForSite: sandbox.stub().returns(true),
+        }),
+      },
+    },
     env: {
       AWS_ENV: 'prod',
       AWS_REGION: 'us-east-1',
     },
     // finalUrl is a hostname (without protocol) as returned by wwwUrlResolver
     finalUrl: 'www.example.com',
+  });
+
+  describe('getPreferredBaseUrl', () => {
+    const site = { getBaseURL: () => 'https://site.example.com' };
+
+    it('returns context.finalUrl when it already has a protocol', () => {
+      const context = { finalUrl: 'https://cdn.example.com' };
+      expect(getPreferredBaseUrl(site, context)).to.equal('https://cdn.example.com');
+    });
+
+    it('prepends https:// when context.finalUrl lacks a protocol', () => {
+      const context = { finalUrl: 'cdn.example.com' };
+      expect(getPreferredBaseUrl(site, context)).to.equal('https://cdn.example.com');
+    });
+
+    it('falls back to site.getBaseURL() when context.finalUrl is null', () => {
+      const context = { finalUrl: null };
+      expect(getPreferredBaseUrl(site, context)).to.equal('https://site.example.com');
+    });
+
+    it('falls back to site.getBaseURL() when context has no finalUrl property', () => {
+      const context = {};
+      expect(getPreferredBaseUrl(site, context)).to.equal('https://site.example.com');
+    });
+
+    it('returns overrideBaseURL from site config when it has a protocol', () => {
+      const siteWithOverride = {
+        getBaseURL: () => 'https://site.example.com',
+        getConfig: () => ({ getFetchConfig: () => ({ overrideBaseURL: 'https://override.example.com' }) }),
+      };
+      const context = { finalUrl: 'https://cdn.example.com' };
+      expect(getPreferredBaseUrl(siteWithOverride, context)).to.equal('https://override.example.com');
+    });
+
+    it('ignores overrideBaseURL from site config when it lacks a protocol', () => {
+      const siteWithOverride = {
+        getBaseURL: () => 'https://site.example.com',
+        getConfig: () => ({ getFetchConfig: () => ({ overrideBaseURL: 'override.example.com' }) }),
+      };
+      const context = { finalUrl: 'https://cdn.example.com' };
+      expect(getPreferredBaseUrl(siteWithOverride, context)).to.equal('https://cdn.example.com');
+    });
   });
 
   describe('getTopAgenticUrlsFromAthena', () => {
@@ -129,6 +183,44 @@ describe('agentic-urls', () => {
       expect(context.log.info).to.have.been.calledWith(
         'Agentic URLs - Top #1 URL: https://www.example.com/page1',
       );
+    });
+
+    it('should return empty array early when cdn-logs-analysis is disabled for the site', async () => {
+      const site = createMockSite();
+      const context = {
+        ...createMockContext(),
+      };
+      context.dataAccess.Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sandbox.stub().returns(false),
+      });
+
+      const result = await getTopAgenticUrlsFromAthena(site, context);
+
+      expect(result).to.deep.equal([]);
+      expect(context.log.info).to.have.been.calledWith(
+        'Agentic URLs - Skipping Athena query because cdn-logs-analysis is disabled for site site-123',
+      );
+      expect(mockGetCdnAwsRuntime).to.not.have.been.called;
+      expect(mockGetS3Config).to.not.have.been.called;
+      expect(mockWeeklyBreakdownQueries.createTopUrlsQueryWithLimit).to.not.have.been.called;
+      expect(mockAthenaClient.query).to.not.have.been.called;
+    });
+
+    it('should return empty array early when Configuration.findLatest returns null', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+      context.dataAccess.Configuration.findLatest.resolves(null);
+
+      const result = await getTopAgenticUrlsFromAthena(site, context);
+
+      expect(result).to.deep.equal([]);
+      expect(context.log.warn).to.have.been.calledWith(
+        'Agentic URLs - Skipping Athena query because no configuration was found for site site-123',
+      );
+      expect(mockGetCdnAwsRuntime).to.not.have.been.called;
+      expect(mockGetS3Config).to.not.have.been.called;
+      expect(mockWeeklyBreakdownQueries.createTopUrlsQueryWithLimit).to.not.have.been.called;
+      expect(mockAthenaClient.query).to.not.have.been.called;
     });
 
     it('should return empty array when Athena returns no results', async () => {
@@ -269,8 +361,8 @@ describe('agentic-urls', () => {
 
       await getTopAgenticUrlsFromAthena(site, context);
 
-      expect(mockExtractCustomerDomain).to.have.been.calledWith(site);
-      expect(mockResolveConsolidatedBucketName).to.have.been.calledWith(context);
+      expect(mockGetS3Config).to.have.been.calledWith(site, context);
+      expect(mockGetCdnAwsRuntime).to.have.been.calledWith(site, context);
     });
 
     it('should handle www prefix in customer domain', async () => {
@@ -279,13 +371,20 @@ describe('agentic-urls', () => {
 
       // Test the www prefix handling - returns www_example_com, which splits to
       //  ['www', 'example', 'com']
-      mockExtractCustomerDomain.returns('www_example_com');
+      mockGetS3Config.returns({
+        region: 'us-east-1',
+        bucket: 'test-bucket',
+        siteName: 'example',
+        siteKey: 'www_example_com',
+        databaseName: 'cdn_logs_www_example_com',
+        getAthenaTempLocation: () => 's3://test-bucket/temp/athena-results/',
+      });
       mockAthenaClient.query.resolves([]);
 
       await getTopAgenticUrlsFromAthena(site, context);
 
-      // The S3 config should use 'example' as customerName (second part when first is 'www')
-      expect(mockExtractCustomerDomain).to.have.been.calledWith(site);
+      // The S3 config should use 'example' as siteName (second part when first is 'www')
+      expect(mockGetS3Config).to.have.been.calledWith(site, context);
     });
 
     it('should use first week from reporting periods', async () => {
@@ -414,6 +513,32 @@ describe('agentic-urls', () => {
         sinon.match({
           excludedUrlSuffixes: sinon.match.array,
         }),
+      );
+    });
+
+    it('should use overrideBaseURL from site config when present', async () => {
+      const site = {
+        ...createMockSite(),
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getLlmoCdnlogsFilter: () => [],
+          getFetchConfig: () => ({ overrideBaseURL: 'https://override.example.com' }),
+        }),
+      };
+      const context = {
+        ...createMockContext(),
+        finalUrl: 'www.example.com',
+      };
+
+      mockAthenaClient.query.resolves([
+        { url: '/page1' },
+      ]);
+
+      const result = await getTopAgenticUrlsFromAthena(site, context);
+
+      expect(result).to.deep.equal(['https://override.example.com/page1']);
+      expect(context.log.info).to.have.been.calledWith(
+        'Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=https://override.example.com',
       );
     });
 

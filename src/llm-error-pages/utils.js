@@ -10,9 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
-import { getStaticContent } from '@adobe/spacecat-shared-utils';
-import { resolveConsolidatedBucketName, extractCustomerDomain } from '../utils/cdn-utils.js';
-import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL } from '../common/user-agent-classification.js';
+import { getStaticContent, isoCalendarWeek } from '@adobe/spacecat-shared-utils';
+import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL, PROVIDER_USER_AGENT_PATTERNS } from '../common/user-agent-classification.js';
 import { ELMO_LIVE_HOST } from '../common/constants.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
 
@@ -20,13 +19,16 @@ import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
 // CONSTANTS
 // ============================================================================
 
-export const LLM_USER_AGENT_PATTERNS = {
-  chatgpt: '(?i)ChatGPT|GPTBot|OAI-SearchBot',
-  perplexity: '(?i)Perplexity',
-  claude: '(?i)Claude|Anthropic',
-  gemini: '(?i)Gemini',
-  copilot: '(?i)Copilot',
-};
+// LLM providers to track — subset of PROVIDER_USER_AGENT_PATTERNS (excludes search bots)
+const LLM_PROVIDERS = ['chatgpt', 'perplexity', 'claude', 'googleai', 'copilot'];
+
+export const LLM_USER_AGENT_PATTERNS = Object.fromEntries(
+  LLM_PROVIDERS.map((key) => [key, PROVIDER_USER_AGENT_PATTERNS[key]]),
+);
+
+// Maximum rows returned per status code (404, 403, 5xx) in a single Athena query.
+// Each status is capped independently so no single status can dominate results.
+export const ROWS_PER_STATUS = 300;
 
 const TIME_CONSTANTS = {
   ISO_MONDAY: 1,
@@ -63,9 +65,11 @@ export function buildLlmUserAgentFilter(providers = null) {
 }
 
 export function normalizeUserAgentToProvider(rawUserAgent) {
-  if (!rawUserAgent || typeof rawUserAgent !== 'string') return 'Unknown';
+  if (!rawUserAgent || typeof rawUserAgent !== 'string') {
+    return 'Unknown';
+  }
 
-  if (/chatgpt|gptbot|oai-searchbot/i.test(rawUserAgent)) {
+  if (/chatgpt|gptbot|oai-searchbot|oai-adsbot/i.test(rawUserAgent)) {
     return 'ChatGPT';
   }
   if (/perplexity/i.test(rawUserAgent)) {
@@ -233,31 +237,9 @@ export async function buildLlmErrorPagesQuery(options) {
     pageCategoryClassification: generatePageTypeClassification(remotePatterns),
     // country extraction
     countryExtraction: buildCountryExtractionSQL(),
+    // per-status row cap
+    rowsPerStatus: ROWS_PER_STATUS,
   }, './src/llm-error-pages/sql/llm-error-pages.sql');
-}
-
-// ============================================================================
-// SITE AND CONFIGURATION UTILITIES
-// ============================================================================
-export async function getS3Config(site, context) {
-  const customerDomain = extractCustomerDomain(site);
-
-  const domainParts = customerDomain.split(/[._]/);
-  /* c8 ignore next */
-  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const bucket = resolveConsolidatedBucketName(context);
-  const siteId = site.getId();
-  const aggregatedLocation = `s3://${bucket}/aggregated/${siteId}/`;
-
-  return {
-    bucket,
-    customerName,
-    customerDomain,
-    aggregatedLocation,
-    databaseName: `cdn_logs_${customerDomain}`,
-    tableName: `aggregated_logs_${customerDomain}_consolidated`,
-    getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
-  };
 }
 
 // ============================================================================
@@ -266,15 +248,6 @@ export async function getS3Config(site, context) {
 
 export function formatDateString(date) {
   return date.toISOString().split('T')[0];
-}
-
-function getWeekNumber(date) {
-  const d = new Date(date);
-  d.setUTCHours(0, 0, 0, 0);
-  /* c8 ignore next */
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
 }
 
 export function getWeekRange(offsetWeeks = 0, referenceDate = new Date()) {
@@ -318,36 +291,38 @@ export function generatePeriodIdentifier(startDate, endDate) {
 
   const diffDays = Math.ceil((endDate - startDate) / (24 * 60 * 60 * 1000));
   if (diffDays === 7) {
-    const year = startDate.getUTCFullYear();
-    const weekNum = getWeekNumber(startDate);
+    const { week: weekNum, year } = isoCalendarWeek(startDate);
     return `w${String(weekNum).padStart(2, '0')}-${year}`;
   }
 
   return `${start}_to_${end}`;
 }
 
-export function generateReportingPeriods(referenceDate = new Date()) {
-  const { weekStart, weekEnd } = getWeekRange(-1, referenceDate);
+export function generateReportingPeriods(referenceDate = new Date(), weekOffsets = [-1]) {
+  const offsets = Array.isArray(weekOffsets) ? weekOffsets : [weekOffsets];
 
-  const weekNumber = getWeekNumber(weekStart);
-  const year = weekStart.getUTCFullYear();
+  const weeks = offsets.map((offset) => {
+    const { weekStart, weekEnd } = getWeekRange(offset, referenceDate);
+    const { week: weekNumber, year } = isoCalendarWeek(weekStart);
 
-  const weeks = [{
-    weekNumber,
-    year,
-    weekLabel: `Week ${weekNumber}`,
-    startDate: weekStart,
-    endDate: weekEnd,
-    dateRange: {
-      start: formatDateString(weekStart),
-      end: formatDateString(weekEnd),
-    },
-  }];
+    return {
+      weekNumber,
+      year,
+      weekLabel: `Week ${weekNumber}`,
+      startDate: weekStart,
+      endDate: weekEnd,
+      dateRange: {
+        start: formatDateString(weekStart),
+        end: formatDateString(weekEnd),
+      },
+      periodIdentifier: `w${String(weekNumber).padStart(2, '0')}-${year}`,
+    };
+  });
 
   return {
     weeks,
     referenceDate: referenceDate.toISOString(),
-    columns: [`Week ${weekNumber}`],
+    columns: weeks.map((w) => w.weekLabel),
   };
 }
 
@@ -406,13 +381,19 @@ export function categorizeErrorsByStatusCode(errorPages) {
   errorPages.forEach((error) => {
     const statusCode = error.status?.toString();
     if (statusCode === '404') {
-      if (!categorized[404]) categorized[404] = [];
+      if (!categorized[404]) {
+        categorized[404] = [];
+      }
       categorized[404].push(error);
     } else if (statusCode === '403') {
-      if (!categorized[403]) categorized[403] = [];
+      if (!categorized[403]) {
+        categorized[403] = [];
+      }
       categorized[403].push(error);
     } else if (statusCode && statusCode.startsWith('5')) {
-      if (!categorized['5xx']) categorized['5xx'] = [];
+      if (!categorized['5xx']) {
+        categorized['5xx'] = [];
+      }
       categorized['5xx'].push(error);
     }
   });
@@ -526,7 +507,9 @@ export async function downloadExistingCdnSheet(
     const rows = [];
 
     worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-      if (rowNumber === 1) return;
+      if (rowNumber === 1) {
+        return;
+      }
 
       const { values } = row;
       rows.push({

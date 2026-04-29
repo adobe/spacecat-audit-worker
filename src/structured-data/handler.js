@@ -16,6 +16,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access/src/models/suggestion/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import {
@@ -164,16 +165,22 @@ export async function submitForScraping(context) {
     log,
     finalUrl,
   } = context;
-  const { SiteTopPage } = dataAccess;
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  if (topPages.length === 0) {
+  const { urls: allUrls } = await getMergedAuditInputUrls({
+    site,
+    dataAccess,
+    auditType,
+    getAgenticUrls: () => Promise.resolve([]),
+    log,
+  });
+
+  if (allUrls.length === 0) {
     throw new Error('No top pages found for site');
   }
 
-  log.debug(`SDA: Submitting for scraping ${topPages.length} top pages for site ${site.getId()}, finalUrl: ${finalUrl}`);
+  log.debug(`SDA: Submitting for scraping ${allUrls.length} URLs for site ${site.getId()}, finalUrl: ${finalUrl}`);
 
   return {
-    urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
+    urls: allUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'structured-data',
   };
@@ -183,7 +190,7 @@ export async function runAuditAndGenerateSuggestions(context) {
   const {
     site, finalUrl, log, dataAccess, audit, sqs, env,
   } = context;
-  const { SiteTopPage, Suggestion } = dataAccess;
+  const { Suggestion } = dataAccess;
 
   const startTime = process.hrtime();
   const siteId = site.getId();
@@ -192,19 +199,25 @@ export async function runAuditAndGenerateSuggestions(context) {
   const scrapeCache = new Map();
 
   try {
-    let topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
-    if (!isNonEmptyArray(topPages)) {
+    const { urls: allUrls } = await getMergedAuditInputUrls({
+      site,
+      dataAccess,
+      auditType,
+      getAgenticUrls: () => Promise.resolve([]),
+      log,
+    });
+    let allPages = allUrls.map((url) => ({ url }));
+
+    if (!isNonEmptyArray(allPages)) {
       log.error(`SDA: No top pages for site ID ${siteId} found. Ensure that top pages were imported.`);
       throw new Error(`No top pages for site ID ${siteId} found.`);
-    } else {
-      topPages = topPages.map((page) => ({ url: page.getUrl() }));
     }
 
     // Filter out files from the top pages as these are not scraped
     const dataTypesToIgnore = ['pdf', 'ps', 'dwf', 'kml', 'kmz', 'xls', 'xlsx', 'ppt', 'pptx', 'doc', 'docx', 'rtf', 'swf'];
-    topPages = topPages.filter((page) => !dataTypesToIgnore.some((dataType) => page.url.endsWith(`.${dataType}`)));
+    allPages = allPages.filter((page) => !dataTypesToIgnore.some((dataType) => page.url.endsWith(`.${dataType}`)));
 
-    const auditResult = await processStructuredData(finalUrl, context, topPages, scrapeCache);
+    const auditResult = await processStructuredData(finalUrl, context, allPages, scrapeCache);
 
     // Create opportunities and suggestions
     const oppAndAudit = await opportunityAndSuggestions(finalUrl, {

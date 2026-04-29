@@ -15,6 +15,7 @@ import {
   mapToSuggestion,
 } from './guidance-opportunity-mapper.js';
 import { createPaidLogger } from '../paid/paid-log.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 const GUIDANCE_TYPE = 'no-cta-above-the-fold';
 
@@ -59,12 +60,14 @@ export default async function handler(message, context) {
 
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   const matchingOpportunity = existingOpportunities
-    .filter((oppty) => oppty.getType() === 'generic-opportunity')
     .find((oppty) => {
+      const type = oppty.getType();
       const opportunityData = oppty.getData();
       const status = oppty.getStatus();
-
-      return opportunityData?.opportunityType === 'no-cta-above-the-fold'
+      const isNoCta = type === 'no-cta-above-the-fold'
+        || (type === 'generic-opportunity'
+            && opportunityData?.opportunityType === 'no-cta-above-the-fold');
+      return isNoCta
         && opportunityData?.page === url
         && status !== 'RESOLVED'
         && status !== 'IGNORED';
@@ -88,6 +91,7 @@ export default async function handler(message, context) {
     guidanceParsed,
   );
 
+  warnOnInvalidSuggestionData(suggestionData.data, opportunity.getType(), log);
   await Suggestion.create(suggestionData);
   paidLog.createdSuggestion(opportunity.getId(), siteId, url, auditId);
 

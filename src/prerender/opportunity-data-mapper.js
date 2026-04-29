@@ -20,7 +20,7 @@ import { CONTENT_GAIN_THRESHOLD } from './utils/constants.js';
  */
 export function createOpportunityData(auditData) {
   const { auditResult } = auditData || {};
-  const { scrapeForbidden } = auditResult || {};
+  const { scrapeForbidden, scrapeForbiddenCount } = auditResult || {};
 
   return {
     runbook: '',
@@ -40,7 +40,7 @@ export function createOpportunityData(auditData) {
     },
     tags: ['isElmo', 'tech-geo', 'edgeOptimize'],
     data: {
-      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
+      dataSources: [DATA_SOURCES.SEO, DATA_SOURCES.SITE],
       thresholds: {
         contentGainRatio: CONTENT_GAIN_THRESHOLD,
       },
@@ -49,6 +49,7 @@ export function createOpportunityData(auditData) {
         'Better LLM indexing and search results',
       ],
       scrapeForbidden: (scrapeForbidden === true),
+      scrapeForbiddenCount: scrapeForbiddenCount ?? 0,
     },
   };
 }

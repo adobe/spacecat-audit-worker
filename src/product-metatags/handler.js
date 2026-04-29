@@ -18,6 +18,7 @@ import { getObjectFromKey } from '../utils/s3-utils.js';
 import ProductSeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
+import { createMemoizedManualConfigResolver } from '../utils/commerce-config-resolver.js';
 import productMetatagsAutoSuggest from './product-metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { getIssueRanking, trimTagValue, normalizeTagValue } from '../utils/seo-utils.js';
@@ -29,6 +30,7 @@ import {
   TITLE,
 } from './constants.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getCommerceConfig } from '../utils/saas.js';
 
@@ -164,6 +166,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   let customConfig = null;
   let productUrlTemplate = null;
   let memoizedGetCommerceConfig = null;
+  let memoizedManualResolver = null;
 
   try {
     const siteId = opportunity.getSiteId();
@@ -174,8 +177,12 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
     customConfig = site?.getConfig?.()?.getHandlers?.()?.[auditType];
     productUrlTemplate = customConfig?.product_url_template;
 
-    // Initialize memoized commerce config function
-    memoizedGetCommerceConfig = createMemoizedCommerceConfig(getCommerceConfig);
+    // Initialize memoized manual config resolver (reads commerceLlmoConfig once)
+    memoizedManualResolver = createMemoizedManualConfigResolver(site);
+    // Only initialize remote config fetcher if no manual config is set
+    if (!site?.getConfig?.()?.state?.commerceLlmoConfig) {
+      memoizedGetCommerceConfig = createMemoizedCommerceConfig(getCommerceConfig);
+    }
 
     log.debug('[PRODUCT-METATAGS] Site configuration loaded:', {
       hasCustomConfig: !!customConfig,
@@ -194,10 +201,13 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
     const baseUrl = getBaseUrl(auditData.auditResult.finalUrl, useHostnameOnly);
     const fullUrl = baseUrl + endpoint;
 
-    // Fetch commerce configuration once per endpoint (with locale extraction and memoization)
+    // Waterfall: manual config first (cached), then remote config (also cached)
     // eslint-disable-next-line no-await-in-loop
     let endpointConfig = {};
-    if (site && memoizedGetCommerceConfig) {
+    if (memoizedManualResolver) {
+      endpointConfig = memoizedManualResolver(fullUrl);
+    }
+    if (!endpointConfig && site && memoizedGetCommerceConfig) {
       try {
         const locale = extractLocaleFromUrl(fullUrl, productUrlTemplate, log);
         // eslint-disable-next-line no-await-in-loop
@@ -221,8 +231,10 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
         log.debug(`[PRODUCT-METATAGS] Failed to fetch config for ${fullUrl}: ${configError.message}`);
         endpointConfig = {};
       }
+    } else if (endpointConfig) {
+      log.debug(`[PRODUCT-METATAGS] Using manual commerce config for ${fullUrl}`);
     } else {
-      log.debug(`[PRODUCT-METATAGS] No site or memoized config function available for ${fullUrl}`);
+      log.debug(`[PRODUCT-METATAGS] No site or config function available for ${fullUrl}`);
     }
 
     for (const tag of [TITLE, DESCRIPTION, H1]) {
@@ -545,7 +557,9 @@ export async function calculateProjectedTraffic(context, site, detectedTags, log
       // Iterate over tag values, filtering out non-issue properties like productTags
       Object.entries(tags).forEach(([tagName, tagIssueDetails]) => {
         // Skip non-issue properties (like productTags) and tags without issues
-        if (tagName === 'productTags' || !tagIssueDetails?.issue) return;
+        if (tagName === 'productTags' || !tagIssueDetails?.issue) {
+          return;
+        }
 
         // Multiplying by 1% for missing tags, and 0.5% for other tag issues
         // For duplicate tags, each page's traffic is multiplied by .5% so
@@ -797,45 +811,28 @@ export async function submitForScraping(context) {
   log.info(`[PRODUCT-METATAGS] Step 2: submitForScraping started for site: ${site.getId()}`);
 
   const { SiteTopPage } = dataAccess;
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'seo', 'global');
   log.info(`[PRODUCT-METATAGS] Retrieved ${topPages.length} top pages from database`);
 
-  const topPagesUrls = topPages.map((page) => page.getUrl());
   log.info(`[PRODUCT-METATAGS] reading site config: ${JSON.stringify(site?.getConfig())}`);
-  // Combine includedURLs and topPages URLs to scrape
-  const includedURLs = await site?.getConfig()?.getIncludedURLs(auditType) || [];
-  log.info(`[PRODUCT-METATAGS] Retrieved ${includedURLs.length} included URLs from site config`);
 
-  const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
-  log.info(`[PRODUCT-METATAGS] Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
+  const { urls: finalUrls } = await getMergedAuditInputUrls({
+    site,
+    dataAccess,
+    auditType,
+    getAgenticUrls: () => Promise.resolve([]),
+    topPages,
+    log,
+  });
+  log.info(`[PRODUCT-METATAGS] Final URLs to scrape after merging and deduplication: ${finalUrls.length}`);
 
   if (finalUrls.length === 0) {
     log.error(`[PRODUCT-METATAGS] No URLs found for site ${site.getId()} - neither top pages nor included URLs`);
     throw new Error('No URLs found for site neither top pages nor included URLs');
   }
 
-  // Filter out PDF files
-  const isPdfUrl = (url) => {
-    try {
-      const pathname = new URL(url).pathname.toLowerCase();
-      return pathname.endsWith('.pdf');
-    } catch {
-      return false;
-    }
-  };
-
-  const filteredUrls = finalUrls.filter((url) => {
-    if (isPdfUrl(url)) {
-      log.info(`[PRODUCT-METATAGS] Skipping PDF file from scraping: ${url}`);
-      return false;
-    }
-    return true;
-  });
-
-  log.info(`[PRODUCT-METATAGS] Filtered ${finalUrls.length - filteredUrls.length} PDF files from ${finalUrls.length} URLs`);
-
   const result = {
-    urls: filteredUrls.map((url) => ({ url })),
+    urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'product-metatags',
   };

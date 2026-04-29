@@ -11,12 +11,12 @@
  */
 import { weeklyBreakdownQueries } from '../utils/query-builder.js';
 
-export function getConfigs(bucket, customerDomain, siteId) {
+export function getConfigs(bucket, siteKey, siteId) {
   return [
     {
       name: 'agentic',
       aggregatedLocation: `s3://${bucket}/aggregated/${siteId}/`,
-      tableName: `aggregated_logs_${customerDomain}_consolidated`,
+      tableName: `aggregated_logs_${siteKey}_consolidated`,
       filePrefix: 'agentictraffic',
       folderSuffix: 'agentic-traffic',
       workbookCreator: 'Spacecat Agentic Flat Report',
@@ -26,7 +26,7 @@ export function getConfigs(bucket, customerDomain, siteId) {
     {
       name: 'referral',
       aggregatedLocation: `s3://${bucket}/aggregated-referral/${siteId}/`,
-      tableName: `aggregated_referral_logs_${customerDomain}_consolidated`,
+      tableName: `aggregated_referral_logs_${siteKey}_consolidated`,
       filePrefix: 'referral-traffic',
       folderSuffix: 'referral-traffic-cdn',
       workbookCreator: 'Spacecat Referral Flat Report',

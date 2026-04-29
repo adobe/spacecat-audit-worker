@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect } from 'chai';
 import { getJsonSummarySuggestion } from '../../../src/summarization/utils.js';
 
@@ -37,20 +35,22 @@ describe('summarization utils', () => {
 
       expect(result).to.be.an('array');
       expect(result).to.have.length(2); // page summary + key points
-      
-      // Verify default values are used for page summary
-      expect(result[0].transformRules.selector).to.equal('body');
-      expect(result[0].transformRules.action).to.equal('appendChild');
+
+      // When no h1: page summary is placed at top of page (insertBefore body's first child)
+      expect(result[0].transformRules.selector).to.equal('body > :first-child');
+      expect(result[0].transformRules.action).to.equal('insertBefore');
       expect(result[0].summarizationText).to.equal('Test summary');
+      expect(result[0].aiGeneratedSummarizationText).to.equal('Test summary');
       expect(result[0].fullPage).to.be.true;
       expect(result[0].keyPoints).to.be.false;
       expect(result[0].url).to.equal('https://example.com/page1');
       expect(result[0].title).to.equal('Test Page');
       
-      // Verify key points suggestion
-      expect(result[1].transformRules.selector).to.equal('body');
-      expect(result[1].transformRules.action).to.equal('appendChild');
+      // Key points use same top-of-page placement when no h1
+      expect(result[1].transformRules.selector).to.equal('body > :first-child');
+      expect(result[1].transformRules.action).to.equal('insertBefore');
       expect(result[1].summarizationText).to.equal('  * Key point 1\n  * Key point 2');
+      expect(result[1].aiGeneratedSummarizationText).to.equal('  * Key point 1\n  * Key point 2');
       expect(result[1].fullPage).to.be.true;
       expect(result[1].keyPoints).to.be.true;
       expect(result[1].url).to.equal('https://example.com/page1');
@@ -88,6 +88,8 @@ describe('summarization utils', () => {
       expect(result[1].transformRules.action).to.equal('insertAfter');
       expect(result[1].keyPoints).to.be.true;
       expect(result[1].summarizationText).to.equal('  * Key point 1\n  * Key point 2');
+      expect(result[1].aiGeneratedSummarizationText).to.equal('  * Key point 1\n  * Key point 2');
+      expect(result[0].aiGeneratedSummarizationText).to.equal('Test summary');
     });
 
     it('should handle suggestions with all properties provided (page + key points only)', () => {
@@ -121,6 +123,8 @@ describe('summarization utils', () => {
       expect(result[1].transformRules.action).to.equal('insertBefore');
       expect(result[1].keyPoints).to.be.true;
       expect(result[1].summarizationText).to.equal('  * Key point A\n  * Key point B\n  * Key point C');
+      expect(result[1].aiGeneratedSummarizationText).to.equal('  * Key point A\n  * Key point B\n  * Key point C');
+      expect(result[0].aiGeneratedSummarizationText).to.equal('Test summary');
     });
 
     it('should handle empty suggestions array', () => {
@@ -160,17 +164,19 @@ describe('summarization utils', () => {
       const result = getJsonSummarySuggestion(suggestions);
 
       expect(result).to.have.length(4); // page1 summary + page1 keypoints + page2 summary + page2 keypoints
-      
-      // First page summary uses defaults
-      expect(result[0].transformRules.selector).to.equal('body');
-      expect(result[0].transformRules.action).to.equal('appendChild');
+
+      // First page summary uses top-of-page when no heading_selector
+      expect(result[0].transformRules.selector).to.equal('body > :first-child');
+      expect(result[0].transformRules.action).to.equal('insertBefore');
       expect(result[0].keyPoints).to.be.false;
-      
-      // First page key points uses defaults
-      expect(result[1].transformRules.selector).to.equal('body');
-      expect(result[1].transformRules.action).to.equal('appendChild');
+
+      // First page key points use same top-of-page placement
+      expect(result[1].transformRules.selector).to.equal('body > :first-child');
+      expect(result[1].transformRules.action).to.equal('insertBefore');
       expect(result[1].keyPoints).to.be.true;
       expect(result[1].summarizationText).to.equal('  * Point 1');
+      expect(result[1].aiGeneratedSummarizationText).to.equal('  * Point 1');
+      expect(result[0].aiGeneratedSummarizationText).to.equal('Summary 1');
       
       // Second page summary uses provided values
       expect(result[2].transformRules.selector).to.equal('h1');
@@ -182,6 +188,8 @@ describe('summarization utils', () => {
       expect(result[3].transformRules.action).to.equal('insertAfter');
       expect(result[3].keyPoints).to.be.true;
       expect(result[3].summarizationText).to.equal('  * Point A\n  * Point B');
+      expect(result[3].aiGeneratedSummarizationText).to.equal('  * Point A\n  * Point B');
+      expect(result[2].aiGeneratedSummarizationText).to.equal('Summary 2');
     });
 
     it('should use provided scrapedAt timestamp when available', () => {
@@ -207,6 +215,8 @@ describe('summarization utils', () => {
       expect(result).to.have.length(2); // page summary + key points
       expect(result[0].scrapedAt).to.equal(testTimestamp);
       expect(result[1].scrapedAt).to.equal(testTimestamp);
+      expect(result[0].aiGeneratedSummarizationText).to.equal('Test summary');
+      expect(result[1].aiGeneratedSummarizationText).to.equal('  * Key 1\n  * Key 2');
     });
 
     it('should generate current timestamp when scrapedAt is missing', () => {
@@ -238,6 +248,8 @@ describe('summarization utils', () => {
       expect(result[0].scrapedAt).to.equal(result[1].scrapedAt);
       expect(result[0].scrapedAt >= beforeTime).to.be.true;
       expect(result[0].scrapedAt <= afterTime).to.be.true;
+      expect(result[0].aiGeneratedSummarizationText).to.equal('Test summary');
+      expect(result[1].aiGeneratedSummarizationText).to.equal('  * Key 1\n  * Key 2');
     });
 
     it('should correctly format key points with bullet points', () => {
@@ -270,6 +282,10 @@ describe('summarization utils', () => {
       expect(keyPointsSuggestion.summarizationText).to.equal(
         '  * First important point\n  * Second important point\n  * Third important point'
       );
+      expect(keyPointsSuggestion.aiGeneratedSummarizationText).to.equal(
+        '  * First important point\n  * Second important point\n  * Third important point'
+      );
+      expect(result[0].aiGeneratedSummarizationText).to.equal('Test summary');
     });
 
     it('should handle empty key points array (exclude from result)', () => {
@@ -294,6 +310,7 @@ describe('summarization utils', () => {
       expect(result).to.have.length(1);
       expect(result[0].keyPoints).to.be.false;
       expect(result[0].summarizationText).to.equal('Test summary');
+      expect(result[0].aiGeneratedSummarizationText).to.equal('Test summary');
     });
 
     it('should handle single key point', () => {
@@ -320,6 +337,8 @@ describe('summarization utils', () => {
       const keyPointsSuggestion = result[1];
       expect(keyPointsSuggestion.keyPoints).to.be.true;
       expect(keyPointsSuggestion.summarizationText).to.equal('  * Single key point');
+      expect(keyPointsSuggestion.aiGeneratedSummarizationText).to.equal('  * Single key point');
+      expect(result[0].aiGeneratedSummarizationText).to.equal('Test summary');
     });
 
     it('should handle keyPoints.formatted_items as non-array (exclude key points)', () => {
@@ -344,6 +363,155 @@ describe('summarization utils', () => {
       expect(result).to.have.length(1);
       expect(result[0].summarizationText).to.equal('Test summary');
       expect(result[0].keyPoints).to.be.false;
+      expect(result[0].aiGeneratedSummarizationText).to.equal('Test summary');
+    });
+
+    describe('already-present flags (page_summary_present, key_points_present)', () => {
+      it('should exclude page summary when page_summary_present is true', () => {
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            page_summary_present: true,
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: {
+              formatted_items: ['Key point 1', 'Key point 2'],
+            },
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(1);
+        expect(result[0].keyPoints).to.be.true;
+        expect(result[0].summarizationText).to.equal('  * Key point 1\n  * Key point 2');
+        expect(result[0].aiGeneratedSummarizationText).to.equal('  * Key point 1\n  * Key point 2');
+      });
+
+      it('should exclude key points when key_points_present is true', () => {
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            key_points_present: true,
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: {
+              formatted_items: ['Key point 1', 'Key point 2'],
+            },
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(1);
+        expect(result[0].keyPoints).to.be.false;
+        expect(result[0].summarizationText).to.equal('Test summary');
+        expect(result[0].aiGeneratedSummarizationText).to.equal('Test summary');
+      });
+
+      it('should exclude both when both flags are true', () => {
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            page_summary_present: true,
+            key_points_present: true,
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: {
+              formatted_items: ['Key point 1', 'Key point 2'],
+            },
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(0);
+      });
+
+      it('should include all when flags are absent (backward compatibility)', () => {
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: {
+              formatted_items: ['Key point 1'],
+            },
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(2);
+        expect(result[0].keyPoints).to.be.false;
+        expect(result[1].keyPoints).to.be.true;
+        expect(result[0].aiGeneratedSummarizationText).to.equal('Test summary');
+        expect(result[1].aiGeneratedSummarizationText).to.equal('  * Key point 1');
+      });
+
+      it('should include all when flags are false', () => {
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            page_summary_present: false,
+            key_points_present: false,
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: {
+              formatted_items: ['Key point 1'],
+            },
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(2);
+        expect(result[0].aiGeneratedSummarizationText).to.equal('Test summary');
+        expect(result[1].aiGeneratedSummarizationText).to.equal('  * Key point 1');
+      });
+
+      it('should exclude when hasExistingSummary/hasExistingKeyPoints (camelCase, legacy Mystique)', () => {
+        const suggestions = [
+          {
+            pageUrl: 'https://example.com/page1',
+            hasExistingSummary: true,
+            hasExistingKeyPoints: true,
+            pageSummary: {
+              title: 'Test Page',
+              formatted_summary: 'Test summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
+            },
+            keyPoints: {
+              formatted_items: ['Key point 1'],
+            },
+          },
+        ];
+
+        const result = getJsonSummarySuggestion(suggestions);
+
+        expect(result).to.have.length(0);
+      });
     });
   });
 });

@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -68,7 +66,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
               productCodes: ['aem-sites'],
             },
           }),
-          isHandlerEnabledForSite: () => true,
+          isHandlerEnabledForSite: (handler) => handler !== 'summit-plg',
         }),
       },
     },
@@ -330,6 +328,17 @@ describe('collectCWVDataAndImportCode Tests', () => {
         warn: sandbox.stub(),
       };
 
+      context.dataAccess.Configuration = {
+        findLatest: sandbox.stub().resolves({
+          getHandlers: () => ({
+            'cwv-auto-suggest': {
+              productCodes: ['aem-sites'],
+            },
+          }),
+          isHandlerEnabledForSite: (handler) => handler !== 'summit-plg',
+        }),
+      };
+
       context.dataAccess.Opportunity = {
         allBySiteIdAndStatus: sandbox.stub(),
         create: sandbox.stub(),
@@ -337,6 +346,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
       context.dataAccess.Suggestion = {
         bulkUpdateStatus: sandbox.stub(),
+        saveMany: sinon.stub().resolves(),
       };
 
       context.sqs = {
@@ -349,7 +359,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
       
       // Mock TierClient for entitlement checks
       const mockTierClient = {
-        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: {} }),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -370,6 +380,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
         setData: sandbox.stub(),
         save: sandbox.stub().resolves(),
         setUpdatedBy: sandbox.stub().returnsThis(),
+        setLastAuditedAt: sandbox.stub(),
         siteId: 'site-id',
         auditId: 'audit-id',
         opportunityId: 'oppty-id',
@@ -418,12 +429,56 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(GoogleClient.createFrom).to.have.been.calledWith(stepContext, auditUrl);
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
 
-      // make sure that newly oppty has all 4 new suggestions
+      // make sure that newly oppty has 2 new suggestions (only failing-metric pages)
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
-      expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(2);
+      // CWV suggestions include jiraLink (empty until user saves URL in UI)
+      suggestionsArg.forEach((s) => expect(s.data).to.have.property('jiraLink', ''));
     });
 
+    it('handles audit result with only group entries for maxConfidenceForUrls coverage', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      const auditResultWithGroupsOnly = {
+        cwv: [
+          {
+            type: 'group',
+            pattern: 'https://example.com/*',
+            name: 'Some pages',
+            pageviews: 5000,
+            organic: 3000,
+            metrics: [{
+              deviceType: 'mobile',
+              lcp: 3000, // > 2500 threshold — ensures group passes hasFailingMetrics
+              cls: null,
+              inp: null,
+            }],
+          },
+        ],
+        auditContext: { interval: 7 },
+      };
+      const mockAuditGroupsOnly = {
+        getSiteId: () => 'site-id',
+        getId: () => 'audit-id',
+        getAuditType: () => Audit.AUDIT_TYPES.CWV,
+        getAuditResult: () => auditResultWithGroupsOnly,
+        getFullAuditRef: () => auditUrl,
+        getAuditedAt: () => '2023-11-27T12:34:56.789Z',
+      };
+
+      const stepContext = { ...context, site, audit: mockAuditGroupsOnly, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+      expect(oppty.addSuggestions).to.have.been.calledOnce;
+      const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
+      expect(suggestionsArg).to.have.lengthOf(1);
+      expect(suggestionsArg[0].data.type).to.equal('group');
+      expect(suggestionsArg[0].data).to.have.property('jiraLink', '');
+    });
     it('creating a new opportunity object fails', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.rejects(new Error('big error happened'));
@@ -462,7 +517,8 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
       expect(oppty.setAuditId).to.have.been.calledOnceWith('audit-id');
       expect(oppty.setData).to.have.been.calledOnceWith({ ...opptyData, ...expectedOppty.data });
-      expect(oppty.save).to.have.been.calledOnce;
+      expect(oppty.setLastAuditedAt).to.have.been.calledOnce;
+      expect(oppty.save).to.have.been.calledTwice;
 
       // make sure that 1 old suggestion is removed
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been
@@ -471,12 +527,12 @@ describe('collectCWVDataAndImportCode Tests', () => {
       // make sure that 1 existing suggestion is updated
       expect(existingSuggestions[1].setData).to.have.been.calledOnce;
       expect(existingSuggestions[1].setData.firstCall.args[0]).to.deep.equal(suggestions[1].data);
-      expect(existingSuggestions[1].save).to.have.been.calledOnce;
+      expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
 
-      // make sure that 3 new suggestions are created
+      // make sure that 1 new suggestion is created (/docs/ — the only new failing-metric page)
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
-      expect(suggestionsArg).to.be.an('array').with.lengthOf(3);
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(1);
     });
 
     it('creates a new opportunity object when GSC connection returns null', async () => {
@@ -495,7 +551,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
-      expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(2);
     });
 
     it('creates a new opportunity object without GSC if not connected', async () => {
@@ -513,7 +569,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
-      expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(2);
     });
 
     it('calls processAutoSuggest when suggestions have no guidance', async () => {
@@ -566,6 +622,60 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
       // Verify that SQS sendMessage was NOT called
       expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('filters CWV suggestions to only failing-metric pages for all sites', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      // Of the 4 CWV entries (pageviews >= 7000):
+      //   - Group: mobile cls=0.27 > 0.1   → FAILS
+      //   - /developer/block-collection:    → PASSES (all below threshold)
+      //   - /docs/: mobile lcp=26276 > 2500 → FAILS
+      //   - /tools/rum/explorer.html:       → PASSES (all below threshold)
+      // Global filter should yield 2 suggestions
+      expect(oppty.addSuggestions).to.have.been.calledOnce;
+      const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
+      expect(suggestionsArg).to.be.an('array').with.lengthOf(2);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/2 of 4 CWV entries have failing metrics/),
+      );
+    });
+
+    it('stores no suggestions when all pages have passing metrics', async () => {
+      const allPassingCwvData = [
+        {
+          type: 'url',
+          url: 'https://www.aem.live/docs/',
+          pageviews: 9000,
+          organic: 500,
+          metrics: [{
+            deviceType: 'desktop',
+            pageviews: 9000,
+            organic: 500,
+            lcp: 1200,
+            cls: 0.05,
+            inp: 150,
+          }],
+        },
+      ];
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      const allPassingAudit = {
+        ...mockAudit,
+        getAuditResult: () => ({ cwv: allPassingCwvData, auditContext: { interval: 7 } }),
+      };
+      const stepContext = { ...context, site, audit: allPassingAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      expect(oppty.addSuggestions).to.not.have.been.called;
     });
 
     it('calls processAutoSuggest when some suggestions have guidance and some do not', async () => {

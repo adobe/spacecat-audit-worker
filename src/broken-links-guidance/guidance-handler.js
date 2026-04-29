@@ -13,6 +13,7 @@
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { isValidUrl } from '@adobe/spacecat-shared-utils';
 import { filterBrokenSuggestedUrls } from '../utils/url-utils.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
@@ -60,11 +61,30 @@ export default async function handler(message, context) {
     return ok();
   }
 
+  // Batch-fetch all suggestions in a single query instead of N individual findById calls
+  const suggestionIds = brokenLinks
+    .map((bl) => bl.suggestionId)
+    .filter(Boolean);
+
+  const { data: existingSuggestions = [] } = suggestionIds.length > 0
+    ? await Suggestion.batchGetByKeys(suggestionIds.map((id) => ({ suggestionId: id })))
+    : { data: [] };
+
+  const suggestionMap = new Map(existingSuggestions.map((s) => [s.getId(), s]));
+
+  // Filter and validate suggested URLs configured for the site
+  const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
+  const effectiveBaseURL = (overrideBaseURL && isValidUrl(overrideBaseURL))
+    ? overrideBaseURL
+    : site.getBaseURL();
+
+  const toSave = [];
+  // Process each broken link (URL filtering is async but not a DB call)
   await Promise.all(brokenLinks.map(async (brokenLink) => {
-    const suggestion = await Suggestion.findById(brokenLink.suggestionId);
+    const suggestion = suggestionMap.get(brokenLink.suggestionId);
     if (!suggestion) {
       log.error(`[${opportunity.getType()}] Suggestion not found for ID: ${brokenLink.suggestionId}`);
-      return {};
+      return;
     }
 
     const suggestedUrls = brokenLink.suggestedUrls || [];
@@ -77,40 +97,61 @@ export default async function handler(message, context) {
       );
     }
 
-    // Filter and validate suggested URLs
-    // Use overrideBaseURL if configured to ensure consistency with data collection
-    const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
-    const effectiveBaseURL = (overrideBaseURL && isValidUrl(overrideBaseURL))
-      ? overrideBaseURL
-      : site.getBaseURL();
-
     const validSuggestedUrls = Array.isArray(suggestedUrls) ? suggestedUrls : [];
     const filteredSuggestedUrls = await filterBrokenSuggestedUrls(
       validSuggestedUrls,
       effectiveBaseURL,
     );
-
-    // Handle AI rationale - clear it if all URLs were filtered out
-    // This prevents showing rationale for URLs that don't exist
-    let aiRationale = brokenLink.aiRationale || '';
-    if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length > 0) {
-      // All URLs were filtered out (likely invalid/broken), clear rationale
-      log.info('All the suggested URLs were filtered out');
-      aiRationale = '';
-    } else if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length === 0) {
-      // No URLs were provided by Mystique, clear rationale
-      log.info('No suggested URLs provided by Mystique');
-      aiRationale = '';
+    const existingData = suggestion.getData() || {};
+    const existingSuggestedUrls = Array.isArray(existingData.urlsSuggested)
+      ? existingData.urlsSuggested.filter(Boolean)
+      : [];
+    let nextSuggestedUrls = filteredSuggestedUrls;
+    if (nextSuggestedUrls.length === 0) {
+      nextSuggestedUrls = existingSuggestedUrls.length > 0
+        ? existingSuggestedUrls
+        : [effectiveBaseURL];
     }
 
-    suggestion.setData({
-      ...suggestion.getData(),
-      urlsSuggested: filteredSuggestedUrls,
-      aiRationale,
-    });
+    // Handle AI rationale - omit it if all URLs were filtered out or none were provided
+    // This prevents storing an empty string which fails schema validation
+    let aiRationale = brokenLink.aiRationale || undefined;
+    if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length > 0) {
+      // All URLs were filtered out (likely invalid/broken):
+      // fall back to base URL with no rationale, unless a previous run already stored valid URLs
+      log.info('All the suggested URLs were filtered out');
+      aiRationale = existingSuggestedUrls.length > 0
+        ? existingData.aiRationale || undefined : undefined;
+    } else if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length === 0) {
+      // No URLs provided by Mystique (LLM/Bright Data found nothing):
+      // fall back to base URL with no rationale, unless a previous run already stored valid URLs
+      log.info('No suggested URLs provided by Mystique');
+      aiRationale = existingSuggestedUrls.length > 0
+        ? existingData.aiRationale || undefined : undefined;
+    }
 
-    return suggestion.save();
+    // Preserve factId from Mystique enrichment (autofix bridge)
+    const updatedData = {
+      ...existingData,
+      urlsSuggested: nextSuggestedUrls,
+    };
+    if (aiRationale) {
+      updatedData.aiRationale = aiRationale;
+    } else {
+      delete updatedData.aiRationale;
+    }
+    // Add factId if provided by Mystique
+    if (brokenLink.factId) {
+      updatedData.factId = brokenLink.factId;
+    }
+    warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
+    suggestion.setData(updatedData);
+    toSave.push(suggestion);
   }));
+
+  if (toSave.length > 0) {
+    await Suggestion.saveMany(toSave);
+  }
 
   return ok();
 }

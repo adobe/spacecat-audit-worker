@@ -15,7 +15,6 @@ import {
   DELIVERY_TYPES, hasText, isNonEmptyArray, tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
 import { ImsClient } from '@adobe/spacecat-shared-ims-client';
-import { createHash } from 'node:crypto';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityProps } from './opportunity-data-mapper.js';
@@ -178,6 +177,28 @@ export async function extractCodeBucket(context) {
   };
 }
 
+/**
+ * Builds a stable key for a vulnerable component used to match new audit data against
+ * previously-stored suggestions. Works on both raw components
+ * ({name, version, dependencyTree}) and stored suggestion data
+ * ({library, current_version, dependency_tree}), since syncSuggestions calls buildKey
+ * against both shapes. The key is "library@version" joined with each dependency-tree
+ * entry (excluding "[root]" and stripped of its "@version" suffix — we don't key on
+ * transitive parent versions, only on the vulnerable library's own version).
+ *
+ * @param {Object} item - Raw vulnerable component or stored suggestion data.
+ * @returns {string} - A stable key derived from library name/version and dependency tree.
+ */
+export const buildKey = (item) => {
+  const libName = item.library ?? item.name;
+  const libVersion = item.current_version ?? item.version;
+  const tree = item.dependency_tree ?? item.dependencyTree ?? [];
+  const parts = tree
+    .filter((entry) => entry !== '[root]')
+    .map((entry) => entry.replace(/@[^@]*$/, ''));
+  return [`${libName}@${libVersion}`, ...parts].join('-');
+};
+
 export const extractCodeInfo = (data) => {
   if (!data || typeof data !== 'object') {
     return null;
@@ -271,13 +292,6 @@ export const opportunityAndSuggestionsStep = async (context) => {
     createOpportunityProps(auditResult.vulnerabilityReport),
   );
 
-  // As a buildKey we hash all the component details and add name and version for readability
-  const buildKey = (item) => {
-    const s = JSON.stringify(item);
-    const hash = createHash('sha256').update(s).digest('hex').slice(0, 8);
-    return `${item.name}@${item.version}#${hash}`;
-  };
-
   // Populate suggestions
   await syncSuggestions({
     opportunity,
@@ -292,8 +306,16 @@ export const opportunityAndSuggestionsStep = async (context) => {
   const codeInfo = extractCodeInfo(data);
   if (!codeInfo) {
     log.debug(
-      `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with mystique, because
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with starfish-auto-code, because
       import worker could not get code.`,
+    );
+    return { status: 'complete' };
+  }
+
+  if (!sqs || !env?.QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE) {
+    log.warn(
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with starfish-auto-code, because
+      QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE is not configured.`,
     );
     return { status: 'complete' };
   }
@@ -319,8 +341,8 @@ export const opportunityAndSuggestionsStep = async (context) => {
     },
   };
 
-  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] sending message to Mystique for code fix generation: ${JSON.stringify(message)}`);
-  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] sending message to starfish-auto-code for code fix generation: ${JSON.stringify(message)}`);
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE, message);
   return { status: 'complete' };
 };
 

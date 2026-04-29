@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
@@ -24,7 +23,9 @@ import {
   VULNERABILITY_REPORT_NO_VULNERABILITIES,
   VULNERABILITY_REPORT_MULTIPLE_COMPONENTS,
 } from '../fixtures/vulnerabilities/vulnerability-reports.js';
-import { vulnerabilityAuditRunner, opportunityAndSuggestionsStep, extractCodeInfo } from '../../src/vulnerabilities/handler.js';
+import {
+  vulnerabilityAuditRunner, opportunityAndSuggestionsStep, extractCodeInfo, buildKey,
+} from '../../src/vulnerabilities/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -522,7 +523,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(springSuggestion.data.cves[1].score).to.equal(5.5);
     });
 
-    it('should skip mystique when auto suggest is disabled', async () => {
+    it('should skip starfish-auto-code when auto suggest is disabled', async () => {
       const configuration = {
         isHandlerEnabledForSite: sandbox.stub(),
       };
@@ -545,9 +546,10 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
-    it('should handle auto suggest to trigger mystique', async () => {
+    it('should handle auto suggest to trigger starfish-auto-code', async () => {
       const mockOpportunity = {
         getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        getType: () => 'security-vulnerabilities',
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
         getSuggestions: sandbox.stub()
           .onCall(0)
@@ -591,15 +593,17 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       ];
 
       context.data = { importResults: codeData };
+      context.env.QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE = 'test-starfish-queue';
 
       const result = await opportunityAndSuggestionsStep(context);
       expect(result).to.deep.equal({ status: 'complete' });
 
-      // Verify SQS message to mystique was sent
+      // Verify SQS message to starfish-auto-code was sent
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
 
-      // Verify the message structure
+      // Verify the queue URL and message structure
       const messageCall = context.sqs.sendMessage.getCall(0);
+      expect(messageCall.args[0]).to.equal('test-starfish-queue');
       const message = messageCall.args[1];
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
@@ -618,6 +622,41 @@ describe('Vulnerabilities Handler Integration Tests', () => {
         'codePath',
         'code/ad3d5bb7-9e85-4195-94e8-833cc5a73253/github/adobe/mystique-project/main/repository.zip',
       );
+    });
+
+    it('should skip starfish-auto-code when queue env var is not configured', async () => {
+      const configuration = {
+        isHandlerEnabledForSite: sandbox.stub(),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+      configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities').returns(true);
+      configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities-auto-suggest').returns(true);
+
+      context.audit = {
+        getAuditResult: () => ({
+          vulnerabilityReport: VULNERABILITY_REPORT_WITH_VULNERABILITIES,
+          success: true,
+        }),
+        getId: () => 'test-audit-id',
+      };
+
+      context.data = {
+        importResults: [{
+          result: [{
+            codeBucket: 'spacecat-importer-bucket',
+            codePath: 'code/test/repository.zip',
+          }],
+        }],
+      };
+
+      // QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE is not set in context.env
+
+      const result = await opportunityAndSuggestionsStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(context.log.warn).to.have.been.calledWithMatch(/QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE is not configured/);
     });
 
     it('should handle configuration lookup failure gracefully', async () => {
@@ -781,6 +820,140 @@ describe('extractCodeInfo', () => {
       expect(extractCodeInfo({
         importResults: [{ result: [{ codeBucket: 'my-bucket', codePath: '   ' }] }],
       })).to.be.null;
+    });
+  });
+
+  describe('buildKey', () => {
+    it('builds key from library@version and dependency tree, stripping [root] and parent @version', () => {
+      const key = buildKey({
+        name: 'com.fasterxml.jackson.core:jackson-databind',
+        version: '2.12.3',
+        dependencyTree: [
+          '[root]',
+          'biz.netcentric.cq.tools.accesscontroltool/accesscontroltool-bundle@3.5.1',
+        ],
+      });
+      expect(key).to.equal(
+        'com.fasterxml.jackson.core:jackson-databind@2.12.3-biz.netcentric.cq.tools.accesscontroltool/accesscontroltool-bundle',
+      );
+    });
+
+    it('distinguishes the same library at different versions', () => {
+      const keyOld = buildKey({
+        name: 'lib-x',
+        version: '1.0.0',
+        dependencyTree: ['[root]', 'parent-a@1.0.0'],
+      });
+      const keyNew = buildKey({
+        name: 'lib-x',
+        version: '1.0.1',
+        dependencyTree: ['[root]', 'parent-a@1.0.0'],
+      });
+      expect(keyOld).to.not.equal(keyNew);
+    });
+
+    it('produces identical keys for raw component and stored suggestion data shapes', () => {
+      const rawComponent = {
+        name: 'com.fasterxml.jackson.core:jackson-databind',
+        version: '2.12.3',
+        recommendedVersion: '2.12.6.1',
+        vulnerabilities: [{ id: 'CVE-2020-36518', score: 7.5 }],
+        dependencyTree: [
+          '[root]',
+          'biz.netcentric.cq.tools.accesscontroltool/accesscontroltool-bundle@3.5.1',
+        ],
+      };
+      const storedData = {
+        library: 'com.fasterxml.jackson.core:jackson-databind',
+        current_version: '2.12.3',
+        recommended_version: '2.12.6.1',
+        cves: [{ cve_id: 'CVE-2020-36518', score: 7.5 }],
+        dependency_tree: [
+          '[root]',
+          'biz.netcentric.cq.tools.accesscontroltool/accesscontroltool-bundle@3.5.1',
+        ],
+      };
+      expect(buildKey(rawComponent)).to.equal(buildKey(storedData));
+    });
+
+    it('distinguishes same library reached via different dependency paths', () => {
+      const keyA = buildKey({
+        name: 'lib-x',
+        dependencyTree: ['[root]', 'parent-a@1.0.0'],
+      });
+      const keyB = buildKey({
+        name: 'lib-x',
+        dependencyTree: ['[root]', 'parent-b@1.0.0'],
+      });
+      expect(keyA).to.not.equal(keyB);
+    });
+
+    it('ignores transitive parent versions in the dependency tree', () => {
+      const keyOld = buildKey({
+        name: 'lib-x',
+        version: '1.0.0',
+        dependencyTree: ['[root]', 'parent-a@1.0.0'],
+      });
+      const keyNew = buildKey({
+        name: 'lib-x',
+        version: '1.0.0',
+        dependencyTree: ['[root]', 'parent-a@2.5.9'],
+      });
+      expect(keyOld).to.equal(keyNew);
+    });
+
+    it('handles missing dependencyTree by falling back to library@version only', () => {
+      expect(buildKey({ name: 'lib-x', version: '1.0.0' })).to.equal('lib-x@1.0.0');
+      expect(buildKey({ library: 'lib-x', current_version: '1.0.0' })).to.equal('lib-x@1.0.0');
+    });
+
+    it('handles empty dependencyTree array', () => {
+      expect(buildKey({ name: 'lib-x', version: '1.0.0', dependencyTree: [] })).to.equal('lib-x@1.0.0');
+    });
+
+    it('handles tree entries without any @version suffix', () => {
+      const key = buildKey({
+        name: 'lib-x',
+        version: '1.0.0',
+        dependencyTree: ['[root]', 'parent-with-no-version'],
+      });
+      expect(key).to.equal('lib-x@1.0.0-parent-with-no-version');
+    });
+
+    it('strips only the trailing @version when entry contains multiple "@"', () => {
+      const key = buildKey({
+        name: 'lib-x',
+        version: '1.0.0',
+        dependencyTree: ['@scope/pkg@1.0.0'],
+      });
+      expect(key).to.equal('lib-x@1.0.0-@scope/pkg');
+    });
+
+    it('preserves dependency tree ordering in the key', () => {
+      const keyAB = buildKey({
+        name: 'lib-x',
+        version: '1.0.0',
+        dependencyTree: ['parent-a@1', 'parent-b@1'],
+      });
+      const keyBA = buildKey({
+        name: 'lib-x',
+        version: '1.0.0',
+        dependencyTree: ['parent-b@1', 'parent-a@1'],
+      });
+      expect(keyAB).to.not.equal(keyBA);
+    });
+
+    it('matches on a real fixture entry across raw and mapped shapes', () => {
+      const raw = VULNERABILITY_REPORT_WITH_VULNERABILITIES.vulnerableComponents[0];
+      const mapped = {
+        library: raw.name,
+        current_version: raw.version,
+        recommended_version: raw.recommendedVersion,
+        cves: [],
+        dependency_tree: raw.dependencyTree,
+      };
+      expect(buildKey(raw)).to.equal(buildKey(mapped));
+      expect(buildKey(raw)).to.include(`@${raw.version}`);
     });
   });
 });

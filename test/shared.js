@@ -72,9 +72,14 @@ export class MockContextBuilder {
       },
       Suggestion: {
         bulkUpdateStatus: this.sandbox.stub(),
+        saveMany: this.sandbox.stub().resolves(),
         allByOpportunityIdAndStatus: this.sandbox.stub(),
       },
       AsyncJob: mockAsyncJobConstructor,
+      PageCitability: {
+        allBySiteId: this.sandbox.stub().resolves([]),
+        create: this.sandbox.stub().resolves({}),
+      },
     };
 
     const mockSqs = {

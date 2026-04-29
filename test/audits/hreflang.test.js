@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -1009,6 +1007,7 @@ describe('Hreflang Audit', () => {
 
       const mockOpportunity = {
         getId: sinon.stub().returns('new-oppty-789'),
+        getType: () => 'hreflang',
         getSuggestions: sinon.stub().resolves([]),
         setAuditId: sinon.stub(),
         save: sinon.stub().resolves(),

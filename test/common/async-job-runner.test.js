@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
@@ -70,7 +69,7 @@ describe('Job-based Step-Audit Tests', () => {
 
     // Mock TierClient for entitlement checks
     const mockTierClient = {
-      checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+      checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: {} }),
     };
     sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -130,6 +129,13 @@ describe('Job-based Step-Audit Tests', () => {
 
     expect(result.status).to.equal(200);
     expect(context.log.warn).to.have.been.calledWith(sinon.match(/disabled for site.*skipping/));
+    expect(job.setStatus).to.have.been.calledWith('CANCELLED');
+    expect(job.setMetadata).to.have.been.calledWith({
+      payload: {
+        siteId: site.getId(),
+        reason: 'content-audit audits disabled for site 42322ae6-b8b1-4a61-9c88-25205fa65b07',
+      },
+    });
   });
 
   it('executes first step and sends continuation message', async () => {
@@ -310,6 +316,59 @@ describe('Job-based Step-Audit Tests', () => {
     };
 
     await runner.run(message, context);
+  });
+
+  it('preserves onDemand from incoming auditContext', async () => {
+    const runner = new AuditBuilder()
+      .withAsyncJob()
+      .addStep('first', async () => ({ ok: true }), AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+      .addStep('second', async () => ({ ok: true }))
+      .build();
+
+    runner.jobProvider = async () => createMockJob({
+      jobId: 'job-123',
+      payload: { siteId: site.getId() },
+    });
+
+    const message = {
+      type: 'content-audit',
+      jobId: 'job-123',
+      auditContext: {
+        onDemand: true,
+      },
+    };
+
+    await runner.run(message, context);
+
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    const [, payload] = context.sqs.sendMessage.firstCall.args;
+    expect(payload.auditContext).to.include({ onDemand: true });
+  });
+
+  it('preserves slackContext across step chain', async () => {
+    const runner = new AuditBuilder()
+      .withAsyncJob()
+      .addStep('first', async () => ({ ok: true }), AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+      .addStep('second', async () => ({ ok: true }))
+      .build();
+
+    runner.jobProvider = async () => createMockJob({
+      jobId: 'job-123',
+      payload: { siteId: site.getId() },
+    });
+
+    const slackContext = { channelId: 'C123', threadTs: '123.456' };
+    const message = {
+      type: 'content-audit',
+      jobId: 'job-123',
+      auditContext: { slackContext },
+    };
+
+    await runner.run(message, context);
+
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    const [, payload] = context.sqs.sendMessage.firstCall.args;
+    expect(payload.auditContext).to.deep.include({ slackContext });
   });
 
   it('does not add promiseToken to step context for AEM_CS sites if message.promiseToken is missing', async () => {

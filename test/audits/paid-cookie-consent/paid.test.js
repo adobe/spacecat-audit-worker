@@ -9,7 +9,6 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-/* eslint-env mocha */
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -199,27 +198,27 @@ describe('Paid Cookie Consent Audit', () => {
     expect(result.auditResult.top3Pages).to.be.an('array');
   });
 
-  it('should include Ahrefs CPC data when available from S3', async () => {
-    const ahrefsData = {
+  it('should include SEO CPC data when available from S3', async () => {
+    const seoData = {
       organicTraffic: 10000,
       organicCost: 1910,
       paidTraffic: 5000,
       paidCost: 1560,
     };
-    const contextWithAhrefs = {
+    const contextWithSEO = {
       ...context,
       s3Client: {
         send: sandbox.stub().resolves({
           Body: {
-            transformToString: () => JSON.stringify(ahrefsData),
+            transformToString: () => JSON.stringify(seoData),
           },
         }),
       },
     };
-    const result = await paidAuditRunner(auditUrl, contextWithAhrefs, site);
-    expect(result.auditResult).to.have.property('cpcSource', 'ahrefs');
-    expect(result.auditResult).to.have.property('ahrefsOrganicCPC', 0.191);
-    expect(result.auditResult).to.have.property('ahrefsPaidCPC', 0.312);
+    const result = await paidAuditRunner(auditUrl, contextWithSEO, site);
+    expect(result.auditResult).to.have.property('cpcSource', 'seo');
+    expect(result.auditResult).to.have.property('seoOrganicCPC', 0.191);
+    expect(result.auditResult).to.have.property('seoPaidCPC', 0.312);
     expect(result.auditResult).to.have.property('appliedCPC', 0.312);
     expect(result.auditResult).to.have.property('defaultCPC', 0.80);
   });
@@ -792,6 +791,53 @@ describe('importAhrefPaidStep', () => {
     await importAhrefPaidStep(stepContext);
 
     expect(logStub.info).to.have.been.calledWithMatch(/Triggering ahref-paid-pages import/);
+  });
+
+  it('should enable ahref-paid-pages import when not already enabled', async () => {
+    const stepContext = {
+      site,
+      log: logStub,
+      finalUrl: auditUrl,
+    };
+
+    await importAhrefPaidStep(stepContext);
+
+    expect(site.getConfig().enableImport).to.have.been.calledWith('ahref-paid-pages');
+    expect(site.save).to.have.been.called;
+  });
+
+  it('should not enable import when ahref-paid-pages is already enabled', async () => {
+    const mockConfigWithImport = createMockConfig(sandbox, {
+      getImports: () => [{ type: 'ahref-paid-pages', enabled: true }],
+    });
+    const siteWithImport = getSite(sandbox, {
+      getConfig: () => mockConfigWithImport,
+    });
+
+    const stepContext = {
+      site: siteWithImport,
+      log: logStub,
+      finalUrl: auditUrl,
+    };
+
+    await importAhrefPaidStep(stepContext);
+
+    expect(mockConfigWithImport.enableImport).to.not.have.been.called;
+  });
+
+  it('should throw error when site config is null', async () => {
+    const siteWithNullConfig = getSite(sandbox, {
+      getConfig: () => null,
+    });
+
+    const stepContext = {
+      site: siteWithNullConfig,
+      log: logStub,
+      finalUrl: auditUrl,
+    };
+
+    await expect(importAhrefPaidStep(stepContext))
+      .to.be.rejectedWith(/site config is null/);
   });
 });
 

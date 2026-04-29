@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/* eslint-env mocha */
-
 import { expect } from 'chai';
 import { describe } from 'mocha';
 import { getLowPerformingPaidPagesTemplate } from '../../../src/paid-keyword-optimizer/queries.js';
