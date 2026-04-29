@@ -47,6 +47,30 @@ sync authority, and records the rationale.
 
 ## Sync implementation notes
 
+### Upsert conflict keys
+
+Each sync module uses `ON CONFLICT (...) DO UPDATE`. The conflict key determines
+which existing row is matched, and all non-key columns are overwritten on every
+run. Any value set out-of-band (e.g. by a manual SQL update) will be reset to
+the config value on the next sync.
+
+| Table | Conflict key (upsert identity) | Compared fields (change detection) |
+|---|---|---|
+| `categories` | `(organization_id, category_id)` | `name`, `origin`, `status` |
+| `topics` | `(organization_id, topic_id)` | `name`, `description`, `status` |
+| `prompts` | derived `prompt_id` (uuid-v5 of text + topic) | `name`, `regions`, `category_id`, `status`, `origin`, `source` |
+| `brand_aliases` | `(brand_id, alias)` | `regions` |
+| `competitors` | `(brand_id, name)` | `aliases`, `regions`, `url` |
+| `topic_categories` | `(topic_id, category_id)` | _(junction — rows are either present or deleted, no field comparison)_ |
+
+**Important — "INSERT" label in diff logs vs. actual DB operation:**
+The diff classifies a row as `INSERT` when no matching entry is found in the
+fetched existing-state map. If the DB already contains a row matching the
+conflict key (e.g. a topic row with `brand_id = NULL` that was excluded from the
+brand-scoped fetch), the upsert will **UPDATE** that row rather than inserting a
+new one. No duplicates are created; the diff label is simply a pre-write
+classification, not the final DB verb.
+
 ### Brand aliases
 
 Config shape: `brands.aliases[].aliases: string[]` plus optional `region` and
