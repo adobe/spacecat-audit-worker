@@ -53,42 +53,33 @@ source_stats AS (
     FROM mobile_paid
     GROUP BY trf_channel
 ),
-highest_pageviews AS (
+candidates AS (
     SELECT
-        path,
-        trf_channel,
-        pageviews,
-        row_count,
-        bounces,
-        CAST(bounces AS DOUBLE) / NULLIF(row_count, 0) AS bounce_rate
-    FROM mobile_paid
-    WHERE pageviews >= ${pageViewThreshold}
-),
-top_bounces AS (
-    SELECT
-        h.path,
-        h.trf_channel,
-        h.pageviews,
-        h.row_count,
-        h.bounce_rate,
+        p.path,
+        p.trf_channel,
+        p.pageviews,
+        p.row_count,
+        p.bounces,
+        CAST(p.bounces AS DOUBLE) / NULLIF(p.row_count, 0) AS bounce_rate,
         ss.channel_bounce_rate,
-        h.bounces,
         ss.channel_bounces,
-        CAST(h.bounces AS DOUBLE) / NULLIF(ss.channel_bounces, 0) AS bounce_share,
-        CAST(h.bounces AS DOUBLE) / NULLIF(ss.channel_bounces, 0) * 100 AS bounce_share_pct
-    FROM highest_pageviews h
-    JOIN source_stats ss ON h.trf_channel = ss.trf_channel
-    WHERE h.bounce_rate >= ss.channel_bounce_rate
-      AND CAST(h.bounces AS DOUBLE) / NULLIF(ss.channel_bounces, 0) >= 0.10
+        CAST(p.pageviews AS DOUBLE) * CAST(p.bounces AS DOUBLE) / NULLIF(p.row_count, 0) AS projected_traffic_lost,
+        CAST(p.pageviews AS DOUBLE) * CAST(p.bounces AS DOUBLE) / NULLIF(p.row_count, 0) * ${ESTIMATED_CPC} AS projected_traffic_value
+    FROM mobile_paid p
+    JOIN source_stats ss
+      ON p.trf_channel = ss.trf_channel
+    WHERE p.pageviews >= ${pageViewThreshold}
+      AND p.bounces >= 25
+      AND CAST(p.bounces AS DOUBLE) / NULLIF(p.row_count, 0) >= GREATEST(ss.channel_bounce_rate, 0.50)
 ),
 deduped AS (
     SELECT
         *,
         ROW_NUMBER() OVER (
             PARTITION BY path
-            ORDER BY bounce_share DESC, pageviews DESC
+            ORDER BY projected_traffic_lost DESC, pageviews DESC, bounces DESC
         ) AS path_rank
-    FROM top_bounces
+    FROM candidates
 )
 SELECT
     path,
@@ -99,11 +90,10 @@ SELECT
     channel_bounce_rate,
     bounces,
     channel_bounces,
-    bounce_share_pct,
-    CAST(pageviews AS DOUBLE) * bounce_rate AS projected_traffic_lost,
-    CAST(pageviews AS DOUBLE) * bounce_rate * ${ESTIMATED_CPC} AS projected_traffic_value
+    projected_traffic_lost,
+    projected_traffic_value
 FROM deduped
 WHERE path_rank = 1
-ORDER BY bounce_share_pct DESC
+ORDER BY projected_traffic_lost DESC
 `.trim();
 }
