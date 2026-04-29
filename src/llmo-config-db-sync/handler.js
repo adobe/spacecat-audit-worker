@@ -31,7 +31,9 @@ export function isSyncEnabledForSite(siteId) {
 
 export default async function llmoConfigDbSync(message, context) {
   const { log, env } = context;
-  const { siteId, dryRun = false } = message;
+  const { siteId } = message;
+  // TEMPORARY: force dry-run while validating LLMO-4477 in dev. Revert before merge.
+  const dryRun = true;
   const tag = dryRun ? '[llmo-config-db-sync] [DRY RUN] ' : '[llmo-config-db-sync]';
 
   if (!isSyncEnabledForSite(siteId)) {
