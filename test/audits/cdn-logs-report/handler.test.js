@@ -13,7 +13,6 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import nock from 'nock';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
 
@@ -193,6 +192,24 @@ describe('CDN Logs Report Handler', function test() {
     }),
   });
 
+  const createPostgrestClient = ({
+    categoryRules = [{ name: 'adobe-analytics', regex: '/test', sort_order: 0 }],
+    pageTypeRules = [{ name: 'Documentation', regex: '/page', sort_order: 0 }],
+    rpcResult = { category_rules: 1, page_type_rules: 1 },
+  } = {}) => ({
+    from: (table) => {
+      const data = table === 'agentic_url_category_rules' ? categoryRules : pageTypeRules;
+      const query = {
+        select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub().returnsThis(),
+        order: sandbox.stub().returnsThis(),
+        then: (resolve) => Promise.resolve({ data, error: null }).then(resolve),
+      };
+      return query;
+    },
+    rpc: sandbox.stub().resolves({ data: rpcResult, error: null }),
+  });
+
   before(async () => {
     saveExcelReportStub = sinon.stub().resolves();
     createLLMOSharepointClientStub = sinon.stub();
@@ -209,8 +226,6 @@ describe('CDN Logs Report Handler', function test() {
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
-    nock.cleanAll();
-    
     // Reset stubs before each test
     saveExcelReportStub.reset();
     createLLMOSharepointClientStub.reset();
@@ -250,6 +265,9 @@ describe('CDN Logs Report Handler', function test() {
         },
         athenaClient: setupAthenaClientWithData(sandbox),
         dataAccess: {
+          services: {
+            postgrestClient: createPostgrestClient(),
+          },
           Organization: {
             findById: sandbox.stub().resolves({
               getImsOrgId: () => 'test-ims-org-id',
@@ -259,13 +277,6 @@ describe('CDN Logs Report Handler', function test() {
       })
       .build();
 
-    // Mock the patterns.json endpoint to avoid pattern generation
-    nock('https://main--project-elmo-ui-data--adobe.aem.live')
-      .get('/test-folder/agentic-traffic/patterns/patterns.json')
-      .reply(200, {
-        pagetype: { data: [] },
-        products: { data: [] },
-      });
   });
 
   after(async () => {
@@ -275,15 +286,15 @@ describe('CDN Logs Report Handler', function test() {
   });
 
   afterEach(() => {
-    nock.abortPendingRequests();
-    nock.cleanAll();
     sandbox.restore();
   });
 
   describe('Cdn logs report audit handler', () => {
-    it('skips patterns regeneration when query-index already lists patterns.json', async () => {
-      const fetchRemotePatternsStub = sandbox.stub().resolves(null);
-      const queryIndexHasPatternsFileStub = sandbox.stub().resolves(true);
+    it('skips patterns regeneration when DB already has rules', async () => {
+      const fetchRulesStub = sandbox.stub().resolves({
+        pagePatterns: [{ name: 'Documentation', regex: '/docs', sort_order: 0 }],
+        topicPatterns: [{ name: 'Products', regex: '/products', sort_order: 0 }],
+      });
       const generatePatternsWorkbookStub = sandbox.stub().resolves(true);
       const runWeeklyReportStub = sandbox.stub().resolves({ success: true, uploadResult: null });
       const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
@@ -293,8 +304,7 @@ describe('CDN Logs Report Handler', function test() {
             weeks: [],
             periodIdentifier: 'w12-2026',
           }),
-          fetchRemotePatterns: fetchRemotePatternsStub,
-          queryIndexHasPatternsFile: queryIndexHasPatternsFileStub,
+          fetchAgenticUrlClassificationRules: fetchRulesStub,
           getConfigCategories: sandbox.stub().resolves(['Category A']),
         },
         '../../../src/utils/cdn-utils.js': {
@@ -344,17 +354,14 @@ describe('CDN Logs Report Handler', function test() {
         createAuditContext(sandbox, { weekOffset: 0, categoriesUpdated: false }),
       );
 
-      expect(fetchRemotePatternsStub).to.have.been.calledOnce;
-      expect(queryIndexHasPatternsFileStub).to.have.been.calledOnce;
+      expect(fetchRulesStub).to.have.been.calledOnce;
       expect(generatePatternsWorkbookStub).to.not.have.been.called;
       expect(runWeeklyReportStub).to.have.been.calledOnce;
-      expect(context.log.info).to.have.been.calledWith(sinon.match('Skipping fresh patterns generation for test-folder'));
       expect(result.auditResult).to.have.length(1);
     });
 
-    it('skips patterns regeneration when patterns.json fetch fails with a non-404 error', async () => {
-      const fetchRemotePatternsStub = sandbox.stub().resolves({ error: true, status: 500, source: 'patterns' });
-      const queryIndexHasPatternsFileStub = sandbox.stub().resolves(false);
+    it('skips patterns regeneration when DB rule fetch fails', async () => {
+      const fetchRulesStub = sandbox.stub().resolves({ error: true, source: 'postgres' });
       const generatePatternsWorkbookStub = sandbox.stub().resolves(true);
       const runWeeklyReportStub = sandbox.stub().resolves({ success: true, uploadResult: null });
       const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
@@ -364,8 +371,7 @@ describe('CDN Logs Report Handler', function test() {
             weeks: [],
             periodIdentifier: 'w12-2026',
           }),
-          fetchRemotePatterns: fetchRemotePatternsStub,
-          queryIndexHasPatternsFile: queryIndexHasPatternsFileStub,
+          fetchAgenticUrlClassificationRules: fetchRulesStub,
           getConfigCategories: sandbox.stub().resolves(['Category A']),
         },
         '../../../src/utils/cdn-utils.js': {
@@ -415,17 +421,15 @@ describe('CDN Logs Report Handler', function test() {
         createAuditContext(sandbox, { weekOffset: 0, categoriesUpdated: false }),
       );
 
-      expect(fetchRemotePatternsStub).to.have.been.calledOnce;
-      expect(queryIndexHasPatternsFileStub).to.not.have.been.called;
+      expect(fetchRulesStub).to.have.been.calledOnce;
       expect(generatePatternsWorkbookStub).to.not.have.been.called;
       expect(runWeeklyReportStub).to.have.been.calledOnce;
-      expect(context.log.info).to.have.been.calledWith(sinon.match('Skipping fresh patterns generation for test-folder'));
+      expect(context.log.info).to.have.been.calledWith(sinon.match('Skipping fresh patterns generation for test-site; DB rule fetch failed'));
       expect(result.auditResult).to.have.length(1);
     });
 
-    it('skips patterns regeneration when query-index fetch fails with a non-404 error', async () => {
-      const fetchRemotePatternsStub = sandbox.stub().resolves(null);
-      const queryIndexHasPatternsFileStub = sandbox.stub().resolves({ error: true, status: 500, source: 'query-index' });
+    it('generates DB rules when DB has no existing rules', async () => {
+      const fetchRulesStub = sandbox.stub().resolves({ pagePatterns: [], topicPatterns: [] });
       const generatePatternsWorkbookStub = sandbox.stub().resolves(true);
       const runWeeklyReportStub = sandbox.stub().resolves({ success: true, uploadResult: null });
       const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
@@ -435,8 +439,7 @@ describe('CDN Logs Report Handler', function test() {
             weeks: [],
             periodIdentifier: 'w12-2026',
           }),
-          fetchRemotePatterns: fetchRemotePatternsStub,
-          queryIndexHasPatternsFile: queryIndexHasPatternsFileStub,
+          fetchAgenticUrlClassificationRules: fetchRulesStub,
           getConfigCategories: sandbox.stub().resolves(['Category A']),
         },
         '../../../src/utils/cdn-utils.js': {
@@ -486,11 +489,9 @@ describe('CDN Logs Report Handler', function test() {
         createAuditContext(sandbox, { weekOffset: -1, categoriesUpdated: false }),
       );
 
-      expect(fetchRemotePatternsStub).to.have.been.calledOnce;
-      expect(queryIndexHasPatternsFileStub).to.have.been.calledOnce;
-      expect(generatePatternsWorkbookStub).to.not.have.been.called;
+      expect(fetchRulesStub).to.have.been.calledOnce;
+      expect(generatePatternsWorkbookStub).to.have.been.calledOnce;
       expect(runWeeklyReportStub).to.have.been.calledOnce;
-      expect(context.log.info).to.have.been.calledWith(sinon.match('Skipping fresh patterns generation for test-folder'));
       expect(result.auditResult).to.have.length(1);
     });
 
@@ -626,8 +627,10 @@ describe('CDN Logs Report Handler', function test() {
             weeks: [],
             periodIdentifier: 'w12-2026',
           }),
-          fetchRemotePatterns: sandbox.stub().resolves(null),
-          queryIndexHasPatternsFile: sandbox.stub().resolves(false),
+          fetchAgenticUrlClassificationRules: sandbox.stub().resolves({
+            pagePatterns: [],
+            topicPatterns: [],
+          }),
           getConfigCategories: sandbox.stub().resolves(['Category A']),
         },
         '../../../src/utils/cdn-utils.js': {
@@ -845,56 +848,48 @@ describe('CDN Logs Report Handler', function test() {
       expect(result.auditResult).to.not.be.empty;
     });
 
-    describe('LLMO pattern fetch scenarios', () => {
-      it('handles successful pattern fetch', async () => {
-        const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
-          .get('/test-folder/agentic-traffic/patterns/patterns.json')
-          .reply(200, {
-            pagetype: { data: [{ pattern: 'product-page' }] },
-            products: { data: [{ product: 'adobe-analytics' }] },
-          });
-
+    describe('LLMO pattern DB rule scenarios', () => {
+      it('handles successful DB rule reads', async () => {
         const auditContext = createAuditContext(sandbox);
         const result = await handler.runner('https://example.com', context, site, auditContext);
 
-        // Verify successful execution
         expect(result).to.have.property('auditResult').that.is.an('array');
         expect(result.auditResult).to.have.length.greaterThan(0);
-
-        // Verify pattern fetch was called
-        expect(patternNock.isDone()).to.be.true;
-
-        // Verify queries were executed with pattern data
         expect(context.athenaClient.query).to.have.been.called;
       });
 
-      it('handles missing pagetype data', async () => {
-        const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
-          .get('/test-folder/agentic-traffic/patterns/patterns.json')
-          .reply(200, {
-            products: { data: [{ product: 'adobe-analytics' }] },
-          });
+      it('handles missing page type rules', async () => {
+        context.dataAccess.services.postgrestClient = createPostgrestClient({
+          pageTypeRules: [],
+        });
 
         const auditContext = createAuditContext(sandbox);
         const result = await handler.runner('https://example.com', context, site, auditContext);
 
         expect(result).to.have.property('auditResult').that.is.an('array');
         expect(result.auditResult).to.have.length.greaterThan(0);
-        expect(patternNock.isDone()).to.be.true;
       });
 
-      it('handles fetch errors gracefully', async () => {
-        const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
-          .get('/test-folder/agentic-traffic/patterns/patterns.json')
-          .reply(500, 'Server Error');
+      it('handles DB rule read errors gracefully', async () => {
+        context.dataAccess.services.postgrestClient = createPostgrestClient();
+        context.dataAccess.services.postgrestClient.from = () => {
+          const query = {
+            select: sandbox.stub().returnsThis(),
+            eq: sandbox.stub().returnsThis(),
+            order: sandbox.stub().returnsThis(),
+            then: (resolve) => Promise.resolve({
+              data: null,
+              error: new Error('DB unavailable'),
+            }).then(resolve),
+          };
+          return query;
+        };
 
         const auditContext = createAuditContext(sandbox);
         const result = await handler.runner('https://example.com', context, site, auditContext);
 
         expect(result).to.have.property('auditResult').that.is.an('array');
         expect(result.auditResult).to.have.length.greaterThan(0);
-        expect(patternNock.isDone()).to.be.true;
-
         expect(context.athenaClient.query).to.have.been.called;
       });
     });

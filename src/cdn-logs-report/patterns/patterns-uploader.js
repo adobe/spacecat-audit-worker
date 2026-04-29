@@ -12,8 +12,39 @@
 import { analyzeProducts } from './product-analysis.js';
 import { analyzePageTypes } from './page-type-analysis.js';
 import { weeklyBreakdownQueries } from '../utils/query-builder.js';
-import { createExcelReport } from '../utils/excel-generator.js';
-import { saveExcelReport } from '../../utils/report-uploader.js';
+import { replaceAgenticUrlClassificationRules } from '../utils/report-utils.js';
+
+function mergePatternRules(existingRules = [], generatedRegexes = {}) {
+  const regexes = generatedRegexes || {};
+  const rulesByName = new Map();
+
+  existingRules.forEach((rule, index) => {
+    if (rule?.name && rule?.regex) {
+      rulesByName.set(rule.name.toLowerCase(), {
+        name: rule.name.toLowerCase(),
+        regex: rule.regex,
+        sort_order: Number.isInteger(rule.sort_order) ? rule.sort_order : index,
+      });
+    }
+  });
+
+  Object.entries(regexes).forEach(([name, regex]) => {
+    const normalizedName = name.toLowerCase();
+    if (normalizedName && regex && !rulesByName.has(normalizedName)) {
+      rulesByName.set(normalizedName, {
+        name: normalizedName,
+        regex,
+        sort_order: rulesByName.size,
+      });
+    }
+  });
+
+  return Array.from(rulesByName.values())
+    .map((rule, index) => ({
+      ...rule,
+      sort_order: index,
+    }));
+}
 
 export async function generatePatternsWorkbook(options) {
   const {
@@ -22,14 +53,13 @@ export async function generatePatternsWorkbook(options) {
     athenaClient,
     s3Config,
     periods,
-    sharepointClient,
     configCategories = [],
     existingPatterns = null,
   } = options;
   const { log } = context;
 
   try {
-    log.info(existingPatterns ? 'Generating patterns.xlsx with merge of existing patterns...' : 'patterns.json not found, generating patterns.xlsx...');
+    log.info(existingPatterns ? 'Generating DB patterns with merge of existing rules...' : 'No DB patterns found, generating fresh rules...');
 
     const query = await weeklyBreakdownQueries.createTopUrlsQuery({
       periods,
@@ -77,57 +107,35 @@ export async function generatePatternsWorkbook(options) {
       productRegexes = {};
     }
 
-    // Merge with existing patterns
-    const mergedProductRegexes = { ...productRegexes };
-    const mergedPagetypeRegexes = { ...pagetypeRegexes };
+    const existingTopicPatterns = Array.isArray(existingPatterns?.topicPatterns)
+      ? existingPatterns.topicPatterns
+      : [];
+    const existingPagePatterns = Array.isArray(existingPatterns?.pagePatterns)
+      ? existingPatterns.pagePatterns
+      : [];
 
     if (existingPatterns) {
-      log.info('Merging with existing patterns...');
-
-      // Merge existing product patterns
-      if (existingPatterns.topicPatterns && Array.isArray(existingPatterns.topicPatterns)) {
-        const existingProductCount = existingPatterns.topicPatterns.length;
-        existingPatterns.topicPatterns.forEach((pattern) => {
-          if (pattern.name && pattern.regex) {
-            mergedProductRegexes[pattern.name] = pattern.regex;
-          }
-        });
-        log.info(`Preserved ${existingProductCount} existing product patterns`);
-      }
-
-      // Merge existing page type patterns
-      if (existingPatterns.pagePatterns && Array.isArray(existingPatterns.pagePatterns)) {
-        const existingPageTypeCount = existingPatterns.pagePatterns.length;
-        existingPatterns.pagePatterns.forEach((pattern) => {
-          if (pattern.name && pattern.regex) {
-            mergedPagetypeRegexes[pattern.name] = pattern.regex;
-          }
-        });
-        log.info(`Preserved ${existingPageTypeCount} existing page type patterns`);
-      }
+      log.info('Merging with existing DB patterns...');
+      log.info(`Preserved ${existingTopicPatterns.length} existing product patterns`);
+      log.info(`Preserved ${existingPagePatterns.length} existing page type patterns`);
     }
 
-    // Prepare data for workbook with unique lowercase names
-    let productData = Array.from(
-      new Map(Object.entries(mergedProductRegexes).map(([name, regex]) => [
-        name.toLowerCase(),
-        { name: name.toLowerCase(), regex },
-      ])).values(),
-    );
+    // Prepare data for DB with unique lowercase names.
+    let productData = mergePatternRules(existingTopicPatterns, productRegexes);
 
     // Filter product data based on config categories if they exist
     if (configCategories.length > 0) {
       const configCategoriesLower = configCategories.map((cat) => cat.toLowerCase());
+      const productCountBeforeFilter = productData.length;
       productData = productData.filter((item) => configCategoriesLower.includes(item.name));
-      log.info(`Filtered product patterns to match config categories. Kept ${productData.length} patterns out of ${Object.keys(mergedProductRegexes).length}`);
+      productData = productData.map((item, index) => ({
+        ...item,
+        sort_order: index,
+      }));
+      log.info(`Filtered product patterns to match config categories. Kept ${productData.length} patterns out of ${productCountBeforeFilter}`);
     }
 
-    const pagetypeData = Array.from(
-      new Map(Object.entries(mergedPagetypeRegexes).map(([name, regex]) => [
-        name.toLowerCase(),
-        { name: name.toLowerCase(), regex },
-      ])).values(),
-    );
+    const pagetypeData = mergePatternRules(existingPagePatterns, pagetypeRegexes);
 
     // Return early if both arrays are empty
     if (productData.length === 0 && pagetypeData.length === 0) {
@@ -135,47 +143,15 @@ export async function generatePatternsWorkbook(options) {
       return false;
     }
 
-    const reportData = {
-      'shared-products': productData,
-      'shared-pagetype': pagetypeData,
-    };
-
-    const excelConfig = {
-      workbookCreator: 'Spacecat Patterns',
-      sheets: [
-        {
-          name: 'shared-products',
-          dataKey: 'shared-products',
-          type: 'patterns',
-        },
-        {
-          name: 'shared-pagetype',
-          dataKey: 'shared-pagetype',
-          type: 'patterns',
-        },
-      ],
-    };
-
-    // Create and upload workbook
-    const workbook = await createExcelReport(reportData, excelConfig, site, context);
-    const llmoFolder = site.getConfig()?.getLlmoDataFolder();
-    const outputLocation = `${llmoFolder}/agentic-traffic/patterns`;
-    const filename = 'patterns.xlsx';
-
-    await saveExcelReport({
-      sharepointClient,
-      workbook,
-      filename,
-      outputLocation,
-      log,
+    const result = await replaceAgenticUrlClassificationRules({
+      site,
+      context,
+      categoryRules: productData,
+      pageTypeRules: pagetypeData,
+      updatedBy: 'audit-worker:agentic-patterns',
     });
 
-    log.info('Successfully generated and uploaded patterns.xlsx');
-
-    // Wait for the file to be published
-    await new Promise((resolve) => {
-      setTimeout(resolve, 3000);
-    });
+    log.info(`Successfully synced patterns to DB for site ${site.getId?.()}: ${result?.category_rules ?? productData.length} category rules, ${result?.page_type_rules ?? pagetypeData.length} page type rules`);
 
     return true;
   } catch (error) {

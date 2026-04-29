@@ -11,7 +11,7 @@
  */
 
 import { DEFAULT_COUNTRY_PATTERNS } from '../../common/country-patterns.js';
-import { loadSql, fetchRemotePatterns } from './report-utils.js';
+import { loadSql, fetchAgenticUrlClassificationRules } from './report-utils.js';
 import { buildAgentTypeClassificationSQL, buildUserAgentDisplaySQL } from '../../common/user-agent-classification.js';
 import { buildDateFilter, buildUserAgentFilter, buildSiteFilters } from '../../utils/cdn-utils.js';
 
@@ -28,6 +28,10 @@ function buildWhereClause(conditions = [], siteFilters = []) {
   return allConditions.length > 0 ? `WHERE ${allConditions.join(' AND ')}` : '';
 }
 
+function escapeSqlLiteral(value) {
+  return String(value).replace(/'/g, "''");
+}
+
 // Page Type Classification
 function generatePageTypeClassification(remotePatterns = null) {
   const patterns = remotePatterns?.pagePatterns || [];
@@ -37,7 +41,7 @@ function generatePageTypeClassification(remotePatterns = null) {
   }
 
   const caseConditions = patterns
-    .map((pattern) => `      WHEN REGEXP_LIKE(url, '${pattern.regex}') THEN '${pattern.name}'`)
+    .map((pattern) => `      WHEN REGEXP_LIKE(url, '${escapeSqlLiteral(pattern.regex)}') THEN '${escapeSqlLiteral(pattern.name)}'`)
     .join('\n');
 
   return `CASE\n${caseConditions}\n      ELSE 'Other'\n    END`;
@@ -62,9 +66,9 @@ function buildTopicExtractionSQL(remotePatterns = null) {
 
     patterns.forEach(({ regex, name }) => {
       if (name) {
-        namedPatterns.push(`WHEN REGEXP_LIKE(url, '${regex}') THEN '${name}'`);
+        namedPatterns.push(`WHEN REGEXP_LIKE(url, '${escapeSqlLiteral(regex)}') THEN '${escapeSqlLiteral(name)}'`);
       } else {
-        extractPatterns.push(`NULLIF(REGEXP_EXTRACT(url, '${regex}', 1), '')`);
+        extractPatterns.push(`NULLIF(REGEXP_EXTRACT(url, '${escapeSqlLiteral(regex)}', 1), '')`);
       }
     });
 
@@ -83,7 +87,7 @@ function buildTopicExtractionSQL(remotePatterns = null) {
 
 async function createAgenticReportQuery(options) {
   const {
-    periods, databaseName, tableName, site,
+    periods, databaseName, tableName, site, context,
   } = options;
 
   const filters = site.getConfig().getLlmoCdnlogsFilter();
@@ -95,7 +99,7 @@ async function createAgenticReportQuery(options) {
     siteFilters,
   );
 
-  const remotePatterns = await fetchRemotePatterns(site);
+  const remotePatterns = await fetchAgenticUrlClassificationRules(site, context);
 
   return loadSql('agentic-traffic-report', {
     agentTypeClassification: buildAgentTypeClassificationSQL(),
@@ -111,7 +115,7 @@ async function createAgenticReportQuery(options) {
 
 async function createAgenticDailyReportQuery(options) {
   const {
-    trafficDate, databaseName, tableName, site,
+    trafficDate, databaseName, tableName, site, context,
   } = options;
 
   const filters = site.getConfig().getLlmoCdnlogsFilter();
@@ -124,7 +128,7 @@ async function createAgenticDailyReportQuery(options) {
     siteFilters,
   );
 
-  const remotePatterns = await fetchRemotePatterns(site);
+  const remotePatterns = await fetchAgenticUrlClassificationRules(site, context);
 
   return loadSql('agentic-traffic-daily-report', {
     agentTypeClassification: buildAgentTypeClassificationSQL(),

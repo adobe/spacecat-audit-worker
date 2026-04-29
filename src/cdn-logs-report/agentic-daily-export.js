@@ -213,6 +213,7 @@ export async function runDailyAgenticExport({
     databaseName: s3Config.databaseName,
     tableName: reportConfig.tableName,
     site,
+    context,
   });
 
   const rawRows = await athenaClient.query(
