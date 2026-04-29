@@ -275,6 +275,31 @@ describe('sqs', () => {
     }).with(sqsWrapper)({}, context);
   });
 
+  it('omits MessageDeduplicationId on a standard (non-.fifo) queue even if msgDedupId is provided', async () => {
+    // Standard queues reject MessageDeduplicationId with InvalidParameterValue.
+    // The same code path runs both before and after a queue is converted to
+    // FIFO; the FIFO-suffix gate keeps it safe in either state.
+    const message = { type: 'agentic_traffic', key: 'value' };
+    const queueUrl = 'https://sqs.us-east-1.amazonaws.com/123456789/analytics-queue';
+
+    nock('https://sqs.us-east-1.amazonaws.com')
+      .post('/')
+      .reply(200, (_, body) => {
+        const parsed = JSON.parse(body);
+        expect(parsed.MessageDeduplicationId).to.be.undefined;
+        // MessageGroupId is still set — standard queues now accept it for fair queuing.
+        expect(parsed.MessageGroupId).to.equal('agentic_traffic:site-1');
+        return {
+          MessageId: 'message-id',
+          MD5OfMessageBody: crypto.createHash('md5').update(parsed.MessageBody, 'utf-8').digest('hex'),
+        };
+      });
+
+    await wrap(async (req, ctx) => {
+      await ctx.sqs.sendMessage(queueUrl, message, 'agentic_traffic:site-1', 0, 'batch-uuid-abc');
+    }).with(sqsWrapper)({}, context);
+  });
+
   it('includes DedupID in log when msgDedupId is set', async () => {
     const message = { type: 'agentic_traffic', key: 'value' };
     const queueUrl = 'https://sqs.us-east-1.amazonaws.com/123456789/analytics-queue.fifo';

@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
+import { hasText } from '@adobe/spacecat-shared-utils';
 
 /**
  * @class SQS utility to send messages to SQS
@@ -22,6 +23,10 @@ class SQS {
     this.sqsClient = new SQSClient({ region });
     this.log = log;
     this.context = context;
+  }
+
+  static #isFifoQueue(queueUrl) {
+    return hasText(queueUrl) && queueUrl.toLowerCase().endsWith('.fifo');
   }
 
   async sendMessage(queueUrl, message, msgGroupId, delaySeconds = 0, msgDedupId = undefined) {
@@ -48,10 +53,10 @@ class SQS {
     };
 
     // FIFO queues with content-based deduplication disabled require an explicit
-    // MessageDeduplicationId on every publish. Only set when the caller provides
-    // one — standard queues reject the attribute, and FIFO queues with
-    // content-based dedup don't need it.
-    if (msgDedupId) {
+    // MessageDeduplicationId on every publish. Gate on the FIFO suffix so the
+    // same code is safe both before and after a queue is converted to FIFO —
+    // standard queues reject MessageDeduplicationId with InvalidParameterValue.
+    if (msgDedupId && SQS.#isFifoQueue(queueUrl)) {
       params.MessageDeduplicationId = msgDedupId;
     }
 
