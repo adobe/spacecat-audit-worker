@@ -41,6 +41,7 @@ import {
   FAST_PAGE_URL_BATCH_DELAY_MS,
   SLOW_PAGE_URL_BATCH_SIZE,
   SLOW_PAGE_URL_BATCH_DELAY_MS,
+  SLOW_MODE_ENTRY_DELAY_MS,
   urlLooksLike404Page,
   formatUrlProbeErrorDetail,
 } from '../../src/sitemap/common.js';
@@ -272,6 +273,16 @@ describe('Sitemap Audit', () => {
 
       const response = await fetchWithHeadFallback(`${url}/head-501`, {});
       expect(response.status).to.equal(200);
+    });
+
+    it('should call beforeRequest before HEAD and before GET fallback', async () => {
+      nock(url).head('/spaced').reply(404);
+      nock(url).get('/spaced').reply(200);
+
+      const beforeRequest = sandbox.spy(async () => {});
+      const response = await fetchWithHeadFallback(`${url}/spaced`, { beforeRequest });
+      expect(response.status).to.equal(200);
+      expect(beforeRequest).to.have.been.calledTwice;
     });
   });
 
@@ -818,6 +829,7 @@ describe('Sitemap Audit', () => {
       const slowBatchOpts = {
         pageUrlBatchSize: SLOW_PAGE_URL_BATCH_SIZE,
         pageUrlBatchDelayMs: SLOW_PAGE_URL_BATCH_DELAY_MS,
+        pageUrlHttpRequestIntervalMs: SLOW_PAGE_URL_BATCH_DELAY_MS,
       };
 
       it('re-probes with slow batching when otherStatus share is >= 60% with at least 10 URLs', async () => {
@@ -848,6 +860,7 @@ describe('Sitemap Audit', () => {
           otherStatusCodes: [],
         });
 
+        const sleepStub = sandbox.stub().resolves();
         const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
           '../../src/sitemap/common.js': {
             applyPageUrlProbeSampling,
@@ -858,11 +871,18 @@ describe('Sitemap Audit', () => {
             slicePageUrlsForSlowProbeSampling,
             SLOW_PAGE_URL_BATCH_DELAY_MS,
             SLOW_PAGE_URL_BATCH_SIZE,
+            SLOW_MODE_ENTRY_DELAY_MS,
+          },
+          '../../src/support/utils.js': {
+            sleep: sleepStub,
           },
         });
 
-        const result = await findSitemapMocked(url, { info: () => {}, debug: () => {} });
+        const result = await findSitemapMocked(url, {
+          info: () => {}, debug: () => {}, warn: () => {},
+        });
         expect(result.success).to.equal(true);
+        expect(sleepStub).to.have.been.calledOnceWith(SLOW_MODE_ENTRY_DELAY_MS);
         expect(filterStub).to.have.been.calledTwice;
         expect(filterStub.firstCall.args[3]).to.equal(null);
         expect(filterStub.secondCall.args[0]).to.deep.equal([tenUrls[0]]);
@@ -904,6 +924,7 @@ describe('Sitemap Audit', () => {
 
         const log = { info: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub(), error: sandbox.stub() };
 
+        const sleepStub = sandbox.stub().resolves();
         const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
           '../../src/sitemap/common.js': {
             applyPageUrlProbeSampling,
@@ -914,21 +935,28 @@ describe('Sitemap Audit', () => {
             slicePageUrlsForSlowProbeSampling,
             SLOW_PAGE_URL_BATCH_DELAY_MS,
             SLOW_PAGE_URL_BATCH_SIZE,
+            SLOW_MODE_ENTRY_DELAY_MS,
+          },
+          '../../src/support/utils.js': {
+            sleep: sleepStub,
           },
         });
 
         await findSitemapMocked(url, log);
+        expect(sleepStub).to.have.been.calledOnceWith(SLOW_MODE_ENTRY_DELAY_MS);
         expect(filterStub).to.have.been.calledThrice;
         expect(filterStub.secondCall.args[0]).to.deep.equal([tenUrlsA[0]]);
         expect(filterStub.thirdCall.args[0]).to.have.length(10);
         expect(filterStub.thirdCall.args[3]).to.deep.equal(slowBatchOpts);
         const summaryMsg = log.info.getCalls().map((c) => c.args[0]).find((m) => typeof m === 'string' && m.includes('slow page URL probing summary'));
         expect(summaryMsg).to.include('otherStatus codes: 6 of 11 page URLs probed slowly (55%)');
-        expect(log.warn).to.have.been.calledOnce;
-        expect(log.warn.firstCall.args[0]).to.include(sitemapB);
-        expect(log.warn.firstCall.args[0]).to.include(`'otherStatus' count=6`);
-        expect(log.warn.firstCall.args[0]).to.include('total count=10');
-        expect(log.warn.firstCall.args[0]).to.include('(60%)');
+        const highOtherWarns = log.warn.getCalls().filter((c) => typeof c.args[0] === 'string'
+          && c.args[0].includes('remains high')
+          && c.args[0].includes(sitemapB));
+        expect(highOtherWarns).to.have.lengthOf(1);
+        expect(highOtherWarns[0].args[0]).to.include(`'otherStatus' count=6`);
+        expect(highOtherWarns[0].args[0]).to.include('total count=10');
+        expect(highOtherWarns[0].args[0]).to.include('(60%)');
       });
 
       it('does not switch to slow when fewer than 10 URLs are probed', async () => {
@@ -995,6 +1023,7 @@ describe('Sitemap Audit', () => {
 
         const log = { info: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub(), error: sandbox.stub() };
 
+        const sleepStub = sandbox.stub().resolves();
         const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
           '../../src/sitemap/common.js': {
             applyPageUrlProbeSampling,
@@ -1005,13 +1034,21 @@ describe('Sitemap Audit', () => {
             slicePageUrlsForSlowProbeSampling,
             SLOW_PAGE_URL_BATCH_DELAY_MS,
             SLOW_PAGE_URL_BATCH_SIZE,
+            SLOW_MODE_ENTRY_DELAY_MS,
+          },
+          '../../src/support/utils.js': {
+            sleep: sleepStub,
           },
         });
 
         await findSitemapMocked(url, log);
+        expect(sleepStub).to.have.been.calledOnceWith(SLOW_MODE_ENTRY_DELAY_MS);
         expect(filterStub).to.have.been.calledTwice;
         expect(filterStub.secondCall.args[0]).to.have.length(10);
-        expect(log.warn).to.have.been.calledOnce;
+        const stillHighWarns = log.warn.getCalls().filter((c) => typeof c.args[0] === 'string'
+          && c.args[0].includes('remains high')
+          && c.args[0].includes('still.xml'));
+        expect(stillHighWarns).to.have.lengthOf(1);
         const summaryMsg = log.info.getCalls().map((c) => c.args[0]).find((m) => typeof m === 'string' && m.includes('slow page URL probing summary'));
         expect(summaryMsg).to.include('otherStatus codes: 6 of 10 page URLs probed slowly (60%)');
       });
@@ -1054,6 +1091,7 @@ describe('Sitemap Audit', () => {
           otherStatusCodes: [],
         });
 
+        const sleepStub = sandbox.stub().resolves();
         const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
           '../../src/sitemap/common.js': {
             applyPageUrlProbeSampling,
@@ -1064,10 +1102,15 @@ describe('Sitemap Audit', () => {
             slicePageUrlsForSlowProbeSampling,
             SLOW_PAGE_URL_BATCH_DELAY_MS,
             SLOW_PAGE_URL_BATCH_SIZE,
+            SLOW_MODE_ENTRY_DELAY_MS,
+          },
+          '../../src/support/utils.js': {
+            sleep: sleepStub,
           },
         });
 
         await findSitemapMocked(url, { info: () => {}, warn: sandbox.stub(), debug: () => {} });
+        expect(sleepStub).to.have.been.calledOnceWith(SLOW_MODE_ENTRY_DELAY_MS);
         expect(filterStub).to.have.been.calledThrice;
         expect(filterStub.secondCall.args[0]).to.deep.equal([tenUrlsA[0]]);
         expect(filterStub.thirdCall.args[0]).to.have.length(10);
@@ -2027,6 +2070,7 @@ describe('filterValidUrls with redirect handling', () => {
       .head('/redirect-to-404')
       .reply(301, '', { Location: 'https://example.com/not-found' });
     nock('https://example.com').head('/not-found').reply(404);
+    nock('https://example.com').get('/not-found').reply(404);
 
     // Redirect to a page that returns 200
     nock('https://example.com')
@@ -2045,6 +2089,7 @@ describe('filterValidUrls with redirect handling', () => {
       .head('/redirect-to-404')
       .reply(302, '', { Location: 'https://subdomain.example.com/not-found' });
     nock('https://subdomain.example.com').head('/not-found').reply(404);
+    nock('https://subdomain.example.com').get('/not-found').reply(404);
 
     const result = await filterValidUrls(urls);
 
@@ -2080,7 +2125,7 @@ describe('filterValidUrls with redirect handling', () => {
       .head('/broken-redirect')
       .reply(301, '', { Location: 'https://example.com/error' });
 
-    // Second request fails with network error (suggests invalid URL)
+    // Follow-up to validate redirect target fails before a usable terminal URL is known
     nock('https://example.com')
       .head('/error')
       .replyWithError('Network error');
@@ -2275,7 +2320,7 @@ describe('filterValidUrls with redirect handling', () => {
     });
   });
 
-  it('should omit urlsSuggested for redirects with no Location header', async () => {
+  it('should set urlsSuggested to empty string when redirect has no Location header', async () => {
     const urls = ['https://example.com/redirect-no-location'];
     nock('https://example.com')
       .head('/redirect-no-location')
@@ -2286,6 +2331,7 @@ describe('filterValidUrls with redirect handling', () => {
       {
         url: 'https://example.com/redirect-no-location',
         statusCode: 301,
+        urlsSuggested: '',
       },
     ]);
   });
@@ -2471,14 +2517,18 @@ describe('filterValidUrls with status code tracking', () => {
 
     // Mock validation requests for redirect targets
     nock('https://example.com').head('/404.html').reply(404);
+    nock('https://example.com').get('/404.html').reply(404);
     nock('https://example.com').head('/404/not-found').reply(404);
+    nock('https://example.com').get('/404/not-found').reply(404);
     nock('https://example.com').head('/errors/404/page').reply(404);
+    nock('https://example.com').get('/errors/404/page').reply(404);
     nock('https://example.com').head('/valid-page').reply(200);
 
     const result = await filterValidUrls(urls);
 
     expect(result.notOk).to.have.length(4);
 
+    // Redirects to clear 404 targets: no safe replacement URL
     const redirectsTo404 = result.notOk.filter(
       (item) => item.url.includes('redirect-to-404')
         || item.url.includes('redirect-to-errors-404'),
@@ -2544,7 +2594,7 @@ describe('filterValidUrls with HEAD to GET fallback', () => {
     expect(result.otherStatusCodes).to.be.empty;
   });
 
-  it('should record otherStatus when HEAD returns 403 and GET also returns 403', async () => {
+  it('should use GET fallback when HEAD returns 403 and classify final 403 as otherStatus', async () => {
     const urls = ['https://example.com/head-403'];
 
     nock('https://example.com').head('/head-403').reply(403);
@@ -2677,5 +2727,24 @@ describe('filterValidUrls with HEAD to GET fallback', () => {
 
     expect(result.networkErrors).to.have.length(1);
     expect(log.debug).to.have.been.calledWith(sinon.match(/network error/i));
+  });
+
+  it('should space HEAD and GET fallback when pageUrlHttpRequestIntervalMs is set', async () => {
+    const urls = ['https://example.com/slow-head-get'];
+    const intervalMs = 40;
+
+    nock('https://example.com').head('/slow-head-get').reply(404);
+    nock('https://example.com').get('/slow-head-get').reply(200);
+
+    const started = Date.now();
+    const result = await filterValidUrls(urls, undefined, PAGE_URL_TIMEOUT_MS, {
+      pageUrlBatchSize: SLOW_PAGE_URL_BATCH_SIZE,
+      pageUrlBatchDelayMs: SLOW_PAGE_URL_BATCH_DELAY_MS,
+      pageUrlHttpRequestIntervalMs: intervalMs,
+    });
+    const elapsed = Date.now() - started;
+
+    expect(result.ok).to.deep.equal(['https://example.com/slow-head-get']);
+    expect(elapsed).to.be.at.least(intervalMs - 5);
   });
 });
