@@ -82,6 +82,31 @@ Note: this is a per-run upsert, so any out-of-band manual population of
 to be write-once, that's a separate change (split insert/update paths or
 column-scoped upsert).
 
+### Topics — brand scoping
+
+The `topics` table has a nullable `brand_id` column. An org can contain topics
+belonging to multiple brands. Without brand filtering, `fetchExistingState` would
+load all brands' topics into `topicLookup`, causing:
+
+- Orphan deletion in `syncTopicCategories` to target topics from **other brands**
+  (their existing `topic_categories` rows would be classified as orphans and deleted).
+- New topic rows upserted without `brand_id`, leaving them un-attributed.
+
+The sync was updated in this PR to:
+- Filter the topics fetch with `.eq('brand_id', brandId)` so `topicLookup` and
+  `existingTopics` only contain the synced brand's rows.
+- Include `brand_id` in every topic row written (`buildTopicRows`,
+  `ensureDeletedRefEntities`).
+
+This was confirmed against production data: the adobe.com org contained rows from
+**15 distinct brands** (1 652 topic rows total); without the fix, the worker would
+have operated on all of them.
+
+**Note:** SQL analysis also revealed 256 pre-existing rows where
+`prompts.brand_id ≠ topics.brand_id` (prompt and its linked topic belong to
+different brands). These rows pre-date this PR and are not caused by it. They
+are tracked as a separate investigation item.
+
 ### Junctions
 
 `topic_categories` is derived from the config on every sync run. Orphaned rows
@@ -107,6 +132,11 @@ junction in sync.
 - **Reverse cleanup for dropped prompts.** Tracked in LLMO-4473.
 - **Dedup fix for prompt sync.** Tracked in LLMO-4470.
 - **`topic_prompts` deprecation decision.** Tracked in LLMO-4465.
+- **Cross-brand prompt-topic mismatches (pre-existing).** Production data
+  contains 256 rows where `prompts.brand_id ≠ topics.brand_id`. Root cause
+  is unknown (likely prior sync runs without brand filtering). Needs a
+  dedicated investigation and backfill before `data_source_pg=true` is
+  enabled for multi-brand orgs.
 
 ---
 

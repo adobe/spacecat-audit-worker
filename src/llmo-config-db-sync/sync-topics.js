@@ -14,7 +14,7 @@ import { v5 as uuidv5 } from 'uuid';
 import { TOPIC_COMPARE_FIELDS, TOPIC_ID_NAMESPACE } from './constants.js';
 import { diffRows, logDiffSummary } from './diff.js';
 
-export function buildTopicRows(s3Config, organizationId) {
+export function buildTopicRows(s3Config, organizationId, brandId) {
   const rows = [];
   const addTopics = (topicsRecord) => {
     if (!topicsRecord) {
@@ -23,6 +23,7 @@ export function buildTopicRows(s3Config, organizationId) {
     Object.entries(topicsRecord).forEach(([topicId, topic]) => {
       rows.push({
         organization_id: organizationId,
+        brand_id: brandId,
         topic_id: topicId,
         name: topic.name,
         description: topic.description || null,
@@ -41,6 +42,7 @@ export async function ensureDeletedRefEntities(
   postgrestClient,
   s3Config,
   organizationId,
+  brandId,
   categoryLookup,
   topicLookup,
   topicNameLookup,
@@ -62,6 +64,7 @@ export async function ensureDeletedRefEntities(
       seenTopicNames.add(p.topic);
       missingTopicRows.push({
         organization_id: organizationId,
+        brand_id: brandId,
         topic_id: uuidv5(p.topic, TOPIC_ID_NAMESPACE),
         name: p.topic,
         description: null,
@@ -122,6 +125,7 @@ export async function syncTopics(
   postgrestClient,
   s3Config,
   organizationId,
+  brandId,
   existingTopics,
   topicLookup,
   topicNameLookup,
@@ -129,7 +133,7 @@ export async function syncTopics(
   dryRun = false,
 ) {
   const tag = dryRun ? '[DRY RUN] ' : '';
-  const topicRows = buildTopicRows(s3Config, organizationId);
+  const topicRows = buildTopicRows(s3Config, organizationId, brandId);
   const topicDiff = diffRows(topicRows, existingTopics, (r) => r.topic_id, TOPIC_COMPARE_FIELDS);
   logDiffSummary(log, 'topics', topicDiff.dryRunInserts, topicDiff.dryRunUpdates);
 

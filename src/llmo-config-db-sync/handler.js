@@ -75,7 +75,7 @@ export default async function llmoConfigDbSync(message, context) {
     const {
       categoryLookup, topicLookup, topicNameLookup,
       existingCats, existingTopics, existingPrompts,
-    } = await fetchExistingState(postgrestClient, organizationId, log);
+    } = await fetchExistingState(postgrestClient, organizationId, brandId, log);
 
     const categoryStats = await syncCategories(
       postgrestClient,
@@ -91,6 +91,7 @@ export default async function llmoConfigDbSync(message, context) {
       postgrestClient,
       s3Config,
       organizationId,
+      brandId,
       existingTopics,
       topicLookup,
       topicNameLookup,
@@ -102,6 +103,7 @@ export default async function llmoConfigDbSync(message, context) {
       postgrestClient,
       s3Config,
       organizationId,
+      brandId,
       categoryLookup,
       topicLookup,
       topicNameLookup,

@@ -22,6 +22,17 @@ use(chaiAsPromised);
 use(sinonChai);
 
 const ORG_ID = 'org-uuid-1';
+const BRAND_ID = 'brand-uuid-test';
+
+// Topics fetch chains two .eq() calls; make the chain itself thenable.
+function makeTopicChain(data, error = null) {
+  const chain = {
+    select: sinon.stub().returnsThis(),
+    eq: sinon.stub().returnsThis(),
+  };
+  chain.then = (resolve, reject) => Promise.resolve({ data, error }).then(resolve, reject);
+  return chain;
+}
 
 function makeChain(resolveWith) {
   return {
@@ -82,13 +93,9 @@ describe('llmo-config-db-sync/fetch', () => {
           error: null,
         }),
       };
-      const topicChain = {
-        select: sinon.stub().returnsThis(),
-        eq: sinon.stub().resolves({
-          data: [{ id: 'topic-uuid', topic_id: 'topic-1', name: 'Topic A', description: null, status: 'active' }],
-          error: null,
-        }),
-      };
+      const topicChain = makeTopicChain([
+        { id: 'topic-uuid', topic_id: 'topic-1', name: 'Topic A', description: null, status: 'active' },
+      ]);
       const promptChain = {
         select: sinon.stub().returnsThis(),
         eq: sinon.stub().returnsThis(),
@@ -106,13 +113,15 @@ describe('llmo-config-db-sync/fetch', () => {
       fromStub.withArgs('prompts').returns(promptChain);
       const client = { from: fromStub };
 
-      const result = await fetchExistingState(client, ORG_ID, log);
+      const result = await fetchExistingState(client, ORG_ID, BRAND_ID, log);
       expect(result.categoryLookup.get('cat-1')).to.equal('cat-uuid');
       expect(result.topicLookup.get('topic-1')).to.equal('topic-uuid');
       expect(result.topicNameLookup.get('Topic A')).to.equal('topic-uuid');
       expect(result.existingCats.get('cat-1')).to.exist;
       expect(result.existingTopics.get('topic-1')).to.exist;
       expect(result.existingPrompts.size).to.equal(2);
+      // Verify brand_id filter was applied to the topics chain
+      expect(topicChain.eq).to.have.been.calledWith('brand_id', BRAND_ID);
     });
 
     it('throws on categories fetch error', async () => {
@@ -120,10 +129,7 @@ describe('llmo-config-db-sync/fetch', () => {
         select: sinon.stub().returnsThis(),
         eq: sinon.stub().resolves({ data: null, error: { message: 'cat fail' } }),
       };
-      const topicChain = {
-        select: sinon.stub().returnsThis(),
-        eq: sinon.stub().resolves({ data: [], error: null }),
-      };
+      const topicChain = makeTopicChain([], null);
       const promptChain = {
         select: sinon.stub().returnsThis(),
         eq: sinon.stub().returnsThis(),
@@ -135,7 +141,7 @@ describe('llmo-config-db-sync/fetch', () => {
       fromStub.withArgs('prompts').returns(promptChain);
       const client = { from: fromStub };
 
-      await expect(fetchExistingState(client, ORG_ID, log))
+      await expect(fetchExistingState(client, ORG_ID, BRAND_ID, log))
         .to.be.rejectedWith('Failed to fetch categories: cat fail');
     });
 
@@ -144,10 +150,7 @@ describe('llmo-config-db-sync/fetch', () => {
         select: sinon.stub().returnsThis(),
         eq: sinon.stub().resolves({ data: [], error: null }),
       };
-      const topicChain = {
-        select: sinon.stub().returnsThis(),
-        eq: sinon.stub().resolves({ data: null, error: { message: 'topic fail' } }),
-      };
+      const topicChain = makeTopicChain(null, { message: 'topic fail' });
       const promptChain = {
         select: sinon.stub().returnsThis(),
         eq: sinon.stub().returnsThis(),
@@ -159,7 +162,7 @@ describe('llmo-config-db-sync/fetch', () => {
       fromStub.withArgs('prompts').returns(promptChain);
       const client = { from: fromStub };
 
-      await expect(fetchExistingState(client, ORG_ID, log))
+      await expect(fetchExistingState(client, ORG_ID, BRAND_ID, log))
         .to.be.rejectedWith('Failed to fetch topics: topic fail');
     });
 
@@ -168,10 +171,7 @@ describe('llmo-config-db-sync/fetch', () => {
         select: sinon.stub().returnsThis(),
         eq: sinon.stub().resolves({ data: null, error: null }),
       };
-      const topicChain = {
-        select: sinon.stub().returnsThis(),
-        eq: sinon.stub().resolves({ data: null, error: null }),
-      };
+      const topicChain = makeTopicChain(null, null);
       const promptChain = {
         select: sinon.stub().returnsThis(),
         eq: sinon.stub().returnsThis(),
@@ -183,7 +183,7 @@ describe('llmo-config-db-sync/fetch', () => {
       fromStub.withArgs('prompts').returns(promptChain);
       const client = { from: fromStub };
 
-      const result = await fetchExistingState(client, ORG_ID, log);
+      const result = await fetchExistingState(client, ORG_ID, BRAND_ID, log);
       expect(result.categoryLookup.size).to.equal(0);
       expect(result.topicLookup.size).to.equal(0);
       expect(result.existingPrompts.size).to.equal(0);

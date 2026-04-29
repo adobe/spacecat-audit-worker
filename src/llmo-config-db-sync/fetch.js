@@ -38,14 +38,15 @@ export async function fetchPromptsBatched(postgrestClient, organizationId, log) 
   return allRows;
 }
 
-export async function fetchExistingState(postgrestClient, organizationId, log) {
+export async function fetchExistingState(postgrestClient, organizationId, brandId, log) {
   const [catResult, topicResult, promptRows] = await Promise.all([
     postgrestClient.from('categories')
       .select('id,category_id,name,origin,status,created_by,updated_by')
       .eq('organization_id', organizationId),
     postgrestClient.from('topics')
       .select('id,topic_id,name,description,status,created_by,updated_by')
-      .eq('organization_id', organizationId),
+      .eq('organization_id', organizationId)
+      .eq('brand_id', brandId),
     fetchPromptsBatched(postgrestClient, organizationId, log),
   ]);
 

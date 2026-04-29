@@ -24,6 +24,7 @@ use(chaiAsPromised);
 use(sinonChai);
 
 const ORG_ID = 'org-uuid-1';
+const BRAND_ID = 'brand-uuid-test';
 const TOPIC_ID = '1413d7bd-eed6-4ac2-a782-1a3070100f11';
 const CAT_ID = '3c36acd9-528a-4f11-b50f-e43aad11e2db';
 
@@ -49,14 +50,15 @@ describe('llmo-config-db-sync/sync-topics', () => {
 
   describe('buildTopicRows', () => {
     it('maps topics and aiTopics to rows', () => {
-      const rows = buildTopicRows(S3_CONFIG, ORG_ID);
+      const rows = buildTopicRows(S3_CONFIG, ORG_ID, BRAND_ID);
       expect(rows).to.have.length(2);
-      expect(rows.find((r) => r.topic_id === TOPIC_ID)).to.include({ name: 'Account Management', status: 'active' });
+      const row = rows.find((r) => r.topic_id === TOPIC_ID);
+      expect(row).to.include({ name: 'Account Management', status: 'active', brand_id: BRAND_ID });
     });
 
     it('handles missing topics/aiTopics gracefully', () => {
-      expect(buildTopicRows({}, ORG_ID)).to.deep.equal([]);
-      expect(buildTopicRows({ topics: null }, ORG_ID)).to.deep.equal([]);
+      expect(buildTopicRows({}, ORG_ID, BRAND_ID)).to.deep.equal([]);
+      expect(buildTopicRows({ topics: null }, ORG_ID, BRAND_ID)).to.deep.equal([]);
     });
   });
 
@@ -108,7 +110,7 @@ describe('llmo-config-db-sync/sync-topics', () => {
       const topicNameLookup = new Map();
 
       await ensureDeletedRefEntities(
-        client, config, ORG_ID, categoryLookup, topicLookup, topicNameLookup, log,
+        client, config, ORG_ID, BRAND_ID, categoryLookup, topicLookup, topicNameLookup, log,
       );
 
       expect(categoryLookup.size).to.equal(1);
@@ -141,7 +143,7 @@ describe('llmo-config-db-sync/sync-topics', () => {
       const client = { from: fromStub };
 
       const categoryLookup = new Map();
-      await ensureDeletedRefEntities(client, config, ORG_ID, categoryLookup, new Map(), new Map(), log);
+      await ensureDeletedRefEntities(client, config, ORG_ID, BRAND_ID, categoryLookup, new Map(), new Map(), log);
       const upsertedCat = upsertChain.upsert.args[0][0][0];
       expect(upsertedCat.name).to.equal('missing-cat-id');
     });
@@ -175,7 +177,7 @@ describe('llmo-config-db-sync/sync-topics', () => {
       const categoryLookup = new Map();
       const topicLookup = new Map();
       const topicNameLookup = new Map();
-      await ensureDeletedRefEntities(client, config, ORG_ID, categoryLookup, topicLookup, topicNameLookup, log);
+      await ensureDeletedRefEntities(client, config, ORG_ID, BRAND_ID, categoryLookup, topicLookup, topicNameLookup, log);
       expect(categoryLookup.size).to.equal(0);
       expect(topicLookup.size).to.equal(0);
     });
@@ -195,7 +197,7 @@ describe('llmo-config-db-sync/sync-topics', () => {
       const categoryLookup = new Map([[CAT_ID, 'cat-uuid']]);
       const topicNameLookup = new Map([['Known Topic', 'topic-uuid']]);
 
-      await ensureDeletedRefEntities(client, config, ORG_ID, categoryLookup, new Map(), topicNameLookup, log);
+      await ensureDeletedRefEntities(client, config, ORG_ID, BRAND_ID, categoryLookup, new Map(), topicNameLookup, log);
       expect(client.from).to.not.have.been.called;
     });
 
@@ -216,7 +218,7 @@ describe('llmo-config-db-sync/sync-topics', () => {
       };
       const client = { from: sinon.stub().returns(upsertChain) };
 
-      await expect(ensureDeletedRefEntities(client, config, ORG_ID, new Map(), new Map(), new Map(), log))
+      await expect(ensureDeletedRefEntities(client, config, ORG_ID, BRAND_ID, new Map(), new Map(), new Map(), log))
         .to.be.rejectedWith('Failed to upsert deleted-ref categories');
     });
 
@@ -239,7 +241,7 @@ describe('llmo-config-db-sync/sync-topics', () => {
       };
       const client = { from: sinon.stub().returns(topicUpsertChain) };
 
-      await expect(ensureDeletedRefEntities(client, config, ORG_ID, categoryLookup, new Map(), new Map(), log))
+      await expect(ensureDeletedRefEntities(client, config, ORG_ID, BRAND_ID, categoryLookup, new Map(), new Map(), log))
         .to.be.rejectedWith('Failed to upsert deleted-ref topics');
     });
 
@@ -255,7 +257,7 @@ describe('llmo-config-db-sync/sync-topics', () => {
         },
       };
       const client = { from: sinon.stub() };
-      await ensureDeletedRefEntities(client, config, ORG_ID, new Map(), new Map(), new Map(), log, true);
+      await ensureDeletedRefEntities(client, config, ORG_ID, BRAND_ID, new Map(), new Map(), new Map(), log, true);
       expect(client.from).to.not.have.been.called;
     });
   });
@@ -273,7 +275,7 @@ describe('llmo-config-db-sync/sync-topics', () => {
       const topicLookup = new Map();
       const topicNameLookup = new Map();
 
-      const stats = await syncTopics(client, S3_CONFIG, ORG_ID, new Map(), topicLookup, topicNameLookup, log);
+      const stats = await syncTopics(client, S3_CONFIG, ORG_ID, BRAND_ID, new Map(), topicLookup, topicNameLookup, log);
       expect(stats.inserted).to.equal(2);
       expect(topicLookup.get(TOPIC_ID)).to.equal('topic-uuid');
       expect(topicNameLookup.get('Account Management')).to.equal('topic-uuid');
@@ -288,7 +290,7 @@ describe('llmo-config-db-sync/sync-topics', () => {
       const topicLookup = new Map();
       const topicNameLookup = new Map();
 
-      await syncTopics(client, S3_CONFIG, ORG_ID, new Map(), topicLookup, topicNameLookup, log);
+      await syncTopics(client, S3_CONFIG, ORG_ID, BRAND_ID, new Map(), topicLookup, topicNameLookup, log);
       expect(topicLookup.size).to.equal(0);
     });
 
@@ -298,14 +300,14 @@ describe('llmo-config-db-sync/sync-topics', () => {
         ['ai-topic-1', { topic_id: 'ai-topic-1', name: 'AI Topic', description: null, status: 'active' }],
       ]);
       const client = { from: sinon.stub() };
-      const stats = await syncTopics(client, S3_CONFIG, ORG_ID, existingTopics, new Map(), new Map(), log);
+      const stats = await syncTopics(client, S3_CONFIG, ORG_ID, BRAND_ID, existingTopics, new Map(), new Map(), log);
       expect(stats.unchanged).to.equal(2);
       expect(client.from).to.not.have.been.called;
     });
 
     it('skips DB writes in dry-run mode', async () => {
       const client = { from: sinon.stub() };
-      await syncTopics(client, S3_CONFIG, ORG_ID, new Map(), new Map(), new Map(), log, true);
+      await syncTopics(client, S3_CONFIG, ORG_ID, BRAND_ID, new Map(), new Map(), new Map(), log, true);
       expect(client.from).to.not.have.been.called;
     });
 
@@ -316,7 +318,7 @@ describe('llmo-config-db-sync/sync-topics', () => {
       };
       const client = { from: sinon.stub().returns(upsertChain) };
 
-      await expect(syncTopics(client, S3_CONFIG, ORG_ID, new Map(), new Map(), new Map(), log))
+      await expect(syncTopics(client, S3_CONFIG, ORG_ID, BRAND_ID, new Map(), new Map(), new Map(), log))
         .to.be.rejectedWith('Failed to upsert topics');
     });
   });
