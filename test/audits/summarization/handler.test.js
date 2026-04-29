@@ -754,6 +754,29 @@ describe('Summarization Handler', () => {
       expect(pageUrls).not.to.include('https://adobe.com/page3');
     });
 
+    it('should send all pages when Opportunity is not in dataAccess (LLMO-4454)', async () => {
+      const mockDetectExistingContent = sandbox.stub().resolves(new Map([
+        ['https://adobe.com/page1', { hasSummary: false, hasKeyPoints: false, contentHash: 'h1' }],
+        ['https://adobe.com/page2', { hasSummary: false, hasKeyPoints: false, contentHash: 'h2' }],
+        ['https://adobe.com/page3', { hasSummary: false, hasKeyPoints: false, contentHash: 'h3' }],
+      ]));
+
+      context.s3Client = {};
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+      context.dataAccess = { ...context.dataAccess, Opportunity: undefined };
+
+      const handler = await esmock('../../../src/summarization/handler.js', {
+        '../../../src/summarization/existing-content-detector.js': { detectExistingContent: mockDetectExistingContent },
+      });
+
+      const result = await handler.sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.pages).to.have.lengthOf(3);
+    });
+
     it('should gracefully handle when fetching opportunity hashes fails (LLMO-4454)', async () => {
       const mockDetectExistingContent = sandbox.stub().resolves(new Map([
         ['https://adobe.com/page1', { hasSummary: false, hasKeyPoints: false, contentHash: 'h1' }],

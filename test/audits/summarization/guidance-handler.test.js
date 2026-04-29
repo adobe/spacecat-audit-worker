@@ -597,6 +597,23 @@ describe('summarization guidance handler', () => {
     expect(syncArgs.scrapedUrlsSet).to.be.null;
   });
 
+  it('should handle audit without getAuditResult method gracefully (LLMO-4454)', async () => {
+    const legacyAudit = { auditId: 'audit-id' };
+    Audit.findById.resolves(legacyAudit);
+
+    const message = {
+      siteId: dummySite.getId(),
+      auditId: legacyAudit.auditId,
+      data: { presignedUrl: 'https://s3.aws.com/summaries.json' },
+    };
+
+    await handler(message, context);
+
+    const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+    expect(syncArgs.scrapedUrlsSet).to.be.null;
+    expect(syncArgs.newData[0].contentHash).to.be.null;
+  });
+
   it('should embed contentHash from urlToContentHash in suggestion data (LLMO-4454)', async () => {
     const contentHash = 'test-content-hash-abc123';
     dummyAudit.getAuditResult = sinon.stub().returns({
