@@ -573,10 +573,12 @@ describe('collectCWVDataAndImportCode Tests', () => {
     });
 
     it('calls processAutoSuggest when suggestions have no guidance', async () => {
-      // Mock suggestions without guidance (empty issues array)
+      // Mock suggestions without guidance (empty issues array). Include a failing metric
+      // on each so the auto-suggest skip ("no failing CWV metrics") doesn't drop them.
+      const failingMetrics = [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }];
       const mockSuggestions = [
-        { getId: () => 'sugg-1', getData: () => ({ type: 'url', url: 'test1', issues: [] }), getStatus: () => 'NEW' },
-        { getId: () => 'sugg-2', getData: () => ({ type: 'url', url: 'test2', issues: [] }), getStatus: () => 'NEW' }
+        { getId: () => 'sugg-1', getData: () => ({ type: 'url', url: 'test1', issues: [], metrics: failingMetrics }), getStatus: () => 'NEW' },
+        { getId: () => 'sugg-2', getData: () => ({ type: 'url', url: 'test2', issues: [], metrics: failingMetrics }), getStatus: () => 'NEW' }
       ];
       
       // Setup opportunity with mock suggestions before the function call
@@ -687,25 +689,29 @@ describe('collectCWVDataAndImportCode Tests', () => {
     });
 
     it('calls processAutoSuggest when some suggestions have guidance and some do not', async () => {
-      // Mock mixed suggestions - some with guidance, some without
+      // Mock mixed suggestions - some with guidance, some without. Include a failing metric
+      // on the no-guidance one so the auto-suggest skip doesn't drop it.
+      const failingMetrics = [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }];
       const mockSuggestions = [
         {
           getId: () => 'sugg-1',
-          getData: () => ({ 
-            type: 'url', 
+          getData: () => ({
+            type: 'url',
             url: 'test1',
             issues: [
               { type: 'lcp', value: '# LCP Optimization...' }
-            ]
+            ],
+            metrics: failingMetrics,
           }),
           getStatus: () => 'NEW'
         },
         {
           getId: () => 'sugg-2',
-          getData: () => ({ 
-            type: 'url', 
+          getData: () => ({
+            type: 'url',
             url: 'test2',
-            issues: [] // No guidance (empty issues array)
+            issues: [], // No guidance (empty issues array)
+            metrics: failingMetrics,
           }),
           getStatus: () => 'NEW'
         }

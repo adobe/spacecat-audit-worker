@@ -167,6 +167,15 @@ export async function processAutoSuggest(context, opportunity, site) {
       const firstMetrics = allMetrics[0] || {};
       const { failingMetrics, cwvMetricValues } = getFailingMetricInfo(allMetrics);
 
+      // Defense-in-depth: hasFailingMetrics upstream should already exclude these,
+      // but if a future code path bypasses that filter we don't want Mystique to
+      // generate guidance for an all-green page.
+      if (failingMetrics.length === 0) {
+        log.info(`[audit-worker-cwv] siteId: ${siteId} | Skipping suggestionId: ${suggestionId} - no failing CWV metrics`);
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
       log.debug(`[audit-worker-cwv] siteId: ${siteId} | Sending CWV suggestion for auto-suggest, suggestionId: ${suggestionId}, url: ${url}, failingMetrics: ${failingMetrics.join(',')}`);
 
       const sqsMessage = {

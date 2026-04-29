@@ -10,9 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-import { expect } from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
+
+use(sinonChai);
 
 describe('CWV Auto-Suggest', () => {
   let processAutoSuggest;
@@ -76,9 +79,9 @@ describe('CWV Auto-Suggest', () => {
             url: 'https://example.com/page1',
             metrics: [{
               deviceType: 'mobile',
-              lcp: 2500,
-              cls: 0.1,
-              inp: 200,
+              lcp: 3500, // > 2500 threshold
+              cls: 0.2,  // > 0.1 threshold
+              inp: 300,  // > 200 threshold
             }],
             issues: [],
           }),
@@ -146,7 +149,7 @@ describe('CWV Auto-Suggest', () => {
           getData: () => ({
             type: 'url',
             url: 'https://example.com/page1',
-            metrics: [{ deviceType: 'mobile' }],
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
             issues: [],
           }),
         }]),
@@ -206,7 +209,7 @@ describe('CWV Auto-Suggest', () => {
           getData: () => ({
             type: 'url',
             url: 'https://example.com/page1',
-            metrics: [{ deviceType: 'mobile' }],
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
             issues: [],
           }),
         }]),
@@ -237,7 +240,7 @@ describe('CWV Auto-Suggest', () => {
             getData: () => ({
               type: 'group',
               pattern: 'https://example.com/products/*',
-              metrics: [{ deviceType: 'mobile' }],
+              metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
               issues: [],
             }),
           },
@@ -247,7 +250,7 @@ describe('CWV Auto-Suggest', () => {
             getData: () => ({
               type: 'url',
               url: 'https://example.com/page1',
-              metrics: [{ deviceType: 'desktop' }],
+              metrics: [{ deviceType: 'desktop', lcp: 3500, cls: 0.05, inp: 100 }],
               issues: [],
             }),
           },
@@ -277,7 +280,7 @@ describe('CWV Auto-Suggest', () => {
           getData: () => ({
             type: 'url',
             url: 'https://example.com/page1',
-            metrics: [{ deviceType: 'mobile' }],
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
             issues: [],
           }),
         }]),
@@ -301,7 +304,7 @@ describe('CWV Auto-Suggest', () => {
           getData: () => ({
             type: 'url',
             url: 'https://example.com/page1',
-            metrics: [{ deviceType: 'mobile' }],
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
             issues: [{ type: 'lcp', value: '# LCP Optimization...' }],
           }),
         }]),
@@ -324,7 +327,7 @@ describe('CWV Auto-Suggest', () => {
           getData: () => ({
             type: 'url',
             url: 'https://example.com/page1',
-            metrics: [{ deviceType: 'mobile' }],
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
             issues: [],
           }),
         }]),
@@ -348,7 +351,7 @@ describe('CWV Auto-Suggest', () => {
             getData: () => ({
               type: 'url',
               url: 'https://example.com/page1',
-              metrics: [{ deviceType: 'mobile' }],
+              metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
               issues: [],
             }),
           },
@@ -358,7 +361,7 @@ describe('CWV Auto-Suggest', () => {
             getData: () => ({
               type: 'url',
               url: 'https://example.com/page2',
-              metrics: [{ deviceType: 'desktop' }],
+              metrics: [{ deviceType: 'desktop', lcp: 3500, cls: 0.05, inp: 100 }],
               issues: [],
             }),
           },
@@ -386,7 +389,7 @@ describe('CWV Auto-Suggest', () => {
           getData: () => ({
             type: 'url',
             url: 'https://example.com/page1',
-            metrics: [{ deviceType: 'mobile' }],
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
             issues: [],
           }),
         }]),
@@ -413,7 +416,7 @@ describe('CWV Auto-Suggest', () => {
           getData: () => ({
             type: 'url',
             url: 'https://example.com/page1',
-            metrics: [{ deviceType: 'mobile' }],
+            metrics: [{ deviceType: 'mobile', lcp: 3500, cls: 0.05, inp: 100 }],
             issues: [],
           }),
         }]),
@@ -499,6 +502,89 @@ describe('CWV Auto-Suggest', () => {
       const message = sqsStub.firstCall.args[1];
       expect(message.data.failing_metrics).to.deep.equal(['lcp']);
       expect(message.data.cwv_metric_values).to.deep.equal({ lcp: 4500 });
+    });
+
+    it('should skip suggestions with no metrics field at all without crashing', async () => {
+      // Exercises the `metrics || []` / `metrics[0] || {}` fallbacks when data.metrics is absent.
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-no-metrics',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/no-metrics',
+            issues: [],
+            // no metrics field
+          }),
+        }]),
+      };
+
+      await processAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.called).to.be.false;
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Skipping suggestionId: sugg-no-metrics - no failing CWV metrics/),
+      );
+    });
+
+    it('should default device_type to mobile when deviceType is missing', async () => {
+      // Exercises the `firstMetrics.deviceType || 'mobile'` fallback.
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-no-device',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/no-device',
+            metrics: [{ lcp: 3500 }], // failing, but no deviceType
+            issues: [],
+          }),
+        }]),
+      };
+
+      await processAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.calledOnce).to.be.true;
+      expect(sqsStub.firstCall.args[1].data.device_type).to.equal('mobile');
+    });
+
+    it('should skip suggestions whose metrics are all green (defense-in-depth)', async () => {
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/all-green',
+            metrics: [{
+              deviceType: 'mobile',
+              lcp: 1200, // < 2500
+              cls: 0.05, // < 0.1
+              inp: 100,  // < 200
+            }],
+            issues: [],
+          }),
+        }]),
+      };
+
+      await processAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.called).to.be.false;
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Skipping suggestionId: sugg-001 - no failing CWV metrics/),
+      );
     });
   });
 
