@@ -12,6 +12,14 @@
 
 import { ESTIMATED_CPC } from './guidance-opportunity-mapper.js';
 
+// Minimum sampled bounce events required for the bounce-rate signal to be
+// statistically credible.
+const MIN_BOUNCES = 25;
+
+// Absolute bounce-rate floor below which a path is not surfaced regardless of
+// how high the channel baseline is.
+const ABSOLUTE_BOUNCE_RATE_FLOOR = 0.50;
+
 /**
  * @param {Object} params - Template parameters
  * @param {string} params.siteId - Site ID
@@ -69,10 +77,13 @@ candidates AS (
     JOIN source_stats ss
       ON p.trf_channel = ss.trf_channel
     WHERE p.pageviews >= ${pageViewThreshold}
-      AND p.bounces >= 25
-      AND CAST(p.bounces AS DOUBLE) / NULLIF(p.row_count, 0) >= GREATEST(ss.channel_bounce_rate, 0.50)
+      AND p.bounces >= ${MIN_BOUNCES}
+      AND CAST(p.bounces AS DOUBLE) / NULLIF(p.row_count, 0) >= GREATEST(ss.channel_bounce_rate, ${ABSOLUTE_BOUNCE_RATE_FLOOR})
 ),
 deduped AS (
+    -- A path can qualify on multiple channels; keep the slice with the highest
+    -- projected traffic lost so the report attributes each path to where it
+    -- has the most impact.
     SELECT
         *,
         ROW_NUMBER() OVER (
