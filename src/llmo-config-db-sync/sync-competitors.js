@@ -27,7 +27,7 @@ export function buildCompetitorRows(config, brandId, log) {
       aliases: c.aliases || [],
       regions,
       url: (c.urls || [])[0] || null,
-      created_by: c.updatedBy || null,
+      created_by: c.createdBy || null,
       updated_by: c.updatedBy || null,
     };
   });

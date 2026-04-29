@@ -12,9 +12,14 @@
 
 /* eslint-env mocha */
 
-import { expect } from 'chai';
+import { expect, use } from 'chai';
+import chaiAsPromised from 'chai-as-promised';
+import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
 import { fetchPromptsBatched, fetchExistingState } from '../../../src/llmo-config-db-sync/fetch.js';
+
+use(chaiAsPromised);
+use(sinonChai);
 
 const ORG_ID = 'org-uuid-1';
 
@@ -53,12 +58,11 @@ describe('llmo-config-db-sync/fetch', () => {
       expect(rows).to.have.length(5001);
     });
 
-    it('logs error and stops on fetch failure', async () => {
+    it('throws on fetch failure', async () => {
       const chain = makeChain({ data: null, error: { message: 'DB error' } });
       const client = { from: sinon.stub().returns(chain) };
-      const rows = await fetchPromptsBatched(client, ORG_ID, log);
-      expect(rows).to.have.length(0);
-      expect(log.error).to.have.been.calledWithMatch(/Failed to fetch prompts/);
+      await expect(fetchPromptsBatched(client, ORG_ID, log))
+        .to.be.rejectedWith('Failed to fetch prompts at offset 0: DB error');
     });
 
     it('handles null data with no error gracefully', async () => {
@@ -109,6 +113,54 @@ describe('llmo-config-db-sync/fetch', () => {
       expect(result.existingCats.get('cat-1')).to.exist;
       expect(result.existingTopics.get('topic-1')).to.exist;
       expect(result.existingPrompts.size).to.equal(2);
+    });
+
+    it('throws on categories fetch error', async () => {
+      const catChain = {
+        select: sinon.stub().returnsThis(),
+        eq: sinon.stub().resolves({ data: null, error: { message: 'cat fail' } }),
+      };
+      const topicChain = {
+        select: sinon.stub().returnsThis(),
+        eq: sinon.stub().resolves({ data: [], error: null }),
+      };
+      const promptChain = {
+        select: sinon.stub().returnsThis(),
+        eq: sinon.stub().returnsThis(),
+        range: sinon.stub().resolves({ data: [], error: null }),
+      };
+      const fromStub = sinon.stub();
+      fromStub.withArgs('categories').returns(catChain);
+      fromStub.withArgs('topics').returns(topicChain);
+      fromStub.withArgs('prompts').returns(promptChain);
+      const client = { from: fromStub };
+
+      await expect(fetchExistingState(client, ORG_ID, log))
+        .to.be.rejectedWith('Failed to fetch categories: cat fail');
+    });
+
+    it('throws on topics fetch error', async () => {
+      const catChain = {
+        select: sinon.stub().returnsThis(),
+        eq: sinon.stub().resolves({ data: [], error: null }),
+      };
+      const topicChain = {
+        select: sinon.stub().returnsThis(),
+        eq: sinon.stub().resolves({ data: null, error: { message: 'topic fail' } }),
+      };
+      const promptChain = {
+        select: sinon.stub().returnsThis(),
+        eq: sinon.stub().returnsThis(),
+        range: sinon.stub().resolves({ data: [], error: null }),
+      };
+      const fromStub = sinon.stub();
+      fromStub.withArgs('categories').returns(catChain);
+      fromStub.withArgs('topics').returns(topicChain);
+      fromStub.withArgs('prompts').returns(promptChain);
+      const client = { from: fromStub };
+
+      await expect(fetchExistingState(client, ORG_ID, log))
+        .to.be.rejectedWith('Failed to fetch topics: topic fail');
     });
 
     it('handles null data from categories and topics queries', async () => {

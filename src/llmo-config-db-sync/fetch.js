@@ -25,8 +25,7 @@ export async function fetchPromptsBatched(postgrestClient, organizationId, log) 
       .range(offset, offset + FETCH_BATCH_SIZE - 1);
 
     if (error) {
-      log.error(`Failed to fetch prompts at offset ${offset}: ${error.message}`);
-      break;
+      throw new Error(`Failed to fetch prompts at offset ${offset}: ${error.message}`);
     }
     const rows = data || [];
     allRows.push(...rows);
@@ -49,6 +48,13 @@ export async function fetchExistingState(postgrestClient, organizationId, log) {
       .eq('organization_id', organizationId),
     fetchPromptsBatched(postgrestClient, organizationId, log),
   ]);
+
+  if (catResult.error) {
+    throw new Error(`Failed to fetch categories: ${catResult.error.message}`);
+  }
+  if (topicResult.error) {
+    throw new Error(`Failed to fetch topics: ${topicResult.error.message}`);
+  }
 
   const categoryLookup = new Map();
   const existingCats = new Map();

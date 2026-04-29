@@ -125,7 +125,7 @@ export function collectPrompts(
         status: 'ignored',
         origin: 'human',
         source: p.source || 'config',
-        created_by: p.updatedBy || null,
+        created_by: p.createdBy || null,
         updated_by: p.updatedBy || null,
       });
     });

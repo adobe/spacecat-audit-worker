@@ -38,12 +38,6 @@ export function buildTopicCategoryRows(config, topicLookup, categoryLookup) {
   return rows;
 }
 
-export function buildTopicPromptRows(promptsWithIds) {
-  return promptsWithIds
-    .filter((p) => p.topic_id !== null && p.topic_id !== undefined)
-    .map((p) => ({ topic_id: p.topic_id, prompt_id: p.id }));
-}
-
 export async function syncTopicCategories(
   postgrestClient,
   config,
@@ -80,15 +74,23 @@ export async function syncTopicCategories(
   if (orphanRows.length > 0) {
     log.info(`${tag}[topic_categories] Deleting ${orphanRows.length} orphaned rows`);
     if (!dryRun) {
-      for (const orphan of orphanRows) {
+      const byTopic = new Map();
+      orphanRows.forEach(({ topic_id: tId, category_id: cId }) => {
+        if (!byTopic.has(tId)) {
+          byTopic.set(tId, []);
+        }
+        byTopic.get(tId).push(cId);
+      });
+
+      for (const [topicId, categoryIds] of byTopic) {
         // eslint-disable-next-line no-await-in-loop
         const { error: delError } = await postgrestClient
           .from('topic_categories')
           .delete()
-          .eq('topic_id', orphan.topic_id)
-          .eq('category_id', orphan.category_id);
+          .eq('topic_id', topicId)
+          .in('category_id', categoryIds);
         if (delError) {
-          throw new Error(`Failed to delete topic_categories row: ${delError.message}`);
+          throw new Error(`Failed to delete topic_categories for topic ${topicId}: ${delError.message}`);
         }
       }
     }
@@ -104,70 +106,5 @@ export async function syncTopicCategories(
   }
 
   log.info(`${tag}topic_categories: ${toInsert.length} inserted, ${orphanRows.length} deleted`);
-  return { inserted: toInsert.length, deleted: orphanRows.length };
-}
-
-export async function syncTopicPrompts(
-  postgrestClient,
-  organizationId,
-  promptsWithIds,
-  log,
-  dryRun = false,
-) {
-  const tag = dryRun ? '[DRY RUN] ' : '';
-
-  const { data: existingData, error: fetchError } = await postgrestClient
-    .from('topic_prompts')
-    .select('topic_id,prompt_id')
-    .eq('organization_id', organizationId);
-  if (fetchError) {
-    throw new Error(`Failed to fetch topic_prompts: ${fetchError.message}`);
-  }
-
-  const existingKeys = new Set((existingData || []).map((r) => `${r.topic_id}\0${r.prompt_id}`));
-  const desiredRows = buildTopicPromptRows(promptsWithIds);
-  const desiredKeys = new Set(desiredRows.map((r) => `${r.topic_id}\0${r.prompt_id}`));
-
-  const toInsert = desiredRows.filter((r) => !existingKeys.has(`${r.topic_id}\0${r.prompt_id}`));
-  const orphanRows = (existingData || []).filter((r) => !desiredKeys.has(`${r.topic_id}\0${r.prompt_id}`));
-
-  log.info(`[DIFF] topic_prompts: ${toInsert.length} to insert, ${orphanRows.length} to delete`);
-
-  if (orphanRows.length > 0) {
-    log.info(`${tag}[topic_prompts] Deleting ${orphanRows.length} orphaned rows`);
-    if (!dryRun) {
-      // Group orphans by topic_id for bulk delete
-      const byTopic = new Map();
-      orphanRows.forEach(({ topic_id: tId, prompt_id: pId }) => {
-        if (!byTopic.has(tId)) {
-          byTopic.set(tId, []);
-        }
-        byTopic.get(tId).push(pId);
-      });
-
-      for (const [topicId, promptIds] of byTopic) {
-        // eslint-disable-next-line no-await-in-loop
-        const { error: delError } = await postgrestClient
-          .from('topic_prompts')
-          .delete()
-          .eq('topic_id', topicId)
-          .in('prompt_id', promptIds);
-        if (delError) {
-          throw new Error(`Failed to delete topic_prompts for topic ${topicId}: ${delError.message}`);
-        }
-      }
-    }
-  }
-
-  if (toInsert.length > 0 && !dryRun) {
-    const { error: upsertError } = await postgrestClient
-      .from('topic_prompts')
-      .upsert(toInsert, { onConflict: 'topic_id,prompt_id' });
-    if (upsertError) {
-      throw new Error(`Failed to upsert topic_prompts: ${upsertError.message}`);
-    }
-  }
-
-  log.info(`${tag}topic_prompts: ${toInsert.length} inserted, ${orphanRows.length} deleted`);
   return { inserted: toInsert.length, deleted: orphanRows.length };
 }

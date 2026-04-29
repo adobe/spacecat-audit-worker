@@ -24,7 +24,7 @@ export function buildBrandAliasRows(config, brandId) {
         brand_id: brandId,
         alias,
         regions,
-        created_by: entry.updatedBy || null,
+        created_by: entry.createdBy || null,
         updated_by: entry.updatedBy || null,
       });
     });

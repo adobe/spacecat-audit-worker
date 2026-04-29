@@ -38,7 +38,7 @@ sync authority, and records the rationale.
 | `brands.aliases` | `brand_aliases` | **PG-authoritative — added in this PR** | DRS uses brand aliases for alias-based brand matching; returning empty breaks matching for all enabled orgs. |
 | `competitors.competitors` | `competitors` | **PG-authoritative — added in this PR** | DRS uses competitor data for competitor presence analysis; absence breaks the feature on all enabled orgs. |
 | topic→category relation (`topics[*].category`) | `topic_categories` | **PG-authoritative — added in this PR** | DRS joins via this junction; empty junction means every topic-category query returns zero results. |
-| topic↔prompt relation | `topic_prompts` | **PG-authoritative — added in this PR (provisional)** | Populated for parity. See LLMO-4465 for the open question of whether this junction is still needed. If LLMO-4465 determines it is redundant, this sync step can be removed. |
+| topic↔prompt relation | `topic_prompts` | **DB-trigger-authoritative — not synced from worker** | The `prompts_sync_junction_tables` trigger on `prompts` (LLMO-4288) auto-populates `topic_prompts` and `category_prompts` from each prompt's `topic_id` / `category_id` columns on every insert/update. The worker writing to `topic_prompts` would be redundant and risks drift with the trigger. See LLMO-4465 for the open question of whether `topic_prompts` is still needed at all. |
 | `entities` | _(no mapping)_ | **Not synced — S3-authoritative / pending** | The field is `{}` in all observed configs and no DRS query targets this key. No Postgres table is defined. Revisit if a concrete consumer appears. |
 | `experimentationTopics` | _(no mapping)_ | **Not synced — unused** | Not present in observed configs; excluded from scope by PR #2210 and confirmed unused. Re-evaluate when an experiment pipeline consumer exists. |
 | `cdnBucketConfig` | _(N/A)_ | **S3-authoritative** | Read by the CDN log ingestion pipeline directly from S3. No Postgres consumer; keeping it S3-side is intentional. |
@@ -62,11 +62,37 @@ Config shape: `competitors.competitors[].urls: string[]` (array). DB column
 warning is logged when more than one URL is present. This is a known schema
 mismatch and may be resolved in a future migration.
 
+### Audit fields (`created_by` / `updated_by`)
+
+The S3 config carries `updatedBy` on most entities (brands, competitors,
+prompts) but no `createdBy` field. The sync writes:
+
+- `updated_by` ← `entry.updatedBy || null` (truthful: this is the last editor)
+- `created_by` ← `entry.createdBy || null` (currently always `null`, since the
+  config field doesn't exist; reads through if it's ever added)
+
+We deliberately do **not** write `updatedBy` into `created_by` even though it
+would be non-null more often: an `updatedBy` value attributed as `created_by`
+is misleading attribution. NULL is honest — "we don't know who created this
+from the config". All five sync target tables (`brand_aliases`, `competitors`,
+`prompts`, `categories`, `topics`) allow NULL on `created_by`.
+
+Note: this is a per-run upsert, so any out-of-band manual population of
+`created_by` will be overwritten on the next sync. If `created_by` ever needs
+to be write-once, that's a separate change (split insert/update paths or
+column-scoped upsert).
+
 ### Junctions
 
-`topic_categories` and `topic_prompts` are derived from the config on every
-sync run. Orphaned rows (topic changed category; prompt moved topic) are
-explicitly deleted before inserting the desired set.
+`topic_categories` is derived from the config on every sync run. Orphaned rows
+(topic changed category) are deleted in batches grouped by `topic_id` before
+inserting the desired set.
+
+`topic_prompts` is **not** written by the worker. The
+`prompts_sync_junction_tables` trigger on the `prompts` table maintains it
+automatically (LLMO-4288). Because the worker uses `ON CONFLICT DO UPDATE`
+upserts (which fire `AFTER UPDATE` triggers), every prompt write keeps the
+junction in sync.
 
 ---
 

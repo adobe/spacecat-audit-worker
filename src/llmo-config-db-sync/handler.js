@@ -23,7 +23,7 @@ import { syncTopics, ensureDeletedRefEntities } from './sync-topics.js';
 import { syncPrompts } from './sync-prompts.js';
 import { syncBrandAliases } from './sync-brand-aliases.js';
 import { syncCompetitors } from './sync-competitors.js';
-import { syncTopicCategories, syncTopicPrompts } from './sync-junctions.js';
+import { syncTopicCategories } from './sync-junctions.js';
 
 export function isSyncEnabledForSite(siteId) {
   return ALLOWED_SITE_IDS.includes(siteId);
@@ -132,22 +132,8 @@ export default async function llmoConfigDbSync(message, context) {
       dryRun,
     );
 
-    // Fetch prompts with internal IDs for junction sync
-    const { data: promptsWithIds = [] } = !dryRun
-      ? await postgrestClient
-        .from('prompts')
-        .select('id,topic_id')
-        .eq('organization_id', organizationId)
-        .not('topic_id', 'is', null)
-      : { data: [] };
-
-    const topicPromptStats = await syncTopicPrompts(
-      postgrestClient,
-      organizationId,
-      promptsWithIds,
-      log,
-      dryRun,
-    );
+    // topic_prompts is auto-synced by the prompts_sync_junction_tables DB trigger
+    // (LLMO-4288), so we do not write to it from the worker.
 
     const stats = {
       categories: categoryStats,
@@ -156,7 +142,6 @@ export default async function llmoConfigDbSync(message, context) {
       brandAliases: brandAliasStats,
       competitors: competitorStats,
       topicCategories: topicCategoryStats,
-      topicPrompts: topicPromptStats,
       ...(dryRun && { dryRun: true }),
     };
     log.info(`${tag}Config DB sync ${dryRun ? 'dry run' : ''} completed for site ${siteId}`, stats);
