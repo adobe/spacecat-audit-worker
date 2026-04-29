@@ -154,12 +154,14 @@ async function dispatchAnalyticsEvent({
     throw new Error('analytics queue is not configured');
   }
 
+  const pipelineId = 'agentic_traffic';
+  const siteId = site.getId();
   const message = {
     type: 'batch.completed',
     correlationId: batchId,
-    pipeline_id: 'agentic_traffic',
+    pipeline_id: pipelineId,
     s3_uri: bundleUri,
-    site_id: site.getId(),
+    site_id: siteId,
     start_date: trafficDate,
     end_date: trafficDate,
     row_count: rowCount,
@@ -169,12 +171,23 @@ async function dispatchAnalyticsEvent({
     message.org_id = site.getOrganizationId();
   }
 
-  await context.sqs.sendMessage(queueUrl, message);
+  // Analytics ingestion queue is FIFO with content-based deduplication
+  // disabled. Group key follows the (pipeline_id, site_id) convention from
+  // spacecat-infrastructure#480 so concurrent imports for the same scope
+  // serialize, while different sites/pipelines run in parallel. Dedup key
+  // is batchId — unique per attempt, replays inside the SQS 5-minute dedup
+  // window collapse.
+  const messageGroupId = `${pipelineId}:${siteId}`;
+  const messageDeduplicationId = batchId;
+
+  await context.sqs.sendMessage(queueUrl, message, messageGroupId, 0, messageDeduplicationId);
 
   return {
     queueUrl,
     messageType: message.type,
     pipelineId: message.pipeline_id,
+    messageGroupId,
+    messageDeduplicationId,
   };
 }
 

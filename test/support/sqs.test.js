@@ -234,6 +234,71 @@ describe('sqs', () => {
     }).with(sqsWrapper)({}, context);
   });
 
+  it('includes MessageDeduplicationId when an explicit msgDedupId is provided', async () => {
+    const message = { type: 'agentic_traffic', key: 'value' };
+    const queueUrl = 'https://sqs.us-east-1.amazonaws.com/123456789/analytics-queue.fifo';
+
+    nock('https://sqs.us-east-1.amazonaws.com')
+      .post('/')
+      .reply(200, (_, body) => {
+        const parsed = JSON.parse(body);
+        expect(parsed.MessageDeduplicationId).to.equal('batch-uuid-abc');
+        expect(parsed.MessageGroupId).to.equal('agentic_traffic:site-1');
+        return {
+          MessageId: 'message-id',
+          MD5OfMessageBody: crypto.createHash('md5').update(parsed.MessageBody, 'utf-8').digest('hex'),
+        };
+      });
+
+    await wrap(async (req, ctx) => {
+      await ctx.sqs.sendMessage(queueUrl, message, 'agentic_traffic:site-1', 0, 'batch-uuid-abc');
+    }).with(sqsWrapper)({}, context);
+  });
+
+  it('omits MessageDeduplicationId when no msgDedupId is provided', async () => {
+    const message = { type: 'agentic_traffic', key: 'value' };
+    const queueUrl = 'https://sqs.us-east-1.amazonaws.com/123456789/analytics-queue.fifo';
+
+    nock('https://sqs.us-east-1.amazonaws.com')
+      .post('/')
+      .reply(200, (_, body) => {
+        const parsed = JSON.parse(body);
+        expect(parsed.MessageDeduplicationId).to.be.undefined;
+        return {
+          MessageId: 'message-id',
+          MD5OfMessageBody: crypto.createHash('md5').update(parsed.MessageBody, 'utf-8').digest('hex'),
+        };
+      });
+
+    await wrap(async (req, ctx) => {
+      await ctx.sqs.sendMessage(queueUrl, message);
+    }).with(sqsWrapper)({}, context);
+  });
+
+  it('includes DedupID in log when msgDedupId is set', async () => {
+    const message = { type: 'agentic_traffic', key: 'value' };
+    const queueUrl = 'https://sqs.us-east-1.amazonaws.com/123456789/analytics-queue.fifo';
+    const logSpy = sandbox.spy(context.log, 'info');
+
+    nock('https://sqs.us-east-1.amazonaws.com')
+      .post('/')
+      .reply(200, (_, body) => {
+        const { MessageBody } = JSON.parse(body);
+        return {
+          MessageId: 'message-id',
+          MD5OfMessageBody: crypto.createHash('md5').update(MessageBody, 'utf-8').digest('hex'),
+        };
+      });
+
+    await wrap(async (req, ctx) => {
+      await ctx.sqs.sendMessage(queueUrl, message, 'agentic_traffic:site-1', 0, 'batch-uuid-abc');
+    }).with(sqsWrapper)({}, context);
+
+    expect(logSpy).to.have.been.calledWith(
+      'Success, message sent. Queue: analytics-queue.fifo, Type: agentic_traffic, MessageID: message-id, GroupID: agentic_traffic:site-1, DedupID: batch-uuid-abc',
+    );
+  });
+
   it('includes GroupID in log when MessageGroupId is set', async () => {
     const message = { type: 'accessibility', key: 'value' };
     const queueUrl = 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue';
