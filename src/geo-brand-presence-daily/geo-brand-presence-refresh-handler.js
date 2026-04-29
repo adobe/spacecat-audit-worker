@@ -35,7 +35,7 @@ import {
  */
 
 const AUDIT_NAME = 'GEO_BRAND_PRESENCE_DAILY_REFRESH';
-const RE_SHEET_NAME = /^brandpresence-(?<webSearchProvider>.+?)-w(?<week>\d{2})-(?<year>\d{4})(?:-\d+)?$/;
+const RE_SHEET_NAME = /^brandpresence-(?<webSearchProvider>.+?)-w(?<week>\d{2})-(?<year>\d{4})(?:-(?<dateSuffix>\d+))?$/;
 
 /* c8 ignore start */
 
@@ -282,9 +282,12 @@ export async function refreshGeoBrandPresenceDailyHandler(message, context) {
         log.warn(`%s: Skipping invalid sheet name ${sheetName} for auditId: ${auditId}, siteId: ${siteId}. Expected format: brandpresence-<webSearchProvider>-w<WW>-<YYYY>`, AUDIT_NAME);
         return false;
       }
-      const { webSearchProvider, week, year } = match.groups;
+      const {
+        webSearchProvider, week, year, dateSuffix,
+      } = match.groups;
+      const runFrequency = dateSuffix ? 'daily' : 'weekly';
 
-      log.debug(`%s: Sheet ${sheetName} parsed for auditId: ${auditId}, siteId: ${siteId}, provider: ${webSearchProvider}, week: ${week}, year: ${year}`, AUDIT_NAME);
+      log.debug(`%s: Sheet ${sheetName} parsed for auditId: ${auditId}, siteId: ${siteId}, provider: ${webSearchProvider}, week: ${week}, year: ${year}, runFrequency: ${runFrequency}`, AUDIT_NAME);
 
       log.info(`%s: Reading sheet from SharePoint for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName}, source: ${sourceFolder}`, AUDIT_NAME);
       const readStartTime = Date.now();
@@ -306,7 +309,7 @@ export async function refreshGeoBrandPresenceDailyHandler(message, context) {
           configVersion,
           week: +week,
           year: +year,
-          runFrequency: site.getConfig()?.getBrandPresenceCadence?.() ?? 'daily',
+          runFrequency,
           brand,
           imsOrgId,
         });

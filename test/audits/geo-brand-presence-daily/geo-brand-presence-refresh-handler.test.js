@@ -146,9 +146,9 @@ describe('Geo Brand Presence Daily Refresh Handler', () => {
     });
   }
 
-  const SHEET_W45 = '/data/llmo/brand-presence/latest/brandpresence-chatgpt-w45-2025.json';
-  const SHEET_W46 = '/data/llmo/brand-presence/latest/brandpresence-gemini-w46-2025.json';
-  const SHEET_OLD = '/data/llmo/brand-presence/latest/brandpresence-chatgpt-w40-2025.json';
+  const SHEET_W45 = '/data/llmo/brand-presence/latest/brandpresence-chatgpt-w45-2025-120125.json';
+  const SHEET_W46 = '/data/llmo/brand-presence/latest/brandpresence-gemini-w46-2025-130125.json';
+  const SHEET_OLD = '/data/llmo/brand-presence/latest/brandpresence-chatgpt-w40-2025-010125.json';
 
   const MESSAGE = {
     siteId: 'test-site-123',
