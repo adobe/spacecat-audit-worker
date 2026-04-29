@@ -25,6 +25,44 @@ const SCRAPE_AVAILABILITY_THRESHOLD = 0.5; // 50%
 const MAX_TOP_PAGES = 200;
 const MAX_PAGES_TO_MYSTIQUE = 100;
 
+/**
+ * Builds a map of URL → stored contentHash from the most recent suggestions
+ * for the site's active summarization opportunity.
+ * Returns an empty Map on any error or when no opportunity exists.
+ * @param {Object} context - Lambda context with dataAccess and log
+ * @param {Object} site - Site object
+ * @returns {Promise<Map<string, string>>}
+ */
+async function buildExistingHashMap(context, site) {
+  const { dataAccess, log } = context;
+  const { Opportunity } = dataAccess;
+  if (!Opportunity) {
+    return new Map();
+  }
+
+  try {
+    // 'NEW' is the only status for an active, unresolved summarization opportunity.
+    const opportunities = await Opportunity.allBySiteIdAndStatus(site.getId(), 'NEW');
+    const oppty = opportunities.find((o) => o.getType() === AUDIT_TYPE);
+    if (!oppty) {
+      return new Map();
+    }
+
+    const suggestions = await oppty.getSuggestions();
+    const hashMap = new Map();
+    for (const suggestion of suggestions) {
+      const data = suggestion.getData();
+      if (data?.url && data?.contentHash && !hashMap.has(data.url)) {
+        hashMap.set(data.url, data.contentHash);
+      }
+    }
+    return hashMap;
+  } catch (error) {
+    log.warn(`[SUMMARIZATION] Failed to fetch existing suggestion hashes: ${error.message}`);
+    return new Map();
+  }
+}
+
 async function getSummarizationInputUrls(context) {
   const { site, dataAccess, log } = context;
   const result = await getMergedAuditInputUrls({
@@ -207,8 +245,12 @@ export async function sendToMystique(context) {
   const scrapedUrls = availableUrls;
   const staticScrapedUrls = filterOutDynamicUrls(scrapedUrls);
 
-  // Pre-check: exclude pages that already have both summary and key points (LLMO-3493)
+  // Pre-check: exclude pages that already have both summary and key points (LLMO-3493),
+  // and exclude pages whose scraped content has not changed since the last suggestion was
+  // generated (LLMO-4454).
   let urlsToSend = staticScrapedUrls;
+  let urlToContentHash = {};
+
   if (s3Client && env?.S3_SCRAPER_BUCKET_NAME) {
     const existingContent = await detectExistingContent(
       s3Client,
@@ -216,13 +258,48 @@ export async function sendToMystique(context) {
       scrapeResultPaths,
       log,
     );
+
+    // LLMO-3493: exclude pages that already have both summary and key points in HTML
     urlsToSend = urlsToSend.filter((url) => {
       const detected = existingContent.get(url);
-      const hasBoth = detected?.hasSummary && detected?.hasKeyPoints;
-      return !hasBoth;
+      return !(detected?.hasSummary && detected?.hasKeyPoints);
     });
+
+    // LLMO-4454: exclude pages whose content hash matches the stored suggestion hash
+    const existingHashMap = await buildExistingHashMap(context, site);
+    const preHashFilterCount = urlsToSend.length;
+    urlsToSend = urlsToSend.filter((url) => {
+      const currentHash = existingContent.get(url)?.contentHash;
+      const storedHash = existingHashMap.get(url);
+      return !(currentHash && storedHash && currentHash === storedHash);
+    });
+    const unchangedCount = preHashFilterCount - urlsToSend.length;
+    if (unchangedCount > 0) {
+      log.info(`[SUMMARIZATION] Skipped ${unchangedCount} page(s) with unchanged content`);
+    }
+
+    urlsToSend = urlsToSend.slice(0, MAX_PAGES_TO_MYSTIQUE);
+
+    urlToContentHash = Object.fromEntries(
+      urlsToSend.map((url) => [url, existingContent.get(url)?.contentHash ?? null]),
+    );
+  } else {
+    urlsToSend = urlsToSend.slice(0, MAX_PAGES_TO_MYSTIQUE);
   }
-  urlsToSend = urlsToSend.slice(0, MAX_PAGES_TO_MYSTIQUE);
+
+  if (urlsToSend.length === 0) {
+    log.info('[SUMMARIZATION] No pages to send to Mystique after filtering');
+    return { status: 'complete' };
+  }
+
+  // Persist the sent URLs and their content hashes on the audit so the guidance
+  // handler can scope syncSuggestions correctly and store hashes with suggestions.
+  audit.setAuditResult({
+    ...auditResult,
+    scrapedUrlsSent: urlsToSend,
+    urlToContentHash,
+  });
+  await audit.save();
 
   const topPagesPayload = urlsToSend.map((url) => ({
     page_url: url,

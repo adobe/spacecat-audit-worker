@@ -98,7 +98,7 @@ describe('summarization guidance handler', () => {
     Audit = {
       findById: sinon.stub(),
     };
-    dummyAudit = { auditId: 'audit-id' };
+    dummyAudit = { auditId: 'audit-id', getAuditResult: sinon.stub().returns({}) };
     Audit.findById.resolves(dummyAudit);
 
     dummyOpportunity = {
@@ -561,6 +561,60 @@ describe('summarization guidance handler', () => {
     };
     const buildKeyResult = syncArgs.buildKey(testData);
     expect(buildKeyResult).to.equal('https://example.com/page1-h1-text');
+  });
+
+  it('should pass scrapedUrlsSet to syncSuggestions when scrapedUrlsSent is in audit result (LLMO-4454)', async () => {
+    const sentUrls = ['https://adobe.com/page1'];
+    dummyAudit.getAuditResult = sinon.stub().returns({
+      scrapedUrlsSent: sentUrls,
+      urlToContentHash: {},
+    });
+
+    const message = {
+      siteId: dummySite.getId(),
+      auditId: dummyAudit.auditId,
+      data: { presignedUrl: 'https://s3.aws.com/summaries.json' },
+    };
+
+    await handler(message, context);
+
+    const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+    expect(syncArgs.scrapedUrlsSet).to.deep.equal(new Set(sentUrls));
+  });
+
+  it('should pass null scrapedUrlsSet when audit has no scrapedUrlsSent (legacy, LLMO-4454)', async () => {
+    dummyAudit.getAuditResult = sinon.stub().returns({});
+
+    const message = {
+      siteId: dummySite.getId(),
+      auditId: dummyAudit.auditId,
+      data: { presignedUrl: 'https://s3.aws.com/summaries.json' },
+    };
+
+    await handler(message, context);
+
+    const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+    expect(syncArgs.scrapedUrlsSet).to.be.null;
+  });
+
+  it('should embed contentHash from urlToContentHash in suggestion data (LLMO-4454)', async () => {
+    const contentHash = 'test-content-hash-abc123';
+    dummyAudit.getAuditResult = sinon.stub().returns({
+      urlToContentHash: { 'https://adobe.com/page1': contentHash },
+      scrapedUrlsSent: ['https://adobe.com/page1'],
+    });
+
+    const message = {
+      siteId: dummySite.getId(),
+      auditId: dummyAudit.auditId,
+      data: { presignedUrl: 'https://s3.aws.com/summaries.json' },
+    };
+
+    await handler(message, context);
+
+    const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+    expect(syncArgs.newData[0].contentHash).to.equal(contentHash);
+    expect(syncArgs.newData[1].contentHash).to.equal(contentHash);
   });
 
   it('should correctly map new suggestion with CODE_CHANGE type', async () => {

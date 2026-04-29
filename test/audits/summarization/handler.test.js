@@ -54,6 +54,8 @@ describe('Summarization Handler', () => {
       getAuditType: () => 'summarization',
       getFullAuditRef: () => 'https://adobe.com',
       getAuditResult: sandbox.stub(),
+      setAuditResult: sandbox.stub(),
+      save: sandbox.stub().resolves(),
     };
 
     log = {
@@ -76,6 +78,9 @@ describe('Summarization Handler', () => {
       },
       Site: {
         findById: sandbox.stub(),
+      },
+      Opportunity: {
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
       },
     };
 
@@ -551,6 +556,227 @@ describe('Summarization Handler', () => {
       const sentMessage = sqs.sendMessage.getCall(0).args[1];
       expect(sentMessage.data.pages.map((page) => page.page_url)).to.include('https://adobe.com/included-page');
     });
+
+    it('should skip pages with unchanged content hash (LLMO-4454)', async () => {
+      const hash1 = 'changed-hash';
+      const hash2 = 'same-hash';
+      const hash3 = 'new-page-hash';
+
+      const mockDetectExistingContent = sandbox.stub().resolves(new Map([
+        ['https://adobe.com/page1', { hasSummary: false, hasKeyPoints: false, contentHash: hash1 }],
+        ['https://adobe.com/page2', { hasSummary: false, hasKeyPoints: false, contentHash: hash2 }],
+        ['https://adobe.com/page3', { hasSummary: false, hasKeyPoints: false, contentHash: hash3 }],
+      ]));
+
+      const mockSuggestion = {
+        getData: sandbox.stub().returns({ url: 'https://adobe.com/page2', contentHash: hash2 }),
+      };
+      const mockOpportunity = {
+        getType: () => 'summarization',
+        getSuggestions: sandbox.stub().resolves([mockSuggestion]),
+      };
+
+      context.s3Client = {};
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      const handler = await esmock('../../../src/summarization/handler.js', {
+        '../../../src/summarization/existing-content-detector.js': { detectExistingContent: mockDetectExistingContent },
+      });
+
+      const result = await handler.sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.pages).to.have.lengthOf(2);
+      const pageUrls = sentMessage.data.pages.map((p) => p.page_url);
+      expect(pageUrls).to.include('https://adobe.com/page1');
+      expect(pageUrls).to.include('https://adobe.com/page3');
+      expect(pageUrls).not.to.include('https://adobe.com/page2');
+      expect(log.info).to.have.been.calledWith(
+        '[SUMMARIZATION] Skipped 1 page(s) with unchanged content',
+      );
+    });
+
+    it('should return early when all pages have unchanged content (LLMO-4454)', async () => {
+      const hash = 'same-hash-for-all';
+
+      const mockDetectExistingContent = sandbox.stub().resolves(new Map([
+        ['https://adobe.com/page1', { hasSummary: false, hasKeyPoints: false, contentHash: hash }],
+        ['https://adobe.com/page2', { hasSummary: false, hasKeyPoints: false, contentHash: hash }],
+        ['https://adobe.com/page3', { hasSummary: false, hasKeyPoints: false, contentHash: hash }],
+      ]));
+
+      const mockSuggestions = [
+        { getData: sandbox.stub().returns({ url: 'https://adobe.com/page1', contentHash: hash }) },
+        { getData: sandbox.stub().returns({ url: 'https://adobe.com/page2', contentHash: hash }) },
+        { getData: sandbox.stub().returns({ url: 'https://adobe.com/page3', contentHash: hash }) },
+      ];
+      const mockOpportunity = {
+        getType: () => 'summarization',
+        getSuggestions: sandbox.stub().resolves(mockSuggestions),
+      };
+
+      context.s3Client = {};
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      const handler = await esmock('../../../src/summarization/handler.js', {
+        '../../../src/summarization/existing-content-detector.js': { detectExistingContent: mockDetectExistingContent },
+      });
+
+      const result = await handler.sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(sqs.sendMessage).not.to.have.been.called;
+      expect(audit.save).not.to.have.been.called;
+      expect(log.info).to.have.been.calledWith(
+        '[SUMMARIZATION] No pages to send to Mystique after filtering',
+      );
+    });
+
+    it('should store scrapedUrlsSent and urlToContentHash in audit result (LLMO-4454)', async () => {
+      const hash1 = 'hash-page1';
+      const hash2 = 'hash-page2';
+      const hash3 = 'hash-page3';
+
+      const mockDetectExistingContent = sandbox.stub().resolves(new Map([
+        ['https://adobe.com/page1', { hasSummary: false, hasKeyPoints: false, contentHash: hash1 }],
+        ['https://adobe.com/page2', { hasSummary: false, hasKeyPoints: false, contentHash: hash2 }],
+        ['https://adobe.com/page3', { hasSummary: false, hasKeyPoints: false, contentHash: hash3 }],
+      ]));
+
+      context.s3Client = {};
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+
+      const handler = await esmock('../../../src/summarization/handler.js', {
+        '../../../src/summarization/existing-content-detector.js': { detectExistingContent: mockDetectExistingContent },
+      });
+
+      await handler.sendToMystique(context);
+
+      expect(audit.setAuditResult).to.have.been.calledOnce;
+      const auditResultArg = audit.setAuditResult.getCall(0).args[0];
+      expect(auditResultArg.scrapedUrlsSent).to.deep.equal([
+        'https://adobe.com/page1',
+        'https://adobe.com/page2',
+        'https://adobe.com/page3',
+      ]);
+      expect(auditResultArg.urlToContentHash).to.deep.equal({
+        'https://adobe.com/page1': hash1,
+        'https://adobe.com/page2': hash2,
+        'https://adobe.com/page3': hash3,
+      });
+      expect(audit.save).to.have.been.calledOnce;
+    });
+
+    it('should store empty urlToContentHash in audit result when s3Client is not configured (LLMO-4454)', async () => {
+      context.s3Client = null;
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+
+      await sendToMystique(context);
+
+      expect(audit.setAuditResult).to.have.been.calledOnce;
+      const auditResultArg = audit.setAuditResult.getCall(0).args[0];
+      expect(auditResultArg.urlToContentHash).to.deep.equal({});
+      expect(auditResultArg.scrapedUrlsSent).to.deep.equal([
+        'https://adobe.com/page1',
+        'https://adobe.com/page2',
+        'https://adobe.com/page3',
+      ]);
+      expect(audit.save).to.have.been.calledOnce;
+    });
+
+    it('should send all pages when no matching summarization opportunity exists (LLMO-4454)', async () => {
+      const nonMatchingOpportunity = {
+        getType: () => 'some-other-type',
+        getSuggestions: sandbox.stub().resolves([]),
+      };
+
+      const mockDetectExistingContent = sandbox.stub().resolves(new Map([
+        ['https://adobe.com/page1', { hasSummary: false, hasKeyPoints: false, contentHash: 'h1' }],
+        ['https://adobe.com/page2', { hasSummary: false, hasKeyPoints: false, contentHash: 'h2' }],
+        ['https://adobe.com/page3', { hasSummary: false, hasKeyPoints: false, contentHash: 'h3' }],
+      ]));
+
+      context.s3Client = {};
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([nonMatchingOpportunity]);
+
+      const handler = await esmock('../../../src/summarization/handler.js', {
+        '../../../src/summarization/existing-content-detector.js': { detectExistingContent: mockDetectExistingContent },
+      });
+
+      const result = await handler.sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.pages).to.have.lengthOf(3);
+    });
+
+    it('should send pages when current content hash is null (LLMO-4454)', async () => {
+      const storedHash = 'stored-hash';
+      const mockDetectExistingContent = sandbox.stub().resolves(new Map([
+        ['https://adobe.com/page1', { hasSummary: false, hasKeyPoints: false, contentHash: null }],
+        ['https://adobe.com/page2', { hasSummary: false, hasKeyPoints: false, contentHash: 'different-hash' }],
+        ['https://adobe.com/page3', { hasSummary: false, hasKeyPoints: false, contentHash: storedHash }],
+      ]));
+
+      const mockSuggestions = [
+        { getData: sandbox.stub().returns({ url: 'https://adobe.com/page1', contentHash: storedHash }) },
+        { getData: sandbox.stub().returns({ url: 'https://adobe.com/page3', contentHash: storedHash }) },
+      ];
+      const mockOpportunity = {
+        getType: () => 'summarization',
+        getSuggestions: sandbox.stub().resolves(mockSuggestions),
+      };
+
+      context.s3Client = {};
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      const handler = await esmock('../../../src/summarization/handler.js', {
+        '../../../src/summarization/existing-content-detector.js': { detectExistingContent: mockDetectExistingContent },
+      });
+
+      const result = await handler.sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      // page1: null hash → sent (can't match), page2: different hash → sent, page3: matching hash → skipped
+      expect(sentMessage.data.pages).to.have.lengthOf(2);
+      const pageUrls = sentMessage.data.pages.map((p) => p.page_url);
+      expect(pageUrls).to.include('https://adobe.com/page1');
+      expect(pageUrls).to.include('https://adobe.com/page2');
+      expect(pageUrls).not.to.include('https://adobe.com/page3');
+    });
+
+    it('should gracefully handle when fetching opportunity hashes fails (LLMO-4454)', async () => {
+      const mockDetectExistingContent = sandbox.stub().resolves(new Map([
+        ['https://adobe.com/page1', { hasSummary: false, hasKeyPoints: false, contentHash: 'h1' }],
+        ['https://adobe.com/page2', { hasSummary: false, hasKeyPoints: false, contentHash: 'h2' }],
+        ['https://adobe.com/page3', { hasSummary: false, hasKeyPoints: false, contentHash: 'h3' }],
+      ]));
+
+      context.s3Client = {};
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('DB error'));
+
+      const handler = await esmock('../../../src/summarization/handler.js', {
+        '../../../src/summarization/existing-content-detector.js': { detectExistingContent: mockDetectExistingContent },
+      });
+
+      const result = await handler.sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      expect(log.warn).to.have.been.calledWith(
+        '[SUMMARIZATION] Failed to fetch existing suggestion hashes: DB error',
+      );
+    });
   });
 });
 
@@ -808,6 +1034,8 @@ describe('Summarization Handler - Athena/SEO fallback', () => {
       audit: {
         getId: () => 'audit-123',
         getAuditResult: () => ({ success: true }),
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
       },
       auditContext: {
         summarizationUrls: [
@@ -861,6 +1089,8 @@ describe('Summarization Handler - Athena/SEO fallback', () => {
       audit: {
         getId: () => 'audit-123',
         getAuditResult: () => ({ success: true }),
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
       },
       auditContext: {
         summarizationUrls: [
