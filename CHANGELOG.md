@@ -1,3 +1,10 @@
+## [1.422.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.422.3...v1.422.4) (2026-04-29)
+
+
+### Bug Fixes
+
+* **preflight:** SITES-43720 full-page link coverage and GET-confirm broken status ([#2434](https://github.com/adobe/spacecat-audit-worker/issues/2434)) ([8437dbd](https://github.com/adobe/spacecat-audit-worker/commit/8437dbdb63808125fa44a0074e46e9739f49c401))
+
 ## [1.422.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.422.2...v1.422.3) (2026-04-29)
 
 
