@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
+import { hasText } from '@adobe/spacecat-shared-utils';
 
 /**
  * @class SQS utility to send messages to SQS
@@ -24,7 +25,11 @@ class SQS {
     this.context = context;
   }
 
-  async sendMessage(queueUrl, message, msgGroupId, delaySeconds = 0) {
+  static #isFifoQueue(queueUrl) {
+    return hasText(queueUrl) && queueUrl.toLowerCase().endsWith('.fifo');
+  }
+
+  async sendMessage(queueUrl, message, msgGroupId, delaySeconds = 0, msgDedupId = undefined) {
     const body = {
       ...message,
       timestamp: new Date().toISOString(),
@@ -40,19 +45,28 @@ class SQS {
     // Uses type (opptyType) as the group identifier to ensure per-audit-type fairness.
     const resolvedGroupId = msgGroupId || body.type || undefined;
 
-    const asJSON = JSON.stringify(body);
-    const msgCommand = new SendMessageCommand({
-      MessageBody: asJSON,
+    const params = {
+      MessageBody: JSON.stringify(body),
       QueueUrl: queueUrl,
       MessageGroupId: resolvedGroupId,
       DelaySeconds: delaySeconds,
-    });
+    };
+
+    // FIFO queues with content-based deduplication disabled require an explicit
+    // MessageDeduplicationId on every publish. Gate on the FIFO suffix so the
+    // same code is safe both before and after a queue is converted to FIFO —
+    // standard queues reject MessageDeduplicationId with InvalidParameterValue.
+    if (msgDedupId && SQS.#isFifoQueue(queueUrl)) {
+      params.MessageDeduplicationId = msgDedupId;
+    }
+
+    const msgCommand = new SendMessageCommand(params);
 
     try {
       const data = await this.sqsClient.send(msgCommand);
       const queueName = queueUrl?.split('/').pop() || 'unknown';
       const messageType = body.type || 'unknown';
-      this.log.info(`Success, message sent. Queue: ${queueName}, Type: ${messageType}, MessageID: ${data.MessageId}${body.traceId ? `, TraceID: ${body.traceId}` : ''}${resolvedGroupId ? `, GroupID: ${resolvedGroupId}` : ''}`);
+      this.log.info(`Success, message sent. Queue: ${queueName}, Type: ${messageType}, MessageID: ${data.MessageId}${body.traceId ? `, TraceID: ${body.traceId}` : ''}${resolvedGroupId ? `, GroupID: ${resolvedGroupId}` : ''}${msgDedupId ? `, DedupID: ${msgDedupId}` : ''}`);
     } catch (e) {
       const { type, code, message: msg } = e;
       this.log.error(`Message send failed. Type: ${type}, Code: ${code}, Message: ${msg}`, e);
