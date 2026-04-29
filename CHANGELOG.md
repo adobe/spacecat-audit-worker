@@ -1,3 +1,10 @@
+## [1.422.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.422.0...v1.422.1) (2026-04-29)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** set FIFO attributes on agentic analytics publish ([#2438](https://github.com/adobe/spacecat-audit-worker/issues/2438)) ([3f7c4d7](https://github.com/adobe/spacecat-audit-worker/commit/3f7c4d7628bf57126f2ec1f093c21f67da8c5040))
+
 # [1.422.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.421.2...v1.422.0) (2026-04-28)
 
 
