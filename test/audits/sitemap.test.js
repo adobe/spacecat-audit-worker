@@ -41,6 +41,9 @@ import {
   FAST_PAGE_URL_BATCH_DELAY_MS,
   SLOW_PAGE_URL_BATCH_SIZE,
   SLOW_PAGE_URL_BATCH_DELAY_MS,
+  SLOW_MODE_ENTRY_DELAY_MS,
+  urlLooksLike404Page,
+  formatUrlProbeErrorDetail,
 } from '../../src/sitemap/common.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
@@ -263,6 +266,24 @@ describe('Sitemap Audit', () => {
       const response = await fetchWithHeadFallback(`${url}/test`, {});
       expect(response.status).to.equal(200);
     });
+
+    it('should retry with GET when HEAD returns 501 and GET returns 200', async () => {
+      nock(url).head('/head-501').reply(501);
+      nock(url).get('/head-501').reply(200);
+
+      const response = await fetchWithHeadFallback(`${url}/head-501`, {});
+      expect(response.status).to.equal(200);
+    });
+
+    it('should call beforeRequest before HEAD and before GET fallback', async () => {
+      nock(url).head('/spaced').reply(404);
+      nock(url).get('/spaced').reply(200);
+
+      const beforeRequest = sandbox.spy(async () => {});
+      const response = await fetchWithHeadFallback(`${url}/spaced`, { beforeRequest });
+      expect(response.status).to.equal(200);
+      expect(beforeRequest).to.have.been.calledTwice;
+    });
   });
 
   describe('fetchContent', () => {
@@ -302,6 +323,30 @@ describe('Sitemap Audit', () => {
       await expect(checkRobotsForSitemap(protocol, domain)).to.be.rejectedWith(
         'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
       );
+    });
+  });
+
+  describe('urlLooksLike404Page', () => {
+    it('returns false when the value cannot be parsed as a URL', () => {
+      expect(urlLooksLike404Page('not a url')).to.be.false;
+      expect(urlLooksLike404Page('')).to.be.false;
+    });
+
+    it('detects common soft-404 path patterns', () => {
+      expect(urlLooksLike404Page('https://example.com/errors/404/soft')).to.be.true;
+      expect(urlLooksLike404Page('https://example.com/404.html')).to.be.true;
+      expect(urlLooksLike404Page('https://example.com/blog/404/about')).to.be.true;
+      expect(urlLooksLike404Page('https://example.com/ok/page')).to.be.false;
+    });
+  });
+
+  describe('formatUrlProbeErrorDetail', () => {
+    it('formats Error instances with name and message', () => {
+      expect(formatUrlProbeErrorDetail(new TypeError('bad'))).to.equal('TypeError: bad');
+    });
+
+    it('stringifies non-Error rejection values', () => {
+      expect(formatUrlProbeErrorDetail('plain-rejection')).to.equal('plain-rejection');
     });
   });
 
@@ -784,6 +829,7 @@ describe('Sitemap Audit', () => {
       const slowBatchOpts = {
         pageUrlBatchSize: SLOW_PAGE_URL_BATCH_SIZE,
         pageUrlBatchDelayMs: SLOW_PAGE_URL_BATCH_DELAY_MS,
+        pageUrlHttpRequestIntervalMs: SLOW_PAGE_URL_BATCH_DELAY_MS,
       };
 
       it('re-probes with slow batching when otherStatus share is >= 60% with at least 10 URLs', async () => {
@@ -814,6 +860,7 @@ describe('Sitemap Audit', () => {
           otherStatusCodes: [],
         });
 
+        const sleepStub = sandbox.stub().resolves();
         const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
           '../../src/sitemap/common.js': {
             applyPageUrlProbeSampling,
@@ -824,11 +871,18 @@ describe('Sitemap Audit', () => {
             slicePageUrlsForSlowProbeSampling,
             SLOW_PAGE_URL_BATCH_DELAY_MS,
             SLOW_PAGE_URL_BATCH_SIZE,
+            SLOW_MODE_ENTRY_DELAY_MS,
+          },
+          '../../src/support/utils.js': {
+            sleep: sleepStub,
           },
         });
 
-        const result = await findSitemapMocked(url, { info: () => {}, debug: () => {} });
+        const result = await findSitemapMocked(url, {
+          info: () => {}, debug: () => {}, warn: () => {},
+        });
         expect(result.success).to.equal(true);
+        expect(sleepStub).to.have.been.calledOnceWith(SLOW_MODE_ENTRY_DELAY_MS);
         expect(filterStub).to.have.been.calledTwice;
         expect(filterStub.firstCall.args[3]).to.equal(null);
         expect(filterStub.secondCall.args[0]).to.deep.equal([tenUrls[0]]);
@@ -870,6 +924,7 @@ describe('Sitemap Audit', () => {
 
         const log = { info: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub(), error: sandbox.stub() };
 
+        const sleepStub = sandbox.stub().resolves();
         const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
           '../../src/sitemap/common.js': {
             applyPageUrlProbeSampling,
@@ -880,21 +935,28 @@ describe('Sitemap Audit', () => {
             slicePageUrlsForSlowProbeSampling,
             SLOW_PAGE_URL_BATCH_DELAY_MS,
             SLOW_PAGE_URL_BATCH_SIZE,
+            SLOW_MODE_ENTRY_DELAY_MS,
+          },
+          '../../src/support/utils.js': {
+            sleep: sleepStub,
           },
         });
 
         await findSitemapMocked(url, log);
+        expect(sleepStub).to.have.been.calledOnceWith(SLOW_MODE_ENTRY_DELAY_MS);
         expect(filterStub).to.have.been.calledThrice;
         expect(filterStub.secondCall.args[0]).to.deep.equal([tenUrlsA[0]]);
         expect(filterStub.thirdCall.args[0]).to.have.length(10);
         expect(filterStub.thirdCall.args[3]).to.deep.equal(slowBatchOpts);
         const summaryMsg = log.info.getCalls().map((c) => c.args[0]).find((m) => typeof m === 'string' && m.includes('slow page URL probing summary'));
         expect(summaryMsg).to.include('otherStatus codes: 6 of 11 page URLs probed slowly (55%)');
-        expect(log.warn).to.have.been.calledOnce;
-        expect(log.warn.firstCall.args[0]).to.include(sitemapB);
-        expect(log.warn.firstCall.args[0]).to.include(`'otherStatus' count=6`);
-        expect(log.warn.firstCall.args[0]).to.include('total count=10');
-        expect(log.warn.firstCall.args[0]).to.include('(60%)');
+        const highOtherWarns = log.warn.getCalls().filter((c) => typeof c.args[0] === 'string'
+          && c.args[0].includes('remains high')
+          && c.args[0].includes(sitemapB));
+        expect(highOtherWarns).to.have.lengthOf(1);
+        expect(highOtherWarns[0].args[0]).to.include(`'otherStatus' count=6`);
+        expect(highOtherWarns[0].args[0]).to.include('total count=10');
+        expect(highOtherWarns[0].args[0]).to.include('(60%)');
       });
 
       it('does not switch to slow when fewer than 10 URLs are probed', async () => {
@@ -961,6 +1023,7 @@ describe('Sitemap Audit', () => {
 
         const log = { info: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub(), error: sandbox.stub() };
 
+        const sleepStub = sandbox.stub().resolves();
         const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
           '../../src/sitemap/common.js': {
             applyPageUrlProbeSampling,
@@ -971,13 +1034,21 @@ describe('Sitemap Audit', () => {
             slicePageUrlsForSlowProbeSampling,
             SLOW_PAGE_URL_BATCH_DELAY_MS,
             SLOW_PAGE_URL_BATCH_SIZE,
+            SLOW_MODE_ENTRY_DELAY_MS,
+          },
+          '../../src/support/utils.js': {
+            sleep: sleepStub,
           },
         });
 
         await findSitemapMocked(url, log);
+        expect(sleepStub).to.have.been.calledOnceWith(SLOW_MODE_ENTRY_DELAY_MS);
         expect(filterStub).to.have.been.calledTwice;
         expect(filterStub.secondCall.args[0]).to.have.length(10);
-        expect(log.warn).to.have.been.calledOnce;
+        const stillHighWarns = log.warn.getCalls().filter((c) => typeof c.args[0] === 'string'
+          && c.args[0].includes('remains high')
+          && c.args[0].includes('still.xml'));
+        expect(stillHighWarns).to.have.lengthOf(1);
         const summaryMsg = log.info.getCalls().map((c) => c.args[0]).find((m) => typeof m === 'string' && m.includes('slow page URL probing summary'));
         expect(summaryMsg).to.include('otherStatus codes: 6 of 10 page URLs probed slowly (60%)');
       });
@@ -1020,6 +1091,7 @@ describe('Sitemap Audit', () => {
           otherStatusCodes: [],
         });
 
+        const sleepStub = sandbox.stub().resolves();
         const { findSitemap: findSitemapMocked } = await esmock('../../src/sitemap/handler.js', {
           '../../src/sitemap/common.js': {
             applyPageUrlProbeSampling,
@@ -1030,10 +1102,15 @@ describe('Sitemap Audit', () => {
             slicePageUrlsForSlowProbeSampling,
             SLOW_PAGE_URL_BATCH_DELAY_MS,
             SLOW_PAGE_URL_BATCH_SIZE,
+            SLOW_MODE_ENTRY_DELAY_MS,
+          },
+          '../../src/support/utils.js': {
+            sleep: sleepStub,
           },
         });
 
         await findSitemapMocked(url, { info: () => {}, warn: sandbox.stub(), debug: () => {} });
+        expect(sleepStub).to.have.been.calledOnceWith(SLOW_MODE_ENTRY_DELAY_MS);
         expect(filterStub).to.have.been.calledThrice;
         expect(filterStub.secondCall.args[0]).to.deep.equal([tenUrlsA[0]]);
         expect(filterStub.thirdCall.args[0]).to.have.length(10);
@@ -1980,7 +2057,7 @@ describe('filterValidUrls with redirect handling', () => {
     ]);
   });
 
-  it('should suggest homepage URL for redirects to 404 status pages', async () => {
+  it('should set urlsSuggested to empty string when redirect target is invalid or 404-like; otherwise suggest terminal URL', async () => {
     const urls = [
       'https://example.com/redirect-to-404',
       'https://example.com/redirect-to-200',
@@ -1993,6 +2070,7 @@ describe('filterValidUrls with redirect handling', () => {
       .head('/redirect-to-404')
       .reply(301, '', { Location: 'https://example.com/not-found' });
     nock('https://example.com').head('/not-found').reply(404);
+    nock('https://example.com').get('/not-found').reply(404);
 
     // Redirect to a page that returns 200
     nock('https://example.com')
@@ -2011,6 +2089,7 @@ describe('filterValidUrls with redirect handling', () => {
       .head('/redirect-to-404')
       .reply(302, '', { Location: 'https://subdomain.example.com/not-found' });
     nock('https://subdomain.example.com').head('/not-found').reply(404);
+    nock('https://subdomain.example.com').get('/not-found').reply(404);
 
     const result = await filterValidUrls(urls);
 
@@ -2018,7 +2097,7 @@ describe('filterValidUrls with redirect handling', () => {
       {
         url: 'https://example.com/redirect-to-404',
         statusCode: 301,
-        urlsSuggested: 'https://example.com',
+        urlsSuggested: '',
       },
       {
         url: 'https://example.com/redirect-to-200',
@@ -2028,17 +2107,17 @@ describe('filterValidUrls with redirect handling', () => {
       {
         url: 'https://example.com/redirect-to-404-custom-path',
         statusCode: 301,
-        urlsSuggested: 'https://example.com',
+        urlsSuggested: '',
       },
       {
         url: 'https://subdomain.example.com/redirect-to-404',
         statusCode: 302,
-        urlsSuggested: 'https://subdomain.example.com',
+        urlsSuggested: '',
       },
     ]);
   });
 
-  it('should handle failed redirect follows with 404 detection', async () => {
+  it('should suggest first hop when follow-up fetch to redirect target throws (e.g. network error)', async () => {
     const urls = ['https://example.com/broken-redirect'];
 
     // First request succeeds with redirect
@@ -2046,23 +2125,18 @@ describe('filterValidUrls with redirect handling', () => {
       .head('/broken-redirect')
       .reply(301, '', { Location: 'https://example.com/error' });
 
-    // Second request fails with network error (suggests invalid URL)
+    // Follow-up to validate redirect target fails before a usable terminal URL is known
     nock('https://example.com')
       .head('/error')
       .replyWithError('Network error');
-
-    // Third request to validate homepage suggestion
-    nock('https://example.com')
-      .head('/')
-      .reply(200);
 
     const result = await filterValidUrls(urls);
 
     expect(result.notOk).to.deep.equal([
       {
         url: 'https://example.com/broken-redirect',
-        urlsSuggested: 'https://example.com',
         statusCode: 301,
+        urlsSuggested: 'https://example.com/error',
       },
     ]);
   });
@@ -2246,72 +2320,62 @@ describe('filterValidUrls with redirect handling', () => {
     });
   });
 
-  it('should suggest homepage for redirects with no location header', async () => {
+  it('should set urlsSuggested to empty string when redirect has no Location header', async () => {
     const urls = ['https://example.com/redirect-no-location'];
     nock('https://example.com')
       .head('/redirect-no-location')
       .reply(301, ''); // No location header
-
-    // Mock homepage validation
-    nock('https://example.com')
-      .head('/')
-      .reply(200);
 
     const result = await filterValidUrls(urls);
     expect(result.notOk).to.deep.equal([
       {
         url: 'https://example.com/redirect-no-location',
         statusCode: 301,
-        urlsSuggested: 'https://example.com',
+        urlsSuggested: '',
       },
     ]);
   });
 
-  it('should not suggest URL when homepage validation fails with network error', async () => {
-    const urls = ['https://example.com/redirect-no-location'];
-    nock('https://example.com')
-      .head('/redirect-no-location')
-      .reply(301, ''); // No location header
+  it('should suggest first hop when terminal cannot be validated but failure is not a clear 404', async () => {
+    const urls = ['https://example.com/redirect-waf'];
 
-    // Mock homepage validation failure
     nock('https://example.com')
-      .head('/')
-      .replyWithError('Network error');
+      .head('/redirect-waf')
+      .reply(301, '', { Location: 'https://example.com/first-hop-page' });
+    nock('https://example.com').head('/first-hop-page').reply(403);
+    nock('https://example.com').get('/first-hop-page').reply(403);
 
     const result = await filterValidUrls(urls);
+
     expect(result.notOk).to.deep.equal([
       {
-        url: 'https://example.com/redirect-no-location',
+        url: 'https://example.com/redirect-waf',
         statusCode: 301,
-        // No urlsSuggested since homepage validation failed
+        urlsSuggested: 'https://example.com/first-hop-page',
       },
     ]);
   });
 
-  it('should fallback to homepage when redirect target validation fails', async () => {
-    const urls = ['https://example.com/broken-redirect'];
+  it('should suggest terminal URL after multi-hop redirect when final page returns 200', async () => {
+    const urls = ['https://example.com/start'];
 
-    // Original redirect
     nock('https://example.com')
-      .head('/broken-redirect')
-      .reply(301, '', { Location: 'https://example.com/invalid' });
-
-    // Redirect target validation fails
+      .head('/start')
+      .reply(302, '', { Location: 'https://example.com/mid' });
     nock('https://example.com')
-      .head('/invalid')
-      .replyWithError('Network error');
-
-    // Homepage validation succeeds
+      .head('/mid')
+      .reply(302, '', { Location: 'https://example.com/end' });
     nock('https://example.com')
-      .head('/')
+      .head('/end')
       .reply(200);
 
     const result = await filterValidUrls(urls);
+
     expect(result.notOk).to.deep.equal([
       {
-        url: 'https://example.com/broken-redirect',
-        statusCode: 301,
-        urlsSuggested: 'https://example.com', // Falls back to homepage
+        url: 'https://example.com/start',
+        statusCode: 302,
+        urlsSuggested: 'https://example.com/end',
       },
     ]);
   });
@@ -2425,7 +2489,7 @@ describe('filterValidUrls with status code tracking', () => {
     expect(result.notOk.some((item) => item.statusCode === 403)).to.be.false;
   });
 
-  it('should suggest homepage for redirects to 404 patterns and final URL for normal redirects', async () => {
+  it('should set urlsSuggested to empty string for redirects to 404 patterns and suggest terminal URL for normal redirects', async () => {
     const urls = [
       'https://example.com/redirect-to-404-page',
       'https://example.com/redirect-to-404-path',
@@ -2453,18 +2517,18 @@ describe('filterValidUrls with status code tracking', () => {
 
     // Mock validation requests for redirect targets
     nock('https://example.com').head('/404.html').reply(404);
+    nock('https://example.com').get('/404.html').reply(404);
     nock('https://example.com').head('/404/not-found').reply(404);
+    nock('https://example.com').get('/404/not-found').reply(404);
     nock('https://example.com').head('/errors/404/page').reply(404);
+    nock('https://example.com').get('/errors/404/page').reply(404);
     nock('https://example.com').head('/valid-page').reply(200);
-
-    // Mock homepage validation for 404 pattern redirects
-    nock('https://example.com').head('/').times(3).reply(200);
 
     const result = await filterValidUrls(urls);
 
     expect(result.notOk).to.have.length(4);
 
-    // Redirects to 404 patterns should suggest homepage URL
+    // Redirects to clear 404 targets: no safe replacement URL
     const redirectsTo404 = result.notOk.filter(
       (item) => item.url.includes('redirect-to-404')
         || item.url.includes('redirect-to-errors-404'),
@@ -2472,10 +2536,9 @@ describe('filterValidUrls with status code tracking', () => {
 
     redirectsTo404.forEach((item) => {
       expect(item.statusCode).to.equal(301);
-      expect(item.urlsSuggested).to.equal('https://example.com');
+      expect(item.urlsSuggested).to.equal('');
     });
 
-    // Normal redirect should suggest the final URL
     const normalRedirect = result.notOk.find((item) => item.url.includes('normal-redirect'));
     expect(normalRedirect.statusCode).to.equal(301);
     expect(normalRedirect.urlsSuggested).to.equal('https://example.com/valid-page');
@@ -2518,11 +2581,24 @@ describe('filterValidUrls with HEAD to GET fallback', () => {
     ]);
   });
 
-  it('should not fallback to GET when HEAD returns non-404 status', async () => {
+  it('should fallback to GET when HEAD returns 403 and GET returns 200', async () => {
+    const urls = ['https://example.com/head-403-get-200'];
+
+    nock('https://example.com').head('/head-403-get-200').reply(403);
+    nock('https://example.com').get('/head-403-get-200').reply(200);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.deep.equal(['https://example.com/head-403-get-200']);
+    expect(result.notOk).to.be.empty;
+    expect(result.otherStatusCodes).to.be.empty;
+  });
+
+  it('should use GET fallback when HEAD returns 403 and classify final 403 as otherStatus', async () => {
     const urls = ['https://example.com/head-403'];
 
-    // HEAD returns 403, no GET fallback should happen
     nock('https://example.com').head('/head-403').reply(403);
+    nock('https://example.com').get('/head-403').reply(403);
 
     const result = await filterValidUrls(urls);
 
@@ -2534,6 +2610,17 @@ describe('filterValidUrls with HEAD to GET fallback', () => {
         statusCode: 403,
       },
     ]);
+  });
+
+  it('should fallback to GET when HEAD returns 405 and GET returns 200', async () => {
+    const urls = ['https://example.com/head-405-get-200'];
+
+    nock('https://example.com').head('/head-405-get-200').reply(405);
+    nock('https://example.com').get('/head-405-get-200').reply(200);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.deep.equal(['https://example.com/head-405-get-200']);
   });
 
   it('should apply HEAD to GET fallback for redirect URL validation', async () => {
@@ -2557,5 +2644,107 @@ describe('filterValidUrls with HEAD to GET fallback', () => {
         urlsSuggested: 'https://example.com/target-page',
       },
     ]);
+  });
+
+  it('should treat 200 probed URL as notOk when path looks like a 404 page', async () => {
+    const urls = ['https://example.com/errors/404/soft'];
+
+    nock('https://example.com').head('/errors/404/soft').reply(200);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.be.empty;
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/errors/404/soft',
+        statusCode: 404,
+      },
+    ]);
+  });
+
+  it('calls log.debug for soft 404 classification when log is provided', async () => {
+    const urls = ['https://example.com/errors/404/soft'];
+    nock('https://example.com').head('/errors/404/soft').reply(200);
+    const log = { debug: sandbox.spy(), error: sandbox.spy() };
+
+    await filterValidUrls(urls, log);
+
+    expect(log.debug).to.have.been.calledWith(sinon.match(/soft.? 404 page/i));
+  });
+
+  it('calls log.error when redirect has no Location and log is provided', async () => {
+    const urls = ['https://example.com/redirect-no-location'];
+    nock('https://example.com')
+      .head('/redirect-no-location')
+      .reply(301, '');
+    const log = { error: sandbox.spy(), debug: sandbox.spy() };
+
+    await filterValidUrls(urls, log);
+
+    expect(log.error).to.have.been.calledWith(sinon.match(/no 'Location' header/));
+  });
+
+  it('calls log.debug for first-hop redirect suggestion when log is provided', async () => {
+    const urls = ['https://example.com/redirect-waf'];
+    nock('https://example.com')
+      .head('/redirect-waf')
+      .reply(301, '', { Location: 'https://example.com/first-hop-page' });
+    nock('https://example.com').head('/first-hop-page').reply(403);
+    nock('https://example.com').get('/first-hop-page').reply(403);
+    const log = { debug: sandbox.spy(), error: sandbox.spy() };
+
+    await filterValidUrls(urls, log);
+
+    expect(log.debug).to.have.been.calledWith(sinon.match(/first-hop redirect target/));
+  });
+
+  it('calls log.error when redirect terminal is clearly bad and log is provided', async () => {
+    const urls = ['https://example.com/orig-301-404'];
+    nock('https://example.com')
+      .head('/orig-301-404')
+      .reply(301, '', { Location: 'https://example.com/term-404' });
+    nock('https://example.com').head('/term-404').reply(404);
+    nock('https://example.com').get('/term-404').reply(404);
+    const log = { error: sandbox.spy(), debug: sandbox.spy() };
+
+    const result = await filterValidUrls(urls, log);
+
+    expect(log.error).to.have.been.calledWith(sinon.match(/does not resolve to a valid terminal/));
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/orig-301-404',
+        statusCode: 301,
+        urlsSuggested: '',
+      },
+    ]);
+  });
+
+  it('calls log.debug on network error during URL probe', async () => {
+    nock('https://example.com').head('/network-err').replyWithError('ECONNRESET');
+    const log = { debug: sandbox.spy(), error: sandbox.spy() };
+
+    const result = await filterValidUrls(['https://example.com/network-err'], log);
+
+    expect(result.networkErrors).to.have.length(1);
+    expect(log.debug).to.have.been.calledWith(sinon.match(/network error/i));
+  });
+
+  it('should space HEAD and GET fallback when pageUrlHttpRequestIntervalMs is set', async () => {
+    const urls = ['https://example.com/slow-head-get'];
+    const intervalMs = 40;
+
+    nock('https://example.com').head('/slow-head-get').reply(404);
+    nock('https://example.com').get('/slow-head-get').reply(200);
+
+    const started = Date.now();
+    const result = await filterValidUrls(urls, undefined, PAGE_URL_TIMEOUT_MS, {
+      pageUrlBatchSize: SLOW_PAGE_URL_BATCH_SIZE,
+      pageUrlBatchDelayMs: SLOW_PAGE_URL_BATCH_DELAY_MS,
+      pageUrlHttpRequestIntervalMs: intervalMs,
+    });
+    const elapsed = Date.now() - started;
+
+    expect(result.ok).to.deep.equal(['https://example.com/slow-head-get']);
+    expect(elapsed).to.be.at.least(intervalMs - 5);
   });
 });
