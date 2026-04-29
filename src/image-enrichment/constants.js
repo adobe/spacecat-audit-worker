@@ -10,6 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-export const AUDIT_TYPE = 'semantic-value-visibility';
-export const GUIDANCE_TYPE = 'guidance:semantic-value-visibility';
-export const OPPORTUNITY_TYPE = 'semantic-value-visibility';
+export const AUDIT_TYPE = 'image-enrichment';
+export const GUIDANCE_TYPE = 'guidance:image-enrichment';
+export const OPPORTUNITY_TYPE = 'image-enrichment';

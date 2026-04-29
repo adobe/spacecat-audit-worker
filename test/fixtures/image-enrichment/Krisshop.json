@@ -1,6 +1,6 @@
 {
   "url": "https://www.krisshop.com/",
-  "opportunityType": "semantic-value-visibility",
+  "opportunityType": "image-enrichment",
   "guidance": {
     "insight": "Marketing images on this page contain promotional text (headlines, offers, CTAs) that is not represented in the page's semantic HTML structure.",
     "rationale": "Text embedded in images is invisible to LLMs and search engines. Without machine-readable HTML equivalents, key marketing messages cannot be understood, indexed, or surfaced in AI-powered search results.",

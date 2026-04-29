@@ -17,7 +17,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { OPPORTUNITY_TYPE } from './constants.js';
 
 /**
- * Guidance handler for semantic value visibility.
+ * Guidance handler for image enrichment.
  *
  * Receives Mystique's response with marketing image suggestions and:
  * - Creates/updates an opportunity for the site
@@ -35,7 +35,7 @@ export default async function handler(message, context) {
   // Validate siteId
   const site = await Site.findById(siteId);
   if (!site) {
-    log.error(`[semantic-value-visibility] Site not found for siteId: ${siteId}`);
+    log.error(`[image-enrichment] Site not found for siteId: ${siteId}`);
     return notFound('Site not found');
   }
 
@@ -47,23 +47,23 @@ export default async function handler(message, context) {
   // Note: semanticHtml contains untrusted LLM-generated content from Mystique.
   // Downstream consumers must sanitize before rendering.
   if (!Array.isArray(suggestions)) {
-    log.error(`[semantic-value-visibility] Invalid suggestions format for siteId: ${siteId}`);
+    log.error(`[image-enrichment] Invalid suggestions format for siteId: ${siteId}`);
     return badRequest('Suggestions must be an array');
   }
 
   const validSuggestions = suggestions.filter((s) => {
     const hasRequiredFields = s?.data?.imageUrl && s?.data?.semanticHtml;
     if (!hasRequiredFields) {
-      log.warn('[semantic-value-visibility] Skipping suggestion with missing imageUrl or semanticHtml');
+      log.warn('[image-enrichment] Skipping suggestion with missing imageUrl or semanticHtml');
     }
     return hasRequiredFields;
   });
 
-  log.info(`[semantic-value-visibility] Guidance handler received ${validSuggestions.length} valid suggestions for siteId: ${siteId}`);
+  log.info(`[image-enrichment] Guidance handler received ${validSuggestions.length} valid suggestions for siteId: ${siteId}`);
 
   // No valid suggestions — handle stale opportunity
   if (validSuggestions.length === 0) {
-    log.info(`[semantic-value-visibility] No marketing images found for siteId: ${siteId}`);
+    log.info(`[image-enrichment] No marketing images found for siteId: ${siteId}`);
 
     // Check if there's an existing opportunity to clean up
     const existing = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
@@ -72,7 +72,7 @@ export default async function handler(message, context) {
     );
 
     if (staleOpportunity) {
-      log.info(`[semantic-value-visibility] Removing stale opportunity ${staleOpportunity.getId()} for siteId: ${siteId}`);
+      log.info(`[image-enrichment] Removing stale opportunity ${staleOpportunity.getId()} for siteId: ${siteId}`);
       staleOpportunity.setStatus('RESOLVED');
       staleOpportunity.setUpdatedBy('system');
       await staleOpportunity.save();
@@ -94,11 +94,11 @@ export default async function handler(message, context) {
   );
 
   if (!opportunity) {
-    log.error(`[semantic-value-visibility] Failed to create opportunity for siteId: ${siteId}`);
+    log.error(`[image-enrichment] Failed to create opportunity for siteId: ${siteId}`);
     return badRequest('Failed to create opportunity');
   }
 
-  log.info(`[semantic-value-visibility] Opportunity ${opportunity.getId()} ready for siteId: ${siteId}`);
+  log.info(`[image-enrichment] Opportunity ${opportunity.getId()} ready for siteId: ${siteId}`);
 
   // Sync suggestions — adds new ones, marks outdated ones
   await syncSuggestions({
@@ -114,7 +114,7 @@ export default async function handler(message, context) {
     context,
   });
 
-  log.info(`[semantic-value-visibility] Synced ${validSuggestions.length} suggestions for opportunity ${opportunity.getId()}`);
+  log.info(`[image-enrichment] Synced ${validSuggestions.length} suggestions for opportunity ${opportunity.getId()}`);
 
   return ok();
 }
