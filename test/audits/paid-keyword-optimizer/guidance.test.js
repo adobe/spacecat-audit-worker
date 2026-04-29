@@ -58,7 +58,12 @@ function createClusterMessage({
   portfolioMetrics = { totalSpend: 1000 },
   langfuseTraceId = 'trace-123',
   langfuseTraceUrl = 'https://langfuse.example.com/trace/123',
+  observability,
 } = {}) {
+  const resolvedObservability = observability !== undefined
+    ? observability
+    : { langfuseTraceId, langfuseTraceUrl };
+
   return {
     auditId: 'auditId',
     siteId: 'site',
@@ -68,10 +73,7 @@ function createClusterMessage({
         body: {
           clusterResults,
           portfolioMetrics,
-          observability: {
-            langfuseTraceId,
-            langfuseTraceUrl,
-          },
+          ...(resolvedObservability != null && { observability: resolvedObservability }),
         },
       }],
     },
