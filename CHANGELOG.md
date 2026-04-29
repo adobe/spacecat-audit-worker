@@ -1,3 +1,10 @@
+## [1.423.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.423.0...v1.423.1) (2026-04-29)
+
+
+### Bug Fixes
+
+* **vulnerabilities:** skip components whose CVEs are all ignored ([#2444](https://github.com/adobe/spacecat-audit-worker/issues/2444)) ([64ef78a](https://github.com/adobe/spacecat-audit-worker/commit/64ef78aaa4ee7af01bdad6306bd5b1479586fbaf))
+
 # [1.423.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.422.4...v1.423.0) (2026-04-29)
 
 
