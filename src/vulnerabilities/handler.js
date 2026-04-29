@@ -250,7 +250,14 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
   const { vulnerabilityReport } = auditResult;
 
-  if (!isNonEmptyArray(vulnerabilityReport.vulnerableComponents)) {
+  // Drop components whose active vulnerabilities list is null/empty — every CVE on them
+  // has been ignored and there is nothing the customer can act on. Routing the all-ignored
+  // case through the "no vulnerabilities" branch below also resolves any stale opportunity.
+  const actionableComponents = isNonEmptyArray(vulnerabilityReport.vulnerableComponents)
+    ? vulnerabilityReport.vulnerableComponents.filter((c) => isNonEmptyArray(c.vulnerabilities))
+    : [];
+
+  if (!isNonEmptyArray(actionableComponents)) {
     // No vulnerabilities found
     // Fetch opportunity
     let opportunity;
@@ -295,7 +302,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
   // Populate suggestions
   await syncSuggestions({
     opportunity,
-    newData: vulnerabilityReport.vulnerableComponents,
+    newData: actionableComponents,
     context,
     buildKey,
     mapNewSuggestion:

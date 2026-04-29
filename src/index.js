@@ -54,7 +54,10 @@ import deliveryConfigWriter from './delivery-config-writer/handler.js';
 import highFormViewsLowConversionsGuidance from './forms-opportunities/guidance-handlers/guidance-high-form-views-low-conversions.js';
 import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-nav.js';
 import highPageViewsLowFormViewsGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-views.js';
-import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
+// KILL SWITCH: HOTLCTR is disabled platform-wide; do not accept Mystique callbacks.
+// Re-enable by uncommenting this import and the HANDLERS entry below.
+// eslint-disable-next-line max-len
+// import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 import paidConsentGuidance from './paid-cookie-consent/guidance-handler.js';
 import noCTAAboveTheFoldGuidance from './no-cta-above-the-fold/guidance-handler.js';
 import paidTrafficAnalysisGuidance from './paid-traffic-analysis/guidance-handler.js';
@@ -151,7 +154,8 @@ const HANDLERS = {
   'llm-blocked': llmBlocked,
   'forms-opportunities': formsOpportunities,
   'site-detection': siteDetection,
-  'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
+  // KILL SWITCH: HOTLCTR disabled — see import above.
+  // 'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
   'guidance:broken-links': brokenLinksGuidance,
   'guidance:metatags': metatagsGuidance,
   'alt-text': imageAltText,

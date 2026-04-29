@@ -1,3 +1,50 @@
+## [1.423.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.423.0...v1.423.1) (2026-04-29)
+
+
+### Bug Fixes
+
+* **vulnerabilities:** skip components whose CVEs are all ignored ([#2444](https://github.com/adobe/spacecat-audit-worker/issues/2444)) ([64ef78a](https://github.com/adobe/spacecat-audit-worker/commit/64ef78aaa4ee7af01bdad6306bd5b1479586fbaf))
+
+# [1.423.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.422.4...v1.423.0) (2026-04-29)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.55.1 ([#2443](https://github.com/adobe/spacecat-audit-worker/issues/2443)) ([05ab4ee](https://github.com/adobe/spacecat-audit-worker/commit/05ab4eec70a7554858d749eb3a4606da6c9f22d2))
+
+
+### Features
+
+* disable HOTLCTR v1 flow ([#2436](https://github.com/adobe/spacecat-audit-worker/issues/2436)) ([c97e516](https://github.com/adobe/spacecat-audit-worker/commit/c97e5160d4920e77dd20ee184a752b0cf19515cf)), closes [hi#organic-low-ctr](https://github.com/hi/issues/organic-low-ctr) [hi#organic-low-ctr](https://github.com/hi/issues/organic-low-ctr)
+
+## [1.422.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.422.3...v1.422.4) (2026-04-29)
+
+
+### Bug Fixes
+
+* **preflight:** SITES-43720 full-page link coverage and GET-confirm broken status ([#2434](https://github.com/adobe/spacecat-audit-worker/issues/2434)) ([8437dbd](https://github.com/adobe/spacecat-audit-worker/commit/8437dbdb63808125fa44a0074e46e9739f49c401))
+
+## [1.422.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.422.2...v1.422.3) (2026-04-29)
+
+
+### Bug Fixes
+
+* **no-cta-above-the-fold:** filter on absolute thresholds instead of bounce share ([#2445](https://github.com/adobe/spacecat-audit-worker/issues/2445)) ([1632326](https://github.com/adobe/spacecat-audit-worker/commit/16323269268d3d50bd8c8c0b00407a1d676a7085)), closes [hi#traffic](https://github.com/hi/issues/traffic)
+
+## [1.422.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.422.1...v1.422.2) (2026-04-29)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.113.0 ([#2440](https://github.com/adobe/spacecat-audit-worker/issues/2440)) ([4ac0f61](https://github.com/adobe/spacecat-audit-worker/commit/4ac0f6123408af990f833c9b51c1a4347575b891))
+
+## [1.422.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.422.0...v1.422.1) (2026-04-29)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** set FIFO attributes on agentic analytics publish ([#2438](https://github.com/adobe/spacecat-audit-worker/issues/2438)) ([3f7c4d7](https://github.com/adobe/spacecat-audit-worker/commit/3f7c4d7628bf57126f2ec1f093c21f67da8c5040))
+
 # [1.422.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.421.2...v1.422.0) (2026-04-28)
 
 

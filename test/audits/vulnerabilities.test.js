@@ -22,6 +22,7 @@ import {
   VULNERABILITY_REPORT_WITH_VULNERABILITIES,
   VULNERABILITY_REPORT_NO_VULNERABILITIES,
   VULNERABILITY_REPORT_MULTIPLE_COMPONENTS,
+  VULNERABILITY_REPORT_ALL_IGNORED,
 } from '../fixtures/vulnerabilities/vulnerability-reports.js';
 import {
   vulnerabilityAuditRunner, opportunityAndSuggestionsStep, extractCodeInfo, buildKey,
@@ -415,6 +416,50 @@ describe('Vulnerabilities Handler Integration Tests', () => {
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    });
+
+    it('should not create suggestions for components whose vulnerabilities are all ignored (null/empty)', async () => {
+      context.audit = {
+        getAuditResult: () => ({
+          vulnerabilityReport: VULNERABILITY_REPORT_ALL_IGNORED,
+          success: true,
+        }),
+        getId: () => 'test-audit-id',
+      };
+
+      const result = await opportunityAndSuggestionsStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      // Components with vulnerabilities=null are non-actionable — no opportunity gets created.
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    });
+
+    it('should resolve a stale opportunity when every reported component has all vulnerabilities ignored', async () => {
+      const suggestions = [
+        { getId: () => 'suggestion1', getStatus: () => 'NEW' },
+      ];
+      const staleOpportunity = {
+        getType: () => 'security-vulnerabilities',
+        setStatus: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves(suggestions),
+        setUpdatedBy: sandbox.stub().resolves(),
+        save: sandbox.stub().resolves(),
+      };
+      context.site.getOpportunitiesByStatus.resolves([staleOpportunity]);
+
+      context.audit = {
+        getAuditResult: () => ({
+          vulnerabilityReport: VULNERABILITY_REPORT_ALL_IGNORED,
+          success: true,
+        }),
+        getId: () => 'test-audit-id',
+      };
+
+      const result = await opportunityAndSuggestionsStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(staleOpportunity.setStatus).to.have.been.calledWith('RESOLVED');
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith(suggestions, 'FIXED');
     });
 
     it('should process vulnerabilities and create opportunities with suggestions', async () => {
