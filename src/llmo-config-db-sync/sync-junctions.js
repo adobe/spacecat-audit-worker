@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { IN_QUERY_CHUNK_SIZE } from './constants.js';
+
 export function buildTopicCategoryRows(config, topicLookup, categoryLookup) {
   const rows = [];
   const seen = new Set();
@@ -54,20 +56,27 @@ export async function syncTopicCategories(
     return { inserted: 0, deleted: 0 };
   }
 
-  const { data: existingData, error: fetchError } = await postgrestClient
-    .from('topic_categories')
-    .select('topic_id,category_id')
-    .in('topic_id', orgTopicUuids);
-  if (fetchError) {
-    throw new Error(`Failed to fetch topic_categories: ${fetchError.message}`);
+  // Chunk topic_id IN-list to stay under the 8KB URL limit (HTTP 414).
+  const existingData = [];
+  for (let i = 0; i < orgTopicUuids.length; i += IN_QUERY_CHUNK_SIZE) {
+    const chunk = orgTopicUuids.slice(i, i + IN_QUERY_CHUNK_SIZE);
+    // eslint-disable-next-line no-await-in-loop
+    const { data, error: fetchError } = await postgrestClient
+      .from('topic_categories')
+      .select('topic_id,category_id')
+      .in('topic_id', chunk);
+    if (fetchError) {
+      throw new Error(`Failed to fetch topic_categories: ${fetchError.message}`);
+    }
+    existingData.push(...(data || []));
   }
 
-  const existingKeys = new Set((existingData || []).map((r) => `${r.topic_id}\0${r.category_id}`));
+  const existingKeys = new Set(existingData.map((r) => `${r.topic_id}\0${r.category_id}`));
   const desiredRows = buildTopicCategoryRows(config, topicLookup, categoryLookup);
   const desiredKeys = new Set(desiredRows.map((r) => `${r.topic_id}\0${r.category_id}`));
 
   const toInsert = desiredRows.filter((r) => !existingKeys.has(`${r.topic_id}\0${r.category_id}`));
-  const orphanRows = (existingData || []).filter((r) => !desiredKeys.has(`${r.topic_id}\0${r.category_id}`));
+  const orphanRows = existingData.filter((r) => !desiredKeys.has(`${r.topic_id}\0${r.category_id}`));
 
   log.info(`[DIFF] topic_categories: ${toInsert.length} to insert, ${orphanRows.length} to delete`);
 

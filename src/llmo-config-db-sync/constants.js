@@ -12,6 +12,10 @@
 
 export const UPSERT_BATCH_SIZE = 3000;
 export const FETCH_BATCH_SIZE = 5000;
+// Max values per `.in(col, [...])` filter. Each UUID adds ~39 URL chars after
+// encoding; staying ~100 keeps requests well under the 8KB proxy URL limit
+// that triggers HTTP 414.
+export const IN_QUERY_CHUNK_SIZE = 100;
 export const PROMPT_ID_NAMESPACE = '1b671a64-40d5-491e-99b0-da01ff1f3341';
 export const TOPIC_ID_NAMESPACE = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
 
