@@ -431,6 +431,104 @@ describe('DRS Config Writer', () => {
     expect(topic.prompts[0].regions.sort()).to.deep.equal(['de', 'us']);
   });
 
+  it('drops non-alpha-2 region values from prompts and category, with aggregated WARN log', async () => {
+    configClient.readConfig.resolves({
+      config: { categories: {}, aiTopics: {} },
+    });
+
+    const drsPrompts = [
+      {
+        prompt: 'Q1', region: 'en-us', category: 'brand', topic: 'general',
+      },
+      {
+        prompt: 'Q2', region: 'en-us', category: 'brand', topic: 'general',
+      },
+      {
+        prompt: 'Q3', region: 'global', category: 'brand', topic: 'general',
+      },
+      {
+        prompt: 'Q4', region: 'us', category: 'brand', topic: 'general',
+      },
+    ];
+
+    await writeDrsPromptsToLlmoConfig({
+      drsPrompts, siteId: 'site-1', s3Client, s3Bucket: 'bucket', log, configClient,
+    });
+
+    expect(log.warn).to.have.been.calledOnce;
+    const warnMsg = log.warn.firstCall.args[0];
+    expect(warnMsg).to.include('site-1');
+    expect(warnMsg).to.include('"en-us":2');
+    expect(warnMsg).to.include('"global":1');
+
+    const writtenConfig = configClient.writeConfig.firstCall.args[1];
+
+    // Category region only includes the valid value.
+    const [, cat] = Object.entries(writtenConfig.categories)[0];
+    expect(cat.region).to.equal('us');
+
+    // All four prompts are still written; only Q4 has a region.
+    const [, topic] = Object.entries(writtenConfig.aiTopics)[0];
+    expect(topic.prompts).to.have.lengthOf(4);
+    const q4 = topic.prompts.find((p) => p.prompt === 'Q4');
+    expect(q4.regions).to.deep.equal(['us']);
+    const q1 = topic.prompts.find((p) => p.prompt === 'Q1');
+    expect(q1.regions).to.deep.equal([]);
+  });
+
+  it('does not warn when all regions are valid alpha-2', async () => {
+    configClient.readConfig.resolves({
+      config: { categories: {}, aiTopics: {} },
+    });
+
+    const drsPrompts = [
+      {
+        prompt: 'Q', region: 'us', category: 'cat', topic: 't',
+      },
+      {
+        prompt: 'Q2', region: 'DE', category: 'cat', topic: 't',
+      },
+    ];
+
+    await writeDrsPromptsToLlmoConfig({
+      drsPrompts, siteId: 's', s3Client, s3Bucket: 'b', log, configClient,
+    });
+
+    expect(log.warn).to.not.have.been.called;
+
+    // Uppercase region is normalized to lowercase before write.
+    const writtenConfig = configClient.writeConfig.firstCall.args[1];
+    const [, cat] = Object.entries(writtenConfig.categories)[0];
+    expect(cat.region.sort()).to.deep.equal(['de', 'us']);
+  });
+
+  it('drops non-string region values gracefully', async () => {
+    configClient.readConfig.resolves({
+      config: { categories: {}, aiTopics: {} },
+    });
+
+    const drsPrompts = [
+      {
+        prompt: 'Q1', region: 123, category: 'cat', topic: 't',
+      },
+      {
+        prompt: 'Q2', region: 'us', category: 'cat', topic: 't',
+      },
+    ];
+
+    const result = await writeDrsPromptsToLlmoConfig({
+      drsPrompts, siteId: 'site-x', s3Client, s3Bucket: 'b', log, configClient,
+    });
+
+    expect(result.success).to.equal(true);
+    expect(log.warn).to.have.been.calledOnce;
+    expect(log.warn.firstCall.args[0]).to.include('123');
+
+    const writtenConfig = configClient.writeConfig.firstCall.args[1];
+    const [, cat] = Object.entries(writtenConfig.categories)[0];
+    expect(cat.region).to.equal('us');
+  });
+
   it('creates separate categories for different category names', async () => {
     configClient.readConfig.resolves({
       config: { categories: {}, aiTopics: {} },
