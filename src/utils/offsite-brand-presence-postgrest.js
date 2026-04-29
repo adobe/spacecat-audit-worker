@@ -14,10 +14,12 @@ import { getDateRanges } from '@adobe/spacecat-shared-utils';
 import { PROVIDERS } from '../offsite-brand-presence/constants.js';
 
 export const EXECUTION_FETCH_BATCH_SIZE = 5000;
+export const MAX_EXECUTION_FETCH_PAGES = 50;
 const DEFAULT_REGION_CODE = 'US';
 
 export const BRAND_PRESENCE_DB_MODEL_BY_PROVIDER = Object.freeze({
   'ai-mode': 'google-ai-mode',
+  // Legacy "all" provider rows are stored as paid ChatGPT executions in Brand Presence DB.
   all: 'chatgpt-paid',
   chatgpt: 'chatgpt-free',
   copilot: 'copilot',
@@ -75,9 +77,14 @@ async function fetchExecutionsWithSources(postgrestClient, {
   const rows = [];
   let lastDate = null;
   let lastId = null;
+  let pageCount = 0;
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    if (pageCount >= MAX_EXECUTION_FETCH_PAGES) {
+      throw new Error(`Exceeded maximum brand_presence_executions pages (${MAX_EXECUTION_FETCH_PAGES})`);
+    }
+
     let query = postgrestClient
       .from('brand_presence_executions')
       .select('id, execution_date, topics, prompt, category_name, region_code, model, brand_presence_sources(source_urls(url))')
@@ -92,7 +99,8 @@ async function fetchExecutionsWithSources(postgrestClient, {
       .limit(EXECUTION_FETCH_BATCH_SIZE);
 
     if (lastDate !== null) {
-      // Keyset pagination: fetch rows after the last seen (date, id) pair
+      // Keyset pagination: lastDate/lastId come from DB ISO date/UUID values.
+      // Revisit if schema types change.
       query = query.or(
         `execution_date.lt.${lastDate},and(execution_date.eq.${lastDate},id.lt.${lastId})`,
       );
@@ -104,6 +112,7 @@ async function fetchExecutionsWithSources(postgrestClient, {
     if (error) {
       throw new Error(`Failed to fetch brand_presence_executions: ${error.message}`);
     }
+    pageCount += 1;
 
     const batch = data || [];
     rows.push(...batch);
@@ -183,7 +192,7 @@ export async function loadBrandPresenceDataFromPostgrest({
     log?.info(`[BrandPresencePostgrest] Loaded ${rows.length} legacy-shaped rows from PostgREST for site ${siteId}`);
     return { data: rows };
   } catch (error) {
-    log?.warn(`[BrandPresencePostgrest] Falling back to file-backed brand presence for site ${siteId}: ${error.message}`);
+    log?.warn(`[BrandPresencePostgrest] PostgREST query failed for site ${siteId}: ${error.message}`);
     return null;
   }
 }

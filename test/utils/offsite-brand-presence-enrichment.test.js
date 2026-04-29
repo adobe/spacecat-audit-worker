@@ -271,6 +271,22 @@ describe('offsite-brand-presence-enrichment', () => {
       );
     });
 
+    it('forwards the provided site object to organization resolution', async () => {
+      const fakeSite = { getOrganizationId: sandbox.stub().returns('org-from-site') };
+      const resolveOrganizationIdForSite = sandbox.stub().resolves('org-123');
+      const mod = await esmockWithPostgrest({ resolveOrganizationIdForSite });
+
+      await mod.computeTopicsFromBrandPresence(
+        SITE_ID,
+        { env, log, dataAccess: {} },
+        fakeSite,
+      );
+
+      expect(resolveOrganizationIdForSite).to.have.been.calledOnce;
+      expect(resolveOrganizationIdForSite.firstCall.args[0].site).to.equal(fakeSite);
+      expect(resolveOrganizationIdForSite.firstCall.args[0].siteId).to.equal(SITE_ID);
+    });
+
     it('returns empty array when SPACECAT_API_BASE_URL is missing', async () => {
       const result = await computeTopicsFromBrandPresence(SITE_ID, {
         env: { SPACECAT_API_KEY: 'k' },
@@ -594,6 +610,29 @@ describe('offsite-brand-presence-enrichment', () => {
       );
     });
 
+    it('returns null without legacy fetch when the brandalf flag state is unknown', async () => {
+      const loadBrandPresenceDataFromPostgrest = sandbox.stub().resolves({
+        data: [makeBrandPresenceRow()],
+      });
+      const mod = await esmockWithPostgrest({
+        isBrandalfEnabled: sandbox.stub().resolves(null),
+        loadBrandPresenceDataFromPostgrest,
+      });
+
+      const result = await mod.loadBrandPresenceData({
+        siteId: SITE_ID,
+        previousWeeks,
+        context: { env, log, dataAccess: {} },
+      });
+
+      expect(result).to.be.null;
+      expect(loadBrandPresenceDataFromPostgrest).to.not.have.been.called;
+      expect(mockFetch).to.not.have.been.called;
+      expect(log.warn).to.have.been.calledWithMatch(
+        /Brandalf flag state unknown/,
+      );
+    });
+
     it('returns { data: rows } from legacy file fetch for non-brandalf org', async () => {
       const row = makeBrandPresenceRow();
       setupQueryIndexAndData([row]);
@@ -605,6 +644,31 @@ describe('offsite-brand-presence-enrichment', () => {
       });
 
       expect(result).to.deep.equal({ data: [row] });
+    });
+
+    it('fetches legacy brand presence files across a year boundary', async () => {
+      const firstWeekRow = makeBrandPresenceRow({ Topics: 'Week 1' });
+      const previousYearRow = makeBrandPresenceRow({ Topics: 'Week 52' });
+      mockFetch
+        .onFirstCall()
+        .resolves(okJsonResponse(sandbox, {
+          data: [
+            { path: '/adobe/brand-presence/w1/brandpresence-copilot-w1-2026-010126.json' },
+            { path: '/adobe/brand-presence/w52/brandpresence-gemini-w52-2025-122925.json' },
+          ],
+        }))
+        .onSecondCall()
+        .resolves(okJsonResponse(sandbox, { data: [firstWeekRow] }))
+        .onThirdCall()
+        .resolves(okJsonResponse(sandbox, { data: [previousYearRow] }));
+
+      const result = await loadBrandPresenceData({
+        siteId: SITE_ID,
+        previousWeeks: [{ week: 1, year: 2026 }, { week: 52, year: 2025 }],
+        context: { env, log },
+      });
+
+      expect(result).to.deep.equal({ data: [firstWeekRow, previousYearRow] });
     });
 
     it('returns null when SPACECAT_API vars are missing (non-brandalf)', async () => {

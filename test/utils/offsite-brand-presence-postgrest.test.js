@@ -17,6 +17,7 @@ import sinonChai from 'sinon-chai';
 import {
   BRAND_PRESENCE_DB_MODEL_BY_PROVIDER,
   EXECUTION_FETCH_BATCH_SIZE,
+  MAX_EXECUTION_FETCH_PAGES,
   getBrandPresenceDbModels,
   getDateWindowForPreviousWeeks,
   loadBrandPresenceDataFromPostgrest,
@@ -418,7 +419,28 @@ describe('offsite-brand-presence-postgrest', () => {
       const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(log.warn).to.have.been.calledWithMatch('query failed');
+      expect(log.warn).to.have.been.calledWithMatch(
+        '[BrandPresencePostgrest] PostgREST query failed for site site-123: Failed to fetch brand_presence_executions: query failed',
+      );
+    });
+
+    it('returns null when keyset pagination reaches the max-page guard', async () => {
+      const fullBatch = new Array(EXECUTION_FETCH_BATCH_SIZE).fill(makeExecution({
+        brand_presence_sources: [embeddedSource('https://example.com/full-page')],
+      }));
+      const chain = createQueryChain(
+        createCapture(),
+        Array.from({ length: MAX_EXECUTION_FETCH_PAGES }, () => ({
+          data: fullBatch,
+          error: null,
+        })),
+      );
+      const postgrestClient = { from: sandbox.stub().returns(chain) };
+
+      expect(await loadWith({ postgrestClient })).to.equal(null);
+      expect(log.warn).to.have.been.calledWithMatch(
+        `Exceeded maximum brand_presence_executions pages (${MAX_EXECUTION_FETCH_PAGES})`,
+      );
     });
   });
 });

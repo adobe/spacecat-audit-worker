@@ -359,6 +359,11 @@ export async function loadBrandPresenceData({
     ? await isBrandalfEnabled(organizationId, env, log)
     : false;
 
+  if (isBrandalfOrg === null) {
+    log.warn(`${LOG_PREFIX} Brandalf flag state unknown for org ${organizationId}; skipping legacy file fetch for site ${siteId}`);
+    return null;
+  }
+
   if (isBrandalfOrg) {
     const postgrestClient = context.dataAccess?.services?.postgrestClient;
     const dbData = await loadBrandPresenceDataFromPostgrest({

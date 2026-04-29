@@ -78,18 +78,18 @@ describe('brandalf-utils', () => {
       expect(log.warn).to.not.have.been.called;
     });
 
-    it('returns false when API env is missing', async () => {
+    it('returns null when API env is missing', async () => {
       const result = await isBrandalfEnabled('org-123', {}, log);
 
-      expect(result).to.equal(false);
+      expect(result).to.equal(null);
       expect(mockFetch).to.not.have.been.called;
       expect(log.warn).to.have.been.calledWithMatch(/cannot check brandalf flag/);
     });
 
-    it('returns false when env is omitted entirely', async () => {
+    it('returns null when env is omitted entirely', async () => {
       const result = await isBrandalfEnabled('org-123', undefined, log);
 
-      expect(result).to.equal(false);
+      expect(result).to.equal(null);
       expect(mockFetch).to.not.have.been.called;
       expect(log.warn).to.have.been.calledWithMatch(/cannot check brandalf flag/);
     });
@@ -109,29 +109,30 @@ describe('brandalf-utils', () => {
       );
     });
 
-    it('returns false when the feature-flags endpoint responds with a non-ok status', async () => {
+    it('returns null when the feature-flags endpoint responds with a non-ok status', async () => {
       mockFetch.resolves({ ok: false, status: 503 });
 
       const result = await isBrandalfEnabled('org-123', DEFAULT_ENV, log);
 
-      expect(result).to.equal(false);
+      expect(result).to.equal(null);
       expect(log.warn).to.have.been.calledWithMatch(
         /Failed to fetch feature flags for org org-123: 503/,
       );
     });
 
-    it('returns false when the API payload is not an array', async () => {
+    it('returns null when the API payload is not an array', async () => {
       stubFeatureFlagsResponse({ flagName: 'brandalf', flagValue: true });
 
-      expect(await isBrandalfEnabled('org-123', DEFAULT_ENV, log)).to.equal(false);
+      expect(await isBrandalfEnabled('org-123', DEFAULT_ENV, log)).to.equal(null);
+      expect(log.warn).to.have.been.calledWithMatch(/Unexpected feature flags payload/);
     });
 
-    it('returns false and warns when the feature-flag request throws', async () => {
+    it('returns null and warns when the feature-flag request throws', async () => {
       mockFetch.rejects(new Error('network down'));
 
       const result = await isBrandalfEnabled('org-123', DEFAULT_ENV, log);
 
-      expect(result).to.equal(false);
+      expect(result).to.equal(null);
       expect(log.warn).to.have.been.calledWithMatch(
         /Error checking brandalf flag for org org-123: network down/,
       );
