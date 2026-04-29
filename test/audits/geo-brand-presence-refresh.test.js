@@ -79,13 +79,18 @@ describe('Geo Brand Presence Refresh Handler', () => {
       getId: () => 'test-site-123',
       getBaseURL: () => 'https://example.com',
       getDeliveryType: () => 'aem_edge',
+      getOrganizationId: () => 'test-org-id',
       getConfig: () => ({
         getLlmoDataFolder: () => '/data/llmo',
         getBrandPresenceCadence: () => 'weekly',
+        getLlmoBrand: () => 'test-brand',
       }),
     };
 
-    dataAccess = { Site: { findById: sandbox.stub().resolves(site) } };
+    dataAccess = {
+      Site: { findById: sandbox.stub().resolves(site) },
+      Organization: { findById: sandbox.stub().resolves({ getImsOrgId: () => 'test-ims-org-id' }) },
+    };
     sharepointClient = { getFile: sandbox.stub() };
 
     context = {
@@ -154,7 +159,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
   // ─── DRS routing ─────────────────────────────────────────────────────────────
 
   describe('DRS routing', () => {
-    it('calls uploadExcelToDrs with correct siteId and auditId', async () => {
+    it('calls uploadExcelToDrs with correct siteId and a spacecat-prefixed jobId', async () => {
       withSheets([SHEET_W45]);
 
       await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
@@ -162,24 +167,28 @@ describe('Geo Brand Presence Refresh Handler', () => {
       expect(uploadExcelToDrsStub).to.have.been.calledOnce;
       expect(uploadExcelToDrsStub).to.have.been.calledWith(
         'test-site-123',
-        sinon.match.string,
+        sinon.match(/^spacecat-/),
         sinon.match.instanceOf(Buffer),
       );
     });
 
-    it('calls publishBrandPresenceAnalyze with correct args', async () => {
+    it('calls publishBrandPresenceAnalyze with correct args including jobId, brand, imsOrgId', async () => {
       withSheets([SHEET_W45]);
 
       await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
 
+      const uploadJobId = uploadExcelToDrsStub.firstCall.args[1];
       expect(publishBrandPresenceAnalyzeStub).to.have.been.calledOnce;
       expect(publishBrandPresenceAnalyzeStub).to.have.been.calledWith('test-site-123', {
+        jobId: uploadJobId,
         resultLocation: 's3://drs-bucket/external/spacecat/test-site-123/job-id/source.xlsx',
         webSearchProvider: 'chatgpt',
         configVersion: 'abc123',
         week: 45,
         year: 2025,
         runFrequency: 'weekly',
+        brand: 'test-brand',
+        imsOrgId: 'test-ims-org-id',
       });
     });
 

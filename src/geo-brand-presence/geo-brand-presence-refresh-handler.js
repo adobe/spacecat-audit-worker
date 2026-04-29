@@ -19,6 +19,7 @@ import ExcelJS from 'exceljs';
 import { getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
 import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
+import { getImsOrgId } from '../utils/data-access.js';
 import {
   refreshDirectoryS3Key,
   refreshMetadataFileS3Key,
@@ -280,6 +281,8 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
     log.info(`%s: Metadata written to S3 for auditId: ${auditId}, siteId: ${siteId} in ${metadataDuration}ms`, AUDIT_NAME);
 
     const { configVersion } = auditContext;
+    const imsOrgId = await getImsOrgId(site, dataAccess, log);
+    const brand = site.getConfig()?.getLlmoBrand?.() ?? null;
 
     log.info(`%s: Site details for auditId: ${auditId}, siteId: ${siteId}, configVersion: ${configVersion || 'none'}`, AUDIT_NAME);
 
@@ -307,20 +310,24 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
       log.info(`%s: Sheet read from SharePoint for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName} (${sheet.length} bytes in ${readDuration}ms)`, AUDIT_NAME);
 
       try {
-        log.info(`%s: Uploading sheet ${sheetName} to DRS S3 for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
-        const resultLocation = await drsClient.uploadExcelToDrs(siteId, auditId, sheet);
+        const jobId = `spacecat-${randomUUID()}`;
+        log.info(`%s: Uploading sheet ${sheetName} to DRS S3 for jobId: ${jobId}, siteId: ${siteId}`, AUDIT_NAME);
+        const resultLocation = await drsClient.uploadExcelToDrs(siteId, jobId, sheet);
         log.info(`%s: Sheet uploaded to DRS S3: ${resultLocation}`, AUDIT_NAME);
 
-        const jobId = await drsClient.publishBrandPresenceAnalyze(siteId, {
+        const publishedJobId = await drsClient.publishBrandPresenceAnalyze(siteId, {
+          jobId,
           resultLocation,
           webSearchProvider: normalizeWebSearchProvider(webSearchProvider),
           configVersion,
           week: +week,
           year: +year,
-          runFrequency: 'weekly',
+          runFrequency: site.getConfig()?.getBrandPresenceCadence?.() ?? 'weekly',
+          brand,
+          imsOrgId,
         });
         log.info(
-          `%s: DRS analyze triggered for sheet ${sheetName}, siteId: ${siteId}, jobId: ${jobId}`,
+          `%s: DRS analyze triggered for sheet ${sheetName}, siteId: ${siteId}, jobId: ${publishedJobId}`,
           AUDIT_NAME,
         );
       } catch (drsError) {
