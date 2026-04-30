@@ -40,11 +40,11 @@ describe('Geo Brand Presence Daily Refresh Handler', () => {
   let drsClientStub;
   let drsCreateFromStub;
 
+  // 3 past full weeks; the handler computes current week (47) as lastFull+1
   const LAST_4_WEEKS = [
     { week: 44, year: 2025 },
     { week: 45, year: 2025 },
     { week: 46, year: 2025 },
-    { week: 47, year: 2025 },
   ];
 
   beforeEach(async () => {
@@ -264,11 +264,11 @@ describe('Geo Brand Presence Daily Refresh Handler', () => {
     });
 
     it('handles year boundaries correctly', async () => {
+      // 3 past full weeks; current week = w2/2025 (lastFull w1/2025 + 1)
       getLastNumberOfWeeksStub.returns([
         { week: 51, year: 2024 },
         { week: 52, year: 2024 },
         { week: 1, year: 2025 },
-        { week: 2, year: 2025 },
       ]);
 
       withSheets([

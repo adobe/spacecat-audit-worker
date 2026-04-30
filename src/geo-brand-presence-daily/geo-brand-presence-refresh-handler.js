@@ -40,16 +40,32 @@ const RE_SHEET_NAME = /^brandpresence-(?<webSearchProvider>.+?)-w(?<week>\d{2})-
 /* c8 ignore start */
 
 /**
- * Filters paths to only include those from the last 4 weeks
+ * Filters paths to only include those from the last 4 weeks including the current week.
  * @param {Array<string>} paths - Array of sheet names to filter
  * @param {Object} log - Logger instance
  * @returns {Array<string>} Filtered paths from the last 4 weeks
  */
 function filterPathsByLastFourWeeks(paths, log) {
-  const last4Weeks = getLastNumberOfWeeks(4);
-  const validWeeks = new Set(last4Weeks.map((w) => `${w.year}-${String(w.week).padStart(2, '0')}`));
+  const last3Weeks = getLastNumberOfWeeks(3);
+  const lastFull = last3Weeks[last3Weeks.length - 1];
+  // Compute current in-progress week (lastFull + 1, with ISO year-rollover)
+  let currentWeek = lastFull.week + 1;
+  let currentYear = lastFull.year;
+  if (currentWeek > 52) {
+    const jan1Day = new Date(Date.UTC(currentYear, 0, 1)).getUTCDay();
+    const dec31Day = new Date(Date.UTC(currentYear, 11, 31)).getUTCDay();
+    const has53Weeks = jan1Day === 4 || dec31Day === 4;
+    if (!has53Weeks || currentWeek > 53) {
+      currentWeek = 1;
+      currentYear += 1;
+    }
+  }
+  const validWeeks = new Set(
+    [...last3Weeks, { week: currentWeek, year: currentYear }]
+      .map((w) => `${w.year}-${String(w.week).padStart(2, '0')}`),
+  );
 
-  log.debug(`${AUDIT_NAME}: Filtering paths to last 4 weeks: ${Array.from(validWeeks).join(', ')}`);
+  log.debug(`${AUDIT_NAME}: Filtering paths to last 4 weeks (incl. current): ${Array.from(validWeeks).join(', ')}`);
 
   const filteredPaths = paths.filter((path) => {
     const match = RE_SHEET_NAME.exec(path);
