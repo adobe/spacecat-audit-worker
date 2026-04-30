@@ -1,3 +1,10 @@
+## [1.423.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.423.1...v1.423.2) (2026-04-30)
+
+
+### Bug Fixes
+
+* **toc:** convert transformRules.value to HAST in mergeDataFunction ([#2388](https://github.com/adobe/spacecat-audit-worker/issues/2388)) ([af122f9](https://github.com/adobe/spacecat-audit-worker/commit/af122f98fc272bb8852811d334824c8ff9597a9e))
+
 ## [1.423.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.423.0...v1.423.1) (2026-04-29)
 
 
