@@ -20,49 +20,16 @@ import { wwwUrlResolver } from '../common/index.js';
 import {
   compareConfigs, areCategoryNamesDifferent,
 } from './utils.js';
+import {
+  isBrandalfEnabled,
+  resolveOrganizationIdForSite,
+} from '../utils/brandalf-utils.js';
 import { getRUMUrl } from '../support/utils.js';
 import { handleCdnBucketConfigChanges } from './cdn-config-handler.js';
 import { sendOnboardingNotification } from './onboarding-notifications.js';
 
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
-
-/**
- * Checks whether the brandalf feature flag is enabled for an organization
- * by calling the SpaceCat API feature-flags endpoint.
- *
- * @param {string} organizationId - SpaceCat org UUID
- * @param {object} env - Environment variables (needs SPACECAT_API_BASE_URL, SPACECAT_API_KEY)
- * @param {object} log - Logger
- * @returns {Promise<boolean>} true if brandalf is enabled, false otherwise
- */
-async function isBrandalfEnabled(organizationId, env, log) {
-  const { SPACECAT_API_BASE_URL: apiBase, SPACECAT_API_KEY: apiKey } = env;
-  if (!apiBase || !apiKey) {
-    log.warn('SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured; cannot check brandalf flag');
-    return false;
-  }
-
-  try {
-    const url = `${apiBase}/organizations/${encodeURIComponent(organizationId)}/feature-flags?product=LLMO`;
-    const response = await fetch(url, {
-      headers: { 'x-api-key': apiKey },
-    });
-
-    if (!response.ok) {
-      log.warn(`Failed to fetch feature flags for org ${organizationId}: ${response.status}`);
-      return false;
-    }
-
-    const flags = await response.json();
-    return Array.isArray(flags) && flags.some(
-      (f) => f.flagName === 'brandalf' && f.flagValue === true,
-    );
-  } catch (error) {
-    log.warn(`Error checking brandalf flag for org ${organizationId}: ${error.message}`);
-    return false;
-  }
-}
 /* c8 ignore start */
 /* this is actually running during tests. verified manually on 2025-12-10. */
 /**
@@ -331,7 +298,11 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   let brandId;
   let organizationId;
   if (isFirstTimeOnboarding) {
-    const orgId = site.getOrganizationId?.() || auditContext.imsOrgId;
+    const orgId = await resolveOrganizationIdForSite({
+      site,
+      fallbackOrganizationId: auditContext.imsOrgId,
+      log,
+    });
     if (orgId) {
       const isV2 = onboardingMode !== 'v1' && await isBrandalfEnabled(orgId, env, log);
       if (isV2) {

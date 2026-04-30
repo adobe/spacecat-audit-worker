@@ -10,22 +10,16 @@
  * governing permissions and limitations under the License.
  */
 
-import { isoCalendarWeek, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import DrsClient, { SCRAPE_DATASET_IDS } from '@adobe/spacecat-shared-drs-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
+import { getPreviousWeeks, loadBrandPresenceData } from '../utils/offsite-brand-presence-enrichment.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import {
-  BRAND_PRESENCE_REGEX,
   DRS_URLS_LIMIT,
-  FETCH_PAGE_SIZE,
-  FETCH_TIMEOUT_MS,
-  INCLUDE_COLUMNS,
   REDDIT_COMMENTS_DAYS_BACK,
   OFFSITE_DOMAINS,
-  PROVIDERS_SET,
   CITED_ANALYSIS_DRS_CONFIG,
-  USER_AGENT,
   YOUTUBE_URL_REGEX,
   REDDIT_URL_REGEX,
 } from './constants.js';
@@ -35,167 +29,6 @@ const LOG_PREFIX = '[OffsiteBrandPresence]';
 const DOMAIN_ALIASES = Object.freeze({
   'youtu.be': 'youtube.com',
 });
-
-/**
- * Gets the ISO week number and year for the previous two weeks.
- * @returns {Array<{ week: number, year: number }>} Previous two weeks (most recent first)
- */
-function getPreviousWeeks() {
-  return [1, 2].map((i) => {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() - (7 * i));
-    return isoCalendarWeek(d);
-  });
-}
-
-/**
- * Fetches query-index.json for a site via the Spacecat API.
- *
- * @param {string} siteId - The site ID
- * @param {object} env - Environment variables
- * @param {object} log - Logger instance
- * @returns {Promise<object|null>} Parsed JSON data or null if the request failed
- */
-async function fetchQueryIndex(siteId, env, log) {
-  const apiBase = env.SPACECAT_API_BASE_URL;
-  const apiKey = env.SPACECAT_API_KEY;
-  const url = `${apiBase}/sites/${siteId}/llmo/data/query-index.json`;
-
-  log.info(`${LOG_PREFIX} Fetching query-index from: ${url}`);
-
-  try {
-    const headers = { 'x-api-key': apiKey, 'User-Agent': USER_AGENT };
-    const response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
-
-    if (!response.ok) {
-      log.warn(`${LOG_PREFIX} Failed to fetch query-index: ${response.status}`);
-      return null;
-    }
-
-    return response.json();
-  } catch (error) {
-    log.error(`${LOG_PREFIX} Error fetching query-index: ${error.message}`);
-    return null;
-  }
-}
-
-/**
- * Fetches brand presence JSON data for a specific file via the Spacecat API.
- * Uses pagination (limit/offset) to handle large files that would otherwise
- * exceed the API's response size limit (HTTP 413).
- *
- * @param {string} siteId - The site ID
- * @param {string} fileName - The brand presence file path relative to the llmo data directory
- *                            (e.g. 'brand-presence/w7/brandpresence-copilot-w7-2026-010126.json')
- * @param {object} env - Environment variables
- * @param {object} log - Logger instance
- * @returns {Promise<object|null>} Parsed JSON data or null if not found
- */
-async function fetchBrandPresenceData(siteId, fileName, env, log) {
-  const apiBase = env.SPACECAT_API_BASE_URL;
-  const apiKey = env.SPACECAT_API_KEY;
-  const headers = { 'x-api-key': apiKey, 'User-Agent': USER_AGENT };
-  const baseUrl = `${apiBase}/sites/${siteId}/llmo/data/${fileName}?sheet=all&include=${INCLUDE_COLUMNS}&source=offsite-audits`;
-
-  let allRows = [];
-  let offset = 0;
-  let hasMore = true;
-
-  log.info(`${LOG_PREFIX} Fetching brand presence data from: ${baseUrl}`);
-  while (hasMore) {
-    const url = `${baseUrl}&limit=${FETCH_PAGE_SIZE}&offset=${offset}`;
-
-    // eslint-disable-next-line no-await-in-loop
-    const response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
-
-    if (!response.ok) {
-      // eslint-disable-next-line no-await-in-loop
-      const errorBody = await response.text().catch(() => '(unable to read body)');
-      log.warn(`${LOG_PREFIX} Failed to fetch data for ${fileName}: ${response.status}`, {
-        url,
-        status: response.status,
-        statusText: response.statusText,
-        responseBody: errorBody,
-      });
-      if (allRows.length === 0) {
-        return null;
-      }
-      break;
-    }
-
-    // eslint-disable-next-line no-await-in-loop
-    const data = await response.json();
-    const rows = data?.data || [];
-    allRows = allRows.concat(rows);
-
-    if (rows.length < FETCH_PAGE_SIZE) {
-      hasMore = false;
-    } else {
-      offset += FETCH_PAGE_SIZE;
-    }
-  }
-  return { data: allRows };
-}
-
-/**
- * Attempts to extract a matching brand presence file path from a query-index entry.
- * Returns the relative file path if it matches the target week and a known provider,
- * or null otherwise.
- *
- * @param {object} entry - A single query-index entry
- * @param {number} targetWeek - The target week number to match
- * @param {number} targetYear - The target year to match
- * @returns {string|null} The matched file path, or null
- */
-function matchBrandPresenceEntry(entry, targetWeek, targetYear) {
-  if (!entry?.path) {
-    return null;
-  }
-
-  const bpIdx = entry.path.indexOf('brand-presence/');
-  if (bpIdx === -1) {
-    return null;
-  }
-
-  const filePath = entry.path.substring(bpIdx);
-  const match = filePath.match(BRAND_PRESENCE_REGEX);
-  if (!match) {
-    return null;
-  }
-
-  const [, providerId, weekStr, yearStr] = match;
-  const fileWeek = Number.parseInt(weekStr, 10);
-  const fileYear = Number.parseInt(yearStr, 10);
-  const yearMatches = fileYear === targetYear;
-
-  if (fileWeek === targetWeek && yearMatches && PROVIDERS_SET.has(providerId)) {
-    return filePath;
-  }
-  return null;
-}
-
-/**
- * Filters brand presence file paths from the query-index response.
- * Only returns files matching the pattern brandpresence-{provider}-w{week}-{year}-*.json
- * where the provider is in PROVIDERS and both week and year match the targets.
- *
- * @param {object} queryIndex - The parsed query-index response
- * @param {number} targetWeek - The target week number to match
- * @param {number} targetYear - The target year to match
- * @returns {string[]} Matched file paths relative to the llmo data directory
- */
-export function filterBrandPresenceFiles(queryIndex, targetWeek, targetYear) {
-  const entries = queryIndex?.data || [];
-  const matched = [];
-
-  for (const entry of entries) {
-    const filePath = matchBrandPresenceEntry(entry, targetWeek, targetYear);
-    if (filePath) {
-      matched.push(filePath);
-    }
-  }
-  return matched;
-}
 
 /**
  * Normalizes a YouTube URL to keep only essential identifiers.
@@ -593,39 +426,6 @@ async function triggerDrsScraping(urlsByDomain, siteId, context) {
 }
 
 /**
- * Fetches matched brand presence files sequentially and aggregates
- * all source URLs and topic associations across files.
- *
- * @param {string} siteId - The site ID
- * @param {string[]} matchedFiles - File paths to fetch
- * @param {object} env - Environment variables
- * @param {object} log - Logger instance
- * @returns {Promise<{allUrls: Map, topicMap: Map}>} Unified URL map and topic map
- */
-async function fetchAndAggregateData(siteId, matchedFiles, env, log) {
-  const allUrls = new Map();
-  const topicMap = new Map();
-
-  for (const filePath of matchedFiles) {
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      const data = await fetchBrandPresenceData(siteId, filePath, env, log);
-      if (!data) {
-        // eslint-disable-next-line no-continue
-        continue;
-      }
-
-      extractUrlsAndTopics(data, allUrls, topicMap, log);
-    } catch (err) {
-      log.error(`${LOG_PREFIX} Error fetching brand presence file ${filePath}: ${err.message}`);
-    }
-  }
-
-  log.info(`${LOG_PREFIX} Extracted ${topicMap.size} unique topics`);
-  return { allUrls, topicMap };
-}
-
-/**
  * Sorts all URLs by citation count once, then partitions them into per-domain
  * buckets and a top-cited bucket in a single pass.
  *
@@ -658,6 +458,33 @@ function selectTopUrls(allUrls, maxUrlsPerBucket, excludedFromTopCited) {
 }
 
 /**
+ * Sends a Slack notification summarizing DRS job results.
+ *
+ * @param {Array} drsResults - Array of DRS job result objects
+ * @param {string} baseURL - The site's base URL
+ * @param {object} context - The execution context
+ * @param {string} channelId - Slack channel ID
+ * @param {string} threadTs - Slack thread timestamp
+ */
+async function notifyDrsResults(drsResults, baseURL, context, channelId, threadTs) {
+  if (drsResults.length === 0) {
+    return;
+  }
+
+  const succeeded = drsResults.filter((r) => r.status === 'success');
+  const failed = drsResults.filter((r) => r.status === 'error');
+  const lines = [
+    `:white_check_mark: *offsite-brand-presence* DRS jobs for *${baseURL}*:`,
+    ...succeeded.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → job_id: \`${r.response.job_id}\``),
+    ...(failed.length > 0 ? [
+      `:x: *Failed (${failed.length}):*`,
+      ...failed.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → ${r.error}`),
+    ] : []),
+  ];
+  await postMessageOptional(context, channelId, lines.join('\n'), { threadTs });
+}
+
+/**
  * Main runner for the offsite-brand-presence audit.
  *
  * Workflow:
@@ -675,46 +502,28 @@ function selectTopUrls(allUrls, maxUrlsPerBucket, excludedFromTopCited) {
  * @returns {Promise<object>} Audit result
  */
 export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditContext) {
-  const { dataAccess, env, log } = context;
+  const { dataAccess, log } = context;
   const { slackContext } = auditContext || {};
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
-
-  log.info(`${LOG_PREFIX} Starting audit for site: ${siteId} (${baseURL})`);
-
-  if (!env.SPACECAT_API_BASE_URL || !env.SPACECAT_API_KEY) {
-    log.error(`${LOG_PREFIX} SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured`);
-    return {
-      auditResult: { success: false, error: 'SPACECAT_API_BASE_URL or SPACECAT_API_KEY not configured' },
-      fullAuditRef: finalUrl,
-    };
-  }
-
-  // Fetch query-index.json
-  const queryIndex = await fetchQueryIndex(siteId, env, log);
-  if (!queryIndex) {
-    log.error(`${LOG_PREFIX} Failed to fetch query-index for site ${siteId}`);
-    return {
-      auditResult: { success: false, error: 'Failed to fetch query-index' },
-      fullAuditRef: finalUrl,
-    };
-  }
-
   const previousWeeks = getPreviousWeeks();
   const weekLabels = previousWeeks
     .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
     .join(', ');
 
-  log.info(`${LOG_PREFIX} Processing weeks: ${weekLabels}`);
+  log.info(`${LOG_PREFIX} Starting audit for site: ${siteId} (${baseURL}), weeks: ${weekLabels}`);
 
-  const matchedFiles = previousWeeks.flatMap(
-    ({ week, year }) => filterBrandPresenceFiles(queryIndex, week, year),
-  );
-  log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for weeks ${weekLabels}`);
+  const brandPresenceData = await loadBrandPresenceData({
+    siteId, site, previousWeeks, context,
+  });
 
-  // Fetch all matched files and collect source URLs + topic associations
-  const { allUrls } = await fetchAndAggregateData(siteId, matchedFiles, env, log);
+  const allUrls = new Map();
+  if (brandPresenceData) {
+    const topicMap = new Map();
+    extractUrlsAndTopics(brandPresenceData, allUrls, topicMap, log);
+  }
+
   log.info(`${LOG_PREFIX} Total unique source URLs found: ${allUrls.size}`);
 
   // Compute per-domain counts for audit result
@@ -749,19 +558,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const storedByDomain = await addUrlsToUrlStore(siteId, topByDomain, topCited, dataAccess, log);
   const drsResults = await triggerDrsScraping(storedByDomain, siteId, context);
 
-  if (drsResults.length > 0) {
-    const succeeded = drsResults.filter((r) => r.status === 'success');
-    const failed = drsResults.filter((r) => r.status === 'error');
-    const lines = [
-      `:white_check_mark: *offsite-brand-presence* DRS jobs for *${baseURL}*:`,
-      ...succeeded.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → job_id: \`${r.response.job_id}\``),
-      ...(failed.length > 0 ? [
-        `:x: *Failed (${failed.length}):*`,
-        ...failed.map((r) => `• \`${r.domain}\` / \`${r.datasetId}\` → ${r.error}`),
-      ] : []),
-    ];
-    await postMessageOptional(context, channelId, lines.join('\n'), { threadTs });
-  }
+  await notifyDrsResults(drsResults, baseURL, context, channelId, threadTs);
 
   // TODO: temporarily disabled
   // if (topicMap.size > 0) {

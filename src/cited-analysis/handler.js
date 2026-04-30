@@ -23,7 +23,7 @@ import {
   resolveMystiqueUrlLimit,
 } from '../utils/offsite-audit-utils.js';
 import { CITED_ANALYSIS_DRS_CONFIG } from '../offsite-brand-presence/constants.js';
-import { computeTopicsFromBrandPresence } from '../utils/brand-presence-enrichment.js';
+import { computeTopicsFromBrandPresence } from '../utils/offsite-brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 
 const LOG_PREFIX = '[Cited]';
@@ -65,7 +65,7 @@ function getCitedConfig(site) {
  * @returns {Promise<Object>} Object containing urls and sentimentConfig
  * @throws {StoreEmptyError} If any store returns empty results
  */
-async function fetchStoreData(siteId, context) {
+async function fetchStoreData(siteId, context, site) {
   const { log } = context;
   const storeClient = StoreClient.createFrom(context);
 
@@ -79,7 +79,7 @@ async function fetchStoreData(siteId, context) {
   const urls = await filterUrlsByDrsStatus(rawUrls, datasetIds, siteId, drsClient, log, LOG_PREFIX);
   log.info(`${LOG_PREFIX} ${urls.length} cited URLs available in DRS`);
 
-  const topics = await computeTopicsFromBrandPresence(siteId, context);
+  const topics = await computeTopicsFromBrandPresence(siteId, context, site);
   log.info(`${LOG_PREFIX} Computed ${topics.length} topics from brand presence data`);
   log.debug(`${LOG_PREFIX} Brand-presence topics payload: ${JSON.stringify(topics)}`);
 
@@ -135,7 +135,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
 
     log.info(`${LOG_PREFIX} Config: companyName=${citedConfig.companyName}, website=${citedConfig.companyWebsite}`);
 
-    const storeData = await fetchStoreData(siteId, context);
+    const storeData = await fetchStoreData(siteId, context, site);
     log.info(`${LOG_PREFIX} Successfully fetched all store data for ${citedConfig.companyName}`);
 
     const urlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
