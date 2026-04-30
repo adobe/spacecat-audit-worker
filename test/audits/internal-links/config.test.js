@@ -146,6 +146,7 @@ describe('internal-links config resolver', () => {
       'audio',
       'media',
     ]);
+    expect(resolver.getExcludeCrossLocalePDP()).to.equal(false);
     expect(resolver.getMystiqueItemTypes()).to.deep.equal([
       'link',
       'form',
@@ -170,6 +171,20 @@ describe('internal-links config resolver', () => {
     }), {});
 
     expect(resolver.getExcludedElementClasses()).to.deep.equal(['no-audit', 'editorial']);
+  });
+
+  it('returns excludeCrossLocalePDP from handler config when the value is set to true', () => {
+    const resolver = new InternalLinksConfigResolver(createSite({
+      excludeCrossLocalePDP: true,
+    }), {});
+    expect(resolver.getExcludeCrossLocalePDP()).to.equal(true);
+  });
+  
+  it('returns excludeCrossLocalePDP from handler config when the value is set to false', () => {
+    const resolver = new InternalLinksConfigResolver(createSite({
+      excludeCrossLocalePDP: false,
+    }), {});
+    expect(resolver.getExcludeCrossLocalePDP()).to.equal(false);
   });
 
   it('normalizeExcludedElementClasses parses comma-separated string', () => {

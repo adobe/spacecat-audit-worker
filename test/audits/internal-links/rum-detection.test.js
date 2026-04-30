@@ -63,11 +63,19 @@ describe('internal-links rum-detection', () => {
     };
   }
 
-  function createSite() {
-    return {
+  function createSite(handlerConfig) {
+    const site = {
       getId: () => 'site-1',
       getBaseURL: () => 'https://example.com',
     };
+    if (handlerConfig !== undefined) {
+      site.getConfig = () => ({
+        getHandlers: () => ({
+          'broken-internal-links': { config: handlerConfig },
+        }),
+      });
+    }
+    return site;
   }
 
   function createSteps(overrides = {}) {
@@ -380,6 +388,75 @@ describe('internal-links rum-detection', () => {
 
     expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
     expect(log.info).to.have.been.calledWith('Filtered out 1 RUM links outside the audit scope before validation');
+  });
+
+  it('filters cross-locale PDP RUM pairs before validation when excludeCrossLocalePDP is true', async () => {
+    const rumApiClient = {
+      query: sinon.stub().resolves([
+        {
+          url_from: 'https://example.com/fr/widget/missing',
+          url_to: 'https://example.com/de/widget/missing',
+          traffic_domain: 99,
+        },
+        {
+          url_from: 'https://example.com/en/page',
+          url_to: 'https://example.com/en/missing',
+          traffic_domain: 5,
+        },
+      ]),
+    };
+    const isLinkInaccessible = createRumValidationStub();
+    const log = createLog();
+    const { internalLinksAuditRunner } = createSteps({ isLinkInaccessible });
+
+    const result = await internalLinksAuditRunner('https://example.com', {
+      log,
+      site: createSite({ excludeCrossLocalePDP: true }),
+      rumApiClient,
+      finalUrl: 'https://example.com',
+    });
+
+    expect(result.auditResult.brokenInternalLinks).to.deep.equal([{
+      urlFrom: 'https://example.com/en/page',
+      urlTo: 'https://example.com/en/missing',
+      trafficDomain: 5,
+      detectionSource: 'rum',
+      httpStatus: 404,
+      statusBucket: 'not_found_404',
+      contentType: 'text/html',
+      priority: 'high',
+    }]);
+    expect(log.info).to.have.been.calledWith(
+      'Filtered out 1 cross-locale 404 RUM PDP links before validation',
+    );
+  });
+
+  it('keeps cross-locale RUM rows when excludeCrossLocalePDP is false', async () => {
+    const rumApiClient = {
+      query: sinon.stub().resolves([
+        {
+          url_from: 'https://example.com/fr/page',
+          url_to: 'https://example.com/de/missing',
+          traffic_domain: 99,
+        },
+      ]),
+    };
+    const isLinkInaccessible = createRumValidationStub();
+    const log = createLog();
+    const { internalLinksAuditRunner } = createSteps({ isLinkInaccessible });
+
+    const result = await internalLinksAuditRunner('https://example.com', {
+      log,
+      site: createSite({ excludeCrossLocalePDP: false }),
+      rumApiClient,
+      finalUrl: 'https://example.com',
+    });
+
+    expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+    expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://example.com/de/missing');
+    expect(log.info).not.to.have.been.calledWith(
+      sinon.match(/cross-locale 404 RUM PDP/),
+    );
   });
 
   it('throws from the top-pages step when rum detection fails', async () => {
