@@ -52,7 +52,8 @@ function filterPathsByLastFourWeeks(paths, log) {
   log.debug(`${AUDIT_NAME}: Filtering paths to last 4 weeks: ${Array.from(validWeeks).join(', ')}`);
 
   const filteredPaths = paths.filter((path) => {
-    const match = RE_SHEET_NAME.exec(path);
+    const filename = path.split('/').pop();
+    const match = RE_SHEET_NAME.exec(filename);
     if (!match) {
       log.debug(`${AUDIT_NAME}: Skipping invalid path format: ${path}`);
       return false;
@@ -63,7 +64,7 @@ function filterPathsByLastFourWeeks(paths, log) {
     const isValid = validWeeks.has(weekKey);
 
     if (!isValid) {
-      log.debug(`${AUDIT_NAME}: Excluding path ${path} (${weekKey}) - outside last 4 weeks`);
+      log.debug(`${AUDIT_NAME}: Excluding path ${filename} (${weekKey}) - outside last 4 weeks`);
     }
 
     return isValid;
@@ -142,15 +143,12 @@ async function fetchQueryIndexPaths(site, context, sharepointClient) {
               }
             }
           } else if (cellValue.includes('/brand-presence/') && !cellValue.includes('/brand-presence/latest/')) {
-            // Then check for regular brand-presence/ (fallback)
-            const filename = cellValue.split('/').pop();
-            if (filename) {
-              // Remove .json extension
-              const filenameWithoutExt = filename.replace(/\.json$/i, '');
-              if (!regularPaths.includes(filenameWithoutExt)) {
-                regularPaths.push(filenameWithoutExt);
-                log.debug(`%s: Found regular path for siteId: ${siteId}, path: ${filenameWithoutExt}`, AUDIT_NAME);
-              }
+            // Preserve relative path from brand-presence/ (e.g. "w18/brandpresence-...")
+            const marker = '/brand-presence/';
+            const relPath = cellValue.slice(cellValue.indexOf(marker) + marker.length).replace(/\.\w+$/i, '');
+            if (relPath && !regularPaths.includes(relPath)) {
+              regularPaths.push(relPath);
+              log.debug(`%s: Found regular path for siteId: ${siteId}, path: ${relPath}`, AUDIT_NAME);
             }
           }
         }
@@ -293,7 +291,8 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
     const results = await Promise.allSettled(sheets.map(async (sheetName, index) => {
       log.info(`%s: Processing sheet ${index + 1}/${sheets.length} for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName}`, AUDIT_NAME);
 
-      const match = RE_SHEET_NAME.exec(sheetName);
+      const sheetFilename = sheetName.split('/').pop();
+      const match = RE_SHEET_NAME.exec(sheetFilename);
       if (!match) {
         log.warn(`%s: Skipping invalid sheet name ${sheetName} for auditId: ${auditId}, siteId: ${siteId}. Expected format: brandpresence-<webSearchProvider>-w<WW>-<YYYY>`, AUDIT_NAME);
         return false;
