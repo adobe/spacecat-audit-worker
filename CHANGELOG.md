@@ -1,3 +1,17 @@
+# [1.425.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.424.2...v1.425.0) (2026-04-30)
+
+
+### Features
+
+* **cdn-logs-report:** add daily referral traffic export to analytics pipeline ([#2452](https://github.com/adobe/spacecat-audit-worker/issues/2452)) ([6ab94f2](https://github.com/adobe/spacecat-audit-worker/commit/6ab94f227f089b93c8beaa7bf7dd60e0aca36d5e))
+
+## [1.424.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.424.1...v1.424.2) (2026-04-30)
+
+
+### Bug Fixes
+
+* Readability - Exclude Invalid content ([#2417](https://github.com/adobe/spacecat-audit-worker/issues/2417)) ([6ce07fd](https://github.com/adobe/spacecat-audit-worker/commit/6ce07fd623a26b2dc85b06625b36ebd05d86106e))
+
 ## [1.424.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.424.0...v1.424.1) (2026-04-30)
 
 
