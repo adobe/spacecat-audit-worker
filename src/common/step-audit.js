@@ -86,6 +86,17 @@ export class StepAudit extends BaseAudit {
     };
 
     if (step.destination === AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT) {
+      if (!stepResult.urls?.length) {
+        const queueUrl = context.env?.AUDIT_JOBS_QUEUE_URL;
+        const bypassPayload = {
+          type: audit.getAuditType(),
+          siteId: stepResult.siteId,
+          auditContext,
+        };
+        await sendContinuationMessage({ queueUrl, payload: bypassPayload }, context);
+        log.debug(`Step ${step.name}: no URLs to scrape, routing directly to ${auditContext.next}`);
+        return stepResult;
+      }
       const scrapeClient = ScrapeClient.createFrom(context);
       const payload = destination.formatPayload(stepResult, auditContext, context);
       log.debug(`Creating new scrapeJob with the ScrapeClient. Payload: ${JSON.stringify(payload)}`);
