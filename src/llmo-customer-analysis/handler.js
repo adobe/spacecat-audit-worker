@@ -14,6 +14,7 @@ import {
   getLastNumberOfWeeks, llmoConfig, tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
@@ -279,6 +280,20 @@ export async function triggerCdnLogsReport(context, site) {
   log.info('Successfully triggered cdn-logs-report audit');
 }
 
+async function triggerGeoBrandPresenceRefresh(context, site, configVersion) {
+  const { sqs, dataAccess, log } = context;
+  const { Configuration } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  const siteId = site.getSiteId();
+  log.info('Triggering geo-brand-presence-trigger-refresh for site: %s', siteId);
+  await sqs.sendMessage(configuration.getQueues().audits, {
+    type: 'geo-brand-presence-trigger-refresh',
+    siteId,
+    auditContext: { configVersion },
+  });
+  log.info('Successfully triggered geo-brand-presence-trigger-refresh');
+}
+
 export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditContext = {}) {
   const {
     env, log, s3Client,
@@ -486,8 +501,19 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   const needsBrandPresenceRefresh = previousConfigVersion
     && (changes.brands || changes.competitors);
 
-  if (hasBrandPresenceChanges || needsBrandPresenceRefresh) {
-    log.info('LLMO config changes detected affecting brand presence; data collection will pick up changes on the next scheduled run');
+  if (hasBrandPresenceChanges) {
+    const drsClient = DrsClient.createFrom(context);
+    if (drsClient.isConfigured()) {
+      await drsClient.triggerBrandDetection(siteId);
+      triggeredSteps.push('drs-brand-detection');
+    } else {
+      log.warn('DRS not configured; skipping brand detection trigger');
+    }
+  }
+
+  if (needsBrandPresenceRefresh) {
+    await triggerGeoBrandPresenceRefresh(context, site, configVersion);
+    triggeredSteps.push('geo-brand-presence-trigger-refresh');
   }
 
   if (triggeredSteps.length > 0) {
