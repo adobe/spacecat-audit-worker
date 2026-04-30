@@ -1,3 +1,29 @@
+## [1.424.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.424.0...v1.424.1) (2026-04-30)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-http-utils to v1.26.0 ([#2451](https://github.com/adobe/spacecat-audit-worker/issues/2451)) ([7e3f3c6](https://github.com/adobe/spacecat-audit-worker/commit/7e3f3c6029515e3e206ddf57eff7366b71582f1b))
+
+# [1.424.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.423.2...v1.424.0) (2026-04-30)
+
+
+### Bug Fixes
+
+* llmo-4010 preserve edge-deployed suggestions in audit sync flow ([#2429](https://github.com/adobe/spacecat-audit-worker/issues/2429)) ([be6be08](https://github.com/adobe/spacecat-audit-worker/commit/be6be087afe9f0cb01c07e87cb3dcc1b7f456b22))
+
+
+### Features
+
+* **llmo-referral-traffic-daily:** add daily LLM referral traffic audit ([#2450](https://github.com/adobe/spacecat-audit-worker/issues/2450)) ([402a950](https://github.com/adobe/spacecat-audit-worker/commit/402a950e19c6d882915e8a2595771377176e485a))
+
+## [1.423.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.423.1...v1.423.2) (2026-04-30)
+
+
+### Bug Fixes
+
+* **toc:** convert transformRules.value to HAST in mergeDataFunction ([#2388](https://github.com/adobe/spacecat-audit-worker/issues/2388)) ([af122f9](https://github.com/adobe/spacecat-audit-worker/commit/af122f98fc272bb8852811d334824c8ff9597a9e))
+
 ## [1.423.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.423.0...v1.423.1) (2026-04-29)
 
 
