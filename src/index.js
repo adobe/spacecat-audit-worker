@@ -219,6 +219,9 @@ const HANDLERS = {
   'frescopa-data-generation': frescopaDataGeneration,
   'image-enrichment': imageEnrichment,
   'guidance:image-enrichment': imageEnrichmentGuidance,
+  // @deprecated remove after jobs-dispatcher + mystique PR 1704 in prod
+  'semantic-value-visibility': imageEnrichment,
+  'guidance:semantic-value-visibility': imageEnrichmentGuidance,
   'drs:prompt_generation_base_url': drsPromptGeneration,
   'offsite-brand-presence': offsiteBrandPresence,
   dummy: (message) => ok(message),
