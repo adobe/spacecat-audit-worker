@@ -78,6 +78,7 @@ import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-h
 import readabilityOpportunities from './readability/opportunities/handler.js';
 import unifiedReadabilityGuidance from './readability/shared/unified-guidance-handler.js';
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
+import llmoReferralTrafficDaily from './llmo-referral-traffic-daily/handler.js';
 import llmErrorPages from './llm-error-pages/handler.js';
 import llmErrorPagesGuidance from './llm-error-pages/guidance-handler.js';
 import paidTrafficAnalysis from './paid-traffic-analysis/handler.js';
@@ -184,6 +185,7 @@ const HANDLERS = {
   'detect:form-details': detectFormDetails,
   'page-intent': pageIntent,
   'llmo-referral-traffic': llmoReferralTraffic,
+  'llmo-referral-traffic-daily': llmoReferralTrafficDaily,
   'llm-error-pages': llmErrorPages,
   'guidance:llm-error-pages': llmErrorPagesGuidance,
   'optimization-report-callback': optimizationReportCallback,
