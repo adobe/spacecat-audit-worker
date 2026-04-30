@@ -12,7 +12,7 @@
 
 import { FETCH_BATCH_SIZE } from './constants.js';
 
-export async function fetchPromptsBatched(postgrestClient, organizationId, log) {
+export async function fetchPromptsBatched(postgrestClient, organizationId, brandId, log) {
   const allRows = [];
   let offset = 0;
   // eslint-disable-next-line no-constant-condition
@@ -22,6 +22,7 @@ export async function fetchPromptsBatched(postgrestClient, organizationId, log) 
       .from('prompts')
       .select('prompt_id,brand_id,text,topic_id,name,regions,category_id,status,origin,source,created_by,updated_by')
       .eq('organization_id', organizationId)
+      .eq('brand_id', brandId)
       .range(offset, offset + FETCH_BATCH_SIZE - 1);
 
     if (error) {
@@ -47,7 +48,7 @@ export async function fetchExistingState(postgrestClient, organizationId, brandI
       .select('id,topic_id,name,description,status,created_by,updated_by')
       .eq('organization_id', organizationId)
       .eq('brand_id', brandId),
-    fetchPromptsBatched(postgrestClient, organizationId, log),
+    fetchPromptsBatched(postgrestClient, organizationId, brandId, log),
   ]);
 
   if (catResult.error) {

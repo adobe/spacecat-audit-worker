@@ -50,11 +50,13 @@ describe('llmo-config-db-sync/fetch', () => {
   });
 
   describe('fetchPromptsBatched', () => {
-    it('returns all rows from a single batch', async () => {
+    it('returns all rows from a single batch and filters by brand_id', async () => {
       const chain = makeChain({ data: [{ prompt_id: 'p1', text: 'hi', topic_id: null }], error: null });
       const client = { from: sinon.stub().returns(chain) };
-      const rows = await fetchPromptsBatched(client, ORG_ID, log);
+      const rows = await fetchPromptsBatched(client, ORG_ID, BRAND_ID, log);
       expect(rows).to.have.length(1);
+      expect(chain.eq).to.have.been.calledWith('organization_id', ORG_ID);
+      expect(chain.eq).to.have.been.calledWith('brand_id', BRAND_ID);
     });
 
     it('paginates across multiple batches', async () => {
@@ -65,21 +67,21 @@ describe('llmo-config-db-sync/fetch', () => {
         .onFirstCall().resolves({ data: bigBatch, error: null })
         .onSecondCall().resolves({ data: [{ prompt_id: 'p5000', text: 'last', topic_id: null }], error: null });
       const client = { from: sinon.stub().returns(chain) };
-      const rows = await fetchPromptsBatched(client, ORG_ID, log);
+      const rows = await fetchPromptsBatched(client, ORG_ID, BRAND_ID, log);
       expect(rows).to.have.length(5001);
     });
 
     it('throws on fetch failure', async () => {
       const chain = makeChain({ data: null, error: { message: 'DB error' } });
       const client = { from: sinon.stub().returns(chain) };
-      await expect(fetchPromptsBatched(client, ORG_ID, log))
+      await expect(fetchPromptsBatched(client, ORG_ID, BRAND_ID, log))
         .to.be.rejectedWith('Failed to fetch prompts at offset 0: DB error');
     });
 
     it('handles null data with no error gracefully', async () => {
       const chain = makeChain({ data: null, error: null });
       const client = { from: sinon.stub().returns(chain) };
-      const rows = await fetchPromptsBatched(client, ORG_ID, log);
+      const rows = await fetchPromptsBatched(client, ORG_ID, BRAND_ID, log);
       expect(rows).to.have.length(0);
     });
   });

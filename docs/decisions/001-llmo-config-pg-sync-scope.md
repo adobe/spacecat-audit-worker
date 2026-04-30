@@ -106,30 +106,45 @@ Note: this is a per-run upsert, so any out-of-band manual population of
 to be write-once, that's a separate change (split insert/update paths or
 column-scoped upsert).
 
-### Topics — brand scoping
+### Brand scoping for `topics` and `prompts`
 
-The `topics` table has a nullable `brand_id` column. An org can contain topics
-belonging to multiple brands. Without brand filtering, `fetchExistingState` would
-load all brands' topics into `topicLookup`, causing:
+Both `topics` and `prompts` are org-scoped tables that also carry a `brand_id`
+column. A single org can contain multiple brands. The original sync (PR #2210)
+filtered both tables by `organization_id` only, while the writes used a
+hard-coded brand. This created a read/write scope mismatch with two distinct
+symptoms:
 
-- Orphan deletion in `syncTopicCategories` to target topics from **other brands**
-  (their existing `topic_categories` rows would be classified as orphans and deleted).
-- New topic rows upserted without `brand_id`, leaving them un-attributed.
+1. **Topics — wrong-brand orphan deletion.** `fetchExistingState` loaded all
+   brands' topics into `topicLookup`. `syncTopicCategories` then classified
+   another brand's `topic_categories` rows as orphans and would have deleted
+   them. New topic rows were also written without `brand_id`, leaving them
+   un-attributed.
+2. **Prompts — silent dedup against other brands' rows** (LLMO-4470).
+   `fetchPromptsBatched` loaded every prompt in the org. The dedup key
+   `(text, topic_id)` plus a `PROMPT_COMPARE_FIELDS` list that omits `brand_id`
+   meant a config prompt matching a different brand's row by text + topic was
+   classified `unchanged` and never written for the target brand. The
+   2026-04-15 adobe.com sync reported 35 175 prompts as `unchanged` for this
+   reason; only 5 365 of an expected ~34 000 prompts were present in the DB
+   under the Adobe brand.
 
-The sync was updated in this PR to:
-- Filter the topics fetch with `.eq('brand_id', brandId)` so `topicLookup` and
-  `existingTopics` only contain the synced brand's rows.
-- Include `brand_id` in every topic row written (`buildTopicRows`,
-  `ensureDeletedRefEntities`).
+The sync was updated in this PR to apply the same brand filter to both fetches:
 
-This was confirmed against production data: the adobe.com org contained rows from
-**15 distinct brands** (1 652 topic rows total); without the fix, the worker would
-have operated on all of them.
+- `fetchExistingState` calls `.eq('brand_id', brandId)` on the topics query.
+- `fetchPromptsBatched` calls `.eq('brand_id', brandId)` on the prompts query.
+- Topic rows now include `brand_id` on every write (`buildTopicRows`,
+  `ensureDeletedRefEntities`). Prompt rows already wrote `brand_id`; the bug
+  was solely on the read path.
 
-**Note:** SQL analysis also revealed 256 pre-existing rows where
-`prompts.brand_id ≠ topics.brand_id` (prompt and its linked topic belong to
-different brands). These rows pre-date this PR and are not caused by it. They
-are tracked as a separate investigation item.
+The `categories` table has no `brand_id` column; categories remain org-scoped.
+
+**Production scale check:** the adobe.com org contained topic rows from
+**15 distinct brands** (1 652 topic rows total). Without these fixes the
+worker would have read and operated on all of them on every sync.
+
+**Pre-existing data anomaly:** SQL analysis also surfaced 256 rows where
+`prompts.brand_id ≠ topics.brand_id`. These rows pre-date this PR. They are
+tracked as a separate investigation item below.
 
 ### Junctions
 
@@ -154,7 +169,6 @@ junction in sync.
   path. This is a known blocker for full LLMO-4403 rollout and must be
   addressed before disabling the hard-coded IDs.
 - **Reverse cleanup for dropped prompts.** Tracked in LLMO-4473.
-- **Dedup fix for prompt sync.** Tracked in LLMO-4470.
 - **`topic_prompts` deprecation decision.** Tracked in LLMO-4465.
 - **Cross-brand prompt-topic mismatches (pre-existing).** Production data
   contains 256 rows where `prompts.brand_id ≠ topics.brand_id`. Root cause
