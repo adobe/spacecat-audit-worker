@@ -1,3 +1,10 @@
+# [1.427.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.426.0...v1.427.0) (2026-04-30)
+
+
+### Features
+
+* Remove 3rd party services from this process ([#2456](https://github.com/adobe/spacecat-audit-worker/issues/2456)) ([af8e9eb](https://github.com/adobe/spacecat-audit-worker/commit/af8e9eb7d987a449bb7f389a770c6c0e04e94bd6))
+
 # [1.426.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.425.1...v1.426.0) (2026-04-30)
 
 
