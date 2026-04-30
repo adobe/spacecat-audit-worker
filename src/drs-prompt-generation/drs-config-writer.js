@@ -101,12 +101,36 @@ export default async function writeDrsPromptsToLlmoConfig({
     grouped[key].prompts.push(p);
   }
 
+  // Determine which categories have at least one prompt with a valid region
+  // across all their topics. New categories without a valid region cannot be
+  // safely persisted because the schema requires `region`.
+  const categoriesWithValidRegion = new Set();
+  for (const p of normalizedPrompts) {
+    if (p.region) {
+      categoriesWithValidRegion.add((p.category || 'general').toLowerCase());
+    }
+  }
+
+  // Drop any group whose category is new AND has no valid region to assign,
+  // so we never create a category that violates the schema.
+  const droppedCategories = new Set();
+  const groupsToProcess = Object.values(grouped).filter((group) => {
+    const catKey = group.category.toLowerCase();
+    const isNew = !categoryNameToId[catKey];
+    if (isNew && !categoriesWithValidRegion.has(catKey)) {
+      droppedCategories.add(group.category);
+      return false;
+    }
+    return true;
+  });
+
   const now = new Date().toISOString();
   const categoryRegions = new Map();
 
-  for (const { category: catName, topic: topicName, prompts } of Object.values(grouped)) {
-    // Find or create category
-    let categoryId = categoryNameToId[catName.toLowerCase()];
+  for (const { category: catName, topic: topicName, prompts } of groupsToProcess) {
+    const catKey = catName.toLowerCase();
+    let categoryId = categoryNameToId[catKey];
+
     if (!categoryId) {
       categoryId = randomUUID();
       config.categories[categoryId] = {
@@ -115,7 +139,7 @@ export default async function writeDrsPromptsToLlmoConfig({
         updatedBy: 'drs',
         updatedAt: now,
       };
-      categoryNameToId[catName.toLowerCase()] = categoryId;
+      categoryNameToId[catKey] = categoryId;
     }
 
     // Track regions for this category
@@ -167,6 +191,10 @@ export default async function writeDrsPromptsToLlmoConfig({
   for (const [catId, regions] of categoryRegions) {
     const arr = [...regions];
     config.categories[catId].region = arr.length === 1 ? arr[0] : arr;
+  }
+
+  if (droppedCategories.size > 0) {
+    log.warn(`Skipped DRS categories with no valid region for site ${siteId}: ${JSON.stringify([...droppedCategories])}`);
   }
 
   const { version } = await configClient.writeConfig(siteId, config, s3Client, { s3Bucket });

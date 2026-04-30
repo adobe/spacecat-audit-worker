@@ -173,7 +173,7 @@ describe('DRS Config Writer', () => {
     });
 
     const drsPrompts = [
-      { prompt: 'No category or topic' },
+      { prompt: 'No category or topic', region: 'us' },
     ];
 
     await writeDrsPromptsToLlmoConfig({
@@ -270,26 +270,40 @@ describe('DRS Config Writer', () => {
     expect(Object.keys(writtenConfig.aiTopics)).to.have.lengthOf(0);
   });
 
-  it('handles prompts without region', async () => {
+  it('preserves prompts with falsy regions (null, undefined, empty string) without WARN', async () => {
     configClient.readConfig.resolves({
       config: { categories: {}, aiTopics: {} },
     });
 
     const drsPrompts = [
-      { prompt: 'No region prompt', category: 'cat', topic: 'topic' },
+      {
+        prompt: 'Q1', region: null, category: 'cat', topic: 'topic',
+      },
+      {
+        prompt: 'Q2', region: undefined, category: 'cat', topic: 'topic',
+      },
+      {
+        prompt: 'Q3', region: '', category: 'cat', topic: 'topic',
+      },
+      {
+        prompt: 'Q4', region: 'us', category: 'cat', topic: 'topic',
+      },
     ];
 
     await writeDrsPromptsToLlmoConfig({
       drsPrompts, siteId: 'site-1', s3Client, s3Bucket: 'bucket', log, configClient,
     });
 
+    // Falsy is not "invalid" — no WARN.
+    expect(log.warn).to.not.have.been.called;
+
     const writtenConfig = configClient.writeConfig.firstCall.args[1];
     const [, topic] = Object.entries(writtenConfig.aiTopics)[0];
-    expect(topic.prompts[0].regions).to.deep.equal([]);
-
-    // Category should not have region set when no prompts have regions
-    const [, cat] = Object.entries(writtenConfig.categories)[0];
-    expect(cat.region).to.be.undefined;
+    expect(topic.prompts).to.have.lengthOf(4);
+    const q1 = topic.prompts.find((p) => p.prompt === 'Q1');
+    const q4 = topic.prompts.find((p) => p.prompt === 'Q4');
+    expect(q1.regions).to.deep.equal([]);
+    expect(q4.regions).to.deep.equal(['us']);
   });
 
   it('sets single region string on category when all prompts share one region', async () => {
@@ -500,6 +514,106 @@ describe('DRS Config Writer', () => {
     const writtenConfig = configClient.writeConfig.firstCall.args[1];
     const [, cat] = Object.entries(writtenConfig.categories)[0];
     expect(cat.region.sort()).to.deep.equal(['de', 'us']);
+  });
+
+  it('skips new categories where every prompt has an invalid region', async () => {
+    configClient.readConfig.resolves({
+      config: { categories: {}, aiTopics: {} },
+    });
+
+    const drsPrompts = [
+      {
+        prompt: 'Q1', region: 'en-us', category: 'newcat', topic: 't1',
+      },
+      {
+        prompt: 'Q2', region: 'global', category: 'newcat', topic: 't2',
+      },
+    ];
+
+    await writeDrsPromptsToLlmoConfig({
+      drsPrompts, siteId: 'site-x', s3Client, s3Bucket: 'bucket', log, configClient,
+    });
+
+    const writtenConfig = configClient.writeConfig.firstCall.args[1];
+    // Category not created — schema requires region, and we have none to assign.
+    expect(writtenConfig.categories).to.deep.equal({});
+    // No aiTopics either — they would orphan-reference a non-existent category.
+    expect(writtenConfig.aiTopics).to.deep.equal({});
+
+    // Two distinct WARN signals: invalid regions, and the dropped category.
+    const messages = log.warn.getCalls().map((c) => c.firstArg);
+    const regionWarn = messages.find((m) => m.includes('non-alpha-2'));
+    const categoryWarn = messages.find((m) => m.includes('Skipped DRS categories'));
+    expect(regionWarn).to.exist;
+    expect(regionWarn).to.include('en-us');
+    expect(regionWarn).to.include('global');
+    expect(categoryWarn).to.exist;
+    expect(categoryWarn).to.include('site-x');
+    expect(categoryWarn).to.include('newcat');
+  });
+
+  it('keeps adding prompts to an existing category when new prompts have only invalid regions', async () => {
+    configClient.readConfig.resolves({
+      config: {
+        categories: {
+          'existing-id': { name: 'existing', region: 'us' },
+        },
+        aiTopics: {},
+      },
+    });
+
+    const drsPrompts = [
+      {
+        prompt: 'Q1', region: 'en-us', category: 'existing', topic: 'topic',
+      },
+    ];
+
+    await writeDrsPromptsToLlmoConfig({
+      drsPrompts, siteId: 'site-1', s3Client, s3Bucket: 'bucket', log, configClient,
+    });
+
+    const writtenConfig = configClient.writeConfig.firstCall.args[1];
+    // Existing category preserved with its existing region.
+    expect(writtenConfig.categories['existing-id'].region).to.equal('us');
+    // Topic created, prompt persisted with empty regions (schema permits).
+    const [, topic] = Object.entries(writtenConfig.aiTopics)[0];
+    expect(topic.prompts).to.have.lengthOf(1);
+    expect(topic.prompts[0].regions).to.deep.equal([]);
+
+    // Region warning fires, but no category is dropped.
+    const messages = log.warn.getCalls().map((c) => c.firstArg);
+    expect(messages.some((m) => m.includes('Skipped DRS categories'))).to.equal(false);
+  });
+
+  it('drops whitespace-padded region values (no implicit trim)', async () => {
+    configClient.readConfig.resolves({
+      config: { categories: {}, aiTopics: {} },
+    });
+
+    const drsPrompts = [
+      {
+        prompt: 'Q1', region: ' us', category: 'cat', topic: 't',
+      },
+      {
+        prompt: 'Q2', region: 'us ', category: 'cat', topic: 't',
+      },
+      {
+        prompt: 'Q3', region: 'us', category: 'cat', topic: 't',
+      },
+    ];
+
+    await writeDrsPromptsToLlmoConfig({
+      drsPrompts, siteId: 's', s3Client, s3Bucket: 'b', log, configClient,
+    });
+
+    expect(log.warn).to.have.been.calledOnce;
+    const warn = log.warn.firstCall.args[0];
+    expect(warn).to.include(' us');
+    expect(warn).to.include('us ');
+
+    const writtenConfig = configClient.writeConfig.firstCall.args[1];
+    const [, cat] = Object.entries(writtenConfig.categories)[0];
+    expect(cat.region).to.equal('us');
   });
 
   it('drops non-string region values gracefully', async () => {
