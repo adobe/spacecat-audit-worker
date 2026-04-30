@@ -14,6 +14,7 @@
 import { createHash } from 'crypto';
 import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { classifyTrafficSource } from '@adobe/spacecat-shared-rum-api-client/src/common/traffic.js';
+import { joinBaseAndPath } from '../utils/url-utils.js';
 import { loadSql } from './utils/report-utils.js';
 import { weeklyBreakdownQueries } from './utils/query-builder.js';
 
@@ -71,12 +72,12 @@ export function mapToReferralCsvRows(rawRows, site, trafficDate) {
       referrer, utm_source, utm_medium, tracking_param,
     } = row;
     const device = row.device || '';
-    const date = row.date || '';
+    const normalizedDate = (row.date || '') || trafficDate;
     const region = row.region || 'GLOBAL';
     const rowPageviews = row.pageviews;
 
     const urlPath = rawPath.split('?')[0];
-    const url = `${baseURL}${urlPath.startsWith('/') ? urlPath : `/${urlPath}`}`;
+    const url = joinBaseAndPath(baseURL, urlPath || '/');
 
     const { type, category, vendor } = classifyTrafficSource(
       url,
@@ -87,17 +88,20 @@ export function mapToReferralCsvRows(rawRows, site, trafficDate) {
     );
 
     if (type === 'earned' && category === 'llm') {
-      const key = JSON.stringify([date, effectiveHost, urlPath, vendor, device, region]);
+      const normalizedVendor = vendor || '';
+      const key = JSON.stringify(
+        [normalizedDate, effectiveHost, urlPath, normalizedVendor, device, region],
+      );
       const pageviews = Number(rowPageviews) || 0;
 
       if (grouped.has(key)) {
         grouped.get(key).pageviews += pageviews;
       } else {
         grouped.set(key, {
-          traffic_date: date || trafficDate,
+          traffic_date: normalizedDate,
           host: effectiveHost,
           url_path: urlPath,
-          trf_platform: vendor || '',
+          trf_platform: normalizedVendor,
           device,
           region,
           pageviews,
@@ -175,7 +179,7 @@ export async function runDailyReferralExport({
   const rows = mapToReferralCsvRows(rawRows, site, trafficDate);
 
   if (rows.length === 0) {
-    log.info(`[cdn-logs-report] No referral daily export rows for ${siteId} on ${trafficDate}`);
+    log.info(`[cdn-logs-report] No LLM referral rows for ${siteId} on ${trafficDate} (Athena returned ${rawRows.length} rows, 0 matched classification)`);
     return {
       enabled: true,
       success: true,

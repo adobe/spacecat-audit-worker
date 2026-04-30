@@ -242,7 +242,7 @@ describe('referral daily export', function referralDailyExportTests() {
       rowCount: 0,
     });
     expect(context.log.info).to.have.been.calledWith(
-      sinon.match('No referral daily export rows'),
+      sinon.match('No LLM referral rows'),
     );
   });
 
@@ -560,6 +560,151 @@ describe('referral daily export', function referralDailyExportTests() {
     const csvBody = s3Client.send.firstCall.args[0].input.Body;
     // trf_platform falls back to '' when vendor is null
     expect(csvBody).to.include('spacecat:cdn');
+  });
+
+  it('normalizes mixed-date rows to the same group key', async () => {
+    const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
+    const module = await loadModule(classifyStub);
+    const s3Client = { send: sandbox.stub().resolves({}) };
+
+    const sharedFields = {
+      host: 'www.example.com',
+      referrer: 'chatgpt.com',
+      utm_source: null,
+      utm_medium: null,
+      tracking_param: null,
+      device: 'desktop',
+      region: 'US',
+    };
+
+    await module.runDailyReferralExport({
+      athenaClient: {
+        execute: sandbox.stub().resolves(),
+        query: sandbox.stub().resolves([
+          { ...sharedFields, path: '/page', date: '2026-03-31', pageviews: 4 },
+          { ...sharedFields, path: '/page', date: '', pageviews: 6 },
+        ]),
+      },
+      s3Client,
+      s3Config: { bucket: 'cdn-bucket', databaseName: 'cdn_db' },
+      site: makeSite(),
+      context: makeContext(),
+      reportConfig: { tableName: 'referral_table' },
+      referenceDate: new Date('2026-04-01T00:00:00Z'),
+    });
+
+    const csvBody = s3Client.send.firstCall.args[0].input.Body;
+    const dataLines = csvBody.split('\r\n').slice(1);
+    expect(dataLines).to.have.length(1);
+    expect(dataLines[0]).to.include(',10,');
+    expect(dataLines[0]).to.include('2026-03-31');
+  });
+
+  it('normalizes undefined and empty-string vendor to the same group key', async () => {
+    const classifyStub = sandbox.stub();
+    classifyStub.onCall(0).returns({ type: 'earned', category: 'llm', vendor: undefined });
+    classifyStub.onCall(1).returns({ type: 'earned', category: 'llm', vendor: '' });
+    const module = await loadModule(classifyStub);
+    const s3Client = { send: sandbox.stub().resolves({}) };
+
+    const sharedFields = {
+      host: 'www.example.com',
+      referrer: 'chatgpt.com',
+      utm_source: null,
+      utm_medium: null,
+      tracking_param: null,
+      device: 'desktop',
+      date: '2026-03-31',
+      region: 'US',
+    };
+
+    await module.runDailyReferralExport({
+      athenaClient: {
+        execute: sandbox.stub().resolves(),
+        query: sandbox.stub().resolves([
+          { ...sharedFields, path: '/page', pageviews: 3 },
+          { ...sharedFields, path: '/page', pageviews: 5 },
+        ]),
+      },
+      s3Client,
+      s3Config: { bucket: 'cdn-bucket', databaseName: 'cdn_db' },
+      site: makeSite(),
+      context: makeContext(),
+      reportConfig: { tableName: 'referral_table' },
+      referenceDate: new Date('2026-04-01T00:00:00Z'),
+    });
+
+    const csvBody = s3Client.send.firstCall.args[0].input.Body;
+    const dataLines = csvBody.split('\r\n').slice(1);
+    expect(dataLines).to.have.length(1);
+    expect(dataLines[0]).to.include(',8,');
+  });
+
+  it('handles trailing slash in baseURL without producing a double-slash URL', async () => {
+    const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
+    const module = await loadModule(classifyStub);
+    const s3Client = { send: sandbox.stub().resolves({}) };
+
+    await module.runDailyReferralExport({
+      athenaClient: {
+        execute: sandbox.stub().resolves(),
+        query: sandbox.stub().resolves([{
+          path: '/page',
+          host: 'www.example.com',
+          referrer: 'chatgpt.com',
+          utm_source: null,
+          utm_medium: null,
+          tracking_param: null,
+          device: 'desktop',
+          date: '2026-03-31',
+          region: 'US',
+          pageviews: 1,
+        }]),
+      },
+      s3Client,
+      s3Config: { bucket: 'cdn-bucket', databaseName: 'cdn_db' },
+      site: makeSite({ getBaseURL: () => 'https://www.example.com/' }),
+      context: makeContext(),
+      reportConfig: { tableName: 'referral_table' },
+      referenceDate: new Date('2026-04-01T00:00:00Z'),
+    });
+
+    expect(classifyStub).to.have.been.calledWith(
+      sinon.match(/^https:\/\/www\.example\.com\/page$/),
+      sinon.match.any,
+      sinon.match.any,
+      sinon.match.any,
+      sinon.match.any,
+    );
+  });
+
+  it('includes raw Athena row count in the zero-rows skip log', async () => {
+    const classifyStub = sandbox.stub().returns({ type: 'paid', category: 'search', vendor: 'google' });
+    const module = await loadModule(classifyStub);
+    const context = makeContext();
+
+    await module.runDailyReferralExport({
+      athenaClient: {
+        execute: sandbox.stub().resolves(),
+        query: sandbox.stub().resolves([
+          {
+            path: '/page', host: 'www.example.com', referrer: 'google.com',
+            utm_source: 'google', utm_medium: 'cpc', tracking_param: null,
+            device: 'desktop', date: '2026-03-31', region: 'US', pageviews: 5,
+          },
+        ]),
+      },
+      s3Client: { send: sandbox.stub().resolves({}) },
+      s3Config: { bucket: 'cdn-bucket', databaseName: 'cdn_db' },
+      site: makeSite(),
+      context,
+      reportConfig: { tableName: 'referral_table' },
+      referenceDate: new Date('2026-04-01T00:00:00Z'),
+    });
+
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match('Athena returned 1 rows, 0 matched classification'),
+    );
   });
 
   it('handles path without leading slash in url construction', async () => {

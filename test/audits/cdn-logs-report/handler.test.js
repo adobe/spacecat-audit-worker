@@ -696,6 +696,9 @@ describe('CDN Logs Report Handler', function test() {
         '../../../src/cdn-logs-report/agentic-daily-export.js': {
           runDailyAgenticExport: runDailyAgenticExportStub,
         },
+        '../../../src/cdn-logs-report/referral-daily-export.js': {
+          runDailyReferralExport: sandbox.stub().resolves({ enabled: true, success: true }),
+        },
       }, {
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
@@ -735,6 +738,9 @@ describe('CDN Logs Report Handler', function test() {
       const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
         '../../../src/cdn-logs-report/agentic-daily-export.js': {
           runDailyAgenticExport: runDailyAgenticExportStub,
+        },
+        '../../../src/cdn-logs-report/referral-daily-export.js': {
+          runDailyReferralExport: sandbox.stub().resolves({ enabled: true, success: true }),
         },
       }, {
         '../../../src/utils/report-uploader.js': {
@@ -779,6 +785,9 @@ describe('CDN Logs Report Handler', function test() {
       const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
         '../../../src/cdn-logs-report/agentic-daily-export.js': {
           runDailyAgenticExport: runDailyAgenticExportStub,
+        },
+        '../../../src/cdn-logs-report/referral-daily-export.js': {
+          runDailyReferralExport: sandbox.stub().resolves({ enabled: true, success: true }),
         },
         '../../../src/cdn-logs-report/utils/report-runner.js': {
           runWeeklyReport: runWeeklyReportStub,
@@ -828,6 +837,9 @@ describe('CDN Logs Report Handler', function test() {
         '../../../src/cdn-logs-report/agentic-daily-export.js': {
           runDailyAgenticExport: runDailyAgenticExportStub,
         },
+        '../../../src/cdn-logs-report/referral-daily-export.js': {
+          runDailyReferralExport: sandbox.stub().resolves({ enabled: true, success: true }),
+        },
       }, {
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
@@ -846,6 +858,35 @@ describe('CDN Logs Report Handler', function test() {
       expect(runDailyAgenticExportStub).to.not.have.been.called;
       expect(result.dailyAgenticExport).to.equal(undefined);
       expect(result.auditResult).to.not.be.empty;
+    });
+
+    it('skips daily referral export when auditContext.weekOffset is provided', async () => {
+      const runDailyAgenticExportStub = sandbox.stub().resolves({ enabled: true, success: true });
+      const runDailyReferralExportStub = sandbox.stub().resolves({ enabled: true, success: true });
+      const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
+        '../../../src/cdn-logs-report/agentic-daily-export.js': {
+          runDailyAgenticExport: runDailyAgenticExportStub,
+        },
+        '../../../src/cdn-logs-report/referral-daily-export.js': {
+          runDailyReferralExport: runDailyReferralExportStub,
+        },
+      }, {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
+          saveExcelReport: saveExcelReportStub,
+          bulkPublishToAdminHlx: sandbox.stub().resolves(),
+        },
+      });
+
+      const result = await localHandler.runner(
+        'https://example.com',
+        context,
+        site,
+        createAuditContext(sandbox, { weekOffset: -2 }),
+      );
+
+      expect(runDailyReferralExportStub).to.not.have.been.called;
+      expect(result.dailyReferralExport).to.equal(undefined);
     });
 
     it('skips daily referral export when the referral report config is missing', async () => {
