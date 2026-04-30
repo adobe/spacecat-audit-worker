@@ -258,6 +258,15 @@ export class InternalLinksConfigResolver {
     return normalizeExcludedElementClasses(this.handlerConfig.excludedElementClasses);
   }
 
+  /**
+   * When true, RUM rows where referrer and 404 target use different locale-like
+   * first path segments (e.g. /fr → /de) are dropped before validation.
+   * Default to false.
+   */
+  getExcludeCrossLocalePDP() {
+    return getBooleanConfig(this.handlerConfig.excludeCrossLocalePDP, false);
+  }
+
   getBrightDataConfig() {
     return {
       validateUrls: this.handlerConfig.validateBrightDataUrls

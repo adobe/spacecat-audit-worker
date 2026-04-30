@@ -92,3 +92,53 @@ export function extractLocalePathPrefix(url) {
     return '';
   }
 }
+
+/**
+ * True when RUM pairs a referring page and 404 target whose first path segments are
+ * both locale-like but different (e.g. /fr/... → /de/...). Those rows are often noise
+ * for same-locale broken-link remediation when the site is audited at domain root.
+ * Same number of segments
+ * all segments are identical except for the first one (locale)
+ *
+ * @param {string} urlFrom - Referrer URL from RUM
+ * @param {string} urlTo - 404 target URL from RUM
+ * @returns {boolean}
+ */
+export function isCrossLocalePDP404RumPair(urlFrom, urlTo) {
+  // base case: one/both of the urls are not valid
+  if (!urlFrom || !urlTo) {
+    return false;
+  }
+
+  try {
+    const urlFromParsed = new URL(prependSchema(urlFrom));
+    const urlToParsed = new URL(prependSchema(urlTo));
+    const { pathname: urlFromPathname } = urlFromParsed;
+    const { pathname: urlToPathname } = urlToParsed;
+
+    if ((!urlFromPathname || urlFromPathname === '/') || (!urlToPathname || urlToPathname === '/')) {
+      return false;
+    }
+
+    const fromSegments = urlFromPathname.split('/').filter((seg) => seg.length > 0);
+    const toSegments = urlToPathname.split('/').filter((seg) => seg.length > 0);
+
+    if (fromSegments.length !== toSegments.length || fromSegments.length < 2) {
+      return false;
+    }
+
+    if (fromSegments[0].toLowerCase() === toSegments[0].toLowerCase()) {
+      return false;
+    }
+
+    for (let i = 1; i < fromSegments.length; i += 1) {
+      if (fromSegments[i] !== toSegments[i]) {
+        return false;
+      }
+    }
+
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
