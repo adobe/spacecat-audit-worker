@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { createHash } from 'crypto';
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -20,6 +21,8 @@ import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
 use(chaiAsPromised);
+
+const EXPECTED_PARQUET_KEY = 'rum-metrics-compact/data-daily/siteid=site-123/year=2026/month=04/day=29/data.parquet';
 
 // Minimal parquet row fixture representing one LLM referral row
 const PARQUET_ROW = {
@@ -37,14 +40,40 @@ const PARQUET_ROW = {
 describe('serializeCsv', () => {
   it('should render null field values as empty string', () => {
     const rows = [{
-      traffic_date: '2026-04-29', host: 'example.com', url_path: '/page',
-      trf_platform: null, device: 'desktop', region: 'GLOBAL',
-      pageviews: 1, consent: 'true', trf_type: 'earned', trf_channel: 'llm',
-      bounced: 0, updated_by: 'spacecat:optel',
+      traffic_date: '2026-04-29',
+      host: 'example.com',
+      url_path: '/page',
+      trf_platform: null,
+      device: 'desktop',
+      region: 'GLOBAL',
+      pageviews: 1,
+      consent: 'true',
+      trf_type: 'earned',
+      trf_channel: 'llm',
+      bounced: 0,
+      updated_by: 'spacecat:optel',
     }];
     const csv = serializeCsv(rows);
-    // null trf_platform should produce an empty field (two consecutive commas)
     expect(csv).to.include('2026-04-29,example.com,/page,,desktop');
+  });
+
+  it('should quote CSV values that contain carriage return', () => {
+    const rows = [{
+      traffic_date: '2026-04-29',
+      host: 'example.com',
+      url_path: '/page',
+      trf_platform: 'platform\rwith\rcr',
+      device: 'desktop',
+      region: 'GLOBAL',
+      pageviews: 1,
+      consent: 'true',
+      trf_type: 'earned',
+      trf_channel: 'llm',
+      bounced: 0,
+      updated_by: 'spacecat:optel',
+    }];
+    const csv = serializeCsv(rows);
+    expect(csv).to.include('"platform\rwith\rcr"');
   });
 });
 
@@ -57,7 +86,6 @@ describe('LLMO Referral Traffic Daily Handler', function () {
   let audit;
   let s3ClientStub;
   let sqsSendMessageStub;
-  let uuidStub;
   let parquetReadObjectsStub;
   let handlerModule;
 
@@ -68,7 +96,6 @@ describe('LLMO Referral Traffic Daily Handler', function () {
   beforeEach(async () => {
     s3ClientStub = { send: sandbox.stub() };
     sqsSendMessageStub = sandbox.stub().resolves();
-    uuidStub = sandbox.stub().returns('test-uuid-1234');
     parquetReadObjectsStub = sandbox.stub().resolves([PARQUET_ROW]);
 
     site = {
@@ -84,6 +111,7 @@ describe('LLMO Referral Traffic Daily Handler', function () {
         year: 2026,
         month: 4,
         day: 29,
+        parquetKey: EXPECTED_PARQUET_KEY,
       }),
     };
 
@@ -107,10 +135,10 @@ describe('LLMO Referral Traffic Daily Handler', function () {
 
     handlerModule = await esmock('../../../src/llmo-referral-traffic-daily/handler.js', {
       'hyparquet': { parquetReadObjects: parquetReadObjectsStub },
-      'uuid': { v4: uuidStub },
       '@aws-sdk/client-s3': {
         GetObjectCommand: sinon.stub().callsFake((args) => ({ ...args, _type: 'GetObjectCommand' })),
         PutObjectCommand: sinon.stub().callsFake((args) => ({ ...args, _type: 'PutObjectCommand' })),
+        DeleteObjectCommand: sinon.stub().callsFake((args) => ({ ...args, _type: 'DeleteObjectCommand' })),
       },
     });
   });
@@ -154,12 +182,13 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       expect(result.fullAuditRef).to.equal('https://example.com');
     });
 
-    it('should include siteId in the returned message', async () => {
+    it('should include siteId and parquetKey in the returned message', async () => {
       context.auditContext = { date: '2026-04-29' };
       context.finalUrl = 'https://example.com';
 
       const result = await handlerModule.triggerTrafficAnalysisDailyImport(context);
       expect(result.siteId).to.equal('site-123');
+      expect(result.auditResult.parquetKey).to.equal(EXPECTED_PARQUET_KEY);
     });
 
     it('should default auditContext to empty object when absent from context', async () => {
@@ -170,6 +199,13 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       const result = await handlerModule.triggerTrafficAnalysisDailyImport(context);
       expect(result.auditResult.date).to.equal('2026-04-29');
       clock.restore();
+    });
+
+    it('should throw on invalid date format', async () => {
+      context.auditContext = { date: '2026/04/29' };
+      context.finalUrl = 'https://example.com';
+      await expect(handlerModule.triggerTrafficAnalysisDailyImport(context))
+        .to.be.rejectedWith('Invalid date format: 2026/04/29');
     });
   });
 
@@ -190,6 +226,23 @@ describe('LLMO Referral Traffic Daily Handler', function () {
         .to.be.rejectedWith('analytics queue is not configured');
     });
 
+    it('should throw if getQueues returns null', async () => {
+      context.dataAccess.Configuration.findLatest.resolves({
+        getQueues: () => null,
+      });
+      await expect(handlerModule.referralTrafficDailyRunner(context))
+        .to.be.rejectedWith('analytics queue is not configured');
+    });
+
+    it('should throw on invalid date format', async () => {
+      audit.getAuditResult.returns({
+        date: 'not-a-date', year: 2026, month: 4, day: 29,
+        parquetKey: EXPECTED_PARQUET_KEY,
+      });
+      await expect(handlerModule.referralTrafficDailyRunner(context))
+        .to.be.rejectedWith('Invalid date format: not-a-date');
+    });
+
     it('should return early with rowCount 0 when parquet does not exist (NoSuchKey)', async () => {
       const noSuchKeyError = new Error('NoSuchKey');
       noSuchKeyError.name = 'NoSuchKey';
@@ -200,6 +253,7 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       expect(result.auditResult.rowCount).to.equal(0);
       expect(result.auditResult.date).to.equal('2026-04-29');
       expect(result.fullAuditRef).to.include('s3://test-bucket');
+      expect(result.fullAuditRef).to.match(/\/$/);
     });
 
     it('should rethrow non-NoSuchKey S3 errors', async () => {
@@ -221,7 +275,6 @@ describe('LLMO Referral Traffic Daily Handler', function () {
         engaged: 1,
       }]);
 
-      // First send() is GetObjectCommand (read parquet), simulate success
       s3ClientStub.send.resolves({
         Body: {
           transformToByteArray: sandbox.stub().resolves(new Uint8Array([0])),
@@ -248,7 +301,9 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       expect(result.auditResult.rowCount).to.equal(1);
       expect(result.auditResult.date).to.equal('2026-04-29');
       expect(result.auditResult.csvKey).to.include('rum-metrics-compact/llmo-daily-csvs/siteid=site-123');
+      expect(result.auditResult.csvKey).to.include('referral_traffic.csv');
       expect(result.fullAuditRef).to.include('s3://test-bucket');
+      expect(result.fullAuditRef).to.match(/\/$/);
 
       // Verify PutObjectCommand was sent with CSV
       const putCall = s3ClientStub.send.secondCall.args[0];
@@ -256,9 +311,12 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       expect(putCall.Body).to.include('traffic_date,host,url_path');
       expect(putCall.Body).to.include('2026-04-29');
 
-      // Verify analytics SQS message
+      // Verify analytics SQS message shape and deterministic dedup ID
       expect(sqsSendMessageStub).to.have.been.calledOnce;
       const [queueUrl, msg, groupId,, dedupId] = sqsSendMessageStub.firstCall.args;
+      const expectedDedupId = createHash('sha256')
+        .update('site-123:2026-04-29:referral_traffic_optel')
+        .digest('hex');
       expect(queueUrl).to.include('analytics');
       expect(msg.pipeline_id).to.equal('referral_traffic_optel');
       expect(msg.type).to.equal('batch.completed');
@@ -267,8 +325,11 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       expect(msg.row_count).to.equal(1);
       expect(msg.start_date).to.equal('2026-04-29');
       expect(msg.end_date).to.equal('2026-04-29');
+      expect(msg.correlationId).to.equal(expectedDedupId);
+      expect(msg.s3_uri).to.include('rum-metrics-compact/llmo-daily-csvs/siteid=site-123');
+      expect(msg.s3_uri).to.match(/\/$/);
       expect(groupId).to.equal('referral_traffic_optel:site-123');
-      expect(dedupId).to.equal('test-uuid-1234');
+      expect(dedupId).to.equal(expectedDedupId);
     });
 
     it('should omit org_id when getOrganizationId returns falsy', async () => {
@@ -283,8 +344,27 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       const result = await handlerModule.referralTrafficDailyRunner(context);
 
       expect(result.auditResult.rowCount).to.equal(1);
-      const [,msg] = sqsSendMessageStub.firstCall.args;
+      const [, msg] = sqsSendMessageStub.firstCall.args;
       expect(msg).not.to.have.property('org_id');
+    });
+
+    it('should delete uploaded CSV when SQS dispatch fails', async () => {
+      parquetReadObjectsStub.resolves([PARQUET_ROW]);
+      s3ClientStub.send
+        .onFirstCall().resolves({
+          Body: { transformToByteArray: sandbox.stub().resolves(new Uint8Array([0])) },
+        })
+        .onSecondCall().resolves({})  // PUT succeeds
+        .onThirdCall().resolves({});  // DELETE cleanup
+
+      sqsSendMessageStub.rejects(new Error('SQS unavailable'));
+
+      await expect(handlerModule.referralTrafficDailyRunner(context))
+        .to.be.rejectedWith('SQS unavailable');
+
+      expect(s3ClientStub.send).to.have.been.calledThrice;
+      const deleteCall = s3ClientStub.send.thirdCall.args[0];
+      expect(deleteCall.Key).to.include('referral_traffic.csv');
     });
 
     it('should aggregate pageviews for same group key', async () => {
@@ -380,7 +460,11 @@ describe('LLMO Referral Traffic Daily Handler', function () {
 
     it('should use correct S3 path for CSV with padded month and day', async () => {
       audit.getAuditResult.returns({
-        date: '2026-01-05', year: 2026, month: 1, day: 5,
+        date: '2026-01-05',
+        year: 2026,
+        month: 1,
+        day: 5,
+        parquetKey: 'rum-metrics-compact/data-daily/siteid=site-123/year=2026/month=01/day=05/data.parquet',
       });
       parquetReadObjectsStub.resolves([{ ...PARQUET_ROW, date: '2026-01-05' }]);
       s3ClientStub.send
@@ -392,7 +476,7 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       const result = await handlerModule.referralTrafficDailyRunner(context);
 
       expect(result.auditResult.csvKey).to.equal(
-        'rum-metrics-compact/llmo-daily-csvs/siteid=site-123/year=2026/month=01/day=05/data.csv',
+        'rum-metrics-compact/llmo-daily-csvs/siteid=site-123/year=2026/month=01/day=05/referral_traffic.csv',
       );
     });
 
@@ -411,8 +495,6 @@ describe('LLMO Referral Traffic Daily Handler', function () {
     });
 
     it('should fall back to empty string for missing row fields', async () => {
-      // Row with undefined date, path, trf_platform, device, pageviews, consent
-      // covers all || '' fallbacks and escapeCsvValue(undefined) branch
       parquetReadObjectsStub.resolves([{
         trf_type: 'earned',
         trf_channel: 'llm',

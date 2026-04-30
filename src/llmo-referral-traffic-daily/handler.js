@@ -10,8 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
-import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { v4 as uuidv4 } from 'uuid';
+import { createHash } from 'crypto';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { parquetReadObjects } from 'hyparquet';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -47,6 +47,12 @@ function consentToBool(raw) {
   return ['hidden', 'suppressed', 'accept'].includes(String(raw).toLowerCase());
 }
 
+function validateDate(date) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error(`Invalid date format: ${date}`);
+  }
+}
+
 const CSV_COLUMNS = [
   'traffic_date', 'host', 'url_path', 'trf_platform', 'device', 'region',
   'pageviews', 'consent', 'trf_type', 'trf_channel', 'bounced', 'updated_by',
@@ -54,7 +60,7 @@ const CSV_COLUMNS = [
 
 function escapeCsvValue(value) {
   const normalized = String(value ?? '');
-  if (/["\n,]/.test(normalized)) {
+  if (/["\r\n,]/.test(normalized)) {
     return `"${normalized.replace(/"/g, '""')}"`;
   }
   return normalized;
@@ -77,10 +83,12 @@ function buildCsvRows(records, host) {
       const device = row.device || '';
       const region = extractCountryCode(urlPath);
       const consentBool = consentToBool(row.consent);
-      const bounced = 1 - Number(row.engaged || 0);
+      const bounced = row.engaged > 0 ? 0 : 1;
       const pageviews = Number(row.pageviews || 0);
 
-      const key = `${trafficDate}|${host}|${urlPath}|${trfPlatform}|${device}|${region}|${consentBool}|${bounced}`;
+      const key = JSON.stringify([
+        trafficDate, host, urlPath, trfPlatform, device, region, consentBool, bounced,
+      ]);
 
       if (grouped.has(key)) {
         grouped.get(key).pageviews += pageviews;
@@ -106,15 +114,15 @@ function buildCsvRows(records, host) {
   return [...grouped.values()];
 }
 
-function getCsvS3Key(siteId, year, month, day) {
+function getCsvS3Dir(siteId, year, month, day) {
   const paddedMonth = String(month).padStart(2, '0');
   const paddedDay = String(day).padStart(2, '0');
-  return `rum-metrics-compact/llmo-daily-csvs/siteid=${siteId}/year=${year}/month=${paddedMonth}/day=${paddedDay}/data.csv`;
+  return `rum-metrics-compact/llmo-daily-csvs/siteid=${siteId}/year=${year}/month=${paddedMonth}/day=${paddedDay}`;
 }
 
 async function getAnalyticsQueueUrl(context) {
   const configuration = await context?.dataAccess?.Configuration?.findLatest?.();
-  return configuration?.getQueues?.().analytics || '';
+  return configuration?.getQueues?.()?.analytics || '';
 }
 
 export async function triggerTrafficAnalysisDailyImport(context) {
@@ -133,10 +141,17 @@ export async function triggerTrafficAnalysisDailyImport(context) {
     [date] = yesterday.toISOString().split('T');
   }
 
+  validateDate(date);
+
   const [yearStr, monthStr, dayStr] = date.split('-');
   const year = Number(yearStr);
   const month = Number(monthStr);
   const day = Number(dayStr);
+
+  // Path mirrors createS3DailyKey in spacecat-import-worker/src/ingestor/traffic-analysis-daily.js
+  const paddedMonth = String(month).padStart(2, '0');
+  const paddedDay = String(day).padStart(2, '0');
+  const parquetKey = `rum-metrics-compact/data-daily/siteid=${siteId}/year=${year}/month=${paddedMonth}/day=${paddedDay}/data.parquet`;
 
   log.info(
     `[llmo-referral-traffic-daily] Triggering traffic-analysis-daily import for site: ${siteId}, date: ${date}`,
@@ -151,6 +166,7 @@ export async function triggerTrafficAnalysisDailyImport(context) {
       year,
       month,
       day,
+      parquetKey,
     },
     auditContext: {
       date,
@@ -180,12 +196,16 @@ export async function referralTrafficDailyRunner(context) {
 
   const auditResult = audit.getAuditResult();
   const {
-    date, year, month, day,
+    date, year, month, day, parquetKey,
   } = auditResult;
   const siteId = site.getId();
   const host = new URL(site.getBaseURL()).hostname;
 
-  const parquetKey = `rum-metrics-compact/data-daily/siteid=${siteId}/year=${year}/month=${String(month).padStart(2, '0')}/day=${String(day).padStart(2, '0')}/data.parquet`;
+  validateDate(date);
+
+  const csvDir = getCsvS3Dir(siteId, year, month, day);
+  const csvKey = `${csvDir}/referral_traffic.csv`;
+  const s3Uri = `s3://${bucket}/${csvDir}/`;
 
   log.info(
     `[llmo-referral-traffic-daily] Starting daily referral traffic export for site: ${siteId}, date: ${date}`,
@@ -195,13 +215,15 @@ export async function referralTrafficDailyRunner(context) {
   try {
     const response = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: parquetKey }));
     const bytes = await response.Body.transformToByteArray();
-    records = await parquetReadObjects({ file: bytes.buffer });
+    records = await parquetReadObjects({
+      file: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    });
   } catch (err) {
     if (err.name === 'NoSuchKey') {
       log.info(`[llmo-referral-traffic-daily] No parquet found at ${parquetKey} for site ${siteId}`);
       return {
         auditResult: { date, rowCount: 0 },
-        fullAuditRef: `s3://${bucket}/${getCsvS3Key(siteId, year, month, day)}`,
+        fullAuditRef: s3Uri,
       };
     }
     throw err;
@@ -213,11 +235,10 @@ export async function referralTrafficDailyRunner(context) {
     log.info(`[llmo-referral-traffic-daily] No LLM referral rows after filter for site ${siteId} on ${date}`);
     return {
       auditResult: { date, rowCount: 0 },
-      fullAuditRef: `s3://${bucket}/${getCsvS3Key(siteId, year, month, day)}`,
+      fullAuditRef: s3Uri,
     };
   }
 
-  const csvKey = getCsvS3Key(siteId, year, month, day);
   const csvBody = serializeCsv(rows);
 
   await s3Client.send(new PutObjectCommand({
@@ -227,15 +248,16 @@ export async function referralTrafficDailyRunner(context) {
     ContentType: 'text/csv',
   }));
 
-  log.info(`[llmo-referral-traffic-daily] Uploaded CSV to s3://${bucket}/${csvKey} (${rows.length} rows)`);
+  log.info(`[llmo-referral-traffic-daily] Uploaded CSV to ${csvKey} (${rows.length} rows)`);
 
-  const batchId = uuidv4();
-  const s3Uri = `s3://${bucket}/${csvKey}`;
+  const dedupId = createHash('sha256')
+    .update(`${siteId}:${date}:referral_traffic_optel`)
+    .digest('hex');
   const messageGroupId = `referral_traffic_optel:${siteId}`;
 
   const message = {
     type: 'batch.completed',
-    correlationId: batchId,
+    correlationId: dedupId,
     pipeline_id: 'referral_traffic_optel',
     s3_uri: s3Uri,
     site_id: siteId,
@@ -248,9 +270,17 @@ export async function referralTrafficDailyRunner(context) {
     message.org_id = site.getOrganizationId();
   }
 
-  await context.sqs.sendMessage(queueUrl, message, messageGroupId, 0, batchId);
+  try {
+    await context.sqs.sendMessage(queueUrl, message, messageGroupId, 0, dedupId);
+  } catch (err) {
+    log.error(`[llmo-referral-traffic-daily] SQS dispatch failed for site ${siteId}; cleaning up uploaded CSV`);
+    await s3Client.send(new DeleteObjectCommand({ Bucket: bucket, Key: csvKey }));
+    throw err;
+  }
 
-  log.info(`[llmo-referral-traffic-daily] Dispatched analytics event for site ${siteId}, date ${date}, batchId: ${batchId}`);
+  log.info(
+    `[llmo-referral-traffic-daily] Dispatched analytics event for site ${siteId}, date ${date}, dedupId: ${dedupId}`,
+  );
 
   return {
     auditResult: { date, csvKey, rowCount: rows.length },
