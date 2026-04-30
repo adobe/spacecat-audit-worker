@@ -1,3 +1,10 @@
+# [1.426.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.425.1...v1.426.0) (2026-04-30)
+
+
+### Features
+
+* **geo-brand-presence:** restore handlers and route refresh via DRS ([#2410](https://github.com/adobe/spacecat-audit-worker/issues/2410)) ([aefac18](https://github.com/adobe/spacecat-audit-worker/commit/aefac1849349cd2f7509e7e5214359fc42d64b69))
+
 ## [1.425.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.425.0...v1.425.1) (2026-04-30)
 
 
