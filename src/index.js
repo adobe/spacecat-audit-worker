@@ -15,6 +15,7 @@ import vaultSecrets from '@adobe/spacecat-shared-vault-secrets';
 import { sqsEventAdapter, logWrapper } from '@adobe/spacecat-shared-utils';
 import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import dataAccess from './support/data-access.js';
+import postgrestSamTemplateOverride from './support/postgrest-sam-template-override.js';
 import { checkSiteRequiresValidation } from './utils/site-validation.js';
 
 import sqs from './support/sqs.js';
@@ -53,7 +54,10 @@ import deliveryConfigWriter from './delivery-config-writer/handler.js';
 import highFormViewsLowConversionsGuidance from './forms-opportunities/guidance-handlers/guidance-high-form-views-low-conversions.js';
 import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-nav.js';
 import highPageViewsLowFormViewsGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-views.js';
-import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
+// KILL SWITCH: HOTLCTR is disabled platform-wide; do not accept Mystique callbacks.
+// Re-enable by uncommenting this import and the HANDLERS entry below.
+// eslint-disable-next-line max-len
+// import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 import paidConsentGuidance from './paid-cookie-consent/guidance-handler.js';
 import noCTAAboveTheFoldGuidance from './no-cta-above-the-fold/guidance-handler.js';
 import paidTrafficAnalysisGuidance from './paid-traffic-analysis/guidance-handler.js';
@@ -148,7 +152,8 @@ const HANDLERS = {
   'llm-blocked': llmBlocked,
   'forms-opportunities': formsOpportunities,
   'site-detection': siteDetection,
-  'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
+  // KILL SWITCH: HOTLCTR disabled — see import above.
+  // 'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
   'guidance:broken-links': brokenLinksGuidance,
   'guidance:metatags': metatagsGuidance,
   'alt-text': imageAltText,
@@ -330,5 +335,6 @@ export const main = wrap(run)
   .with(logWrapper)
   .with(sqs)
   .with(s3Client)
+  .with(postgrestSamTemplateOverride)
   .with(vaultSecrets)
   .with(helixStatus);
