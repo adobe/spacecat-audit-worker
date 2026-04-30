@@ -253,7 +253,6 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       expect(result.auditResult.rowCount).to.equal(0);
       expect(result.auditResult.date).to.equal('2026-04-29');
       expect(result.fullAuditRef).to.include('s3://test-bucket');
-      expect(result.fullAuditRef).to.match(/\/$/);
     });
 
     it('should rethrow non-NoSuchKey S3 errors', async () => {
@@ -301,9 +300,8 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       expect(result.auditResult.rowCount).to.equal(1);
       expect(result.auditResult.date).to.equal('2026-04-29');
       expect(result.auditResult.csvKey).to.include('rum-metrics-compact/llmo-daily-csvs/siteid=site-123');
-      expect(result.auditResult.csvKey).to.include('referral_traffic.csv');
+      expect(result.auditResult.csvKey).to.include('data.csv');
       expect(result.fullAuditRef).to.include('s3://test-bucket');
-      expect(result.fullAuditRef).to.match(/\/$/);
 
       // Verify PutObjectCommand was sent with CSV
       const putCall = s3ClientStub.send.secondCall.args[0];
@@ -327,7 +325,7 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       expect(msg.end_date).to.equal('2026-04-29');
       expect(msg.correlationId).to.equal(expectedDedupId);
       expect(msg.s3_uri).to.include('rum-metrics-compact/llmo-daily-csvs/siteid=site-123');
-      expect(msg.s3_uri).to.match(/\/$/);
+      expect(msg.s3_uri).to.include('data.csv');
       expect(groupId).to.equal('referral_traffic_optel:site-123');
       expect(dedupId).to.equal(expectedDedupId);
     });
@@ -364,7 +362,7 @@ describe('LLMO Referral Traffic Daily Handler', function () {
 
       expect(s3ClientStub.send).to.have.been.calledThrice;
       const deleteCall = s3ClientStub.send.thirdCall.args[0];
-      expect(deleteCall.Key).to.include('referral_traffic.csv');
+      expect(deleteCall.Key).to.include('data.csv');
     });
 
     it('should aggregate pageviews for same group key', async () => {
@@ -476,7 +474,10 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       const result = await handlerModule.referralTrafficDailyRunner(context);
 
       expect(result.auditResult.csvKey).to.equal(
-        'rum-metrics-compact/llmo-daily-csvs/siteid=site-123/year=2026/month=01/day=05/referral_traffic.csv',
+        'rum-metrics-compact/llmo-daily-csvs/siteid=site-123/year=2026/month=01/day=05/data.csv',
+      );
+      expect(result.fullAuditRef).to.equal(
+        's3://test-bucket/rum-metrics-compact/llmo-daily-csvs/siteid=site-123/year=2026/month=01/day=05/data.csv',
       );
     });
 

@@ -114,10 +114,10 @@ function buildCsvRows(records, host) {
   return [...grouped.values()];
 }
 
-function getCsvS3Dir(siteId, year, month, day) {
+function getCsvS3Key(siteId, year, month, day) {
   const paddedMonth = String(month).padStart(2, '0');
   const paddedDay = String(day).padStart(2, '0');
-  return `rum-metrics-compact/llmo-daily-csvs/siteid=${siteId}/year=${year}/month=${paddedMonth}/day=${paddedDay}`;
+  return `rum-metrics-compact/llmo-daily-csvs/siteid=${siteId}/year=${year}/month=${paddedMonth}/day=${paddedDay}/data.csv`;
 }
 
 async function getAnalyticsQueueUrl(context) {
@@ -203,9 +203,8 @@ export async function referralTrafficDailyRunner(context) {
 
   validateDate(date);
 
-  const csvDir = getCsvS3Dir(siteId, year, month, day);
-  const csvKey = `${csvDir}/referral_traffic.csv`;
-  const s3Uri = `s3://${bucket}/${csvDir}/`;
+  const csvKey = getCsvS3Key(siteId, year, month, day);
+  const s3Uri = `s3://${bucket}/${csvKey}`;
 
   log.info(
     `[llmo-referral-traffic-daily] Starting daily referral traffic export for site: ${siteId}, date: ${date}`,
