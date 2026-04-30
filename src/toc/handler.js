@@ -489,12 +489,27 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   );
 
   const mergeDataFunction = (existingSuggestion, newSuggestion) => {
+    // Do not overwrite data for suggestions already deployed to the edge CDN
+    if (existingSuggestion.edgeDeployed) {
+      return { ...existingSuggestion };
+    }
+    const converted = { ...newSuggestion };
+    if (converted.transformRules && Array.isArray(converted.transformRules.value)) {
+      converted.transformRules = {
+        ...converted.transformRules,
+        value: tocArrayToHast(converted.transformRules.value),
+        valueFormat: 'hast',
+      };
+    }
     const mergedSuggestion = {
       ...existingSuggestion,
-      ...newSuggestion,
+      ...converted,
     };
     if (existingSuggestion.isEdited && existingSuggestion.transformRules?.value !== undefined) {
-      mergedSuggestion.transformRules.value = existingSuggestion.transformRules.value;
+      const existingValue = existingSuggestion.transformRules.value;
+      mergedSuggestion.transformRules.value = Array.isArray(existingValue)
+        ? tocArrayToHast(existingValue)
+        : existingValue;
     }
     return mergedSuggestion;
   };

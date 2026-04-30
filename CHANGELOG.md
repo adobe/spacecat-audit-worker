@@ -1,3 +1,62 @@
+## [1.424.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.424.0...v1.424.1) (2026-04-30)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-http-utils to v1.26.0 ([#2451](https://github.com/adobe/spacecat-audit-worker/issues/2451)) ([7e3f3c6](https://github.com/adobe/spacecat-audit-worker/commit/7e3f3c6029515e3e206ddf57eff7366b71582f1b))
+
+# [1.424.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.423.2...v1.424.0) (2026-04-30)
+
+
+### Bug Fixes
+
+* llmo-4010 preserve edge-deployed suggestions in audit sync flow ([#2429](https://github.com/adobe/spacecat-audit-worker/issues/2429)) ([be6be08](https://github.com/adobe/spacecat-audit-worker/commit/be6be087afe9f0cb01c07e87cb3dcc1b7f456b22))
+
+
+### Features
+
+* **llmo-referral-traffic-daily:** add daily LLM referral traffic audit ([#2450](https://github.com/adobe/spacecat-audit-worker/issues/2450)) ([402a950](https://github.com/adobe/spacecat-audit-worker/commit/402a950e19c6d882915e8a2595771377176e485a))
+
+## [1.423.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.423.1...v1.423.2) (2026-04-30)
+
+
+### Bug Fixes
+
+* **toc:** convert transformRules.value to HAST in mergeDataFunction ([#2388](https://github.com/adobe/spacecat-audit-worker/issues/2388)) ([af122f9](https://github.com/adobe/spacecat-audit-worker/commit/af122f98fc272bb8852811d334824c8ff9597a9e))
+
+## [1.423.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.423.0...v1.423.1) (2026-04-29)
+
+
+### Bug Fixes
+
+* **vulnerabilities:** skip components whose CVEs are all ignored ([#2444](https://github.com/adobe/spacecat-audit-worker/issues/2444)) ([64ef78a](https://github.com/adobe/spacecat-audit-worker/commit/64ef78aaa4ee7af01bdad6306bd5b1479586fbaf))
+
+# [1.423.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.422.4...v1.423.0) (2026-04-29)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.55.1 ([#2443](https://github.com/adobe/spacecat-audit-worker/issues/2443)) ([05ab4ee](https://github.com/adobe/spacecat-audit-worker/commit/05ab4eec70a7554858d749eb3a4606da6c9f22d2))
+
+
+### Features
+
+* disable HOTLCTR v1 flow ([#2436](https://github.com/adobe/spacecat-audit-worker/issues/2436)) ([c97e516](https://github.com/adobe/spacecat-audit-worker/commit/c97e5160d4920e77dd20ee184a752b0cf19515cf)), closes [hi#organic-low-ctr](https://github.com/hi/issues/organic-low-ctr) [hi#organic-low-ctr](https://github.com/hi/issues/organic-low-ctr)
+
+## [1.422.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.422.3...v1.422.4) (2026-04-29)
+
+
+### Bug Fixes
+
+* **preflight:** SITES-43720 full-page link coverage and GET-confirm broken status ([#2434](https://github.com/adobe/spacecat-audit-worker/issues/2434)) ([8437dbd](https://github.com/adobe/spacecat-audit-worker/commit/8437dbdb63808125fa44a0074e46e9739f49c401))
+
+## [1.422.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.422.2...v1.422.3) (2026-04-29)
+
+
+### Bug Fixes
+
+* **no-cta-above-the-fold:** filter on absolute thresholds instead of bounce share ([#2445](https://github.com/adobe/spacecat-audit-worker/issues/2445)) ([1632326](https://github.com/adobe/spacecat-audit-worker/commit/16323269268d3d50bd8c8c0b00407a1d676a7085)), closes [hi#traffic](https://github.com/hi/issues/traffic)
+
 ## [1.422.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.422.1...v1.422.2) (2026-04-29)
 
 
