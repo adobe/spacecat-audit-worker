@@ -162,13 +162,7 @@ export const refreshMetadataSchema = z.object({
  * @returns {string} The normalized webSearchProvider name
  */
 export function normalizeWebSearchProvider(webSearchProvider) {
-  // Define transformation patterns
-  const transformations = {
-    'google-ai-overviews': 'google_ai_overviews',
-    // Add more transformations here as needed
-  };
-
-  return transformations[webSearchProvider] || webSearchProvider;
+  return webSearchProvider.replace(/-/g, '_');
 }
 
 export const refreshSheetResultSchema = z.object({

@@ -150,6 +150,8 @@ describe('Geo Brand Presence Refresh Handler', () => {
   const SHEET_W45 = '/data/llmo/brand-presence/latest/brandpresence-chatgpt-w45-2025.json';
   const SHEET_W46 = '/data/llmo/brand-presence/latest/brandpresence-gemini-w46-2025.json';
   const SHEET_OLD = '/data/llmo/brand-presence/latest/brandpresence-chatgpt-w40-2025.json';
+  const SHEET_AI_MODE = '/data/llmo/brand-presence/latest/brandpresence-ai-mode-w45-2025.json';
+  const SHEET_GOOGLE_AI = '/data/llmo/brand-presence/latest/brandpresence-google-ai-overviews-w45-2025.json';
 
   const MESSAGE = {
     siteId: 'test-site-123',
@@ -190,6 +192,16 @@ describe('Geo Brand Presence Refresh Handler', () => {
         brand: 'test-brand',
         imsOrgId: 'test-ims-org-id',
       });
+    });
+
+    it('normalizes hyphenated providers to underscores before publishing to DRS', async () => {
+      withSheets([SHEET_AI_MODE, SHEET_GOOGLE_AI]);
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      expect(publishBrandPresenceAnalyzeStub).to.have.been.calledTwice;
+      expect(publishBrandPresenceAnalyzeStub.firstCall.args[1]).to.include({ webSearchProvider: 'ai_mode' });
+      expect(publishBrandPresenceAnalyzeStub.secondCall.args[1]).to.include({ webSearchProvider: 'google_ai_overviews' });
     });
 
     it('sends one DRS call per sheet when multiple sheets exist', async () => {
