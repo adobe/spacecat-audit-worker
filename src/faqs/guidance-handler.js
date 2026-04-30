@@ -337,7 +337,8 @@ async function addSuggestions(
       data: suggestion,
     }),
     mergeDataFunction: (existingData, newData) => {
-      // Do not overwrite data (including shouldOptimize) for suggestions already deployed to the edge CDN
+      // Do not overwrite data (including shouldOptimize) for suggestions
+      // already deployed to the edge CDN
       if (existingData.edgeDeployed) {
         return { ...existingData };
       }
