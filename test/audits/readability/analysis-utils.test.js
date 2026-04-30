@@ -734,6 +734,33 @@ describe('Readability Analysis Utils', () => {
       expect(mockFranc).to.not.have.been.called;
     });
 
+    it('does not exclude paragraphs with compound review/rating class names', async () => {
+      const body = makeLongText('This editorial paragraph reviews product sustainability impact for readers.');
+      const html = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <p class="product-review-text">${body}</p>
+          <p class="customer-rating-summary">${body}</p>
+        </body>
+      </html>`;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(15);
+
+      const result = await analyzePageContent(
+        html,
+        'https://example.com/page',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result.length).to.equal(2);
+    });
+
     it('excludes paragraphs where link text is most of the element text', async () => {
       const filler = 'Lead in sentence text that is not inside any anchor tag at all. ';
       const linkInner = Array.from({ length: 40 }, () => 'Linkedphrase ').join('');

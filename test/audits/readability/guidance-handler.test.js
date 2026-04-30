@@ -855,6 +855,52 @@ describe('Readability Opportunities Guidance Handler', () => {
       expect(merged.url).to.equal('https://example.com/page1');
       expect(merged.scrapedAt).to.equal('2025-06-01T12:00:00.000Z');
     });
+
+    it('should preserve existing url when pageUrl is absent in previously-enriched existingData', async () => {
+      const mixedResults = [
+        {
+          status: 'success',
+          selector: '#citation',
+          data: {
+            should_exclude: true,
+            exclusion_reason: 'citation_block',
+            page_url: 'https://example.com/page1',
+            original_paragraph: 'Bibliographic line excluded by classifier.',
+            current_flesch_score: 18,
+          },
+        },
+      ];
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.input?.Key) {
+          return Promise.resolve({
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify(mixedResults)),
+            },
+          });
+        }
+        return Promise.resolve();
+      });
+
+      await handler.default({
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      }, mockContext);
+
+      const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+      const { mergeDataFunction, newData } = syncArgs;
+      const excluded = newData[0];
+
+      // Simulate a previously-enriched suggestion: pageUrl was consumed into url and is absent
+      const merged = mergeDataFunction({
+        url: 'https://example.com/page1',
+        selector: '#citation',
+        scrapedAt: '2025-06-01T12:00:00.000Z',
+      }, excluded);
+
+      expect(merged.url).to.equal('https://example.com/page1');
+    });
   });
 
   describe('mergeStatusFunction', () => {

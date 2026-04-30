@@ -23,7 +23,7 @@ import { syncSuggestions, defaultMergeStatusFunction } from '../../utils/data-ac
 function enrichExcludedReadabilitySuggestionData(data) {
   return {
     ...data,
-    url: data.pageUrl,
+    url: data.pageUrl ?? data.url,
     scrapedAt: data.scrapedAt ? new Date(data.scrapedAt).toISOString() : undefined,
   };
 }

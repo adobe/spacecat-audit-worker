@@ -355,7 +355,7 @@ export async function analyzeTextReadability(
  * @param {Cheerio} $ - The Cheerio object to search for text elements.
  * @returns {Element[]} Array of meaningful text elements for readability analysis and enhancement.
  */
-const NAV_CLASS_PATTERNS = ['nav', 'menu', 'breadcrumb', 'filter', 'pagination', 'sidebar', 'review', 'rating', 'promo', 'banner', 'cookie'];
+const NAV_CLASS_PATTERNS = ['nav', 'menu', 'breadcrumb', 'filter', 'pagination', 'sidebar', 'promo', 'banner', 'cookie'];
 
 const getMeaningfulElementsForReadability = ($) => {
   stripNonContent($);
