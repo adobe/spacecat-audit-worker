@@ -32,6 +32,9 @@ import { generatePatternsWorkbook } from './patterns/patterns-uploader.js';
 import {
   runDailyAgenticExport,
 } from './agentic-daily-export.js';
+import {
+  runDailyReferralExport,
+} from './referral-daily-export.js';
 
 async function runCdnLogsReport(url, context, site, auditContext) {
   const { log } = context;
@@ -58,6 +61,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   const siteId = site.getId();
   const reportConfigs = getConfigs(s3Config.bucket, s3Config.siteKey, siteId);
   const agenticReportConfig = reportConfigs.find((config) => config.name === 'agentic');
+  const referralReportConfig = reportConfigs.find((config) => config.name === 'referral');
 
   const results = [];
   const reportsToPublish = [];
@@ -155,6 +159,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   }
 
   let dailyAgenticExport;
+  let dailyReferralExport;
   if (!isWeeklyOnlyRun) {
     if (!agenticReportConfig) {
       log.debug(`Skipping daily agentic export for ${siteId}: agentic report config not found`);
@@ -179,6 +184,30 @@ async function runCdnLogsReport(url, context, site, auditContext) {
         };
       }
     }
+
+    if (!referralReportConfig) {
+      log.debug(`Skipping daily referral export for ${siteId}: referral report config not found`);
+    } else {
+      try {
+        dailyReferralExport = await runDailyReferralExport({
+          athenaClient,
+          s3Client,
+          s3Config,
+          site,
+          context,
+          reportConfig: referralReportConfig,
+          ...(auditContext?.date ? { referenceDate: new Date(auditContext.date) } : {}),
+        });
+      } catch (error) {
+        context.log.error(`Failed daily referral export for site ${siteId}: ${error.message}`, error);
+        dailyReferralExport = {
+          enabled: true,
+          success: false,
+          siteId,
+          error: error.message,
+        };
+      }
+    }
   }
 
   // Batch publish all uploaded reports using bulk API
@@ -193,6 +222,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   return {
     auditResult: results,
     dailyAgenticExport,
+    dailyReferralExport,
     fullAuditRef: `${site.getConfig()?.getLlmoDataFolder()}`,
   };
 }
