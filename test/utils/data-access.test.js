@@ -530,6 +530,31 @@ describe('data-access', () => {
       expect(actualArgs[0].status).to.equal('NEW');
     });
 
+    it('should use status returned by mapNewSuggestion when present (overrides default and newSuggestionStatus)', async () => {
+      const newData = [{ key: '3' }];
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+      context.site = { requiresValidation: true };
+
+      const mapSkipped = (data) => ({
+        ...mapNewSuggestion(data),
+        status: 'SKIPPED',
+      });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion: mapSkipped,
+        newSuggestionStatus: 'NEW',
+      });
+
+      const actualArgs = mockOpportunity.addSuggestions.getCall(0).args[0];
+      expect(actualArgs[0].status).to.equal('SKIPPED');
+    });
+
     it('should default to PENDING_VALIDATION when newSuggestionStatus is null and site requires validation', async () => {
       const newData = [{ key: '3' }];
 
