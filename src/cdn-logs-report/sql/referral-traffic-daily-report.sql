@@ -33,17 +33,17 @@ llm_referrals AS (
 )
 
 SELECT
-  url as path,
-  host,
+  COALESCE(url, '') AS path,
+  COALESCE(host, '') AS host,
   referrer,
   utm_source,
   utm_medium,
   tracking_param,
-  device,
+  COALESCE(device, '') AS device,
   date,
   region,
   COUNT(*) AS pageviews
 FROM llm_referrals
 GROUP BY
-  url, host, referrer, utm_source, utm_medium, tracking_param, device, date, region
+  COALESCE(url, ''), COALESCE(host, ''), referrer, utm_source, utm_medium, tracking_param, COALESCE(device, ''), date, region
 ORDER BY pageviews DESC
