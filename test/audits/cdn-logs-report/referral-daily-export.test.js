@@ -579,6 +579,8 @@ describe('referral daily export', function referralDailyExportTests() {
     const cols = dataLine.split(',');
     const header = csvBody.split('\r\n')[0].split(',');
     expect(cols[header.indexOf('referrer')]).to.equal('');
+    // null path from Athena must floor to '/' for the NOT NULL url_path column
+    expect(cols[header.indexOf('url_path')]).to.equal('/');
   });
 
   it('includes actual referrer and UTM values in CSV output', async () => {

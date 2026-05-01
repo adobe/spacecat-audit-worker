@@ -100,7 +100,7 @@ export function mapToReferralCsvRows(rawRows, site, trafficDate) {
         grouped.set(key, {
           traffic_date: normalizedDate,
           host: effectiveHost,
-          url_path: urlPath,
+          url_path: urlPath || '/',
           trf_platform: normalizedVendor,
           device,
           region,
