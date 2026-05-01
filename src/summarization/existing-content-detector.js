@@ -45,11 +45,11 @@ export function computeContentHash(rawBody) {
  * @returns {{ hasSummary: boolean, hasKeyPoints: boolean, contentHash: string|null }}
  */
 function detectFromHtml(rawBody) {
+  if (!rawBody || typeof rawBody !== 'string') {
+    return { hasSummary: false, hasKeyPoints: false, contentHash: null };
+  }
   const contentHash = computeContentHash(rawBody);
   const result = { hasSummary: false, hasKeyPoints: false, contentHash };
-  if (!rawBody || typeof rawBody !== 'string') {
-    return result;
-  }
   try {
     const $ = cheerioLoad(rawBody);
     const headings = $('h1, h2, h3, h4, h5, h6');

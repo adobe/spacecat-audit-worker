@@ -24,6 +24,8 @@ const AUDIT_CONTEXT_URLS_KEY = 'summarizationUrls';
 const SCRAPE_AVAILABILITY_THRESHOLD = 0.5; // 50%
 const MAX_TOP_PAGES = 200;
 const MAX_PAGES_TO_MYSTIQUE = 100;
+// Summarization opportunities remain in NEW status while active/unresolved.
+const ACTIVE_OPPORTUNITY_STATUS = 'NEW';
 
 /**
  * Builds a map of URL → stored contentHash from the most recent suggestions
@@ -41,10 +43,15 @@ async function buildExistingHashMap(context, site) {
   }
 
   try {
-    // 'NEW' is the only status for an active, unresolved summarization opportunity.
-    const opportunities = await Opportunity.allBySiteIdAndStatus(site.getId(), 'NEW');
+    const opportunities = await Opportunity.allBySiteIdAndStatus(
+      site.getId(),
+      ACTIVE_OPPORTUNITY_STATUS,
+    );
     const oppty = opportunities.find((o) => o.getType() === AUDIT_TYPE);
     if (!oppty) {
+      if (opportunities.length > 0) {
+        log.warn(`[SUMMARIZATION] Found ${opportunities.length} active opportunity/ies but none matched type '${AUDIT_TYPE}' — skipping hash-based filtering`);
+      }
       return new Map();
     }
 
@@ -52,6 +59,8 @@ async function buildExistingHashMap(context, site) {
     const hashMap = new Map();
     for (const suggestion of suggestions) {
       const data = suggestion.getData();
+      // A page produces two suggestions (summary + key points) with the same URL and hash.
+      // Take only the first occurrence — both carry identical contentHash values.
       if (data?.url && data?.contentHash && !hashMap.has(data.url)) {
         hashMap.set(data.url, data.contentHash);
       }

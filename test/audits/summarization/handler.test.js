@@ -714,6 +714,50 @@ describe('Summarization Handler', () => {
       expect(sqs.sendMessage).to.have.been.calledOnce;
       const sentMessage = sqs.sendMessage.getCall(0).args[1];
       expect(sentMessage.data.pages).to.have.lengthOf(3);
+      expect(log.warn).to.have.been.calledWithMatch(
+        "Found 1 active opportunity/ies but none matched type 'summarization'",
+      );
+    });
+
+    it('should use first hash when a URL has two suggestions (summary + key points) (LLMO-4454)', async () => {
+      const hash = 'shared-page-hash';
+
+      // All three context pages are present so none slip through the filter
+      const mockDetectExistingContent = sandbox.stub().resolves(new Map([
+        ['https://adobe.com/page1', { hasSummary: false, hasKeyPoints: false, contentHash: hash }],
+        ['https://adobe.com/page2', { hasSummary: false, hasKeyPoints: false, contentHash: hash }],
+        ['https://adobe.com/page3', { hasSummary: false, hasKeyPoints: false, contentHash: hash }],
+      ]));
+
+      // page1 appears twice in suggestions (one page-summary + one key-points entry),
+      // both carrying the same hash — the duplicate guard should keep just one map entry.
+      const mockSuggestions = [
+        { getData: sandbox.stub().returns({ url: 'https://adobe.com/page1', contentHash: hash }) },
+        { getData: sandbox.stub().returns({ url: 'https://adobe.com/page1', contentHash: hash }) },
+        { getData: sandbox.stub().returns({ url: 'https://adobe.com/page2', contentHash: hash }) },
+        { getData: sandbox.stub().returns({ url: 'https://adobe.com/page3', contentHash: hash }) },
+      ];
+      const mockOpportunity = {
+        getType: () => 'summarization',
+        getSuggestions: sandbox.stub().resolves(mockSuggestions),
+      };
+
+      context.s3Client = {};
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      const handler = await esmock('../../../src/summarization/handler.js', {
+        '../../../src/summarization/existing-content-detector.js': { detectExistingContent: mockDetectExistingContent },
+      });
+
+      const result = await handler.sendToMystique(context);
+
+      // All three pages have matching hashes — all skipped, no Mystique call
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(sqs.sendMessage).not.to.have.been.called;
+      expect(log.info).to.have.been.calledWith(
+        '[SUMMARIZATION] Skipped 3 page(s) with unchanged content',
+      );
     });
 
     it('should send pages when current content hash is null (LLMO-4454)', async () => {
