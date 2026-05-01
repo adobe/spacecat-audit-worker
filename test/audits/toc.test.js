@@ -1862,11 +1862,9 @@ describe('TOC (Table of Contents) Audit', () => {
       const { processTocResults } = await import('../../src/toc/handler.js');
 
       context.scrapeResultPaths = throwingMap;
-      const result = await processTocResults(context);
-
-      expect(result.auditResult.error).to.exist;
-      expect(result.auditResult.success).to.be.false;
+      await expect(processTocResults(context)).to.be.rejectedWith('Map iteration error');
       expect(logSpy.error).to.have.been.calledWith(sinon.match(/TOC audit failed/));
+      expect(context.dataAccess.Audit.updateByKeys).to.have.been.called;
     });
 
     it('covers lines 360-362: early return when TOC audit has no issues', async () => {
@@ -3292,53 +3290,55 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(logSpy.info).to.have.been.calledWith('[TOC] Submitting 1 URLs for scraping');
     });
 
-    it('returns empty urls when previous audit step failed (no throw)', async () => {
+    it('persists terminal result and returns when previous audit step failed', async () => {
       const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
       context.log = logSpy;
       context.site = site;
-      context.audit = { getAuditResult: () => ({ success: false, topPages: [] }) };
+      context.audit = { getId: () => 'audit-1', getAuditResult: () => ({ success: false, topPages: [] }) };
 
       const { submitForScraping } = await import('../../src/toc/handler.js');
       const result = await submitForScraping(context);
 
-      expect(result.urls).to.deep.equal([]);
-      expect(result.siteId).to.equal(site.getId());
-      expect(result.processingType).to.equal('toc');
-      expect(result.bypassOnEmpty).to.equal(true);
+      expect(result.auditResult.success).to.equal(false);
+      expect(result.auditResult.check).to.equal('top-pages');
+      expect(result.fullAuditRef).to.equal(site.getBaseURL());
+      expect(result).to.not.have.property('urls');
+      expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledOnce;
       expect(logSpy.warn).to.have.been.calledWith('[TOC] Audit failed in previous step, skipping scraping');
     });
 
-    it('returns empty urls when topPages is empty (no throw)', async () => {
+    it('persists terminal result and returns when topPages is empty', async () => {
       const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
       context.log = logSpy;
       context.site = site;
-      context.audit = { getAuditResult: () => ({ success: true, topPages: [] }) };
+      context.audit = { getId: () => 'audit-1', getAuditResult: () => ({ success: true, topPages: [] }) };
 
       const { submitForScraping } = await import('../../src/toc/handler.js');
       const result = await submitForScraping(context);
 
-      expect(result.urls).to.deep.equal([]);
-      expect(result.siteId).to.equal(site.getId());
-      expect(result.processingType).to.equal('toc');
-      expect(result.bypassOnEmpty).to.equal(true);
-      expect(logSpy.warn).to.have.been.calledWith('[TOC] No URLs to submit for scraping, routing to process-toc-results');
+      expect(result.auditResult.success).to.equal(false);
+      expect(result.auditResult.check).to.equal('top-pages');
+      expect(result.fullAuditRef).to.equal(site.getBaseURL());
+      expect(result).to.not.have.property('urls');
+      expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledOnce;
+      expect(logSpy.warn).to.have.been.calledWith('[TOC] No top pages found, ending audit');
     });
 
-    it('returns empty urls when topPages is undefined (no throw)', async () => {
+    it('persists terminal result and returns when topPages is undefined', async () => {
       const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
       context.log = logSpy;
       context.site = site;
-      // No topPages key — defaults to []
-      context.audit = { getAuditResult: () => ({ success: true }) };
+      context.audit = { getId: () => 'audit-1', getAuditResult: () => ({ success: true }) };
 
       const { submitForScraping } = await import('../../src/toc/handler.js');
       const result = await submitForScraping(context);
 
-      expect(result.urls).to.deep.equal([]);
-      expect(result.siteId).to.equal(site.getId());
-      expect(result.processingType).to.equal('toc');
-      expect(result.bypassOnEmpty).to.equal(true);
-      expect(logSpy.warn).to.have.been.calledWith('[TOC] No URLs to submit for scraping, routing to process-toc-results');
+      expect(result.auditResult.success).to.equal(false);
+      expect(result.auditResult.check).to.equal('top-pages');
+      expect(result.fullAuditRef).to.equal(site.getBaseURL());
+      expect(result).to.not.have.property('urls');
+      expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledOnce;
+      expect(logSpy.warn).to.have.been.calledWith('[TOC] No top pages found, ending audit');
     });
   });
 });

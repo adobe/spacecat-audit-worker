@@ -316,21 +316,26 @@ export async function importTopPages(context) {
  */
 export async function submitForScraping(context) {
   const { site, audit, log } = context;
+  const { Audit: AuditModel } = context.dataAccess;
   const auditResult = audit.getAuditResult();
   const topPages = auditResult?.topPages ?? [];
 
   if (auditResult?.success === false) {
     log.warn('[TOC] Audit failed in previous step, skipping scraping');
-    return {
-      urls: [], siteId: site.getId(), processingType: auditType, bypassOnEmpty: true,
+    const terminalResult = {
+      check: TOPPAGES_CHECK.check, success: false, explanation: TOPPAGES_CHECK.explanation,
     };
+    await AuditModel.updateByKeys({ auditId: audit.getId() }, { auditResult: terminalResult });
+    return { auditResult: terminalResult, fullAuditRef: site.getBaseURL() };
   }
 
   if (topPages.length === 0) {
-    log.warn('[TOC] No URLs to submit for scraping, routing to process-toc-results');
-    return {
-      urls: [], siteId: site.getId(), processingType: auditType, bypassOnEmpty: true,
+    log.warn('[TOC] No top pages found, ending audit');
+    const terminalResult = {
+      check: TOPPAGES_CHECK.check, success: false, explanation: TOPPAGES_CHECK.explanation,
     };
+    await AuditModel.updateByKeys({ auditId: audit.getId() }, { auditResult: terminalResult });
+    return { auditResult: terminalResult, fullAuditRef: site.getBaseURL() };
   }
 
   log.info(`[TOC] Submitting ${topPages.length} URLs for scraping`);
@@ -589,10 +594,9 @@ export async function processTocResults(context) {
     return { fullAuditRef: baseURL, auditResult: slimmedAuditResult };
   } catch (error) {
     log.error(`TOC audit failed: ${error.message}`);
-    return {
-      fullAuditRef: baseURL,
-      auditResult: { error: `Audit failed with error: ${error.message}`, success: false },
-    };
+    const errorResult = { error: `Audit failed with error: ${error.message}`, success: false };
+    await AuditModel.updateByKeys({ auditId: audit.getId() }, { auditResult: errorResult });
+    throw error;
   }
 }
 
