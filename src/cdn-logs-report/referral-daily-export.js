@@ -52,7 +52,7 @@ export function getPreviousUtcDate(referenceDate = new Date()) {
 
 function getCsvKey(siteId, trafficDate) {
   const [year, month, day] = trafficDate.split('-');
-  return `aggregated-referral-llmo-daily-csvs/${siteId}/${year}/${month}/${day}/data.csv`;
+  return `referral-traffic-cdn-daily-export/csvs/${siteId}/${year}/${month}/${day}/data.csv`;
 }
 
 async function ensureAthenaDatabase(athenaClient, databaseName) {
@@ -153,7 +153,10 @@ export async function runDailyReferralExport({
   const { log } = context;
   const trafficDateObj = getPreviousUtcDate(referenceDate);
   const trafficDate = trafficDateObj.toISOString().split('T')[0];
-  const { bucket } = s3Config;
+  const bucket = context.env?.S3_IMPORTER_BUCKET_NAME;
+  if (!bucket) {
+    throw new Error('S3_IMPORTER_BUCKET_NAME must be provided for referral daily export');
+  }
   const siteId = site.getId();
 
   const queueUrl = await getAnalyticsQueueUrl(context);
