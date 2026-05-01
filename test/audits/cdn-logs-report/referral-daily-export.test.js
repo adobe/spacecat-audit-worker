@@ -551,9 +551,9 @@ describe('referral daily export', function referralDailyExportTests() {
       athenaClient: {
         execute: sandbox.stub().resolves(),
         query: sandbox.stub().resolves([{
-          path: null,   // triggers row.path || ''
+          path: null,       // triggers row.path || ''
           host: 'www.example.com',
-          referrer: 'chatgpt.com',
+          referrer: null,   // triggers referrer || ''
           utm_source: null,
           utm_medium: null,
           tracking_param: null,
@@ -574,6 +574,43 @@ describe('referral daily export', function referralDailyExportTests() {
     const csvBody = s3Client.send.firstCall.args[0].input.Body;
     // trf_platform falls back to '' when vendor is null
     expect(csvBody).to.include('spacecat:cdn');
+  });
+
+  it('includes actual referrer and UTM values in CSV output', async () => {
+    const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
+    const module = await loadModule(classifyStub);
+    const s3Client = { send: sandbox.stub().resolves({}) };
+
+    await module.runDailyReferralExport({
+      athenaClient: {
+        execute: sandbox.stub().resolves(),
+        query: sandbox.stub().resolves([{
+          path: '/page',
+          host: 'www.example.com',
+          referrer: 'chatgpt.com',
+          utm_source: 'chatgpt',
+          utm_medium: 'referral',
+          tracking_param: 'llm_ref',
+          device: 'desktop',
+          date: '2026-03-31',
+          region: 'US',
+          pageviews: 1,
+        }]),
+      },
+      s3Client,
+      s3Config: { bucket: 'cdn-bucket', databaseName: 'cdn_db' },
+      site: makeSite(),
+      context: makeContext(),
+      reportConfig: { tableName: 'referral_table' },
+      referenceDate: new Date('2026-04-01T00:00:00Z'),
+    });
+
+    const csvBody = s3Client.send.firstCall.args[0].input.Body;
+    expect(csvBody).to.include('chatgpt.com');
+    expect(csvBody).to.include('chatgpt');
+    expect(csvBody).to.include('referral');
+    expect(csvBody).to.include('llm_ref');
+    expect(csvBody).to.not.include('cdn_provider');
   });
 
   it('normalizes mixed-date rows to the same group key', async () => {
