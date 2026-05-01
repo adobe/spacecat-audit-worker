@@ -111,9 +111,10 @@ describe('TOC (Table of Contents) Audit', () => {
       AzureOpenAIClient.createFrom.restore();
       sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
+      const convertToOpportunityStub = sinon.stub().resolves({ getId: () => 'test-opp-id' });
       const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/common/opportunity.js': {
-          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+          convertToOpportunity: convertToOpportunityStub,
         },
         '../../src/utils/data-access.js': {
           syncSuggestions: sinon.stub().resolves(),
@@ -162,6 +163,11 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(tocIssue).to.not.have.property('transformRules');
       expect(tocIssue.tocConfidence).to.equal(8);
       expect(tocIssue.tocReasoning).to.equal('No TOC structure found');
+
+      // auditData passed to convertToOpportunity must include id so the opportunity is linked
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      const [, calledWithAuditData] = convertToOpportunityStub.getCall(0).args;
+      expect(calledWithAuditData).to.have.property('id', 'default-audit-id');
     });
   });
 
@@ -3298,6 +3304,7 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(result.urls).to.deep.equal([]);
       expect(result.siteId).to.equal(site.getId());
       expect(result.processingType).to.equal('toc');
+      expect(result.bypassOnEmpty).to.equal(true);
       expect(logSpy.warn).to.have.been.calledWith('[TOC] Audit failed in previous step, skipping scraping');
     });
 
@@ -3313,6 +3320,7 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(result.urls).to.deep.equal([]);
       expect(result.siteId).to.equal(site.getId());
       expect(result.processingType).to.equal('toc');
+      expect(result.bypassOnEmpty).to.equal(true);
       expect(logSpy.warn).to.have.been.calledWith('[TOC] No URLs to submit for scraping, routing to process-toc-results');
     });
 
@@ -3329,6 +3337,7 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(result.urls).to.deep.equal([]);
       expect(result.siteId).to.equal(site.getId());
       expect(result.processingType).to.equal('toc');
+      expect(result.bypassOnEmpty).to.equal(true);
       expect(logSpy.warn).to.have.been.calledWith('[TOC] No URLs to submit for scraping, routing to process-toc-results');
     });
   });

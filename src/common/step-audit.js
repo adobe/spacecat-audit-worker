@@ -86,7 +86,7 @@ export class StepAudit extends BaseAudit {
     };
 
     if (step.destination === AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT) {
-      if (!stepResult.urls?.length) {
+      if (!stepResult.urls?.length && stepResult.bypassOnEmpty) {
         const queueUrl = context.env?.AUDIT_JOBS_QUEUE_URL;
         const bypassPayload = {
           type: audit.getAuditType(),

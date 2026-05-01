@@ -529,6 +529,7 @@ describe('Step-based Audit Tests', () => {
         .addStep('scrape-step', async () => ({
           urls: [],
           siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+          bypassOnEmpty: true,
         }), AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
         .addStep('final', async () => ({ status: 'complete' }))
         .build();
@@ -565,6 +566,51 @@ describe('Step-based Audit Tests', () => {
       expect(payload.auditContext.next).to.equal('final');
 
       expect(context.log.debug).to.have.been.calledWith(sinon.match(/no URLs to scrape, routing directly to/));
+    });
+
+    it('does not bypass ScrapeClient when urls is empty but bypassOnEmpty is not set', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      const mockScrapeClient = {
+        createScrapeJob: sandbox.stub().resolves({ id: 'scrape-job-no-bypass' }),
+      };
+      sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
+
+      const noBypassAudit = new AuditBuilder()
+        .addStep('scrape-step', async () => ({
+          urls: [],
+          siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        }), AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+        .addStep('final', async () => ({ status: 'complete' }))
+        .build();
+
+      const existingAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.findById.resolves(existingAudit);
+
+      const scrapeMessage = {
+        type: 'content-audit',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        auditContext: {
+          next: 'scrape-step',
+          auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
+        },
+      };
+
+      const result = await noBypassAudit.run(scrapeMessage, context);
+
+      expect(result.status).to.equal(200);
+
+      // ScrapeClient MUST be invoked — no bypass without bypassOnEmpty flag
+      expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
+
+      // No SQS bypass message should be sent for the bypass path
+      expect(context.sqs.sendMessage).not.to.have.been.called;
     });
 
     it('loads scrape result paths when scrapeJobId is provided', async () => {

@@ -321,12 +321,16 @@ export async function submitForScraping(context) {
 
   if (auditResult?.success === false) {
     log.warn('[TOC] Audit failed in previous step, skipping scraping');
-    return { urls: [], siteId: site.getId(), processingType: auditType };
+    return {
+      urls: [], siteId: site.getId(), processingType: auditType, bypassOnEmpty: true,
+    };
   }
 
   if (topPages.length === 0) {
     log.warn('[TOC] No URLs to submit for scraping, routing to process-toc-results');
-    return { urls: [], siteId: site.getId(), processingType: auditType };
+    return {
+      urls: [], siteId: site.getId(), processingType: auditType, bypassOnEmpty: true,
+    };
   }
 
   log.info(`[TOC] Submitting ${topPages.length} URLs for scraping`);
@@ -565,6 +569,7 @@ export async function processTocResults(context) {
 
     // Build suggestions from FULL result (transformRules present) before slimming
     const auditData = {
+      id: audit.getId(),
       siteId: site.getId(),
       auditType,
       auditResult,
