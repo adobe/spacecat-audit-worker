@@ -1,3 +1,10 @@
+# [1.428.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.427.1...v1.428.0) (2026-05-01)
+
+
+### Features
+
+* **llmo-referral-traffic-daily:** use traffic-analysis with mode:daily instead of traffic-analysis-daily ([#2460](https://github.com/adobe/spacecat-audit-worker/issues/2460)) ([c583ee0](https://github.com/adobe/spacecat-audit-worker/commit/c583ee093caa1975c4fef3224be9c556661a72a2)), closes [adobe/spacecat-import-worker#733](https://github.com/adobe/spacecat-import-worker/issues/733)
+
 ## [1.427.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.427.0...v1.427.1) (2026-05-01)
 
 
