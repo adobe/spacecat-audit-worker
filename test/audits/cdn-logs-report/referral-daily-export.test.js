@@ -574,6 +574,11 @@ describe('referral daily export', function referralDailyExportTests() {
     const csvBody = s3Client.send.firstCall.args[0].input.Body;
     // trf_platform falls back to '' when vendor is null
     expect(csvBody).to.include('spacecat:cdn');
+    // null referrer from Athena must render as an unquoted empty field (not ""), so PostgreSQL reads it as NULL
+    const dataLine = csvBody.split('\r\n')[1];
+    const cols = dataLine.split(',');
+    const header = csvBody.split('\r\n')[0].split(',');
+    expect(cols[header.indexOf('referrer')]).to.equal('');
   });
 
   it('includes actual referrer and UTM values in CSV output', async () => {
