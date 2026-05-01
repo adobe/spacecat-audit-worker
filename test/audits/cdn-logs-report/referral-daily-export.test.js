@@ -51,7 +51,7 @@ describe('referral daily export', function referralDailyExportTests() {
 
   function makeContext(overrides = {}) {
     return {
-      env: {},
+      env: { S3_IMPORTER_BUCKET_NAME: 'spacecat-importer-bucket' },
       dataAccess: {
         Configuration: {
           findLatest: sandbox.stub().resolves(createConfiguration()),
@@ -129,9 +129,9 @@ describe('referral daily export', function referralDailyExportTests() {
       '[Athena Query] referral_daily_flat_data',
     );
     expect(s3Client.send).to.have.been.calledOnce;
-    expect(s3Client.send.firstCall.args[0].input.Bucket).to.equal('spacecat-dev-cdn-logs-aggregates-us-east-1');
+    expect(s3Client.send.firstCall.args[0].input.Bucket).to.equal('spacecat-importer-bucket');
     expect(s3Client.send.firstCall.args[0].input.Key).to.equal(
-      'aggregated-referral-llmo-daily-csvs/site-abc/2026/03/31/data.csv',
+      'referral-traffic-cdn-daily-export/csvs/site-abc/2026/03/31/data.csv',
     );
     expect(s3Client.send.firstCall.args[0].input.Body).to.include('traffic_date,host,url_path');
     expect(s3Client.send.firstCall.args[0].input.Body).to.include('2026-03-31,www.example.com,/products/ai');
@@ -141,7 +141,7 @@ describe('referral daily export', function referralDailyExportTests() {
         type: 'batch.completed',
         correlationId: expectedDedupId,
         pipeline_id: 'referral_traffic_cdn',
-        s3_uri: 's3://spacecat-dev-cdn-logs-aggregates-us-east-1/aggregated-referral-llmo-daily-csvs/site-abc/2026/03/31/data.csv',
+        s3_uri: 's3://spacecat-importer-bucket/referral-traffic-cdn-daily-export/csvs/site-abc/2026/03/31/data.csv',
         site_id: 'site-abc',
         org_id: 'org-1',
         start_date: '2026-03-31',
@@ -159,7 +159,7 @@ describe('referral daily export', function referralDailyExportTests() {
       siteId: 'site-abc',
       trafficDate: '2026-03-31',
       rowCount: 1,
-      csvUri: 's3://spacecat-dev-cdn-logs-aggregates-us-east-1/aggregated-referral-llmo-daily-csvs/site-abc/2026/03/31/data.csv',
+      csvUri: 's3://spacecat-importer-bucket/referral-traffic-cdn-daily-export/csvs/site-abc/2026/03/31/data.csv',
     });
     expect(context.log.info).to.have.been.calledWith(
       '[cdn-logs-report] Daily referral export dispatched for site-abc (https://www.example.com) on 2026-03-31. Rows: 1',
@@ -389,6 +389,20 @@ describe('referral daily export', function referralDailyExportTests() {
     expect(csvBody).to.include('2026-03-31');
   });
 
+  it('throws when S3_IMPORTER_BUCKET_NAME is not set', async () => {
+    const module = await loadModule(sandbox.stub());
+
+    await expect(module.runDailyReferralExport({
+      athenaClient: { execute: sandbox.stub().resolves(), query: sandbox.stub().resolves([]) },
+      s3Client: { send: sandbox.stub().resolves({}) },
+      s3Config: { databaseName: 'cdn_db' },
+      site: makeSite(),
+      context: makeContext({ env: {} }),
+      reportConfig: { tableName: 'referral_table' },
+      referenceDate: new Date('2026-04-01T00:00:00Z'),
+    })).to.be.rejectedWith('S3_IMPORTER_BUCKET_NAME must be provided for referral daily export');
+  });
+
   it('throws when analytics queue is not configured', async () => {
     const module = await loadModule(sandbox.stub());
 
@@ -504,7 +518,7 @@ describe('referral daily export', function referralDailyExportTests() {
     await module.testHelpers.cleanupCsvFromS3({
       s3Client,
       bucket: 'cdn-bucket',
-      csvKey: 'aggregated-referral-llmo-daily-csvs/site-abc/2026/03/31/data.csv',
+      csvKey: 'referral-traffic-cdn-daily-export/csvs/site-abc/2026/03/31/data.csv',
       log,
     });
 
