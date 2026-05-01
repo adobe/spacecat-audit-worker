@@ -21,7 +21,7 @@ import { weeklyBreakdownQueries } from './utils/query-builder.js';
 const CDN_REFERRAL_CSV_COLUMNS = [
   'traffic_date', 'host', 'url_path', 'trf_platform', 'device', 'region',
   'pageviews', 'referrer', 'utm_source', 'utm_medium', 'tracking_param',
-  'trf_type', 'trf_channel', 'cdn_provider', 'updated_by',
+  'trf_type', 'trf_channel', 'updated_by',
 ];
 
 function escapeCsvValue(value) {
@@ -105,13 +105,12 @@ export function mapToReferralCsvRows(rawRows, site, trafficDate) {
           device,
           region,
           pageviews,
-          referrer: '',
-          utm_source: '',
-          utm_medium: '',
-          tracking_param: '',
+          referrer: referrer || '',
+          utm_source: utm_source || '',
+          utm_medium: utm_medium || '',
+          tracking_param: tracking_param || '',
           trf_type: 'earned',
           trf_channel: 'llm',
-          cdn_provider: '',
           updated_by: 'spacecat:cdn',
         });
       }
