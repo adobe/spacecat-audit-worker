@@ -1,3 +1,10 @@
+## [1.427.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.427.0...v1.427.1) (2026-05-01)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** use S3_IMPORTER_BUCKET_NAME and new key prefix for referral daily export ([#2458](https://github.com/adobe/spacecat-audit-worker/issues/2458)) ([01ca913](https://github.com/adobe/spacecat-audit-worker/commit/01ca913b668707634e48fc40f2c54417fdd6b816))
+
 # [1.427.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.426.0...v1.427.0) (2026-04-30)
 
 
