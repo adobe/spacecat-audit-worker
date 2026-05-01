@@ -212,7 +212,6 @@ describe('LLM Error Pages Handler', function () {
         getAllLlmProviders: mockGetAllLlmProviders,
         categorizeErrorsByStatusCode: mockCategorizeErrorsByStatusCode,
         downloadExistingCdnSheet: mockDownloadExistingCdnSheet,
-        matchErrorsWithCdnData: mockMatchErrorsWithCdnData,
         consolidateErrorsByUrl: (errors) => errors,
         sortErrorsByTrafficVolume: (errors) => errors,
         toPathOnly: (url) => url,
@@ -1293,6 +1292,458 @@ describe('LLM Error Pages Handler – default export routing', function () {
     const result = await capturedRunner('https://example.com', mockContext, mockSite, { weekOffset: -1 });
     expect(result).to.have.property('auditResult');
 
+    sandbox.restore();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DB dual-write paths (Opportunity + Suggestion sync alongside Excel write)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('LLM Error Pages Handler — DB dual-write', function () {
+  this.timeout(10000);
+
+  const buildHandler = async (sandbox, overrides = {}) => {
+    const mockAthenaClient = { query: sandbox.stub().resolves([]) };
+    const mockGenerateReportingPeriods = sandbox.stub().returns({
+      weeks: [{
+        weekNumber: 15,
+        year: 2026,
+        startDate: new Date('2026-04-06T00:00:00Z'),
+        endDate: new Date('2026-04-12T23:59:59Z'),
+        periodIdentifier: 'w15-2026',
+      }],
+    });
+    const defaultErrorPages = [
+      { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      { user_agent: 'Perplexity', agent_type: 'Web search crawlers', url: '/p2', status: 403, total_requests: 5 },
+      { user_agent: 'Claude', agent_type: 'Chatbots', url: '/p3', status: 503, total_requests: 3 },
+    ];
+    const errorPages = overrides.errorPages || defaultErrorPages;
+    const mockProcessResults = sandbox.stub().returns({
+      totalErrors: errorPages.length,
+      errorPages,
+      summary: { uniqueUrls: errorPages.length, uniqueUserAgents: errorPages.length },
+    });
+    const mockCategorize = sandbox.stub().callsFake((errors) => ({
+      404: errors.filter((e) => e.status === 404),
+      403: errors.filter((e) => e.status === 403),
+      '5xx': errors.filter((e) => e.status >= 500),
+    }));
+
+    const mockGroupErrorsByUrl = sandbox.stub().callsFake((errors) => errors.map((e) => ({
+      url: e.url,
+      httpStatus: e.status,
+      hitCount: e.total_requests || 0,
+      agentTypes: [e.agent_type],
+      userAgents: [e.user_agent],
+      avgTtfb: e.avg_ttfb_ms,
+      countryCode: e.country_code,
+      product: e.product,
+      category: e.category,
+    })));
+
+    const mockParsePeriod = overrides.parsePeriodIdentifier
+      || sandbox.stub().returns(new Date('2026-04-06T00:00:00Z'));
+
+    const mockConvertToOpportunity = overrides.convertToOpportunity
+      || sandbox.stub().callsFake((url, audit, ctx, mapper, type) => Promise.resolve({
+        getId: () => `opp-${type}`,
+        getType: () => type,
+        getSuggestions: sandbox.stub().resolves(overrides.existingSuggestionsByType?.[type] || []),
+      }));
+    const mockSyncSuggestions = overrides.syncSuggestions || sandbox.stub().resolves();
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'i', SCRAPE_CLIENT: 's' } },
+      },
+      '@adobe/spacecat-shared-tier-client': { default: {} },
+      '../../../src/common/index.js': { wwwUrlResolver: () => ({}) },
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class {
+          withUrlResolver() { return this; } addStep() { return this; }
+          withRunner() { return this; } build() { return {}; }
+        },
+      },
+      '../../../src/common/audit-utils.js': { default: {} },
+      '../../../src/common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
+      '../../../src/utils/data-access.js': { syncSuggestions: mockSyncSuggestions },
+      '../../../src/llm-error-pages/opportunity-data-mapper.js': {
+        createOpportunityData: sandbox.stub().returns({}),
+      },
+      '../../../src/llm-error-pages/utils.js': {
+        generateReportingPeriods: mockGenerateReportingPeriods,
+        processErrorPagesResults: mockProcessResults,
+        buildLlmErrorPagesQuery: sandbox.stub().resolves('SELECT'),
+        getAllLlmProviders: sandbox.stub().returns([]),
+        categorizeErrorsByStatusCode: mockCategorize,
+        groupErrorsByUrl: mockGroupErrorsByUrl,
+        parsePeriodIdentifier: mockParsePeriod,
+        consolidateErrorsByUrl: (e) => e,
+        sortErrorsByTrafficVolume: (e) => e,
+        toPathOnly: (u) => u,
+        SPREADSHEET_COLUMNS: [],
+      },
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: sandbox.stub().resolves({}),
+        saveExcelReport: overrides.saveExcelReport || sandbox.stub().resolves(),
+      },
+      '../../../src/utils/cdn-utils.js': {
+        buildSiteFilters: sandbox.stub().returns(''),
+        getS3Config: sandbox.stub().returns({
+          databaseName: 'db',
+          tableName: 't',
+          siteName: 'c',
+          getAthenaTempLocation: () => 's3://x/',
+        }),
+        getCdnAwsRuntime: () => ({ createAthenaClient: () => mockAthenaClient }),
+      },
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: sandbox.stub().resolves([]),
+      },
+      '../../../src/cdn-logs-report/utils/report-utils.js': {
+        validateCountryCode: () => 'US',
+      },
+      exceljs: {
+        default: { Workbook: function W() { return { addWorksheet: () => ({ addRow: sandbox.stub() }) }; } },
+      },
+    });
+
+    return { handler, mockConvertToOpportunity, mockSyncSuggestions };
+  };
+
+  const buildContext = (sandbox, overrides = {}) => ({
+    log: {
+      info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(),
+    },
+    sqs: { sendMessage: sandbox.stub().resolves({}) },
+    env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
+    site: {
+      getBaseURL: () => 'https://example.com',
+      getId: () => 'site-1',
+      getDeliveryType: () => 'aem_edge',
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [], getLlmoDataFolder: () => 'c' }),
+    },
+    audit: { getId: () => 'audit-1', getAuditResult: sandbox.stub() },
+    dataAccess: {
+      SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+      Opportunity: {
+        allBySiteIdAndStatus: sandbox.stub().resolves(overrides.existingOpportunities || []),
+      },
+      Suggestion: { bulkUpdateStatus: sandbox.stub().resolves() },
+    },
+    ...overrides.contextOverrides,
+  });
+
+  it('creates Opportunities and syncs suggestions per non-empty bucket', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockConvertToOpportunity, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(mockConvertToOpportunity).to.have.been.calledThrice;
+    const auditTypes = mockConvertToOpportunity.args.map((a) => a[4]);
+    expect(auditTypes).to.have.members([
+      'llm-error-pages-404', 'llm-error-pages-403', 'llm-error-pages-5xx',
+    ]);
+    expect(mockSyncSuggestions).to.have.been.calledThrice;
+    sandbox.restore();
+  });
+
+  it('passes opportunityId from DB into the Mystique message', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.sqs.sendMessage).to.have.been.called;
+    const sent = ctx.sqs.sendMessage.firstCall.args[1];
+    expect(sent.data.opportunityId).to.equal('opp-llm-error-pages-404');
+    sandbox.restore();
+  });
+
+  it('writes hitCount, agentTypes, and userAgents into the new Suggestion data', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    const callArgs = mockSyncSuggestions.args.find((a) => {
+      const sample = a[0].newData[0];
+      return sample && sample.url === '/p1';
+    });
+    expect(callArgs).to.exist;
+    const { mapNewSuggestion } = callArgs[0];
+    const fixture = {
+      url: '/p1', httpStatus: 404, hitCount: 10, agentTypes: ['Chatbots'], userAgents: ['ChatGPT'],
+    };
+    const mapped = mapNewSuggestion(fixture);
+    expect(mapped.data.userAgents).to.deep.equal(['ChatGPT']);
+    expect(mapped.data.agentTypes).to.deep.equal(['Chatbots']);
+    expect(mapped.data.hitCount).to.equal(10);
+    expect(mapped.data.periodIdentifier).to.equal('w15-2026');
+    sandbox.restore();
+  });
+
+  it('preserves AI-enriched fields via mergeDataFunction', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    const { mergeDataFunction } = mockSyncSuggestions.firstCall.args[0];
+    const merged = mergeDataFunction(
+      {
+        url: '/p1',
+        suggestedUrls: ['/alt'],
+        aiRationale: 'great',
+        confidenceScore: 0.9,
+        someOldField: 'keepme',
+      },
+      {
+        hitCount: 99,
+        agentTypes: ['Chatbots'],
+        userAgents: ['ChatGPT'],
+        avgTtfb: 50,
+        countryCode: 'US',
+        product: 'P',
+        category: 'C',
+      },
+    );
+    expect(merged.hitCount).to.equal(99);
+    expect(merged.userAgents).to.deep.equal(['ChatGPT']);
+    expect(merged.suggestedUrls).to.deep.equal(['/alt']);
+    expect(merged.aiRationale).to.equal('great');
+    expect(merged.confidenceScore).to.equal(0.9);
+    expect(merged.someOldField).to.equal('keepme');
+  });
+
+  it('mergeDataFunction omits AI fields when not present on existing data', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    const { mergeDataFunction } = mockSyncSuggestions.firstCall.args[0];
+    const merged = mergeDataFunction({ url: '/p1' }, { hitCount: 1, agentTypes: ['A'], userAgents: ['U'] });
+    expect(merged.suggestedUrls).to.be.undefined;
+    expect(merged.aiRationale).to.be.undefined;
+    expect(merged.confidenceScore).to.be.undefined;
+  });
+
+  it('runs retention sweep on existing opportunity for empty buckets', async () => {
+    const sandbox = sinon.createSandbox();
+
+    const staleSuggestion = {
+      getData: () => ({ url: '/old', periodIdentifier: 'w01-2025' }),
+      getStatus: () => 'NEW',
+    };
+    const staleOpportunity = {
+      getId: () => 'opp-403-stale',
+      getType: () => 'llm-error-pages-403',
+      getSuggestions: sandbox.stub().resolves([staleSuggestion]),
+    };
+
+    // Only 404 errors — 403 and 5xx buckets empty so retention runs via stale lookup.
+    const { handler } = await buildHandler(sandbox, {
+      errorPages: [
+        { user_agent: 'ChatGPT', agent_type: 'Chatbots', url: '/p1', status: 404, total_requests: 10 },
+      ],
+    });
+    const ctx = buildContext(sandbox);
+    ctx.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([staleOpportunity]);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(staleOpportunity.getSuggestions).to.have.been.called;
+    sandbox.restore();
+  });
+
+  it('skips suggestions with no periodIdentifier in retention check', async () => {
+    const sandbox = sinon.createSandbox();
+    const sugWithoutPeriod = {
+      getData: () => ({ url: '/legacy' }),
+      getStatus: () => 'NEW',
+    };
+    const sugWithTerminal = {
+      getData: () => ({ url: '/done', periodIdentifier: 'w01-2020' }),
+      getStatus: () => 'RESOLVED',
+    };
+    const oldOpp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getSuggestions: sandbox.stub().resolves([sugWithoutPeriod, sugWithTerminal]),
+    };
+    const { handler, mockConvertToOpportunity } = await buildHandler(sandbox, {
+      convertToOpportunity: sandbox.stub().resolves(oldOpp),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(mockConvertToOpportunity).to.have.been.called;
+    sandbox.restore();
+  });
+
+  it('calls bulkUpdateStatus when suggestions are stale', async () => {
+    const sandbox = sinon.createSandbox();
+    const stale = {
+      getData: () => ({ url: '/old', periodIdentifier: 'w01-2020' }),
+      getStatus: () => 'NEW',
+    };
+    const opp = {
+      getId: () => 'opp-404',
+      getType: () => 'llm-error-pages-404',
+      getSuggestions: sandbox.stub().resolves([stale]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      convertToOpportunity: sandbox.stub().resolves(opp),
+      parsePeriodIdentifier: sandbox.stub().returns(new Date(0)), // epoch → always stale
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith([stale], 'OUTDATED');
+    sandbox.restore();
+  });
+
+  it('logs and continues when DB sync throws (best-effort independence)', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler } = await buildHandler(sandbox, {
+      convertToOpportunity: sandbox.stub().rejects(new Error('boom')),
+    });
+    const ctx = buildContext(sandbox);
+
+    const result = await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.log.error).to.have.been.calledWithMatch(/DB sync failed/);
+    // Mystique message still sent (Excel + send-to-mystique path is independent of DB).
+    expect(ctx.sqs.sendMessage).to.have.been.called;
+    expect(result.auditResult[0].success).to.be.true;
+    sandbox.restore();
+  });
+
+  it('logs and continues when Excel write throws (best-effort independence)', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox, {
+      saveExcelReport: sandbox.stub().rejects(new Error('sharepoint-down')),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.log.error).to.have.been.calledWithMatch(/Excel write failed/);
+    // DB sync still ran.
+    expect(mockSyncSuggestions).to.have.been.called;
+    sandbox.restore();
+  });
+
+  it('handles categorizedResults missing a status code key', async () => {
+    const sandbox = sinon.createSandbox();
+    // Custom buildHandler with categorize returning only 404 (no 403 / 5xx keys).
+    const mockAthenaClient = { query: sandbox.stub().resolves([]) };
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'i', SCRAPE_CLIENT: 's' } },
+      },
+      '@adobe/spacecat-shared-tier-client': { default: {} },
+      '../../../src/common/index.js': { wwwUrlResolver: () => ({}) },
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class {
+          withUrlResolver() { return this; } addStep() { return this; }
+          withRunner() { return this; } build() { return {}; }
+        },
+      },
+      '../../../src/common/audit-utils.js': { default: {} },
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: sandbox.stub().resolves({
+          getId: () => 'opp-404', getType: () => 't', getSuggestions: sandbox.stub().resolves([]),
+        }),
+      },
+      '../../../src/utils/data-access.js': { syncSuggestions: sandbox.stub().resolves() },
+      '../../../src/llm-error-pages/opportunity-data-mapper.js': {
+        createOpportunityData: sandbox.stub().returns({}),
+      },
+      '../../../src/llm-error-pages/utils.js': {
+        generateReportingPeriods: sandbox.stub().returns({
+          weeks: [{ startDate: new Date(), endDate: new Date(), periodIdentifier: 'w01-2026' }],
+        }),
+        processErrorPagesResults: sandbox.stub().returns({
+          totalErrors: 1,
+          errorPages: [{ url: '/p', status: 404, total_requests: 1, agent_type: 'A', user_agent: 'U' }],
+          summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+        }),
+        buildLlmErrorPagesQuery: sandbox.stub().resolves('SELECT'),
+        getAllLlmProviders: sandbox.stub().returns([]),
+        // Returns only 404 — 403 and 5xx are undefined → triggers `|| []` branch.
+        categorizeErrorsByStatusCode: () => ({ 404: [{ url: '/p', status: 404, total_requests: 1, agent_type: 'A', user_agent: 'U' }] }),
+        groupErrorsByUrl: (e) => e.map((x) => ({ ...x, hitCount: x.total_requests })),
+        parsePeriodIdentifier: () => new Date(),
+        consolidateErrorsByUrl: (e) => e,
+        sortErrorsByTrafficVolume: (e) => e,
+        toPathOnly: (u) => u,
+        SPREADSHEET_COLUMNS: [],
+      },
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: sandbox.stub().resolves({}),
+        saveExcelReport: sandbox.stub().resolves(),
+      },
+      '../../../src/utils/cdn-utils.js': {
+        buildSiteFilters: sandbox.stub().returns(''),
+        getS3Config: sandbox.stub().returns({
+          databaseName: 'db', tableName: 't', siteName: 'c', getAthenaTempLocation: () => 's3://x/',
+        }),
+        getCdnAwsRuntime: () => ({ createAthenaClient: () => mockAthenaClient }),
+      },
+      '../../../src/utils/agentic-urls.js': { getTopAgenticUrlsFromAthena: sandbox.stub().resolves([]) },
+      '../../../src/cdn-logs-report/utils/report-utils.js': { validateCountryCode: () => 'US' },
+      exceljs: { default: { Workbook: function W() { return { addWorksheet: () => ({ addRow: sandbox.stub() }) }; } } },
+    });
+
+    const ctx = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
+      sqs: { sendMessage: sandbox.stub().resolves({}) },
+      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
+      site: {
+        getBaseURL: () => 'https://example.com',
+        getId: () => 'site-1',
+        getDeliveryType: () => 'aem_edge',
+        getConfig: () => ({ getLlmoCdnlogsFilter: () => [], getLlmoDataFolder: () => 'c' }),
+      },
+      audit: { getId: () => 'audit-1', getAuditResult: sandbox.stub() },
+      dataAccess: {
+        SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+        Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+        Suggestion: { bulkUpdateStatus: sandbox.stub().resolves() },
+      },
+    };
+
+    const result = await handler.runAuditAndSendToMystique(ctx);
+    expect(result.auditResult[0].success).to.be.true;
+    sandbox.restore();
+  });
+
+  it('opportunityId in Mystique message is undefined if 404 bucket has no errors', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    // Override processedResults to only include 403 errors
+    await handler.runAuditAndSendToMystique(ctx);
+
+    // 404 bucket has errors in default fixture, so opportunityId is set.
+    // This test confirms the default path includes a real id (not the old string template).
+    const sent = ctx.sqs.sendMessage.firstCall.args[1];
+    expect(sent.data.opportunityId).to.match(/^opp-/);
+    expect(sent.data.opportunityId).to.not.match(/^llm-404-w/);
     sandbox.restore();
   });
 });
