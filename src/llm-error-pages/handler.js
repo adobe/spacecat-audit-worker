@@ -211,9 +211,7 @@ export async function runAuditAndSendToMystique(context) {
 
         // Pre-fetch existing NEW opportunities once so the empty-bucket retention sweep
         // can find a stale opportunity without creating one.
-        const existingOpportunities = await Opportunity.allBySiteIdAndStatus(
-          site.getId(), 'NEW',
-        );
+        const existingOpportunities = await Opportunity.allBySiteIdAndStatus(site.getId(), 'NEW');
 
         for (const { code, auditType, suggestionType } of STATUS_BUCKETS) {
           const rawErrors = categorizedResults[code] || [];

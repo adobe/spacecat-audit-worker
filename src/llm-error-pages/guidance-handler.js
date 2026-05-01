@@ -77,23 +77,21 @@ export default async function handler(message, context) {
 
     if (!suggestedUrls || suggestedUrls.length === 0) {
       log.warn(`[LLM-ERROR-PAGES] No suggested URLs returned by Mystique for ${urlTo}`);
-      continue;
+    } else {
+      const path = toPathOnly(urlTo, baseUrl);
+      const suggestion = suggestionByPath.get(path);
+      if (!suggestion) {
+        log.info(`[LLM-ERROR-PAGES] No existing suggestion matched Mystique URL: ${path}`);
+      } else {
+        suggestion.setData({
+          ...suggestion.getData(),
+          suggestedUrls,
+          aiRationale: aiRationale || '',
+          ...(confidenceScore !== undefined && { confidenceScore }),
+        });
+        toUpdate.push(suggestion);
+      }
     }
-
-    const path = toPathOnly(urlTo, baseUrl);
-    const suggestion = suggestionByPath.get(path);
-    if (!suggestion) {
-      log.info(`[LLM-ERROR-PAGES] No existing suggestion matched Mystique URL: ${path}`);
-      continue;
-    }
-
-    suggestion.setData({
-      ...suggestion.getData(),
-      suggestedUrls,
-      aiRationale: aiRationale || '',
-      ...(confidenceScore !== undefined && { confidenceScore }),
-    });
-    toUpdate.push(suggestion);
   }
 
   if (toUpdate.length === 0) {
