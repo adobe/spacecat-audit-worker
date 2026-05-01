@@ -23,8 +23,62 @@ import {
   TARGET_READABILITY_SCORE,
   MIN_TEXT_LENGTH,
   MAX_CHARACTERS_DISPLAY,
+  MAX_LINK_DENSITY_RATIO,
 } from './constants.js';
 import { getElementSelector } from './selector-utils.js';
+import {
+  removeEmbeddedSocialElements,
+  isEmbeddedSocialContentElement,
+} from './embed-content-utils.js';
+
+/**
+ * Collapses runs of whitespace into single spaces.
+ */
+export function collapseWhitespace(text) {
+  if (!text || typeof text !== 'string') {
+    return '';
+  }
+  return text.replace(/\s+/g, ' ');
+}
+
+/**
+ * Normalizes text extracted from the DOM before length checks and scoring
+ * (removes layout padding between inline nodes, etc.).
+ */
+export function normalizeReadabilityText(text) {
+  return collapseWhitespace(text ?? '').trim();
+}
+
+const NAV_ANCESTOR_SELECTORS = 'nav, [role="navigation"], [role="menubar"], [role="menu"]';
+
+const NAV_CLASS_OR_ID_RE = /\b(nav[Hh]dr|nav-hdr|navbar|main-nav|site-nav|primary-nav|global-nav|meta-nav|footer-nav|subnav|sub-nav|breadcrumb)\b/i;
+
+/**
+ * Heuristic: navigation / menu chrome should not be scored as body copy.
+ */
+export function isLikelyNavigationElement($, element) {
+  const $el = $(element);
+  if ($el.closest(NAV_ANCESTOR_SELECTORS).length > 0) {
+    return true;
+  }
+  const role = ($el.attr('role') || '').toLowerCase();
+  if (['menuitem', 'menuitemradio', 'menuitemcheckbox'].includes(role)) {
+    return true;
+  }
+  const nodesToCheck = [element, ...$el.parents().toArray()].slice(0, 24);
+  for (const node of nodesToCheck) {
+    const $node = $(node);
+    const cls = $node.attr('class') || '';
+    const id = $node.attr('id') || '';
+    if (NAV_CLASS_OR_ID_RE.test(cls) || NAV_CLASS_OR_ID_RE.test(id)) {
+      return true;
+    }
+  }
+  if ($el.find('p.navHdr, p[class*="navHdr"], p[class*="nav-hdr"]').length > 0) {
+    return true;
+  }
+  return false;
+}
 
 /**
  * Categorizes readability issues by severity and traffic impact
@@ -62,9 +116,166 @@ function extractTrafficFromKey() {
 }
 
 /**
- * Analyzes readability for a single text block
+ * Strips non-content structural elements from the document before text extraction.
+ * Exported so both the opportunity and preflight paths share the same removal list.
+ *
+ * @param {Cheerio} $ - The Cheerio document object.
  */
-async function analyzeTextReadability(
+export function stripNonContent($) {
+  $('header, footer, style, script, noscript, figcaption').remove();
+}
+
+/**
+ * Language-agnostic citation signals (DOI, journal line, URL + access verb).
+ *
+ * Pattern notes:
+ * - "year; doi:" is always a citation signal.
+ * - "year; https://..." is only a citation when the URL ends the text; body prose like
+ *   "launched in 2022; https://example.com/ published results" must not be excluded.
+ * - "accessed/retrieved Month D, YYYY" is only a citation when the date ends the text;
+ *   body prose like "retrieved March 1, 2024 from our database" must not be excluded.
+ */
+const CITATION_EXCLUSION_PATTERNS = [
+  /doi:\s*10\.\d{4,}/i,
+  /\d{4};\s*doi:/i,
+  /\d{4};\s*https?:\/\/\S+[.,]?\s*$/i,
+  /\b(accessed|retrieved)\s+\w+ \d{1,2},\s*\d{4}[.,]?\s*$/i,
+  /https?:\/\/\S+[\s,.]*\s*(accessed|retrieved)\b/i,
+];
+
+/**
+ * "Last accessed" / retrieval lines in locales aligned with SUPPORTED_LANGUAGES
+ * (multilingual-readability.js): de, es, fr, it, nl, plus English patterns above.
+ */
+const MULTILINGUAL_RETRIEVAL_PATTERNS = [
+  // German — DD.MM.YYYY (dot) and DD/MM/YYYY (slash), plus written-out month
+  /\b(abgerufen|aufgerufen)\s+am\s+\d{1,2}\.\d{1,2}\.20\d{2}/i,
+  /\b(abgerufen|aufgerufen)\s+am\s+\d{1,2}\/\d{1,2}\/20\d{2}/i,
+  /\b(abgerufen|aufgerufen)\s+am\s+\d{1,2}\.\s*\w+\s+20\d{2}/i,
+  // French — written-out month and all-numeric DD/MM/YYYY or DD.MM.YYYY
+  /\b(consulté|consultée|accédé|accédée)\s+le\s+\d{1,2}\s+[^.]{2,50}20\d{2}/i,
+  /\b(consulté|consultée|accédé|accédée)\s+le\s+\d{1,2}[/.]\d{1,2}[/.]20\d{2}/i,
+  // Spanish — written-out month and all-numeric
+  /\b(consultado|consultada)\s+el\s+\d{1,2}\s+[^.]{2,50}20\d{2}/i,
+  /\b(consultado|consultada)\s+el\s+\d{1,2}[/.]\d{1,2}[/.]20\d{2}/i,
+  // Italian — both masculine (consultato) and feminine (consultata), written-out and numeric
+  /\b(consultato|consultata)\s+il\s+\d{1,2}\s+[^.]{2,50}20\d{2}/i,
+  /\b(consultato|consultata)\s+il\s+\d{1,2}[/.]\d{1,2}[/.]20\d{2}/i,
+  // Dutch — already covers [-./] separators
+  /\b(geraadpleegd|bekeken)\s+op\s+\d{1,2}[-./]\d{1,2}[-./]20\d{2}/i,
+  /\b(geraadpleegd|bekeken)\s+op\s+\d{1,2}\s+\w+\s+20\d{2}/i,
+  // URL then non-English access verb (same line as bibliography)
+  /https?:\/\/\S+[\s,.]*\s*(abgerufen|aufgerufen|consulté|consultée|consultado|consultata|consultato|geraadpleegd|bekeken)\b/i,
+];
+
+/**
+ * Removes http(s) URLs so slash counts reflect caption-style "Name / Role" lines,
+ * not path segments inside links.
+ * @param {string} text
+ * @returns {string}
+ */
+function textWithoutUrls(text) {
+  return text.replace(/https?:\/\/\S+/gi, '');
+}
+
+/**
+ * Image and wire-service attribution lines (often a plain &lt;p&gt; under a photo).
+ * Uses composite signals only — not standalone "et al." or single slashes.
+ * Note: contributor is intentionally in the agency token list; it only fires when
+ * combined with via + 2+ slashes, so the false-positive risk on normal prose is low.
+ *
+ * @param {string} text - Trimmed text
+ * @returns {boolean}
+ */
+function isImageAttributionCreditLine(text) {
+  const normalized = collapseWhitespace(text).trim();
+  if (normalized.length < 45 || normalized.length > 520) {
+    return false;
+  }
+  const withoutUrls = textWithoutUrls(normalized);
+  const slashCount = (withoutUrls.match(/\//g) || []).length;
+  const hasVia = /\bvia\b/i.test(normalized);
+  const hasAgencyToken = /getty|reuters|afp|shutterstock|alamy|contributor|staff\s+via|photo\s*©|©\s*\w/i.test(normalized);
+  const hasCreditIntro = /\b(photo\s*credit|image\s*credit|crédit\s*photo|photo\s*:|foto\s*:|bildnachweis|imagen\s*:)\b/i.test(normalized);
+
+  // Slash is required only when no agency token is present; "Photo credit: Jane Smith at Reuters"
+  // has no slash but is unambiguously a credit line.
+  if (hasCreditIntro && normalized.length < 220 && (slashCount >= 1 || hasAgencyToken)) {
+    return true;
+  }
+  if (slashCount >= 2 && hasVia && hasAgencyToken) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Returns true if the text looks like a bibliographic citation, retrieval line,
+ * or image/agency credit rather than body prose — exclude from readability scoring.
+ *
+ * @param {string} text - Text content of an element or <br> segment.
+ * @returns {boolean}
+ */
+export function isExcludedReadabilityText(text) {
+  if (text == null || typeof text !== 'string') {
+    return false;
+  }
+  const t = text.trim();
+  if (t.length === 0) {
+    return false;
+  }
+  if (CITATION_EXCLUSION_PATTERNS.some((re) => re.test(t))) {
+    return true;
+  }
+  if (MULTILINGUAL_RETRIEVAL_PATTERNS.some((re) => re.test(t))) {
+    return true;
+  }
+  if (isImageAttributionCreditLine(t)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Returns true if a Cheerio element wrapper should be processed for readability scoring.
+ * Shared between the opportunity path (analyzePageContent) and the preflight path so that
+ * adding a new exclusion signal only requires a change in one place.
+ *
+ * @param {CheerioElement} $el - Cheerio wrapper for the element.
+ * @returns {boolean}
+ */
+export function isEligibleTextElement($el) {
+  const textContent = $el.text()?.trim();
+  if (!textContent
+    || collapseWhitespace(textContent).length < MIN_TEXT_LENGTH
+    || !/\s/.test(textContent)) {
+    return false;
+  }
+  // <br>-split blocks: exclusion is applied per segment below.
+  if ($el.html().includes('<br')) {
+    return true;
+  }
+  return !isExcludedReadabilityText(textContent);
+}
+
+/**
+ * Returns true if a plain-text paragraph (from a <br>-split block) should be scored.
+ * Shared between the opportunity path and the preflight path.
+ *
+ * @param {string} text - Trimmed paragraph text.
+ * @returns {boolean}
+ */
+export function isEligibleParagraphText(text) {
+  return collapseWhitespace(text).length >= MIN_TEXT_LENGTH
+    && /\s/.test(text)
+    && !isExcludedReadabilityText(text);
+}
+
+/**
+ * Analyzes readability for a single text block.
+ * Exported for unit tests (defense-in-depth exclusion branch coverage).
+ */
+export async function analyzeTextReadability(
   text,
   selector,
   pageUrl,
@@ -75,6 +286,11 @@ async function analyzeTextReadability(
   scrapedAt,
 ) {
   try {
+    // Defense in depth: filters above also exclude; callers may change over time.
+    if (isExcludedReadabilityText(text)) {
+      return null;
+    }
+
     // Check if text is in a supported language
     const detectedLanguage = getSupportedLanguage(text);
     if (!detectedLanguage) {
@@ -87,9 +303,9 @@ async function analyzeTextReadability(
     // Calculate readability score
     let readabilityScore;
     if (detectedLanguage === 'english') {
-      readabilityScore = rs.fleschReadingEase(text.trim());
+      readabilityScore = rs.fleschReadingEase(text);
     } else {
-      readabilityScore = await calculateReadabilityScore(text.trim(), detectedLanguage);
+      readabilityScore = await calculateReadabilityScore(text, detectedLanguage);
     }
 
     // Check if readability is poor
@@ -131,12 +347,6 @@ async function analyzeTextReadability(
 }
 
 /**
- * Collapses runs of whitespace into single spaces.
- * Used to normalize text extracted from table/grid layouts before length checks.
- */
-const collapseWhitespace = (text) => text.replace(/\s+/g, ' ');
-
-/**
  * Returns an array of meaningful text elements from the provided document.
  * Selects <p>, <blockquote>, <div> and <li> elements, but excludes elements
  * that are descendants of <header> or <footer>.
@@ -145,17 +355,35 @@ const collapseWhitespace = (text) => text.replace(/\s+/g, ' ');
  * @param {Cheerio} $ - The Cheerio object to search for text elements.
  * @returns {Element[]} Array of meaningful text elements for readability analysis and enhancement.
  */
+const NAV_CLASS_PATTERNS = ['nav', 'menu', 'breadcrumb', 'filter', 'pagination', 'sidebar', 'promo', 'banner', 'cookie'];
+
 const getMeaningfulElementsForReadability = ($) => {
-  $('header, footer, style, script, noscript').remove();
+  stripNonContent($);
+  $('nav, aside, [role="navigation"], [role="complementary"]').remove();
+  removeEmbeddedSocialElements($);
   return $('p, blockquote, li, div').toArray().filter((el) => {
-    const text = $(el).text()?.trim();
-    return text && collapseWhitespace(text).length >= MIN_TEXT_LENGTH;
+    const normalized = normalizeReadabilityText($(el).text());
+    if (normalized.length < MIN_TEXT_LENGTH) {
+      return false;
+    }
+    if (isLikelyNavigationElement($, el)) {
+      return false;
+    }
+    const cls = (el.attribs?.class || '').toLowerCase();
+    const id = (el.attribs?.id || '').toLowerCase();
+    if (NAV_CLASS_PATTERNS.some((p) => cls.includes(p) || id.includes(p))) {
+      return false;
+    }
+    const $el = $(el);
+    const linkTextLength = normalizeReadabilityText($el.find('a').text()).length;
+    const totalLength = normalized.length;
+    if (totalLength > 0 && linkTextLength / totalLength > MAX_LINK_DENSITY_RATIO) {
+      return false;
+    }
+    return true;
   });
 };
 
-/**
- * Analyzes readability for a single page's content
- */
 /**
  * Analyzes the readability of HTML page content and returns an array of readability issue objects
  * for text elements with poor readability.
@@ -211,18 +439,17 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log, scraped
 
         return !hasBlockChildren;
       })
-      .filter(({ element }) => {
-        const textContent = $(element).text()?.trim();
-        return textContent && collapseWhitespace(textContent).length >= MIN_TEXT_LENGTH
-          && /\s/.test(textContent);
-      });
+      // Exclude citation / attribution chunks before scoring; analyzeTextReadability
+      // repeats isExcludedReadabilityText for defense in depth.
+      .filter(({ element }) => isEligibleTextElement($(element)))
+      .filter(({ element }) => !isEmbeddedSocialContentElement($, element));
 
     // Process each element and collect analysis promises
     const analysisPromises = [];
 
     elementsToProcess.forEach(({ element }) => {
       const $el = $(element);
-      const textContent = $el.text()?.trim();
+      const textContent = normalizeReadabilityText($el.text());
       const selector = getElementSelector(element);
 
       // Handle elements with <br> tags (multiple paragraphs)
@@ -233,9 +460,8 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log, scraped
             const tempDiv = cheerioLoad(`<div>${p}</div>`)('div');
             return tempDiv.text();
           })
-          .map((p) => p.trim())
-          .filter((p) => collapseWhitespace(p).length >= MIN_TEXT_LENGTH
-            && /\s/.test(p));
+          .map((p) => normalizeReadabilityText(p))
+          .filter(isEligibleParagraphText);
 
         paragraphs.forEach((paragraph) => {
           const analysisPromise = analyzeTextReadability(

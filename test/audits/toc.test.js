@@ -1618,7 +1618,8 @@ describe('TOC (Table of Contents) Audit', () => {
       const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
 
       expect(merged.explanation).to.equal('New explanation');
-      expect(merged.transformRules.value).to.deep.equal([{ text: 'New Title', level: 1 }]);
+      expect(merged.transformRules.value).to.deep.equal(tocArrayToHast([{ text: 'New Title', level: 1 }]));
+      expect(merged.transformRules.valueFormat).to.equal('hast');
       expect(merged.isEdited).to.equal(false);
     });
 
@@ -1677,8 +1678,9 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
 
-      // Should preserve the edited value
-      expect(merged.transformRules.value).to.deep.equal([{ text: 'Edited by User', level: 1 }]);
+      // Should preserve the edited value, converted to HAST
+      expect(merged.transformRules.value).to.deep.equal(tocArrayToHast([{ text: 'Edited by User', level: 1 }]));
+      expect(merged.transformRules.valueFormat).to.equal('hast');
       expect(merged.explanation).to.equal('New explanation');
       expect(merged.isEdited).to.equal(true);
     });
@@ -1735,8 +1737,9 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
 
-      // Should use new value since existing.transformRules.value is undefined
-      expect(merged.transformRules.value).to.deep.equal([{ text: 'New Title', level: 1 }]);
+      // Should use new value since existing.transformRules.value is undefined, converted to HAST
+      expect(merged.transformRules.value).to.deep.equal(tocArrayToHast([{ text: 'New Title', level: 1 }]));
+      expect(merged.transformRules.valueFormat).to.equal('hast');
       expect(merged.isEdited).to.equal(true);
     });
 
@@ -1788,8 +1791,9 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
 
-      // Should use new value since existing.transformRules is null
-      expect(merged.transformRules.value).to.deep.equal([{ text: 'New Title', level: 1 }]);
+      // Should use new value since existing.transformRules is null, converted to HAST
+      expect(merged.transformRules.value).to.deep.equal(tocArrayToHast([{ text: 'New Title', level: 1 }]));
+      expect(merged.transformRules.valueFormat).to.equal('hast');
       expect(merged.isEdited).to.equal(true);
     });
 
@@ -1843,8 +1847,9 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
 
-      // Should overwrite with new value since isEdited is false
-      expect(merged.transformRules.value).to.deep.equal([{ text: 'New Title', level: 1 }]);
+      // Should overwrite with new value since isEdited is false, converted to HAST
+      expect(merged.transformRules.value).to.deep.equal(tocArrayToHast([{ text: 'New Title', level: 1 }]));
+      expect(merged.transformRules.valueFormat).to.equal('hast');
       expect(merged.isEdited).to.equal(false);
     });
 
@@ -1898,8 +1903,122 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
 
-      // Should overwrite with new value since isEdited is undefined (falsy)
-      expect(merged.transformRules.value).to.deep.equal([{ text: 'New Title', level: 1 }]);
+      // Should overwrite with new value since isEdited is undefined (falsy), converted to HAST
+      expect(merged.transformRules.value).to.deep.equal(tocArrayToHast([{ text: 'New Title', level: 1 }]));
+      expect(merged.transformRules.valueFormat).to.equal('hast');
+    });
+
+    it('preserves HAST value and sets valueFormat to hast when value is already HAST', async () => {
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id',
+      });
+
+      let capturedMergeDataFunction;
+      const syncSuggestionsStub = sinon.stub().callsFake((args) => {
+        capturedMergeDataFunction = args.mergeDataFunction;
+        return Promise.resolve();
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE',
+            checkType: 'toc',
+            url: 'https://example.com/page1',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const hastValue = tocArrayToHast([{ text: 'Existing HAST', level: 1 }]);
+      const existingSuggestion = {
+        url: 'https://example.com/page1',
+        isEdited: true,
+        transformRules: {
+          value: hastValue,
+          valueFormat: 'html',
+        },
+      };
+
+      const newSuggestion = {
+        url: 'https://example.com/page1',
+        transformRules: {
+          value: [{ text: 'New Title', level: 1 }],
+        },
+      };
+
+      const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
+
+      // Should preserve the existing HAST value (isEdited=true) and fix valueFormat
+      expect(merged.transformRules.value).to.deep.equal(hastValue);
+      expect(merged.transformRules.valueFormat).to.equal('hast');
+    });
+
+    it('returns existing suggestion unchanged when edgeDeployed is true', async () => {
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id',
+      });
+
+      let capturedMergeDataFunction;
+      const syncSuggestionsStub = sinon.stub().callsFake((args) => {
+        capturedMergeDataFunction = args.mergeDataFunction;
+        return Promise.resolve();
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE',
+            checkType: 'toc',
+            url: 'https://example.com/page1',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const existingSuggestion = {
+        url: 'https://example.com/page1',
+        isEdited: true,
+        edgeDeployed: true,
+        transformRules: {
+          value: [{ text: 'Deployed Title', level: 1 }],
+        },
+      };
+      const newSuggestion = {
+        url: 'https://example.com/page1',
+        transformRules: {
+          value: [{ text: 'New Audit Title', level: 1 }],
+        },
+      };
+
+      const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
+
+      // Must return existing data unchanged — re-audit must not overwrite deployed suggestions
+      expect(merged.edgeDeployed).to.equal(true);
+      expect(merged.transformRules.value).to.deep.equal([{ text: 'Deployed Title', level: 1 }]);
+      expect(merged.isEdited).to.equal(true);
     });
   });
 

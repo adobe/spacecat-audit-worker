@@ -4438,7 +4438,7 @@ describe('Prerender Audit', () => {
   });
 
   describe('Shared utils loadLatestAgenticSheet', () => {
-    it('falls back to s3Config.customerName when getLlmoDataFolder returns falsy', async () => {
+    it('falls back to s3Config.siteName when getLlmoDataFolder returns falsy', async () => {
       const shared = await esmock('../../../src/prerender/utils/shared.js', {
         '../../../src/cdn-logs-report/utils/report-utils.js': {
           generateReportingPeriods: () => ({
@@ -4447,7 +4447,7 @@ describe('Prerender Audit', () => {
         },
         '../../../src/llm-error-pages/utils.js': {
           downloadExistingCdnSheet: async (_weekId, outputLocation) => {
-            // outputLocation should use customerName from s3Config, not getLlmoDataFolder
+            // outputLocation should use siteName from s3Config, not getLlmoDataFolder
             if (!outputLocation.startsWith('acme-customer/')) throw new Error(`unexpected: ${outputLocation}`);
             return [];
           },
@@ -4458,14 +4458,14 @@ describe('Prerender Audit', () => {
         },
         '../../../src/utils/cdn-utils.js': {
           resolveConsolidatedBucketName: () => 'bucket',
-          extractCustomerDomain: () => 'acme_com',
-          getS3Config: () => ({ customerName: 'acme-customer', bucket: 'bucket', getAthenaTempLocation: () => '' }),
+          extractSiteKeyFromBaseURL: () => 'acme_com',
+          getS3Config: () => ({ siteName: 'acme-customer', bucket: 'bucket', getAthenaTempLocation: () => '' }),
         },
       });
 
       const site = {
         getBaseURL: () => 'https://acme.com',
-        // getLlmoDataFolder returns null → falls back to s3Config.customerName
+        // getLlmoDataFolder returns null -> falls back to s3Config.siteName
         getConfig: () => ({ getLlmoDataFolder: () => null }),
       };
       const ctx = { log: { info: () => {} } };
@@ -4494,7 +4494,7 @@ describe('Prerender Audit', () => {
         },
         '../../../src/utils/cdn-utils.js': {
           resolveConsolidatedBucketName: () => 'bucket',
-          extractCustomerDomain: () => 'acme_com',
+          extractSiteKeyFromBaseURL: () => 'acme_com',
         },
       });
 
@@ -4537,8 +4537,8 @@ describe('Prerender Audit', () => {
         },
         '../../../src/utils/cdn-utils.js': {
           resolveConsolidatedBucketName: () => 'bucket',
-          extractCustomerDomain: () => 'acme_com',
-          getS3Config: () => ({ customerName: 'acme', bucket: 'bucket', getAthenaTempLocation: () => '' }),
+          extractSiteKeyFromBaseURL: () => 'acme_com',
+          getS3Config: () => ({ siteName: 'acme', bucket: 'bucket', getAthenaTempLocation: () => '' }),
         },
       });
       const site = {
@@ -4567,8 +4567,8 @@ describe('Prerender Audit', () => {
         },
         '../../../src/utils/cdn-utils.js': {
           resolveConsolidatedBucketName: () => 'bucket',
-          extractCustomerDomain: () => 'acme_com',
-          getS3Config: () => ({ customerName: 'acme', bucket: 'bucket', getAthenaTempLocation: () => '' }),
+          extractSiteKeyFromBaseURL: () => 'acme_com',
+          getS3Config: () => ({ siteName: 'acme', bucket: 'bucket', getAthenaTempLocation: () => '' }),
         },
       });
       const site = {
@@ -4587,7 +4587,7 @@ describe('Prerender Audit', () => {
         '../../../src/utils/cdn-utils.js': {
           // Avoid depending on env; just return a deterministic bucket
           resolveConsolidatedBucketName: () => 'bucket',
-          extractCustomerDomain: () => 'adobe_com',
+          extractSiteKeyFromBaseURL: () => 'adobe_com',
         },
       });
       const cfg = await shared.getS3Config({ getBaseURL: () => 'https://www.adobe.com' }, { });
@@ -4599,10 +4599,10 @@ describe('Prerender Audit', () => {
       expect(cfg.getAthenaTempLocation()).to.include('/temp/athena-results/');
     });
 
-    it('should compute customerName correctly when domain starts with www', async () => {
+    it('should compute siteName correctly when site key starts with www', async () => {
       const shared = await esmock('../../../src/prerender/utils/shared.js', {});
       const cfg = shared.getS3Config({ getBaseURL: () => 'https://www.adobe.com' }, {});
-      expect(cfg.customerName).to.equal('adobe');
+      expect(cfg.siteName).to.equal('adobe');
       expect(cfg.databaseName).to.equal('cdn_logs_adobe_com');
       expect(cfg.tableName).to.equal('aggregated_logs_adobe_com_consolidated');
     });

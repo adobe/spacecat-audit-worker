@@ -136,7 +136,7 @@ describe('LLM Error Pages Handler', function () {
 
     mockGetS3Config = sandbox.stub().returns({
       bucket: 'test-bucket',
-      customerName: 'test-customer',
+      siteName: 'test-customer',
       databaseName: 'test_db',
       tableName: 'test_table',
       getAthenaTempLocation: () => 's3://test-bucket/temp/',

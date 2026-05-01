@@ -67,33 +67,45 @@ async function checkLinkStatus(href, pageUrl, context, options = {
     headers.Authorization = pageAuthToken;
   }
 
-  const fetchOptions = { method: 'HEAD', decode: false, headers };
+  // Use a fresh options object per request so callers (and tests) can inspect
+  // the method that was actually used on each call without seeing it mutated
+  // when we fall through to GET.
+  const headOptions = { method: 'HEAD', decode: false, headers };
 
   try {
-    const res = await fetch(href, fetchOptions);
+    const res = await fetch(href, headOptions);
 
-    if (HEAD_FALLBACK_STATUSES.has(res.status)) {
-      // Server may be blocking HEAD (405) or applying bot/auth restrictions to our crawler.
-      // Retry with GET before deciding the link is broken.
-    } else if (isBrokenStatus(res.status)) {
-      log.debug(`[preflight-audit] ${linkType} url ${href} returned with status code: %s`, res.status, res.statusText);
-      return {
-        urlTo: href,
-        href: pageUrl,
-        status: res.status,
-        ...toElementTargets(selectors),
-      };
-    } else {
+    // HEAD is a fast-path optimization, GET is the source of truth for "broken".
+    // If HEAD reports a healthy status, accept it and skip the GET. If HEAD reports
+    // anything that would be flagged as broken (404/410/5xx) — or any of the known
+    // auth/bot fallback codes — fall through to a GET retry before deciding. Real
+    // servers commonly return 404 / 5xx to HEAD on routes that respond 200 to GET
+    // (misconfigured Apache origins, SSO endpoints, etc.).
+    if (
+      !isBrokenStatus(res.status)
+      && !HEAD_FALLBACK_STATUSES.has(res.status)
+    ) {
       return null;
     }
   } catch (err) {
     log.warn(`[preflight-audit] HEAD request failed (${err.message}), retrying with GET: ${href}`);
   }
 
-  // GET fallback — reached when HEAD was inconclusive (fallback status or network error)
-  fetchOptions.method = 'GET';
+  // GET fallback — HEAD was inconclusive (broken status, fallback status, or network error).
+  // Send `Range: bytes=0-0` so cooperating servers reply with 206 + 1 byte instead of
+  // streaming the full response body, since we only need the status code. Servers that
+  // ignore the header fall back to a normal 200 (or whatever error code applies). 206
+  // and 416 (Range Not Satisfiable) both fall outside `isBrokenStatus`, so they're
+  // correctly treated as healthy. Servers that genuinely 404/410/5xx do so regardless
+  // of the Range header — there's no way to skip those bodies without reading the
+  // status, but those response bodies are typically small.
+  const getOptions = {
+    method: 'GET',
+    decode: false,
+    headers: { ...headers, Range: 'bytes=0-0' },
+  };
   try {
-    const res = await fetch(href, fetchOptions);
+    const res = await fetch(href, getOptions);
 
     if (isBrokenStatus(res.status)) {
       log.debug(`[preflight-audit] ${linkType} url ${href} returned with status code: %s`, res.status, res.statusText);
@@ -147,11 +159,6 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
 
         anchors.each((i, a) => {
           const $a = $(a);
-          // Skip links that are inside header or footer elements
-          if ($a.closest('header').length || $a.closest('footer').length) {
-            return;
-          }
-
           try {
             const href = $a.attr('href');
             const abs = new URL(href, pageUrl).toString();

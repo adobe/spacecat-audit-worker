@@ -278,6 +278,7 @@ describe('Offsite Brand Presence Handler', () => {
       );
       expect(options.headers).to.deep.equal({
         'x-api-key': env.SPACECAT_API_KEY,
+        'User-Agent': 'Offsite Audits - Spacecat/1.0',
       });
     });
   });
@@ -428,7 +429,7 @@ describe('Offsite Brand Presence Handler', () => {
         (call) => call.args[0].includes('brandpresence-'),
       );
       expect(providerCall.args[0]).to.equal(
-        `${env.SPACECAT_API_BASE_URL}/sites/${SITE_ID}/llmo/data/${expectedFilePath(PROVIDERS[0])}?sheet=all&include=${INCLUDE_COLUMNS}&limit=${FETCH_PAGE_SIZE}&offset=0`,
+        `${env.SPACECAT_API_BASE_URL}/sites/${SITE_ID}/llmo/data/${expectedFilePath(PROVIDERS[0])}?sheet=all&include=${INCLUDE_COLUMNS}&source=offsite-audits&limit=${FETCH_PAGE_SIZE}&offset=0`,
       );
     });
 

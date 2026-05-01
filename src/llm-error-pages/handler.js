@@ -396,7 +396,7 @@ export async function runAuditAndSendToMystique(context) {
           },
           database: s3Config.databaseName,
           table: s3Config.tableName,
-          customer: s3Config.customerName,
+          customer: s3Config.siteName,
           totalErrors: processedResults.totalErrors,
           summary: processedResults.summary,
           errorPages: processedResults.errorPages,
@@ -431,7 +431,7 @@ export async function runAuditAndSendToMystique(context) {
         error: error.message,
         database: s3Config?.databaseName,
         table: s3Config?.tableName,
-        customer: s3Config?.customerName,
+        customer: s3Config?.siteName,
       }],
       fullAuditRef: url,
     };
