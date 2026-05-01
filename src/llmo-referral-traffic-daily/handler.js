@@ -158,7 +158,7 @@ export async function triggerTrafficAnalysisDailyImport(context) {
   );
 
   return {
-    type: 'traffic-analysis',
+    type: 'traffic-analysis-daily',
     siteId,
     auditResult: {
       status: 'import-triggered',
@@ -170,7 +170,9 @@ export async function triggerTrafficAnalysisDailyImport(context) {
     },
     auditContext: {
       date,
-      mode: 'daily',
+      year,
+      month,
+      day,
     },
     fullAuditRef: finalUrl,
     allowCache: false,

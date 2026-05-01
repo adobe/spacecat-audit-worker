@@ -161,7 +161,7 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       expect(result.auditResult.year).to.equal(2026);
       expect(result.auditResult.month).to.equal(4);
       expect(result.auditResult.day).to.equal(29);
-      expect(result.type).to.equal('traffic-analysis');
+      expect(result.type).to.equal('traffic-analysis-daily');
       expect(result.allowCache).to.equal(false);
       clock.restore();
     });
@@ -177,7 +177,7 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       expect(result.auditResult.month).to.equal(3);
       expect(result.auditResult.day).to.equal(15);
       expect(result.auditContext).to.deep.equal({
-        date: '2026-03-15', mode: 'daily',
+        date: '2026-03-15', year: 2026, month: 3, day: 15,
       });
       expect(result.fullAuditRef).to.equal('https://example.com');
     });
