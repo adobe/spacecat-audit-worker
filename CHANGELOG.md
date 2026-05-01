@@ -1,3 +1,10 @@
+# [1.429.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.428.0...v1.429.0) (2026-05-01)
+
+
+### Features
+
+* **llmo-customer-analysis:** enable llmo-referral-traffic-daily audit on onboarding ([#2462](https://github.com/adobe/spacecat-audit-worker/issues/2462)) ([03059b5](https://github.com/adobe/spacecat-audit-worker/commit/03059b5e7307c441d3417ec995eeea20289399af))
+
 # [1.428.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.427.1...v1.428.0) (2026-05-01)
 
 
