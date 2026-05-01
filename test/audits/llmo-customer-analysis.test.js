@@ -1268,6 +1268,7 @@ describe('LLMO Customer Analysis Handler', () => {
         'llm-error-pages',
         'summarization',
         'llmo-referral-traffic',
+        'llmo-referral-traffic-daily',
         'readability',
         'wikipedia-analysis',
       ];

@@ -26,6 +26,7 @@ import { handleCdnBucketConfigChanges } from './cdn-config-handler.js';
 import { sendOnboardingNotification } from './onboarding-notifications.js';
 
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
+const REFERRAL_TRAFFIC_DAILY_AUDIT = 'llmo-referral-traffic-daily';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
 
 /**
@@ -314,6 +315,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       'llm-error-pages',
       'summarization',
       REFERRAL_TRAFFIC_AUDIT,
+      REFERRAL_TRAFFIC_DAILY_AUDIT,
       'readability',
       'wikipedia-analysis',
     ];
