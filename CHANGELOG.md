@@ -1,3 +1,10 @@
+## [1.429.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.429.0...v1.429.1) (2026-05-01)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** populate referrer/UTM fields and remove cdn_provider from referral CSV ([#2463](https://github.com/adobe/spacecat-audit-worker/issues/2463)) ([3f3174e](https://github.com/adobe/spacecat-audit-worker/commit/3f3174e49b8672f00166c7527098bff8ae80fee8))
+
 # [1.429.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.428.0...v1.429.0) (2026-05-01)
 
 
