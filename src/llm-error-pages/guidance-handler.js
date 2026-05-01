@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import ExcelJS from 'exceljs';
 import {
   createLLMOSharepointClient, publishToAdminHlx, readFromSharePoint, uploadToSharePoint,
@@ -41,9 +41,11 @@ function derivePeriodFromBrokenLinks(brokenLinks = []) {
  */
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Site, Audit } = dataAccess;
+  const {
+    Site, Audit, Opportunity, Suggestion,
+  } = dataAccess;
   const { siteId, data, auditId } = message;
-  const { brokenLinks } = data;
+  const { brokenLinks, opportunityId } = data;
 
   log.debug(`Message received in LLM error pages guidance handler: ${JSON.stringify(message, null, 2)}`);
 
@@ -129,7 +131,53 @@ export default async function handler(message, context) {
     log.debug(`Updated Excel 404 file with Mystique guidance: ${filename}`);
   } catch (e) {
     log.error(`Failed to update 404 Excel on Mystique callback: ${e.message}`);
-    return badRequest('Failed to persist guidance');
+  }
+
+  // DB Suggestion update (independent best-effort).
+  try {
+    if (!opportunityId) {
+      log.warn('[LLM-ERROR-PAGES] No opportunityId in Mystique message — skipping DB update');
+    } else {
+      const opportunity = await Opportunity.findById(opportunityId);
+      if (!opportunity) {
+        log.warn(`[LLM-ERROR-PAGES] Opportunity not found: ${opportunityId}`);
+      } else {
+        const existingSuggestions = await opportunity.getSuggestions();
+        const baseUrl = site.getBaseURL();
+        const suggestionByPath = new Map(
+          existingSuggestions.map((s) => [toPathOnly(s.getData()?.url, baseUrl), s]),
+        );
+
+        const toUpdate = [];
+        for (const link of brokenLinks) {
+          const {
+            urlTo, suggestedUrls, aiRationale, confidenceScore,
+          } = link;
+          if (!suggestedUrls || suggestedUrls.length === 0) {
+            // already logged above
+          } else {
+            const path = toPathOnly(urlTo, baseUrl);
+            const suggestion = suggestionByPath.get(path);
+            if (suggestion) {
+              suggestion.setData({
+                ...suggestion.getData(),
+                suggestedUrls,
+                aiRationale: aiRationale || '',
+                ...(confidenceScore !== undefined && { confidenceScore }),
+              });
+              toUpdate.push(suggestion);
+            }
+          }
+        }
+
+        if (toUpdate.length > 0) {
+          await Suggestion.saveMany(toUpdate);
+          log.info(`[LLM-ERROR-PAGES] Persisted Mystique enrichment for ${toUpdate.length} suggestions`);
+        }
+      }
+    }
+  } catch (e) {
+    log.error(`[LLM-ERROR-PAGES] DB guidance update failed: ${e.message}`);
   }
 
   return ok();
