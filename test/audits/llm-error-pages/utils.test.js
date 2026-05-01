@@ -29,7 +29,8 @@ import {
   sortErrorsByTrafficVolume,
   toPathOnly,
   downloadExistingCdnSheet,
-  matchErrorsWithCdnData,
+  groupErrorsByUrl,
+  parsePeriodIdentifier,
 } from '../../../src/llm-error-pages/utils.js';
 import { extractSiteKeyFromBaseURL, getS3Config } from '../../../src/utils/cdn-utils.js';
 
@@ -1466,277 +1467,67 @@ describe('LLM Error Pages Utils', () => {
     });
   });
 
-  describe('matchErrorsWithCdnData', () => {
-    it('should match errors with CDN data by URL and user agent', async () => {
+  describe('groupErrorsByUrl', () => {
+    it('collapses rows by URL, deduping agentTypes and userAgents', () => {
       const errors = [
         {
-          url: '/page1',
-          user_agent: 'ChatGPT',
-          total_requests: 100,
+          url: '/p1', status: 404, total_requests: 10, agent_type: 'Chatbots', user_agent: 'ChatGPT', avg_ttfb_ms: 100, country_code: 'US', product: 'X', category: 'Y',
         },
         {
-          url: '/page2',
-          user_agent: 'Perplexity',
-          total_requests: 50,
+          url: '/p1', status: 404, total_requests: 5, agent_type: 'Web search crawlers', user_agent: 'Perplexity',
+        },
+        {
+          url: '/p1', status: 404, total_requests: 3, agent_type: 'Chatbots', user_agent: 'ChatGPT',
+        },
+        {
+          url: '/p2', status: 404, total_requests: 7, agent_type: 'Chatbots', user_agent: 'Claude',
         },
       ];
 
-      const cdnData = [
-        {
-          url: '/page1',
-          user_agent_display: 'ChatGPT',
-          agent_type: 'Chatbot',
-          number_of_hits: 200,
-          avg_ttfb_ms: 250,
-          country_code: 'US',
-          product: 'Product A',
-          category: 'Category X',
-        },
-        {
-          url: '/page2',
-          user_agent_display: 'Perplexity',
-          agent_type: 'Search Engine',
-          number_of_hits: 150,
-          avg_ttfb_ms: 300,
-          country_code: 'UK',
-          product: 'Product B',
-          category: 'Category Y',
-        },
-      ];
+      const result = groupErrorsByUrl(errors);
 
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
+      expect(result).to.have.length(2);
+      const p1 = result.find((r) => r.url === '/p1');
+      expect(p1.hitCount).to.equal(18);
+      expect(p1.agentTypes).to.have.members(['Chatbots', 'Web search crawlers']);
+      expect(p1.userAgents).to.have.members(['ChatGPT', 'Perplexity']);
+      expect(p1.avgTtfb).to.equal(100);
 
-      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
-
-      expect(result).to.have.lengthOf(2);
-      expect(result[0]).to.deep.equal({
-        agent_type: 'Chatbot',
-        user_agent_display: 'ChatGPT',
-        number_of_hits: 100, // Uses error's total_requests
-        avg_ttfb_ms: 250,
-        country_code: 'US',
-        url: '/page1',
-        product: 'Product A',
-        category: 'Category X',
-      });
-      expect(result[1]).to.deep.equal({
-        agent_type: 'Search Engine',
-        user_agent_display: 'Perplexity',
-        number_of_hits: 50,
-        avg_ttfb_ms: 300,
-        country_code: 'UK',
-        url: '/page2',
-        product: 'Product B',
-        category: 'Category Y',
-      });
+      const p2 = result.find((r) => r.url === '/p2');
+      expect(p2.hitCount).to.equal(7);
+      expect(p2.userAgents).to.deep.equal(['Claude']);
     });
 
-    it('should handle partial URL matches', async () => {
-      const errors = [
-        {
-          url: '/page1/subpage',
-          user_agent: 'ChatGPT',
-          total_requests: 100,
-        },
-      ];
-
-      const cdnData = [
-        {
-          url: '/page1',
-          user_agent_display: 'ChatGPT',
-          agent_type: 'Chatbot',
-          number_of_hits: 200,
-          avg_ttfb_ms: 250,
-          country_code: 'US',
-          product: 'Product A',
-          category: 'Category X',
-        },
-      ];
-
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
-
-      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
-
-      expect(result).to.have.lengthOf(1);
-      expect(result[0].url).to.equal('/page1/subpage');
+    it('treats missing total_requests as 0 on first and subsequent rows', () => {
+      const result = groupErrorsByUrl([
+        { url: '/p', status: 404, agent_type: 'A', user_agent: 'U' },
+        { url: '/p', status: 404, agent_type: 'B', user_agent: 'V' },
+      ]);
+      expect(result[0].hitCount).to.equal(0);
     });
 
-    it('should handle partial user agent matches (case-insensitive)', async () => {
-      const errors = [
-        {
-          url: '/page1',
-          user_agent: 'chatgpt-user',
-          total_requests: 100,
-        },
-      ];
-
-      const cdnData = [
-        {
-          url: '/page1',
-          user_agent_display: 'ChatGPT',
-          agent_type: 'Chatbot',
-          number_of_hits: 200,
-          avg_ttfb_ms: 250,
-          country_code: 'US',
-          product: 'Product A',
-          category: 'Category X',
-        },
-      ];
-
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
-
-      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
-
-      expect(result).to.have.lengthOf(1);
-      expect(result[0].user_agent_display).to.equal('ChatGPT');
-    });
-
-    it('should handle root path specially', async () => {
-      const errors = [
-        {
-          url: '/',
-          user_agent: 'ChatGPT',
-          total_requests: 100,
-        },
-      ];
-
-      const cdnData = [
-        {
-          url: '/',
-          user_agent_display: 'ChatGPT',
-          agent_type: 'Chatbot',
-          number_of_hits: 200,
-          avg_ttfb_ms: 250,
-          country_code: 'US',
-          product: 'Product A',
-          category: 'Category X',
-        },
-      ];
-
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
-
-      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
-
-      expect(result).to.have.lengthOf(1);
-      expect(result[0].url).to.equal('/');
-    });
-
-    it('should handle no matches and empty arrays', async () => {
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
-
-      // No matches found
-      const noMatchResult = matchErrorsWithCdnData(
-        [{ url: '/page1', user_agent: 'ChatGPT', total_requests: 100 }],
-        [{ url: '/different-page', user_agent_display: 'DifferentBot', agent_type: 'Chatbot', number_of_hits: 200, avg_ttfb_ms: 250, country_code: 'US', product: 'A', category: 'X' }],
-        'https://example.com',
-      );
-      expect(noMatchResult).to.have.lengthOf(0);
-
-      // Empty errors array
-      const emptyErrorsResult = matchErrorsWithCdnData(
-        [],
-        [{ url: '/page1', user_agent_display: 'ChatGPT', agent_type: 'Chatbot', number_of_hits: 200, avg_ttfb_ms: 250, country_code: 'US', product: 'A', category: 'X' }],
-        'https://example.com',
-      );
-      expect(emptyErrorsResult).to.have.lengthOf(0);
-
-      // Empty CDN data array
-      const emptyCdnResult = matchErrorsWithCdnData(
-        [{ url: '/page1', user_agent: 'ChatGPT', total_requests: 100 }],
-        [],
-        'https://example.com',
-      );
-      expect(emptyCdnResult).to.have.lengthOf(0);
-    });
-
-    it('should use error total_requests when available, CDN number_of_hits otherwise', async () => {
-      const errors = [
-        {
-          url: '/page1',
-          user_agent: 'ChatGPT',
-          total_requests: 100,
-        },
-        {
-          url: '/page2',
-          user_agent: 'Perplexity',
-          // No total_requests
-        },
-      ];
-
-      const cdnData = [
-        {
-          url: '/page1',
-          user_agent_display: 'ChatGPT',
-          agent_type: 'Chatbot',
-          number_of_hits: 200,
-          avg_ttfb_ms: 250,
-          country_code: 'US',
-          product: 'Product A',
-          category: 'Category X',
-        },
-        {
-          url: '/page2',
-          user_agent_display: 'Perplexity',
-          agent_type: 'Search Engine',
-          number_of_hits: 150,
-          avg_ttfb_ms: 300,
-          country_code: 'UK',
-          product: 'Product B',
-          category: 'Category Y',
-        },
-      ];
-
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
-
-      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
-
-      expect(result).to.have.lengthOf(2);
-      expect(result[0].number_of_hits).to.equal(100); // From error
-      expect(result[1].number_of_hits).to.equal(150); // From CDN
-    });
-
-    it('should handle CDN data with null or undefined URL', async () => {
-      const errors = [
-        {
-          url: '',
-          user_agent: 'ChatGPT',
-          total_requests: 100,
-        },
-      ];
-
-      const cdnData = [
-        {
-          url: null, // Null URL
-          user_agent_display: 'ChatGPT',
-          agent_type: 'Chatbot',
-          number_of_hits: 200,
-          avg_ttfb_ms: 250,
-          country_code: 'US',
-          product: 'Product A',
-          category: 'Category X',
-        },
-      ];
-
-      const { matchErrorsWithCdnData } = await esmock(
-        '../../../src/llm-error-pages/utils.js',
-      );
-
-      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
-
-      // Should match because empty string matches empty string
-      expect(result).to.have.lengthOf(1);
+    it('returns empty array for empty input', () => {
+      expect(groupErrorsByUrl([])).to.deep.equal([]);
     });
   });
+
+  describe('parsePeriodIdentifier', () => {
+    it('parses w15-2026 to the Monday of ISO week 15, 2026', () => {
+      const d = parsePeriodIdentifier('w15-2026');
+      expect(d.getUTCFullYear()).to.equal(2026);
+      expect(d.getUTCDay()).to.equal(1); // Monday
+    });
+
+    it('returns epoch for unrecognised input', () => {
+      expect(parsePeriodIdentifier('not-a-period').getTime()).to.equal(0);
+      expect(parsePeriodIdentifier(undefined).getTime()).to.equal(0);
+    });
+
+    it('handles week 1 of a year correctly', () => {
+      const d = parsePeriodIdentifier('w01-2024');
+      expect(d.getUTCFullYear()).to.equal(2024);
+      expect(d.getUTCDay()).to.equal(1);
+    });
+  });
+
 });

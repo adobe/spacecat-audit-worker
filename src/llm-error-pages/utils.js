@@ -534,52 +534,63 @@ export async function downloadExistingCdnSheet(
 }
 
 /**
- * Matches error data with existing CDN data and enriches it
- * @param {Array} errors - Error data from Athena
- * @param {Array} cdnData - Existing CDN data from sheet
- * @param {string} baseUrl - Base URL for path conversion
- * @returns {Array} - Enriched error data with CDN fields
+ * Collapses Athena rows (one per URL × user_agent) into one entry per URL.
+ * agentTypes and userAgents are deduped Sets so a URL hit by multiple bots
+ * yields a single Suggestion with both arrays populated.
+ *
+ * @param {Array<Object>} errors - Categorized error rows.
+ * @returns {Array<Object>} One entry per unique URL with aggregated metrics.
  */
-export function matchErrorsWithCdnData(errors, cdnData, baseUrl) {
-  const enrichedErrors = [];
+export function groupErrorsByUrl(errors) {
+  const urlMap = new Map();
 
-  errors.forEach((error) => {
-    const errorUrl = toPathOnly(error.url, baseUrl);
-    const errorUserAgent = error.user_agent;
-    const match = cdnData.find((cdnRow) => {
-      let cdnUrl;
-      if (cdnRow.url === '/') {
-        cdnUrl = '/';
-      } else {
-        cdnUrl = cdnRow.url || '';
-      }
-
-      const urlMatch = errorUrl === cdnUrl
-        || errorUrl.includes(cdnUrl)
-        || cdnUrl.includes(errorUrl);
-
-      const userAgentMatch = cdnRow.user_agent_display === errorUserAgent
-        || (cdnRow.user_agent_display && errorUserAgent
-          && cdnRow.user_agent_display.toLowerCase().includes(errorUserAgent.toLowerCase()))
-        || (errorUserAgent && cdnRow.user_agent_display
-          && errorUserAgent.toLowerCase().includes(cdnRow.user_agent_display.toLowerCase()));
-
-      return urlMatch && userAgentMatch;
-    });
-
-    if (match) {
-      enrichedErrors.push({
-        agent_type: match.agent_type,
-        user_agent_display: match.user_agent_display,
-        number_of_hits: error.total_requests || match.number_of_hits,
-        avg_ttfb_ms: match.avg_ttfb_ms,
-        country_code: match.country_code,
-        url: errorUrl,
-        product: match.product,
-        category: match.category,
+  for (const error of errors) {
+    const { url } = error;
+    if (urlMap.has(url)) {
+      const existing = urlMap.get(url);
+      existing.hitCount += (error.total_requests || 0);
+      existing.agentTypes.add(error.agent_type);
+      existing.userAgents.add(error.user_agent);
+    } else {
+      urlMap.set(url, {
+        url,
+        httpStatus: error.status,
+        hitCount: error.total_requests || 0,
+        agentTypes: new Set([error.agent_type]),
+        userAgents: new Set([error.user_agent]),
+        avgTtfb: error.avg_ttfb_ms,
+        countryCode: error.country_code,
+        product: error.product,
+        category: error.category,
       });
     }
-  });
+  }
 
-  return enrichedErrors;
+  return Array.from(urlMap.values()).map((entry) => ({
+    ...entry,
+    agentTypes: [...entry.agentTypes],
+    userAgents: [...entry.userAgents],
+  }));
+}
+
+/**
+ * Parses a period identifier 'wWW-YYYY' into the Monday of that ISO week (UTC).
+ * Returns epoch for unrecognised inputs so unknown periods are treated as stale.
+ */
+export function parsePeriodIdentifier(periodIdentifier) {
+  const match = /^w(\d{2})-(\d{4})$/.exec(periodIdentifier);
+  if (!match) {
+    return new Date(0);
+  }
+  const weekNum = parseInt(match[1], 10);
+  const year = parseInt(match[2], 10);
+
+  // ISO 8601: Jan 4 is always in week 1.
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4Day = jan4.getUTCDay() || 7;
+  const week1Monday = new Date(jan4);
+  week1Monday.setUTCDate(jan4.getUTCDate() - (jan4Day - 1));
+  const target = new Date(week1Monday);
+  target.setUTCDate(week1Monday.getUTCDate() + (weekNum - 1) * 7);
+  return target;
 }
