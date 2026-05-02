@@ -46,6 +46,9 @@ const STATUS_BUCKETS = [
 const RETENTION_WEEKS = 4;
 const RETENTION_MS = RETENTION_WEEKS * 7 * 24 * 60 * 60 * 1000;
 
+// Top-N cap applied to 404s on both Excel and DB write paths.
+const TOP_404_LIMIT = 50;
+
 /**
  * Step 1: Import top pages and submit for scraping
  */
@@ -246,32 +249,50 @@ export async function runAuditAndSendToMystique(context) {
 
         try {
           await Promise.all([
-            writeCategoryExcel('404', categorizedResults[404]?.slice(0, 50)),
+            writeCategoryExcel('404', categorizedResults[404]?.slice(0, TOP_404_LIMIT)),
             writeCategoryExcel('403', categorizedResults[403]),
             writeCategoryExcel('5xx', categorizedResults['5xx']),
           ]);
         } catch (excelError) {
-          log.error(`[LLM-ERROR-PAGES] Excel write failed for ${periodIdentifier}: ${excelError.message}`);
+          log.error('[LLM-ERROR-PAGES] Excel write failed', {
+            err: excelError.message,
+            stack: excelError.stack,
+            siteId: site.getId(),
+            periodIdentifier,
+          });
         }
 
         log.info(`[LLM-ERROR-PAGES] Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
 
-        // DB Opportunity + Suggestion sync (independent best-effort).
+        // DB Opportunity + Suggestion sync — each bucket runs independently
+        // (Promise.allSettled) so a failure in one bucket cannot block the
+        // retention sweep or sync for the other two.
         const opportunityMap = {};
+        const { Suggestion, Opportunity } = dataAccess;
+        const retentionCutoff = new Date(Date.now() - RETENTION_MS);
+        let existingOpportunities = [];
         try {
-          const { Suggestion, Opportunity } = dataAccess;
-          const retentionCutoff = new Date(Date.now() - RETENTION_MS);
-          const existingOpportunities = await Opportunity.allBySiteIdAndStatus(
-            site.getId(),
-            'NEW',
-          );
+          existingOpportunities = await Opportunity.allBySiteIdAndStatus(site.getId(), 'NEW');
+        } catch (preFetchError) {
+          log.error('[LLM-ERROR-PAGES] Failed to pre-fetch opportunities', {
+            err: preFetchError.message,
+            stack: preFetchError.stack,
+            siteId: site.getId(),
+            periodIdentifier,
+          });
+        }
 
-          for (const { code, auditType, suggestionType } of STATUS_BUCKETS) {
-            const rawErrors = categorizedResults[code] || [];
+        await Promise.allSettled(STATUS_BUCKETS.map(async ({ code, auditType, suggestionType }) => {
+          try {
+            // 404 bucket is capped at TOP_404_LIMIT on both Excel and DB paths.
+            const rawAll = categorizedResults[code] || [];
+            const rawErrors = code === 404 ? rawAll.slice(0, TOP_404_LIMIT) : rawAll;
             let existingSuggestions = [];
+            let scrapedUrls = new Set();
 
             if (rawErrors.length > 0) {
               const groupedErrors = groupErrorsByUrl(rawErrors);
+              scrapedUrls = new Set(groupedErrors.map((e) => e.url));
 
               const opportunity = await convertToOpportunity(
                 url,
@@ -292,7 +313,7 @@ export async function runAuditAndSendToMystique(context) {
                 context,
                 log,
                 existingSuggestions,
-                scrapedUrlsSet: new Set(groupedErrors.map((e) => e.url)),
+                scrapedUrlsSet: scrapedUrls,
                 mergeDataFunction: (existingData, newDataItem) => ({
                   ...existingData,
                   hitCount: newDataItem.hitCount,
@@ -335,8 +356,15 @@ export async function runAuditAndSendToMystique(context) {
               }
             }
 
+            // Retention sweep: skip URLs synced this run (defensive — syncSuggestions
+            // mutates existingSuggestions in-place, but this guard keeps the filter
+            // correct even if that contract changes).
             const toOutdate = existingSuggestions.filter((s) => {
-              const lastSeen = s.getData()?.periodIdentifier;
+              const data = s.getData() || {};
+              if (scrapedUrls.has(data.url)) {
+                return false;
+              }
+              const lastSeen = data.periodIdentifier;
               if (!lastSeen) {
                 return false;
               }
@@ -351,10 +379,17 @@ export async function runAuditAndSendToMystique(context) {
               await Suggestion.bulkUpdateStatus(toOutdate, 'OUTDATED');
               log.info(`[LLM-ERROR-PAGES] Outdated ${toOutdate.length} stale suggestions for ${auditType}`);
             }
+          } catch (bucketError) {
+            log.error('[LLM-ERROR-PAGES] DB sync failed for bucket', {
+              err: bucketError.message,
+              stack: bucketError.stack,
+              siteId: site.getId(),
+              bucket: code,
+              auditType,
+              periodIdentifier,
+            });
           }
-        } catch (dbError) {
-          log.error(`[LLM-ERROR-PAGES] DB sync failed for ${periodIdentifier}: ${dbError.message}`);
-        }
+        }));
 
         if (sqs && env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
           const errors404 = categorizedResults[404] || [];

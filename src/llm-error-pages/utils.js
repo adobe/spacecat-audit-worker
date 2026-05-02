@@ -546,24 +546,24 @@ export function groupErrorsByUrl(errors) {
 
   for (const error of errors) {
     const { url } = error;
-    if (urlMap.has(url)) {
-      const existing = urlMap.get(url);
-      existing.hitCount += (error.total_requests || 0);
-      existing.agentTypes.add(error.agent_type);
-      existing.userAgents.add(error.user_agent);
-    } else {
-      urlMap.set(url, {
+    let entry = urlMap.get(url);
+    if (!entry) {
+      entry = {
         url,
         httpStatus: error.status,
-        hitCount: error.total_requests || 0,
-        agentTypes: new Set([error.agent_type]),
-        userAgents: new Set([error.user_agent]),
+        hitCount: 0,
+        agentTypes: new Set(),
+        userAgents: new Set(),
         avgTtfb: error.avg_ttfb_ms,
         countryCode: error.country_code,
         product: error.product,
         category: error.category,
-      });
+      };
+      urlMap.set(url, entry);
     }
+    entry.hitCount += (error.total_requests ?? 0);
+    if (error.agent_type) entry.agentTypes.add(error.agent_type);
+    if (error.user_agent) entry.userAgents.add(error.user_agent);
   }
 
   return Array.from(urlMap.values()).map((entry) => ({
@@ -574,11 +574,12 @@ export function groupErrorsByUrl(errors) {
 }
 
 /**
- * Parses a period identifier 'wWW-YYYY' into the Monday of that ISO week (UTC).
- * Returns epoch for unrecognised inputs so unknown periods are treated as stale.
+ * Parses a period identifier 'wWW-YYYY' (case-insensitive, zero-padded week)
+ * into the Monday of that ISO week (UTC). Returns epoch for unrecognised
+ * inputs so unknown periods are treated as stale.
  */
 export function parsePeriodIdentifier(periodIdentifier) {
-  const match = /^w(\d{2})-(\d{4})$/.exec(periodIdentifier);
+  const match = /^w(\d{2})-(\d{4})$/i.exec(periodIdentifier);
   if (!match) {
     return new Date(0);
   }

@@ -1746,4 +1746,104 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     expect(sent.data.opportunityId).to.not.match(/^llm-404-w/);
     sandbox.restore();
   });
+
+  it('retention sweep skips suggestions whose URL was synced this run', async () => {
+    const sandbox = sinon.createSandbox();
+    // Stale-by-period suggestion whose URL IS in this run's scraped set.
+    // Without the scrapedUrlsSet guard, this would be marked OUTDATED.
+    const justSynced = {
+      getData: () => ({ url: '/p1', periodIdentifier: 'w01-2020' }),
+      getStatus: () => 'NEW',
+    };
+    const oppFor404 = {
+      getId: () => 'opp-llm-error-pages-404',
+      getType: () => 'llm-error-pages-404',
+      getSuggestions: sandbox.stub().resolves([justSynced]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      convertToOpportunity: sandbox.stub().callsFake((url, audit, ctx, mapper, type) => {
+        if (type === 'llm-error-pages-404') return Promise.resolve(oppFor404);
+        return Promise.resolve({
+          getId: () => `opp-${type}`,
+          getType: () => type,
+          getSuggestions: sandbox.stub().resolves([]),
+        });
+      }),
+      parsePeriodIdentifier: sandbox.stub().returns(new Date(0)), // would mark stale
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    // /p1 is in scrapedUrlsSet (it's the 404 URL in default fixture), so it
+    // must NOT appear in the OUTDATED batch even though the period parses as stale.
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('retention filter handles suggestions whose getData returns null', async () => {
+    const sandbox = sinon.createSandbox();
+    const sugWithNullData = {
+      getData: () => null,
+      getStatus: () => 'NEW',
+    };
+    const opp = {
+      getId: () => 'opp-llm-error-pages-404',
+      getType: () => 'llm-error-pages-404',
+      getSuggestions: sandbox.stub().resolves([sugWithNullData]),
+    };
+    const { handler } = await buildHandler(sandbox, {
+      convertToOpportunity: sandbox.stub().resolves(opp),
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    // Suggestion with null data is gracefully skipped (no lastSeen → return false).
+    expect(ctx.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    sandbox.restore();
+  });
+
+  it('logs and continues when pre-fetch of existing opportunities fails', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+    ctx.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('list-down'));
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    expect(ctx.log.error).to.have.been.calledWithMatch(/Failed to pre-fetch opportunities/);
+    // Per-bucket sync still proceeded — convertToOpportunity is called per bucket.
+    expect(mockSyncSuggestions).to.have.been.called;
+    sandbox.restore();
+  });
+
+  it('one bucket failure does not block the other two (per-bucket isolation)', async () => {
+    const sandbox = sinon.createSandbox();
+    const convertStub = sandbox.stub().callsFake((url, audit, ctx, mapper, type) => {
+      if (type === 'llm-error-pages-404') {
+        return Promise.reject(new Error('404 bucket exploded'));
+      }
+      return Promise.resolve({
+        getId: () => `opp-${type}`,
+        getType: () => type,
+        getSuggestions: sandbox.stub().resolves([]),
+      });
+    });
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox, {
+      convertToOpportunity: convertStub,
+    });
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    // 404 bucket failed and was logged with bucket context.
+    expect(ctx.log.error).to.have.been.calledWithMatch(
+      /DB sync failed for bucket/,
+      sinon.match({ bucket: 404, auditType: 'llm-error-pages-404' }),
+    );
+    // 403 and 5xx still synced — proves per-bucket isolation.
+    expect(mockSyncSuggestions).to.have.been.calledTwice;
+    sandbox.restore();
+  });
 });

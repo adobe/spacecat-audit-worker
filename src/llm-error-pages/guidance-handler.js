@@ -130,7 +130,12 @@ export default async function handler(message, context) {
     await publishToAdminHlx(filename, outputDir, log);
     log.debug(`Updated Excel 404 file with Mystique guidance: ${filename}`);
   } catch (e) {
-    log.error(`Failed to update 404 Excel on Mystique callback: ${e.message}`);
+    log.error('[LLM-ERROR-PAGES] Excel guidance update failed', {
+      err: e.message,
+      stack: e.stack,
+      siteId,
+      auditId,
+    });
   }
 
   // DB Suggestion update (independent best-effort).
@@ -141,6 +146,14 @@ export default async function handler(message, context) {
       const opportunity = await Opportunity.findById(opportunityId);
       if (!opportunity) {
         log.warn(`[LLM-ERROR-PAGES] Opportunity not found: ${opportunityId}`);
+      } else if (opportunity.getSiteId?.() !== siteId) {
+        // Cross-site safety: a forged or replayed callback must not update
+        // another site's suggestions even if its opportunityId is valid.
+        log.warn('[LLM-ERROR-PAGES] Opportunity siteId mismatch — skipping DB update', {
+          opportunityId,
+          messageSiteId: siteId,
+          opportunitySiteId: opportunity.getSiteId?.(),
+        });
       } else {
         const existingSuggestions = await opportunity.getSuggestions();
         const baseUrl = site.getBaseURL();
@@ -148,27 +161,27 @@ export default async function handler(message, context) {
           existingSuggestions.map((s) => [toPathOnly(s.getData()?.url, baseUrl), s]),
         );
 
-        const toUpdate = [];
-        for (const link of brokenLinks) {
+        const toUpdate = brokenLinks.reduce((acc, link) => {
           const {
             urlTo, suggestedUrls, aiRationale, confidenceScore,
           } = link;
-          if (!suggestedUrls || suggestedUrls.length === 0) {
-            // already logged above
-          } else {
-            const path = toPathOnly(urlTo, baseUrl);
-            const suggestion = suggestionByPath.get(path);
-            if (suggestion) {
-              suggestion.setData({
-                ...suggestion.getData(),
-                suggestedUrls,
-                aiRationale: aiRationale || '',
-                ...(confidenceScore !== undefined && { confidenceScore }),
-              });
-              toUpdate.push(suggestion);
-            }
+          if (!suggestedUrls?.length) {
+            return acc;
           }
-        }
+          const path = toPathOnly(urlTo, baseUrl);
+          const suggestion = suggestionByPath.get(path);
+          if (!suggestion) {
+            return acc;
+          }
+          suggestion.setData({
+            ...suggestion.getData(),
+            suggestedUrls,
+            aiRationale: aiRationale || '',
+            ...(confidenceScore !== undefined && { confidenceScore }),
+          });
+          acc.push(suggestion);
+          return acc;
+        }, []);
 
         if (toUpdate.length > 0) {
           await Suggestion.saveMany(toUpdate);
@@ -177,7 +190,12 @@ export default async function handler(message, context) {
       }
     }
   } catch (e) {
-    log.error(`[LLM-ERROR-PAGES] DB guidance update failed: ${e.message}`);
+    log.error('[LLM-ERROR-PAGES] DB guidance update failed', {
+      err: e.message,
+      stack: e.stack,
+      siteId,
+      opportunityId,
+    });
   }
 
   return ok();

@@ -227,7 +227,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
-    expect(logMock.error.calledWith('Failed to update 404 Excel on Mystique callback: SharePoint error')).to.be.true;
+    expect(logMock.error).to.have.been.calledWith(
+      sinon.match(/Excel guidance update failed/),
+      sinon.match({ err: 'SharePoint error', siteId: 'site-1' }),
+    );
   });
 
   it('handles empty brokenLinks array', async () => {
@@ -1133,6 +1136,7 @@ describe('LLM Error Pages – guidance-handler (DB dual-write)', () => {
     const suggestions = overrides.suggestions ?? [];
     const opportunity = overrides.opportunity || {
       getId: () => 'opp-1',
+      getSiteId: () => 'site-1',
       getSuggestions: sandbox.stub().resolves(suggestions),
     };
     const dataAccess = {
@@ -1240,6 +1244,34 @@ describe('LLM Error Pages – guidance-handler (DB dual-write)', () => {
     expect(ctx.log.warn).to.have.been.calledWithMatch(/No opportunityId/);
     // Excel side ran.
     expect(uploadToSharePointStub).to.have.been.called;
+  });
+
+  it('skips DB write and warns when opportunity belongs to a different site', async () => {
+    const suggestion = makeSuggestion('/p');
+    const otherSiteOpportunity = {
+      getId: () => 'opp-other-site',
+      getSiteId: () => 'other-site',
+      getSuggestions: sandbox.stub().resolves([suggestion]),
+    };
+    const ctx = buildContext({
+      opportunity: otherSiteOpportunity,
+    });
+
+    const resp = await guidanceHandler.default({
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      data: {
+        opportunityId: 'opp-other-site',
+        brokenLinks: [{
+          urlFrom: 'X', urlTo: 'https://example.com/p', suggestedUrls: ['/x'], aiRationale: 'r',
+        }],
+      },
+    }, ctx);
+
+    expect(resp.status).to.equal(200);
+    expect(ctx.log.warn).to.have.been.calledWithMatch(/siteId mismatch/);
+    expect(suggestion.setData).to.not.have.been.called;
+    expect(ctx.dataAccess.Suggestion.saveMany).to.not.have.been.called;
   });
 
   it('warns when Opportunity is not found in DB', async () => {
