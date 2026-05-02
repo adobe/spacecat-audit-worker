@@ -143,8 +143,7 @@ export async function runAuditAndSendToMystique(context) {
       weekOffsets = [context.auditContext.weekOffset];
     } else {
       // Always operate on the last fully-completed ISO week so we never publish
-      // partial in-progress data, and so the live run aligns with the UI and
-      // brandpresence (which only surface completed weeks).
+      // partial in-progress data, and so the live run aligns with the UI.
       weekOffsets = [-1];
     }
 
