@@ -364,31 +364,25 @@ describe('LLM Error Pages Handler', function () {
       );
     });
 
-    it('should produce two weeks when run on a Monday without weekOffset', async () => {
+    it('should target the last completed week when run on a Monday without weekOffset', async () => {
       const monday = new Date('2025-08-18T12:00:00Z'); // Monday
       const clock = sinon.useFakeTimers(monday.getTime());
       try {
-        mockGenerateReportingPeriods.returns({
-          weeks: [
-            { weekNumber: 33, year: 2025, startDate: new Date('2025-08-11'), endDate: new Date('2025-08-17'), periodIdentifier: 'w33-2025' },
-            { weekNumber: 34, year: 2025, startDate: new Date('2025-08-18'), endDate: new Date('2025-08-24'), periodIdentifier: 'w34-2025' },
-          ],
-        });
         const result = await runAuditAndSendToMystique(context);
-        expect(result.auditResult).to.have.length(2);
-        expect(mockGenerateReportingPeriods).to.have.been.calledWith(sinon.match.date, [-1, 0]);
+        expect(result.auditResult).to.have.length(1);
+        expect(mockGenerateReportingPeriods).to.have.been.calledWith(sinon.match.date, [-1]);
       } finally {
         clock.restore();
       }
     });
 
-    it('should use current week only when not Monday and no weekOffset', async () => {
+    it('should target the last completed week when not Monday and no weekOffset', async () => {
       const wednesday = new Date('2025-08-20T12:00:00Z'); // Wednesday
       const clock = sinon.useFakeTimers(wednesday.getTime());
       try {
         const result = await runAuditAndSendToMystique(context);
         expect(result.auditResult).to.have.length(1);
-        expect(mockGenerateReportingPeriods).to.have.been.calledWith(sinon.match.date, [0]);
+        expect(mockGenerateReportingPeriods).to.have.been.calledWith(sinon.match.date, [-1]);
       } finally {
         clock.restore();
       }
