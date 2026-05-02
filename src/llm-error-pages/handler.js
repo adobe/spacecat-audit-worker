@@ -353,11 +353,41 @@ const stepAudit = new AuditBuilder()
   .addStep('run-audit-and-send-to-mystique', runAuditAndSendToMystique)
   .build();
 
+// RunnerAudit's processAuditResult persists the Audit record AFTER the runner
+// returns, but runAuditAndSendToMystique needs context.audit DURING its run:
+// convertToOpportunity reads audit.getId() to wire up Opportunity/Suggestion
+// records, and the Mystique message includes auditId so the guidance callback
+// can later locate the audit and write AI suggestions back into the SharePoint
+// xlsx. Without a real audit in context the bucket sync throws (silently, per
+// its try/catch) and Mystique gets a placeholder auditId that the guidance
+// handler cannot resolve, so backfilled weeks end up with no DB suggestions
+// and no AI columns in the xlsx. Pre-create the Audit row here, then override
+// the persister to update-and-return that same row so we end up with exactly
+// one Audit per backfill week (not a duplicate from processAuditResult).
 const backfillAudit = new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .withRunner(async (_finalUrl, context, site, auditContext) => {
-    const enrichedContext = { ...context, site, auditContext };
+    const { dataAccess } = context;
+    const audit = await dataAccess.Audit.create({
+      siteId: site.getId(),
+      isLive: site.getIsLive(),
+      auditedAt: new Date().toISOString(),
+      auditType: 'llm-error-pages',
+      auditResult: { backfill: true, weekOffset: auditContext.weekOffset },
+      fullAuditRef: site.getBaseURL(),
+    });
+    const enrichedContext = {
+      ...context, site, auditContext, audit,
+    };
     return runAuditAndSendToMystique(enrichedContext);
+  })
+  .withPersister(async (auditData, context) => {
+    const { audit } = context;
+    if (audit && typeof audit.setAuditResult === 'function' && auditData?.auditResult) {
+      audit.setAuditResult(auditData.auditResult);
+      await audit.save();
+    }
+    return audit;
   })
   .build();
 
