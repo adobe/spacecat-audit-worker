@@ -138,7 +138,6 @@ export default async function handler(message, context) {
     });
   }
 
-  // DB Suggestion update (independent best-effort).
   try {
     if (!opportunityId) {
       log.warn('[LLM-ERROR-PAGES] No opportunityId in Mystique message — skipping DB update');
@@ -147,8 +146,6 @@ export default async function handler(message, context) {
       if (!opportunity) {
         log.warn(`[LLM-ERROR-PAGES] Opportunity not found: ${opportunityId}`);
       } else if (opportunity.getSiteId?.() !== siteId) {
-        // Cross-site safety: a forged or replayed callback must not update
-        // another site's suggestions even if its opportunityId is valid.
         log.warn('[LLM-ERROR-PAGES] Opportunity siteId mismatch — skipping DB update', {
           opportunityId,
           messageSiteId: siteId,

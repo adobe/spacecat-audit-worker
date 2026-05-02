@@ -46,7 +46,6 @@ const STATUS_BUCKETS = [
 const RETENTION_WEEKS = 4;
 const RETENTION_MS = RETENTION_WEEKS * 7 * 24 * 60 * 60 * 1000;
 
-// Top-N cap applied to 404s on both Excel and DB write paths.
 const TOP_404_LIMIT = 50;
 
 /**
@@ -264,9 +263,6 @@ export async function runAuditAndSendToMystique(context) {
 
         log.info(`[LLM-ERROR-PAGES] Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
 
-        // DB Opportunity + Suggestion sync — each bucket runs independently
-        // (Promise.allSettled) so a failure in one bucket cannot block the
-        // retention sweep or sync for the other two.
         const opportunityMap = {};
         const { Suggestion, Opportunity } = dataAccess;
         const retentionCutoff = new Date(Date.now() - RETENTION_MS);
@@ -284,7 +280,6 @@ export async function runAuditAndSendToMystique(context) {
 
         await Promise.allSettled(STATUS_BUCKETS.map(async ({ code, auditType, suggestionType }) => {
           try {
-            // 404 bucket is capped at TOP_404_LIMIT on both Excel and DB paths.
             const rawAll = categorizedResults[code] || [];
             const rawErrors = code === 404 ? rawAll.slice(0, TOP_404_LIMIT) : rawAll;
             let existingSuggestions = [];
@@ -356,9 +351,6 @@ export async function runAuditAndSendToMystique(context) {
               }
             }
 
-            // Retention sweep: skip URLs synced this run (defensive — syncSuggestions
-            // mutates existingSuggestions in-place, but this guard keeps the filter
-            // correct even if that contract changes).
             const toOutdate = existingSuggestions.filter((s) => {
               const data = s.getData() || {};
               if (scrapedUrls.has(data.url)) {
