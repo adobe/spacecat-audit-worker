@@ -562,8 +562,12 @@ export function groupErrorsByUrl(errors) {
       urlMap.set(url, entry);
     }
     entry.hitCount += (error.total_requests ?? 0);
-    if (error.agent_type) entry.agentTypes.add(error.agent_type);
-    if (error.user_agent) entry.userAgents.add(error.user_agent);
+    if (error.agent_type) {
+      entry.agentTypes.add(error.agent_type);
+    }
+    if (error.user_agent) {
+      entry.userAgents.add(error.user_agent);
+    }
   }
 
   return Array.from(urlMap.values()).map((entry) => ({
