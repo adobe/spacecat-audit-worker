@@ -138,14 +138,13 @@ export async function runAuditAndSendToMystique(context) {
     const awsRuntime = getCdnAwsRuntime(site, context);
     const athenaClient = awsRuntime.createAthenaClient(s3Config.getAthenaTempLocation());
 
-    const isMonday = new Date().getUTCDay() === 1;
     let weekOffsets;
     if (context.auditContext?.weekOffset !== undefined) {
       weekOffsets = [context.auditContext.weekOffset];
-    } else if (isMonday) {
-      weekOffsets = [-1, 0];
     } else {
-      weekOffsets = [0];
+      // Always operate on the last fully-completed ISO week so we never publish
+      // partial in-progress data, and so the live run aligns with the UI.
+      weekOffsets = [-1];
     }
 
     const { weeks } = generateReportingPeriods(new Date(), weekOffsets);
