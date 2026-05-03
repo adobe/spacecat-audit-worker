@@ -49,6 +49,9 @@ describe('RunnerAudit', () => {
         isAuditEnabledForSite,
         parseMessageDataForRunnerAudit,
       },
+      '../../src/utils/slack-utils.js': {
+        sendAuditFailureNotification: sandbox.stub().resolves(),
+      },
     });
     RunnerAudit = mod.RunnerAudit;
   });
@@ -217,5 +220,45 @@ describe('RunnerAudit', () => {
         context,
       ),
     ).to.be.rejectedWith('reddit-analysis audit failed for site site-1. Reason: runner boom');
+  });
+
+  it('falls back to siteId when site.getBaseURL() throws during siteUrl caching', async () => {
+    // site.getBaseURL() throws — inner try-catch keeps siteUrl = siteId
+    const throwingSite = {
+      getId: () => 'site-1',
+      getBaseURL: () => { throw new Error('getBaseURL not available'); },
+      getIsLive: () => true,
+    };
+    const siteProvider = sandbox.stub().resolves(throwingSite);
+    // urlResolver must not call getBaseURL on the site
+    const urlResolver = sandbox.stub().resolves('https://resolved.example.com');
+    const runner = sandbox.stub().rejects(new Error('runner failed after bad url'));
+    const persister = sandbox.stub();
+    const messageSender = sandbox.stub();
+
+    const instance = new RunnerAudit(
+      siteProvider,
+      sandbox.stub(),
+      urlResolver,
+      runner,
+      persister,
+      messageSender,
+      [],
+    );
+
+    const context = {
+      log: {
+        warn: sandbox.stub(),
+        error: sandbox.stub(),
+        info: sandbox.stub(),
+        debug: sandbox.stub(),
+      },
+      dataAccess: {},
+      invocation: {},
+    };
+
+    await expect(
+      instance.run({ type: 'test-audit', siteId: 'site-1', auditContext: {} }, context),
+    ).to.be.rejectedWith('test-audit audit failed for site site-1. Reason: runner failed after bad url');
   });
 });

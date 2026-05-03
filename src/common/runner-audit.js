@@ -13,6 +13,7 @@
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { BaseAudit } from './base-audit.js';
 import { isAuditEnabledForSite, parseMessageDataForRunnerAudit } from './audit-utils.js';
+import { sendAuditFailureNotification } from '../utils/slack-utils.js';
 
 /**
  * Builds the audit context for RunnerAudit: `message.auditContext` plus optional `messageData`
@@ -44,9 +45,15 @@ export class RunnerAudit extends BaseAudit {
     const { log } = context;
     const { type, siteId } = message;
     const auditContext = buildRunnerAuditContext(message);
+    let site;
+    let siteUrl = siteId;
 
     try {
-      const site = await this.siteProvider(siteId, context);
+      site = await this.siteProvider(siteId, context);
+      // Cache now so the catch block has it even if a later step throws
+      try {
+        siteUrl = site.getBaseURL();
+      } catch { /* keep siteId fallback */ }
 
       if (!(await isAuditEnabledForSite(type, site, context))) {
         log.debug(`${type} audits disabled for site ${siteId}, skipping...`);
@@ -67,6 +74,12 @@ export class RunnerAudit extends BaseAudit {
         context,
       );
     } catch (e) {
+      await sendAuditFailureNotification(context, {
+        type,
+        siteUrl,
+        auditContext,
+        error: e,
+      });
       throw new Error(`${type} audit failed for site ${siteId}. Reason: ${e.message}`, { cause: e });
     }
   }
