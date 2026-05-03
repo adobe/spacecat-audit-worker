@@ -1112,14 +1112,15 @@ export async function processOpportunityAndSuggestions(
   }
 
   // Build key function that handles both individual and domain-wide suggestions
-  /* c8 ignore next 7 */
   const buildKey = (data) => {
     // Domain-wide suggestion has a special key field
     if (data.key) {
       return data.key;
     }
-    // Individual suggestions use URL-based key
-    return `${data.url}|${AUDIT_TYPE}`;
+    // Key on pathname only so that domain shifts (e.g. after page-citability migration
+    // switching from site.getBaseURL() to getPreferredBaseUrl()) don't produce duplicate
+    // suggestions for the same page path.
+    return `${new URL(data.url).pathname}|${AUDIT_TYPE}`;
   };
 
   // Helper function to extract only the fields we want in suggestions
