@@ -448,6 +448,74 @@ describe('Prerender AI-Only Mode', () => {
       );
     });
 
+    it('should skip suggestions that already have a valid AI summary and are valuable', async () => {
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        scrapeJobId: 'test-scrape-job',
+        aiSummary: 'This page benefits greatly from prerendering.',
+        valuable: true,
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.auditResult.suggestionCount).to.equal(1); // Only page2 sent
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.suggestions).to.have.lengthOf(1);
+      expect(message.data.suggestions[0].url).to.equal('https://example.com/page2');
+    });
+
+    it('should not skip suggestions with aiSummary "not available" even if valuable', async () => {
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        scrapeJobId: 'test-scrape-job',
+        aiSummary: 'not available',
+        valuable: true,
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.auditResult.suggestionCount).to.equal(2); // Both sent
+    });
+
+    it('should not skip suggestions with valid aiSummary but valuable=false', async () => {
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        scrapeJobId: 'test-scrape-job',
+        aiSummary: 'This page benefits greatly from prerendering.',
+        valuable: false,
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.auditResult.suggestionCount).to.equal(2); // Both sent
+    });
+
+    it('should return 0 if all suggestions have valid AI summaries and are valuable', async () => {
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        scrapeJobId: 'test-scrape-job',
+        aiSummary: 'Prerendering is recommended.',
+        valuable: true,
+      });
+      mockSuggestions[1].getData.returns({
+        url: 'https://example.com/page2',
+        isDomainWide: false,
+        scrapeJobId: 'test-scrape-job',
+        aiSummary: 'Great candidate for prerendering.',
+        valuable: true,
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.auditResult.suggestionCount).to.equal(0);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/No eligible suggestions to send to Mystique/),
+      );
+    });
 
     it('should handle missing getDeliveryType method', async () => {
       context.site.getDeliveryType = undefined;
@@ -653,9 +721,9 @@ describe('Prerender AI-Only Mode', () => {
       );
 
       expect(opportunity).to.equal(mockOpportunityNormal);
-      // getSuggestions is called once by findPreservableDomainWideSuggestion only —
-      // suggestionId is now the URL itself, no post-sync DB fetch needed.
-      expect(getSuggestionsStub).to.have.been.calledOnce;
+      // getSuggestions is called twice: once by findPreservableDomainWideSuggestion and once
+      // after syncSuggestions to filter out candidates that already have a valid AI summary.
+      expect(getSuggestionsStub).to.have.been.calledTwice;
       // One candidate per URL in the current batch — plain objects with S3 keys and suggestionId
       expect(auditRunCandidates).to.have.lengthOf(1);
       expect(auditRunCandidates[0].suggestionId).to.equal('https://example.com/page1');
