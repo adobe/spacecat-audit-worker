@@ -19,11 +19,7 @@ import {
   detectCdnFromHeaders,
   detectCdnFromUrl,
   matchCdnByCname,
-  matchCdnByAsn,
   getCnameChain,
-  getCnameChainDoh,
-  getOneIpDoh,
-  getAsnForIp,
   detectCdnFromDnsFallback,
   matchCdnByKeywords,
 } from '../../src/detect-cdn/cdn-detector.js';
@@ -194,6 +190,17 @@ describe('cdn-detector', () => {
   });
 
   describe('detectCdnFromUrl', () => {
+    // Avoid mocha timeout by mocking instant DNS failure.
+    function mockDnsForFastFallback() {
+      return {
+        promises: {
+          resolve: sinon.stub().rejects(Object.assign(new Error('ENODATA'), { code: 'ENODATA' })),
+          resolve4: sinon.stub().resolves([]),
+          reverse: sinon.stub().resolves([]),
+        },
+      };
+    }
+
     it('returns CDN from response headers when fetch succeeds', async () => {
       const headers = new Map([
         ['cf-ray', 'abc123'],
@@ -219,15 +226,11 @@ describe('cdn-detector', () => {
     });
 
     it('returns error when both HEAD and GET throw', async () => {
-      let n = 0;
-      const fetchFn = sinon.stub().callsFake(() => {
-        n += 1;
-        if (n <= 2) {
-          return Promise.reject(new Error('network error'));
-        }
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ Answer: [] }) });
+      const detector = await esmock('../../src/detect-cdn/cdn-detector.js', {
+        'node:dns': mockDnsForFastFallback(),
       });
-      const result = await detectCdnFromUrl('https://example.com', fetchFn);
+      const fetchFn = sinon.stub().rejects(new Error('network error'));
+      const result = await detector.detectCdnFromUrl('https://example.com', fetchFn);
       expect(result.cdn).to.equal('unknown');
       expect(result.error).to.equal('network error');
       expect(fetchFn.firstCall.args[1].method).to.equal('HEAD');
@@ -275,17 +278,13 @@ describe('cdn-detector', () => {
     });
 
     it('returns error message as string when both HEAD and GET throw with no .message', async () => {
-      let n = 0;
-      const fetchFn = sinon.stub().callsFake(() => {
-        n += 1;
-        if (n <= 2) {
-          // Non-Error rejection: code uses String(reason) when .message is missing
-          // eslint-disable-next-line prefer-promise-reject-errors -- intentional for coverage
-          return Promise.reject('plain string error');
-        }
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ Answer: [] }) });
+      const detector = await esmock('../../src/detect-cdn/cdn-detector.js', {
+        'node:dns': mockDnsForFastFallback(),
       });
-      const result = await detectCdnFromUrl('https://example.com', fetchFn);
+      // Non-Error rejection: code uses String(reason) when .message is missing
+      // eslint-disable-next-line prefer-promise-reject-errors -- intentional for coverage
+      const fetchFn = sinon.stub().callsFake(() => Promise.reject('plain string error'));
+      const result = await detector.detectCdnFromUrl('https://example.com', fetchFn);
       expect(result.cdn).to.equal('unknown');
       expect(result.error).to.equal('plain string error');
       expect(fetchFn.callCount).to.be.at.least(2);
@@ -331,14 +330,7 @@ describe('cdn-detector', () => {
       const detector = await esmock('../../src/detect-cdn/cdn-detector.js', {
         'node:dns': mockDns,
       });
-      let n = 0;
-      const fetchFn = sinon.stub().callsFake(() => {
-        n += 1;
-        if (n <= 2) {
-          return Promise.reject(new Error('connection reset'));
-        }
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ Answer: [] }) });
-      });
+      const fetchFn = sinon.stub().rejects(new Error('connection reset'));
       const result = await detector.detectCdnFromUrl('https://example.com', fetchFn);
       expect(result.cdn).to.equal('Fastly');
       expect(result.error).to.equal('connection reset');
@@ -359,9 +351,7 @@ describe('cdn-detector', () => {
         .onFirstCall()
         .resolves({
           headers: { forEach(cb) { emptyHeaders.forEach((v, k) => cb(v, k)); } },
-        })
-        // Fallback may call fetch for ipinfo; omit if CNAME matches first
-        .onSecondCall();
+        });
       const detector = await esmock('../../src/detect-cdn/cdn-detector.js', {
         'node:dns': mockDns,
       });
@@ -427,50 +417,6 @@ describe('cdn-detector', () => {
 
     it('returns null when no CDN domain matches', () => {
       expect(matchCdnByCname(['example.com', 'origin.example.com'])).to.equal(null);
-    });
-  });
-
-  describe('matchCdnByAsn', () => {
-    it('returns null for non-number or NaN', () => {
-      expect(matchCdnByAsn(null)).to.equal(null);
-      expect(matchCdnByAsn(undefined)).to.equal(null);
-      expect(matchCdnByAsn('13335')).to.equal(null);
-      expect(matchCdnByAsn(Number.NaN)).to.equal(null);
-    });
-
-    it('returns Cloudflare for AS13335', () => {
-      expect(matchCdnByAsn(13335)).to.equal('Cloudflare');
-    });
-
-    it('returns Fastly for AS54113', () => {
-      expect(matchCdnByAsn(54113)).to.equal('Fastly');
-    });
-
-    it('returns CloudFront for AS16509', () => {
-      expect(matchCdnByAsn(16509)).to.equal('CloudFront');
-    });
-
-    it('returns Akamai for known Akamai ASNs', () => {
-      expect(matchCdnByAsn(20940)).to.equal('Akamai');
-      expect(matchCdnByAsn(16625)).to.equal('Akamai');
-      expect(matchCdnByAsn(21342)).to.equal('Akamai');
-    });
-
-    it('returns Azure for AS8075', () => {
-      expect(matchCdnByAsn(8075)).to.equal('Azure Front Door / Azure CDN');
-    });
-
-    it('returns Google Cloud CDN for AS15169', () => {
-      expect(matchCdnByAsn(15169)).to.equal('Google Cloud CDN');
-    });
-
-    it('returns Alibaba for known Alibaba ASNs', () => {
-      expect(matchCdnByAsn(24429)).to.equal('Alibaba Cloud CDN');
-      expect(matchCdnByAsn(37963)).to.equal('Alibaba Cloud CDN');
-    });
-
-    it('returns null for unknown ASN', () => {
-      expect(matchCdnByAsn(99999)).to.equal(null);
     });
   });
 
@@ -546,79 +492,6 @@ describe('cdn-detector', () => {
       const chain = await detector.getCnameChain('example.com', log);
       expect(chain).to.deep.equal(['example.com']);
       expect(log.warn).to.not.have.been.called;
-    });
-  });
-
-  describe('getCnameChainDoh', () => {
-    it('follows CNAME hops from Google DoH JSON', async () => {
-      const fetchFn = sinon.stub();
-      fetchFn.onFirstCall().resolves({
-        ok: true,
-        json: () => Promise.resolve({ Answer: [{ type: 5, data: 'e123.fastly.net.' }] }),
-      });
-      fetchFn.onSecondCall().resolves({
-        ok: true,
-        json: () => Promise.resolve({ Answer: [] }),
-      });
-      const chain = await getCnameChainDoh('www.example.com', fetchFn);
-      expect(chain).to.deep.equal(['www.example.com', 'e123.fastly.net']);
-      expect(fetchFn.firstCall.args[0]).to.include('dns.google/resolve');
-    });
-
-    it('stops when DoH CNAME data is non-string (normalizeDohName empty branch)', async () => {
-      const fetchFn = sinon.stub().resolves({
-        ok: true,
-        json: () => Promise.resolve({ Answer: [{ type: 5, data: 12345 }] }),
-      });
-      const chain = await getCnameChainDoh('www.example.com', fetchFn);
-      expect(chain).to.deep.equal(['www.example.com']);
-    });
-  });
-
-  describe('getOneIpDoh', () => {
-    it('returns first IPv4 from DoH A record answers', async () => {
-      const fetchFn = sinon.stub().resolves({
-        ok: true,
-        json: () => Promise.resolve({ Answer: [{ type: 1, data: '93.184.216.34' }] }),
-      });
-      const ip = await getOneIpDoh('example.com', fetchFn);
-      expect(ip).to.equal('93.184.216.34');
-    });
-
-    it('returns null when DoH returns no A record', async () => {
-      const fetchFn = sinon.stub().resolves({
-        ok: true,
-        json: () => Promise.resolve({ Answer: [] }),
-      });
-      const ip = await getOneIpDoh('example.com', fetchFn);
-      expect(ip).to.equal(null);
-    });
-
-    it('returns null when DoH response is not ok', async () => {
-      const fetchFn = sinon.stub().resolves({
-        ok: false,
-        status: 500,
-        json: () => Promise.resolve({}),
-      });
-      const ip = await getOneIpDoh('example.com', fetchFn);
-      expect(ip).to.equal(null);
-    });
-
-    it('returns null when DoH JSON has no Answer array (dohQuery normalizes body)', async () => {
-      const fetchFn = sinon.stub().resolves({
-        ok: true,
-        json: () => Promise.resolve({ Status: 0 }),
-      });
-      const ip = await getOneIpDoh('example.com', fetchFn);
-      expect(ip).to.equal(null);
-    });
-
-    it('logs when DoH fetch throws and log is provided', async () => {
-      const log = { warn: sinon.stub() };
-      const fetchFn = sinon.stub().rejects(new Error('DoH down'));
-      const ip = await getOneIpDoh('example.com', fetchFn, log);
-      expect(ip).to.equal(null);
-      expect(log.warn).to.have.been.calledWith('[detect-cdn] DoH query failed', sinon.match.object);
     });
   });
 
@@ -708,82 +581,21 @@ describe('cdn-detector', () => {
     });
   });
 
-  describe('getAsnForIp', () => {
-    it('returns ASN when ipinfo returns org with AS number', async () => {
-      const fetchFn = sinon.stub().resolves({
-        ok: true,
-        json: sinon.stub().resolves({ org: 'AS54113 Fastly, Inc.' }),
-      });
-      const asn = await getAsnForIp('151.101.1.1', fetchFn);
-      expect(asn).to.equal(54113);
-    });
-
-    it('returns null when ipinfo returns non-ok', async () => {
-      const fetchFn = sinon.stub().resolves({ ok: false });
-      const asn = await getAsnForIp('1.2.3.4', fetchFn);
-      expect(asn).to.equal(null);
-    });
-
-    it('returns null when ipinfo org is missing', async () => {
-      const fetchFn = sinon.stub().resolves({ ok: true, json: sinon.stub().resolves({}) });
-      const asn = await getAsnForIp('1.2.3.4', fetchFn);
-      expect(asn).to.equal(null);
-    });
-
-    it('returns null when org does not match AS number pattern', async () => {
-      const fetchFn = sinon.stub().resolves({
-        ok: true,
-        json: sinon.stub().resolves({ org: 'Some Other Org' }),
-      });
-      const asn = await getAsnForIp('1.2.3.4', fetchFn);
-      expect(asn).to.equal(null);
-    });
-
-    it('calls log.warn when fetch throws', async () => {
-      const log = { warn: sinon.stub() };
-      const fetchFn = sinon.stub().rejects(new Error('network error'));
-      const asn = await getAsnForIp('1.2.3.4', fetchFn, { log });
-      expect(asn).to.equal(null);
-      expect(log.warn).to.have.been.calledWith('[detect-cdn] ASN lookup failed', sinon.match({ ip: '1.2.3.4' }));
-    });
-  });
-
   describe('detectCdnFromDnsFallback', () => {
     it('returns unknown for invalid URL', async () => {
-      const result = await detectCdnFromDnsFallback('', sinon.stub());
+      const result = await detectCdnFromDnsFallback('');
       expect(result.cdn).to.equal('unknown');
     });
 
     it('returns unknown when hostname is empty (e.g. file:///)', async () => {
-      const result = await detectCdnFromDnsFallback('file:///', sinon.stub());
+      const result = await detectCdnFromDnsFallback('file:///');
       expect(result.cdn).to.equal('unknown');
     });
 
     it('accepts URL with scheme', async () => {
-      const result = await detectCdnFromDnsFallback('https://example.com/path', sinon.stub());
+      const result = await detectCdnFromDnsFallback('https://example.com/path');
       expect(result).to.have.property('cdn');
       expect(['unknown', 'Akamai', 'Cloudflare', 'Fastly', 'CloudFront']).to.include(result.cdn);
-    });
-
-    it('returns CDN from ASN when CNAME does not match', async () => {
-      const mockDns = {
-        promises: {
-          resolve: sinon.stub().resolves([]),
-          resolve4: sinon.stub().resolves(['151.101.1.1']),
-          reverse: sinon.stub().resolves([]),
-        },
-      };
-      const fetchFn = sinon.stub().resolves({
-        ok: true,
-        json: sinon.stub().resolves({ org: 'AS54113 Fastly, Inc.' }),
-      });
-      const detector = await esmock('../../src/detect-cdn/cdn-detector.js', {
-        'node:dns': mockDns,
-      });
-      const log = { info: sinon.stub() };
-      const result = await detector.detectCdnFromDnsFallback('https://example.com', fetchFn, { log });
-      expect(result.cdn).to.equal('Fastly');
-      expect(log.info).to.have.been.calledWith('[detect-cdn] Fallback: detected by ASN', { cdn: 'Fastly', asn: 54113 });
     });
 
     it('logs when detected by CNAME', async () => {
@@ -800,69 +612,12 @@ describe('cdn-detector', () => {
         'node:dns': mockDns,
       });
       const log = { info: sinon.stub() };
-      const result = await detector.detectCdnFromDnsFallback('https://example.com', sinon.stub(), { log });
+      const result = await detector.detectCdnFromDnsFallback('https://example.com', { log });
       expect(result.cdn).to.equal('Cloudflare');
       expect(log.info).to.have.been.calledWith('[detect-cdn] Fallback: detected by CNAME', { cdn: 'Cloudflare', hostname: 'example.com' });
     });
 
-    it('uses DoH CNAME when system DNS fails (ETIMEOUT)', async () => {
-      const mockDns = {
-        promises: {
-          resolve: sinon.stub().rejects(Object.assign(new Error('timeout'), { code: 'ETIMEOUT' })),
-          resolve4: sinon.stub().rejects(Object.assign(new Error('timeout'), { code: 'ETIMEOUT' })),
-        },
-      };
-      const fetchFn = sinon.stub();
-      fetchFn.onFirstCall().resolves({
-        ok: true,
-        json: () => Promise.resolve({ Answer: [{ type: 5, data: 'edge.example.fastly.net.' }] }),
-      });
-      fetchFn.onSecondCall().resolves({
-        ok: true,
-        json: () => Promise.resolve({ Answer: [] }),
-      });
-      const detector = await esmock('../../src/detect-cdn/cdn-detector.js', {
-        'node:dns': mockDns,
-      });
-      const log = { info: sinon.stub(), warn: sinon.stub() };
-      const result = await detector.detectCdnFromDnsFallback('https://example.com', fetchFn, { log });
-      expect(result.cdn).to.equal('Fastly');
-      expect(log.info).to.have.been.calledWith('[detect-cdn] Fallback: detected by CNAME (DoH)', { cdn: 'Fastly', hostname: 'example.com' });
-    });
-
-    it('uses DoH A record and ASN when system DNS has no CNAME match', async () => {
-      const mockDns = {
-        promises: {
-          resolve: sinon.stub().rejects({ code: 'ENODATA' }),
-          resolve4: sinon.stub().rejects({ code: 'ETIMEOUT' }),
-          reverse: sinon.stub().resolves([]),
-        },
-      };
-      const fetchFn = sinon.stub();
-      let call = 0;
-      fetchFn.callsFake(async () => {
-        call += 1;
-        if (call === 1) {
-          return { ok: true, json: () => ({ Answer: [] }) };
-        }
-        if (call === 2) {
-          return { ok: true, json: () => ({ Answer: [{ type: 1, data: '151.101.1.1' }] }) };
-        }
-        return {
-          ok: true,
-          json: () => ({ org: 'AS54113 Fastly, Inc.' }),
-        };
-      });
-      const detector = await esmock('../../src/detect-cdn/cdn-detector.js', {
-        'node:dns': mockDns,
-      });
-      const log = { info: sinon.stub() };
-      const result = await detector.detectCdnFromDnsFallback('https://example.com', fetchFn, { log });
-      expect(result.cdn).to.equal('Fastly');
-      expect(log.info).to.have.been.calledWith('[detect-cdn] Fallback: detected by ASN', { cdn: 'Fastly', asn: 54113 });
-    });
-
-    it('uses PTR reverse DNS when ASN does not map to a known CDN', async () => {
+    it('uses PTR reverse DNS when CNAME does not match a known CDN', async () => {
       const mockDns = {
         promises: {
           resolve: sinon.stub().rejects({ code: 'ENODATA' }),
@@ -870,15 +625,11 @@ describe('cdn-detector', () => {
           reverse: sinon.stub().resolves(['a23-123-456.deploy.static.akamaitechnologies.com']),
         },
       };
-      const fetchFn = sinon.stub().resolves({
-        ok: true,
-        json: sinon.stub().resolves({ org: 'AS99999 Some Unknown Network' }),
-      });
       const detector = await esmock('../../src/detect-cdn/cdn-detector.js', {
         'node:dns': mockDns,
       });
       const log = { info: sinon.stub(), warn: sinon.stub() };
-      const result = await detector.detectCdnFromDnsFallback('https://example.com', fetchFn, { log });
+      const result = await detector.detectCdnFromDnsFallback('https://example.com', { log });
       expect(result.cdn).to.equal('Akamai');
       expect(log.info).to.have.been.calledWith(
         '[detect-cdn] Fallback: detected by PTR keywords {"cdn":"Akamai","ip":"23.0.0.1","ptr":"a23-123-456.deploy.static.akamaitechnologies.com"}',
@@ -893,15 +644,11 @@ describe('cdn-detector', () => {
           reverse: sinon.stub().resolves(['cache-xyz.azureedge.net']),
         },
       };
-      const fetchFn = sinon.stub().resolves({
-        ok: true,
-        json: sinon.stub().resolves({ org: 'AS64500 Unknown' }),
-      });
       const detector = await esmock('../../src/detect-cdn/cdn-detector.js', {
         'node:dns': mockDns,
       });
       const log = { info: sinon.stub() };
-      const result = await detector.detectCdnFromDnsFallback('https://example.com', fetchFn, { log });
+      const result = await detector.detectCdnFromDnsFallback('https://example.com', { log });
       expect(result.cdn).to.equal('Azure Front Door / Azure CDN');
       expect(log.info).to.have.been.calledWith(
         '[detect-cdn] Fallback: detected by PTR CNAME signature {"cdn":"Azure Front Door / Azure CDN","ip":"1.1.1.1","ptr":"cache-xyz.azureedge.net"}',
@@ -922,7 +669,7 @@ describe('cdn-detector', () => {
         'node:dns': mockDns,
       });
       const log = { info: sinon.stub() };
-      const result = await detector.detectCdnFromDnsFallback('https://example.com', sinon.stub(), { log });
+      const result = await detector.detectCdnFromDnsFallback('https://example.com', { log });
       expect(result.cdn).to.equal('Fastly');
       expect(log.info).to.have.been.calledWith(
         '[detect-cdn] Fallback: detected by DNS name keywords',
@@ -930,60 +677,21 @@ describe('cdn-detector', () => {
       );
     });
 
-    it('detects by keywords on DoH CNAME chain when signatures miss', async () => {
-      const mockDns = {
-        promises: {
-          resolve: sinon.stub().rejects(Object.assign(new Error('ETIMEOUT'), { code: 'ETIMEOUT' })),
-          resolve4: sinon.stub().rejects(Object.assign(new Error('ETIMEOUT'), { code: 'ETIMEOUT' })),
-        },
-      };
-      const fetchFn = sinon.stub();
-      fetchFn.onFirstCall().resolves({
-        ok: true,
-        json: () => Promise.resolve({
-          Answer: [{ type: 5, data: 'edge.my-fastly-internal.example.' }],
-        }),
-      });
-      fetchFn.onSecondCall().resolves({
-        ok: true,
-        json: () => Promise.resolve({ Answer: [] }),
-      });
-      const detector = await esmock('../../src/detect-cdn/cdn-detector.js', {
-        'node:dns': mockDns,
-      });
-      const log = { info: sinon.stub() };
-      const result = await detector.detectCdnFromDnsFallback('https://example.com', fetchFn, { log });
-      expect(result.cdn).to.equal('Fastly');
-      expect(log.info).to.have.been.calledWith(
-        '[detect-cdn] Fallback: detected by DNS name keywords (DoH)',
-        { cdn: 'Fastly', hostname: 'example.com' },
-      );
-    });
-
-    it('returns unknown when no IP can be resolved for ASN/PTR path', async () => {
+    it('returns unknown when no IP can be resolved for PTR path', async () => {
       const mockDns = {
         promises: {
           resolve: sinon.stub().rejects({ code: 'ENODATA' }),
           resolve4: sinon.stub().rejects({ code: 'ENOTFOUND' }),
         },
       };
-      const fetchFn = sinon.stub();
-      fetchFn.onFirstCall().resolves({
-        ok: true,
-        json: () => Promise.resolve({ Answer: [] }),
-      });
-      fetchFn.onSecondCall().resolves({
-        ok: true,
-        json: () => Promise.resolve({ Answer: [] }),
-      });
       const detector = await esmock('../../src/detect-cdn/cdn-detector.js', {
         'node:dns': mockDns,
       });
-      const result = await detector.detectCdnFromDnsFallback('https://example.com', fetchFn);
+      const result = await detector.detectCdnFromDnsFallback('https://example.com');
       expect(result.cdn).to.equal('unknown');
     });
 
-    it('returns unknown when IP resolves but ASN and PTR hostnames do not match any CDN', async () => {
+    it('returns unknown when IP resolves but PTR hostnames do not match any CDN', async () => {
       const mockDns = {
         promises: {
           resolve: sinon.stub().rejects({ code: 'ENODATA' }),
@@ -991,33 +699,11 @@ describe('cdn-detector', () => {
           reverse: sinon.stub().resolves(['router1.isp-internal.example']),
         },
       };
-      const fetchFn = sinon.stub().resolves({
-        ok: true,
-        json: sinon.stub().resolves({ org: 'AS64500 Some ISP' }),
-      });
       const detector = await esmock('../../src/detect-cdn/cdn-detector.js', {
         'node:dns': mockDns,
       });
-      const result = await detector.detectCdnFromDnsFallback('https://example.com', fetchFn);
+      const result = await detector.detectCdnFromDnsFallback('https://example.com');
       expect(result.cdn).to.equal('unknown');
-    });
-
-    it('uses PTR when ASN lookup returns null (ipinfo non-ok)', async () => {
-      const mockDns = {
-        promises: {
-          resolve: sinon.stub().rejects({ code: 'ENODATA' }),
-          resolve4: sinon.stub().resolves(['198.51.100.20']),
-          reverse: sinon.stub().resolves(['a23-9.deploy.static.akamaitechnologies.com']),
-        },
-      };
-      const fetchFn = sinon.stub().resolves({ ok: false, status: 429 });
-      const detector = await esmock('../../src/detect-cdn/cdn-detector.js', {
-        'node:dns': mockDns,
-      });
-      const log = { info: sinon.stub() };
-      const result = await detector.detectCdnFromDnsFallback('https://example.com', fetchFn, { log });
-      expect(result.cdn).to.equal('Akamai');
-      expect(log.info).to.have.been.calledWith(sinon.match('[detect-cdn] Fallback: detected by PTR keywords'));
     });
 
     it('uses second PTR hostname when first PTR does not match CDN heuristics', async () => {
@@ -1028,15 +714,11 @@ describe('cdn-detector', () => {
           reverse: sinon.stub().resolves(['irrelevant.example.com', 'a23-456.deploy.static.akamaitechnologies.com']),
         },
       };
-      const fetchFn = sinon.stub().resolves({
-        ok: true,
-        json: sinon.stub().resolves({ org: 'AS99999 Unknown' }),
-      });
       const detector = await esmock('../../src/detect-cdn/cdn-detector.js', {
         'node:dns': mockDns,
       });
       const log = { info: sinon.stub() };
-      const result = await detector.detectCdnFromDnsFallback('https://example.com', fetchFn, { log });
+      const result = await detector.detectCdnFromDnsFallback('https://example.com', { log });
       expect(result.cdn).to.equal('Akamai');
       expect(log.info).to.have.been.calledWith(
         sinon.match('[detect-cdn] Fallback: detected by PTR keywords'),
