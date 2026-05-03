@@ -340,7 +340,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
         const brand = await findActiveBrandForSite(context, { orgId, siteId });
         if (brand) {
           brandId = brand.brandId;
-          log.info(`Resolved brand ${brandId} for site ${siteId} (v2 onboarding, via ${brand.via})`);
+          log.info(`Resolved brand ${brandId} for site ${siteId} (v2 onboarding)`);
         } else {
           log.warn(`No brand resolved for site ${siteId} in org ${organizationId} for v2 BP schedule`);
         }

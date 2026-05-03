@@ -587,31 +587,36 @@ describe('Wikipedia Analysis Handler', () => {
       expect(context.log.error).to.have.been.calledWith('[Wikipedia] Failed to send Mystique message: SQS Error');
     });
 
-    it('should include scope fields when a brand is resolved', async () => {
-      const queryChain = {
-        from: sandbox.stub().returnsThis(),
+    // Helper: fresh PostgREST chain mock that resolves on the 3rd eq call (org, status, site_id)
+    function makeQueryChain(data) {
+      const chain = {
         select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub(),
+        eq: sandbox.stub().returnsThis(),
       };
-      queryChain.eq.onFirstCall().returns(queryChain);
-      queryChain.eq.onSecondCall().resolves({
-        data: [{ id: 'brand-1', site_id: 'brand-primary-site', brand_sites: [{ site_id: siteId }] }],
-      });
-      context.dataAccess.services = { postgrestClient: queryChain };
+      chain.eq.onThirdCall().resolves({ data });
+      return chain;
+    }
+
+    const wikiConfig = {
+      companyName: 'Example Corp',
+      companyWebsite: baseURL,
+      wikipediaUrl: 'https://en.wikipedia.org/wiki/Example_Corp',
+      competitors: [],
+      competitorRegion: null,
+    };
+
+    it('should include scope fields when brand is resolved via brand_sites join', async () => {
+      context.dataAccess.services = {
+        postgrestClient: {
+          from: sandbox.stub()
+            .onFirstCall().returns(makeQueryChain([]))
+            .onSecondCall().returns(makeQueryChain([{ id: 'brand-1' }])),
+        },
+      };
 
       const auditData = {
         siteId,
-        auditResult: {
-          success: true,
-          status: 'pending_analysis',
-          config: {
-            companyName: 'Example Corp',
-            companyWebsite: baseURL,
-            wikipediaUrl: 'https://en.wikipedia.org/wiki/Example_Corp',
-            competitors: [],
-            competitorRegion: null,
-          },
-        },
+        auditResult: { success: true, status: 'pending_analysis', config: wikiConfig },
       };
 
       const postProcessor = wikipediaAnalysisHandler.postProcessors[0];
@@ -627,29 +632,39 @@ describe('Wikipedia Analysis Handler', () => {
       );
     });
 
-    it('should omit scope fields and preserve siteId when no brand is resolved', async () => {
-      const queryChain = {
-        from: sandbox.stub().returnsThis(),
-        select: sandbox.stub().returnsThis(),
-        eq: sandbox.stub(),
+    it('should include scope fields when brand is resolved via direct baseSiteId match', async () => {
+      context.dataAccess.services = {
+        postgrestClient: {
+          from: sandbox.stub().returns(makeQueryChain([{ id: 'brand-8' }])),
+        },
       };
-      queryChain.eq.onFirstCall().returns(queryChain);
-      queryChain.eq.onSecondCall().resolves({ data: [] });
-      context.dataAccess.services = { postgrestClient: queryChain };
 
       const auditData = {
         siteId,
-        auditResult: {
-          success: true,
-          status: 'pending_analysis',
-          config: {
-            companyName: 'Example Corp',
-            companyWebsite: baseURL,
-            wikipediaUrl: 'https://en.wikipedia.org/wiki/Example_Corp',
-            competitors: [],
-            competitorRegion: null,
-          },
+        auditResult: { success: true, status: 'pending_analysis', config: wikiConfig },
+      };
+
+      const postProcessor = wikipediaAnalysisHandler.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.scopeType).to.equal('brand');
+      expect(sentMessage.scopeId).to.equal('brand-8');
+      expect(sentMessage.siteId).to.equal(siteId);
+    });
+
+    it('should omit scope fields and preserve siteId when no brand is resolved', async () => {
+      context.dataAccess.services = {
+        postgrestClient: {
+          from: sandbox.stub()
+            .onFirstCall().returns(makeQueryChain([]))
+            .onSecondCall().returns(makeQueryChain([])),
         },
+      };
+
+      const auditData = {
+        siteId,
+        auditResult: { success: true, status: 'pending_analysis', config: wikiConfig },
       };
 
       const postProcessor = wikipediaAnalysisHandler.postProcessors[0];
@@ -659,6 +674,33 @@ describe('Wikipedia Analysis Handler', () => {
       expect(sentMessage).to.not.have.property('scopeType');
       expect(sentMessage).to.not.have.property('scopeId');
       expect(sentMessage.siteId).to.equal(siteId);
+    });
+
+    it('should still send message without scope if brand resolution throws unexpectedly', async () => {
+      const faultySite = {
+        getId: sandbox.stub().returns(siteId),
+        getBaseURL: sandbox.stub().returns(baseURL),
+        getDeliveryType: sandbox.stub().returns('aem_edge'),
+        getOrganizationId: sandbox.stub().throws(new Error('getter failed')),
+      };
+      context.dataAccess.Site.findById.resolves(faultySite);
+
+      const auditData = {
+        siteId,
+        auditResult: { success: true, status: 'pending_analysis', config: wikiConfig },
+      };
+
+      const postProcessor = wikipediaAnalysisHandler.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage).to.not.have.property('scopeType');
+      expect(sentMessage).to.not.have.property('scopeId');
+      expect(sentMessage.siteId).to.equal(siteId);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Brand resolution failed unexpectedly/),
+      );
     });
   });
 

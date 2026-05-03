@@ -18,6 +18,7 @@ import sinonChai from 'sinon-chai';
 
 import {
   applyBrandScope,
+  BRAND_RESOLUTION_TIMEOUT_MS,
   findActiveBrandForSite,
   resolveBrandForSite,
 } from '../../src/utils/brand-resolver.js';
@@ -32,26 +33,53 @@ describe('brand-resolver', () => {
   const siteId = 'site-1';
   const orgId = 'org-1';
 
-  function buildContext({ brands, throws } = {}) {
-    const queryChain = {
-      from: sandbox.stub().returnsThis(),
+  /**
+   * Build a single PostgREST query chain mock that resolves (or rejects) on the
+   * third `.eq()` call (matching the new 3-eq query pattern: org, status, site_id).
+   */
+  function makeChain(resolveData, throwWith) {
+    const chain = {
       select: sandbox.stub().returnsThis(),
       eq: sandbox.stub().returnsThis(),
     };
-    const promise = throws
-      ? Promise.reject(throws)
-      : Promise.resolve({ data: brands });
-    queryChain.eq.onSecondCall().returns(promise);
+    if (throwWith) {
+      chain.eq.onThirdCall().rejects(throwWith);
+    } else {
+      chain.eq.onThirdCall().resolves({ data: resolveData });
+    }
+    return chain;
+  }
+
+  /**
+   * Build a full Lambda context with a PostgREST client mock that supports the
+   * two-query structure: directChain for Q1 (site_id match), joinChain for Q2
+   * (brand_sites join fallback).
+   *
+   * @param {object} opts
+   * @param {Array}  [opts.directBrands=[]] - rows returned by Q1 (direct site_id match)
+   * @param {Array}  [opts.joinBrands=[]]   - rows returned by Q2 (brand_sites join)
+   * @param {Error}  [opts.throws=null]     - if set, Q1 rejects with this error (Q2 never runs)
+   */
+  function buildContext({ directBrands = [], joinBrands = [], throws = null } = {}) {
+    const directChain = makeChain(throws ? null : directBrands, throws);
+    const joinChain = makeChain(joinBrands, null);
     return {
       log,
       dataAccess: {
         services: {
-          postgrestClient: queryChain,
+          postgrestClient: {
+            from: sandbox.stub()
+              .onFirstCall()
+              .returns(directChain)
+              .onSecondCall()
+              .returns(joinChain),
+          },
         },
       },
     };
   }
 
+  /** Return the last structured outcome log call across all log levels. */
   function lastOutcome() {
     const calls = [...log.info.getCalls(), ...log.warn.getCalls(), ...log.debug.getCalls()]
       .filter((c) => /\[brand-resolver\] outcome/.test(c.args[0] || ''));
@@ -80,11 +108,11 @@ describe('brand-resolver', () => {
     it('returns null and emits missing_input outcome at debug when context is missing', async () => {
       const result = await findActiveBrandForSite(undefined, { orgId, siteId });
       expect(result).to.be.null;
-      // No log available, so just verify the call doesn't throw and returns null.
+      // No log available; just verify the call doesn't throw and returns null.
     });
 
     it('returns null and logs missing_input at debug when orgId is missing', async () => {
-      const ctx = buildContext({ brands: [] });
+      const ctx = buildContext({ directBrands: [] });
       const result = await findActiveBrandForSite(ctx, { siteId });
 
       expect(result).to.be.null;
@@ -95,7 +123,7 @@ describe('brand-resolver', () => {
     });
 
     it('returns null and logs missing_input when params is omitted entirely', async () => {
-      const ctx = buildContext({ brands: [] });
+      const ctx = buildContext({ directBrands: [] });
       const result = await findActiveBrandForSite(ctx);
 
       expect(result).to.be.null;
@@ -103,27 +131,23 @@ describe('brand-resolver', () => {
       expect(call.args[1]).to.include({ result: 'missing_input' });
     });
 
-    it('returns null and logs no_client when postgrestClient is unavailable', async () => {
+    it('returns null and logs no_client at warn when postgrestClient is unavailable', async () => {
       const ctx = { log, dataAccess: { services: {} } };
 
       const result = await findActiveBrandForSite(ctx, { orgId, siteId });
 
       expect(result).to.be.null;
       const call = lastOutcome();
-      expect(call.proxy).to.equal(log.debug);
+      expect(call.proxy).to.equal(log.warn);
       expect(call.args[1]).to.include({ result: 'no_client', orgId, siteId });
     });
 
-    it('resolves brand via baseSiteId match and logs success at info', async () => {
-      const brands = [
-        { id: 'brand-other', site_id: 'other-site', brand_sites: [] },
-        { id: 'brand-1', site_id: siteId, brand_sites: [] },
-      ];
-      const ctx = buildContext({ brands });
+    it('resolves brand via direct baseSiteId match and logs success at info', async () => {
+      const ctx = buildContext({ directBrands: [{ id: 'brand-1' }] });
 
       const result = await findActiveBrandForSite(ctx, { orgId, siteId });
 
-      expect(result).to.deep.equal({ brandId: 'brand-1', via: 'baseSiteId' });
+      expect(result).to.deep.equal({ brandId: 'brand-1' });
       const call = lastOutcome();
       expect(call.proxy).to.equal(log.info);
       expect(call.args[1]).to.include({
@@ -132,28 +156,19 @@ describe('brand-resolver', () => {
       expect(call.args[1].durationMs).to.be.a('number');
     });
 
-    it('falls back to brand_sites join match when baseSiteId does not match', async () => {
-      const brands = [
-        {
-          id: 'brand-2',
-          site_id: 'primary-site',
-          brand_sites: [{ site_id: 'another' }, { site_id: siteId }],
-        },
-      ];
-      const ctx = buildContext({ brands });
+    it('falls back to brand_sites join match when no direct baseSiteId match exists', async () => {
+      const ctx = buildContext({ directBrands: [], joinBrands: [{ id: 'brand-2' }] });
 
       const result = await findActiveBrandForSite(ctx, { orgId, siteId });
 
-      expect(result).to.deep.equal({ brandId: 'brand-2', via: 'brand_sites' });
+      expect(result).to.deep.equal({ brandId: 'brand-2' });
       const call = lastOutcome();
-      expect(call.args[1]).to.include({ via: 'brand_sites' });
+      expect(call.proxy).to.equal(log.info);
+      expect(call.args[1]).to.include({ result: 'success', via: 'brand_sites' });
     });
 
-    it('returns null and logs no_match at info when no brand matches', async () => {
-      const brands = [
-        { id: 'brand-x', site_id: 'other-site', brand_sites: [{ site_id: 'unrelated' }] },
-      ];
-      const ctx = buildContext({ brands });
+    it('returns null and logs no_match at info when no brand matches either query', async () => {
+      const ctx = buildContext();
 
       const result = await findActiveBrandForSite(ctx, { orgId, siteId });
 
@@ -163,15 +178,15 @@ describe('brand-resolver', () => {
       expect(call.args[1]).to.include({ result: 'no_match' });
     });
 
-    it('handles undefined brands array gracefully', async () => {
-      const ctx = buildContext({ brands: undefined });
+    it('handles undefined data array from Q1 gracefully and falls through to Q2', async () => {
+      const ctx = buildContext({ directBrands: undefined, joinBrands: [] });
 
       const result = await findActiveBrandForSite(ctx, { orgId, siteId });
 
       expect(result).to.be.null;
     });
 
-    it('returns null and logs error at warn with errorName when query throws', async () => {
+    it('returns null and logs error at warn with errorName (not errorMessage) when query throws', async () => {
       const err = new Error('boom');
       err.name = 'PostgrestError';
       const ctx = buildContext({ throws: err });
@@ -181,19 +196,55 @@ describe('brand-resolver', () => {
       expect(result).to.be.null;
       const call = lastOutcome();
       expect(call.proxy).to.equal(log.warn);
-      expect(call.args[1]).to.include({
-        result: 'error', errorName: 'PostgrestError', errorMessage: 'boom',
-      });
-      expect(log.debug).to.have.been.calledWithMatch(/\[brand-resolver\] stack/);
+      expect(call.args[1]).to.include({ result: 'error', errorName: 'PostgrestError' });
+      // errorMessage must NOT appear in the warn payload (may contain DB internals)
+      expect(call.args[1]).to.not.have.property('errorMessage');
+      // but error detail (message + stack) must appear at debug level
+      expect(log.debug).to.have.been.calledWithMatch(/\[brand-resolver\] error detail/);
+      const debugCall = log.debug.getCalls().find((c) => /error detail/.test(c.args[0]));
+      expect(debugCall.args[1]).to.have.property('errorMessage', 'boom');
+    });
+
+    it('returns null and logs timeout at warn when query exceeds BRAND_RESOLUTION_TIMEOUT_MS', async () => {
+      const clock = sandbox.useFakeTimers();
+      const neverChain = {
+        select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub().returnsThis(),
+      };
+      // Third eq call returns a promise that never settles
+      neverChain.eq.onThirdCall().returns(new Promise(() => {}));
+
+      const ctx = {
+        log,
+        dataAccess: {
+          services: {
+            postgrestClient: { from: sandbox.stub().returns(neverChain) },
+          },
+        },
+      };
+
+      const resultP = findActiveBrandForSite(ctx, { orgId, siteId });
+      await clock.tickAsync(BRAND_RESOLUTION_TIMEOUT_MS + 1);
+      const result = await resultP;
+
+      expect(result).to.be.null;
+      const call = lastOutcome();
+      expect(call.proxy).to.equal(log.warn);
+      expect(call.args[1]).to.include({ result: 'timeout', orgId, siteId });
     });
 
     it('does not throw when log is missing across all outcomes', async () => {
-      // success path
-      const brands = [{ id: 'brand-z', site_id: siteId, brand_sites: [] }];
-      const okCtx = buildContext({ brands });
+      // success via direct match
+      const okCtx = buildContext({ directBrands: [{ id: 'brand-z' }] });
       delete okCtx.log;
       expect(await findActiveBrandForSite(okCtx, { orgId, siteId }))
-        .to.deep.equal({ brandId: 'brand-z', via: 'baseSiteId' });
+        .to.deep.equal({ brandId: 'brand-z' });
+
+      // success via brand_sites join
+      const joinCtx = buildContext({ joinBrands: [{ id: 'brand-j' }] });
+      delete joinCtx.log;
+      expect(await findActiveBrandForSite(joinCtx, { orgId, siteId }))
+        .to.deep.equal({ brandId: 'brand-j' });
 
       // error path
       const errCtx = buildContext({ throws: new Error('silent') });
@@ -201,7 +252,7 @@ describe('brand-resolver', () => {
       expect(await findActiveBrandForSite(errCtx, { orgId, siteId })).to.be.null;
 
       // missing_input path
-      const missCtx = buildContext({ brands: [] });
+      const missCtx = buildContext({ directBrands: [] });
       delete missCtx.log;
       expect(await findActiveBrandForSite(missCtx, { siteId })).to.be.null;
 
@@ -211,7 +262,7 @@ describe('brand-resolver', () => {
       ).to.be.null;
 
       // no_match path
-      const noMatchCtx = buildContext({ brands: [] });
+      const noMatchCtx = buildContext();
       delete noMatchCtx.log;
       expect(await findActiveBrandForSite(noMatchCtx, { orgId, siteId })).to.be.null;
     });
@@ -219,18 +270,17 @@ describe('brand-resolver', () => {
 
   describe('resolveBrandForSite', () => {
     it('delegates to findActiveBrandForSite using site getters', async () => {
-      const brands = [{ id: 'brand-1', site_id: siteId, brand_sites: [] }];
-      const ctx = buildContext({ brands });
+      const ctx = buildContext({ directBrands: [{ id: 'brand-1' }] });
 
       const result = await resolveBrandForSite(ctx, site);
 
-      expect(result).to.deep.equal({ brandId: 'brand-1', via: 'baseSiteId' });
+      expect(result).to.deep.equal({ brandId: 'brand-1' });
       expect(site.getId).to.have.been.called;
       expect(site.getOrganizationId).to.have.been.called;
     });
 
     it('returns null when site is missing (no getters)', async () => {
-      const result = await resolveBrandForSite(buildContext({ brands: [] }), undefined);
+      const result = await resolveBrandForSite(buildContext({ directBrands: [] }), undefined);
       expect(result).to.be.null;
     });
 
@@ -253,7 +303,13 @@ describe('brand-resolver', () => {
       expect(out).to.equal(message);
     });
 
-    it('adds scope fields and does NOT mutate siteId when brand is provided', () => {
+    it('returns the message unchanged when brand has no brandId', () => {
+      const message = { type: 't', siteId: 'orig' };
+      const out = applyBrandScope(message, { someOtherField: 'x' });
+      expect(out).to.equal(message);
+    });
+
+    it('adds scope fields, does NOT mutate siteId, and does not mutate the original message', () => {
       const message = { type: 't', siteId: 'orig-site', data: { foo: 1 } };
       const out = applyBrandScope(message, { brandId: 'b-1' });
 
@@ -267,6 +323,12 @@ describe('brand-resolver', () => {
       });
       // original message untouched
       expect(message).to.deep.equal({ type: 't', siteId: 'orig-site', data: { foo: 1 } });
+    });
+
+    it('sets scopeType to the exact string "brand"', () => {
+      const out = applyBrandScope({ type: 't', siteId: 's' }, { brandId: 'b-2' });
+      expect(out.scopeType).to.equal('brand');
+      expect(out.scopeId).to.equal('b-2');
     });
   });
 });

@@ -1582,12 +1582,12 @@ describe('LLMO Customer Analysis Handler', () => {
         json: async () => ({}),
       });
 
-      // Chain the eq calls and resolve with matching brand
+      // Q1 direct match: site_id = 'site-123' → brand-uuid-1 returned immediately
       const brandsQuery = {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({
-              data: [{ id: 'brand-uuid-1', site_id: 'site-123', brand_sites: [{ site_id: 'site-123' }] }],
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().resolves({ data: [{ id: 'brand-uuid-1' }] }),
             }),
           }),
         }),
@@ -1648,17 +1648,27 @@ describe('LLMO Customer Analysis Handler', () => {
         json: async () => ({}),
       });
 
-      const brandsQuery = {
+      // Q1 direct: no direct site_id match; Q2 brand_sites join returns brand-fb
+      const directQuery = {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({
-              data: [{ id: 'brand-fb', site_id: null, brand_sites: [{ site_id: 'site-123' }] }],
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().resolves({ data: [] }),
+            }),
+          }),
+        }),
+      };
+      const joinQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().resolves({ data: [{ id: 'brand-fb' }] }),
             }),
           }),
         }),
       };
       context.dataAccess.services = {
-        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+        postgrestClient: { from: sandbox.stub().onFirstCall().returns(directQuery).onSecondCall().returns(joinQuery) },
       };
 
       await mockHandler.runLlmoCustomerAnalysis('https://example.com', context, site, auditContext);
@@ -1689,18 +1699,27 @@ describe('LLMO Customer Analysis Handler', () => {
         json: async () => ({}),
       });
 
-      // Return brands without brand_sites property
-      const brandsQuery = {
+      // Both queries return empty: no direct match, no brand_sites match
+      const directQuery = {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({
-              data: [{ id: 'brand-no-sites', site_id: null }],
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().resolves({ data: [] }),
+            }),
+          }),
+        }),
+      };
+      const joinQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().resolves({ data: [] }),
             }),
           }),
         }),
       };
       context.dataAccess.services = {
-        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+        postgrestClient: { from: sandbox.stub().onFirstCall().returns(directQuery).onSecondCall().returns(joinQuery) },
       };
 
       await mockHandler.runLlmoCustomerAnalysis('https://example.com', context, site, auditContext);
@@ -1730,17 +1749,27 @@ describe('LLMO Customer Analysis Handler', () => {
         json: async () => ({}),
       });
 
-      const brandsQuery = {
+      // Server-side filtering: 'other-site' doesn't match siteId 'site-123' — both queries empty
+      const directQuery = {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({
-              data: [{ id: 'brand-other', site_id: 'other-site', brand_sites: [{ site_id: 'other-site' }] }],
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().resolves({ data: [] }),
+            }),
+          }),
+        }),
+      };
+      const joinQuery = {
+        select: sandbox.stub().returns({
+          eq: sandbox.stub().returns({
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().resolves({ data: [] }),
             }),
           }),
         }),
       };
       context.dataAccess.services = {
-        postgrestClient: { from: sandbox.stub().returns(brandsQuery) },
+        postgrestClient: { from: sandbox.stub().onFirstCall().returns(directQuery).onSecondCall().returns(joinQuery) },
       };
 
       await mockHandler.runLlmoCustomerAnalysis(
@@ -1777,16 +1806,12 @@ describe('LLMO Customer Analysis Handler', () => {
         json: async () => ({}),
       });
 
-      // Two brands: one with baseSiteId (site_id) match, one with only brand_sites match.
-      // The baseSiteId match should be preferred (it has the correct base URL).
+      // Q1 direct: filters by site_id='site-123' server-side → only brand-base returned (Q2 never called)
       const brandsQuery = {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
-            eq: sandbox.stub().resolves({
-              data: [
-                { id: 'brand-sub', site_id: null, brand_sites: [{ site_id: 'site-123' }] },
-                { id: 'brand-base', site_id: 'site-123', brand_sites: [{ site_id: 'site-123' }] },
-              ],
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().resolves({ data: [{ id: 'brand-base' }] }),
             }),
           }),
         }),
@@ -1834,11 +1859,13 @@ describe('LLMO Customer Analysis Handler', () => {
         json: async () => ({}),
       });
 
-      // Mock postgrestClient that throws
+      // Mock postgrestClient that throws on 3rd eq (matching new 3-eq query pattern)
       const brandsQuery = {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
-            eq: sandbox.stub().rejects(new Error('DB error')),
+            eq: sandbox.stub().returns({
+              eq: sandbox.stub().rejects(new Error('DB error')),
+            }),
           }),
         }),
       };

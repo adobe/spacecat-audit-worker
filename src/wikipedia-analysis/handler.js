@@ -309,7 +309,12 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       },
     };
 
-    const brand = await resolveBrandForSite(context, site);
+    let brand = null;
+    try {
+      brand = await resolveBrandForSite(context, site);
+    } catch (brandError) {
+      log.warn(`${LOG_PREFIX} Brand resolution failed unexpectedly; proceeding without scope: ${brandError.message}`);
+    }
     const message = applyBrandScope(baseMessage, brand);
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
