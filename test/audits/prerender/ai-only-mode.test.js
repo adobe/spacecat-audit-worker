@@ -738,6 +738,161 @@ describe('Prerender AI-Only Mode', () => {
     });
   });
 
+  describe('generatePrompts flag in SQS payload', () => {
+    it('should include generatePrompts:false in SQS message by default', async () => {
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.generatePrompts).to.equal(false);
+    });
+
+    it('should include generatePrompts:true in SQS message when flag is set', async () => {
+      context.data = JSON.stringify({
+        mode: 'ai-only',
+        scrapeJobId: 'test-scrape-job',
+        generatePrompts: true,
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.generatePrompts).to.equal(true);
+    });
+
+    it('should treat generatePrompts as truthy when provided as string "true"', async () => {
+      // The Slack keyword parser passes values as strings (generatePrompts:true → "true")
+      context.data = JSON.stringify({
+        mode: 'ai-only',
+        scrapeJobId: 'test-scrape-job',
+        generatePrompts: 'true',
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      // !!parsedData.generatePrompts → !!'true' → true
+      expect(message.data.generatePrompts).to.equal(true);
+    });
+  });
+
+  describe('hasPrompts flag per suggestion in SQS payload', () => {
+    it('should set hasPrompts:false for suggestions without existing prompts', async () => {
+      // Default mock suggestions have no prompts field
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      message.data.suggestions.forEach((s) => {
+        expect(s.hasPrompts).to.equal(false);
+      });
+    });
+
+    it('should set hasPrompts:true for suggestions that already have prompts', async () => {
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        scrapeJobId: 'test-scrape-job',
+        prompts: [{ question: 'What is prerendering?', category: 'SEO' }],
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      const s1 = message.data.suggestions.find((s) => s.url === 'https://example.com/page1');
+      const s2 = message.data.suggestions.find((s) => s.url === 'https://example.com/page2');
+      expect(s1.hasPrompts).to.equal(true);
+      expect(s2.hasPrompts).to.equal(false);
+    });
+
+    it('should set hasPrompts:false for suggestions with empty prompts array', async () => {
+      mockSuggestions[0].getData.returns({
+        url: 'https://example.com/page1',
+        isDomainWide: false,
+        scrapeJobId: 'test-scrape-job',
+        prompts: [], // Empty — no prompts yet
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      const s1 = message.data.suggestions.find((s) => s.url === 'https://example.com/page1');
+      expect(s1.hasPrompts).to.equal(false);
+    });
+  });
+
+  describe('LLMO config in SQS payload', () => {
+    it('should include empty LLMO arrays when site has no LLMO config', async () => {
+      // Default mock site has no getConfig method
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.llmoCategories).to.deep.equal([]);
+      expect(message.data.llmoTopics).to.deep.equal([]);
+      expect(message.data.llmoRegions).to.deep.equal([]);
+    });
+
+    it('should populate LLMO arrays from site config when available', async () => {
+      context.site.getConfig = sandbox.stub().returns({
+        getLlmoConfig: sandbox.stub().returns({
+          categories: {
+            cat1: { name: 'Technology', region: ['US', 'EU'] },
+            cat2: { name: 'Business', region: 'APAC' },
+          },
+          topics: {
+            t1: { name: 'SEO Basics' },
+          },
+          aiTopics: {
+            t2: { name: 'Advanced SEO' },
+          },
+        }),
+      });
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.llmoCategories).to.include('Technology');
+      expect(message.data.llmoCategories).to.include('Business');
+      expect(message.data.llmoTopics).to.include('SEO Basics');
+      expect(message.data.llmoTopics).to.include('Advanced SEO');
+      expect(message.data.llmoRegions).to.include('US');
+      expect(message.data.llmoRegions).to.include('EU');
+      expect(message.data.llmoRegions).to.include('APAC');
+    });
+
+    it('should gracefully handle errors reading LLMO config and default to empty arrays', async () => {
+      context.site.getConfig = sandbox.stub().throws(new Error('Config not available'));
+
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.llmoCategories).to.deep.equal([]);
+      expect(message.data.llmoTopics).to.deep.equal([]);
+      expect(message.data.llmoRegions).to.deep.equal([]);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to read LLMO config/),
+      );
+    });
+  });
+
+  describe('batchIndex and totalBatches in SQS payload', () => {
+    it('should include batchIndex:0 and totalBatches:1 in SQS message', async () => {
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.data.batchIndex).to.equal(0);
+      expect(message.data.totalBatches).to.equal(1);
+    });
+  });
+
   describe('sendPrerenderGuidanceRequestToMystique error handling', () => {
     it('should return success with 0 suggestions when SQS sendMessage fails', async () => {
       // sendPrerenderGuidanceRequestToMystique catches errors and returns 0

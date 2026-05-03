@@ -515,12 +515,19 @@ async function fetchLatestScrapeJobId(siteId, context) {
  * @param {Object} opportunity - The prerender opportunity entity
  * @param {Object} context - Processing context
  * @param {Array|null} [preBuiltCandidates] - Pre-built candidate objects for normal audit runs.
+ * @param {boolean} [generatePrompts] - Whether to generate RCV prompts for the suggestions.
  *   Each entry is { suggestionId, url, originalHtmlMarkdownKey, markdownDiffKey }.
  *   When null/omitted, candidates are derived from all DB suggestions (ai-only mode).
  * @returns {Promise<number>} - Number of suggestions sent to Mystique
  */
-// eslint-disable-next-line max-len
-async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, opportunity, context, preBuiltCandidates) {
+async function sendPrerenderGuidanceRequestToMystique(
+  auditUrl,
+  auditData,
+  opportunity,
+  context,
+  preBuiltCandidates,
+  generatePrompts = false,
+) {
   const {
     log, sqs, env, site,
   } = context;
@@ -610,6 +617,8 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
           url: data.url,
           originalHtmlMarkdownKey: getS3Path(data.url, effectiveScrapeJobId, 'server-side-html.md'),
           markdownDiffKey: getS3Path(data.url, effectiveScrapeJobId, 'markdown-diff.md'),
+          // Signal whether this suggestion already has prompts so Mystique can skip re-generation
+          hasPrompts: Array.isArray(data.prompts) && data.prompts.length > 0,
         });
       });
 
@@ -620,6 +629,36 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
       log.info(`${LOG_PREFIX} No eligible suggestions to send to Mystique for opportunityId=${opportunityId}. baseUrl=${baseUrl}, siteId=${siteId}`);
       return 0;
     }
+
+    // Send LLMO site config category/topic/region names to Mystique for prompt classification.
+    // Mirrors how the rcv-prompts utility injects llmoCategoryNames/llmoTopicNames/llmoRegionNames.
+    // Gracefully degrades to empty arrays if config is unavailable.
+    let llmoCategories = [];
+    let llmoTopics = [];
+    let llmoRegions = [];
+    /* c8 ignore start - LLMO config read is best-effort; tested separately */
+    try {
+      const llmoCfg = site?.getConfig?.()?.getLlmoConfig?.();
+      if (llmoCfg) {
+        llmoCategories = Object.values(llmoCfg.categories || {})
+          .map((c) => c.name).filter(Boolean);
+        const allTopics = { ...llmoCfg.topics, ...llmoCfg.aiTopics };
+        llmoTopics = Object.values(allTopics).map((t) => t.name).filter(Boolean);
+        const regionSet = new Set();
+        Object.values(llmoCfg.categories || {}).forEach((cat) => {
+          if (Array.isArray(cat.region)) {
+            cat.region.forEach((r) => regionSet.add(r));
+          } else if (cat.region) {
+            regionSet.add(cat.region);
+          }
+        });
+        llmoRegions = [...regionSet];
+        log.debug(`${LOG_PREFIX} Loaded LLMO config: ${llmoCategories.length} categories, ${llmoTopics.length} topics, ${llmoRegions.length} regions. baseUrl=${baseUrl}`);
+      }
+    } catch (llmoErr) {
+      log.warn(`${LOG_PREFIX} Failed to read LLMO config for prompt classification (non-fatal): ${llmoErr.message}. baseUrl=${baseUrl}`);
+    }
+    /* c8 ignore stop */
 
     const deliveryType = site?.getDeliveryType?.() || 'unknown';
 
@@ -641,6 +680,10 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
         suggestions: firstBatch,
         batchIndex: 0,
         totalBatches: 1,
+        generatePrompts,
+        llmoCategories,
+        llmoTopics,
+        llmoRegions,
       },
     });
 
@@ -670,14 +713,16 @@ export async function handleAiOnlyMode(context) {
   const siteId = site.getId();
   const baseUrl = site.getBaseURL();
 
-  // Parse optional params from data field (opportunityId, scrapeJobId)
+  // Parse optional params from data field (opportunityId, scrapeJobId, generatePrompts)
   let opportunityId = null;
   let scrapeJobId = null;
+  let generatePrompts = false;
   if (data) {
     try {
       const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
       opportunityId = parsedData.opportunityId;
       scrapeJobId = parsedData.scrapeJobId;
+      generatePrompts = !!parsedData.generatePrompts;
     } catch (e) {
       // Ignore parse errors - graceful degradation for malformed JSON
     }
@@ -760,6 +805,8 @@ export async function handleAiOnlyMode(context) {
     auditData,
     opportunity,
     context,
+    null, // preBuiltCandidates — build from DB suggestions in ai-only mode
+    generatePrompts,
   );
 
   log.info(`${LOG_PREFIX} ai-only: Successfully queued AI summary request for ${suggestionCount} suggestion(s). baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunity.getId()}`);
