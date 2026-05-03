@@ -48,14 +48,12 @@ describe('AccessibilityCodeFixHandler', () => {
       getId: sandbox.stub().returns('opportunity-123'),
       getSiteId: sandbox.stub().returns('site-123'),
       getSuggestions: sandbox.stub().resolves([mockSuggestion]),
+      addFixEntities: sandbox.stub().resolves({ createdItems: [], errorItems: [] }),
     };
 
     mockDataAccess = {
       Opportunity: {
         findById: sandbox.stub().resolves(mockOpportunity),
-      },
-      Suggestion: {
-        saveMany: sandbox.stub().resolves(),
       },
     };
 
@@ -136,19 +134,14 @@ describe('AccessibilityCodeFixHandler', () => {
       const result = await handler.default(validMessage, context);
 
       expect(result.status).to.equal(200);
-      expect(mockSuggestion.setData).to.have.been.calledWith({
-        url: 'https://example.com/contact',
-        source: 'form',
-        issues: [{
-          type: 'button-name',
-          htmlWithIssues: [{
-            target_selector: 'button.submit',
-          }],
-        }],
-        patchContent: 'mock diff content',
-        isCodeChangeAvailable: false,
-      });
-      expect(mockDataAccess.Suggestion.saveMany).to.have.been.called;
+      expect(mockOpportunity.addFixEntities).to.have.been.calledOnce;
+      const fixEntities = mockOpportunity.addFixEntities.firstCall.args[0];
+      expect(fixEntities).to.have.lengthOf(1);
+      expect(fixEntities[0].type).to.equal('CODE_CHANGE');
+      expect(fixEntities[0].status).to.equal('PENDING');
+      expect(fixEntities[0].changeDetails.patchContent).to.equal('mock diff content');
+      expect(fixEntities[0].changeDetails.aggregationKey).to.equal('https://example.com/contact|button-name|form');
+      expect(fixEntities[0].suggestions).to.deep.equal(['suggestion-123']);
     });
 
     it('should return badRequest when no data provided', async () => {
@@ -355,8 +348,7 @@ describe('AccessibilityCodeFixHandler', () => {
       const result = await handler.default(validMessage, context);
 
       expect(result.status).to.equal(200);
-      expect(mockSuggestion.setData).not.to.have.been.called;
-      expect(mockSuggestion.save).not.to.have.been.called;
+      expect(mockOpportunity.addFixEntities).not.to.have.been.called;
     });
 
     it('should not update suggestions without diff content', async () => {
@@ -388,10 +380,10 @@ describe('AccessibilityCodeFixHandler', () => {
       const result = await handler.default(validMessage, context);
 
       expect(result.status).to.equal(200);
-      expect(mockSuggestion.setData).not.to.have.been.called;
+      expect(mockOpportunity.addFixEntities).not.to.have.been.called;
     });
 
-    it('should handle suggestion save errors', async () => {
+    it('should handle addFixEntities errors', async () => {
       const mockReportData = {
         diff: 'mock diff content',
       };
@@ -408,8 +400,8 @@ describe('AccessibilityCodeFixHandler', () => {
       };
 
       mockSuggestion.getData.returns(suggestionData);
-      // Suggestion.saveMany rejects to simulate batch save failure
-      mockDataAccess.Suggestion.saveMany.rejects(new Error('Save failed'));
+      // addFixEntities rejects to simulate batch creation failure
+      mockOpportunity.addFixEntities.rejects(new Error('Fix entity creation failed'));
       getObjectFromKeyStub.resolves(mockReportData);
 
       const handler = await esmock('../../../../src/common/codefix-response-handler.js', {
@@ -428,12 +420,12 @@ describe('AccessibilityCodeFixHandler', () => {
       );
     });
 
-    it('should handle errors in updateSuggestionsWithCodeChange when getData throws', async () => {
+    it('should skip individual suggestions that throw errors during matching', async () => {
       const mockReportData = {
         diff: 'mock diff content',
       };
 
-      // Make getData throw to trigger the catch block in updateSuggestionsWithCodeChange
+      // Make getData throw to trigger the per-suggestion catch in findMatchingSuggestions
       mockSuggestion.getData.throws(new Error('getData exploded'));
       getObjectFromKeyStub.resolves(mockReportData);
 
@@ -447,10 +439,12 @@ describe('AccessibilityCodeFixHandler', () => {
 
       const result = await handler.default(validMessage, context);
 
-      expect(result.status).to.equal(500);
-      expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Error updating suggestions with code change/),
+      // Should succeed — the bad suggestion is skipped, no fix entities created
+      expect(result.status).to.equal(200);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Error matching suggestion/),
       );
+      expect(mockOpportunity.addFixEntities).not.to.have.been.called;
     });
 
     it('should handle processing errors gracefully', async () => {
@@ -615,7 +609,7 @@ describe('AccessibilityCodeFixHandler', () => {
       const result = await handler.default(messageWithoutSource, context);
 
       expect(result.status).to.equal(200);
-      expect(mockSuggestion.setData).to.have.been.called;
+      expect(mockOpportunity.addFixEntities).to.have.been.calledOnce;
     });
 
     it('should use provided code_fix_path and code_fix_bucket when available', async () => {
@@ -670,7 +664,7 @@ describe('AccessibilityCodeFixHandler', () => {
         'custom/path/to/report.json',
         sinon.match.any,
       );
-      expect(mockSuggestion.setData).to.have.been.called;
+      expect(mockOpportunity.addFixEntities).to.have.been.calledOnce;
     });
 
     it('should support old format with type array (backwards compatible)', async () => {
@@ -712,7 +706,11 @@ describe('AccessibilityCodeFixHandler', () => {
       const result = await handler.default(messageOldFormat, context);
 
       expect(result.status).to.equal(200);
-      expect(mockSuggestion.setData).to.have.been.called;
+      expect(mockOpportunity.addFixEntities).to.have.been.calledOnce;
+      const fixEntities = mockOpportunity.addFixEntities.firstCall.args[0];
+      expect(fixEntities[0].type).to.equal('CODE_CHANGE');
+      expect(fixEntities[0].changeDetails.patchContent).to.equal('mock diff content');
+      expect(fixEntities[0].changeDetails.ruleId).to.equal('color-contrast');
     });
 
     it('should work without source parameter for old format', async () => {
@@ -753,8 +751,8 @@ describe('AccessibilityCodeFixHandler', () => {
       const result = await handler.default(messageOldFormatNoSource, context);
 
       expect(result.status).to.equal(200);
-      expect(mockSuggestion.setData).to.have.been.called;
-      
+      expect(mockOpportunity.addFixEntities).to.have.been.calledOnce;
+
       // Verify S3 call arguments
       const callArgs = getObjectFromKeyStub.firstCall.args;
       expect(callArgs[1]).to.equal('test-mystique-bucket');
@@ -818,8 +816,9 @@ describe('AccessibilityCodeFixHandler', () => {
 
       expect(result.status).to.equal(200);
       expect(getObjectFromKeyStub).to.have.been.calledTwice;
-      expect(mockSuggestion.setData).to.have.been.called;
-      expect(mockSuggestion2.setData).to.have.been.called;
+      expect(mockOpportunity.addFixEntities).to.have.been.calledOnce;
+      const fixEntities = mockOpportunity.addFixEntities.firstCall.args[0];
+      expect(fixEntities).to.have.lengthOf(2);
     });
 
     it('should prefer aggregation_key over type array when both present', async () => {
@@ -867,7 +866,7 @@ describe('AccessibilityCodeFixHandler', () => {
       const result = await handler.default(messageBothFormats, context);
 
       expect(result.status).to.equal(200);
-      expect(mockSuggestion.setData).to.have.been.called;
+      expect(mockOpportunity.addFixEntities).to.have.been.calledOnce;
       // Should only be called once for aggregation_key, not for type array
       expect(getObjectFromKeyStub).to.have.been.calledOnce;
     });
@@ -972,20 +971,11 @@ describe('AccessibilityCodeFixHandler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(200);
-      // JSON string should be parsed and suggestion should be updated
-      expect(mockSuggestion.setData).to.have.been.calledWith({
-        url: 'https://example.com/contact',
-        source: 'form',
-        issues: [{
-          type: 'button-name',
-          htmlWithIssues: [{
-            target_selector: 'button.submit',
-          }],
-        }],
-        patchContent: mockDiffContent,
-        isCodeChangeAvailable: false,
-      });
-      expect(mockDataAccess.Suggestion.saveMany).to.have.been.called;
+      // JSON string should be parsed and FixEntity should be created
+      expect(mockOpportunity.addFixEntities).to.have.been.calledOnce;
+      const fixEntities = mockOpportunity.addFixEntities.firstCall.args[0];
+      expect(fixEntities[0].changeDetails.patchContent).to.equal(mockDiffContent);
+      expect(fixEntities[0].suggestions).to.deep.equal(['suggestion-123']);
     });
 
     it('should update multiple suggestions with same aggregation_key', async () => {
@@ -1061,32 +1051,16 @@ describe('AccessibilityCodeFixHandler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(200);
-      // Both suggestions should be updated
-      expect(mockSuggestion.setData).to.have.been.calledWith({
-        url: 'https://example.com/page1',
-        source: 'form1',
-        issues: [{
-          type: 'aria-prohibited-attr',
-          htmlWithIssues: [{
-            target_selector: 'div[aria-hidden]',
-          }],
-        }],
-        patchContent: 'mock diff content for aria-prohibited-attr',
-        isCodeChangeAvailable: false,
-      });
-      expect(mockSuggestion2.setData).to.have.been.calledWith({
-        url: 'https://example.com/page2',
-        source: 'form2',
-        issues: [{
-          type: 'aria-prohibited-attr',
-          htmlWithIssues: [{
-            target_selector: 'span.label',
-          }],
-        }],
-        patchContent: 'mock diff content for aria-prohibited-attr',
-        isCodeChangeAvailable: false,
-      });
-      expect(mockDataAccess.Suggestion.saveMany).to.have.been.called;
+      // Both suggestions should be linked to fix entities
+      expect(mockOpportunity.addFixEntities).to.have.been.calledOnce;
+      const fixEntities = mockOpportunity.addFixEntities.firstCall.args[0];
+      // Two updates with same PER_TYPE aggregation_key each match both suggestions
+      expect(fixEntities).to.have.lengthOf(2);
+      expect(fixEntities[0].changeDetails.patchContent).to.equal('mock diff content for aria-prohibited-attr');
+      expect(fixEntities[0].suggestions).to.include('suggestion-123');
+      expect(fixEntities[0].suggestions).to.include('suggestion-456');
+      expect(fixEntities[1].suggestions).to.include('suggestion-123');
+      expect(fixEntities[1].suggestions).to.include('suggestion-456');
     });
 
     it('should throw CodeFixConfigurationError when S3_MYSTIQUE_BUCKET_NAME is not set (new format)', async () => {
