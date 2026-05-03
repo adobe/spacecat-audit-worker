@@ -16,6 +16,7 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
+import { DataAccessError } from '@adobe/spacecat-shared-data-access';
 import {
   isAuditEnabledForSite,
   loadExistingAudit,
@@ -284,13 +285,102 @@ describe('Audit Utils Tests', () => {
       expect(result).to.be.true;
     });
 
-    it('handles critical error in checkProductCodeEntitlements and returns false', async () => {
+    it('handles critical error in checkProductCodeEntitlements and throws', async () => {
       // Mock Promise.all to throw an error to trigger the outer try-catch block
       sandbox.stub(Promise, 'all').throws(new Error('Critical Promise.all error'));
 
-      const result = await checkProductCodeEntitlements(['ASO', 'LLMO'], site, context);
+      await expect(checkProductCodeEntitlements(['ASO', 'LLMO'], site, context))
+        .to.be.rejectedWith('Critical Promise.all error');
+      expect(context.log.error).to.have.been.calledWith('Error in entitlement check, job will retry:', sinon.match.instanceOf(Error));
+    });
+
+    it('throws when PGRST003 database timeout occurs', async () => {
+      const pgrstError = {
+        code: 'PGRST003',
+        message: 'Timed out acquiring connection from connection pool',
+      };
+      const dbError = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, pgrstError);
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().rejects(dbError),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      await expect(checkProductCodeEntitlements(['ASO'], site, context))
+        .to.be.rejectedWith('Transient entitlement check error for ASO');
+      expect(context.log.error).to.have.been.calledWith(
+        'Transient error checking entitlement for product ASO, will retry:',
+        dbError,
+      );
+    });
+
+    it('throws when connection timeout occurs', async () => {
+      const networkCause = { code: 'ETIMEDOUT', message: 'Connection timed out' };
+      const timeoutError = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, networkCause);
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().rejects(timeoutError),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      await expect(checkProductCodeEntitlements(['ASO'], site, context))
+        .to.be.rejectedWith('Transient entitlement check error for ASO');
+    });
+
+    it('throws when network error occurs', async () => {
+      const networkCause = { message: 'Network error occurred' };
+      const networkError = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, networkCause);
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().rejects(networkError),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      await expect(checkProductCodeEntitlements(['ASO'], site, context))
+        .to.be.rejectedWith('Transient entitlement check error for ASO');
+    });
+
+    it('returns false when permanent error (404) occurs', async () => {
+      const httpCause = { statusCode: 404, message: 'Not Found' };
+      const notFoundError = new DataAccessError('Failed to query', { entityName: 'Entitlement' }, httpCause);
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().rejects(notFoundError),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const result = await checkProductCodeEntitlements(['ASO'], site, context);
       expect(result).to.be.false;
-      expect(context.log.error).to.have.been.calledWith('Error checking product code entitlements:', sinon.match.instanceOf(Error));
+      expect(context.log.warn).to.have.been.calledWith(
+        'Site not entitled for product code ASO:',
+        notFoundError,
+      );
+    });
+
+    it('throws immediately when transient error occurs even with multiple product codes', async () => {
+      const dbError = new Error('Connection pool exhausted');
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub()
+          .onFirstCall()
+          .rejects(dbError)
+          .onSecondCall()
+          .resolves({ siteEnrollment: mockSiteEnrollment }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      await expect(checkProductCodeEntitlements(['ASO', 'LLMO'], site, context))
+        .to.be.rejectedWith('Transient entitlement check error for ASO');
+    });
+
+    it('returns true when one product has permanent error but another succeeds', async () => {
+      const notFoundError = new Error('Not enrolled');
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub()
+          .onFirstCall()
+          .rejects(notFoundError)
+          .onSecondCall()
+          .resolves({ siteEnrollment: mockSiteEnrollment }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const result = await checkProductCodeEntitlements(['ASO', 'LLMO'], site, context);
+      expect(result).to.be.true;
     });
   });
 
