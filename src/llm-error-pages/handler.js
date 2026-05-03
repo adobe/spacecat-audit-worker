@@ -21,6 +21,8 @@ import {
   consolidateErrorsByUrl,
   sortErrorsByTrafficVolume,
   categorizeErrorsByStatusCode,
+  groupErrorsByUrl,
+  parsePeriodIdentifier,
   SPREADSHEET_COLUMNS,
   toPathOnly,
 } from './utils.js';
@@ -29,8 +31,22 @@ import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-upl
 import { validateCountryCode } from '../cdn-logs-report/utils/report-utils.js';
 import { buildSiteFilters, getS3Config, getCdnAwsRuntime } from '../utils/cdn-utils.js';
 import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { syncSuggestions } from '../utils/data-access.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
+
+const STATUS_BUCKETS = [
+  { code: 404, auditType: 'llm-error-pages-404', suggestionType: 'REDIRECT_UPDATE' },
+  { code: 403, auditType: 'llm-error-pages-403', suggestionType: 'CODE_CHANGE' },
+  { code: '5xx', auditType: 'llm-error-pages-5xx', suggestionType: 'CODE_CHANGE' },
+];
+
+const RETENTION_WEEKS = 4;
+const RETENTION_MS = RETENTION_WEEKS * 7 * 24 * 60 * 60 * 1000;
+
+const TOP_404_LIMIT = 50;
 
 /**
  * Step 1: Import top pages and submit for scraping
@@ -230,13 +246,142 @@ export async function runAuditAndSendToMystique(context) {
           log.info(`[LLM-ERROR-PAGES] Uploaded Excel for ${code}: ${filename} (${sorted.length} rows)`);
         };
 
-        await Promise.all([
-          writeCategoryExcel('404', categorizedResults[404]?.slice(0, 50)),
-          writeCategoryExcel('403', categorizedResults[403]),
-          writeCategoryExcel('5xx', categorizedResults['5xx']),
-        ]);
+        try {
+          await Promise.all([
+            writeCategoryExcel('404', categorizedResults[404]?.slice(0, TOP_404_LIMIT)),
+            writeCategoryExcel('403', categorizedResults[403]),
+            writeCategoryExcel('5xx', categorizedResults['5xx']),
+          ]);
+        } catch (excelError) {
+          log.error('[LLM-ERROR-PAGES] Excel write failed', {
+            err: excelError.message,
+            stack: excelError.stack,
+            siteId: site.getId(),
+            periodIdentifier,
+          });
+        }
 
         log.info(`[LLM-ERROR-PAGES] Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
+
+        const opportunityMap = {};
+        const { Suggestion, Opportunity } = dataAccess;
+        const retentionCutoff = new Date(Date.now() - RETENTION_MS);
+        let existingOpportunities = [];
+        try {
+          existingOpportunities = await Opportunity.allBySiteIdAndStatus(site.getId(), 'NEW');
+        } catch (preFetchError) {
+          log.error('[LLM-ERROR-PAGES] Failed to pre-fetch opportunities', {
+            err: preFetchError.message,
+            stack: preFetchError.stack,
+            siteId: site.getId(),
+            periodIdentifier,
+          });
+        }
+
+        await Promise.allSettled(STATUS_BUCKETS.map(async ({ code, auditType, suggestionType }) => {
+          try {
+            const rawAll = categorizedResults[code] || [];
+            const rawErrors = code === 404 ? rawAll.slice(0, TOP_404_LIMIT) : rawAll;
+            let existingSuggestions = [];
+            let scrapedUrls = new Set();
+
+            if (rawErrors.length > 0) {
+              const groupedErrors = groupErrorsByUrl(rawErrors);
+              scrapedUrls = new Set(groupedErrors.map((e) => e.url));
+
+              const opportunity = await convertToOpportunity(
+                url,
+                { siteId: site.getId(), auditId: audit.getId(), id: audit.getId() },
+                context,
+                createOpportunityData,
+                auditType,
+                { statusCode: code, totalErrors: groupedErrors.length },
+              );
+
+              opportunityMap[code] = opportunity;
+              existingSuggestions = await opportunity.getSuggestions();
+
+              await syncSuggestions({
+                opportunity,
+                newData: groupedErrors,
+                buildKey: (error) => `${auditType}::${error.url}`,
+                context,
+                log,
+                existingSuggestions,
+                scrapedUrlsSet: scrapedUrls,
+                mergeDataFunction: (existingData, newDataItem) => ({
+                  ...existingData,
+                  hitCount: newDataItem.hitCount,
+                  agentTypes: newDataItem.agentTypes,
+                  userAgents: newDataItem.userAgents,
+                  avgTtfb: newDataItem.avgTtfb,
+                  countryCode: newDataItem.countryCode,
+                  product: newDataItem.product,
+                  category: newDataItem.category,
+                  periodIdentifier,
+                  ...(existingData.suggestedUrls && { suggestedUrls: existingData.suggestedUrls }),
+                  ...(existingData.aiRationale && { aiRationale: existingData.aiRationale }),
+                  ...(existingData.confidenceScore !== undefined && {
+                    confidenceScore: existingData.confidenceScore,
+                  }),
+                }),
+                mapNewSuggestion: (error) => ({
+                  opportunityId: opportunity.getId(),
+                  type: suggestionType,
+                  rank: error.hitCount,
+                  data: {
+                    url: error.url,
+                    httpStatus: error.httpStatus,
+                    agentTypes: error.agentTypes,
+                    userAgents: error.userAgents,
+                    hitCount: error.hitCount,
+                    avgTtfb: error.avgTtfb,
+                    countryCode: error.countryCode,
+                    product: error.product,
+                    category: error.category,
+                    periodIdentifier,
+                  },
+                }),
+              });
+            } else {
+              const stale = existingOpportunities.find((o) => o.getType() === auditType);
+              if (stale) {
+                opportunityMap[code] = stale;
+                existingSuggestions = await stale.getSuggestions();
+              }
+            }
+
+            const toOutdate = existingSuggestions.filter((s) => {
+              const data = s.getData() || {};
+              if (scrapedUrls.has(data.url)) {
+                return false;
+              }
+              const lastSeen = data.periodIdentifier;
+              if (!lastSeen) {
+                return false;
+              }
+              const status = s.getStatus();
+              if (['OUTDATED', 'FIXED', 'RESOLVED', 'REJECTED', 'APPROVED'].includes(status)) {
+                return false;
+              }
+              return parsePeriodIdentifier(lastSeen) < retentionCutoff;
+            });
+
+            if (toOutdate.length > 0) {
+              await Suggestion.bulkUpdateStatus(toOutdate, 'OUTDATED');
+              log.info(`[LLM-ERROR-PAGES] Outdated ${toOutdate.length} stale suggestions for ${auditType}`);
+            }
+          } catch (bucketError) {
+            log.error('[LLM-ERROR-PAGES] DB sync failed for bucket', {
+              err: bucketError.message,
+              stack: bucketError.stack,
+              siteId: site.getId(),
+              bucket: code,
+              auditType,
+              periodIdentifier,
+            });
+          }
+        }));
 
         if (sqs && env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
           const errors404 = categorizedResults[404] || [];
@@ -280,7 +425,7 @@ export async function runAuditAndSendToMystique(context) {
                   }))
                   .filter((link) => link.urlFrom.length > 0),
                 alternativeUrls,
-                opportunityId: `llm-404-${periodIdentifier}`,
+                opportunityId: opportunityMap[404]?.getId(),
               },
             };
 

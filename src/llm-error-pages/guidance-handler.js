@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import ExcelJS from 'exceljs';
 import {
   createLLMOSharepointClient, publishToAdminHlx, readFromSharePoint, uploadToSharePoint,
@@ -41,9 +41,11 @@ function derivePeriodFromBrokenLinks(brokenLinks = []) {
  */
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Site, Audit } = dataAccess;
+  const {
+    Site, Audit, Opportunity, Suggestion,
+  } = dataAccess;
   const { siteId, data, auditId } = message;
-  const { brokenLinks } = data;
+  const { brokenLinks, opportunityId } = data;
 
   log.debug(`Message received in LLM error pages guidance handler: ${JSON.stringify(message, null, 2)}`);
 
@@ -128,8 +130,69 @@ export default async function handler(message, context) {
     await publishToAdminHlx(filename, outputDir, log);
     log.debug(`Updated Excel 404 file with Mystique guidance: ${filename}`);
   } catch (e) {
-    log.error(`Failed to update 404 Excel on Mystique callback: ${e.message}`);
-    return badRequest('Failed to persist guidance');
+    log.error('[LLM-ERROR-PAGES] Excel guidance update failed', {
+      err: e.message,
+      stack: e.stack,
+      siteId,
+      auditId,
+    });
+  }
+
+  try {
+    if (!opportunityId) {
+      log.warn('[LLM-ERROR-PAGES] No opportunityId in Mystique message — skipping DB update');
+    } else {
+      const opportunity = await Opportunity.findById(opportunityId);
+      if (!opportunity) {
+        log.warn(`[LLM-ERROR-PAGES] Opportunity not found: ${opportunityId}`);
+      } else if (opportunity.getSiteId?.() !== siteId) {
+        log.warn('[LLM-ERROR-PAGES] Opportunity siteId mismatch — skipping DB update', {
+          opportunityId,
+          messageSiteId: siteId,
+          opportunitySiteId: opportunity.getSiteId?.(),
+        });
+      } else {
+        const existingSuggestions = await opportunity.getSuggestions();
+        const baseUrl = site.getBaseURL();
+        const suggestionByPath = new Map(
+          existingSuggestions.map((s) => [toPathOnly(s.getData()?.url, baseUrl), s]),
+        );
+
+        const toUpdate = brokenLinks.reduce((acc, link) => {
+          const {
+            urlTo, suggestedUrls, aiRationale, confidenceScore,
+          } = link;
+          if (!suggestedUrls?.length) {
+            return acc;
+          }
+          const path = toPathOnly(urlTo, baseUrl);
+          const suggestion = suggestionByPath.get(path);
+          if (!suggestion) {
+            return acc;
+          }
+          suggestion.setData({
+            ...suggestion.getData(),
+            suggestedUrls,
+            aiRationale: aiRationale || '',
+            ...(confidenceScore !== undefined && { confidenceScore }),
+          });
+          acc.push(suggestion);
+          return acc;
+        }, []);
+
+        if (toUpdate.length > 0) {
+          await Suggestion.saveMany(toUpdate);
+          log.info(`[LLM-ERROR-PAGES] Persisted Mystique enrichment for ${toUpdate.length} suggestions`);
+        }
+      }
+    }
+  } catch (e) {
+    log.error('[LLM-ERROR-PAGES] DB guidance update failed', {
+      err: e.message,
+      stack: e.stack,
+      siteId,
+      opportunityId,
+    });
   }
 
   return ok();
