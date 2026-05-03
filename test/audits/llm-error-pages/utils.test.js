@@ -30,6 +30,8 @@ import {
   toPathOnly,
   downloadExistingCdnSheet,
   matchErrorsWithCdnData,
+  groupErrorsByUrl,
+  parsePeriodIdentifier,
 } from '../../../src/llm-error-pages/utils.js';
 import { extractSiteKeyFromBaseURL, getS3Config } from '../../../src/utils/cdn-utils.js';
 
@@ -1737,6 +1739,138 @@ describe('LLM Error Pages Utils', () => {
 
       // Should match because empty string matches empty string
       expect(result).to.have.lengthOf(1);
+    });
+  });
+
+  // ─── groupErrorsByUrl ────────────────────────────────────────────────────────
+
+  describe('groupErrorsByUrl', () => {
+    it('should return one entry per unique URL with summed hitCount and agentTypes array', () => {
+      const errors = [
+        {
+          url: '/page/foo', status: 404, agent_type: 'ChatGPT', total_requests: 100,
+          avg_ttfb_ms: 200, country_code: 'US', product: 'Blog', category: 'Tech',
+        },
+        {
+          url: '/page/foo', status: 404, agent_type: 'Perplexity', total_requests: 50,
+          avg_ttfb_ms: 180, country_code: 'DE', product: 'Blog', category: 'Tech',
+        },
+      ];
+
+      const result = groupErrorsByUrl(errors);
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].url).to.equal('/page/foo');
+      expect(result[0].hitCount).to.equal(150);
+      expect(result[0].agentTypes).to.include('ChatGPT');
+      expect(result[0].agentTypes).to.include('Perplexity');
+      expect(result[0].httpStatus).to.equal(404);
+    });
+
+    it('should keep separate entries for distinct URLs', () => {
+      const errors = [
+        {
+          url: '/page/a', status: 404, agent_type: 'ChatGPT', total_requests: 10,
+          avg_ttfb_ms: 100, country_code: 'US', product: 'P', category: 'C',
+        },
+        {
+          url: '/page/b', status: 403, agent_type: 'Claude', total_requests: 5,
+          avg_ttfb_ms: 90, country_code: 'UK', product: 'Q', category: 'D',
+        },
+      ];
+
+      const result = groupErrorsByUrl(errors);
+
+      expect(result).to.have.lengthOf(2);
+      expect(result.map((r) => r.url)).to.include.members(['/page/a', '/page/b']);
+    });
+
+    it('should treat missing total_requests as 0', () => {
+      const errors = [
+        {
+          url: '/page/missing', status: 404, agent_type: 'Bot',
+          avg_ttfb_ms: 150, country_code: 'US', product: 'P', category: 'C',
+        },
+      ];
+
+      const result = groupErrorsByUrl(errors);
+
+      expect(result[0].hitCount).to.equal(0);
+    });
+
+    it('should treat missing total_requests as 0 for duplicate URLs', () => {
+      // First occurrence has requests; second (same URL, different UA) has none
+      const errors = [
+        {
+          url: '/page/dup', status: 404, agent_type: 'Bot1', total_requests: 30,
+          avg_ttfb_ms: 100, country_code: 'US', product: 'P', category: 'C',
+        },
+        {
+          url: '/page/dup', status: 404, agent_type: 'Bot2',
+          // total_requests intentionally absent
+          avg_ttfb_ms: 90, country_code: 'US', product: 'P', category: 'C',
+        },
+      ];
+
+      const result = groupErrorsByUrl(errors);
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].hitCount).to.equal(30); // 30 + 0
+    });
+
+    it('should return empty array for empty input', () => {
+      expect(groupErrorsByUrl([])).to.deep.equal([]);
+    });
+
+    it('should convert agentTypes Set to Array in output', () => {
+      const errors = [
+        {
+          url: '/page/x', status: 404, agent_type: 'ChatGPT', total_requests: 20,
+          avg_ttfb_ms: 100, country_code: 'US', product: 'P', category: 'C',
+        },
+      ];
+
+      const result = groupErrorsByUrl(errors);
+
+      expect(Array.isArray(result[0].agentTypes)).to.be.true;
+    });
+  });
+
+  // ─── parsePeriodIdentifier ───────────────────────────────────────────────────
+
+  describe('parsePeriodIdentifier', () => {
+    it('should return the Monday of the given ISO week', () => {
+      // w15-2026: ISO week 15 of 2026 starts on Monday 2026-04-06
+      const result = parsePeriodIdentifier('w15-2026');
+      expect(result).to.be.instanceOf(Date);
+      expect(result.getUTCFullYear()).to.equal(2026);
+      expect(result.getUTCMonth()).to.equal(3); // April (0-indexed)
+      expect(result.getUTCDate()).to.equal(6);
+      expect(result.getUTCDay()).to.equal(1); // Monday
+    });
+
+    it('should return epoch (Date(0)) for an unrecognised format', () => {
+      const result = parsePeriodIdentifier('2025-04-01_to_2025-04-07');
+      expect(result.getTime()).to.equal(0);
+    });
+
+    it('should return epoch for an empty string', () => {
+      const result = parsePeriodIdentifier('');
+      expect(result.getTime()).to.equal(0);
+    });
+
+    it('should correctly handle week 1 of the year', () => {
+      // w01-2025: ISO week 1 of 2025 starts on Monday 2024-12-30
+      const result = parsePeriodIdentifier('w01-2025');
+      expect(result).to.be.instanceOf(Date);
+      expect(result.getUTCDay()).to.equal(1); // Must be a Monday
+    });
+
+    it('should correctly handle the last week of the year', () => {
+      // w52-2025 is a valid week
+      const result = parsePeriodIdentifier('w52-2025');
+      expect(result).to.be.instanceOf(Date);
+      expect(result.getUTCDay()).to.equal(1); // Must be a Monday
     });
   });
 });
