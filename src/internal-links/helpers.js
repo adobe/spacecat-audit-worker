@@ -126,6 +126,53 @@ export function classifyStatusBucket(status, error = null) {
 }
 
 /**
+ * Analyzes if a 403 response is from a known WAF/bot blocker.
+ * Detects known WAF signatures (Cloudflare, Akamai, Imperva, Fastly, CloudFront).
+ *
+ * Note: This detection relies on response headers, which can be spoofed. A malicious site owner
+ * could theoretically inject fake WAF headers to hide broken links from audits. This is considered
+ * low-risk since the attacker can only hide their own broken links, not affect other sites.
+ * For higher assurance, consider validating IP ranges or requiring multiple consistent signatures.
+ *
+ * @param {number} status - HTTP status code
+ * @param {Object} headers - Response headers (Headers object from fetch)
+ * @returns {boolean} True if known WAF detected
+ */
+function isKnownWafBlock(status, headers) {
+  if (status !== 403) {
+    return false;
+  }
+
+  // Check for known WAF/CDN headers
+  const hasCloudflare = headers.get('cf-ray') || headers.get('server') === 'cloudflare';
+  const hasImperva = headers.get('x-iinfo') || headers.get('x-cdn') === 'Incapsula';
+  const hasAkamai = headers.get('x-akamai-request-id')
+    || headers.get('x-akamai-session-id')
+    || (headers.get('server') || '').includes('AkamaiGHost')
+    || headers.get('akamai-cache-status')
+    || headers.get('akamai-grn');
+  // Tightened Fastly detection: require fastly-io-info OR x-served-by matching Fastly pattern
+  const hasFastly = headers.get('fastly-io-info')
+    || /^cache-.+\.(fastly\.net|fastlylb\.net)$/i.test(headers.get('x-served-by') || '');
+  const hasCloudFront = headers.get('x-amz-cf-id')
+    || headers.get('x-amz-cf-pop')
+    || (headers.get('via') || '').includes('CloudFront');
+
+  return hasCloudflare || hasImperva || hasAkamai || hasFastly || hasCloudFront;
+}
+
+/**
+ * Logs a WAF-protected link detection.
+ * @param {Object} log - Logger instance
+ * @param {string} url - The URL being checked
+ * @param {string} method - HTTP method (HEAD or GET)
+ * @param {number} status - HTTP status code
+ */
+function logWafDetection(log, url, method, status) {
+  log.warn(`Skipping WAF-protected link: ${url} (${method} ${status}, known WAF detected)`);
+}
+
+/**
  * Checks if a URL points to a static asset
  * @param {string} url - The URL to check
  * @returns {boolean} True if it's a static asset (image, SVG, CSS, JS, etc.)
@@ -246,7 +293,21 @@ async function checkLinkWithHead(url, log) {
       };
     }
 
-    // For auth errors, return null to trigger GET verification before classifying.
+    // At this point, statusBucket === FORBIDDEN_OR_BLOCKED
+    // Check if it's a known WAF before classifying
+    if (isKnownWafBlock(status, headResponse.headers)) {
+      logWafDetection(log, url, 'HEAD', status);
+      return {
+        isBroken: false,
+        inconclusive: true,
+        httpStatus: status,
+        statusBucket: STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED,
+        contentType,
+      };
+    }
+
+    // Not a known WAF - fallback to GET to verify if it's truly broken
+    // (some servers block HEAD but allow GET, or WAF might not be detected via HEAD)
     return null;
   } catch (headError) {
     return null;
@@ -292,6 +353,28 @@ async function checkLinkWithGet(url, log) {
       };
     }
 
+    // For FORBIDDEN_OR_BLOCKED, check if it's a known WAF before classifying
+    if (statusBucket === STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED) {
+      if (isKnownWafBlock(status, getResponse.headers)) {
+        logWafDetection(log, url, 'GET', status);
+        return {
+          isBroken: false,
+          inconclusive: true,
+          httpStatus: status,
+          statusBucket: STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED,
+          contentType,
+        };
+      }
+
+      // Not a known WAF - treat as broken
+      log.info(`✗ BROKEN LINK FOUND: ${url} (GET ${status}, bucket=${statusBucket})`);
+      return {
+        isBroken: true, httpStatus: status, statusBucket, contentType,
+      };
+    }
+
+    // For other error buckets, treat as broken
+    log.info(`✗ BROKEN LINK FOUND: ${url} (GET ${status}, bucket=${statusBucket})`);
     return {
       isBroken: true, httpStatus: status, statusBucket, contentType,
     };

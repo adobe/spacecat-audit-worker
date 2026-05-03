@@ -171,7 +171,7 @@ describe('isLinkInaccessible', () => {
     expect(result.isBroken).to.be.true;
   });
 
-  it('should classify forbidden responses as broken for SEO purposes', async function call() {
+  it('should classify generic 403 (no WAF headers) as broken for SEO purposes', async function call() {
     this.timeout(6000);
     nock('https://example.com')
       .head('/forbidden')
@@ -195,6 +195,162 @@ describe('isLinkInaccessible', () => {
     const result = await isLinkInaccessible('https://example.com/rate-limited', mockLog, 'test-site-id');
     expect(result.isBroken).to.be.true;
     expect(result.statusBucket).to.equal(STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED);
+  });
+
+  describe('WAF-aware 403 handling', () => {
+    it('should treat Cloudflare 403 as inconclusive, not broken', async function call() {
+      this.timeout(6000);
+      nock('https://example.com')
+        .head('/cloudflare-protected')
+        .reply(403, '', { 'cf-ray': '1234567890abc-SJC' });
+
+      const result = await isLinkInaccessible('https://example.com/cloudflare-protected', mockLog, 'test-site-id');
+      expect(result.isBroken).to.be.false;
+      expect(result.inconclusive).to.be.true;
+      expect(result.statusBucket).to.equal(STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED);
+    });
+
+    it('should treat Akamai 403 as inconclusive, not broken', async function call() {
+      this.timeout(6000);
+      nock('https://example.com')
+        .head('/akamai-protected')
+        .reply(403, '', { 'x-akamai-request-id': 'abc123' });
+
+      const result = await isLinkInaccessible('https://example.com/akamai-protected', mockLog, 'test-site-id');
+      expect(result.isBroken).to.be.false;
+      expect(result.inconclusive).to.be.true;
+      expect(result.statusBucket).to.equal(STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED);
+    });
+
+    it('should treat Imperva 403 as inconclusive, not broken', async function call() {
+      this.timeout(6000);
+      nock('https://example.com')
+        .head('/imperva-protected')
+        .reply(403, '', { 'x-iinfo': '1-23456789-0' });
+
+      const result = await isLinkInaccessible('https://example.com/imperva-protected', mockLog, 'test-site-id');
+      expect(result.isBroken).to.be.false;
+      expect(result.inconclusive).to.be.true;
+      expect(result.statusBucket).to.equal(STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED);
+    });
+
+    it('should treat Fastly 403 as inconclusive, not broken', async function call() {
+      this.timeout(6000);
+      nock('https://example.com')
+        .head('/fastly-protected')
+        .reply(403, '', { 'x-served-by': 'cache-sjc10025.fastly.net' });
+
+      const result = await isLinkInaccessible('https://example.com/fastly-protected', mockLog, 'test-site-id');
+      expect(result.isBroken).to.be.false;
+      expect(result.inconclusive).to.be.true;
+      expect(result.statusBucket).to.equal(STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED);
+    });
+
+    it('should treat Fastly 403 (with fastly-io-info) as inconclusive', async function call() {
+      this.timeout(6000);
+      nock('https://example.com')
+        .head('/fastly-protected-alt')
+        .reply(403, '', { 'fastly-io-info': 'abc123' });
+
+      const result = await isLinkInaccessible('https://example.com/fastly-protected-alt', mockLog, 'test-site-id');
+      expect(result.isBroken).to.be.false;
+      expect(result.inconclusive).to.be.true;
+      expect(result.statusBucket).to.equal(STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED);
+    });
+
+    it('should treat CloudFront 403 as inconclusive, not broken', async function call() {
+      this.timeout(6000);
+      nock('https://example.com')
+        .head('/cloudfront-protected')
+        .reply(403, '', { 'x-amz-cf-id': 'abcdef123456' });
+
+      const result = await isLinkInaccessible('https://example.com/cloudfront-protected', mockLog, 'test-site-id');
+      expect(result.isBroken).to.be.false;
+      expect(result.inconclusive).to.be.true;
+      expect(result.statusBucket).to.equal(STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED);
+    });
+
+    it('should use GET fallback for WAF-protected links when HEAD fails with 405', async function call() {
+      this.timeout(6000);
+      nock('https://example.com')
+        .head('/waf-get-fallback')
+        .reply(405)
+        .get('/waf-get-fallback')
+        .reply(403, '', { 'cf-ray': '9876543210xyz-LAX' });
+
+      const result = await isLinkInaccessible('https://example.com/waf-get-fallback', mockLog, 'test-site-id');
+      expect(result.isBroken).to.be.false;
+      expect(result.inconclusive).to.be.true;
+      expect(result.statusBucket).to.equal(STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED);
+    });
+
+    it('should detect WAF headers case-insensitively', async function call() {
+      this.timeout(6000);
+      nock('https://example.com')
+        .head('/cloudflare-mixed-case')
+        .reply(403, '', { 'CF-Ray': '1234567890abc-SJC' });
+
+      const result = await isLinkInaccessible('https://example.com/cloudflare-mixed-case', mockLog, 'test-site-id');
+      expect(result.isBroken).to.be.false;
+      expect(result.inconclusive).to.be.true;
+      expect(result.statusBucket).to.equal(STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED);
+    });
+
+    it('should handle missing/null headers gracefully', async function call() {
+      this.timeout(6000);
+      nock('https://example.com')
+        .head('/null-headers')
+        .reply(403, '', {})
+        .get('/null-headers')
+        .reply(403, '', {});
+
+      const result = await isLinkInaccessible('https://example.com/null-headers', mockLog, 'test-site-id');
+      // No WAF headers, should be treated as broken
+      expect(result.isBroken).to.be.true;
+      expect(result.statusBucket).to.equal(STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED);
+    });
+
+    it('should ignore WAF headers on non-403 status codes', async function call() {
+      this.timeout(6000);
+      nock('https://example.com')
+        .head('/waf-non-403')
+        .reply(200, '', { 'cf-ray': '1234567890abc-SJC' });
+
+      const result = await isLinkInaccessible('https://example.com/waf-non-403', mockLog, 'test-site-id');
+      expect(result.isBroken).to.be.false;
+      expect(result.httpStatus).to.equal(200);
+      // 200 responses don't have inconclusive field - WAF detection only applies to 403s
+      expect(result.inconclusive).to.be.undefined;
+    });
+
+    it('should detect when multiple WAF signatures are present', async function call() {
+      this.timeout(6000);
+      nock('https://example.com')
+        .head('/multi-waf')
+        .reply(403, '', {
+          'cf-ray': '1234567890abc-SJC',
+          'x-akamai-request-id': 'abc123',
+        });
+
+      const result = await isLinkInaccessible('https://example.com/multi-waf', mockLog, 'test-site-id');
+      expect(result.isBroken).to.be.false;
+      expect(result.inconclusive).to.be.true;
+      expect(result.statusBucket).to.equal(STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED);
+    });
+
+    it('should not treat non-Fastly cache- prefixed servers as WAF', async function call() {
+      this.timeout(6000);
+      nock('https://example.com')
+        .head('/fake-fastly')
+        .reply(403, '', { 'x-served-by': 'cache-cdn123-XYZ' })
+        .get('/fake-fastly')
+        .reply(403, '', { 'x-served-by': 'cache-cdn123-XYZ' });
+
+      const result = await isLinkInaccessible('https://example.com/fake-fastly', mockLog, 'test-site-id');
+      // Should be treated as broken since it doesn't match Fastly pattern
+      expect(result.isBroken).to.be.true;
+      expect(result.statusBucket).to.equal(STATUS_BUCKETS.FORBIDDEN_OR_BLOCKED);
+    });
   });
 
   it('should fallback to GET when HEAD is not allowed', async function call() {
