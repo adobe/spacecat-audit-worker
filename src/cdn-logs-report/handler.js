@@ -34,59 +34,17 @@ import {
   runDailyReferralExport,
 } from './referral-daily-export.js';
 
-const DAILY_AGENTIC_EXPORT_AUDIT_FIELDS = [
-  'enabled',
-  'success',
-  'skipped',
-  'queued',
-  'siteId',
-  'trafficDate',
-  'referenceDate',
-  'batchId',
-  'rowCount',
-  'classificationCount',
-  'bundleUri',
-  'delaySeconds',
-  'error',
-];
-
-function compactDailyAgenticExport(exportResult) {
-  return DAILY_AGENTIC_EXPORT_AUDIT_FIELDS.reduce((compact, field) => {
-    if (exportResult?.[field] !== undefined) {
-      return {
-        ...compact,
-        [field]: exportResult[field],
-      };
-    }
-    return compact;
-  }, {});
+function getAgenticExportBatchId(agenticDbExportResult) {
+  return agenticDbExportResult.dailyAgenticExport?.batchId;
 }
 
-function getAgenticExportAuditDetails(agenticDbExportResult) {
-  const details = {};
-  if (agenticDbExportResult.dailyAgenticExport) {
-    details.dailyAgenticExport = compactDailyAgenticExport(
-      agenticDbExportResult.dailyAgenticExport,
-    );
-  }
-
-  const dailyAgenticExports = (agenticDbExportResult.dailyAgenticExports || [])
-    .map(compactDailyAgenticExport)
-    .filter((exportResult) => Object.keys(exportResult).length > 0);
-  if (dailyAgenticExports.length > 0) {
-    details.dailyAgenticExports = dailyAgenticExports;
-  }
-
-  return details;
-}
-
-function addAgenticExportDetailsToAuditResult(
+function addAgenticExportBatchIdToAuditResult(
   results,
   agenticReportConfig,
   s3Config,
-  exportDetails,
+  batchId,
 ) {
-  if (Object.keys(exportDetails).length === 0) {
+  if (!batchId) {
     return results;
   }
 
@@ -98,7 +56,7 @@ function addAgenticExportDetailsToAuditResult(
     attached = true;
     return {
       ...result,
-      ...exportDetails,
+      batchId,
     };
   });
 
@@ -113,8 +71,7 @@ function addAgenticExportDetailsToAuditResult(
       table: agenticReportConfig.tableName,
       database: s3Config.databaseName,
       customer: s3Config.siteName,
-      success: exportDetails.dailyAgenticExport?.success !== false,
-      ...exportDetails,
+      batchId,
     },
   ];
 }
@@ -295,11 +252,11 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     }
   }
 
-  const auditResult = addAgenticExportDetailsToAuditResult(
+  const auditResult = addAgenticExportBatchIdToAuditResult(
     results,
     agenticReportConfig,
     s3Config,
-    getAgenticExportAuditDetails(agenticDbExportResult),
+    getAgenticExportBatchId(agenticDbExportResult),
   );
 
   return {

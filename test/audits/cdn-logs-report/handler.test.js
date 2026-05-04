@@ -729,12 +729,8 @@ describe('CDN Logs Report Handler', function test() {
         error: 'daily export boom',
       });
       const agenticResult = result.auditResult.find((entry) => entry.name === 'agentic');
-      expect(agenticResult.dailyAgenticExport).to.deep.equal({
-        enabled: true,
-        success: false,
-        siteId: 'test-site',
-        error: 'daily export boom',
-      });
+      expect(agenticResult).to.not.have.property('batchId');
+      expect(agenticResult).to.not.have.property('dailyAgenticExport');
     });
 
     it('includes successful daily agentic export results for enabled sites', async () => {
@@ -793,14 +789,8 @@ describe('CDN Logs Report Handler', function test() {
         },
       });
       const agenticResult = result.auditResult.find((entry) => entry.name === 'agentic');
-      expect(agenticResult.dailyAgenticExport).to.deep.equal({
-        enabled: true,
-        success: true,
-        siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
-        trafficDate: '2026-03-31',
-        batchId: 'batch-123',
-        rowCount: 12,
-      });
+      expect(agenticResult.batchId).to.equal('batch-123');
+      expect(agenticResult).to.not.have.property('dailyAgenticExport');
     });
 
     it('skips sharepoint and weekly reports when auditContext.date is provided', async () => {
@@ -866,14 +856,7 @@ describe('CDN Logs Report Handler', function test() {
         table: 'aggregated_logs_example_com_consolidated',
         database: 'cdn_logs_example_com',
         customer: 'example',
-        success: true,
-        dailyAgenticExport: {
-          enabled: true,
-          success: true,
-          siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
-          trafficDate: '2026-03-31',
-          batchId: 'date-batch-123',
-        },
+        batchId: 'date-batch-123',
       }]);
     });
 
@@ -1046,20 +1029,9 @@ describe('CDN Logs Report Handler', function test() {
       });
       expect(result.dailyAgenticExports).to.have.length(7);
       const agenticResult = result.auditResult.find((entry) => entry.name === 'agentic');
-      expect(agenticResult.dailyAgenticExport).to.deep.include({
-        enabled: true,
-        success: true,
-        queued: true,
-      });
-      expect(agenticResult.dailyAgenticExports).to.have.length(7);
-      expect(agenticResult.dailyAgenticExports[0]).to.deep.include({
-        enabled: true,
-        success: true,
-        queued: true,
-        siteId: 'test-site',
-        referenceDate: '2026-03-31T00:00:00.000Z',
-        delaySeconds: 0,
-      });
+      expect(agenticResult).to.not.have.property('batchId');
+      expect(agenticResult).to.not.have.property('dailyAgenticExport');
+      expect(agenticResult).to.not.have.property('dailyAgenticExports');
       expect(result.dailyReferralExport).to.equal(undefined);
     });
 
