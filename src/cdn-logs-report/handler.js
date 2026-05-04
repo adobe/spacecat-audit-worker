@@ -34,25 +34,6 @@ import {
   runDailyReferralExport,
 } from './referral-daily-export.js';
 
-function getAgenticDbExportAuditResult(
-  agenticDbExportResult,
-  agenticReportConfig,
-  s3Config,
-) {
-  const batchId = agenticDbExportResult.dailyAgenticExport?.batchId;
-  if (!batchId) {
-    return null;
-  }
-
-  return {
-    name: 'agentic-db-export',
-    table: agenticReportConfig.tableName,
-    database: s3Config.databaseName,
-    customer: s3Config.siteName,
-    batchId,
-  };
-}
-
 async function runCdnLogsReport(url, context, site, auditContext) {
   const { log } = context;
   const isDailyDateRun = Boolean(auditContext?.date);
@@ -229,14 +210,19 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     }
   }
 
-  const agenticDbExportAuditResult = getAgenticDbExportAuditResult(
-    agenticDbExportResult,
-    agenticReportConfig,
-    s3Config,
-  );
-  const auditResult = agenticDbExportAuditResult
-    ? [...results, agenticDbExportAuditResult]
-    : results;
+  const auditResult = [...results];
+  if (agenticDbExportResult.dailyAgenticExport?.batchId) {
+    auditResult.push({
+      name: 'agentic-db-export',
+      batchId: agenticDbExportResult.dailyAgenticExport.batchId,
+    });
+  }
+  if (dailyReferralExport?.batchId) {
+    auditResult.push({
+      name: 'referral-db-export',
+      batchId: dailyReferralExport.batchId,
+    });
+  }
 
   return {
     ...agenticDbExportResult,

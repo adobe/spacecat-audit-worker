@@ -243,6 +243,7 @@ export async function runDailyReferralExport({
     siteId,
     trafficDate,
     rowCount: rows.length,
+    batchId: dedupId,
     csvUri,
   };
 }

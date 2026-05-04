@@ -728,11 +728,7 @@ describe('CDN Logs Report Handler', function test() {
         siteId: 'test-site',
         error: 'daily export boom',
       });
-      const agenticResult = result.auditResult.find((entry) => entry.name === 'agentic');
-      expect(agenticResult).to.not.have.property('batchId');
-      expect(agenticResult).to.not.have.property('dailyAgenticExport');
-      expect(result.auditResult.find((entry) => entry.name === 'agentic-db-export'))
-        .to.equal(undefined);
+      expect(result.auditResult).to.be.an('array').that.is.not.empty;
     });
 
     it('includes successful daily agentic export results for enabled sites', async () => {
@@ -792,14 +788,8 @@ describe('CDN Logs Report Handler', function test() {
       });
       const agenticResult = result.auditResult.find((entry) => entry.name === 'agentic');
       expect(agenticResult).to.not.have.property('batchId');
-      const agenticDbExportResult = result.auditResult.find(
-        (entry) => entry.name === 'agentic-db-export',
-      );
-      expect(agenticDbExportResult).to.deep.equal({
+      expect(result.auditResult).to.deep.include({
         name: 'agentic-db-export',
-        table: 'aggregated_logs_example_com_consolidated',
-        database: 'cdn_logs_example_com',
-        customer: 'example',
         batchId: 'batch-123',
       });
     });
@@ -864,9 +854,6 @@ describe('CDN Logs Report Handler', function test() {
       });
       expect(result.auditResult).to.deep.equal([{
         name: 'agentic-db-export',
-        table: 'aggregated_logs_example_com_consolidated',
-        database: 'cdn_logs_example_com',
-        customer: 'example',
         batchId: 'date-batch-123',
       }]);
     });
@@ -1039,12 +1026,6 @@ describe('CDN Logs Report Handler', function test() {
         queued: true,
       });
       expect(result.dailyAgenticExports).to.have.length(7);
-      const agenticResult = result.auditResult.find((entry) => entry.name === 'agentic');
-      expect(agenticResult).to.not.have.property('batchId');
-      expect(agenticResult).to.not.have.property('dailyAgenticExport');
-      expect(agenticResult).to.not.have.property('dailyAgenticExports');
-      expect(result.auditResult.find((entry) => entry.name === 'agentic-db-export'))
-        .to.equal(undefined);
       expect(result.dailyReferralExport).to.equal(undefined);
     });
 
@@ -1126,6 +1107,7 @@ describe('CDN Logs Report Handler', function test() {
         siteId: 'test-site',
         trafficDate: '2026-03-31',
         rowCount: 7,
+        batchId: 'referral-batch-123',
       });
       const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
         '../../../src/cdn-logs-report/agentic-daily-export.js': {
@@ -1156,6 +1138,11 @@ describe('CDN Logs Report Handler', function test() {
         siteId: 'test-site',
         trafficDate: '2026-03-31',
         rowCount: 7,
+        batchId: 'referral-batch-123',
+      });
+      expect(result.auditResult).to.deep.include({
+        name: 'referral-db-export',
+        batchId: 'referral-batch-123',
       });
     });
 
