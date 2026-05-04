@@ -700,6 +700,9 @@ describe('CDN Logs Report Handler', function test() {
           runDailyReferralExport: sandbox.stub().resolves({ enabled: true, success: true }),
         },
       }, {
+        '../../../src/cdn-logs-report/agentic-daily-export.js': {
+          runDailyAgenticExport: runDailyAgenticExportStub,
+        },
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
           saveExcelReport: saveExcelReportStub,
@@ -743,6 +746,9 @@ describe('CDN Logs Report Handler', function test() {
           runDailyReferralExport: sandbox.stub().resolves({ enabled: true, success: true }),
         },
       }, {
+        '../../../src/cdn-logs-report/agentic-daily-export.js': {
+          runDailyAgenticExport: runDailyAgenticExportStub,
+        },
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
           saveExcelReport: saveExcelReportStub,
@@ -793,6 +799,9 @@ describe('CDN Logs Report Handler', function test() {
           runWeeklyReport: runWeeklyReportStub,
         },
       }, {
+        '../../../src/cdn-logs-report/agentic-daily-export.js': {
+          runDailyAgenticExport: runDailyAgenticExportStub,
+        },
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: createSharepointStub,
           saveExcelReport: saveExcelReportStub,
@@ -841,6 +850,22 @@ describe('CDN Logs Report Handler', function test() {
           runDailyReferralExport: sandbox.stub().resolves({ enabled: true, success: true }),
         },
       }, {
+        '../../../src/cdn-logs-report/agentic-daily-export.js': {
+          runDailyAgenticExport: runDailyAgenticExportStub,
+        },
+        '../../../src/cdn-logs-report/utils/report-utils.js': {
+          loadSql: sandbox.stub().resolves('SELECT 1'),
+          generateReportingPeriods: sandbox.stub().returns({
+            weeks: [{
+              startDate: new Date('2026-03-30T00:00:00.000Z'),
+              endDate: new Date('2026-04-05T23:59:59.999Z'),
+            }],
+            periodIdentifier: 'w14-2026',
+          }),
+          fetchRemotePatterns: sandbox.stub().resolves({ pagetype: { data: [] } }),
+          queryIndexHasPatternsFile: sandbox.stub().resolves(false),
+          getConfigCategories: sandbox.stub().resolves(['Category A']),
+        },
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
           saveExcelReport: saveExcelReportStub,
@@ -858,6 +883,129 @@ describe('CDN Logs Report Handler', function test() {
       expect(runDailyAgenticExportStub).to.not.have.been.called;
       expect(result.dailyAgenticExport).to.equal(undefined);
       expect(result.auditResult).to.not.be.empty;
+    });
+
+    it('queues date-based agentic DB exports for weekly refreshes without running daily exports inline', async () => {
+      const runDailyAgenticExportStub = sandbox.stub().resolves({
+        enabled: true,
+        success: true,
+      });
+      const runDailyReferralExportStub = sandbox.stub().resolves({ enabled: true, success: true });
+      const generatePatternsWorkbookStub = sandbox.stub().resolves(true);
+      const runWeeklyReportStub = sandbox.stub().resolves({ success: true, uploadResult: null });
+      context.dataAccess.Configuration = {
+        findLatest: sandbox.stub().resolves({
+          getQueues: () => ({ audits: 'https://sqs.us-east-1.amazonaws.com/123/audits-queue' }),
+        }),
+      };
+
+      const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
+        '../../../src/cdn-logs-report/agentic-daily-export.js': {
+          runDailyAgenticExport: runDailyAgenticExportStub,
+        },
+        '../../../src/cdn-logs-report/referral-daily-export.js': {
+          runDailyReferralExport: runDailyReferralExportStub,
+        },
+        '../../../src/cdn-logs-report/utils/report-utils.js': {
+          loadSql: sandbox.stub().resolves('SELECT 1'),
+          generateReportingPeriods: sandbox.stub().returns({
+            weeks: [{
+              startDate: new Date('2026-03-30T00:00:00.000Z'),
+              endDate: new Date('2026-04-05T23:59:59.999Z'),
+            }],
+            periodIdentifier: 'w14-2026',
+          }),
+          fetchRemotePatterns: sandbox.stub().resolves({ pagetype: { data: [] } }),
+          queryIndexHasPatternsFile: sandbox.stub().resolves(false),
+          getConfigCategories: sandbox.stub().resolves(['Category A']),
+        },
+        '../../../src/utils/cdn-utils.js': {
+          pathHasData: sandbox.stub().resolves(true),
+          getS3Config: sandbox.stub().returns({
+            bucket: 'test-bucket',
+            siteKey: 'example_com',
+            siteName: 'example',
+            databaseName: 'cdn_logs_example_com',
+            getAthenaTempLocation: () => 's3://temp',
+          }),
+          getCdnAwsRuntime: sandbox.stub().returns({
+            s3Client: {},
+            createAthenaClient: sandbox.stub().returns({
+              execute: sandbox.stub().resolves(),
+            }),
+          }),
+        },
+        '../../../src/cdn-logs-report/utils/report-runner.js': {
+          runWeeklyReport: runWeeklyReportStub,
+        },
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
+          saveExcelReport: saveExcelReportStub,
+          bulkPublishToAdminHlx: sandbox.stub().resolves(),
+        },
+        '../../../src/cdn-logs-report/constants/report-configs.js': {
+          getConfigs: sandbox.stub().returns([{
+            name: 'agentic',
+            aggregatedLocation: 's3://bucket/aggregated/test-site/',
+            tableName: 'aggregated_logs_example_com_consolidated',
+            filePrefix: 'agentictraffic',
+            folderSuffix: 'agentic-traffic',
+            workbookCreator: 'Spacecat Agentic Flat Report',
+            queryFunction: sandbox.stub(),
+            sheetName: 'shared-all',
+          }]),
+        },
+        '../../../src/cdn-logs-report/patterns/patterns-uploader.js': {
+          generatePatternsWorkbook: generatePatternsWorkbookStub,
+        },
+      }, {
+        '../../../src/cdn-logs-report/agentic-daily-export.js': {
+          runDailyAgenticExport: runDailyAgenticExportStub,
+        },
+        '../../../src/cdn-logs-report/utils/report-utils.js': {
+          loadSql: sandbox.stub().resolves('SELECT 1'),
+          generateReportingPeriods: sandbox.stub().returns({
+            weeks: [{
+              startDate: new Date('2026-03-30T00:00:00.000Z'),
+              endDate: new Date('2026-04-05T23:59:59.999Z'),
+            }],
+            periodIdentifier: 'w14-2026',
+          }),
+          fetchRemotePatterns: sandbox.stub().resolves({ pagetype: { data: [] } }),
+          queryIndexHasPatternsFile: sandbox.stub().resolves(false),
+          getConfigCategories: sandbox.stub().resolves(['Category A']),
+        },
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
+          saveExcelReport: saveExcelReportStub,
+          bulkPublishToAdminHlx: sandbox.stub().resolves(),
+        },
+      });
+
+      const result = await localHandler.runner(
+        'https://example.com',
+        context,
+        site,
+        createAuditContext(sandbox, { weekOffset: -1, refreshAgenticDailyExport: true }),
+      );
+
+      expect(runWeeklyReportStub).to.have.been.calledOnce;
+      expect(generatePatternsWorkbookStub).to.not.have.been.called;
+      expect(runDailyAgenticExportStub).to.not.have.been.called;
+      expect(runDailyReferralExportStub).to.not.have.been.called;
+      expect(context.sqs.sendMessage).to.have.callCount(7);
+      expect(context.sqs.sendMessage.firstCall.args[1].auditContext).to.deep.equal({
+        date: '2026-03-31T00:00:00.000Z',
+        refreshAgenticDailyExport: true,
+        sourceWeekOffset: -1,
+      });
+      expect(result.dailyAgenticExport).to.deep.include({
+        enabled: true,
+        success: true,
+        queued: true,
+      });
+      expect(result.dailyAgenticExports).to.have.length(7);
+      expect(result.dailyReferralExport).to.equal(undefined);
     });
 
     it('skips daily referral export when auditContext.weekOffset is provided', async () => {
@@ -1040,6 +1188,84 @@ describe('CDN Logs Report Handler', function test() {
 
       expect(runDailyReferralExportStub.firstCall.args[0].referenceDate.toISOString())
         .to.equal('2026-04-01T10:00:00.000Z');
+    });
+
+    it('skips daily referral export for category-refresh agentic DB fanout messages', async () => {
+      const runDailyAgenticExportStub = sandbox.stub().resolves({ enabled: true, success: true });
+      const runDailyReferralExportStub = sandbox.stub().resolves({ enabled: true, success: true });
+      const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
+        '../../../src/cdn-logs-report/agentic-daily-export.js': {
+          runDailyAgenticExport: runDailyAgenticExportStub,
+        },
+        '../../../src/cdn-logs-report/referral-daily-export.js': {
+          runDailyReferralExport: runDailyReferralExportStub,
+        },
+      }, {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
+          saveExcelReport: saveExcelReportStub,
+          bulkPublishToAdminHlx: sandbox.stub().resolves(),
+        },
+      });
+
+      const result = await localHandler.runner(
+        'https://example.com',
+        context,
+        site,
+        createAuditContext(sandbox, {
+          date: '2026-04-01T00:00:00.000Z',
+          refreshAgenticDailyExport: true,
+          categoriesUpdated: true,
+          sourceWeekOffset: -1,
+        }),
+      );
+
+      expect(runDailyReferralExportStub).to.not.have.been.called;
+      expect(result.dailyReferralExport).to.equal(undefined);
+    });
+
+    it('runs daily referral export for BYOCDN other agentic DB fanout messages', async () => {
+      const runDailyAgenticExportStub = sandbox.stub().resolves({ enabled: true, success: true });
+      const runDailyReferralExportStub = sandbox.stub().resolves({
+        enabled: true,
+        success: true,
+        trafficDate: '2026-03-31',
+      });
+      const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
+        '../../../src/cdn-logs-report/agentic-daily-export.js': {
+          runDailyAgenticExport: runDailyAgenticExportStub,
+        },
+        '../../../src/cdn-logs-report/referral-daily-export.js': {
+          runDailyReferralExport: runDailyReferralExportStub,
+        },
+      }, {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
+          saveExcelReport: saveExcelReportStub,
+          bulkPublishToAdminHlx: sandbox.stub().resolves(),
+        },
+      });
+
+      const result = await localHandler.runner(
+        'https://example.com',
+        context,
+        site,
+        createAuditContext(sandbox, {
+          date: '2026-04-01T00:00:00.000Z',
+          refreshAgenticDailyExport: true,
+          sourceWeekOffset: 0,
+          triggeredBy: 'byocdn-other',
+        }),
+      );
+
+      expect(runDailyReferralExportStub).to.have.been.calledOnce;
+      expect(runDailyReferralExportStub.firstCall.args[0].referenceDate.toISOString())
+        .to.equal('2026-04-01T00:00:00.000Z');
+      expect(result.dailyReferralExport).to.deep.equal({
+        enabled: true,
+        success: true,
+        trafficDate: '2026-03-31',
+      });
     });
 
     describe('LLMO pattern fetch scenarios', () => {
