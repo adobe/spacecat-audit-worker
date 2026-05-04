@@ -1,3 +1,10 @@
+## [1.430.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.430.1...v1.430.2) (2026-05-04)
+
+
+### Bug Fixes
+
+* skip suggestion regeneration when scraped content is unchanged ([#2446](https://github.com/adobe/spacecat-audit-worker/issues/2446)) ([5460507](https://github.com/adobe/spacecat-audit-worker/commit/546050763371176d208371be37c7a52a0943a78c))
+
 ## [1.430.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.430.0...v1.430.1) (2026-05-04)
 
 
