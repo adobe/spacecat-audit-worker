@@ -50,7 +50,7 @@ async function buildExistingHashMap(context, site) {
     const oppty = opportunities.find((o) => o.getType() === AUDIT_TYPE);
     if (!oppty) {
       if (opportunities.length > 0) {
-        log.warn(`[SUMMARIZATION] Found ${opportunities.length} active opportunity/ies but none matched type '${AUDIT_TYPE}' — skipping hash-based filtering`);
+        log.warn(`[SUMMARIZATION] Found ${opportunities.length} active opportunities but none matched type '${AUDIT_TYPE}' — skipping hash-based filtering`);
       }
       return new Map();
     }
