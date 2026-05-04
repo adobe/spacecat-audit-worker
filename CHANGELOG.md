@@ -1,3 +1,10 @@
+## [1.429.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.429.3...v1.429.4) (2026-05-04)
+
+
+### Bug Fixes
+
+* **agentic:** queue weekly DB export refreshes by date ([#2449](https://github.com/adobe/spacecat-audit-worker/issues/2449)) ([2983317](https://github.com/adobe/spacecat-audit-worker/commit/298331707bb0d3958444bcc8909d07d753c76f56))
+
 ## [1.429.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.429.2...v1.429.3) (2026-05-04)
 
 
