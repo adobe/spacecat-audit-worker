@@ -12,6 +12,35 @@
 
 import { isAuditEnabledForSite } from '../common/index.js';
 import { getCodeInfo } from '../accessibility/utils/data-processing.js';
+import { METRICS, THRESHOLDS } from './kpi-metrics.js';
+
+/**
+ * Given all device-level metric rows for a suggestion, returns:
+ * - failingMetrics: metric names (lcp/cls/inp) that exceed the threshold on any device
+ * - cwvMetricValues: worst (highest) observed value for each failing metric across devices
+ *
+ * Used to tell Mystique exactly which metrics are flagged so it only generates
+ * guidance for those metrics and can surface the measured values to the UI.
+ * @param {Array<Object>} allMetrics - Array of per-device metric objects
+ * @returns {{ failingMetrics: string[], cwvMetricValues: Object }}
+ */
+function getFailingMetricInfo(allMetrics) {
+  const worstValues = {};
+  for (const deviceMetrics of allMetrics) {
+    for (const metric of METRICS) {
+      const value = deviceMetrics[metric];
+      if (value !== null && value !== undefined && value > THRESHOLDS[metric]) {
+        if (worstValues[metric] === undefined || value > worstValues[metric]) {
+          worstValues[metric] = value;
+        }
+      }
+    }
+  }
+  return {
+    failingMetrics: Object.keys(worstValues),
+    cwvMetricValues: worstValues,
+  };
+}
 
 const CWV_AUTO_SUGGEST_MESSAGE_TYPE = 'guidance:cwv';
 const CWV_AUTO_SUGGEST_FEATURE_TOGGLE = 'cwv-auto-suggest';
@@ -134,9 +163,20 @@ export async function processAutoSuggest(context, opportunity, site) {
 
       // Extract URL and metrics from suggestion data
       const { url } = suggestionData;
-      const metrics = suggestionData.metrics?.[0] || {};
+      const allMetrics = suggestionData.metrics || [];
+      const firstMetrics = allMetrics[0] || {};
+      const { failingMetrics, cwvMetricValues } = getFailingMetricInfo(allMetrics);
 
-      log.debug(`[audit-worker-cwv] siteId: ${siteId} | Sending CWV suggestion for auto-suggest, suggestionId: ${suggestionId}, url: ${url}`);
+      // Defense-in-depth: hasFailingMetrics upstream should already exclude these,
+      // but if a future code path bypasses that filter we don't want Mystique to
+      // generate guidance for an all-green page.
+      if (failingMetrics.length === 0) {
+        log.info(`[audit-worker-cwv] siteId: ${siteId} | Skipping suggestionId: ${suggestionId} - no failing CWV metrics`);
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      log.debug(`[audit-worker-cwv] siteId: ${siteId} | Sending CWV suggestion for auto-suggest, suggestionId: ${suggestionId}, url: ${url}, failingMetrics: ${failingMetrics.join(',')}`);
 
       const sqsMessage = {
         type: CWV_AUTO_SUGGEST_MESSAGE_TYPE,
@@ -149,7 +189,13 @@ export async function processAutoSuggest(context, opportunity, site) {
           url,
           opportunityId,
           suggestionId,
-          device_type: metrics.deviceType || 'mobile',
+          device_type: firstMetrics.deviceType || 'mobile',
+          // Metrics flagged as failing in RUM — Mystique must only generate guidance
+          // for these metrics, keeping the identify and suggest steps consistent.
+          failing_metrics: failingMetrics,
+          // Actual P75 values for each failing metric — passed through so guidance
+          // issues can surface the measured value alongside the recommendation.
+          cwv_metric_values: cwvMetricValues,
           // Add code repository information if available
           ...(hasCodeInfo && {
             codeBucket: codeInfo.codeBucket,
