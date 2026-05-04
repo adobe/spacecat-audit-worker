@@ -260,7 +260,14 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(sqs.sendMessage).to.have.callCount(1);
       expect(sqs.sendMessage).to.have.been.calledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'cdn-logs-report' }),
+        sinon.match({
+          type: 'cdn-logs-report',
+          auditContext: {
+            weekOffset: -1,
+            categoriesUpdated: true,
+            refreshAgenticDailyExport: true,
+          },
+        }),
       );
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
@@ -629,7 +636,14 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(sqs.sendMessage).to.have.callCount(2);
       expect(sqs.sendMessage).to.have.been.calledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'cdn-logs-report' }),
+        sinon.match({
+          type: 'cdn-logs-report',
+          auditContext: {
+            weekOffset: -1,
+            categoriesUpdated: true,
+            refreshAgenticDailyExport: true,
+          },
+        }),
       );
       expect(sqs.sendMessage).to.have.been.calledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',

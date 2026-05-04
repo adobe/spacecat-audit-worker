@@ -275,6 +275,7 @@ export async function triggerCdnLogsReport(context, site) {
     auditContext: {
       weekOffset: -1,
       categoriesUpdated: true,
+      refreshAgenticDailyExport: true,
     },
   });
 
