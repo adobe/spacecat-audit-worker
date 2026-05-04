@@ -419,6 +419,7 @@ describe('CDN Config Handler', () => {
       dailyReportCalls.forEach((call, index) => {
         expect(call.args[1].auditContext).to.deep.equal({
           date: getExpectedReportDate(cdnLogsAnalysisCalls[index]),
+          refreshAgenticDailyExport: true,
         });
         expect(call.args[3]).to.equal(900 + (index * 5));
       });
@@ -559,6 +560,7 @@ describe('CDN Config Handler', () => {
       dailyReportCalls.forEach((call, index) => {
         expect(call.args[1].auditContext).to.deep.equal({
           date: getExpectedReportDate(cdnLogsAnalysisCalls[index]),
+          refreshAgenticDailyExport: true,
         });
         expect(call.args[3]).to.equal(900 + (index * 5));
       });

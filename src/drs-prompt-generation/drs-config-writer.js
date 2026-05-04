@@ -13,10 +13,27 @@
 import { randomUUID } from 'crypto';
 import { llmoConfig as sharedLlmoConfig } from '@adobe/spacecat-shared-utils';
 
+// Region values must match the schema in @adobe/spacecat-shared-utils
+// (ISO-3166 alpha-2). Upstream DRS occasionally emits non-conformant values
+// like "en-us" or "global" — those would corrupt the LLMO config and break
+// every subsequent schema-validated read. See SITES-43238.
+const REGION_REGEX = /^[a-z]{2}$/;
+
+function normalizeRegion(raw) {
+  if (typeof raw !== 'string') {
+    return null;
+  }
+  const lc = raw.toLowerCase();
+  return REGION_REGEX.test(lc) ? lc : null;
+}
+
 /**
  * Groups DRS prompts by category and topic, then writes them into
  * the LLMO config as aiTopics so they appear in the UI and are used
  * by downstream brand-presence analysis flows.
+ *
+ * Non-alpha-2 region values are dropped (with an aggregated WARN log)
+ * before grouping so they cannot reach the schema-validated S3 config.
  *
  * @param {object} params
  * @param {Array<object>} params.drsPrompts - Raw prompts from DRS
@@ -36,6 +53,25 @@ export default async function writeDrsPromptsToLlmoConfig({
   log,
   configClient = sharedLlmoConfig,
 }) {
+  const droppedRegions = new Map();
+  const normalizedPrompts = drsPrompts.map((p) => {
+    if (!p.region) {
+      return p;
+    }
+    const valid = normalizeRegion(p.region);
+    if (valid) {
+      return { ...p, region: valid };
+    }
+    droppedRegions.set(p.region, (droppedRegions.get(p.region) || 0) + 1);
+    const rest = { ...p };
+    delete rest.region;
+    return rest;
+  });
+  if (droppedRegions.size > 0) {
+    const summary = Object.fromEntries(droppedRegions);
+    log.warn(`Dropped non-alpha-2 region values from DRS prompts for site ${siteId}: ${JSON.stringify(summary)}`);
+  }
+
   const { config } = await configClient.readConfig(siteId, s3Client, { s3Bucket });
 
   if (!config.aiTopics) {
@@ -54,7 +90,7 @@ export default async function writeDrsPromptsToLlmoConfig({
   // Group prompts by topic (DRS topic field) within each category
   // DRS prompt shape: { prompt, region, category, topic, base_url }
   const grouped = {};
-  for (const p of drsPrompts) {
+  for (const p of normalizedPrompts) {
     const catName = p.category || 'general';
     const topicName = p.topic || 'general';
     const key = `${catName}|||${topicName}`;
@@ -65,12 +101,36 @@ export default async function writeDrsPromptsToLlmoConfig({
     grouped[key].prompts.push(p);
   }
 
+  // Determine which categories have at least one prompt with a valid region
+  // across all their topics. New categories without a valid region cannot be
+  // safely persisted because the schema requires `region`.
+  const categoriesWithValidRegion = new Set();
+  for (const p of normalizedPrompts) {
+    if (p.region) {
+      categoriesWithValidRegion.add((p.category || 'general').toLowerCase());
+    }
+  }
+
+  // Drop any group whose category is new AND has no valid region to assign,
+  // so we never create a category that violates the schema.
+  const droppedCategories = new Set();
+  const groupsToProcess = Object.values(grouped).filter((group) => {
+    const catKey = group.category.toLowerCase();
+    const isNew = !categoryNameToId[catKey];
+    if (isNew && !categoriesWithValidRegion.has(catKey)) {
+      droppedCategories.add(group.category);
+      return false;
+    }
+    return true;
+  });
+
   const now = new Date().toISOString();
   const categoryRegions = new Map();
 
-  for (const { category: catName, topic: topicName, prompts } of Object.values(grouped)) {
-    // Find or create category
-    let categoryId = categoryNameToId[catName.toLowerCase()];
+  for (const { category: catName, topic: topicName, prompts } of groupsToProcess) {
+    const catKey = catName.toLowerCase();
+    let categoryId = categoryNameToId[catKey];
+
     if (!categoryId) {
       categoryId = randomUUID();
       config.categories[categoryId] = {
@@ -79,7 +139,7 @@ export default async function writeDrsPromptsToLlmoConfig({
         updatedBy: 'drs',
         updatedAt: now,
       };
-      categoryNameToId[catName.toLowerCase()] = categoryId;
+      categoryNameToId[catKey] = categoryId;
     }
 
     // Track regions for this category
@@ -88,7 +148,7 @@ export default async function writeDrsPromptsToLlmoConfig({
         if (!categoryRegions.has(categoryId)) {
           categoryRegions.set(categoryId, new Set());
         }
-        categoryRegions.get(categoryId).add(p.region.toLowerCase());
+        categoryRegions.get(categoryId).add(p.region);
       }
     }
 
@@ -101,7 +161,7 @@ export default async function writeDrsPromptsToLlmoConfig({
           promptMap[text] = { regions: new Set(), type: p.type || '' };
         }
         if (p.region) {
-          promptMap[text].regions.add(p.region.toLowerCase());
+          promptMap[text].regions.add(p.region);
         }
       }
     }
@@ -131,6 +191,10 @@ export default async function writeDrsPromptsToLlmoConfig({
   for (const [catId, regions] of categoryRegions) {
     const arr = [...regions];
     config.categories[catId].region = arr.length === 1 ? arr[0] : arr;
+  }
+
+  if (droppedCategories.size > 0) {
+    log.warn(`Skipped DRS categories with no valid region for site ${siteId}: ${JSON.stringify([...droppedCategories])}`);
   }
 
   const { version } = await configClient.writeConfig(siteId, config, s3Client, { s3Bucket });
