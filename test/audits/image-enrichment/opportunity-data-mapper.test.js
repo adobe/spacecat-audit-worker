@@ -14,15 +14,15 @@ import { expect } from 'chai';
 import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { createOpportunityData } from '../../../src/semantic-value-visibility/opportunity-data-mapper.js';
+import { createOpportunityData } from '../../../src/image-enrichment/opportunity-data-mapper.js';
 import { DATA_SOURCES } from '../../../src/common/constants.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const fixturesPath = join(__dirname, '../../fixtures/semantic-value-visibility');
+const fixturesPath = join(__dirname, '../../fixtures/image-enrichment');
 const krisshopFixture = JSON.parse(readFileSync(join(fixturesPath, 'Krisshop.json'), 'utf8'));
 
-describe('Semantic Value Visibility Opportunity Data Mapper', () => {
+describe('Image Enrichment Opportunity Data Mapper', () => {
   describe('createOpportunityData', () => {
     it('should create opportunity data with all required fields', () => {
       const result = createOpportunityData({ guidance: krisshopFixture.guidance });

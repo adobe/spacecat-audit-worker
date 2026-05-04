@@ -13,11 +13,11 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import { auditRunner, sendToMystique } from '../../../src/semantic-value-visibility/handler.js';
+import { auditRunner, sendToMystique } from '../../../src/image-enrichment/handler.js';
 
 use(sinonChai);
 
-describe('Semantic Value Visibility Handler', () => {
+describe('Image Enrichment Handler', () => {
   let sandbox;
   let site;
   let context;
@@ -83,7 +83,7 @@ describe('Semantic Value Visibility Handler', () => {
 
       const message = sqsStub.sendMessage.getCall(0).args[1];
       expect(message).to.deep.include({
-        type: 'guidance:semantic-value-visibility',
+        type: 'guidance:image-enrichment',
         siteId,
         auditId: 'audit-456',
         url: auditUrl,
@@ -107,7 +107,7 @@ describe('Semantic Value Visibility Handler', () => {
       await sendToMystique(auditUrl, {}, context, site);
 
       expect(logStub.info).to.have.been.calledWith(
-        '[semantic-value-visibility] Request sent to Mystique',
+        '[image-enrichment] Request sent to Mystique',
       );
     });
 
