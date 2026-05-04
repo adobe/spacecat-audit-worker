@@ -1,3 +1,10 @@
+## [1.429.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.429.2...v1.429.3) (2026-05-04)
+
+
+### Bug Fixes
+
+* **drs-prompt-generation:** drop non-alpha-2 region values before writeConfig (SITES-43238) ([#2442](https://github.com/adobe/spacecat-audit-worker/issues/2442)) ([7793a53](https://github.com/adobe/spacecat-audit-worker/commit/7793a53614cb3b0c1551439fab45e5f1c8cd0362))
+
 ## [1.429.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.429.1...v1.429.2) (2026-05-02)
 
 
