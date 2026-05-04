@@ -78,6 +78,7 @@ import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-h
 import readabilityOpportunities from './readability/opportunities/handler.js';
 import unifiedReadabilityGuidance from './readability/shared/unified-guidance-handler.js';
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
+import llmoReferralTrafficDaily from './llmo-referral-traffic-daily/handler.js';
 import llmErrorPages from './llm-error-pages/handler.js';
 import llmErrorPagesGuidance from './llm-error-pages/guidance-handler.js';
 import paidTrafficAnalysis from './paid-traffic-analysis/handler.js';
@@ -121,6 +122,8 @@ import semanticValueVisibility from './semantic-value-visibility/handler.js';
 import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
 import drsPromptGeneration from './drs-prompt-generation/handler.js';
 import offsiteBrandPresence from './offsite-brand-presence/handler.js';
+import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
+import { refreshGeoBrandPresenceDailyHandler } from './geo-brand-presence-daily/geo-brand-presence-refresh-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -184,6 +187,7 @@ const HANDLERS = {
   'detect:form-details': detectFormDetails,
   'page-intent': pageIntent,
   'llmo-referral-traffic': llmoReferralTraffic,
+  'llmo-referral-traffic-daily': llmoReferralTrafficDaily,
   'llm-error-pages': llmErrorPages,
   'guidance:llm-error-pages': llmErrorPagesGuidance,
   'optimization-report-callback': optimizationReportCallback,
@@ -225,6 +229,8 @@ const HANDLERS = {
   'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
   'drs:prompt_generation_base_url': drsPromptGeneration,
   'offsite-brand-presence': offsiteBrandPresence,
+  'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,
+  'refresh:geo-brand-presence-daily': refreshGeoBrandPresenceDailyHandler,
   dummy: (message) => ok(message),
 };
 
