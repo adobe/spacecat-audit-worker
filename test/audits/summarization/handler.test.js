@@ -715,7 +715,7 @@ describe('Summarization Handler', () => {
       const sentMessage = sqs.sendMessage.getCall(0).args[1];
       expect(sentMessage.data.pages).to.have.lengthOf(3);
       expect(log.warn).to.have.been.calledWithMatch(
-        "Found 1 active opportunity/ies but none matched type 'summarization'",
+        "Found 1 active opportunities but none matched type 'summarization'",
       );
     });
 
