@@ -34,46 +34,23 @@ import {
   runDailyReferralExport,
 } from './referral-daily-export.js';
 
-function getAgenticExportBatchId(agenticDbExportResult) {
-  return agenticDbExportResult.dailyAgenticExport?.batchId;
-}
-
-function addAgenticExportBatchIdToAuditResult(
-  results,
+function getAgenticDbExportAuditResult(
+  agenticDbExportResult,
   agenticReportConfig,
   s3Config,
-  batchId,
 ) {
+  const batchId = agenticDbExportResult.dailyAgenticExport?.batchId;
   if (!batchId) {
-    return results;
+    return null;
   }
 
-  let attached = false;
-  const enrichedResults = results.map((result) => {
-    if (result.name !== 'agentic') {
-      return result;
-    }
-    attached = true;
-    return {
-      ...result,
-      batchId,
-    };
-  });
-
-  if (attached) {
-    return enrichedResults;
-  }
-
-  return [
-    ...enrichedResults,
-    {
-      name: 'agentic',
-      table: agenticReportConfig.tableName,
-      database: s3Config.databaseName,
-      customer: s3Config.siteName,
-      batchId,
-    },
-  ];
+  return {
+    name: 'agentic-db-export',
+    table: agenticReportConfig.tableName,
+    database: s3Config.databaseName,
+    customer: s3Config.siteName,
+    batchId,
+  };
 }
 
 async function runCdnLogsReport(url, context, site, auditContext) {
@@ -252,12 +229,14 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     }
   }
 
-  const auditResult = addAgenticExportBatchIdToAuditResult(
-    results,
+  const agenticDbExportAuditResult = getAgenticDbExportAuditResult(
+    agenticDbExportResult,
     agenticReportConfig,
     s3Config,
-    getAgenticExportBatchId(agenticDbExportResult),
   );
+  const auditResult = agenticDbExportAuditResult
+    ? [...results, agenticDbExportAuditResult]
+    : results;
 
   return {
     ...agenticDbExportResult,
