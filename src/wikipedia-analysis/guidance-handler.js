@@ -71,9 +71,11 @@ function getRankFromPriority(priority) {
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Site, Audit: AuditModel } = dataAccess;
-  const { siteId, auditId, data } = message;
+  const {
+    siteId, auditId, brandId, data,
+  } = message;
 
-  log.info(`[Wikipedia] Received Wikipedia analysis guidance for siteId: ${siteId}, auditId: ${auditId}`);
+  log.info(`[Wikipedia] Received Wikipedia analysis guidance for siteId: ${siteId}, auditId: ${auditId}${brandId ? `, brandId: ${brandId}` : ''}`);
 
   // Handle presigned URL (large response) or direct analysis data
   let analysisData = data?.analysis;

@@ -32,9 +32,11 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.REDDIT_ANALYSIS;
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Site, Audit: AuditModel } = dataAccess;
-  const { siteId, auditId, data } = message;
+  const {
+    siteId, auditId, brandId, data,
+  } = message;
 
-  log.info(`[Reddit] Received Reddit analysis guidance for siteId: ${siteId}, auditId: ${auditId}`);
+  log.info(`[Reddit] Received Reddit analysis guidance for siteId: ${siteId}, auditId: ${auditId}${brandId ? `, brandId: ${brandId}` : ''}`);
 
   if (data?.error) {
     log.error(`[Reddit] Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}: ${data.errorMessage}`);
