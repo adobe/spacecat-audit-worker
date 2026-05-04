@@ -23,6 +23,7 @@ import {
   TARGET_READABILITY_SCORE,
   MIN_TEXT_LENGTH,
   MAX_CHARACTERS_DISPLAY,
+  MAX_LINK_DENSITY_RATIO,
 } from './constants.js';
 import { getElementSelector } from './selector-utils.js';
 import {
@@ -354,15 +355,32 @@ export async function analyzeTextReadability(
  * @param {Cheerio} $ - The Cheerio object to search for text elements.
  * @returns {Element[]} Array of meaningful text elements for readability analysis and enhancement.
  */
+const NAV_CLASS_PATTERNS = ['nav', 'menu', 'breadcrumb', 'filter', 'pagination', 'sidebar', 'promo', 'banner', 'cookie'];
+
 const getMeaningfulElementsForReadability = ($) => {
   stripNonContent($);
+  $('nav, aside, [role="navigation"], [role="complementary"]').remove();
   removeEmbeddedSocialElements($);
   return $('p, blockquote, li, div').toArray().filter((el) => {
+    const normalized = normalizeReadabilityText($(el).text());
+    if (normalized.length < MIN_TEXT_LENGTH) {
+      return false;
+    }
     if (isLikelyNavigationElement($, el)) {
       return false;
     }
-    const normalized = normalizeReadabilityText($(el).text());
-    return normalized.length >= MIN_TEXT_LENGTH;
+    const cls = (el.attribs?.class || '').toLowerCase();
+    const id = (el.attribs?.id || '').toLowerCase();
+    if (NAV_CLASS_PATTERNS.some((p) => cls.includes(p) || id.includes(p))) {
+      return false;
+    }
+    const $el = $(el);
+    const linkTextLength = normalizeReadabilityText($el.find('a').text()).length;
+    const totalLength = normalized.length;
+    if (totalLength > 0 && linkTextLength / totalLength > MAX_LINK_DENSITY_RATIO) {
+      return false;
+    }
+    return true;
   });
 };
 

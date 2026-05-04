@@ -139,6 +139,7 @@ async function handleAdobeFastly(
     siteId,
     auditContext: {
       date: backfillDay.reportDate,
+      refreshAgenticDailyExport: true,
     },
   }, null, CDN_LOGS_REPORT_DELAY_SECONDS + (index * CDN_LOGS_ANALYSIS_DELAY_SECONDS)));
 

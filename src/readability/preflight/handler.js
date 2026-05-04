@@ -192,11 +192,10 @@ export default async function readability(context, auditContext) {
     stripNonContent($);
     removeEmbeddedSocialElements($);
 
-    // Remove structural/navigation elements before analysis — their concatenated link text
-    // scores very poorly on Flesch despite not being readable prose (SITES-43577).
-    // Note: the shared getMeaningfulElementsForReadability() only removes header/footer/style/
-    // script/noscript; nav removal and the link-density filter below are preflight-only for now.
-    $('header, footer, nav, [role="navigation"]').remove();
+    // Remove navigation landmarks before analysis — concatenated link text scores very poorly
+    // on Flesch despite not being prose (SITES-43577). stripNonContent() already strips
+    // header/footer/figcaption.
+    $('nav, [role="navigation"]').remove();
 
     // Get all paragraph, div, and list item elements
     const textElements = $('p, div, li').toArray();

@@ -212,7 +212,11 @@ async function triggerSubAudits(context, site, detectedDays) {
     await sqs.sendMessage(auditQueue, {
       type: 'cdn-logs-report',
       siteId,
-      auditContext: { weekOffset },
+      auditContext: {
+        weekOffset,
+        refreshAgenticDailyExport: true,
+        triggeredBy: SERVICE_PROVIDER_TYPES.BYOCDN_OTHER,
+      },
     }, null, 900);
     log.info(`Triggered cdn-logs-report for siteId=${siteId} weekOffset=${weekOffset}`);
   }
