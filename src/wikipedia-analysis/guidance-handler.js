@@ -164,6 +164,10 @@ export default async function handler(message, context) {
       }),
     });
 
+    if (brandId) {
+      opportunity.setScopeType('brand');
+      opportunity.setScopeId(brandId);
+    }
     // Store the full analysis in the opportunity data
     opportunity.setData({
       ...opportunity.getData(),

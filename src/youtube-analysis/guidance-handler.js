@@ -124,6 +124,10 @@ export default async function handler(message, context) {
       }),
     });
 
+    if (brandId) {
+      opportunity.setScopeType('brand');
+      opportunity.setScopeId(brandId);
+    }
     const status = opportunityData.status || 'NEW';
     opportunity.setStatus(status);
     opportunity.setData({

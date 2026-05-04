@@ -54,6 +54,8 @@ describe('Cited Analysis Guidance Handler', () => {
       getData: sandbox.stub().returns({ existingData: true }),
       setData: sandbox.stub(),
       setStatus: sandbox.stub(),
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       save: sandbox.stub().resolves(),
     };
 
@@ -737,6 +739,45 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(/brandId: brand-uuid-123/),
       );
+    });
+  });
+
+  describe('Brand scope', () => {
+    it('should set scope on opportunity when brandId is present', async () => {
+      const message = {
+        siteId,
+        auditId,
+        brandId: 'brand-uuid-123',
+        data: {
+          companyName: 'Test Corp',
+          analysis: {
+            suggestions: [{ id: 's1', type: 'CONTENT_UPDATE', rank: 1 }],
+          },
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockOpportunity.setScopeType).to.have.been.calledWith('brand');
+      expect(mockOpportunity.setScopeId).to.have.been.calledWith('brand-uuid-123');
+    });
+
+    it('should not set scope on opportunity when brandId is absent', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Test Corp',
+          analysis: {
+            suggestions: [{ id: 's1', type: 'CONTENT_UPDATE', rank: 1 }],
+          },
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockOpportunity.setScopeType).to.not.have.been.called;
+      expect(mockOpportunity.setScopeId).to.not.have.been.called;
     });
   });
 });

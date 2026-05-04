@@ -53,6 +53,8 @@ describe('Wikipedia Analysis Guidance Handler', () => {
       getId: sandbox.stub().returns('opp-123'),
       getData: sandbox.stub().returns({ existingData: true }),
       setData: sandbox.stub(),
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       save: sandbox.stub().resolves(),
     };
 
@@ -643,6 +645,47 @@ describe('Wikipedia Analysis Guidance Handler', () => {
 
       const callText = mockPostMessageOptional.firstCall.args[2];
       expect(callText).to.include('1 suggestion processed');
+    });
+  });
+
+  describe('Brand scope', () => {
+    const analysisWithSuggestions = {
+      company: 'Test Corp',
+      suggestions: [
+        {
+          id: 'add_citations',
+          priority: 'HIGH',
+          title: 'Add citations',
+          description: 'Add more references',
+        },
+      ],
+    };
+
+    it('should set scope on opportunity when brandId is present', async () => {
+      const message = {
+        siteId,
+        auditId,
+        brandId: 'brand-uuid-123',
+        data: { analysis: analysisWithSuggestions },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockOpportunity.setScopeType).to.have.been.calledWith('brand');
+      expect(mockOpportunity.setScopeId).to.have.been.calledWith('brand-uuid-123');
+    });
+
+    it('should not set scope on opportunity when brandId is absent', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: { analysis: analysisWithSuggestions },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockOpportunity.setScopeType).to.not.have.been.called;
+      expect(mockOpportunity.setScopeId).to.not.have.been.called;
     });
   });
 });
