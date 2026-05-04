@@ -210,9 +210,23 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     }
   }
 
+  const auditResult = [...results];
+  if (agenticDbExportResult.dailyAgenticExport?.batchId) {
+    auditResult.push({
+      name: 'agentic-db-export',
+      batchId: agenticDbExportResult.dailyAgenticExport.batchId,
+    });
+  }
+  if (dailyReferralExport?.batchId) {
+    auditResult.push({
+      name: 'referral-db-export',
+      batchId: dailyReferralExport.batchId,
+    });
+  }
+
   return {
     ...agenticDbExportResult,
-    auditResult: results,
+    auditResult,
     dailyReferralExport,
     fullAuditRef: `${site.getConfig()?.getLlmoDataFolder()}`,
   };
