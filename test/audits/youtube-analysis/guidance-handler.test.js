@@ -693,4 +693,26 @@ describe('YouTube Analysis Guidance Handler', () => {
       );
     });
   });
+
+  describe('Message logging', () => {
+    it('should include brandId in log when present', async () => {
+      const message = {
+        siteId,
+        auditId,
+        brandId: 'brand-uuid-123',
+        data: {
+          companyName: 'Test',
+          analysis: {
+            suggestions: [],
+          },
+        },
+      };
+
+      await guidanceHandler.default(message, context);
+
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/brandId: brand-uuid-123/),
+      );
+    });
+  });
 });
