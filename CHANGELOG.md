@@ -1,3 +1,10 @@
+# [1.430.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.429.5...v1.430.0) (2026-05-04)
+
+
+### Features
+
+* **commerce-enrichments:** scrape as GPTBot user-agent ([#2467](https://github.com/adobe/spacecat-audit-worker/issues/2467)) ([b79793c](https://github.com/adobe/spacecat-audit-worker/commit/b79793c08ca548093b939c1e37c7242b6fcd7943))
+
 ## [1.429.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.429.4...v1.429.5) (2026-05-04)
 
 
