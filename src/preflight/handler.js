@@ -144,21 +144,22 @@ export const preflightAudit = async (context) => {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
   }
 
-  // Compute enabled preflight checks; enablement is enforced upstream, so run all available checks
-  const enabledChecks = [...AVAILABLE_CHECKS];
-  let checksForIdentify = enabledChecks;
+  // Single list for which checks run this execution (DOM gates + handler loop below).
+  // Default: all catalog checks; job payload may carry a narrower list from a prior step/client.
+  const allAvailableChecks = [...AVAILABLE_CHECKS];
+  let enabledChecks = allAvailableChecks;
   try {
     const jobEntity = await AsyncJobEntity.findById(jobId);
     const currentMetadata = jobEntity.getMetadata();
     const currentPayload = currentMetadata?.payload;
     if (currentPayload?.checks?.length) {
-      checksForIdentify = currentPayload.checks;
+      enabledChecks = currentPayload.checks;
     }
     jobEntity.setMetadata({
       ...currentMetadata,
       payload: {
         ...currentPayload,
-        checks: enabledChecks,
+        checks: allAvailableChecks,
       },
     });
     await jobEntity.save();
@@ -201,9 +202,9 @@ export const preflightAudit = async (context) => {
     }));
     const audits = new Map(auditsResult.map((r) => [r.pageUrl, r]));
 
-    const bodySizeEnabled = checksForIdentify.includes(AUDIT_BODY_SIZE);
-    const loremIpsumEnabled = checksForIdentify.includes(AUDIT_LOREM_IPSUM);
-    const h1CountEnabled = checksForIdentify.includes(AUDIT_H1_COUNT);
+    const bodySizeEnabled = enabledChecks.includes(AUDIT_BODY_SIZE);
+    const loremIpsumEnabled = enabledChecks.includes(AUDIT_LOREM_IPSUM);
+    const h1CountEnabled = enabledChecks.includes(AUDIT_H1_COUNT);
     // DOM-based checks: body size, lorem ipsum, h1 count
     if (bodySizeEnabled || loremIpsumEnabled || h1CountEnabled) {
       const domStartTime = Date.now();
