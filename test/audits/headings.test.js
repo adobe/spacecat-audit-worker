@@ -3126,6 +3126,64 @@ describe('Headings Audit', () => {
       expect(result.someField).to.equal('new value');
       expect(result.isEdited).to.equal(true);
     });
+
+    it('tests mergeDataFunction execution - returns existing suggestion unchanged when edgeDeployed is true', async () => {
+      const convertToOpportunityStub10 = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id'
+      });
+
+      const syncSuggestionsStub10 = sinon.stub().resolves();
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub10,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub10,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: { headings: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'heading-empty',
+            url: 'https://example.com/page1',
+            recommendedAction: 'New action'
+          }
+        ], toc: [] }
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const syncCall = syncSuggestionsStub10.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+      // When edgeDeployed is true, the existing suggestion must be returned as-is
+      const existingSuggestion = {
+        type: 'CODE_CHANGE',
+        url: 'https://example.com/page1',
+        checkType: 'heading-empty',
+        recommendedAction: 'Deployed action',
+        edgeDeployed: true,
+        someField: 'existing value'
+      };
+      const newSuggestion = {
+        type: 'CODE_CHANGE',
+        url: 'https://example.com/page1',
+        checkType: 'heading-empty',
+        recommendedAction: 'New audit action',
+        someField: 'new value'
+      };
+
+      const result = mergeDataFn(existingSuggestion, newSuggestion);
+
+      // Must return existing data unchanged — new audit must not overwrite deployed suggestions
+      expect(result.recommendedAction).to.equal('Deployed action');
+      expect(result.someField).to.equal('existing value');
+      expect(result.edgeDeployed).to.equal(true);
+    });
   });
 
   describe('Opportunity Data Mapper', () => {
