@@ -144,26 +144,33 @@ export const preflightAudit = async (context) => {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
   }
 
-  // Compute enabled preflight checks for the site and store in job metadata
+  // Single list for which checks run this execution (DOM gates + handler loop below).
+  const allAvailableChecks = [...AVAILABLE_CHECKS];
   let enabledChecks = [];
   try {
-    enabledChecks = (await Promise.all(
+    const siteEnabled = (await Promise.all(
       AVAILABLE_CHECKS.map(async (audit) => {
         const enabled = await isAuditEnabledForSite(`${audit}-preflight`, site, context);
         return enabled ? audit : null;
       }),
     )).filter(Boolean);
 
-    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Enabled checks: ${JSON.stringify(enabledChecks)}`);
+    enabledChecks = siteEnabled;
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
     const currentMetadata = jobEntity.getMetadata();
     const currentPayload = currentMetadata?.payload;
+    if (currentPayload?.checks?.length) {
+      enabledChecks = currentPayload.checks.filter((c) => siteEnabled.includes(c));
+    }
+
+    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Enabled checks: ${JSON.stringify(enabledChecks)}`);
+
     jobEntity.setMetadata({
       ...currentMetadata,
       payload: {
         ...currentPayload,
-        checks: enabledChecks,
+        checks: allAvailableChecks,
       },
     });
     await jobEntity.save();
