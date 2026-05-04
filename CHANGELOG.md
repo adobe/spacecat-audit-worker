@@ -1,3 +1,10 @@
+## [1.429.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.429.4...v1.429.5) (2026-05-04)
+
+
+### Bug Fixes
+
+* persist daily db export batch ids ([#2468](https://github.com/adobe/spacecat-audit-worker/issues/2468)) ([d9204e9](https://github.com/adobe/spacecat-audit-worker/commit/d9204e9de02497a0784f88e5572a9c2390e682c1))
+
 ## [1.429.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.429.3...v1.429.4) (2026-05-04)
 
 
