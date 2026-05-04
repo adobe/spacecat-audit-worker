@@ -1903,6 +1903,122 @@ describe('Crawl Detection Module', () => {
       expect(result.results[0].trafficDomain).to.equal(7);
     });
 
+    it('skips crawl extraction for links under ancestors with excludedElementClasses', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      const rawBody = `<html><body>
+        <div class="skip-bil">
+          <a href="/ignored">In skip</a>
+          <link rel="canonical" href="https://example.com/canon-ignored">
+          <link rel="alternate" hreflang="en" href="https://example.com/alt-ignored">
+          <form action="/form-ignored"><button type="submit">Go</button></form>
+          <img src="/img-ignored.png" alt="">
+          <img srcset="/srcset-ignored.png 1x" alt="">
+          <video><source srcset="/srcset-only-ignored.png 1x"></video>
+          <video><source src="/vid-ignored.mp4"></video>
+          <map name="m"><area shape="rect" coords="0,0,1,1" href="/area-ignored" alt=""></map>
+          <link rel="stylesheet" href="/ignored.css">
+          <script src="/ignored.js"></script>
+          <style>.x{background:url(/ignored-from-style.png)}</style>
+          <span style="background:url(/ignored-from-inline.png)">x</span>
+        </div>
+        <main><a href="/checked">Outside</a></main>
+      </body></html>`;
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: { rawBody },
+        finalUrl: 'https://example.com/page1',
+      });
+      isLinkInaccessibleStub.resolves(createValidationResponse(false));
+
+      const contextWithIgnore = {
+        ...mockContext,
+        site: {
+          ...mockSite,
+          getConfig: () => ({
+            getHandlers: () => ({
+              'broken-internal-links': {
+                config: {
+                  excludedElementClasses: ['skip-bil'],
+                },
+              },
+            }),
+          }),
+        },
+      };
+
+      await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, contextWithIgnore);
+
+      expect(isLinkInaccessibleStub.callCount).to.equal(1);
+      expect(isLinkInaccessibleStub.firstCall.args[0]).to.equal('https://example.com/checked');
+    });
+
+    it('retain crawl extraction for links without class', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/page1.json'],
+      ]);
+
+      const rawBody = `<html><body>
+        <div class="">
+          <a href="/link1">Link 1</a>
+          <link rel="canonical" href="https://example.com/canon1">
+          <link rel="alternate" hreflang="en" href="https://example.com/alt1">
+          <form action="/form1"><button type="submit">Go</button></form>
+          <img src="/img1.png" alt="">
+          <img srcset="/srcset1.png 1x" alt="">
+          <video><source srcset="/srcset1.png 1x"></video>
+          <video><source src="/vid1.mp4"></video>
+          <map name="m"><area shape="rect" coords="0,0,1,1" href="/area1" alt=""></map>
+          <link rel="stylesheet" href="/style1.css">
+          <script src="/script1.js"></script>
+          <style>.x{background:url(/style1.png)}</style>
+          <span style="background:url(/inline1.png)">x</span>
+        </div>
+        <main><a href="/link2">Link 2</a></main>
+      </body></html>`;
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: { rawBody },
+        finalUrl: 'https://example.com/page1',
+      });
+      isLinkInaccessibleStub.resolves(createValidationResponse(false));
+
+      const contextWithIgnore = {
+        ...mockContext,
+        site: {
+          ...mockSite,
+          getConfig: () => ({
+            getHandlers: () => ({
+              'broken-internal-links': {
+                config: {
+                  excludedElementClasses: ['skip-bil'],
+                },
+              },
+            }),
+          }),
+        },
+      };
+
+      await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, contextWithIgnore);
+
+      expect(isLinkInaccessibleStub.callCount).to.equal(14);
+      expect(isLinkInaccessibleStub.firstCall.args[0]).to.equal('https://example.com/link1');
+    });
+
     it('should extract object data, meta refresh, and CSS url() references', async () => {
       const scrapeResultPaths = new Map([
         ['https://example.com/page1', 'scrapes/page1.json'],

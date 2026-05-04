@@ -13,6 +13,7 @@
 import { expect } from 'chai';
 import {
   extractLocalePathPrefix,
+  isCrossLocalePDP404RumPair,
   isSharedInternalResource,
 } from '../../../src/internal-links/scope-utils.js';
 
@@ -64,6 +65,81 @@ describe('internal-links scope-utils', () => {
     it('handles double-slash and malformed urls defensively', () => {
       expect(extractLocalePathPrefix('https://bulk.com//')).to.equal('');
       expect(extractLocalePathPrefix('://invalid')).to.equal('');
+    });
+  });
+
+  describe('isCrossLocalePDP404RumPair', () => {
+    it('returns false when either argument is missing', () => {
+      expect(isCrossLocalePDP404RumPair('', 'https://example.com/de/a/b')).to.equal(false);
+      expect(isCrossLocalePDP404RumPair('https://example.com/fr/a/b', '')).to.equal(false);
+      expect(isCrossLocalePDP404RumPair(null, 'https://example.com/de/a/b')).to.equal(false);
+    });
+
+    it('returns false when either pathname is empty or root-only', () => {
+      expect(isCrossLocalePDP404RumPair(
+        'https://example.com',
+        'https://example.com/de/item/x',
+      )).to.equal(false);
+      expect(isCrossLocalePDP404RumPair(
+        'https://example.com/fr/item/x',
+        'https://example.com',
+      )).to.equal(false);
+    });
+
+    it('returns false when segment counts differ or path is too shallow', () => {
+      expect(isCrossLocalePDP404RumPair(
+        'https://example.com/fr/a/b',
+        'https://example.com/de/a',
+      )).to.equal(false);
+      expect(isCrossLocalePDP404RumPair(
+        'https://example.com/fr',
+        'https://example.com/de',
+      )).to.equal(false);
+    });
+
+    it('returns false when either side has no locale-like prefix', () => {
+      expect(isCrossLocalePDP404RumPair(
+        'https://example.com/blog/post',
+        'https://example.com/fr/missing',
+      )).to.equal(false);
+      expect(isCrossLocalePDP404RumPair(
+        'https://example.com/fr/page',
+        'https://example.com/products/missing',
+      )).to.equal(false);
+    });
+
+    it('returns false when both sides share the same locale prefix', () => {
+      expect(isCrossLocalePDP404RumPair(
+        'https://example.com/fr/page',
+        'https://example.com/fr/missing',
+      )).to.equal(false);
+      expect(isCrossLocalePDP404RumPair(
+        'https://example.com/FR/page',
+        'https://example.com/fr/missing',
+      )).to.equal(false);
+    });
+
+    it('returns false when non-locale segments after the first differ', () => {
+      expect(isCrossLocalePDP404RumPair(
+        'https://example.com/fr/a/b',
+        'https://example.com/de/a/c',
+      )).to.equal(false);
+    });
+
+    it('returns true when locales differ and all following path segments match', () => {
+      expect(isCrossLocalePDP404RumPair(
+        'https://example.com/fr/product/slug',
+        'https://example.com/de/product/slug',
+      )).to.equal(true);
+      expect(isCrossLocalePDP404RumPair(
+        'https://example.com/en-us/a/b',
+        'https://example.com/de-de/a/b',
+      )).to.equal(true);
+    });
+
+    it('returns false when URL parsing throws', () => {
+      expect(isCrossLocalePDP404RumPair('https://%zz', 'https://example.com/de/a/b')).to.equal(false);
+      expect(isCrossLocalePDP404RumPair('https://example.com/fr/a/b', 'https://%zz')).to.equal(false);
     });
   });
 });
