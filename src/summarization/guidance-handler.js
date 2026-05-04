@@ -38,9 +38,11 @@ async function createOpportunity(siteId, auditId, baseUrl, guidance, context) {
 async function addSuggestions(
   opportunity,
   suggestions,
+  urlToContentHash,
+  scrapedUrlsSet,
   context,
 ) {
-  const suggestionValues = getJsonSummarySuggestion(suggestions);
+  const suggestionValues = getJsonSummarySuggestion(suggestions, urlToContentHash);
 
   await syncSuggestions({
     context,
@@ -53,6 +55,7 @@ async function addSuggestions(
       rank: 10,
       data: suggestion,
     }),
+    scrapedUrlsSet,
   });
 }
 
@@ -93,6 +96,16 @@ export default async function handler(message, context) {
     return notFound();
   }
 
+  // Read the content hashes and processed URLs stored by the sendToMystique step.
+  // scrapedUrlsSet scopes syncSuggestions so only re-sent URLs are eligible for OUTDATED
+  // marking — skipped URLs (content unchanged) retain their existing suggestions.
+  const auditResult = audit.getAuditResult?.() || {};
+  const urlToContentHash = auditResult.urlToContentHash || {};
+  const sentUrls = auditResult.scrapedUrlsSent;
+  // Only apply scoped OUTDATED logic when the new field is present; fall back to null
+  // (current behaviour) for in-flight audits pre-dating this feature.
+  const scrapedUrlsSet = Array.isArray(sentUrls) ? new Set(sentUrls) : null;
+
   try {
     // Fetch summarization data from presigned URL
     log.info(`[Summarization] Fetching summarization data from presigned URL: ${presignedUrl}`);
@@ -122,7 +135,7 @@ export default async function handler(message, context) {
     );
 
     try {
-      await addSuggestions(opportunity, suggestions, context);
+      await addSuggestions(opportunity, suggestions, urlToContentHash, scrapedUrlsSet, context);
     } catch (e) {
       log.error(`[Summarization] Failed to save summarization opportunity on Mystique callback: ${e.message}`);
       return badRequest('Failed to persist summarization opportunity');
