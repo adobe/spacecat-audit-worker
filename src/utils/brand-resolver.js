@@ -220,13 +220,13 @@ export async function resolveBrandForSite(context, site) {
  *
  * When `brand` is non-null and has a `brandId`, sets:
  *   - `scopeType: 'brand'`
- *   - `scopeId: brand.brandId`
+ *   - `brandId: brand.brandId`
  *
  * `siteId` is intentionally NOT touched: it keeps its original meaning ("the site that
- * triggered the audit"). The brand is identified solely by `scopeId` when present.
+ * triggered the audit"). The brand is identified solely by `brandId` when present.
  *
  * When `brand` is null or has no `brandId`, the message is returned unchanged.
- * Mystique consumers must treat absent `scopeType`/`scopeId` as "apply site-level
+ * Mystique consumers must treat absent `scopeType`/`brandId` as "apply site-level
  * defaults", not as broader access — confirm this contract with the Mystique team
  * to prevent privilege-confusion when fail-open occurs during outages.
  *
@@ -241,6 +241,6 @@ export function applyBrandScope(message, brand) {
   return {
     ...message,
     scopeType: 'brand',
-    scopeId: brand.brandId,
+    brandId: brand.brandId,
   };
 }

@@ -319,7 +319,7 @@ describe('brand-resolver', () => {
         siteId: 'orig-site',
         data: { foo: 1 },
         scopeType: 'brand',
-        scopeId: 'b-1',
+        brandId: 'b-1',
       });
       // original message untouched
       expect(message).to.deep.equal({ type: 't', siteId: 'orig-site', data: { foo: 1 } });
@@ -328,7 +328,7 @@ describe('brand-resolver', () => {
     it('sets scopeType to the exact string "brand"', () => {
       const out = applyBrandScope({ type: 't', siteId: 's' }, { brandId: 'b-2' });
       expect(out.scopeType).to.equal('brand');
-      expect(out.scopeId).to.equal('b-2');
+      expect(out.brandId).to.equal('b-2');
     });
   });
 });

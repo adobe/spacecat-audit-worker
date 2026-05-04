@@ -322,7 +322,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       ? config.wikipediaUrl
       : '(empty → auto-detect)';
     const scopeForLog = brand
-      ? ` scopeType=brand scopeId=${brand.brandId}`
+      ? ` brandId=${brand.brandId}`
       : '';
 
     log.info(

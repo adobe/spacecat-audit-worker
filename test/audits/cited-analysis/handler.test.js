@@ -669,10 +669,10 @@ describe('Cited Analysis Handler', () => {
 
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.scopeType).to.equal('brand');
-      expect(sentMessage.scopeId).to.equal('brand-4');
+      expect(sentMessage.brandId).to.equal('brand-4');
       expect(sentMessage.siteId).to.equal(siteId);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/scopeType=brand scopeId=brand-4/).and(sinon.match((v) => !/siteId=/.test(v))),
+        sinon.match(/brandId=brand-4/).and(sinon.match((v) => !/siteId=/.test(v))),
       );
     });
 
@@ -697,7 +697,7 @@ describe('Cited Analysis Handler', () => {
 
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.scopeType).to.equal('brand');
-      expect(sentMessage.scopeId).to.equal('brand-5');
+      expect(sentMessage.brandId).to.equal('brand-5');
       expect(sentMessage.siteId).to.equal(siteId);
     });
 
@@ -724,7 +724,7 @@ describe('Cited Analysis Handler', () => {
 
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage).to.not.have.property('scopeType');
-      expect(sentMessage).to.not.have.property('scopeId');
+      expect(sentMessage).to.not.have.property('brandId');
       expect(sentMessage.siteId).to.equal(siteId);
     });
 
@@ -752,7 +752,7 @@ describe('Cited Analysis Handler', () => {
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage).to.not.have.property('scopeType');
-      expect(sentMessage).to.not.have.property('scopeId');
+      expect(sentMessage).to.not.have.property('brandId');
       expect(sentMessage.siteId).to.equal(siteId);
       expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/Brand resolution failed unexpectedly/),

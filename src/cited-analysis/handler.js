@@ -256,7 +256,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     log.debug(`${LOG_PREFIX} Built Mystique message type ${message.type}`);
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     const scopeForLog = brand
-      ? ` scopeType=brand scopeId=${brand.brandId}`
+      ? ` brandId=${brand.brandId}`
       : '';
     log.info(
       `${LOG_PREFIX} Queued Cited analysis request to Mystique for ${config.companyName} `
