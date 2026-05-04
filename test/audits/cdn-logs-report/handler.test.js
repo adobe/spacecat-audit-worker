@@ -728,7 +728,13 @@ describe('CDN Logs Report Handler', function test() {
         siteId: 'test-site',
         error: 'daily export boom',
       });
-      expect(result.auditResult).to.be.an('array').that.is.not.empty;
+      const agenticResult = result.auditResult.find((entry) => entry.name === 'agentic');
+      expect(agenticResult.dailyAgenticExport).to.deep.equal({
+        enabled: true,
+        success: false,
+        siteId: 'test-site',
+        error: 'daily export boom',
+      });
     });
 
     it('includes successful daily agentic export results for enabled sites', async () => {
@@ -736,7 +742,12 @@ describe('CDN Logs Report Handler', function test() {
         enabled: true,
         success: true,
         siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+        trafficDate: '2026-03-31',
+        batchId: 'batch-123',
         rowCount: 12,
+        dispatch: {
+          queueUrl: 'https://sqs.us-east-1.amazonaws.com/123/analytics-queue',
+        },
       });
       const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
         '../../../src/cdn-logs-report/agentic-daily-export.js': {
@@ -774,6 +785,20 @@ describe('CDN Logs Report Handler', function test() {
         enabled: true,
         success: true,
         siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+        trafficDate: '2026-03-31',
+        batchId: 'batch-123',
+        rowCount: 12,
+        dispatch: {
+          queueUrl: 'https://sqs.us-east-1.amazonaws.com/123/analytics-queue',
+        },
+      });
+      const agenticResult = result.auditResult.find((entry) => entry.name === 'agentic');
+      expect(agenticResult.dailyAgenticExport).to.deep.equal({
+        enabled: true,
+        success: true,
+        siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+        trafficDate: '2026-03-31',
+        batchId: 'batch-123',
         rowCount: 12,
       });
     });
@@ -784,6 +809,7 @@ describe('CDN Logs Report Handler', function test() {
         success: true,
         siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
         trafficDate: '2026-03-31',
+        batchId: 'date-batch-123',
       });
       const createSharepointStub = sandbox.stub().resolves(createMockSharepointClient(sandbox));
       const bulkPublishStub = sandbox.stub().resolves();
@@ -828,13 +854,27 @@ describe('CDN Logs Report Handler', function test() {
       expect(runDailyAgenticExportStub).to.have.been.calledOnce;
       expect(runDailyAgenticExportStub.firstCall.args[0].referenceDate.toISOString())
         .to.equal('2026-04-01T10:00:00.000Z');
-      expect(result.auditResult).to.deep.equal([]);
       expect(result.dailyAgenticExport).to.deep.equal({
         enabled: true,
         success: true,
         siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
         trafficDate: '2026-03-31',
+        batchId: 'date-batch-123',
       });
+      expect(result.auditResult).to.deep.equal([{
+        name: 'agentic',
+        table: 'aggregated_logs_example_com_consolidated',
+        database: 'cdn_logs_example_com',
+        customer: 'example',
+        success: true,
+        dailyAgenticExport: {
+          enabled: true,
+          success: true,
+          siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+          trafficDate: '2026-03-31',
+          batchId: 'date-batch-123',
+        },
+      }]);
     });
 
     it('skips daily export when auditContext.weekOffset is provided', async () => {
@@ -1005,6 +1045,21 @@ describe('CDN Logs Report Handler', function test() {
         queued: true,
       });
       expect(result.dailyAgenticExports).to.have.length(7);
+      const agenticResult = result.auditResult.find((entry) => entry.name === 'agentic');
+      expect(agenticResult.dailyAgenticExport).to.deep.include({
+        enabled: true,
+        success: true,
+        queued: true,
+      });
+      expect(agenticResult.dailyAgenticExports).to.have.length(7);
+      expect(agenticResult.dailyAgenticExports[0]).to.deep.include({
+        enabled: true,
+        success: true,
+        queued: true,
+        siteId: 'test-site',
+        referenceDate: '2026-03-31T00:00:00.000Z',
+        delaySeconds: 0,
+      });
       expect(result.dailyReferralExport).to.equal(undefined);
     });
 

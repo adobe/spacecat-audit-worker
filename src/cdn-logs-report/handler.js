@@ -34,6 +34,91 @@ import {
   runDailyReferralExport,
 } from './referral-daily-export.js';
 
+const DAILY_AGENTIC_EXPORT_AUDIT_FIELDS = [
+  'enabled',
+  'success',
+  'skipped',
+  'queued',
+  'siteId',
+  'trafficDate',
+  'referenceDate',
+  'batchId',
+  'rowCount',
+  'classificationCount',
+  'bundleUri',
+  'delaySeconds',
+  'error',
+];
+
+function compactDailyAgenticExport(exportResult) {
+  return DAILY_AGENTIC_EXPORT_AUDIT_FIELDS.reduce((compact, field) => {
+    if (exportResult?.[field] !== undefined) {
+      return {
+        ...compact,
+        [field]: exportResult[field],
+      };
+    }
+    return compact;
+  }, {});
+}
+
+function getAgenticExportAuditDetails(agenticDbExportResult) {
+  const details = {};
+  if (agenticDbExportResult.dailyAgenticExport) {
+    details.dailyAgenticExport = compactDailyAgenticExport(
+      agenticDbExportResult.dailyAgenticExport,
+    );
+  }
+
+  const dailyAgenticExports = (agenticDbExportResult.dailyAgenticExports || [])
+    .map(compactDailyAgenticExport)
+    .filter((exportResult) => Object.keys(exportResult).length > 0);
+  if (dailyAgenticExports.length > 0) {
+    details.dailyAgenticExports = dailyAgenticExports;
+  }
+
+  return details;
+}
+
+function addAgenticExportDetailsToAuditResult(
+  results,
+  agenticReportConfig,
+  s3Config,
+  exportDetails,
+) {
+  if (Object.keys(exportDetails).length === 0) {
+    return results;
+  }
+
+  let attached = false;
+  const enrichedResults = results.map((result) => {
+    if (result.name !== 'agentic') {
+      return result;
+    }
+    attached = true;
+    return {
+      ...result,
+      ...exportDetails,
+    };
+  });
+
+  if (attached) {
+    return enrichedResults;
+  }
+
+  return [
+    ...enrichedResults,
+    {
+      name: 'agentic',
+      table: agenticReportConfig.tableName,
+      database: s3Config.databaseName,
+      customer: s3Config.siteName,
+      success: exportDetails.dailyAgenticExport?.success !== false,
+      ...exportDetails,
+    },
+  ];
+}
+
 async function runCdnLogsReport(url, context, site, auditContext) {
   const { log } = context;
   const isDailyDateRun = Boolean(auditContext?.date);
@@ -210,9 +295,16 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     }
   }
 
+  const auditResult = addAgenticExportDetailsToAuditResult(
+    results,
+    agenticReportConfig,
+    s3Config,
+    getAgenticExportAuditDetails(agenticDbExportResult),
+  );
+
   return {
     ...agenticDbExportResult,
-    auditResult: results,
+    auditResult,
     dailyReferralExport,
     fullAuditRef: `${site.getConfig()?.getLlmoDataFolder()}`,
   };
