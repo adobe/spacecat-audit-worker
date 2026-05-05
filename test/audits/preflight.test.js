@@ -22,9 +22,7 @@ import { Site } from '@adobe/spacecat-shared-data-access';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import {
   scrapePages, PREFLIGHT_STEP_SUGGEST, PREFLIGHT_STEP_IDENTIFY,
-  AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT, AVAILABLE_CHECKS,
-  AUDIT_CANONICAL, AUDIT_LINKS, AUDIT_METATAGS, AUDIT_ACCESSIBILITY,
-  AUDIT_READABILITY, AUDIT_HEADINGS, AUDIT_FORM_ACCESSIBILITY,
+  AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT,
 } from '../../src/preflight/handler.js';
 import { runLinksChecks } from '../../src/preflight/links-checks.js';
 import { MockContextBuilder } from '../shared.js';
@@ -670,13 +668,14 @@ describe('Preflight Audit', () => {
       sandbox.stub(GenvarClient, 'createFrom').returns(genvarClient);
       retrievePageAuthenticationStub = sinon.stub().resolves('token1234');
 
-      // Mock accessibility and form-accessibility handlers to prevent timeouts (all checks run now)
+      // Accessibility + form-accessibility mocked (timeouts / SQS). Alt-text stays real — needs
+      // `alt-text-preflight` in getHandlers below so entitlement + fixtures stay aligned.
       const { preflightAudit: mockedPreflightAudit } = await esmock('../../src/preflight/handler.js', {
         '../../src/preflight/accessibility.js': {
-          default: sinon.stub().resolves(), // Mock accessibility handler as no-op
+          default: sinon.stub().resolves(),
         },
         '../../src/preflight/form-accessibility.js': {
-          default: sinon.stub().resolves(), // Mock form-accessibility handler as no-op
+          default: sinon.stub().resolves(),
         },
         '@adobe/spacecat-shared-ims-client': {
           retrievePageAuthentication: retrievePageAuthenticationStub,
@@ -697,8 +696,6 @@ describe('Preflight Audit', () => {
 
       context.dataAccess.AsyncJob.findById = sinon.stub().callsFake(() => Promise.resolve({
         getId: () => 'job-123',
-        getMetadata: () => job.getMetadata(),
-        setMetadata: sinon.stub(),
         setResult: sinon.stub(),
         setStatus: sinon.stub(),
         setResultType: sinon.stub(),
@@ -718,6 +715,8 @@ describe('Preflight Audit', () => {
           'body-size-preflight': { productCodes: ['aem-sites'] },
           'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
           'h1-count-preflight': { productCodes: ['aem-sites'] },
+          'form-accessibility-preflight': { productCodes: ['aem-sites'] },
+          'alt-text-preflight': { productCodes: ['aem-sites'] },
         }),
       };
       context.dataAccess.Configuration.findLatest.resolves(configuration);
@@ -1215,7 +1214,8 @@ describe('Preflight Audit', () => {
 
       await preflightAuditFunction(context);
 
-      // Preflight uses isAuditEnabledForSite (which calls isHandlerEnabledForSite) to compute enabled checks
+      // isHandlerEnabledForSite is now called through isAuditEnabledForSite
+      expect(configuration.isHandlerEnabledForSite).to.have.been.called;
       expect(genvarClient.generateSuggestions).not.to.have.been.called;
 
       // Verify that AsyncJob.findById was called for the final save
@@ -1465,7 +1465,7 @@ describe('Preflight Audit', () => {
       await preflightAuditFunction(context);
 
       // Verify that AsyncJob.findById was called for job metadata update, each intermediate save and final save
-      // (total of 7 times: 1 metadata update + 6 intermediate + 1 final)
+      // (total of 8 calls: 1 metadata update + 6 intermediate saves + 1 final)
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
       expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(8);
     });
@@ -1477,8 +1477,6 @@ describe('Preflight Audit', () => {
         findByIdCallCount += 1;
         return Promise.resolve({
           getId: () => 'job-123',
-          getMetadata: () => job.getMetadata(),
-          setMetadata: sinon.stub(),
           setResult: sinon.stub(),
           setStatus: sinon.stub(),
           setResultType: sinon.stub(),
@@ -1534,6 +1532,9 @@ describe('Preflight Audit', () => {
           });
         }
       });
+      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_BODY_SIZE}-preflight`, site).returns(true);
+      configuration.isHandlerEnabledForSite.returns(false);
+
       await preflightAuditFunction(context);
 
       // Get the final result
@@ -1549,6 +1550,10 @@ describe('Preflight Audit', () => {
       expect(bodySizeAudit).to.exist;
       expect(bodySizeAudit.opportunities).to.have.lengthOf(1);
       expect(bodySizeAudit.opportunities[0].check).to.equal('content-length');
+
+      // Verify other checks were not performed
+      expect(audits.find((a) => a.name === AUDIT_LOREM_IPSUM)).to.not.exist;
+      expect(audits.find((a) => a.name === AUDIT_H1_COUNT)).to.not.exist;
     });
 
     it('handles individual AUDIT_LOREM_IPSUM check', async () => {
@@ -1583,6 +1588,8 @@ describe('Preflight Audit', () => {
         }
       });
 
+      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_LOREM_IPSUM}-preflight`, site).returns(true);
+
       await preflightAuditFunction(context);
 
       // Get the final result
@@ -1598,6 +1605,10 @@ describe('Preflight Audit', () => {
       expect(loremIpsumAudit).to.exist;
       expect(loremIpsumAudit.opportunities).to.have.lengthOf(1);
       expect(loremIpsumAudit.opportunities[0].check).to.equal('placeholder-text');
+
+      // Verify other checks were not performed
+      expect(audits.find((a) => a.name === AUDIT_BODY_SIZE)).to.not.exist;
+      expect(audits.find((a) => a.name === AUDIT_H1_COUNT)).to.not.exist;
     });
 
     it('lorem ipsum filter keeps only innermost elements when nested', async () => {
@@ -1689,6 +1700,8 @@ describe('Preflight Audit', () => {
         }
       });
 
+      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_H1_COUNT}-preflight`, site).returns(true);
+
       await preflightAuditFunction(context);
 
       // Get the final result
@@ -1704,6 +1717,10 @@ describe('Preflight Audit', () => {
       expect(h1CountAudit).to.exist;
       expect(h1CountAudit.opportunities).to.have.lengthOf(1);
       expect(h1CountAudit.opportunities[0].check).to.equal('multiple-h1');
+
+      // Verify other checks were not performed
+      expect(audits.find((a) => a.name === AUDIT_BODY_SIZE)).to.not.exist;
+      expect(audits.find((a) => a.name === AUDIT_LOREM_IPSUM)).to.not.exist;
     });
 
     it('should keep job in progress when audit handler returns processing: true', async () => {
@@ -1738,8 +1755,6 @@ describe('Preflight Audit', () => {
 
       mockContext.dataAccess.AsyncJob.findById = sinon.stub().callsFake(() => Promise.resolve({
         getId: () => 'job-123',
-        getMetadata: () => mockContext.job.getMetadata(),
-        setMetadata: sinon.stub(),
         setResult: sinon.stub(),
         setStatus: sinon.stub(),
         setResultType: sinon.stub(),
@@ -1764,9 +1779,6 @@ describe('Preflight Audit', () => {
           default: sinon.stub().resolves({ processing: true }),
         },
         '../../src/preflight/accessibility.js': {
-          default: sinon.stub().resolves(),
-        },
-        '../../src/preflight/form-accessibility.js': {
           default: sinon.stub().resolves(),
         },
         '@adobe/spacecat-shared-ims-client': {
@@ -1821,8 +1833,6 @@ describe('Preflight Audit', () => {
 
       mockContext.dataAccess.AsyncJob.findById = sinon.stub().callsFake(() => Promise.resolve({
         getId: () => 'job-123',
-        getMetadata: () => mockContext.job.getMetadata(),
-        setMetadata: sinon.stub(),
         setResult: sinon.stub(),
         setStatus: sinon.stub(),
         setResultType: sinon.stub(),
@@ -1853,7 +1863,6 @@ describe('Preflight Audit', () => {
         '../../src/preflight/headings.js': { default: async () => undefined },
         '../../src/readability/preflight/handler.js': { default: async () => undefined },
         '../../src/preflight/accessibility.js': { default: async () => undefined },
-        '../../src/preflight/form-accessibility.js': { default: sinon.stub().resolves() },
         '@adobe/spacecat-shared-ims-client': {
           retrievePageAuthentication: retrievePageAuthenticationStub,
         },
@@ -2050,8 +2059,6 @@ describe('Preflight Audit', () => {
         dataAccess: {
           AsyncJob: {
             findById: sinon.stub().resolves({
-              getMetadata: () => context.job.getMetadata(),
-              setMetadata: sinon.stub(),
               setStatus: sinon.stub(),
               setResultType: sinon.stub(),
               setResult: sinon.stub(),
@@ -4720,8 +4727,6 @@ describe('Preflight Audit', () => {
       sandbox = sinon.createSandbox();
       site = {
         getId: () => 'site-123',
-        getBaseURL: () => 'https://main--example--page.aem.page',
-        getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE,
       };
       job = {
         getMetadata: () => ({
@@ -4775,6 +4780,8 @@ describe('Preflight Audit', () => {
           'body-size-preflight': { productCodes: ['aem-sites'] },
           'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
           'h1-count-preflight': { productCodes: ['aem-sites'] },
+          'form-accessibility-preflight': { productCodes: ['aem-sites'] },
+          'alt-text-preflight': { productCodes: ['aem-sites'] },
         }),
       };
 
@@ -4787,7 +4794,6 @@ describe('Preflight Audit', () => {
       }
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
-      // Import preflight with accessibility and form-accessibility mocked to no-op
       const { preflightAudit } = await esmock('../../src/preflight/handler.js', {
         '../../src/preflight/accessibility.js': {
           default: sinon.stub().resolves(),
@@ -4805,6 +4811,10 @@ describe('Preflight Audit', () => {
     });
 
     it('merges checks into existing metadata payload and saves', async () => {
+      // Enable only body-size so no handlers run
+      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_BODY_SIZE}-preflight`, site).returns(true);
+      configuration.isHandlerEnabledForSite.returns(false);
+
       const jobEntity = {
         getMetadata: sinon.stub().returns(job.getMetadata()),
         setMetadata: sinon.stub(),
@@ -4839,48 +4849,7 @@ describe('Preflight Audit', () => {
         urls: ['https://main--example--page.aem.page/page1'],
         enableAuthentication: false,
       });
-      expect(metadataArg.payload.checks).to.deep.equal(AVAILABLE_CHECKS);
-      expect(jobEntity.save).to.have.been.called;
-    });
-
-    it('uses job payload.checks for identify when present; skips DOM block when checks exclude body-size, lorem-ipsum, h1-count', async () => {
-      const checksWithoutDom = [
-        AUDIT_CANONICAL, AUDIT_LINKS, AUDIT_METATAGS,
-        AUDIT_ACCESSIBILITY, AUDIT_READABILITY, AUDIT_HEADINGS, AUDIT_FORM_ACCESSIBILITY,
-      ];
-      const jobWithReducedChecks = {
-        ...job,
-        getMetadata: () => ({
-          payload: {
-            step: PREFLIGHT_STEP_IDENTIFY,
-            urls: ['https://main--example--page.aem.page/page1'],
-            enableAuthentication: false,
-            checks: checksWithoutDom,
-          },
-        }),
-      };
-      const jobEntity = {
-        getMetadata: sinon.stub().returns(jobWithReducedChecks.getMetadata()),
-        setMetadata: sinon.stub(),
-        setStatus: sinon.stub(),
-        setResultType: sinon.stub(),
-        setResult: sinon.stub(),
-        setEndedAt: sinon.stub(),
-        setError: sinon.stub(),
-        save: sinon.stub().resolves(),
-      };
-      const context = new MockContextBuilder()
-        .withSandbox(sinon.createSandbox())
-        .withOverrides({ job: jobWithReducedChecks, site, s3Client, func: { version: 'test' } })
-        .build();
-      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
-      context.dataAccess.Configuration.findLatest.resolves(configuration);
-      context.dataAccess.AsyncJob.findById = sinon.stub().resolves(jobEntity);
-
-      await preflightAuditFunction(context);
-
-      expect(jobEntity.setMetadata).to.have.been.calledOnce;
-      expect(jobEntity.setMetadata.getCall(0).args[0].payload.checks).to.deep.equal(AVAILABLE_CHECKS);
+      expect(metadataArg.payload.checks).to.deep.equal([AUDIT_BODY_SIZE]);
       expect(jobEntity.save).to.have.been.called;
     });
   });
