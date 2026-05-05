@@ -230,16 +230,21 @@ describe('Geo Brand Presence Refresh Handler', () => {
       expect(publishBrandPresenceAnalyzeStub.firstCall.args[1]).to.include({ brandId: null });
     });
 
-    it('propagates resolver errors so SQS retries (fail-closed on 5xx)', async () => {
+    it('propagates resolver errors with original message so DLQ shows the real cause', async () => {
       withSheets([SHEET_W45]);
-      resolveBrandIdForSiteStub.rejects(new Error('SpaceCat 503'));
+      const cause = new Error('SpaceCat 503');
+      resolveBrandIdForSiteStub.rejects(cause);
 
-      // The handler's outer catch wraps the failure with its audit prefix —
-      // the important thing is that the run rejects (so SQS retries) and DRS
-      // is never invoked.
+      // Brand resolution runs BEFORE the S3 metadata write and outside the
+      // outer try/catch, so the original `[BrandResolver]` message is preserved
+      // for DLQ triage rather than being rewrapped as "Failed to create S3
+      // folder".
       await expect(refreshGeoBrandPresenceSheetsHandler(MESSAGE, context))
-        .to.be.rejected;
+        .to.be.rejectedWith(/SpaceCat 503/);
       expect(publishBrandPresenceAnalyzeStub).to.not.have.been.called;
+      // Metadata write must NOT fire when the resolver fails — otherwise we'd
+      // litter S3 with orphaned metadata.json files (one per SQS retry).
+      expect(s3Client.send).to.not.have.been.called;
     });
 
     it('skips brand resolution and logs warning when site has no organizationId', async () => {

@@ -253,6 +253,25 @@ export async function refreshGeoBrandPresenceDailyHandler(message, context) {
 
   log.info(`%s: DRS S3 is configured, routing refresh via DRS for siteId: ${siteId}`, AUDIT_NAME);
 
+  // LLMO-4716: resolve v2 brand_id once per audit (per site), thread onto every
+  // SNS publish below so the DRS Fargate runner branches v1/v2 correctly. 404
+  // returns null (v1 / brandalf-migration / no active brand). 5xx throws so
+  // SQS retries — silently continuing without brand_id for a brandalf=true org
+  // would degrade to stale-config v1 reads with no surfaced error.
+  //
+  // Resolved BEFORE the S3 metadata write so a fail-closed throw doesn't leave
+  // an orphaned `metadata.json` for an audit that never ran. The throw bypasses
+  // the outer catch block too, so DLQ messages preserve the original
+  // `[BrandResolver]` error context instead of being rewrapped as
+  // "Failed to create S3 folder".
+  const orgId = site.getOrganizationId?.() ?? null;
+  let brandId = null;
+  if (orgId) {
+    brandId = await resolveBrandIdForSite(orgId, siteId, env, log);
+  } else {
+    log.warn(`%s: site ${siteId} has no organizationId — skipping brand_id resolution`, AUDIT_NAME);
+  }
+
   try {
     log.debug(`%s: Creating metadata for ${sheets.length} sheets, auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
 
@@ -284,18 +303,6 @@ export async function refreshGeoBrandPresenceDailyHandler(message, context) {
     const { configVersion } = auditContext;
     const imsOrgId = await getImsOrgId(site, dataAccess, log);
     const brand = site.getConfig()?.getLlmoBrand?.() ?? null;
-    // LLMO-4716: resolve v2 brand_id once per audit (per site), thread onto every
-    // SNS publish below so the DRS Fargate runner branches v1/v2 correctly. 404
-    // returns null (v1 / brandalf-migration / no active brand). 5xx throws so
-    // SQS retries — silently continuing without brand_id for a brandalf=true org
-    // would degrade to stale-config v1 reads with no surfaced error.
-    const orgId = site.getOrganizationId?.() ?? null;
-    let brandId = null;
-    if (orgId) {
-      brandId = await resolveBrandIdForSite(orgId, siteId, env, log);
-    } else {
-      log.warn(`%s: site ${siteId} has no organizationId — skipping brand_id resolution`, AUDIT_NAME);
-    }
 
     log.info(`%s: Site details for auditId: ${auditId}, siteId: ${siteId}, configVersion: ${configVersion || 'none'}, brandId: ${brandId || 'none'}`, AUDIT_NAME);
 
@@ -418,8 +425,8 @@ export async function refreshGeoBrandPresenceDailyHandler(message, context) {
     log[logLevel](logMsg, ...logArgs);
   } catch (error) {
     log.error('%s:Failed to create S3 folder for audit %s: %s', AUDIT_NAME, auditId, errorMsg(error));
-    errMsg = `${AUDIT_NAME}:Failed to create S3 folder for audit ${auditId}`;
-    throw new Error(errMsg);
+    errMsg = `${AUDIT_NAME}:Failed to create S3 folder for audit ${auditId}: ${errorMsg(error)}`;
+    throw new Error(errMsg, { cause: error });
   }
 
   log.info('Site: %s, Audit: %s, Context:', site, {}, auditContext);

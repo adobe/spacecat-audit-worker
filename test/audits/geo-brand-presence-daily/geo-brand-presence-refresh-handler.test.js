@@ -220,8 +220,13 @@ describe('Geo Brand Presence Daily Refresh Handler', () => {
       withSheets([SHEET_W45]);
       resolveBrandIdForSiteStub.rejects(new Error('SpaceCat 503'));
 
-      await expect(refreshGeoBrandPresenceDailyHandler(MESSAGE, context)).to.be.rejected;
+      // Brand resolution runs BEFORE the S3 metadata write and outside the
+      // outer try/catch, so the original `[BrandResolver]` message is preserved
+      // for DLQ triage and no orphaned metadata.json file is left behind.
+      await expect(refreshGeoBrandPresenceDailyHandler(MESSAGE, context))
+        .to.be.rejectedWith(/SpaceCat 503/);
       expect(publishBrandPresenceAnalyzeStub).to.not.have.been.called;
+      expect(s3Client.send).to.not.have.been.called;
     });
 
     it('skips brand resolution and logs warning when site has no organizationId', async () => {
