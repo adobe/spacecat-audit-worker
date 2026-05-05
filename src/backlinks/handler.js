@@ -276,17 +276,11 @@ export const generateSuggestionData = async (context) => {
   const {
     site, audit, dataAccess, log, sqs, env, finalUrl,
   } = context;
-  const { Configuration, Suggestion } = dataAccess;
+  const { Suggestion } = dataAccess;
 
   const auditResult = audit.getAuditResult();
   if (auditResult.success === false) {
     throw new Error('Audit failed, skipping suggestions generation');
-  }
-
-  const configuration = await Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite('broken-backlinks-auto-suggest', site)) {
-    log.info('Auto-suggest is disabled for site');
-    throw new Error('Auto-suggest is disabled for site');
   }
 
   // Check if there are broken backlinks BEFORE creating opportunity

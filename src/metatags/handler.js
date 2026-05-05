@@ -407,14 +407,7 @@ export async function runAuditAndGenerateSuggestions(context) {
   });
 
   // Get synced suggestions from database (with IDs)
-  const { Suggestion, Configuration } = context.dataAccess;
-  const configuration = await Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite('meta-tags-auto-suggest', site)) {
-    log.info('Metatags auto-suggest is disabled for site');
-    return {
-      status: 'complete',
-    };
-  }
+  const { Suggestion } = context.dataAccess;
 
   const suggestionStatusesToProcess = [SuggestionModel.STATUSES.NEW];
   if (site?.requiresValidation && SuggestionModel.STATUSES.PENDING_VALIDATION) {

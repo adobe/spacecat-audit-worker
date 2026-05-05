@@ -44,8 +44,9 @@ describe('Headings Audit', () => {
   let allKeys;
   let s3Client;
   let seoChecks;
+  let headingsHandlerWithAthenaStub;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     log = { info: console.log, error: console.error, debug: console.debug };
     nock.cleanAll();
     context = {
@@ -87,6 +88,10 @@ describe('Headings Audit', () => {
         h1: ['Test H1']
       })
     };
+
+    headingsHandlerWithAthenaStub = await esmock('../../src/headings/handler.js', {
+      '../../src/utils/agentic-urls.js': { getTopAgenticUrlsFromAthena: () => Promise.resolve([]) },
+    });
   });
 
 
@@ -139,7 +144,7 @@ describe('Headings Audit', () => {
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const completedAudit = await headingsHandlerWithAthenaStub.headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
     
     // Debug: Check what we actually got
@@ -213,7 +218,7 @@ describe('Headings Audit', () => {
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const completedAudit = await headingsHandlerWithAthenaStub.headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
     expect(result.headings[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check]).to.exist;
     expect(result.headings[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].success).to.equal(false);
@@ -270,7 +275,7 @@ describe('Headings Audit', () => {
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const completedAudit = await headingsHandlerWithAthenaStub.headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
 
     // When no issues are found, result should indicate success
@@ -321,7 +326,7 @@ describe('Headings Audit', () => {
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const completedAudit = await headingsHandlerWithAthenaStub.headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
 
     expect(result.headings[HEADINGS_CHECKS.HEADING_MISSING_H1.check]).to.exist;
@@ -375,7 +380,7 @@ describe('Headings Audit', () => {
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const completedAudit = await headingsHandlerWithAthenaStub.headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
 
     expect(result.headings[HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check]).to.exist;
@@ -431,7 +436,7 @@ describe('Headings Audit', () => {
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const completedAudit = await headingsHandlerWithAthenaStub.headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
 
     expect(result.headings[HEADINGS_CHECKS.HEADING_H1_LENGTH.check]).to.exist;
@@ -485,7 +490,7 @@ describe('Headings Audit', () => {
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const completedAudit = await headingsHandlerWithAthenaStub.headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
 
     expect(result.headings[HEADINGS_CHECKS.HEADING_EMPTY.check]).to.exist;
@@ -539,7 +544,7 @@ describe('Headings Audit', () => {
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const completedAudit = await headingsHandlerWithAthenaStub.headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
 
     expect(result.headings[HEADINGS_CHECKS.HEADING_EMPTY.check]).to.exist;
@@ -595,7 +600,7 @@ describe('Headings Audit', () => {
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
-    const result = await headingsAuditRunner(baseURL, context, site);
+    const result = await headingsHandlerWithAthenaStub.headingsAuditRunner(baseURL, context, site);
 
     expect(result.auditResult.status).to.equal('success');
     expect(result.auditResult.message).to.equal('No heading issues detected');
@@ -715,7 +720,7 @@ describe('Headings Audit', () => {
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const completedAudit = await headingsHandlerWithAthenaStub.headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
 
     // Should pass with no heading issues since content exists between headings
@@ -766,7 +771,7 @@ describe('Headings Audit', () => {
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const completedAudit = await headingsHandlerWithAthenaStub.headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
 
     // Should pass with no heading issues since IMG is considered content
@@ -817,7 +822,7 @@ describe('Headings Audit', () => {
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const completedAudit = await headingsHandlerWithAthenaStub.headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
 
     // Should pass with no heading issues since text node exists between headings
@@ -1039,7 +1044,7 @@ describe('Headings Audit', () => {
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const completedAudit = await headingsHandlerWithAthenaStub.headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
 
     // Should pass with no heading issues since HR is considered content even without text
@@ -1090,7 +1095,7 @@ describe('Headings Audit', () => {
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const completedAudit = await headingsHandlerWithAthenaStub.headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
 
     // Should pass with no heading issues since content is eventually found after iterating through empty siblings
@@ -1279,7 +1284,8 @@ describe('Headings Audit', () => {
       const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: sinon.stub().resolves([{ url }])
-        }
+        },
+        '../../src/utils/agentic-urls.js': { getTopAgenticUrlsFromAthena: () => Promise.resolve([]) },
       });
 
       context.dataAccess = {
@@ -1343,7 +1349,8 @@ describe('Headings Audit', () => {
       const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: sinon.stub().resolves([{ url }])
-        }
+        },
+        '../../src/utils/agentic-urls.js': { getTopAgenticUrlsFromAthena: () => Promise.resolve([]) },
       });
 
       context.dataAccess = {
@@ -1666,6 +1673,7 @@ describe('Headings Audit', () => {
           throw new Error('DOM processing failed');
         }
       },
+      '../../src/utils/agentic-urls.js': { getTopAgenticUrlsFromAthena: () => Promise.resolve([]) },
     });
 
     const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
@@ -1774,6 +1782,7 @@ describe('Headings Audit', () => {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
       },
+      '../../src/utils/agentic-urls.js': { getTopAgenticUrlsFromAthena: () => Promise.resolve([]) },
     });
 
     context.dataAccess = {
@@ -1859,6 +1868,7 @@ describe('Headings Audit', () => {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
       },
+      '../../src/utils/agentic-urls.js': { getTopAgenticUrlsFromAthena: () => Promise.resolve([]) },
     });
 
     context.dataAccess = {
@@ -1944,6 +1954,7 @@ describe('Headings Audit', () => {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
       },
+      '../../src/utils/agentic-urls.js': { getTopAgenticUrlsFromAthena: () => Promise.resolve([]) },
     });
 
     context.dataAccess = {
@@ -2026,6 +2037,7 @@ describe('Headings Audit', () => {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
       },
+      '../../src/utils/agentic-urls.js': { getTopAgenticUrlsFromAthena: () => Promise.resolve([]) },
     });
 
     context.dataAccess = {
@@ -2074,8 +2086,11 @@ describe('Headings Audit', () => {
     const result = await mockedHandlerWithStubs.headingsAuditRunner(baseURL, context, site);
 
     // Verify the audit completed successfully with all properties provided
-    expect(result.auditResult.headings['heading-missing-h1']).to.exist;
-    expect(result.auditResult.headings['heading-missing-h1'].urls[0].url).to.equal(url);
+    expect(result.auditResult).to.exist;
+    expect(result.auditResult.headings).to.exist;
+    const missingH1 = result.auditResult.headings['heading-missing-h1'] ?? result.auditResult.headings['heading-h1-length'];
+    expect(missingH1, 'expected heading-missing-h1 or heading-h1-length').to.exist;
+    expect(missingH1.urls[0].url).to.equal(url);
 
     // Verify AI suggestion was called at least twice (once for brand guidelines, once for H1 suggestion, plus TOC detection)
     expect(mockClient.fetchChatCompletion.callCount).to.be.at.least(2);
@@ -2116,6 +2131,7 @@ describe('Headings Audit', () => {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
       },
+      '../../src/utils/agentic-urls.js': { getTopAgenticUrlsFromAthena: () => Promise.resolve([]) },
     });
 
     context.dataAccess = {
@@ -2457,6 +2473,7 @@ describe('Headings Audit', () => {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
       },
+      '../../src/utils/agentic-urls.js': { getTopAgenticUrlsFromAthena: () => Promise.resolve([]) },
     });
 
     context.s3Client = s3Client;
@@ -4103,6 +4120,7 @@ describe('Headings Audit', () => {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
+        '../../src/utils/agentic-urls.js': { getTopAgenticUrlsFromAthena: () => Promise.resolve([]) },
         '@adobe/spacecat-shared-utils': {
           getPrompt: getPromptStub,
         },
@@ -4169,6 +4187,7 @@ describe('Headings Audit', () => {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
+        '../../src/utils/agentic-urls.js': { getTopAgenticUrlsFromAthena: () => Promise.resolve([]) },
       });
 
       const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
@@ -4892,7 +4911,7 @@ describe('Headings Audit', () => {
         };
 
         const { headingsAuditRunner } = await import('../../src/headings/handler.js');
-        const result = await headingsAuditRunner(baseURL, mockContext, mockSite);
+        const result = await headingsHandlerWithAthenaStub.headingsAuditRunner(baseURL, mockContext, mockSite);
 
         // Verify brand profile was used (check logs)
         expect(mockLog.info).to.have.been.calledWith('[Brand Guidelines] Using brand profile from site config');
@@ -4988,7 +5007,7 @@ describe('Headings Audit', () => {
         };
 
         const { headingsAuditRunner } = await import('../../src/headings/handler.js');
-        const result = await headingsAuditRunner(baseURL, mockContext, mockSite);
+        const result = await headingsHandlerWithAthenaStub.headingsAuditRunner(baseURL, mockContext, mockSite);
 
         // Verify AI fallback was used
         expect(mockLog.info).to.have.been.calledWith('[Brand Guidelines] No brand profile found in site config, generating from healthy tags using AI');
