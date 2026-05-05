@@ -22,12 +22,12 @@ use(sinonChai);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const fixturesPath = join(__dirname, '../../fixtures/semantic-value-visibility');
+const fixturesPath = join(__dirname, '../../fixtures/image-enrichment');
 
 // Load Krisshop fixture (new format with top-level guidance)
 const krisshopFixture = JSON.parse(readFileSync(join(fixturesPath, 'Krisshop.json'), 'utf8'));
 
-describe('Semantic Value Visibility Guidance Handler', () => {
+describe('Image Enrichment Guidance Handler', () => {
   let context;
   let log;
   let Opportunity;
@@ -46,7 +46,7 @@ describe('Semantic Value Visibility Guidance Handler', () => {
 
     // Load handler with mocked dependencies
     const mockedHandler = await esmock(
-      '../../../src/semantic-value-visibility/guidance-handler.js',
+      '../../../src/image-enrichment/guidance-handler.js',
       {
         '../../../src/utils/data-access.js': {
           syncSuggestions: syncSuggestionsStub,
@@ -316,7 +316,7 @@ describe('Semantic Value Visibility Guidance Handler', () => {
     it('should mark stale opportunity as RESOLVED when no new suggestions', async () => {
       const staleOpportunity = {
         getId: sinon.stub().returns('stale-oppty-123'),
-        getType: sinon.stub().returns('semantic-value-visibility'),
+        getType: sinon.stub().returns('image-enrichment'),
         setStatus: sinon.stub(),
         setUpdatedBy: sinon.stub(),
         save: sinon.stub().resolves(),

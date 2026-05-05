@@ -118,8 +118,8 @@ import youtubeAnalysisGuidance from './youtube-analysis/guidance-handler.js';
 import citedAnalysis from './cited-analysis/handler.js';
 import citedAnalysisGuidance from './cited-analysis/guidance-handler.js';
 import frescopaDataGeneration from './frescopa-data-generation/handler.js';
-import semanticValueVisibility from './semantic-value-visibility/handler.js';
-import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
+import imageEnrichment from './image-enrichment/handler.js';
+import imageEnrichmentGuidance from './image-enrichment/guidance-handler.js';
 import drsPromptGeneration from './drs-prompt-generation/handler.js';
 import offsiteBrandPresence from './offsite-brand-presence/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
@@ -225,8 +225,11 @@ const HANDLERS = {
   'cited-analysis': citedAnalysis,
   'guidance:cited-analysis': citedAnalysisGuidance,
   'frescopa-data-generation': frescopaDataGeneration,
-  'semantic-value-visibility': semanticValueVisibility,
-  'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
+  'image-enrichment': imageEnrichment,
+  'guidance:image-enrichment': imageEnrichmentGuidance,
+  // @deprecated remove after jobs-dispatcher + mystique PR 1704 in prod
+  'semantic-value-visibility': imageEnrichment,
+  'guidance:semantic-value-visibility': imageEnrichmentGuidance,
   'drs:prompt_generation_base_url': drsPromptGeneration,
   'offsite-brand-presence': offsiteBrandPresence,
   'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,

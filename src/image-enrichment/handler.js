@@ -38,7 +38,7 @@ export async function sendToMystique(auditUrl, auditData, context, site) {
     data: { url: auditUrl },
   });
 
-  log.info('[semantic-value-visibility] Request sent to Mystique');
+  log.info('[image-enrichment] Request sent to Mystique');
   return auditData;
 }
 
