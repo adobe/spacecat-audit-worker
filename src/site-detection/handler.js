@@ -128,7 +128,11 @@ function isPrivateIP(address) {
   if (lower === '::1' || lower === '::') {
     return true;
   }
-  if (lower.startsWith('fe80:') || lower.startsWith('fc') || lower.startsWith('fd')) {
+  // Link-local is fe80::/10 (fe80–febf). Multicast is ff00::/8.
+  if (/^fe[89ab][0-9a-f]:/.test(lower) || lower.startsWith('ff')) {
+    return true;
+  }
+  if (lower.startsWith('fc') || lower.startsWith('fd')) {
     return true;
   }
   const v4Mapped = lower.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
@@ -173,6 +177,14 @@ async function resolvesToPublicAddress(hostname, log) {
  * address and by disabling redirect following (a 30x response is treated as
  * not-a-Helix-site). The reason returned to the caller is intentionally generic;
  * detail stays in the log.
+ *
+ * Known limitation — DNS rebinding window: the hostname is resolved once here
+ * for the SSRF guard, and again implicitly by the underlying fetch/socket layer.
+ * An attacker controlling DNS with TTL=0 could pass the guard with a public
+ * address then flip to a private one for the actual connect. Blast radius is
+ * bounded: this is blind SSRF (only NOT_HELIX_REASON reaches callers) and
+ * IMDSv2 rejects unauthenticated GETs. A full fix requires pinning the
+ * validated address into the Undici connect options (tracked as follow-up).
  *
  * @returns {Promise<{isHelix: boolean, reason?: string}>}
  */
@@ -352,7 +364,8 @@ async function finalizeCompleted(job, result, log) {
   try {
     await job.save();
   } catch (e) {
-    log.error(`[site-detection] failed to save COMPLETED state for job ${job.getId()}: ${e.message}`);
+    // event=site-detection.finalize_save_failed — suitable for a CloudWatch metric/alarm.
+    log.error(`[site-detection] event=site-detection.finalize_save_failed job=${job.getId()}: ${e.message}`);
   }
 }
 
@@ -505,12 +518,28 @@ export async function siteDetectionRunner(message, context) {
     const hlxConfig = await extractHlxConfig(domain, hlxVersion, hlxAdminToken, log);
 
     // Step 6: Create SiteCandidate
-    await SiteCandidate.create({
-      baseURL,
-      source: SiteCandidateModel.SITE_CANDIDATE_SOURCES.CDN,
-      status: SiteCandidateModel.SITE_CANDIDATE_STATUS.PENDING,
-      hlxConfig,
-    });
+    // Note: findByBaseURL (Step 3) → create is not atomic. Two concurrent SQS
+    // deliveries for the same domain can both pass the duplicate check and race
+    // here. We recover by treating any create failure where a candidate now
+    // exists as a duplicate (unique-violation semantics without a schema migration).
+    // A unique index on site_candidates.base_url would make this watertight
+    // (tracked as follow-up).
+    try {
+      await SiteCandidate.create({
+        baseURL,
+        source: SiteCandidateModel.SITE_CANDIDATE_SOURCES.CDN,
+        status: SiteCandidateModel.SITE_CANDIDATE_STATUS.PENDING,
+        hlxConfig,
+      });
+    } catch (createErr) {
+      const racedCandidate = await SiteCandidate.findByBaseURL(baseURL);
+      if (racedCandidate !== null) {
+        log.info(`[site-detection] Job ${jobId}: concurrent duplicate detected for ${baseURL}, marking as duplicate`);
+        await finalizeCompleted(job, { action: 'duplicate', domain, reason: 'Site candidate already evaluated' }, log);
+        return { auditResult: { action: 'duplicate', domain }, fullAuditRef: 'site-detection' };
+      }
+      throw createErr;
+    }
 
     log.info(`[site-detection] Job ${jobId}: created SiteCandidate for ${baseURL}`);
 

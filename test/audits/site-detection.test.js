@@ -457,6 +457,30 @@ describe('[site-detection] runner tests', function () {
     expect(fetchStub).to.not.have.been.called;
   });
 
+  it('SSRF: rejects IPv6 link-local (fe90:: — fe80::/10 range beyond fe80:)', async () => {
+    dnsLookupStub.resolves([{ address: 'fe90::1', family: 6 }]);
+
+    await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(fetchStub).to.not.have.been.called;
+  });
+
+  it('SSRF: rejects IPv6 multicast (ff00::/8)', async () => {
+    dnsLookupStub.resolves([{ address: 'ff02::1', family: 6 }]);
+
+    await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(fetchStub).to.not.have.been.called;
+  });
+
+  it('SSRF: rejects IPv6 ULA (fc00::/7)', async () => {
+    dnsLookupStub.resolves([{ address: 'fc00::1', family: 6 }]);
+
+    await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(fetchStub).to.not.have.been.called;
+  });
+
   it('SSRF: rejects IPv4-mapped IPv6 pointing at private v4', async () => {
     dnsLookupStub.resolves([{ address: '::ffff:10.0.0.5', family: 6 }]);
 
@@ -580,7 +604,7 @@ describe('[site-detection] runner tests', function () {
     const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
 
     expect(context.log.error).to.have.been.calledWith(
-      sinon.match(/failed to save COMPLETED state/),
+      sinon.match(/event=site-detection\.finalize_save_failed/),
     );
     expect(result.auditResult.action).to.equal('created');
   });
@@ -777,6 +801,44 @@ describe('[site-detection] runner tests', function () {
 
     expect(context.log.error).to.have.been.calledWith(sinon.match(/Error fetching hlx config/));
     expect(result.auditResult.action).to.equal('created');
+  });
+
+  // ── Concurrent duplicate (race condition) ─────────────────────────────────
+  // findByBaseURL (Step 3) → create is not atomic. A second SQS delivery for
+  // the same domain can race through the Step 3 check and fail at create.
+  // The handler retries findByBaseURL in the catch block and, if the candidate
+  // now exists, maps the error to COMPLETED/duplicate instead of FAILED.
+
+  it('marks COMPLETED/duplicate when SiteCandidate.create fails and the candidate exists (race)', async () => {
+    fetchStub.resolves(makeSiteResponse(HELIX_DOM));
+    context.dataAccess.SiteCandidate.create.rejects(new Error('ConditionalCheckFailedException'));
+    // First call (Step 3): no candidate yet. Second call (race recovery): candidate present.
+    context.dataAccess.SiteCandidate.findByBaseURL
+      .onFirstCall().resolves(null)
+      .onSecondCall().resolves({ getBaseURL: () => TEST_BASE_URL });
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(mockJob.setStatus).to.have.been.calledWith(AsyncJob.Status.COMPLETED);
+    expect(mockJob.setResult).to.have.been.calledWith(
+      sinon.match({ action: 'duplicate', reason: 'Site candidate already evaluated' }),
+    );
+    expect(result.auditResult.action).to.equal('duplicate');
+  });
+
+  it('re-throws create error as FAILED when no candidate exists after create fails (non-race error)', async () => {
+    fetchStub.resolves(makeSiteResponse(HELIX_DOM));
+    context.dataAccess.SiteCandidate.create.rejects(new Error('DB write failed'));
+    // Both calls return null — not a duplicate race, just a plain DB error.
+    context.dataAccess.SiteCandidate.findByBaseURL.resolves(null);
+
+    const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
+
+    expect(mockJob.setStatus).to.have.been.calledWith(AsyncJob.Status.FAILED);
+    expect(mockJob.setError).to.have.been.calledWith(
+      sinon.match({ code: 'EXCEPTION', message: 'DB write failed' }),
+    );
+    expect(result.auditResult.error).to.equal('DB write failed');
   });
 
   // ── Error handling ────────────────────────────────────────────────────────
