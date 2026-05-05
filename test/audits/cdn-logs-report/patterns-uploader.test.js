@@ -248,6 +248,7 @@ describe('Patterns Uploader', () => {
     const result = await generatePatternsWorkbook(options);
 
     expect(result).to.be.true;
+    expect(mockAnalyzeProducts).to.not.have.been.called;
     const callArgs = mockReplaceRules.getCall(0).args[0];
     expect(callArgs.categoryRules).to.deep.equal([
       { name: 'old-product', regex: 'regex-old', sort_order: 0 },
@@ -255,5 +256,40 @@ describe('Patterns Uploader', () => {
     expect(callArgs.pageTypeRules).to.deep.equal([
       { name: 'old-page', regex: 'regex-old', sort_order: 0 },
     ]);
+  });
+
+  it('keeps explicit existing sort order while merging before final reindexing', async () => {
+    mockAnalyzeProducts.resolves({ 'new-product': 'regex-new' });
+    mockAnalyzePageTypes.resolves({});
+
+    const existingPatterns = {
+      topicPatterns: [{ name: 'old-product', regex: 'regex-old', sort_order: 3 }],
+      pagePatterns: [],
+    };
+
+    const options = createMockOptions({
+      existingPatterns,
+      configCategories: ['old-product', 'new-product'],
+    });
+    const result = await generatePatternsWorkbook(options);
+
+    expect(result).to.be.true;
+    const callArgs = mockReplaceRules.getCall(0).args[0];
+    expect(callArgs.categoryRules).to.deep.equal([
+      { name: 'old-product', regex: 'regex-old', sort_order: 0 },
+      { name: 'new-product', regex: 'regex-new', sort_order: 1 },
+    ]);
+  });
+
+  it('logs local rule counts when RPC does not return counts', async () => {
+    mockReplaceRules.resolves(null);
+    const options = createMockOptions();
+
+    const result = await generatePatternsWorkbook(options);
+
+    expect(result).to.be.true;
+    expect(options.context.log.info).to.have.been.calledWith(
+      'Successfully synced patterns to DB for site test-site: 1 category rules, 1 page type rules',
+    );
   });
 });

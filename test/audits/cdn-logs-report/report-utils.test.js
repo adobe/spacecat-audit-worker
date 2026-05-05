@@ -372,6 +372,20 @@ describe('CDN Logs Report Utils', () => {
       expect(patternNock.isDone()).to.be.true;
     });
 
+    it('returns null when fetch throws a not-found-shaped error', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoDataFolder: () => 'bulk',
+          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
+        }),
+      };
+      sandbox.stub(globalThis, 'fetch').rejects({ status: 404 });
+
+      const result = await reportUtils.fetchRemotePatterns(mockSite);
+
+      expect(result).to.be.null;
+    });
+
     it('returns an error state when JSON parsing fails', async () => {
       const mockSite = {
         getConfig: () => ({
@@ -420,7 +434,219 @@ describe('CDN Logs Report Utils', () => {
     });
   });
 
+  describe('fetchAgenticUrlClassificationRules', () => {
+    const mockSite = { getId: () => 'test-site-id' };
+
+    const createPostgrestClient = ({
+      categoryData = [],
+      pageTypeData = [],
+      categoryError = null,
+      pageTypeError = null,
+    } = {}) => ({
+      from: (table) => {
+        const result = table === 'agentic_url_category_rules'
+          ? { data: categoryData, error: categoryError }
+          : { data: pageTypeData, error: pageTypeError };
+        const query = {
+          select: sandbox.stub().returnsThis(),
+          eq: sandbox.stub().returnsThis(),
+          order: sandbox.stub().resolves(result),
+        };
+        return query;
+      },
+    });
+
+    it('returns null when no PostgREST client is available', async () => {
+      const log = { warn: sandbox.stub() };
+
+      const result = await reportUtils.fetchAgenticUrlClassificationRules(mockSite, { log });
+
+      expect(result).to.be.null;
+      expect(log.warn).to.have.been.calledWith(
+        'fetchAgenticUrlClassificationRules: no PostgREST client available, skipping DB rule fetch',
+      );
+    });
+
+    it('loads rules and falls back to row index when sort_order is missing', async () => {
+      const log = { info: sandbox.stub(), error: sandbox.stub() };
+      const context = {
+        log,
+        dataAccess: {
+          services: {
+            postgrestClient: createPostgrestClient({
+              categoryData: [
+                { name: 'Products', regex: '/products', sort_order: 5 },
+                { name: 'Docs', regex: '/docs' },
+              ],
+              pageTypeData: [{ name: 'Article', regex: '/blog' }],
+            }),
+          },
+        },
+      };
+
+      const result = await reportUtils.fetchAgenticUrlClassificationRules(mockSite, context);
+
+      expect(result).to.deep.equal({
+        pagePatterns: [{ name: 'Article', regex: '/blog', sort_order: 0 }],
+        topicPatterns: [
+          { name: 'Products', regex: '/products', sort_order: 5 },
+          { name: 'Docs', regex: '/docs', sort_order: 1 },
+        ],
+      });
+      expect(log.info).to.have.been.calledWith(
+        'fetchAgenticUrlClassificationRules: loaded 1 page patterns, 2 topic patterns for site test-site-id',
+      );
+    });
+
+    it('handles null rule result data as empty arrays', async () => {
+      const log = { info: sandbox.stub(), error: sandbox.stub() };
+      const context = {
+        log,
+        dataAccess: {
+          services: {
+            postgrestClient: createPostgrestClient({
+              categoryData: null,
+              pageTypeData: null,
+            }),
+          },
+        },
+      };
+
+      const result = await reportUtils.fetchAgenticUrlClassificationRules(mockSite, context);
+
+      expect(result).to.deep.equal({
+        pagePatterns: [],
+        topicPatterns: [],
+      });
+      expect(log.info).to.have.been.calledWith(
+        'fetchAgenticUrlClassificationRules: loaded 0 page patterns, 0 topic patterns for site test-site-id',
+      );
+    });
+
+    it('returns an error state when page type rule loading fails', async () => {
+      const log = { error: sandbox.stub() };
+      const context = {
+        log,
+        dataAccess: {
+          services: {
+            postgrestClient: createPostgrestClient({
+              pageTypeError: new Error('page type boom'),
+            }),
+          },
+        },
+      };
+
+      const result = await reportUtils.fetchAgenticUrlClassificationRules(mockSite, context);
+
+      expect(result).to.deep.equal({ error: true, source: 'postgres' });
+      expect(log.error).to.have.been.calledWith(
+        'fetchAgenticUrlClassificationRules: failed to load rules for site test-site-id: page type boom',
+      );
+    });
+
+    it('returns an error state when category rule loading fails', async () => {
+      const log = { error: sandbox.stub() };
+      const context = {
+        log,
+        dataAccess: {
+          services: {
+            postgrestClient: createPostgrestClient({
+              categoryError: new Error('category boom'),
+            }),
+          },
+        },
+      };
+
+      const result = await reportUtils.fetchAgenticUrlClassificationRules(mockSite, context);
+
+      expect(result).to.deep.equal({ error: true, source: 'postgres' });
+      expect(log.error).to.have.been.calledWith(
+        'fetchAgenticUrlClassificationRules: failed to load rules for site test-site-id: category boom',
+      );
+    });
+  });
+
+  describe('replaceAgenticUrlClassificationRules', () => {
+    const mockSite = { getId: () => 'test-site-id' };
+
+    it('throws when no PostgREST RPC client is available', async () => {
+      await expect(reportUtils.replaceAgenticUrlClassificationRules({
+        site: mockSite,
+        context: {},
+      })).to.be.rejectedWith('PostgREST client is required to replace agentic URL classification rules');
+    });
+
+    it('calls the replacement RPC and unwraps array responses', async () => {
+      const rpc = sandbox.stub().resolves({
+        data: [{ category_rules: 1, page_type_rules: 2 }],
+        error: null,
+      });
+
+      const result = await reportUtils.replaceAgenticUrlClassificationRules({
+        site: mockSite,
+        context: { dataAccess: { services: { postgrestClient: { rpc } } } },
+        categoryRules: [{ name: 'products', regex: '/products' }],
+        pageTypeRules: [{ name: 'article', regex: '/blog' }],
+      });
+
+      expect(result).to.deep.equal({ category_rules: 1, page_type_rules: 2 });
+      expect(rpc).to.have.been.calledWith(
+        'wrpc_replace_agentic_url_classification_rules',
+        {
+          p_site_id: 'test-site-id',
+          p_category_rules: [{ name: 'products', regex: '/products' }],
+          p_page_type_rules: [{ name: 'article', regex: '/blog' }],
+          p_updated_by: 'audit-worker:agentic-patterns',
+        },
+      );
+    });
+
+    it('returns object RPC responses as-is', async () => {
+      const rpc = sandbox.stub().resolves({
+        data: { category_rules: 0, page_type_rules: 0 },
+        error: null,
+      });
+
+      const result = await reportUtils.replaceAgenticUrlClassificationRules({
+        site: mockSite,
+        context: { dataAccess: { services: { postgrestClient: { rpc } } } },
+        updatedBy: 'unit-test',
+      });
+
+      expect(result).to.deep.equal({ category_rules: 0, page_type_rules: 0 });
+      expect(rpc.firstCall.args[1].p_updated_by).to.equal('unit-test');
+    });
+
+    it('throws RPC errors', async () => {
+      const rpc = sandbox.stub().resolves({
+        data: null,
+        error: new Error('rpc boom'),
+      });
+
+      await expect(reportUtils.replaceAgenticUrlClassificationRules({
+        site: mockSite,
+        context: { dataAccess: { services: { postgrestClient: { rpc } } } },
+      })).to.be.rejectedWith('rpc boom');
+    });
+  });
+
   describe('queryIndexHasPatternsFile', () => {
+    it('returns false when no data folder is configured', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoDataFolder: () => null,
+        }),
+      };
+      const log = { warn: sandbox.stub() };
+
+      const result = await reportUtils.queryIndexHasPatternsFile(mockSite, log);
+
+      expect(result).to.be.false;
+      expect(log.warn).to.have.been.calledWith(
+        'queryIndexHasPatternsFile: no dataFolder configured for site, skipping query-index fetch',
+      );
+    });
+
     it('returns true when query-index contains patterns.json', async () => {
       const mockSite = {
         getConfig: () => ({
@@ -569,6 +795,42 @@ describe('CDN Logs Report Utils', () => {
   });
 
   describe('saveExcelReportForBatch', () => {
+    it('uploads and returns metadata when sharepointClient is provided', async () => {
+      const uploadToSharePoint = sandbox.stub().resolves();
+      const mockedReportUtils = await esmock('../../../src/cdn-logs-report/utils/report-utils.js', {
+        '../../../src/utils/report-uploader.js': {
+          uploadToSharePoint,
+        },
+      });
+      const mockWorkbook = {
+        xlsx: {
+          writeBuffer: sandbox.stub().resolves(Buffer.from('test')),
+        },
+      };
+      const mockLog = { info: sandbox.stub() };
+      const sharepointClient = {};
+
+      const result = await mockedReportUtils.saveExcelReportForBatch({
+        workbook: mockWorkbook,
+        outputLocation: 'test-location',
+        log: mockLog,
+        sharepointClient,
+        filename: 'test-file.xlsx',
+      });
+
+      expect(uploadToSharePoint).to.have.been.calledWith(
+        Buffer.from('test'),
+        'test-file.xlsx',
+        'test-location',
+        sharepointClient,
+        mockLog,
+      );
+      expect(result).to.deep.equal({
+        filename: 'test-file.xlsx',
+        outputLocation: 'test-location',
+      });
+    });
+
     it('returns null when sharepointClient is not provided', async () => {
       const mockWorkbook = {
         xlsx: {

@@ -219,6 +219,25 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.include('CASE');
   });
 
+  it('handles topic patterns with extract-only patterns', async () => {
+    const customOptions = createMockOptions({
+      context: {
+        dataAccess: {
+          services: {
+            postgrestClient: createMockPostgrestClient({
+              categoryRules: [{ regex: '/category/([^/]+)', sort_order: 0 }],
+              pageTypeRules: [],
+            }),
+          },
+        },
+      },
+    });
+
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
+
+    expect(query).to.include("COALESCE(\n    NULLIF(REGEXP_EXTRACT(url, '/category/([^/]+)', 1), ''),");
+  });
+
   it('handles cross-month date filtering', async () => {
     const customOptions = createMockOptions({
       periods: {
@@ -256,6 +275,15 @@ describe('CDN Logs Query Builder', () => {
   });
 
   describe('createTopUrlsQueryWithLimit', () => {
+    it('creates top URLs query without a limit', async () => {
+      const query = await weeklyBreakdownQueries.createTopUrlsQuery(mockOptions);
+
+      expect(query).to.be.a('string');
+      expect(query).to.include('test_db.test_table');
+      expect(query).to.include("year = '2025'");
+      expect(query).to.include("month = '01'");
+    });
+
     it('creates query with limit parameter', async () => {
       const customOptions = createMockOptions({
         limit: 100,
