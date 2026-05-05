@@ -121,7 +121,9 @@ export default async function handler(message, context) {
     const cleanedUrls = validSuggestedUrls
       .map(stripTrackingParams)
       .filter((url) => {
-        if (seen.has(url)) return false;
+        if (seen.has(url)) {
+          return false;
+        }
         seen.add(url);
         return true;
       });
