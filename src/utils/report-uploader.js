@@ -92,6 +92,9 @@ export async function readFromSharePoint(filename, outputLocation, sharepointCli
  * Downloads a document from SharePoint and validates it is a valid XLSX file.
  * Retries up to XLSX_RETRY_MAX times with a fixed delay when SharePoint returns
  * a non-XLSX response (e.g. an HTML error page from a transient outage).
+ *
+ * Note: only magic-byte failures trigger a retry. Network errors or SDK throws
+ * from the underlying readFromSharePoint call propagate immediately without retrying.
  * @param {string} sheetName - The sheet filename (without .xlsx extension)
  * @param {string} sourceFolder - The SharePoint source folder path
  * @param {SharepointClient} sharepointClient - The SharePoint client instance
