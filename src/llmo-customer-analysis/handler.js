@@ -296,6 +296,113 @@ async function triggerGeoBrandPresenceRefresh(context, site, configVersion) {
   log.info('Successfully triggered geo-brand-presence-trigger-refresh');
 }
 
+// V2 (brandalf) dispatch contract — see LLMO-4744.
+// BrandsController in spacecat-api-service dispatches one message per site
+// after every customer-config mutation. The legacy v1 S3 snapshot diff is
+// frozen for brandalf orgs, so we route by an explicit `changeKind` instead.
+const V2_CHANGE_KINDS = Object.freeze({
+  BRANDS: 'brands',
+  COMPETITORS: 'competitors',
+  CATEGORIES: 'categories',
+  TOPICS: 'topics',
+  ENTITIES: 'entities',
+  PROMPTS: 'prompts',
+});
+
+const V2_FIRES_BRAND_PRESENCE_REFRESH = new Set([
+  V2_CHANGE_KINDS.BRANDS,
+  V2_CHANGE_KINDS.COMPETITORS,
+  V2_CHANGE_KINDS.PROMPTS,
+]);
+
+const V2_FIRES_BRAND_DETECTION = new Set([
+  V2_CHANGE_KINDS.CATEGORIES,
+  V2_CHANGE_KINDS.TOPICS,
+  V2_CHANGE_KINDS.ENTITIES,
+  V2_CHANGE_KINDS.PROMPTS,
+]);
+
+const V2_CONFIG_VERSION_SENTINEL = 'v2';
+
+function buildV2NoOpResult(changeKind, finalUrl) {
+  return {
+    auditResult: {
+      status: 'completed',
+      configChangesDetected: false,
+      onboardingMode: 'v2',
+      changeKind,
+      triggeredSteps: [],
+    },
+    fullAuditRef: finalUrl,
+  };
+}
+
+/**
+ * Handle a v2 customer-analysis dispatch from spacecat-api-service.
+ *
+ * Routes triggers from `auditContext.changeKind` instead of diffing two S3
+ * snapshots — the v1 mirror is frozen for brandalf orgs, so the snapshot
+ * diff cannot fire. Skips CDN logs (out of scope under brandalf).
+ *
+ * @param {object} context Audit-worker context
+ * @param {object} site Site model
+ * @param {object} auditContext Message auditContext
+ * @param {string} finalUrl Resolved site URL
+ * @returns {Promise<object>} Audit framework result
+ */
+async function handleV2ChangeKindDispatch(context, site, auditContext, finalUrl) {
+  const { env, log } = context;
+  const { changeKind, organizationId: ctxOrgId } = auditContext;
+  const siteId = site.getSiteId();
+  const orgId = site.getOrganizationId?.() || ctxOrgId;
+
+  if (!Object.values(V2_CHANGE_KINDS).includes(changeKind)) {
+    log.warn(`Ignoring v2 customer-analysis dispatch with unknown changeKind="${changeKind}" for site ${siteId}`);
+    return buildV2NoOpResult(changeKind, finalUrl);
+  }
+
+  if (!orgId) {
+    log.warn(`v2 customer-analysis dispatch for site ${siteId} has no organizationId; cannot verify brandalf flag`);
+    return buildV2NoOpResult(changeKind, finalUrl);
+  }
+
+  const brandalf = await isBrandalfEnabled(orgId, env, log);
+  if (!brandalf) {
+    log.warn(`v2 customer-analysis dispatch for site ${siteId} but brandalf is not enabled for org ${orgId}; skipping triggers`);
+    return buildV2NoOpResult(changeKind, finalUrl);
+  }
+
+  const triggeredSteps = [];
+
+  if (V2_FIRES_BRAND_DETECTION.has(changeKind)) {
+    const drsClient = DrsClient.createFrom(context);
+    if (drsClient.isConfigured()) {
+      await drsClient.triggerBrandDetection(siteId);
+      triggeredSteps.push('drs-brand-detection');
+    } else {
+      log.warn(`DRS not configured; skipping brand detection trigger for site ${siteId} (v2 changeKind=${changeKind})`);
+    }
+  }
+
+  if (V2_FIRES_BRAND_PRESENCE_REFRESH.has(changeKind)) {
+    await triggerGeoBrandPresenceRefresh(context, site, V2_CONFIG_VERSION_SENTINEL);
+    triggeredSteps.push('geo-brand-presence-trigger-refresh');
+  }
+
+  log.info(`v2 customer-analysis dispatch handled for site ${siteId}, changeKind=${changeKind}, triggered: ${triggeredSteps.join(', ') || 'none'}`);
+
+  return {
+    auditResult: {
+      status: 'completed',
+      configChangesDetected: triggeredSteps.length > 0,
+      onboardingMode: 'v2',
+      changeKind,
+      triggeredSteps,
+    },
+    fullAuditRef: finalUrl,
+  };
+}
+
 export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditContext = {}) {
   const {
     env, log, s3Client,
@@ -338,8 +445,21 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   log.info(`Starting LLMO customer analysis for site: ${siteId}, domain: ${domain}`);
 
   const triggeredSteps = [];
+  const {
+    configVersion, previousConfigVersion, onboardingMode, changeKind,
+  } = auditContext;
+
+  // V2 dispatch (LLMO-4744): BrandsController emits one message per site
+  // with `changeKind` after every customer-config mutation. Short-circuit
+  // before first-onboarding logic so we do not re-create BP schedules on
+  // subsequent edits (createAndTriggerBrandPresenceSchedule is not
+  // idempotent), and before the v1 S3 diff because the v1 mirror is
+  // frozen under brandalf.
+  if (changeKind !== undefined) {
+    return handleV2ChangeKindDispatch(context, site, auditContext, finalUrl);
+  }
+
   const hasOptelData = await checkOptelData(domain, context);
-  const { configVersion, previousConfigVersion, onboardingMode } = auditContext;
   const isFirstTimeOnboarding = !previousConfigVersion;
 
   // For brandalf-enabled orgs, resolve brand ID so the DRS scheduler can use v2 prompts.
