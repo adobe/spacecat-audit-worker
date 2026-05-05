@@ -25,6 +25,7 @@ import {
 import { CITED_ANALYSIS_DRS_CONFIG } from '../offsite-brand-presence/constants.js';
 import { computeTopicsFromBrandPresence } from '../utils/brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
+import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
 
 const LOG_PREFIX = '[Cited]';
 
@@ -226,7 +227,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
       .slice(0, urlLimit);
 
-    const message = {
+    const baseMessage = {
       type: 'guidance:cited-analysis',
       siteId,
       url: site.getBaseURL(),
@@ -244,11 +245,22 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       },
     };
 
+    let brand = null;
+    try {
+      brand = await resolveBrandForSite(context, site);
+    } catch (brandError) {
+      log.warn(`${LOG_PREFIX} Brand resolution failed unexpectedly; proceeding without scope: ${brandError.message}`);
+    }
+    const message = applyBrandScope(baseMessage, brand);
+
     log.debug(`${LOG_PREFIX} Built Mystique message type ${message.type}`);
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    const scopeForLog = brand
+      ? ` brandId=${brand.brandId}`
+      : '';
     log.info(
       `${LOG_PREFIX} Queued Cited analysis request to Mystique for ${config.companyName} `
-        + `with ${enrichedUrls.length} URLs`,
+        + `with ${enrichedUrls.length} URLs${scopeForLog}`,
     );
     return auditData;
   } catch (error) {

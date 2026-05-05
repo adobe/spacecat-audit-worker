@@ -18,6 +18,7 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
+import { resolveBrandForSite, applyScopeToOpportunity } from '../utils/brand-resolver.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS;
 
@@ -30,9 +31,11 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS;
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Site, Audit: AuditModel } = dataAccess;
-  const { siteId, auditId, data } = message;
+  const {
+    siteId, auditId, brandId, data,
+  } = message;
 
-  log.info(`[YouTube] Received YouTube analysis guidance for siteId: ${siteId}, auditId: ${auditId}`);
+  log.info(`[YouTube] Received YouTube analysis guidance for siteId: ${siteId}, auditId: ${auditId}${brandId ? `, brandId: ${brandId}` : ''}`);
 
   if (data?.error) {
     log.error(`[Youtube] Mystique returned an error for siteId: ${siteId}, auditId: ${auditId}: ${data.errorMessage}`);
@@ -72,6 +75,7 @@ export default async function handler(message, context) {
     return notFound('Site not found');
   }
 
+  const brand = await resolveBrandForSite(context, site);
   const baseUrl = site.getBaseURL();
 
   if (auditId) {
@@ -122,6 +126,7 @@ export default async function handler(message, context) {
       }),
     });
 
+    applyScopeToOpportunity(opportunity, brand, log, '[YouTube]');
     const status = opportunityData.status || 'NEW';
     opportunity.setStatus(status);
     opportunity.setData({

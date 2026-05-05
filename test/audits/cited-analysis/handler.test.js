@@ -635,5 +635,129 @@ describe('Cited Analysis Handler', () => {
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
       expect(context.log.error).to.have.been.calledWith('[Cited] Failed to send Mystique message: SQS Error');
     });
+
+    // Helper: fresh PostgREST chain mock that resolves on limit() (org, status, site_id, order, limit)
+    function makeQueryChain(data, postgrestError = null) {
+      const chain = {
+        select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub().returnsThis(),
+        order: sandbox.stub().returnsThis(),
+        limit: sandbox.stub().resolves({ data, error: postgrestError }),
+      };
+      return chain;
+    }
+
+    it('should include scope fields when brand is resolved via brand_sites join', async () => {
+      context.dataAccess.services = {
+        postgrestClient: {
+          from: sandbox.stub()
+            .onFirstCall().returns(makeQueryChain([]))             // Q1: no direct match
+            .onSecondCall().returns(makeQueryChain([{ id: 'brand-4' }])), // Q2: join match
+        },
+      };
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: { urls: mockUrls, sentimentConfig: expectedSentimentConfigForPostProcessor },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.scopeType).to.equal('brand');
+      expect(sentMessage.brandId).to.equal('brand-4');
+      expect(sentMessage.siteId).to.equal(siteId);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/brandId=brand-4/).and(sinon.match((v) => !/siteId=/.test(v))),
+      );
+    });
+
+    it('should include scope fields when brand is resolved via direct baseSiteId match', async () => {
+      context.dataAccess.services = {
+        postgrestClient: {
+          from: sandbox.stub().returns(makeQueryChain([{ id: 'brand-5' }])), // Q1: direct match
+        },
+      };
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: { urls: mockUrls, sentimentConfig: expectedSentimentConfigForPostProcessor },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.scopeType).to.equal('brand');
+      expect(sentMessage.brandId).to.equal('brand-5');
+      expect(sentMessage.siteId).to.equal(siteId);
+    });
+
+    it('should omit scope fields and preserve siteId when no brand is resolved', async () => {
+      context.dataAccess.services = {
+        postgrestClient: {
+          from: sandbox.stub()
+            .onFirstCall().returns(makeQueryChain([]))
+            .onSecondCall().returns(makeQueryChain([])),
+        },
+      };
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: { urls: mockUrls, sentimentConfig: expectedSentimentConfigForPostProcessor },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage).to.not.have.property('scopeType');
+      expect(sentMessage).to.not.have.property('brandId');
+      expect(sentMessage.siteId).to.equal(siteId);
+    });
+
+    it('should still send message without scope if brand resolution throws unexpectedly', async () => {
+      const faultySite = {
+        getId: sandbox.stub().returns(siteId),
+        getBaseURL: sandbox.stub().returns(baseURL),
+        getDeliveryType: sandbox.stub().returns('aem_edge'),
+        getOrganizationId: sandbox.stub().throws(new Error('getter failed')),
+      };
+      context.dataAccess.Site.findById.resolves(faultySite);
+
+      const auditData = {
+        siteId,
+        auditResult: {
+          success: true,
+          config: { companyName: 'Test' },
+          storeData: { urls: mockUrls, sentimentConfig: expectedSentimentConfigForPostProcessor },
+        },
+      };
+
+      const postProcessor = citedAnalysisHandler.default.postProcessors[0];
+      await postProcessor(baseURL, auditData, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage).to.not.have.property('scopeType');
+      expect(sentMessage).to.not.have.property('brandId');
+      expect(sentMessage.siteId).to.equal(siteId);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Brand resolution failed unexpectedly/),
+      );
+    });
   });
 });

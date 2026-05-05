@@ -19,6 +19,7 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
+import { resolveBrandForSite, applyScopeToOpportunity } from '../utils/brand-resolver.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS;
 
@@ -71,9 +72,11 @@ function getRankFromPriority(priority) {
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Site, Audit: AuditModel } = dataAccess;
-  const { siteId, auditId, data } = message;
+  const {
+    siteId, auditId, brandId, data,
+  } = message;
 
-  log.info(`[Wikipedia] Received Wikipedia analysis guidance for siteId: ${siteId}, auditId: ${auditId}`);
+  log.info(`[Wikipedia] Received Wikipedia analysis guidance for siteId: ${siteId}, auditId: ${auditId}${brandId ? `, brandId: ${brandId}` : ''}`);
 
   // Handle presigned URL (large response) or direct analysis data
   let analysisData = data?.analysis;
@@ -108,6 +111,7 @@ export default async function handler(message, context) {
     return notFound('Site not found');
   }
 
+  const brand = await resolveBrandForSite(context, site);
   const baseUrl = site.getBaseURL();
 
   // Check if audit exists
@@ -162,6 +166,7 @@ export default async function handler(message, context) {
       }),
     });
 
+    applyScopeToOpportunity(opportunity, brand, log, '[Wikipedia]');
     // Store the full analysis in the opportunity data
     opportunity.setData({
       ...opportunity.getData(),

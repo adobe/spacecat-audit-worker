@@ -31,6 +31,7 @@ describe('YouTube Analysis Guidance Handler', () => {
   let mockConvertToOpportunity;
   let mockSyncSuggestions;
   let mockPostMessageOptional;
+  let resolveBrandForSiteStub;
 
   const siteId = 'test-site-id';
   const auditId = 'test-audit-id';
@@ -77,6 +78,8 @@ describe('YouTube Analysis Guidance Handler', () => {
       getData: sandbox.stub().returns({}),
       setData: sandbox.stub(),
       setStatus: sandbox.stub(),
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       save: sandbox.stub().resolves(),
     };
 
@@ -84,6 +87,7 @@ describe('YouTube Analysis Guidance Handler', () => {
     mockConvertToOpportunity = sandbox.stub().resolves(mockOpportunity);
     mockSyncSuggestions = sandbox.stub().resolves();
     mockPostMessageOptional = sandbox.stub().resolves({ success: true });
+    resolveBrandForSiteStub = sandbox.stub().resolves(null);
 
     guidanceHandler = await esmock('../../../src/youtube-analysis/guidance-handler.js', {
       '@adobe/spacecat-shared-utils': {
@@ -97,6 +101,17 @@ describe('YouTube Analysis Guidance Handler', () => {
       },
       '../../../src/utils/slack-utils.js': {
         postMessageOptional: mockPostMessageOptional,
+      },
+      '../../../src/utils/brand-resolver.js': {
+        resolveBrandForSite: resolveBrandForSiteStub,
+        applyScopeToOpportunity: (opp, brand, l, prefix) => {
+          try {
+            opp.setScopeType(brand ? 'brand' : null);
+            opp.setScopeId(brand?.brandId ?? null);
+          } catch (err) {
+            l?.warn?.(`${prefix} Failed to set brand scope; continuing without: ${err.message}`);
+          }
+        },
       },
     });
 
@@ -691,6 +706,70 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(/Successfully processed YouTube analysis/),
       );
+    });
+  });
+
+  describe('Message logging', () => {
+    it('should include brandId in log when present', async () => {
+      const message = {
+        siteId,
+        auditId,
+        brandId: 'brand-uuid-123',
+        data: {
+          companyName: 'Test',
+          analysis: {
+            suggestions: [],
+          },
+        },
+      };
+
+      await guidanceHandler.default(message, context);
+
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/brandId: brand-uuid-123/),
+      );
+    });
+  });
+
+  describe('Brand scope', () => {
+    it('should set scope when brand is resolved server-side', async () => {
+      resolveBrandForSiteStub.resolves({ brandId: 'brand-uuid-123' });
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Test Corp',
+          analysis: {
+            suggestions: [{ id: 's1', type: 'CONTENT_UPDATE', rank: 1 }],
+          },
+        },
+      };
+
+      await guidanceHandler.default(message, context);
+
+      expect(mockOpportunity.setScopeType).to.have.been.calledWith('brand');
+      expect(mockOpportunity.setScopeId).to.have.been.calledWith('brand-uuid-123');
+    });
+
+    it('should clear scope (null) when no brand is resolved', async () => {
+      resolveBrandForSiteStub.resolves(null);
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Test Corp',
+          analysis: {
+            suggestions: [{ id: 's1', type: 'CONTENT_UPDATE', rank: 1 }],
+          },
+        },
+      };
+
+      await guidanceHandler.default(message, context);
+
+      expect(mockOpportunity.setScopeType).to.have.been.calledWith(null);
+      expect(mockOpportunity.setScopeId).to.have.been.calledWith(null);
     });
   });
 });

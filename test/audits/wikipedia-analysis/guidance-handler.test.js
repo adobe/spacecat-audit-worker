@@ -31,6 +31,7 @@ describe('Wikipedia Analysis Guidance Handler', () => {
   let convertToOpportunityStub;
   let fetchStub;
   let mockPostMessageOptional;
+  let resolveBrandForSiteStub;
 
   const baseURL = 'https://example.com';
   const siteId = 'test-site-id';
@@ -53,6 +54,8 @@ describe('Wikipedia Analysis Guidance Handler', () => {
       getId: sandbox.stub().returns('opp-123'),
       getData: sandbox.stub().returns({ existingData: true }),
       setData: sandbox.stub(),
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       save: sandbox.stub().resolves(),
     };
 
@@ -60,6 +63,7 @@ describe('Wikipedia Analysis Guidance Handler', () => {
     convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
     fetchStub = sandbox.stub();
     mockPostMessageOptional = sandbox.stub().resolves({ success: true });
+    resolveBrandForSiteStub = sandbox.stub().resolves(null);
 
     handler = await esmock('../../../src/wikipedia-analysis/guidance-handler.js', {
       '../../../src/utils/data-access.js': {
@@ -73,6 +77,17 @@ describe('Wikipedia Analysis Guidance Handler', () => {
       },
       '../../../src/utils/slack-utils.js': {
         postMessageOptional: mockPostMessageOptional,
+      },
+      '../../../src/utils/brand-resolver.js': {
+        resolveBrandForSite: resolveBrandForSiteStub,
+        applyScopeToOpportunity: (opp, brand, l, prefix) => {
+          try {
+            opp.setScopeType(brand ? 'brand' : null);
+            opp.setScopeId(brand?.brandId ?? null);
+          } catch (err) {
+            l?.warn?.(`${prefix} Failed to set brand scope; continuing without: ${err.message}`);
+          }
+        },
       },
     });
 
@@ -508,6 +523,26 @@ describe('Wikipedia Analysis Guidance Handler', () => {
         sinon.match(/Received Wikipedia analysis guidance for siteId/),
       );
     });
+
+    it('should include brandId in log when present', async () => {
+      const message = {
+        siteId,
+        auditId,
+        brandId: 'brand-uuid-123',
+        data: {
+          analysis: {
+            company: 'Test',
+            suggestions: [],
+          },
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/brandId: brand-uuid-123/),
+      );
+    });
   });
 
   describe('Slack Notifications', () => {
@@ -623,6 +658,50 @@ describe('Wikipedia Analysis Guidance Handler', () => {
 
       const callText = mockPostMessageOptional.firstCall.args[2];
       expect(callText).to.include('1 suggestion processed');
+    });
+  });
+
+  describe('Brand scope', () => {
+    const analysisWithSuggestions = {
+      company: 'Test Corp',
+      suggestions: [
+        {
+          id: 'add_citations',
+          priority: 'HIGH',
+          title: 'Add citations',
+          description: 'Add more references',
+        },
+      ],
+    };
+
+    it('should set scope when brand is resolved server-side', async () => {
+      resolveBrandForSiteStub.resolves({ brandId: 'brand-uuid-123' });
+
+      const message = {
+        siteId,
+        auditId,
+        data: { analysis: analysisWithSuggestions },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockOpportunity.setScopeType).to.have.been.calledWith('brand');
+      expect(mockOpportunity.setScopeId).to.have.been.calledWith('brand-uuid-123');
+    });
+
+    it('should clear scope (null) when no brand is resolved', async () => {
+      resolveBrandForSiteStub.resolves(null);
+
+      const message = {
+        siteId,
+        auditId,
+        data: { analysis: analysisWithSuggestions },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockOpportunity.setScopeType).to.have.been.calledWith(null);
+      expect(mockOpportunity.setScopeId).to.have.been.calledWith(null);
     });
   });
 });
