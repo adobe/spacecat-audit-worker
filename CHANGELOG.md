@@ -1,3 +1,10 @@
+# [1.432.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.431.3...v1.432.0) (2026-05-05)
+
+
+### Features
+
+* **geo-brand-presence:** forward v2 brand_id to DRS (LLMO-4716) ([#2473](https://github.com/adobe/spacecat-audit-worker/issues/2473)) ([c2f5717](https://github.com/adobe/spacecat-audit-worker/commit/c2f5717c421d82ed492938fb915dfb2ff69082e0))
+
 ## [1.431.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.431.2...v1.431.3) (2026-05-05)
 
 
