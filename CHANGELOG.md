@@ -1,3 +1,188 @@
+## [1.430.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.430.1...v1.430.2) (2026-05-04)
+
+
+### Bug Fixes
+
+* skip suggestion regeneration when scraped content is unchanged ([#2446](https://github.com/adobe/spacecat-audit-worker/issues/2446)) ([5460507](https://github.com/adobe/spacecat-audit-worker/commit/546050763371176d208371be37c7a52a0943a78c))
+
+## [1.430.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.430.0...v1.430.1) (2026-05-04)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2469](https://github.com/adobe/spacecat-audit-worker/issues/2469)) ([794e7c9](https://github.com/adobe/spacecat-audit-worker/commit/794e7c99ef309d61852e5e013b1a2ab9d11ed5f8))
+
+# [1.430.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.429.5...v1.430.0) (2026-05-04)
+
+
+### Features
+
+* **commerce-enrichments:** scrape as GPTBot user-agent ([#2467](https://github.com/adobe/spacecat-audit-worker/issues/2467)) ([b79793c](https://github.com/adobe/spacecat-audit-worker/commit/b79793c08ca548093b939c1e37c7242b6fcd7943))
+
+## [1.429.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.429.4...v1.429.5) (2026-05-04)
+
+
+### Bug Fixes
+
+* persist daily db export batch ids ([#2468](https://github.com/adobe/spacecat-audit-worker/issues/2468)) ([d9204e9](https://github.com/adobe/spacecat-audit-worker/commit/d9204e9de02497a0784f88e5572a9c2390e682c1))
+
+## [1.429.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.429.3...v1.429.4) (2026-05-04)
+
+
+### Bug Fixes
+
+* **agentic:** queue weekly DB export refreshes by date ([#2449](https://github.com/adobe/spacecat-audit-worker/issues/2449)) ([2983317](https://github.com/adobe/spacecat-audit-worker/commit/298331707bb0d3958444bcc8909d07d753c76f56))
+
+## [1.429.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.429.2...v1.429.3) (2026-05-04)
+
+
+### Bug Fixes
+
+* **drs-prompt-generation:** drop non-alpha-2 region values before writeConfig (SITES-43238) ([#2442](https://github.com/adobe/spacecat-audit-worker/issues/2442)) ([7793a53](https://github.com/adobe/spacecat-audit-worker/commit/7793a53614cb3b0c1551439fab45e5f1c8cd0362))
+
+## [1.429.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.429.1...v1.429.2) (2026-05-02)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2466](https://github.com/adobe/spacecat-audit-worker/issues/2466)) ([5ecd1a6](https://github.com/adobe/spacecat-audit-worker/commit/5ecd1a6f3cb5296e97edf88f6b0a8448719b65e7))
+
+## [1.429.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.429.0...v1.429.1) (2026-05-01)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** populate referrer/UTM fields and remove cdn_provider from referral CSV ([#2463](https://github.com/adobe/spacecat-audit-worker/issues/2463)) ([3f3174e](https://github.com/adobe/spacecat-audit-worker/commit/3f3174e49b8672f00166c7527098bff8ae80fee8))
+
+# [1.429.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.428.0...v1.429.0) (2026-05-01)
+
+
+### Features
+
+* **llmo-customer-analysis:** enable llmo-referral-traffic-daily audit on onboarding ([#2462](https://github.com/adobe/spacecat-audit-worker/issues/2462)) ([03059b5](https://github.com/adobe/spacecat-audit-worker/commit/03059b5e7307c441d3417ec995eeea20289399af))
+
+# [1.428.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.427.1...v1.428.0) (2026-05-01)
+
+
+### Features
+
+* **llmo-referral-traffic-daily:** use traffic-analysis with mode:daily instead of traffic-analysis-daily ([#2460](https://github.com/adobe/spacecat-audit-worker/issues/2460)) ([c583ee0](https://github.com/adobe/spacecat-audit-worker/commit/c583ee093caa1975c4fef3224be9c556661a72a2)), closes [adobe/spacecat-import-worker#733](https://github.com/adobe/spacecat-import-worker/issues/733)
+
+## [1.427.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.427.0...v1.427.1) (2026-05-01)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** use S3_IMPORTER_BUCKET_NAME and new key prefix for referral daily export ([#2458](https://github.com/adobe/spacecat-audit-worker/issues/2458)) ([01ca913](https://github.com/adobe/spacecat-audit-worker/commit/01ca913b668707634e48fc40f2c54417fdd6b816))
+
+# [1.427.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.426.0...v1.427.0) (2026-04-30)
+
+
+### Features
+
+* Remove 3rd party services from this process ([#2456](https://github.com/adobe/spacecat-audit-worker/issues/2456)) ([af8e9eb](https://github.com/adobe/spacecat-audit-worker/commit/af8e9eb7d987a449bb7f389a770c6c0e04e94bd6))
+
+# [1.426.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.425.1...v1.426.0) (2026-04-30)
+
+
+### Features
+
+* **geo-brand-presence:** restore handlers and route refresh via DRS ([#2410](https://github.com/adobe/spacecat-audit-worker/issues/2410)) ([aefac18](https://github.com/adobe/spacecat-audit-worker/commit/aefac1849349cd2f7509e7e5214359fc42d64b69))
+
+## [1.425.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.425.0...v1.425.1) (2026-04-30)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-drs-client to v1.6.0 ([#2454](https://github.com/adobe/spacecat-audit-worker/issues/2454)) ([d560b9a](https://github.com/adobe/spacecat-audit-worker/commit/d560b9a8fb9c015542eec54f799c9f1e727722ad))
+
+# [1.425.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.424.2...v1.425.0) (2026-04-30)
+
+
+### Features
+
+* **cdn-logs-report:** add daily referral traffic export to analytics pipeline ([#2452](https://github.com/adobe/spacecat-audit-worker/issues/2452)) ([6ab94f2](https://github.com/adobe/spacecat-audit-worker/commit/6ab94f227f089b93c8beaa7bf7dd60e0aca36d5e))
+
+## [1.424.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.424.1...v1.424.2) (2026-04-30)
+
+
+### Bug Fixes
+
+* Readability - Exclude Invalid content ([#2417](https://github.com/adobe/spacecat-audit-worker/issues/2417)) ([6ce07fd](https://github.com/adobe/spacecat-audit-worker/commit/6ce07fd623a26b2dc85b06625b36ebd05d86106e))
+
+## [1.424.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.424.0...v1.424.1) (2026-04-30)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-http-utils to v1.26.0 ([#2451](https://github.com/adobe/spacecat-audit-worker/issues/2451)) ([7e3f3c6](https://github.com/adobe/spacecat-audit-worker/commit/7e3f3c6029515e3e206ddf57eff7366b71582f1b))
+
+# [1.424.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.423.2...v1.424.0) (2026-04-30)
+
+
+### Bug Fixes
+
+* llmo-4010 preserve edge-deployed suggestions in audit sync flow ([#2429](https://github.com/adobe/spacecat-audit-worker/issues/2429)) ([be6be08](https://github.com/adobe/spacecat-audit-worker/commit/be6be087afe9f0cb01c07e87cb3dcc1b7f456b22))
+
+
+### Features
+
+* **llmo-referral-traffic-daily:** add daily LLM referral traffic audit ([#2450](https://github.com/adobe/spacecat-audit-worker/issues/2450)) ([402a950](https://github.com/adobe/spacecat-audit-worker/commit/402a950e19c6d882915e8a2595771377176e485a))
+
+## [1.423.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.423.1...v1.423.2) (2026-04-30)
+
+
+### Bug Fixes
+
+* **toc:** convert transformRules.value to HAST in mergeDataFunction ([#2388](https://github.com/adobe/spacecat-audit-worker/issues/2388)) ([af122f9](https://github.com/adobe/spacecat-audit-worker/commit/af122f98fc272bb8852811d334824c8ff9597a9e))
+
+## [1.423.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.423.0...v1.423.1) (2026-04-29)
+
+
+### Bug Fixes
+
+* **vulnerabilities:** skip components whose CVEs are all ignored ([#2444](https://github.com/adobe/spacecat-audit-worker/issues/2444)) ([64ef78a](https://github.com/adobe/spacecat-audit-worker/commit/64ef78aaa4ee7af01bdad6306bd5b1479586fbaf))
+
+# [1.423.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.422.4...v1.423.0) (2026-04-29)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.55.1 ([#2443](https://github.com/adobe/spacecat-audit-worker/issues/2443)) ([05ab4ee](https://github.com/adobe/spacecat-audit-worker/commit/05ab4eec70a7554858d749eb3a4606da6c9f22d2))
+
+
+### Features
+
+* disable HOTLCTR v1 flow ([#2436](https://github.com/adobe/spacecat-audit-worker/issues/2436)) ([c97e516](https://github.com/adobe/spacecat-audit-worker/commit/c97e5160d4920e77dd20ee184a752b0cf19515cf)), closes [hi#organic-low-ctr](https://github.com/hi/issues/organic-low-ctr) [hi#organic-low-ctr](https://github.com/hi/issues/organic-low-ctr)
+
+## [1.422.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.422.3...v1.422.4) (2026-04-29)
+
+
+### Bug Fixes
+
+* **preflight:** SITES-43720 full-page link coverage and GET-confirm broken status ([#2434](https://github.com/adobe/spacecat-audit-worker/issues/2434)) ([8437dbd](https://github.com/adobe/spacecat-audit-worker/commit/8437dbdb63808125fa44a0074e46e9739f49c401))
+
+## [1.422.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.422.2...v1.422.3) (2026-04-29)
+
+
+### Bug Fixes
+
+* **no-cta-above-the-fold:** filter on absolute thresholds instead of bounce share ([#2445](https://github.com/adobe/spacecat-audit-worker/issues/2445)) ([1632326](https://github.com/adobe/spacecat-audit-worker/commit/16323269268d3d50bd8c8c0b00407a1d676a7085)), closes [hi#traffic](https://github.com/hi/issues/traffic)
+
+## [1.422.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.422.1...v1.422.2) (2026-04-29)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.113.0 ([#2440](https://github.com/adobe/spacecat-audit-worker/issues/2440)) ([4ac0f61](https://github.com/adobe/spacecat-audit-worker/commit/4ac0f6123408af990f833c9b51c1a4347575b891))
+
+## [1.422.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.422.0...v1.422.1) (2026-04-29)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** set FIFO attributes on agentic analytics publish ([#2438](https://github.com/adobe/spacecat-audit-worker/issues/2438)) ([3f7c4d7](https://github.com/adobe/spacecat-audit-worker/commit/3f7c4d7628bf57126f2ec1f093c21f67da8c5040))
+
 # [1.422.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.421.2...v1.422.0) (2026-04-28)
 
 

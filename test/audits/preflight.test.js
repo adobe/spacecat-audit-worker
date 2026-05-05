@@ -82,9 +82,10 @@ describe('Preflight Audit', () => {
 
     it('returns broken links for 404 responses', async () => {
       const urls = ['https://main--example--page.aem.page/page1'];
+      // SITES-43720: HEAD-404 triggers a GET confirm; both must return 404 to flag broken.
       nock('https://main--example--page.aem.page')
-        .head('/broken')
-        .reply(404);
+        .head('/broken').reply(404)
+        .get('/broken').reply(404);
 
       const scrapedObjects = [{
         data: {
@@ -311,8 +312,8 @@ describe('Preflight Audit', () => {
     it('returns broken external links for 404 responses', async () => {
       const urls = ['https://main--example--page.aem.page/page1'];
       nock('https://external-site.com')
-        .head('/broken')
-        .reply(404);
+        .head('/broken').reply(404)
+        .get('/broken').reply(404);
 
       const scrapedObjects = [{
         data: {
@@ -402,11 +403,11 @@ describe('Preflight Audit', () => {
     it('processes both internal and external links correctly', async () => {
       const urls = ['https://main--example--page.aem.page/page1'];
       nock('https://main--example--page.aem.page')
-        .head('/internal-broken')
-        .reply(404);
+        .head('/internal-broken').reply(404)
+        .get('/internal-broken').reply(404);
       nock('https://external-site.com')
-        .head('/external-broken')
-        .reply(500);
+        .head('/external-broken').reply(500)
+        .get('/external-broken').reply(500);
 
       const scrapedObjects = [{
         data: {
@@ -436,17 +437,20 @@ describe('Preflight Audit', () => {
       ]);
     });
 
-    it('skips links inside header and footer', async () => {
+    it('checks links inside header and footer (full single-page coverage)', async () => {
+      // SITES-43720: chrome (header/footer) anchors are no longer skipped — preflight
+      // audits a single page on demand and is expected to give complete coverage.
       const urls = ['https://main--example--page.aem.page/page1'];
-      // One link in header, one in footer, one in body
       const html = `
         <header><a href="/header-link">Header Link</a></header>
         <footer><a href="/footer-link">Footer Link</a></footer>
         <main><a href="/body-link">Body Link</a></main>
       `;
       nock('https://main--example--page.aem.page')
-        .head('/body-link')
-        .reply(200);
+        .head('/header-link').reply(200)
+        .head('/footer-link').reply(404)
+        .get('/footer-link').reply(404)
+        .head('/body-link').reply(200);
 
       const scrapedObjects = [{
         data: {
@@ -456,15 +460,18 @@ describe('Preflight Audit', () => {
       }];
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
-      // Only the body link should be considered internal
-      expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
-      // Check that only the body link is logged as internal
+      // The footer link's 404 surfaces as a broken internal link.
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].urlTo)
+        .to.equal('https://main--example--page.aem.page/footer-link');
+      // All three links — header, footer, and body — appear in the internal links map.
       expect(context.log.debug).to.have.been.calledWith(
         '[preflight-audit] Found internal links:',
-        sinon.match.instanceOf(Map).and(sinon.match((linksMap) => {
-          const selectors = linksMap.get('https://main--example--page.aem.page/body-link');
-          return selectors instanceof Set && selectors.has('body > main > a');
-        })),
+        sinon.match.instanceOf(Map).and(sinon.match((linksMap) => (
+          linksMap.has('https://main--example--page.aem.page/header-link')
+          && linksMap.has('https://main--example--page.aem.page/footer-link')
+          && linksMap.has('https://main--example--page.aem.page/body-link')
+        ))),
       );
     });
   });
@@ -778,11 +785,11 @@ describe('Preflight Audit', () => {
         .head('/header-url')
         .reply(200);
       nock('https://main--example--page.aem.page')
-        .head('/broken')
-        .reply(404);
+        .head('/broken').reply(404)
+        .get('/broken').reply(404);
       nock('https://main--example--page.aem.page')
-        .head('/another-broken-url')
-        .reply(404);
+        .head('/another-broken-url').reply(404)
+        .get('/another-broken-url').reply(404);
 
       job.getMetadata = () => ({
         payload: {
@@ -880,11 +887,11 @@ describe('Preflight Audit', () => {
         .head('/header-url')
         .reply(200);
       nock('https://main--example--page.aem.page')
-        .head('/broken')
-        .reply(404);
+        .head('/broken').reply(404)
+        .get('/broken').reply(404);
       nock('https://main--example--page.aem.page')
-        .head('/another-broken-url')
-        .reply(404);
+        .head('/another-broken-url').reply(404)
+        .get('/another-broken-url').reply(404);
 
       job.getMetadata = () => ({
         payload: {
@@ -1148,15 +1155,15 @@ describe('Preflight Audit', () => {
       const body = `<body>${'a'.repeat(10)}lorem ipsum<a href="broken"></a><a href="http://test.com"></a></body>`;
       const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
 
-      // Mock the broken internal link to return 404
+      // Mock the broken internal link to return 404 (HEAD + GET-confirm).
       nock('https://main--example--page.aem.page')
-        .head('/broken')
-        .reply(404);
+        .head('/broken').reply(404)
+        .get('/broken').reply(404);
 
-      // Mock the external link to return 404
+      // Mock the external link to return 404 (HEAD + GET-confirm).
       nock('http://test.com')
-        .head('/')
-        .reply(404);
+        .head('/').reply(404)
+        .get('/').reply(404);
 
       s3Client.send.callsFake((command) => {
         if (command.input?.Prefix) {
