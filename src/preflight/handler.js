@@ -15,7 +15,7 @@ import { Audit, AsyncJob } from '@adobe/spacecat-shared-data-access';
 import { load as cheerioLoad } from 'cheerio';
 import { retrievePageAuthentication } from '@adobe/spacecat-shared-ims-client';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopPersister, noopUrlResolver } from '../common/index.js';
+import { isAuditEnabledForSite, noopPersister, noopUrlResolver } from '../common/index.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import {
   getPrefixedPageAuthToken, isValidUrls, saveIntermediateResults,
@@ -55,7 +55,7 @@ export const AUDIT_HEADINGS = 'headings';
 export const AUDIT_FORM_ACCESSIBILITY = 'form-accessibility';
 export { AUDIT_ALT_TEXT } from './audit-constants.js';
 
-export const AVAILABLE_CHECKS = [
+const AVAILABLE_CHECKS = [
   AUDIT_CANONICAL,
   AUDIT_LINKS,
   AUDIT_METATAGS,
@@ -144,22 +144,26 @@ export const preflightAudit = async (context) => {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
   }
 
-  // Single list for which checks run this execution (DOM gates + handler loop below).
-  // Default: all catalog checks; job payload may carry a narrower list from a prior step/client.
-  const allAvailableChecks = [...AVAILABLE_CHECKS];
-  let enabledChecks = allAvailableChecks;
+  // Compute enabled preflight checks for the site and store in job metadata
+  let enabledChecks = [];
   try {
+    enabledChecks = (await Promise.all(
+      AVAILABLE_CHECKS.map(async (audit) => {
+        const enabled = await isAuditEnabledForSite(`${audit}-preflight`, site, context);
+        return enabled ? audit : null;
+      }),
+    )).filter(Boolean);
+
+    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Enabled checks: ${JSON.stringify(enabledChecks)}`);
+
     const jobEntity = await AsyncJobEntity.findById(jobId);
     const currentMetadata = jobEntity.getMetadata();
     const currentPayload = currentMetadata?.payload;
-    if (currentPayload?.checks?.length) {
-      enabledChecks = currentPayload.checks;
-    }
     jobEntity.setMetadata({
       ...currentMetadata,
       payload: {
         ...currentPayload,
-        checks: allAvailableChecks,
+        checks: enabledChecks,
       },
     });
     await jobEntity.save();

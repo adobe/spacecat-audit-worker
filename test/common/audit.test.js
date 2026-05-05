@@ -238,7 +238,7 @@ describe('Audit tests', () => {
       const resp = await audit.run(message, context);
 
       expect(resp.status).to.equal(200);
-      expect(context.log.warn).to.have.been.calledWith(sinon.match(/disabled for site.*skipping/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/disabled for site.*skipping/));
       expect(context.dataAccess.Audit.create).not.to.have.been.called;
     });
 

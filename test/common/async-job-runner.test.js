@@ -128,7 +128,7 @@ describe('Job-based Step-Audit Tests', () => {
     const result = await runner.run(message, context);
 
     expect(result.status).to.equal(200);
-    expect(context.log.warn).to.have.been.calledWith(sinon.match(/disabled for site.*skipping/));
+    expect(context.log.info).to.have.been.calledWith(sinon.match(/disabled for site.*skipping/));
     expect(job.setStatus).to.have.been.calledWith('CANCELLED');
     expect(job.setMetadata).to.have.been.calledWith({
       payload: {

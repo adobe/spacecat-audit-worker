@@ -117,7 +117,7 @@ export class StepAudit extends BaseAudit {
         site.requiresValidation = context.site.requiresValidation;
       }
       if (await isAuditDisabledForSite(type, site, context)) {
-        log.warn(`Audit ${type} is disabled for site ${site.getId()}, skipping`);
+        log.info(`Audit ${type} is disabled for site ${site.getId()}, skipping`);
         return ok();
       }
 

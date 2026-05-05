@@ -158,7 +158,7 @@ describe('Step-based Audit Tests', () => {
       const result = await audit.run(message, context);
 
       expect(result.status).to.equal(200);
-      expect(context.log.warn).to.have.been.calledWith(sinon.match(/disabled for site.*skipping/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/disabled for site.*skipping/));
       expect(context.dataAccess.Audit.create).not.to.have.been.called;
       expect(context.sqs.sendMessage).not.to.have.been.called;
     });

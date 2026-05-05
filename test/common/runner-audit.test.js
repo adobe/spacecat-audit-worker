@@ -186,7 +186,7 @@ describe('RunnerAudit', () => {
 
     expect(result.status).to.equal(ok().status);
     expect(runner).not.to.have.been.called;
-    expect(context.log.warn).to.have.been.calledWith(
+    expect(context.log.info).to.have.been.calledWith(
       'Audit reddit-analysis is disabled for site site-1, skipping',
     );
   });
