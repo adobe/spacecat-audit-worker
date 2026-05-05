@@ -1,3 +1,18 @@
+## [1.431.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.431.1...v1.431.2) (2026-05-05)
+
+
+### Bug Fixes
+
+* imperva path does not require underscore path to work ([#2474](https://github.com/adobe/spacecat-audit-worker/issues/2474)) ([6f3349f](https://github.com/adobe/spacecat-audit-worker/commit/6f3349fb55d4f8587fbc1c00865383d1a6b49c6a))
+
+## [1.431.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.431.0...v1.431.1) (2026-05-05)
+
+
+### Bug Fixes
+
+* broken-backlinks - support two-level locale URL structures in Bright Data ([#2457](https://github.com/adobe/spacecat-audit-worker/issues/2457)) ([cec528a](https://github.com/adobe/spacecat-audit-worker/commit/cec528ac9041c2459ed36f5ad26d6bf4a3284d58))
+* toc audit update to scrape client ([#2415](https://github.com/adobe/spacecat-audit-worker/issues/2415)) ([6423c64](https://github.com/adobe/spacecat-audit-worker/commit/6423c647f5bd144dfb0b5dd1b0c6f13d4b9a67ed))
+
 # [1.431.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.430.2...v1.431.0) (2026-05-05)
 
 

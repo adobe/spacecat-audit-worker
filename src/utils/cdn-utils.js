@@ -242,13 +242,9 @@ export function buildCdnPaths(bucketName, serviceProvider, timeParts, pathId = n
   } = timeParts;
 
   // New standardized bucket structure: cdn-logs-adobe-{env}/{pathId}/raw/{serviceProvider}/
-  // For byocdn-imperva, pathId, 'raw', and serviceProvider are joined with underscores
   if (isStandardAdobeCdnBucket(bucketName) && pathId) {
-    const rawLocation = serviceProvider.includes('byocdn-imperva')
-      ? `s3://${bucketName}/${pathId}_raw_${serviceProvider}/`
-      : `s3://${bucketName}/${pathId}/raw/${serviceProvider}/`;
     return {
-      rawLocation,
+      rawLocation: `s3://${bucketName}/${pathId}/raw/${serviceProvider}/`,
       aggregatedLocation: `s3://${bucketName}/${pathId}/aggregated/`,
       aggregatedOutput: `s3://${bucketName}/${pathId}/aggregated/${year}/${month}/${day}/${hour}/`,
       aggregatedReferralLocation: `s3://${bucketName}/${pathId}/aggregated-referral/`,
@@ -338,24 +334,6 @@ export async function getBucketInfo(s3Client, bucketName, pathId = null) {
       providers = (response.CommonPrefixes || [])
         .map((prefix) => prefix.Prefix.replace(`${pathId}/raw/`, '').replace('/', ''))
         .filter((provider) => provider && provider.length > 0);
-
-      // Also discover providers using the underscore layout: {pathId}_raw_{provider}/
-      // Imperva logs are delivered with pathId, "raw", and provider joined by underscores
-      // instead of slashes, so a separate listing is needed to find them.
-      const underscoreResponse = await s3Client.send(new ListObjectsV2Command({
-        Bucket: bucketName,
-        Prefix: `${pathId}_raw_`,
-        Delimiter: '/',
-        MaxKeys: 10,
-      }));
-
-      const underscorePrefix = `${pathId}_raw_`;
-      const underscoreProviders = (underscoreResponse.CommonPrefixes || [])
-        .filter((prefix) => prefix.Prefix.startsWith(underscorePrefix))
-        .map((prefix) => prefix.Prefix.slice(underscorePrefix.length).replace(/\/$/, ''))
-        .filter((provider) => provider && provider.length > 0);
-
-      providers = [...providers, ...underscoreProviders];
 
       return { isLegacy: isLegacyBucketStructure(providers), providers };
     }
