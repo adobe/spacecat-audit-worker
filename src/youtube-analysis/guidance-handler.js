@@ -18,6 +18,7 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
+import { resolveBrandForSite, applyScopeToOpportunity } from '../utils/brand-resolver.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS;
 
@@ -74,6 +75,7 @@ export default async function handler(message, context) {
     return notFound('Site not found');
   }
 
+  const brand = await resolveBrandForSite(context, site);
   const baseUrl = site.getBaseURL();
 
   if (auditId) {
@@ -124,10 +126,7 @@ export default async function handler(message, context) {
       }),
     });
 
-    if (brandId) {
-      opportunity.setScopeType('brand');
-      opportunity.setScopeId(brandId);
-    }
+    applyScopeToOpportunity(opportunity, brand, log, '[YouTube]');
     const status = opportunityData.status || 'NEW';
     opportunity.setStatus(status);
     opportunity.setData({

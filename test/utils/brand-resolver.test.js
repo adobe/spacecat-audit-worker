@@ -18,6 +18,7 @@ import sinonChai from 'sinon-chai';
 
 import {
   applyBrandScope,
+  applyScopeToOpportunity,
   BRAND_RESOLUTION_TIMEOUT_MS,
   findActiveBrandForSite,
   resolveBrandForSite,
@@ -37,15 +38,16 @@ describe('brand-resolver', () => {
    * Build a single PostgREST query chain mock that resolves (or rejects) on the
    * third `.eq()` call (matching the new 3-eq query pattern: org, status, site_id).
    */
-  function makeChain(resolveData, throwWith) {
+  function makeChain(resolveData, throwWith, postgrestError = null) {
     const chain = {
       select: sandbox.stub().returnsThis(),
       eq: sandbox.stub().returnsThis(),
+      order: sandbox.stub().returnsThis(),
     };
     if (throwWith) {
-      chain.eq.onThirdCall().rejects(throwWith);
+      chain.limit = sandbox.stub().rejects(throwWith);
     } else {
-      chain.eq.onThirdCall().resolves({ data: resolveData });
+      chain.limit = sandbox.stub().resolves({ data: resolveData, error: postgrestError });
     }
     return chain;
   }
@@ -210,9 +212,10 @@ describe('brand-resolver', () => {
       const neverChain = {
         select: sandbox.stub().returnsThis(),
         eq: sandbox.stub().returnsThis(),
+        order: sandbox.stub().returnsThis(),
+        limit: sandbox.stub().returns(new Promise(() => {})),
       };
-      // Third eq call returns a promise that never settles
-      neverChain.eq.onThirdCall().returns(new Promise(() => {}));
+      // limit() returns a promise that never settles
 
       const ctx = {
         log,
@@ -231,6 +234,28 @@ describe('brand-resolver', () => {
       const call = lastOutcome();
       expect(call.proxy).to.equal(log.warn);
       expect(call.args[1]).to.include({ result: 'timeout', orgId, siteId });
+    });
+
+    it('returns null and logs error at warn when Q1 returns a PostgREST error response', async () => {
+      const postgrestErr = { message: 'RLS policy violation', code: '42501' };
+      const errorChain = {
+        select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub().returnsThis(),
+        order: sandbox.stub().returnsThis(),
+        limit: sandbox.stub().resolves({ data: null, error: postgrestErr }),
+      };
+      const ctx = {
+        log,
+        dataAccess: { services: { postgrestClient: { from: sandbox.stub().returns(errorChain) } } },
+      };
+
+      const result = await findActiveBrandForSite(ctx, { orgId, siteId });
+
+      expect(result).to.be.null;
+      const call = lastOutcome();
+      expect(call.proxy).to.equal(log.warn);
+      expect(call.args[1]).to.include({ result: 'error', errorName: 'PostgrestError' });
+      expect(call.args[1]).to.not.have.property('errorMessage');
     });
 
     it('does not throw when log is missing across all outcomes', async () => {
@@ -329,6 +354,45 @@ describe('brand-resolver', () => {
       const out = applyBrandScope({ type: 't', siteId: 's' }, { brandId: 'b-2' });
       expect(out.scopeType).to.equal('brand');
       expect(out.brandId).to.equal('b-2');
+    });
+  });
+
+  describe('applyScopeToOpportunity', () => {
+    let mockOpportunity;
+
+    beforeEach(() => {
+      mockOpportunity = {
+        setScopeType: sandbox.stub(),
+        setScopeId: sandbox.stub(),
+      };
+    });
+
+    it("sets scopeType='brand' and scopeId when brand is resolved", () => {
+      applyScopeToOpportunity(mockOpportunity, { brandId: 'brand-abc' }, log, '[Test]');
+
+      expect(mockOpportunity.setScopeType).to.have.been.calledWith('brand');
+      expect(mockOpportunity.setScopeId).to.have.been.calledWith('brand-abc');
+    });
+
+    it('sets scopeType=null and scopeId=null when brand is null (ghost scope cleanup)', () => {
+      applyScopeToOpportunity(mockOpportunity, null, log, '[Test]');
+
+      expect(mockOpportunity.setScopeType).to.have.been.calledWith(null);
+      expect(mockOpportunity.setScopeId).to.have.been.calledWith(null);
+    });
+
+    it('does not throw when setScopeType throws; emits warn log', () => {
+      mockOpportunity.setScopeType.throws(new Error('validation error'));
+
+      expect(() => applyScopeToOpportunity(mockOpportunity, { brandId: 'b' }, log, '[Test]')).to.not.throw();
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to set brand scope/);
+    });
+
+    it('uses empty logPrefix when not provided', () => {
+      mockOpportunity.setScopeType.throws(new Error('oops'));
+
+      expect(() => applyScopeToOpportunity(mockOpportunity, { brandId: 'b' }, log)).to.not.throw();
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to set brand scope/);
     });
   });
 });

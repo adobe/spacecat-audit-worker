@@ -636,13 +636,14 @@ describe('Cited Analysis Handler', () => {
       expect(context.log.error).to.have.been.calledWith('[Cited] Failed to send Mystique message: SQS Error');
     });
 
-    // Helper: fresh PostgREST chain mock that resolves on the 3rd eq call (org, status, site_id)
-    function makeQueryChain(data) {
+    // Helper: fresh PostgREST chain mock that resolves on limit() (org, status, site_id, order, limit)
+    function makeQueryChain(data, postgrestError = null) {
       const chain = {
         select: sandbox.stub().returnsThis(),
         eq: sandbox.stub().returnsThis(),
+        order: sandbox.stub().returnsThis(),
+        limit: sandbox.stub().resolves({ data, error: postgrestError }),
       };
-      chain.eq.onThirdCall().resolves({ data });
       return chain;
     }
 

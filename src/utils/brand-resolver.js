@@ -90,23 +90,35 @@ function logOutcome(log, fields) {
  * @returns {Promise<{brandId: string, via: 'baseSiteId'|'brand_sites'} | null>}
  */
 async function resolveQueries(postgrestClient, orgId, siteId) {
-  const { data: direct } = await postgrestClient
+  const { data: direct, error: directErr } = await postgrestClient
     .from('brands')
     .select('id')
     .eq('organization_id', orgId)
     .eq('status', 'active')
-    .eq('site_id', siteId);
+    .eq('site_id', siteId)
+    .order('created_at', { ascending: true })
+    .limit(1);
+
+  if (directErr) {
+    throw Object.assign(new Error('brand Q1 failed'), { name: 'PostgrestError', cause: directErr });
+  }
 
   if (direct?.length) {
     return { brandId: direct[0].id, via: 'baseSiteId' };
   }
 
-  const { data: joined } = await postgrestClient
+  const { data: joined, error: joinedErr } = await postgrestClient
     .from('brands')
     .select('id, brand_sites!inner(site_id)')
     .eq('organization_id', orgId)
     .eq('status', 'active')
-    .eq('brand_sites.site_id', siteId);
+    .eq('brand_sites.site_id', siteId)
+    .order('created_at', { ascending: true })
+    .limit(1);
+
+  if (joinedErr) {
+    throw Object.assign(new Error('brand Q2 failed'), { name: 'PostgrestError', cause: joinedErr });
+  }
 
   if (joined?.length) {
     return { brandId: joined[0].id, via: 'brand_sites' };
@@ -213,6 +225,25 @@ export async function resolveBrandForSite(context, site) {
   const orgId = site?.getOrganizationId?.();
   const siteId = site?.getId?.();
   return findActiveBrandForSite(context, { orgId, siteId });
+}
+
+/**
+ * Apply resolved brand scope to an opportunity, always assigning (including null to clear
+ * stale scope on re-runs). Wrapped in try/catch so a model validation error never
+ * prevents the opportunity from being saved.
+ *
+ * @param {object} opportunity - Opportunity model instance
+ * @param {{brandId: string}|null} brand - Resolved brand, or null when none
+ * @param {object} log - Lambda logger
+ * @param {string} [logPrefix=''] - Log prefix for context
+ */
+export function applyScopeToOpportunity(opportunity, brand, log, logPrefix = '') {
+  try {
+    opportunity.setScopeType(brand ? 'brand' : null);
+    opportunity.setScopeId(brand?.brandId ?? null);
+  } catch (err) {
+    log?.warn?.(`${logPrefix} Failed to set brand scope; continuing without: ${err.message}`);
+  }
 }
 
 /**
