@@ -584,6 +584,14 @@ describe('CDN Analysis Handler', () => {
         null,
         900,
       );
+
+      const reportCall = context.sqs.sendMessage.getCalls()
+        .find((call) => call.args[1].type === 'cdn-logs-report');
+      expect(reportCall.args[1].auditContext).to.deep.equal({
+        weekOffset: computeWeekOffset(2025, 6, 14),
+        refreshAgenticDailyExport: true,
+        triggeredBy: 'byocdn-other',
+      });
     });
 
     it('byocdn-other sub-audit processes logs normally without scanning', async () => {

@@ -513,6 +513,49 @@ describe('summarization utils', () => {
         expect(result).to.have.length(0);
       });
     });
+
+    it('should include contentHash from urlToContentHash map (LLMO-4454)', () => {
+      const hash = 'abc123def456';
+      const suggestions = [
+        {
+          pageUrl: 'https://example.com/page1',
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+          },
+          keyPoints: { formatted_items: ['Key 1'] },
+        },
+      ];
+
+      const result = getJsonSummarySuggestion(suggestions, { 'https://example.com/page1': hash });
+
+      expect(result).to.have.length(2);
+      expect(result[0].contentHash).to.equal(hash);
+      expect(result[1].contentHash).to.equal(hash);
+    });
+
+    it('should set contentHash to null when url not in urlToContentHash (LLMO-4454)', () => {
+      const suggestions = [
+        {
+          pageUrl: 'https://example.com/page1',
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+          },
+          keyPoints: { formatted_items: ['Key 1'] },
+        },
+      ];
+
+      const result = getJsonSummarySuggestion(suggestions);
+
+      expect(result).to.have.length(2);
+      expect(result[0].contentHash).to.be.null;
+      expect(result[1].contentHash).to.be.null;
+    });
   });
 });
 

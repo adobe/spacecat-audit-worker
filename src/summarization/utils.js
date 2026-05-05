@@ -45,12 +45,13 @@ function getPageSummaryTransformRules(pageSummary) {
   return { selector, action };
 }
 
-export function getJsonSummarySuggestion(suggestions) {
+export function getJsonSummarySuggestion(suggestions, urlToContentHash = {}) {
   const suggestionValues = [];
   suggestions.forEach((suggestion) => {
     // Get scrapedAt once for all suggestion values from this suggestion
     const scrapedAt = suggestion.scrapedAt || new Date().toISOString();
     const pageTransformRules = getPageSummaryTransformRules(suggestion.pageSummary);
+    const contentHash = urlToContentHash[suggestion.pageUrl] ?? null;
 
     // handle page level summary - only add if summary text is present and not already on page
     const pageSummaryText = suggestion.pageSummary?.formatted_summary;
@@ -66,6 +67,7 @@ export function getJsonSummarySuggestion(suggestions) {
         title: suggestion.pageSummary?.title,
         transformRules: pageTransformRules,
         scrapedAt,
+        contentHash,
       });
     }
 
@@ -83,6 +85,7 @@ export function getJsonSummarySuggestion(suggestions) {
         title: suggestion.pageSummary?.title,
         transformRules: pageTransformRules,
         scrapedAt,
+        contentHash,
       });
     }
   });

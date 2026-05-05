@@ -170,6 +170,29 @@ async function createReferralReportQuery(options) {
   });
 }
 
+async function createReferralDailyReportQuery(options) {
+  const {
+    trafficDate, databaseName, tableName, site,
+  } = options;
+
+  const filters = site.getConfig().getLlmoCdnlogsFilter();
+  const siteFilters = buildSiteFilters(filters, site);
+  const year = trafficDate.getUTCFullYear().toString();
+  const month = String(trafficDate.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(trafficDate.getUTCDate()).padStart(2, '0');
+  const whereClause = buildWhereClauseReferral(
+    [`(year = '${year}' AND month = '${month}' AND day = '${day}')`],
+    siteFilters,
+  );
+
+  return loadSql('referral-traffic-daily-report', {
+    databaseName,
+    tableName,
+    whereClause,
+    countryExtraction: buildCountryExtractionSQL(),
+  });
+}
+
 async function createTopUrlsQuery(options) {
   const {
     periods, databaseName, tableName, site,
@@ -245,6 +268,7 @@ export const weeklyBreakdownQueries = {
   createAgenticReportQuery,
   createAgenticDailyReportQuery,
   createReferralReportQuery,
+  createReferralDailyReportQuery,
   createTopUrlsQuery,
   createTopUrlsQueryWithLimit,
 };
