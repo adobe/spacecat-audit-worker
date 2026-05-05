@@ -1,3 +1,10 @@
+# [1.431.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.430.2...v1.431.0) (2026-05-05)
+
+
+### Features
+
+* **paid-keyword-optimizer:** multi-keyword cluster support ([#2437](https://github.com/adobe/spacecat-audit-worker/issues/2437)) ([0eba1ce](https://github.com/adobe/spacecat-audit-worker/commit/0eba1ce65af361b0521cef9136b3128f9d135b8c))
+
 ## [1.430.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.430.1...v1.430.2) (2026-05-04)
 
 
