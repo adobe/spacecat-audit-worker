@@ -617,14 +617,14 @@ describe('YouTube Analysis Handler', () => {
       expect(context.log.error).to.have.been.calledWith('[YouTube] Failed to send Mystique message: SQS Error');
     });
 
-    // Helper: fresh PostgREST chain mock that resolves on the 3rd eq call (org, status, site_id)
+    // Helper: fresh PostgREST chain mock — limit() is the terminal call (org, status, site_id, order, limit)
     function makeQueryChain(data) {
-      const chain = {
+      return {
         select: sandbox.stub().returnsThis(),
         eq: sandbox.stub().returnsThis(),
+        order: sandbox.stub().returnsThis(),
+        limit: sandbox.stub().resolves({ data, error: null }),
       };
-      chain.eq.onThirdCall().resolves({ data });
-      return chain;
     }
 
     it('should include scope fields when brand is resolved via brand_sites join', async () => {

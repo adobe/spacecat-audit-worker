@@ -236,6 +236,44 @@ describe('brand-resolver', () => {
       expect(call.args[1]).to.include({ result: 'timeout', orgId, siteId });
     });
 
+    it('returns null and logs error at warn when Q2 returns a PostgREST error response', async () => {
+      const postgrestErr = { message: 'permission denied', code: '42501' };
+      const okChain = {
+        select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub().returnsThis(),
+        order: sandbox.stub().returnsThis(),
+        limit: sandbox.stub().resolves({ data: [], error: null }),
+      };
+      const errorChain = {
+        select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub().returnsThis(),
+        order: sandbox.stub().returnsThis(),
+        limit: sandbox.stub().resolves({ data: null, error: postgrestErr }),
+      };
+      const ctx = {
+        log,
+        dataAccess: {
+          services: {
+            postgrestClient: {
+              from: sandbox.stub()
+                .onFirstCall()
+                .returns(okChain)
+                .onSecondCall()
+                .returns(errorChain),
+            },
+          },
+        },
+      };
+
+      const result = await findActiveBrandForSite(ctx, { orgId, siteId });
+
+      expect(result).to.be.null;
+      const call = lastOutcome();
+      expect(call.proxy).to.equal(log.warn);
+      expect(call.args[1]).to.include({ result: 'error', errorName: 'PostgrestError' });
+      expect(call.args[1]).to.not.have.property('errorMessage');
+    });
+
     it('returns null and logs error at warn when Q1 returns a PostgREST error response', async () => {
       const postgrestErr = { message: 'RLS policy violation', code: '42501' };
       const errorChain = {

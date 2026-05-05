@@ -1614,7 +1614,11 @@ describe('LLMO Customer Analysis Handler', () => {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
             eq: sandbox.stub().returns({
-              eq: sandbox.stub().resolves({ data: [{ id: 'brand-uuid-1' }] }),
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [{ id: 'brand-uuid-1' }], error: null }),
+                }),
+              }),
             }),
           }),
         }),
@@ -1680,7 +1684,11 @@ describe('LLMO Customer Analysis Handler', () => {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
             eq: sandbox.stub().returns({
-              eq: sandbox.stub().resolves({ data: [] }),
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
             }),
           }),
         }),
@@ -1689,7 +1697,11 @@ describe('LLMO Customer Analysis Handler', () => {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
             eq: sandbox.stub().returns({
-              eq: sandbox.stub().resolves({ data: [{ id: 'brand-fb' }] }),
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [{ id: 'brand-fb' }], error: null }),
+                }),
+              }),
             }),
           }),
         }),
@@ -1731,7 +1743,11 @@ describe('LLMO Customer Analysis Handler', () => {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
             eq: sandbox.stub().returns({
-              eq: sandbox.stub().resolves({ data: [] }),
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
             }),
           }),
         }),
@@ -1740,7 +1756,11 @@ describe('LLMO Customer Analysis Handler', () => {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
             eq: sandbox.stub().returns({
-              eq: sandbox.stub().resolves({ data: [] }),
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
             }),
           }),
         }),
@@ -1781,7 +1801,11 @@ describe('LLMO Customer Analysis Handler', () => {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
             eq: sandbox.stub().returns({
-              eq: sandbox.stub().resolves({ data: [] }),
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
             }),
           }),
         }),
@@ -1790,7 +1814,11 @@ describe('LLMO Customer Analysis Handler', () => {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
             eq: sandbox.stub().returns({
-              eq: sandbox.stub().resolves({ data: [] }),
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [], error: null }),
+                }),
+              }),
             }),
           }),
         }),
@@ -1838,7 +1866,11 @@ describe('LLMO Customer Analysis Handler', () => {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
             eq: sandbox.stub().returns({
-              eq: sandbox.stub().resolves({ data: [{ id: 'brand-base' }] }),
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().resolves({ data: [{ id: 'brand-base' }], error: null }),
+                }),
+              }),
             }),
           }),
         }),
@@ -1886,12 +1918,16 @@ describe('LLMO Customer Analysis Handler', () => {
         json: async () => ({}),
       });
 
-      // Mock postgrestClient that throws on 3rd eq (matching new 3-eq query pattern)
+      // Mock postgrestClient that rejects on limit() (matching the order/limit terminal pattern)
       const brandsQuery = {
         select: sandbox.stub().returns({
           eq: sandbox.stub().returns({
             eq: sandbox.stub().returns({
-              eq: sandbox.stub().rejects(new Error('DB error')),
+              eq: sandbox.stub().returns({
+                order: sandbox.stub().returns({
+                  limit: sandbox.stub().rejects(new Error('DB error')),
+                }),
+              }),
             }),
           }),
         }),
