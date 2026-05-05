@@ -15,10 +15,9 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import {
   loadSql,
   generateReportingPeriods,
-  fetchRemotePatterns,
-  queryIndexHasPatternsFile,
   getConfigCategories,
 } from './utils/report-utils.js';
+import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
 import {
   pathHasData,
   getS3Config,
@@ -98,25 +97,20 @@ async function runCdnLogsReport(url, context, site, auditContext) {
         weekOffsets = [0];
       }
 
+      let existingPatterns;
       if (reportConfig.name === 'agentic') {
-        const dataFolder = site.getConfig()?.getLlmoDataFolder();
-        const existingPatterns = await fetchRemotePatterns(site, log);
-        const queryIndexPatternsExists = !existingPatterns
-          ? await queryIndexHasPatternsFile(site, log)
-          : false;
+        existingPatterns = await fetchAgenticUrlClassificationRules(site, context);
+        const hasExistingPatterns = (existingPatterns?.pagePatterns?.length || 0) > 0
+          && (existingPatterns?.topicPatterns?.length || 0) > 0;
 
-        const shouldSkipGeneration = existingPatterns?.error
-          || queryIndexPatternsExists?.error
-          || (!existingPatterns && queryIndexPatternsExists);
-
-        if (shouldSkipGeneration) {
-          log.info(`Skipping fresh patterns generation for ${dataFolder}`);
-        } else if (!existingPatterns || auditContext?.categoriesUpdated) {
-          log.info('Patterns not found, generating patterns workbook...');
+        if (existingPatterns?.error) {
+          log.info(`Skipping fresh patterns generation for ${siteId}; DB rule fetch failed`);
+        } else if (!hasExistingPatterns || auditContext?.categoriesUpdated) {
+          log.info('Agentic URL classification rules not found or stale, generating DB rules...');
           const periods = generateReportingPeriods(new Date(), weekOffsets[0]);
           const configCategories = await getConfigCategories(site, context);
 
-          await generatePatternsWorkbook({
+          const generatedPatterns = await generatePatternsWorkbook({
             site,
             context,
             athenaClient,
@@ -125,10 +119,12 @@ async function runCdnLogsReport(url, context, site, auditContext) {
               tableName: reportConfig.tableName,
             },
             periods,
-            sharepointClient,
             configCategories,
             existingPatterns,
           });
+          if (generatedPatterns) {
+            existingPatterns = await fetchAgenticUrlClassificationRules(site, context);
+          }
         }
       }
 
@@ -145,6 +141,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
           sharepointClient,
           weekOffset,
           context,
+          ...(reportConfig.name === 'agentic' ? { remotePatterns: existingPatterns } : {}),
         });
 
         if (result.success && result.uploadResult) {

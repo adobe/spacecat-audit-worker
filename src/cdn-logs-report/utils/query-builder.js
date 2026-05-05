@@ -11,7 +11,8 @@
  */
 
 import { DEFAULT_COUNTRY_PATTERNS } from '../../common/country-patterns.js';
-import { loadSql, fetchRemotePatterns } from './report-utils.js';
+import { fetchAgenticUrlClassificationRules } from '../../common/agentic-url-classification-rules.js';
+import { loadSql } from './report-utils.js';
 import { buildAgentTypeClassificationSQL, buildUserAgentDisplaySQL } from '../../common/user-agent-classification.js';
 import { buildDateFilter, buildUserAgentFilter, buildSiteFilters } from '../../utils/cdn-utils.js';
 
@@ -83,7 +84,7 @@ function buildTopicExtractionSQL(remotePatterns = null) {
 
 async function createAgenticReportQuery(options) {
   const {
-    periods, databaseName, tableName, site,
+    periods, databaseName, tableName, site, context,
   } = options;
 
   const filters = site.getConfig().getLlmoCdnlogsFilter();
@@ -95,7 +96,9 @@ async function createAgenticReportQuery(options) {
     siteFilters,
   );
 
-  const remotePatterns = await fetchRemotePatterns(site);
+  const remotePatterns = Object.hasOwn(options, 'remotePatterns')
+    ? options.remotePatterns
+    : await fetchAgenticUrlClassificationRules(site, context);
 
   return loadSql('agentic-traffic-report', {
     agentTypeClassification: buildAgentTypeClassificationSQL(),
@@ -111,7 +114,7 @@ async function createAgenticReportQuery(options) {
 
 async function createAgenticDailyReportQuery(options) {
   const {
-    trafficDate, databaseName, tableName, site,
+    trafficDate, databaseName, tableName, site, context,
   } = options;
 
   const filters = site.getConfig().getLlmoCdnlogsFilter();
@@ -124,7 +127,9 @@ async function createAgenticDailyReportQuery(options) {
     siteFilters,
   );
 
-  const remotePatterns = await fetchRemotePatterns(site);
+  const remotePatterns = Object.hasOwn(options, 'remotePatterns')
+    ? options.remotePatterns
+    : await fetchAgenticUrlClassificationRules(site, context);
 
   return loadSql('agentic-traffic-daily-report', {
     agentTypeClassification: buildAgentTypeClassificationSQL(),

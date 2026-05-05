@@ -31,6 +31,7 @@ const createMockSiteConfig = (overrides = {}) => ({
 });
 
 const createMockSite = (overrides = {}) => ({
+  getId: () => 'test-site-id',
   getBaseURL: () => 'https://adobe.com',
   getConfig: () => createMockSiteConfig(),
   ...overrides,
@@ -52,14 +53,26 @@ const createMockOptions = (overrides = {}) => ({
 });
 
 const createMockPatterns = () => ({
-  pagetype: {
-    data: [{ name: 'Product Page', regex: '.*product.*' }],
-  },
-  products: {
-    data: [
-      { regex: '/products/', name: 'Products' },
-      { regex: '/category/([^/]+)' },
-    ],
+  pagePatterns: [{ name: 'Product Page', regex: '.*product.*', sort_order: 0 }],
+  topicPatterns: [
+    { regex: '/products/', name: 'Products', sort_order: 0 },
+    { regex: '/category/([^/]+)', sort_order: 1 },
+  ],
+});
+
+const createMockPostgrestClient = ({
+  categoryRules = [],
+  pageTypeRules = [],
+} = {}) => ({
+  from: (table) => {
+    const data = table === 'agentic_url_category_rules' ? categoryRules : pageTypeRules;
+    const query = {
+      select: () => query,
+      eq: () => query,
+      order: () => query,
+      then: (resolve) => Promise.resolve({ data, error: null }).then(resolve),
+    };
+    return query;
   },
 });
 
@@ -150,54 +163,101 @@ describe('CDN Logs Query Builder', () => {
   });
 
   it('handles topic patterns with mixed named and extract patterns', async () => {
+    const patterns = createMockPatterns();
     const customOptions = createMockOptions({
       site: createMockSite({
         getConfig: () => createMockSiteConfig({
           getLlmoDataFolder: () => 'test-folder',
         }),
       }),
+      context: {
+        dataAccess: {
+          services: {
+            postgrestClient: createMockPostgrestClient({
+              categoryRules: patterns.topicPatterns,
+              pageTypeRules: patterns.pagePatterns,
+            }),
+          },
+        },
+      },
     });
-
-    const nock = await import('nock');
-    const patternNock = nock.default('https://main--project-elmo-ui-data--adobe.aem.live')
-      .get('/test-folder/agentic-traffic/patterns/patterns.json')
-      .reply(200, createMockPatterns());
 
     const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
 
     expect(query).to.be.a('string');
     expect(query).to.include('CASE');
-    expect(patternNock.isDone()).to.be.true;
+  });
+
+  it('uses pre-fetched patterns for agentic report queries', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(createMockOptions({
+      remotePatterns: createMockPatterns(),
+    }));
+
+    expect(query).to.include("THEN 'Product Page'");
+    expect(query).to.include("THEN 'Products'");
+  });
+
+  it('uses pre-fetched patterns for daily agentic report queries', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery({
+      trafficDate: new Date('2025-01-07T00:00:00Z'),
+      databaseName: 'test_db',
+      tableName: 'test_table',
+      site: createMockSite(),
+      remotePatterns: createMockPatterns(),
+    });
+
+    expect(query).to.include("THEN 'Product Page'");
+    expect(query).to.include("THEN 'Products'");
   });
 
   it('handles topic patterns with named patterns', async () => {
+    const categoryRules = [
+      { regex: '/products/', name: 'Products', sort_order: 0 },
+    ];
+    const pageTypeRules = [
+      { name: 'Product Page', regex: '.*product.*', sort_order: 0 },
+    ];
     const customOptions = createMockOptions({
       site: createMockSite({
         getConfig: () => createMockSiteConfig({
           getLlmoDataFolder: () => 'test-folder',
         }),
       }),
-    });
-
-    const nock = await import('nock');
-    const namedPatternsOnly = {
-      pagetype: { data: [{ name: 'Product Page', regex: '.*product.*' }] },
-      products: {
-        data: [
-          { regex: '/products/', name: 'Products' },
-        ],
+      context: {
+        dataAccess: {
+          services: {
+            postgrestClient: createMockPostgrestClient({
+              categoryRules,
+              pageTypeRules,
+            }),
+          },
+        },
       },
-    };
-
-    const patternNock = nock.default('https://main--project-elmo-ui-data--adobe.aem.live')
-      .get('/test-folder/agentic-traffic/patterns/patterns.json')
-      .reply(200, namedPatternsOnly);
+    });
 
     const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
 
     expect(query).to.be.a('string');
     expect(query).to.include('CASE');
-    expect(patternNock.isDone()).to.be.true;
+  });
+
+  it('handles topic patterns with extract-only patterns', async () => {
+    const customOptions = createMockOptions({
+      context: {
+        dataAccess: {
+          services: {
+            postgrestClient: createMockPostgrestClient({
+              categoryRules: [{ regex: '/category/([^/]+)', sort_order: 0 }],
+              pageTypeRules: [],
+            }),
+          },
+        },
+      },
+    });
+
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
+
+    expect(query).to.include("COALESCE(\n    NULLIF(REGEXP_EXTRACT(url, '/category/([^/]+)', 1), ''),");
   });
 
   it('handles cross-month date filtering', async () => {
@@ -237,6 +297,15 @@ describe('CDN Logs Query Builder', () => {
   });
 
   describe('createTopUrlsQueryWithLimit', () => {
+    it('creates top URLs query without a limit', async () => {
+      const query = await weeklyBreakdownQueries.createTopUrlsQuery(mockOptions);
+
+      expect(query).to.be.a('string');
+      expect(query).to.include('test_db.test_table');
+      expect(query).to.include("year = '2025'");
+      expect(query).to.include("month = '01'");
+    });
+
     it('creates query with limit parameter', async () => {
       const customOptions = createMockOptions({
         limit: 100,
