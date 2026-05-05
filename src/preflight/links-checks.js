@@ -119,8 +119,16 @@ async function checkLinkStatus(href, pageUrl, context, options = {
 
     return null;
   } catch (finalErr) {
-    log.error(`[preflight-audit] Error checking ${linkType} link ${href} from ${pageUrl} with GET fallback:`, finalErr.message);
-    return null;
+    // Network-level failure (DNS, timeout, unsupported protocol) — the link is
+    // unreachable, which is a broken-link condition. status: 0 is the sentinel
+    // for "no HTTP response received".
+    log.info(`[preflight-audit] ${linkType} link ${href} unreachable (${finalErr.message}) — reporting as broken`);
+    return {
+      urlTo: href,
+      href: pageUrl,
+      status: 0,
+      ...toElementTargets(selectors),
+    };
   }
 }
 

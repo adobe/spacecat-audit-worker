@@ -301,7 +301,7 @@ describe('preflight/links-checks - runLinksChecks', () => {
     expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
   });
 
-  it('returns null (not broken) when both HEAD and GET throw network errors', async () => {
+  it('flags as broken (status 0) when both HEAD and GET throw network errors', async () => {
     fetchStub.onFirstCall().rejects(new Error('network error'));
     fetchStub.onSecondCall().rejects(new Error('still failing'));
 
@@ -311,8 +311,25 @@ describe('preflight/links-checks - runLinksChecks', () => {
       context,
     );
 
-    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
-    expect(context.log.error).to.have.been.called;
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
+    expect(result.auditResult.brokenExternalLinks[0].status).to.equal(0);
+    expect(context.log.info).to.have.been.calledWith(sinon.match(/unreachable/));
+    expect(context.log.error).to.not.have.been.called;
+  });
+
+  it('flags internal link as broken (status 0) when both HEAD and GET throw network errors', async () => {
+    fetchStub.onFirstCall().rejects(new Error('getaddrinfo ENOTFOUND internal.example.com'));
+    fetchStub.onSecondCall().rejects(new Error('getaddrinfo ENOTFOUND internal.example.com'));
+
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects(`<a href="${pageUrl}/unreachable">internal broken</a>`),
+      context,
+    );
+
+    expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+    expect(result.auditResult.brokenInternalLinks[0].status).to.equal(0);
+    expect(context.log.info).to.have.been.calledWith(sinon.match(/unreachable/));
   });
 
   // ── Broken internal links ─────────────────────────────────────────────────
