@@ -1,3 +1,10 @@
+## [1.431.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.431.1...v1.431.2) (2026-05-05)
+
+
+### Bug Fixes
+
+* imperva path does not require underscore path to work ([#2474](https://github.com/adobe/spacecat-audit-worker/issues/2474)) ([6f3349f](https://github.com/adobe/spacecat-audit-worker/commit/6f3349fb55d4f8587fbc1c00865383d1a6b49c6a))
+
 ## [1.431.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.431.0...v1.431.1) (2026-05-05)
 
 
