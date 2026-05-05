@@ -1128,6 +1128,225 @@ describe('Prerender Audit', () => {
         expect(athenaStub).to.have.been.called;
       });
 
+      describe('skipUntil URL filtering in normal batch mode', () => {
+        it('should exclude URLs with an active skipUntil from the scraping batch', async () => {
+          const now = Date.now();
+          const skippedUrl = 'https://example.com/blocked-page';
+          const allowedUrl = 'https://example.com/allowed-page';
+
+          const getObjectFromKeyStub = sandbox.stub().resolves({
+            pages: [
+              { url: skippedUrl, skipUntil: now + 14 * 24 * 60 * 60 * 1000 },
+              { url: allowedUrl, skipUntil: now - 1000 }, // expired — should NOT be skipped
+            ],
+          });
+
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/s3-utils.js': {
+              getObjectFromKey: getObjectFromKeyStub,
+              getObjectKeysUsingPrefix: sandbox.stub().resolves([]),
+            },
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticUrlsFromAthena: async () => [],
+              getPreferredBaseUrl: () => 'https://example.com',
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://example.com',
+              getConfig: () => ({ getIncludedURLs: () => [] }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                  { getUrl: () => skippedUrl },
+                  { getUrl: () => allowedUrl },
+                ]),
+              },
+              PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+            },
+            s3Client: { send: sandbox.stub() },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+            log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          const submittedUrls = result.urls.map((u) => u.url);
+          expect(submittedUrls).to.not.include(skippedUrl);
+          expect(submittedUrls).to.include(allowedUrl);
+          expect(context.log.info).to.have.been.calledWithMatch('skippedBySkipUntil=1');
+        });
+
+        it('should not filter anything when no URLs have an active skipUntil', async () => {
+          const getObjectFromKeyStub = sandbox.stub().resolves({
+            pages: [
+              { url: 'https://example.com/old-blocked', skipUntil: Date.now() - 1 }, // expired
+            ],
+          });
+
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/s3-utils.js': {
+              getObjectFromKey: getObjectFromKeyStub,
+              getObjectKeysUsingPrefix: sandbox.stub().resolves([]),
+            },
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticUrlsFromAthena: async () => [],
+              getPreferredBaseUrl: () => 'https://example.com',
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://example.com',
+              getConfig: () => ({ getIncludedURLs: () => [] }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                  { getUrl: () => 'https://example.com/old-blocked' },
+                ]),
+              },
+              PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+            },
+            s3Client: { send: sandbox.stub() },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+            log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          expect(result.urls).to.have.lengthOf(1);
+          expect(context.log.info).to.have.been.calledWithMatch('skippedBySkipUntil=0');
+        });
+
+        it('should skip status.json load and not filter when s3Client is absent', async () => {
+          const getObjectFromKeyStub = sandbox.stub().resolves({
+            pages: [{ url: 'https://example.com/blocked', skipUntil: Date.now() + 99999 }],
+          });
+
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/s3-utils.js': {
+              getObjectFromKey: getObjectFromKeyStub,
+              getObjectKeysUsingPrefix: sandbox.stub().resolves([]),
+            },
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticUrlsFromAthena: async () => [],
+              getPreferredBaseUrl: () => 'https://example.com',
+            },
+          });
+
+          // No s3Client in context — guard should prevent the status.json load
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://example.com',
+              getConfig: () => ({ getIncludedURLs: () => [] }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                  { getUrl: () => 'https://example.com/blocked' },
+                ]),
+              },
+              PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+            },
+            // s3Client intentionally omitted
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+            log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          // URL must NOT be filtered (no s3Client means no status.json loaded)
+          expect(result.urls.map((u) => u.url)).to.include('https://example.com/blocked');
+          expect(getObjectFromKeyStub).to.not.have.been.called;
+        });
+
+        it('should not apply skipUntil filter in Slack-triggered mode', async () => {
+          const now = Date.now();
+          const getObjectFromKeyStub = sandbox.stub().resolves({
+            pages: [{ url: 'https://example.com/blocked', skipUntil: now + 99999 }],
+          });
+
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/s3-utils.js': {
+              getObjectFromKey: getObjectFromKeyStub,
+              getObjectKeysUsingPrefix: sandbox.stub().resolves([]),
+            },
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticUrlsFromAthena: async () => [],
+              getPreferredBaseUrl: () => 'https://example.com',
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://example.com',
+              getConfig: () => ({ getIncludedURLs: () => [] }),
+            },
+            auditContext: { slackContext: { channelId: 'C12345' } }, // Slack trigger
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                  { getUrl: () => 'https://example.com/blocked' },
+                ]),
+              },
+              PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+            },
+            s3Client: { send: sandbox.stub() },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+            log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          };
+
+          const result = await mockHandler.submitForScraping(context);
+          // Slack path bypasses the skip-until filter entirely
+          expect(result.urls.map((u) => u.url)).to.include('https://example.com/blocked');
+          expect(getObjectFromKeyStub).to.not.have.been.called;
+        });
+
+        it('should handle status.json with no pages array (null return from getObjectFromKey)', async () => {
+          // getObjectFromKey returns null when file missing/unreadable
+          const getObjectFromKeyStub = sandbox.stub().resolves(null);
+
+          const mockHandler = await esmock('../../../src/prerender/handler.js', {
+            '../../../src/utils/s3-utils.js': {
+              getObjectFromKey: getObjectFromKeyStub,
+              getObjectKeysUsingPrefix: sandbox.stub().resolves([]),
+            },
+            '../../../src/utils/agentic-urls.js': {
+              getTopAgenticUrlsFromAthena: async () => [],
+              getPreferredBaseUrl: () => 'https://example.com',
+            },
+          });
+
+          const context = {
+            site: {
+              getId: () => 'site-1',
+              getBaseURL: () => 'https://example.com',
+              getConfig: () => ({ getIncludedURLs: () => [] }),
+            },
+            dataAccess: {
+              SiteTopPage: {
+                allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                  { getUrl: () => 'https://example.com/page1' },
+                ]),
+              },
+              PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+            },
+            s3Client: { send: sandbox.stub() },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+            log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          };
+
+          // Should proceed normally without filtering
+          const result = await mockHandler.submitForScraping(context);
+          expect(result.urls).to.have.lengthOf(1);
+          expect(result.urls[0].url).to.equal('https://example.com/page1');
+        });
+      });
+
     });
 
     describe('processContentAndGenerateOpportunities', () => {
@@ -6891,6 +7110,211 @@ describe('Prerender Audit', () => {
 
       expect(earlyPage.usedEarlyClientSideHtml).to.equal(true);
       expect(normalPage.usedEarlyClientSideHtml).to.equal(false);
+    });
+
+    describe('skipUntil tombstoning via consecutiveFailures', () => {
+      it('should set consecutiveFailures=1 and skipUntil on first 404 in missingPages', async () => {
+        const before = Date.now();
+        const auditData = {
+          siteId: 'test-site-id',
+          auditedAt: '2025-01-01T00:00:00.000Z',
+          auditResult: {
+            results: [],
+            missingPages: [{
+              url: 'https://example.com/gone-page',
+              scrapingStatus: 'failed',
+              needsPrerender: false,
+              scrapeError: { statusCode: 404, message: 'Not Found' },
+            }],
+          },
+        };
+
+        await uploadStatusSummaryToS3('https://example.com', auditData, context);
+
+        const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+        const page = uploadedData.pages.find((p) => p.url === 'https://example.com/gone-page');
+        expect(page).to.exist;
+        expect(page.consecutiveFailures).to.equal(1);
+        // First failure for 404: 14 days window
+        const expectedMinSkipUntil = before + 14 * 24 * 60 * 60 * 1000;
+        expect(page.skipUntil).to.be.at.least(expectedMinSkipUntil);
+        expect(page.skipUntil).to.be.below(expectedMinSkipUntil + 5000);
+      });
+
+      it('should set consecutiveFailures=2 and longer skipUntil on repeated 404 failure', async () => {
+        const existingStatus = {
+          pages: [{
+            url: 'https://example.com/gone-page',
+            scrapingStatus: 'failed',
+            consecutiveFailures: 1,
+            skipUntil: Date.now() - 1, // expired
+          }],
+        };
+        mockS3Client.send.callsFake((command) => {
+          if (command.constructor.name === 'GetObjectCommand') {
+            return Promise.resolve({
+              Body: { transformToString: () => Promise.resolve(JSON.stringify(existingStatus)) },
+            });
+          }
+          return Promise.resolve({});
+        });
+
+        const before = Date.now();
+        const auditData = {
+          siteId: 'test-site-id',
+          auditedAt: '2025-01-15T00:00:00.000Z',
+          auditResult: {
+            results: [],
+            missingPages: [{
+              url: 'https://example.com/gone-page',
+              scrapingStatus: 'failed',
+              scrapeError: { statusCode: 404, message: 'Not Found' },
+            }],
+          },
+        };
+
+        await uploadStatusSummaryToS3('https://example.com', auditData, context);
+
+        const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+        const page = uploadedData.pages.find((p) => p.url === 'https://example.com/gone-page');
+        expect(page.consecutiveFailures).to.equal(2);
+        // Repeat failure for 404: 28 days window
+        const expectedMinSkipUntil = before + 28 * 24 * 60 * 60 * 1000;
+        expect(page.skipUntil).to.be.at.least(expectedMinSkipUntil);
+        expect(page.skipUntil).to.be.below(expectedMinSkipUntil + 5000);
+      });
+
+      it('should use 84-day window for 401 (unauthorized) failures', async () => {
+        const before = Date.now();
+        const auditData = {
+          siteId: 'test-site-id',
+          auditedAt: '2025-01-01T00:00:00.000Z',
+          auditResult: {
+            results: [],
+            missingPages: [{
+              url: 'https://example.com/protected',
+              scrapingStatus: 'failed',
+              scrapeError: { statusCode: 401, message: 'Unauthorized' },
+            }],
+          },
+        };
+
+        await uploadStatusSummaryToS3('https://example.com', auditData, context);
+
+        const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+        const page = uploadedData.pages.find((p) => p.url === 'https://example.com/protected');
+        expect(page.consecutiveFailures).to.equal(1);
+        // 401 always uses 84-day window
+        const expectedMinSkipUntil = before + 84 * 24 * 60 * 60 * 1000;
+        expect(page.skipUntil).to.be.at.least(expectedMinSkipUntil);
+        expect(page.skipUntil).to.be.below(expectedMinSkipUntil + 5000);
+      });
+
+      it('should NOT set consecutiveFailures for non-skippable errors (e.g., 500)', async () => {
+        const auditData = {
+          siteId: 'test-site-id',
+          auditedAt: '2025-01-01T00:00:00.000Z',
+          auditResult: {
+            results: [],
+            missingPages: [{
+              url: 'https://example.com/server-error',
+              scrapingStatus: 'failed',
+              scrapeError: { statusCode: 500, message: 'Internal Server Error' },
+            }],
+          },
+        };
+
+        await uploadStatusSummaryToS3('https://example.com', auditData, context);
+
+        const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+        const page = uploadedData.pages.find((p) => p.url === 'https://example.com/server-error');
+        expect(page).to.not.have.property('consecutiveFailures');
+        expect(page).to.not.have.property('skipUntil');
+      });
+
+      it('should set consecutiveFailures and skipUntil for 403 in currentPages results', async () => {
+        const before = Date.now();
+        const auditData = {
+          siteId: 'test-site-id',
+          auditedAt: '2025-01-01T00:00:00.000Z',
+          auditResult: {
+            results: [{
+              url: 'https://example.com/forbidden',
+              error: true,
+              needsPrerender: false,
+              scrapeError: { statusCode: 403, message: 'Forbidden' },
+            }],
+          },
+        };
+
+        await uploadStatusSummaryToS3('https://example.com', auditData, context);
+
+        const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+        const page = uploadedData.pages.find((p) => p.url === 'https://example.com/forbidden');
+        expect(page.consecutiveFailures).to.equal(1);
+        // First failure for 403: 14-day window
+        const expectedMinSkipUntil = before + 14 * 24 * 60 * 60 * 1000;
+        expect(page.skipUntil).to.be.at.least(expectedMinSkipUntil);
+        expect(page.skipUntil).to.be.below(expectedMinSkipUntil + 5000);
+      });
+
+      it('should NOT set consecutiveFailures for non-skippable status code in currentPages results', async () => {
+        const auditData = {
+          siteId: 'test-site-id',
+          auditedAt: '2025-01-01T00:00:00.000Z',
+          auditResult: {
+            results: [{
+              url: 'https://example.com/server-error',
+              error: true,
+              needsPrerender: false,
+              scrapeError: { statusCode: 500, message: 'Internal Server Error' },
+            }],
+          },
+        };
+
+        await uploadStatusSummaryToS3('https://example.com', auditData, context);
+
+        const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+        const page = uploadedData.pages.find((p) => p.url === 'https://example.com/server-error');
+        expect(page).to.not.have.property('consecutiveFailures');
+        expect(page).to.not.have.property('skipUntil');
+      });
+
+      it('should NOT carry over consecutiveFailures when a previously-tombstoned URL now succeeds', async () => {
+        const existingStatus = {
+          pages: [{
+            url: 'https://example.com/recovered-page',
+            scrapingStatus: 'failed',
+            consecutiveFailures: 2,
+            skipUntil: Date.now() - 1, // expired probe window
+          }],
+        };
+        mockS3Client.send.callsFake((command) => {
+          if (command.constructor.name === 'GetObjectCommand') {
+            return Promise.resolve({
+              Body: { transformToString: () => Promise.resolve(JSON.stringify(existingStatus)) },
+            });
+          }
+          return Promise.resolve({});
+        });
+
+        const auditData = {
+          siteId: 'test-site-id',
+          auditedAt: '2025-02-01T00:00:00.000Z',
+          auditResult: {
+            // URL now succeeds — no scrapeError
+            results: [{ url: 'https://example.com/recovered-page', error: false, needsPrerender: false }],
+          },
+        };
+
+        await uploadStatusSummaryToS3('https://example.com', auditData, context);
+
+        const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+        const page = uploadedData.pages.find((p) => p.url === 'https://example.com/recovered-page');
+        expect(page.scrapingStatus).to.equal('success');
+        expect(page).to.not.have.property('consecutiveFailures');
+        expect(page).to.not.have.property('skipUntil');
+      });
     });
   });
 

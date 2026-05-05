@@ -29,6 +29,8 @@ import {
   PRERENDER_RECENT_PROCESSING_TIME_DAYS,
   MODE_AI_ONLY,
   MYSTIQUE_BATCH_SIZE,
+  SKIPPABLE_HTTP_STATUS_CODES,
+  SKIP_UNTIL_DAYS_BY_STATUS,
 } from './utils/constants.js';
 
 function rebaseUrl(url, preferredBase, log) {
@@ -309,6 +311,24 @@ function normalizePathname(url) {
   } catch {
     return url;
   }
+}
+
+/**
+ * Computes the timestamp (ms) until which a URL should be excluded from scraping,
+ * based on its HTTP error code and how many consecutive times it has failed.
+ *
+ * Probe windows must exceed the natural 7-day audit cadence
+ * (PRERENDER_RECENT_PROCESSING_TIME_DAYS) so that at least one cycle is saved.
+ *
+ * @param {number} statusCode - HTTP status code of the permanent failure.
+ * @param {number} consecutiveFailures - How many times in a row this URL has failed.
+ * @returns {number} Unix timestamp (ms) after which the URL should be retried.
+ */
+function computeSkipUntil(statusCode, consecutiveFailures) {
+  /* c8 ignore next -- defensive fallback; both constants are kept in sync */
+  const [firstDays, repeatDays] = SKIP_UNTIL_DAYS_BY_STATUS[statusCode] ?? [14, 28];
+  const days = consecutiveFailures <= 1 ? firstDays : repeatDays;
+  return Date.now() + days * 24 * 60 * 60 * 1000;
 }
 
 /**
@@ -820,6 +840,8 @@ export async function submitForScraping(context) {
     log,
     data,
     auditContext,
+    s3Client,
+    env,
   } = context;
 
   // Check for AI-only mode - skip scraping step (step 1 already triggered Mystique)
@@ -875,6 +897,7 @@ export async function submitForScraping(context) {
   let currentIncludedUrls;
   let isFirstRunOfCycle;
   let agenticNewThisCycle = 0;
+  let skippedBySkipUntil = 0;
 
   if (isSlackTriggered) {
     ({ urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls([
@@ -907,7 +930,32 @@ export async function submitForScraping(context) {
       ...filteredIncludedURLs,
       ...filteredAgenticUrls,
     ];
-    const batchedUrls = orderedCandidateUrls.slice(0, DAILY_BATCH_SIZE);
+
+    // Filter URLs tombstoned by persistent scrape failures (skipUntil > now).
+    // Only applied in the normal daily-batch path — Slack-triggered and explicit-URL
+    // paths bypass this filter intentionally.
+    const skipUntilMap = new Map();
+    if (s3Client && env?.S3_SCRAPER_BUCKET_NAME) {
+      const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
+      // eslint-disable-next-line max-len
+      const existingStatus = await getObjectFromKey(s3Client, env.S3_SCRAPER_BUCKET_NAME, statusKey, log);
+      if (existingStatus?.pages) {
+        const now = Date.now();
+        for (const page of existingStatus.pages) {
+          if (page.skipUntil && page.skipUntil > now) {
+            skipUntilMap.set(normalizePathname(page.url), page.skipUntil);
+          }
+        }
+      }
+    }
+
+    skippedBySkipUntil = skipUntilMap.size > 0
+      ? orderedCandidateUrls.filter((url) => skipUntilMap.has(normalizePathname(url))).length
+      : 0;
+    const activeUrls = skippedBySkipUntil > 0
+      ? orderedCandidateUrls.filter((url) => !skipUntilMap.has(normalizePathname(url)))
+      : orderedCandidateUrls;
+    const batchedUrls = activeUrls.slice(0, DAILY_BATCH_SIZE);
 
     const organicUrlSet = new Set(filteredOrganicUrls);
     const includedUrlSet = new Set(filteredIncludedURLs);
@@ -931,6 +979,7 @@ export async function submitForScraping(context) {
     currentIncludedUrls=${currentIncludedUrls},
     isFirstRunOfCycle=${isFirstRunOfCycle},
     agenticNewThisCycle=${agenticNewThisCycle},
+    skippedBySkipUntil=${skippedBySkipUntil},
     baseUrl=${site.getBaseURL()},
     siteId=${siteId}`);
 
@@ -1334,6 +1383,14 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       // Only stamp the current scrapeJobId for URLs actually submitted to this job.
       // For fallback URLs that weren't submitted, preserve the existing scrapeJobId.
       const wasSubmitted = !submittedUrlSet || submittedUrlSet.has(result.url);
+      const existing = existingPageMap.get(normalizePathname(result.url));
+      const statusCode = result.scrapeError?.statusCode;
+      // Set.has(undefined) safely returns false, so no explicit null-guard is needed here
+      const isSkippable = SKIPPABLE_HTTP_STATUS_CODES.has(statusCode);
+      const consecutiveFailures = isSkippable
+        ? (existing?.consecutiveFailures ?? 0) + 1 : undefined;
+      const skipUntil = isSkippable
+        ? computeSkipUntil(statusCode, consecutiveFailures) : undefined;
       return {
         url: result.url,
         scrapingStatus: result.error ? 'error' : 'success',
@@ -1346,19 +1403,35 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
         scrapedAt,
         scrapeJobId: wasSubmitted
           ? (scrapeJobId || null)
-          : (existingPageMap.get(normalizePathname(result.url))?.scrapeJobId ?? null),
+          : (existing?.scrapeJobId ?? null),
         ...(result.scrapeError && { scrapeError: result.scrapeError }),
+        ...(consecutiveFailures !== undefined && { consecutiveFailures }),
+        ...(skipUntil !== undefined && { skipUntil }),
       };
     });
 
     // missingPages should be precomputed by getScrapeJobStats and passed via auditResult.
     if (Array.isArray(auditResult.missingPages)) {
       currentPages.push(
-        ...auditResult.missingPages.map((page) => ({
-          ...page,
-          scrapedAt: page.scrapedAt || scrapedAt,
-          scrapeJobId: page.scrapeJobId || scrapeJobId || null,
-        })),
+        ...auditResult.missingPages.map((page) => {
+          const existing = existingPageMap.get(normalizePathname(page.url));
+          const statusCode = page.scrapeError?.statusCode;
+          // Set.has(undefined) safely returns false, so no explicit null-guard is needed here
+          const isSkippable = SKIPPABLE_HTTP_STATUS_CODES.has(statusCode);
+          const consecutiveFailures = isSkippable
+            ? (existing?.consecutiveFailures ?? 0) + 1
+            : undefined;
+          const skipUntil = isSkippable
+            ? computeSkipUntil(statusCode, consecutiveFailures)
+            : undefined;
+          return {
+            ...page,
+            scrapedAt: page.scrapedAt || scrapedAt,
+            scrapeJobId: page.scrapeJobId || scrapeJobId || null,
+            ...(consecutiveFailures !== undefined && { consecutiveFailures }),
+            ...(skipUntil !== undefined && { skipUntil }),
+          };
+        }),
       );
     }
 
