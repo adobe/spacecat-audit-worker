@@ -188,6 +188,28 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.include('CASE');
   });
 
+  it('uses pre-fetched patterns for agentic report queries', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(createMockOptions({
+      remotePatterns: createMockPatterns(),
+    }));
+
+    expect(query).to.include("THEN 'Product Page'");
+    expect(query).to.include("THEN 'Products'");
+  });
+
+  it('uses pre-fetched patterns for daily agentic report queries', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery({
+      trafficDate: new Date('2025-01-07T00:00:00Z'),
+      databaseName: 'test_db',
+      tableName: 'test_table',
+      site: createMockSite(),
+      remotePatterns: createMockPatterns(),
+    });
+
+    expect(query).to.include("THEN 'Product Page'");
+    expect(query).to.include("THEN 'Products'");
+  });
+
   it('handles topic patterns with named patterns', async () => {
     const categoryRules = [
       { regex: '/products/', name: 'Products', sort_order: 0 },

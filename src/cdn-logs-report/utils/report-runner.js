@@ -19,6 +19,7 @@ export async function runReport(reportConfig, athenaClient, s3Config, log, optio
     sharepointClient,
     weekOffset,
     context,
+    remotePatterns,
   } = options;
 
   const referenceDate = new Date();
@@ -39,6 +40,7 @@ export async function runReport(reportConfig, athenaClient, s3Config, log, optio
       tableName,
       site,
       context,
+      remotePatterns,
       athenaClient,
       s3Config,
     };
@@ -94,6 +96,7 @@ export async function runWeeklyReport({
   sharepointClient,
   weekOffset,
   context,
+  remotePatterns,
 }) {
   const siteId = site.getId();
   try {
@@ -103,6 +106,7 @@ export async function runWeeklyReport({
       sharepointClient,
       weekOffset,
       context,
+      remotePatterns,
     });
     log.debug(`Successfully completed ${reportConfig.name} report for site ${siteId}`);
     return { success: true, uploadResult: result?.uploadResult };

@@ -307,8 +307,10 @@ describe('CDN Logs Report Handler', function test() {
             weeks: [],
             periodIdentifier: 'w12-2026',
           }),
-          fetchAgenticUrlClassificationRules: fetchRulesStub,
           getConfigCategories: sandbox.stub().resolves(['Category A']),
+        },
+        '../../../src/common/agentic-url-classification-rules.js': {
+          fetchAgenticUrlClassificationRules: fetchRulesStub,
         },
         '../../../src/utils/cdn-utils.js': {
           pathHasData: sandbox.stub().resolves(true),
@@ -374,8 +376,10 @@ describe('CDN Logs Report Handler', function test() {
             weeks: [],
             periodIdentifier: 'w12-2026',
           }),
-          fetchAgenticUrlClassificationRules: fetchRulesStub,
           getConfigCategories: sandbox.stub().resolves(['Category A']),
+        },
+        '../../../src/common/agentic-url-classification-rules.js': {
+          fetchAgenticUrlClassificationRules: fetchRulesStub,
         },
         '../../../src/utils/cdn-utils.js': {
           pathHasData: sandbox.stub().resolves(true),
@@ -432,7 +436,13 @@ describe('CDN Logs Report Handler', function test() {
     });
 
     it('generates DB rules when DB has no existing rules', async () => {
-      const fetchRulesStub = sandbox.stub().resolves({ pagePatterns: [], topicPatterns: [] });
+      const refreshedPatterns = {
+        pagePatterns: [{ name: 'Documentation', regex: '/docs', sort_order: 0 }],
+        topicPatterns: [{ name: 'Products', regex: '/products', sort_order: 0 }],
+      };
+      const fetchRulesStub = sandbox.stub();
+      fetchRulesStub.onFirstCall().resolves({ pagePatterns: [], topicPatterns: [] });
+      fetchRulesStub.onSecondCall().resolves(refreshedPatterns);
       const generatePatternsWorkbookStub = sandbox.stub().resolves(true);
       const runWeeklyReportStub = sandbox.stub().resolves({ success: true, uploadResult: null });
       const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
@@ -442,8 +452,10 @@ describe('CDN Logs Report Handler', function test() {
             weeks: [],
             periodIdentifier: 'w12-2026',
           }),
-          fetchAgenticUrlClassificationRules: fetchRulesStub,
           getConfigCategories: sandbox.stub().resolves(['Category A']),
+        },
+        '../../../src/common/agentic-url-classification-rules.js': {
+          fetchAgenticUrlClassificationRules: fetchRulesStub,
         },
         '../../../src/utils/cdn-utils.js': {
           pathHasData: sandbox.stub().resolves(true),
@@ -492,9 +504,10 @@ describe('CDN Logs Report Handler', function test() {
         createAuditContext(sandbox, { weekOffset: -1, categoriesUpdated: false }),
       );
 
-      expect(fetchRulesStub).to.have.been.calledOnce;
+      expect(fetchRulesStub).to.have.been.calledTwice;
       expect(generatePatternsWorkbookStub).to.have.been.calledOnce;
       expect(runWeeklyReportStub).to.have.been.calledOnce;
+      expect(runWeeklyReportStub.firstCall.args[0].remotePatterns).to.deep.equal(refreshedPatterns);
       expect(result.auditResult).to.have.length(1);
     });
 
@@ -630,11 +643,13 @@ describe('CDN Logs Report Handler', function test() {
             weeks: [],
             periodIdentifier: 'w12-2026',
           }),
+          getConfigCategories: sandbox.stub().resolves(['Category A']),
+        },
+        '../../../src/common/agentic-url-classification-rules.js': {
           fetchAgenticUrlClassificationRules: sandbox.stub().resolves({
             pagePatterns: [],
             topicPatterns: [],
           }),
-          getConfigCategories: sandbox.stub().resolves(['Category A']),
         },
         '../../../src/utils/cdn-utils.js': {
           pathHasData: sandbox.stub().resolves(true),
@@ -886,11 +901,13 @@ describe('CDN Logs Report Handler', function test() {
             }],
             periodIdentifier: 'w14-2026',
           }),
+          getConfigCategories: sandbox.stub().resolves(['Category A']),
+        },
+        '../../../src/common/agentic-url-classification-rules.js': {
           fetchAgenticUrlClassificationRules: sandbox.stub().resolves({
             pagePatterns: [{ name: 'Documentation', regex: '/docs', sort_order: 0 }],
             topicPatterns: [{ name: 'Products', regex: '/products', sort_order: 0 }],
           }),
-          getConfigCategories: sandbox.stub().resolves(['Category A']),
         },
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
@@ -941,11 +958,13 @@ describe('CDN Logs Report Handler', function test() {
             }],
             periodIdentifier: 'w14-2026',
           }),
+          getConfigCategories: sandbox.stub().resolves(['Category A']),
+        },
+        '../../../src/common/agentic-url-classification-rules.js': {
           fetchAgenticUrlClassificationRules: sandbox.stub().resolves({
             pagePatterns: [{ name: 'Documentation', regex: '/docs', sort_order: 0 }],
             topicPatterns: [{ name: 'Products', regex: '/products', sort_order: 0 }],
           }),
-          getConfigCategories: sandbox.stub().resolves(['Category A']),
         },
         '../../../src/utils/cdn-utils.js': {
           pathHasData: sandbox.stub().resolves(true),
@@ -999,11 +1018,13 @@ describe('CDN Logs Report Handler', function test() {
             }],
             periodIdentifier: 'w14-2026',
           }),
+          getConfigCategories: sandbox.stub().resolves(['Category A']),
+        },
+        '../../../src/common/agentic-url-classification-rules.js': {
           fetchAgenticUrlClassificationRules: sandbox.stub().resolves({
             pagePatterns: [{ name: 'Documentation', regex: '/docs', sort_order: 0 }],
             topicPatterns: [{ name: 'Products', regex: '/products', sort_order: 0 }],
           }),
-          getConfigCategories: sandbox.stub().resolves(['Category A']),
         },
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
@@ -1317,6 +1338,18 @@ describe('CDN Logs Report Handler', function test() {
       it('handles missing page type rules', async () => {
         context.dataAccess.services.postgrestClient = createPostgrestClient({
           pageTypeRules: [],
+        });
+
+        const auditContext = createAuditContext(sandbox);
+        const result = await handler.runner('https://example.com', context, site, auditContext);
+
+        expect(result).to.have.property('auditResult').that.is.an('array');
+        expect(result.auditResult).to.have.length.greaterThan(0);
+      });
+
+      it('handles missing category rules', async () => {
+        context.dataAccess.services.postgrestClient = createPostgrestClient({
+          categoryRules: [],
         });
 
         const auditContext = createAuditContext(sandbox);

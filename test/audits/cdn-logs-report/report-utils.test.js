@@ -16,6 +16,7 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import { getS3Config } from '../../../src/utils/cdn-utils.js';
+import { fetchAgenticUrlClassificationRules } from '../../../src/common/agentic-url-classification-rules.js';
 import * as reportUtils from '../../../src/cdn-logs-report/utils/report-utils.js';
 import { getConfigs } from '../../../src/cdn-logs-report/constants/report-configs.js';
 
@@ -260,7 +261,8 @@ describe('CDN Logs Report Utils', () => {
         const query = {
           select: sandbox.stub().returnsThis(),
           eq: sandbox.stub().returnsThis(),
-          order: sandbox.stub().resolves(result),
+          order: sandbox.stub().returnsThis(),
+          then: (resolve) => Promise.resolve(result).then(resolve),
         };
         return query;
       },
@@ -269,7 +271,7 @@ describe('CDN Logs Report Utils', () => {
     it('returns null when no PostgREST client is available', async () => {
       const log = { warn: sandbox.stub() };
 
-      const result = await reportUtils.fetchAgenticUrlClassificationRules(mockSite, { log });
+      const result = await fetchAgenticUrlClassificationRules(mockSite, { log });
 
       expect(result).to.be.null;
       expect(log.warn).to.have.been.calledWith(
@@ -294,7 +296,7 @@ describe('CDN Logs Report Utils', () => {
         },
       };
 
-      const result = await reportUtils.fetchAgenticUrlClassificationRules(mockSite, context);
+      const result = await fetchAgenticUrlClassificationRules(mockSite, context);
 
       expect(result).to.deep.equal({
         pagePatterns: [{ name: 'Article', regex: '/blog', sort_order: 0 }],
@@ -322,7 +324,7 @@ describe('CDN Logs Report Utils', () => {
         },
       };
 
-      const result = await reportUtils.fetchAgenticUrlClassificationRules(mockSite, context);
+      const result = await fetchAgenticUrlClassificationRules(mockSite, context);
 
       expect(result).to.deep.equal({
         pagePatterns: [],
@@ -346,7 +348,7 @@ describe('CDN Logs Report Utils', () => {
         },
       };
 
-      const result = await reportUtils.fetchAgenticUrlClassificationRules(mockSite, context);
+      const result = await fetchAgenticUrlClassificationRules(mockSite, context);
 
       expect(result).to.deep.equal({ error: true, source: 'postgres' });
       expect(log.error).to.have.been.calledWith(
@@ -367,7 +369,7 @@ describe('CDN Logs Report Utils', () => {
         },
       };
 
-      const result = await reportUtils.fetchAgenticUrlClassificationRules(mockSite, context);
+      const result = await fetchAgenticUrlClassificationRules(mockSite, context);
 
       expect(result).to.deep.equal({ error: true, source: 'postgres' });
       expect(log.error).to.have.been.calledWith(
@@ -432,11 +434,15 @@ describe('CDN Logs Report Utils', () => {
         data: null,
         error: new Error('rpc boom'),
       });
+      const log = { error: sandbox.stub() };
 
       await expect(reportUtils.replaceAgenticUrlClassificationRules({
         site: mockSite,
-        context: { dataAccess: { services: { postgrestClient: { rpc } } } },
+        context: { log, dataAccess: { services: { postgrestClient: { rpc } } } },
       })).to.be.rejectedWith('rpc boom');
+      expect(log.error).to.have.been.calledWith(
+        'Failed to replace agentic URL classification rules for site test-site-id: rpc boom',
+      );
     });
   });
 

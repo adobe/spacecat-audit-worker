@@ -258,7 +258,7 @@ describe('Patterns Uploader', () => {
     ]);
   });
 
-  it('keeps explicit existing sort order while merging before final reindexing', async () => {
+  it('reindexes merged rules sequentially regardless of existing sort order', async () => {
     mockAnalyzeProducts.resolves({ 'new-product': 'regex-new' });
     mockAnalyzePageTypes.resolves({});
 

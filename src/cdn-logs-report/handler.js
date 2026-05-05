@@ -15,9 +15,9 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import {
   loadSql,
   generateReportingPeriods,
-  fetchAgenticUrlClassificationRules,
   getConfigCategories,
 } from './utils/report-utils.js';
+import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
 import {
   pathHasData,
   getS3Config,
@@ -97,10 +97,11 @@ async function runCdnLogsReport(url, context, site, auditContext) {
         weekOffsets = [0];
       }
 
+      let existingPatterns;
       if (reportConfig.name === 'agentic') {
-        const existingPatterns = await fetchAgenticUrlClassificationRules(site, context);
+        existingPatterns = await fetchAgenticUrlClassificationRules(site, context);
         const hasExistingPatterns = (existingPatterns?.pagePatterns?.length || 0) > 0
-          || (existingPatterns?.topicPatterns?.length || 0) > 0;
+          && (existingPatterns?.topicPatterns?.length || 0) > 0;
 
         if (existingPatterns?.error) {
           log.info(`Skipping fresh patterns generation for ${siteId}; DB rule fetch failed`);
@@ -109,7 +110,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
           const periods = generateReportingPeriods(new Date(), weekOffsets[0]);
           const configCategories = await getConfigCategories(site, context);
 
-          await generatePatternsWorkbook({
+          const generatedPatterns = await generatePatternsWorkbook({
             site,
             context,
             athenaClient,
@@ -121,6 +122,9 @@ async function runCdnLogsReport(url, context, site, auditContext) {
             configCategories,
             existingPatterns,
           });
+          if (generatedPatterns) {
+            existingPatterns = await fetchAgenticUrlClassificationRules(site, context);
+          }
         }
       }
 
@@ -137,6 +141,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
           sharepointClient,
           weekOffset,
           context,
+          ...(reportConfig.name === 'agentic' ? { remotePatterns: existingPatterns } : {}),
         });
 
         if (result.success && result.uploadResult) {

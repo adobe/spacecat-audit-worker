@@ -18,12 +18,11 @@ function mergePatternRules(existingRules = [], generatedRegexes = {}) {
   const regexes = generatedRegexes || {};
   const rulesByName = new Map();
 
-  existingRules.forEach((rule, index) => {
+  existingRules.forEach((rule) => {
     if (rule?.name && rule?.regex) {
       rulesByName.set(rule.name.toLowerCase(), {
         name: rule.name.toLowerCase(),
         regex: rule.regex,
-        sort_order: Number.isInteger(rule.sort_order) ? rule.sort_order : index,
       });
     }
   });
@@ -34,11 +33,11 @@ function mergePatternRules(existingRules = [], generatedRegexes = {}) {
       rulesByName.set(normalizedName, {
         name: normalizedName,
         regex,
-        sort_order: rulesByName.size,
       });
     }
   });
 
+  // Re-index after merging so persisted rules have sequential first-match order.
   return Array.from(rulesByName.values())
     .map((rule, index) => ({
       ...rule,
