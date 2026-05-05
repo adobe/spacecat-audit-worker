@@ -853,6 +853,116 @@ describe('guidance-broken-links-remediation handler', () => {
     });
   });
 
+  it('should strip tracking params from suggested URLs before storing', async () => {
+    const messageWithTrackingParams = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          brokenUrl: 'https://foo.com/broken',
+          suggestedUrls: ['https://foo.com/fixed?utm_source=email&utm_medium=cpc&fbclid=abc123'],
+          aiRationale: 'Tracking params should be stripped',
+        }],
+      },
+    };
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
+    });
+    const mockSetData = sandbox.stub();
+    mockContext.dataAccess.Suggestion.batchGetByKeys = sandbox.stub().resolves({
+      data: [{
+        getId: () => 'test-suggestion-id-1',
+        setData: mockSetData,
+        getData: sandbox.stub().returns({
+          url_to: 'https://foo.com/broken',
+          url_from: 'https://referrer.com/page',
+        }),
+      }],
+    });
+    mockContext.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+    nock('https://foo.com')
+      .get('/fixed')
+      .reply(200);
+
+    const response = await brokenLinksGuidanceHandler(messageWithTrackingParams, mockContext);
+    expect(response.status).to.equal(200);
+    expect(mockSetData).to.have.been.calledWith({
+      url_to: 'https://foo.com/broken',
+      url_from: 'https://referrer.com/page',
+      urlsSuggested: ['https://foo.com/fixed'],
+      aiRationale: 'Tracking params should be stripped',
+    });
+  });
+
+  it('should deduplicate suggested URLs after stripping tracking params', async () => {
+    const messageWithDuplicates = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          brokenUrl: 'https://foo.com/broken',
+          suggestedUrls: [
+            'https://foo.com/fixed?utm_source=email',
+            'https://foo.com/fixed?utm_medium=cpc',
+            'https://foo.com/fixed',
+          ],
+          aiRationale: 'Duplicates after strip should be removed',
+        }],
+      },
+    };
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
+    });
+    const mockSetData = sandbox.stub();
+    mockContext.dataAccess.Suggestion.batchGetByKeys = sandbox.stub().resolves({
+      data: [{
+        getId: () => 'test-suggestion-id-1',
+        setData: mockSetData,
+        getData: sandbox.stub().returns({
+          url_to: 'https://foo.com/broken',
+          url_from: 'https://referrer.com/page',
+        }),
+      }],
+    });
+    mockContext.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+    nock('https://foo.com')
+      .get('/fixed')
+      .reply(200);
+
+    const response = await brokenLinksGuidanceHandler(messageWithDuplicates, mockContext);
+    expect(response.status).to.equal(200);
+    expect(mockSetData).to.have.been.calledWith({
+      url_to: 'https://foo.com/broken',
+      url_from: 'https://referrer.com/page',
+      urlsSuggested: ['https://foo.com/fixed'],
+      aiRationale: 'Duplicates after strip should be removed',
+    });
+  });
+
   it('should respect overrideBaseURL when validating suggestions', async () => {
     const messageWithOverride = {
       ...mockMessage,
