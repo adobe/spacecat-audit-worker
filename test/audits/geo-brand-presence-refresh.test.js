@@ -35,6 +35,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
   let refreshGeoBrandPresenceSheetsHandler;
   let createLLMOSharepointClientStub;
   let readFromSharePointStub;
+  let readFromSharePointWithRetryStub;
   let uploadExcelToDrsStub;
   let publishBrandPresenceAnalyzeStub;
   let drsClientStub;
@@ -55,6 +56,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
     getLastNumberOfWeeksStub = sandbox.stub().returns(LAST_4_WEEKS);
     createLLMOSharepointClientStub = sandbox.stub();
     readFromSharePointStub = sandbox.stub();
+    readFromSharePointWithRetryStub = sandbox.stub();
 
     uploadExcelToDrsStub = sandbox.stub().resolves('s3://drs-bucket/external/spacecat/test-site-123/job-id/source.xlsx');
     publishBrandPresenceAnalyzeStub = sandbox.stub().resolves('spacecat-job-123');
@@ -116,6 +118,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
       }
       return Buffer.from('mock-sheet-data');
     });
+    readFromSharePointWithRetryStub.resolves(Buffer.from('mock-sheet-data'));
 
     const handlerModule = await esmock('../../src/geo-brand-presence/geo-brand-presence-refresh-handler.js', {
       '@adobe/spacecat-shared-utils': {
@@ -127,6 +130,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
       '../../src/utils/report-uploader.js': {
         createLLMOSharepointClient: createLLMOSharepointClientStub,
         readFromSharePoint: readFromSharePointStub,
+        readFromSharePointWithRetry: readFromSharePointWithRetryStub,
       },
       '../../src/utils/brand-resolver.js': {
         resolveBrandIdForSite: resolveBrandIdForSiteStub,
@@ -153,6 +157,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
       if (filename === 'query-index.xlsx') return createMockQueryIndexExcel(paths);
       return Buffer.from('mock-sheet-data');
     });
+    readFromSharePointWithRetryStub.resolves(Buffer.from('mock-sheet-data'));
   }
 
   const SHEET_W45 = '/data/llmo/brand-presence/latest/brandpresence-chatgpt-w45-2025.json';

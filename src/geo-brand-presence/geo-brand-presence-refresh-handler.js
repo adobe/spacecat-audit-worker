@@ -18,7 +18,7 @@ import { randomUUID } from 'crypto';
 import ExcelJS from 'exceljs';
 import { getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
 import DrsClient from '@adobe/spacecat-shared-drs-client';
-import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
+import { createLLMOSharepointClient, readFromSharePoint, readFromSharePointWithRetry } from '../utils/report-uploader.js';
 import { getImsOrgId } from '../utils/data-access.js';
 import { resolveBrandIdForSite } from '../utils/brand-resolver.js';
 import {
@@ -326,7 +326,7 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
 
       log.info(`%s: Reading sheet from SharePoint for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName}, source: ${sourceFolder}`, AUDIT_NAME);
       const readStartTime = Date.now();
-      const sheet = await readFromSharePoint(`${sheetName}.xlsx`, sourceFolder, sharepointClient, log);
+      const sheet = await readFromSharePointWithRetry(`${sheetName}.xlsx`, sourceFolder, sharepointClient, log);
       const readDuration = Date.now() - readStartTime;
 
       log.info(`%s: Sheet read from SharePoint for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName} (${sheet.length} bytes in ${readDuration}ms)`, AUDIT_NAME);
