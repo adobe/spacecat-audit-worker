@@ -39,6 +39,7 @@ describe('Geo Brand Presence Daily Refresh Handler', () => {
   let publishBrandPresenceAnalyzeStub;
   let drsClientStub;
   let drsCreateFromStub;
+  let resolveBrandIdForSiteStub;
 
   // 3 past full weeks; the handler computes current week (47) as lastFull+1
   const LAST_4_WEEKS = [
@@ -64,6 +65,8 @@ describe('Geo Brand Presence Daily Refresh Handler', () => {
     };
 
     drsCreateFromStub = sandbox.stub().returns(drsClientStub);
+
+    resolveBrandIdForSiteStub = sandbox.stub().resolves(null);
 
     log = {
       info: sandbox.stub(),
@@ -122,6 +125,9 @@ describe('Geo Brand Presence Daily Refresh Handler', () => {
         createLLMOSharepointClient: createLLMOSharepointClientStub,
         readFromSharePoint: readFromSharePointStub,
       },
+      '../../../src/utils/brand-resolver.js': {
+        resolveBrandIdForSite: resolveBrandIdForSiteStub,
+      },
     });
 
     refreshGeoBrandPresenceDailyHandler = handlerModule.refreshGeoBrandPresenceDailyHandler;
@@ -173,7 +179,7 @@ describe('Geo Brand Presence Daily Refresh Handler', () => {
       );
     });
 
-    it('calls publishBrandPresenceAnalyze with runFrequency daily, jobId, brand, imsOrgId', async () => {
+    it('calls publishBrandPresenceAnalyze with runFrequency daily, jobId, brand, imsOrgId, brandId', async () => {
       withSheets([SHEET_W45]);
 
       await refreshGeoBrandPresenceDailyHandler(MESSAGE, context);
@@ -189,7 +195,47 @@ describe('Geo Brand Presence Daily Refresh Handler', () => {
         runFrequency: 'daily',
         brand: 'test-brand',
         imsOrgId: 'test-ims-org-id',
+        brandId: null,
       }));
+    });
+
+    it('forwards brandId resolved from spacecat-api-service to publishBrandPresenceAnalyze (v2 org)', async () => {
+      withSheets([SHEET_W45]);
+      resolveBrandIdForSiteStub.resolves('brand-uuid-daily');
+
+      await refreshGeoBrandPresenceDailyHandler(MESSAGE, context);
+
+      expect(resolveBrandIdForSiteStub).to.have.been.calledOnceWith(
+        'test-org-id',
+        'test-site-123',
+        context.env,
+        log,
+      );
+      expect(publishBrandPresenceAnalyzeStub.firstCall.args[1]).to.include({
+        brandId: 'brand-uuid-daily',
+      });
+    });
+
+    it('propagates resolver errors so SQS retries (fail-closed on 5xx)', async () => {
+      withSheets([SHEET_W45]);
+      resolveBrandIdForSiteStub.rejects(new Error('SpaceCat 503'));
+
+      await expect(refreshGeoBrandPresenceDailyHandler(MESSAGE, context)).to.be.rejected;
+      expect(publishBrandPresenceAnalyzeStub).to.not.have.been.called;
+    });
+
+    it('skips brand resolution and logs warning when site has no organizationId', async () => {
+      withSheets([SHEET_W45]);
+      site.getOrganizationId = () => null;
+
+      await refreshGeoBrandPresenceDailyHandler(MESSAGE, context);
+
+      expect(resolveBrandIdForSiteStub).to.not.have.been.called;
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/has no organizationId/),
+        sinon.match.any,
+      );
+      expect(publishBrandPresenceAnalyzeStub.firstCall.args[1]).to.include({ brandId: null });
     });
 
     it('normalizes hyphenated providers to underscores before publishing to DRS', async () => {

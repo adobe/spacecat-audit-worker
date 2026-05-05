@@ -20,6 +20,7 @@ import { getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
 import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
 import { getImsOrgId } from '../utils/data-access.js';
+import { resolveBrandIdForSite } from '../utils/brand-resolver.js';
 import {
   refreshDirectoryS3Key,
   refreshMetadataFileS3Key,
@@ -283,8 +284,20 @@ export async function refreshGeoBrandPresenceDailyHandler(message, context) {
     const { configVersion } = auditContext;
     const imsOrgId = await getImsOrgId(site, dataAccess, log);
     const brand = site.getConfig()?.getLlmoBrand?.() ?? null;
+    // LLMO-4716: resolve v2 brand_id once per audit (per site), thread onto every
+    // SNS publish below so the DRS Fargate runner branches v1/v2 correctly. 404
+    // returns null (v1 / brandalf-migration / no active brand). 5xx throws so
+    // SQS retries — silently continuing without brand_id for a brandalf=true org
+    // would degrade to stale-config v1 reads with no surfaced error.
+    const orgId = site.getOrganizationId?.() ?? null;
+    let brandId = null;
+    if (orgId) {
+      brandId = await resolveBrandIdForSite(orgId, siteId, env, log);
+    } else {
+      log.warn(`%s: site ${siteId} has no organizationId — skipping brand_id resolution`, AUDIT_NAME);
+    }
 
-    log.info(`%s: Site details for auditId: ${auditId}, siteId: ${siteId}, configVersion: ${configVersion || 'none'}`, AUDIT_NAME);
+    log.info(`%s: Site details for auditId: ${auditId}, siteId: ${siteId}, configVersion: ${configVersion || 'none'}, brandId: ${brandId || 'none'}`, AUDIT_NAME);
 
     log.info(`%s: Processing ${sheets.length} sheets for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
     const processingStartTime = Date.now();
@@ -329,6 +342,7 @@ export async function refreshGeoBrandPresenceDailyHandler(message, context) {
           runFrequency,
           brand,
           imsOrgId,
+          brandId,
         });
         log.info(
           `%s: DRS analyze triggered for sheet ${sheetName}, siteId: ${siteId}, jobId: ${publishedJobId}`,
