@@ -34,7 +34,6 @@ describe('Geo Brand Presence Refresh Handler', () => {
   let getLastNumberOfWeeksStub;
   let refreshGeoBrandPresenceSheetsHandler;
   let createLLMOSharepointClientStub;
-  let readFromSharePointStub;
   let readFromSharePointWithRetryStub;
   let uploadExcelToDrsStub;
   let publishBrandPresenceAnalyzeStub;
@@ -55,7 +54,6 @@ describe('Geo Brand Presence Refresh Handler', () => {
 
     getLastNumberOfWeeksStub = sandbox.stub().returns(LAST_4_WEEKS);
     createLLMOSharepointClientStub = sandbox.stub();
-    readFromSharePointStub = sandbox.stub();
     readFromSharePointWithRetryStub = sandbox.stub();
 
     uploadExcelToDrsStub = sandbox.stub().resolves('s3://drs-bucket/external/spacecat/test-site-123/job-id/source.xlsx');
@@ -112,13 +110,12 @@ describe('Geo Brand Presence Refresh Handler', () => {
     };
 
     createLLMOSharepointClientStub.resolves(sharepointClient);
-    readFromSharePointStub.callsFake(async (filename) => {
+    readFromSharePointWithRetryStub.callsFake(async (filename) => {
       if (filename === 'query-index.xlsx') {
         return createMockQueryIndexExcel([]);
       }
       return Buffer.from('mock-sheet-data');
     });
-    readFromSharePointWithRetryStub.resolves(Buffer.from('mock-sheet-data'));
 
     const handlerModule = await esmock('../../src/geo-brand-presence/geo-brand-presence-refresh-handler.js', {
       '@adobe/spacecat-shared-utils': {
@@ -129,7 +126,6 @@ describe('Geo Brand Presence Refresh Handler', () => {
       },
       '../../src/utils/report-uploader.js': {
         createLLMOSharepointClient: createLLMOSharepointClientStub,
-        readFromSharePoint: readFromSharePointStub,
         readFromSharePointWithRetry: readFromSharePointWithRetryStub,
       },
       '../../src/utils/brand-resolver.js': {
@@ -153,11 +149,10 @@ describe('Geo Brand Presence Refresh Handler', () => {
   }
 
   function withSheets(paths) {
-    readFromSharePointStub.callsFake(async (filename) => {
+    readFromSharePointWithRetryStub.callsFake(async (filename) => {
       if (filename === 'query-index.xlsx') return createMockQueryIndexExcel(paths);
       return Buffer.from('mock-sheet-data');
     });
-    readFromSharePointWithRetryStub.resolves(Buffer.from('mock-sheet-data'));
   }
 
   const SHEET_W45 = '/data/llmo/brand-presence/latest/brandpresence-chatgpt-w45-2025.json';
@@ -308,6 +303,24 @@ describe('Geo Brand Presence Refresh Handler', () => {
       expect(uploadExcelToDrsStub).to.have.been.calledTwice;
     });
 
+    it('records failed sheet and still processes sibling sheet when XLSX retry exhausted', async () => {
+      readFromSharePointWithRetryStub.callsFake(async (filename) => {
+        if (filename === 'query-index.xlsx') return createMockQueryIndexExcel([SHEET_W45, SHEET_W46]);
+        if (filename.includes('brandpresence-chatgpt')) {
+          throw new Error('SharePoint returned non-XLSX content after 3 attempts -- aborting S3 upload');
+        }
+        return Buffer.from('mock-sheet-data');
+      });
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      // Sibling sheet (gemini) still reaches DRS
+      expect(uploadExcelToDrsStub).to.have.been.calledOnce;
+      // Failed sheet is recorded in S3
+      expect(s3Client.send).to.have.been.calledWith(sinon.match.instanceOf(PutObjectCommand));
+      // Handler does not throw out of Promise.allSettled
+    });
+
     it('returns internalServerError when DRS S3 is not configured', async () => {
       drsClientStub.isS3Configured.returns(false);
       withSheets([SHEET_W45]);
@@ -401,7 +414,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
     });
 
     it('throws when SharePoint query-index fetch fails', async () => {
-      readFromSharePointStub.rejects(new Error('SharePoint unavailable'));
+      readFromSharePointWithRetryStub.rejects(new Error('SharePoint unavailable'));
 
       await expect(refreshGeoBrandPresenceSheetsHandler(MESSAGE, context))
         .to.be.rejectedWith(/Failed to read query-index from SharePoint/);

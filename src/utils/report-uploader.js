@@ -105,20 +105,28 @@ export async function readFromSharePointWithRetry(sheetName, sourceFolder, share
   for (let attempt = 1; attempt <= XLSX_RETRY_MAX; attempt += 1) {
     // eslint-disable-next-line no-await-in-loop
     const buffer = await readFromSharePoint(sheetName, sourceFolder, sharepointClient, log);
-    if (Buffer.from(buffer.slice(0, 4)).equals(XLSX_MAGIC)) {
+    if (buffer.subarray(0, 4).equals(XLSX_MAGIC)) {
       return buffer;
     }
     log.warn(
       `%s: SharePoint returned non-XLSX content on attempt ${attempt}/${XLSX_RETRY_MAX} `
-      + `(size=${buffer.length ?? buffer.byteLength}, magic=${Buffer.from(buffer.slice(0, 4)).toString('hex')})`,
+      + `(size=${buffer.length}, magic=${buffer.subarray(0, 4).toString('hex')}, `
+      + `sheet=${sheetName}, folder=${sourceFolder})`,
       AUDIT_NAME,
     );
     if (attempt < XLSX_RETRY_MAX) {
+      // Fixed delay tuned for the SharePoint cache-flip recovery window observed in LLMO-4739;
+      // exponential backoff offers no benefit when the outage resolves on a known ~60s cadence.
       // eslint-disable-next-line no-await-in-loop
       await sleep(XLSX_RETRY_DELAY_MS);
     }
   }
-  throw new Error(`SharePoint returned non-XLSX content after ${XLSX_RETRY_MAX} attempts — aborting S3 upload`);
+  log.error(
+    `%s: SharePoint returned non-XLSX content after ${XLSX_RETRY_MAX} attempts -- aborting S3 upload`,
+    AUDIT_NAME,
+    { sheetName, sourceFolder },
+  );
+  throw new Error(`SharePoint returned non-XLSX content after ${XLSX_RETRY_MAX} attempts -- aborting S3 upload`);
 }
 
 async function fetchWithRetry(url, options, endpointName, log, maxRetries = 3) {

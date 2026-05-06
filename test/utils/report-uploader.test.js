@@ -178,8 +178,8 @@ describe('Utils Report Uploader', () => {
       expect(result).to.deep.equal(validXlsx);
       expect(mockContext.sharepointDoc.getDocumentContent).to.have.been.calledTwice;
       expect(sleepStub).to.have.been.calledOnce;
-      expect(mockContext.log.warn).to.have.been.calledWithMatch(
-        sinon.match.string,
+      expect(mockContext.log.warn).to.have.been.calledWith(
+        sinon.match(/sheet=sheet\.xlsx.*folder=source-folder/),
         'REPORT_UPLOADER',
       );
     });
@@ -194,10 +194,15 @@ describe('Utils Report Uploader', () => {
           mockContext.sharepointClient,
           mockContext.log,
         ),
-      ).to.be.rejectedWith('SharePoint returned non-XLSX content after 3 attempts — aborting S3 upload');
+      ).to.be.rejectedWith('SharePoint returned non-XLSX content after 3 attempts -- aborting S3 upload');
 
       expect(mockContext.sharepointDoc.getDocumentContent).to.have.been.calledThrice;
       expect(sleepStub).to.have.been.calledTwice;
+      expect(mockContext.log.error).to.have.been.calledWith(
+        sinon.match(/non-XLSX content after 3 attempts/),
+        'REPORT_UPLOADER',
+        sinon.match({ sheetName: 'sheet.xlsx', sourceFolder: 'source-folder' }),
+      );
     });
 
     it('should propagate SharePoint network errors without retrying', async () => {
