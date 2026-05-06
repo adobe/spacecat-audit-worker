@@ -186,11 +186,13 @@ export default async function drsPromptGenerationHandler(message, context) {
   // Single org lookup: drives both the v1 write gate and the fan-out gate.
   // Under brandalf / brandalf_migration the v1 config bucket is read-only and
   // the llmo-customer-analysis fan-out is owned by the brandalf-migration path.
-  const brandalfBlocksV1 = await isV1WriteBlockedByBrandalf(siteId, dataAccess, env, log);
+  if (await isV1WriteBlockedByBrandalf(siteId, dataAccess, env, log)) {
+    log.info(`Skipping v1 LLMO config write and llmo-customer-analysis trigger for site ${siteId}, job ${drsJobId} because brandalf or brandalf_migration is enabled`);
+    return ok();
+  }
 
   let configVersion;
-  const shouldWriteLegacyConfig = !brandalfBlocksV1
-    && (source !== 'onboarding' || onboardingMode !== 'v2');
+  const shouldWriteLegacyConfig = source !== 'onboarding' || onboardingMode !== 'v2';
 
   if (shouldWriteLegacyConfig) {
     // Download DRS result and write prompts to LLMO config (non-fatal)
@@ -206,15 +208,8 @@ export default async function drsPromptGenerationHandler(message, context) {
         'Failed to download or write prompts to LLMO config',
       );
     }
-  } else if (brandalfBlocksV1) {
-    log.info(`Skipping v1 LLMO config write for site ${siteId} because brandalf or brandalf_migration is enabled`);
   } else {
-    log.info(`Skipping v1 LLMO config write for site ${siteId} because onboarding_mode is v2`);
-  }
-
-  if (brandalfBlocksV1) {
-    log.info(`Skipping llmo-customer-analysis trigger for site ${siteId} because brandalf or brandalf_migration is enabled`);
-    return ok();
+    log.info(`Skipping v1 LLMO config write for site ${siteId}, job ${drsJobId} because onboarding_mode is v2`);
   }
 
   if (source !== 'onboarding') {

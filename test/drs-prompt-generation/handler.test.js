@@ -429,11 +429,15 @@ describe('DRS Prompt Generation Handler', () => {
       sandbox.restore();
 
       const localPostMessageSafe = sandbox.stub().resolves({ success: true });
+      const localIsBrandalfOrMigrationEnabled = sandbox.stub().resolves(false);
 
       // eslint-disable-next-line no-await-in-loop
       const handler = await esmock('../../src/drs-prompt-generation/handler.js', {
         '../../src/utils/slack-utils.js': { postMessageSafe: localPostMessageSafe },
         '../../src/drs-prompt-generation/drs-config-writer.js': { default: sandbox.stub().resolves() },
+        '../../src/utils/feature-flags.js': {
+          isBrandalfOrMigrationEnabled: localIsBrandalfOrMigrationEnabled,
+        },
       });
       const localHandler = handler.default;
 
@@ -441,6 +445,9 @@ describe('DRS Prompt Generation Handler', () => {
         .withSandbox(sandbox)
         .build();
       context.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
+      context.dataAccess.Site.findById.resolves({
+        getOrganizationId: sandbox.stub().returns('org-uuid-loop'),
+      });
       context.s3Client = { send: sandbox.stub().resolves() };
       context.env.S3_IMPORTER_BUCKET_NAME = 'importer-bucket';
       context.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID = 'C-TEST-CHANNEL';
@@ -465,6 +472,7 @@ describe('DRS Prompt Generation Handler', () => {
       await localHandler(message, context);
 
       expect(fetchStub, `fetch should be called for source=${source}`).to.have.been.calledOnceWith(PRESIGNED_URL);
+      expect(localIsBrandalfOrMigrationEnabled, `brandalf check should run for source=${source}`).to.have.been.calledOnceWith('org-uuid-loop');
     }
   });
 
@@ -490,10 +498,7 @@ describe('DRS Prompt Generation Handler', () => {
       expect(mockWriteDrsPromptsToLlmoConfig).to.not.have.been.called;
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Skipping v1 LLMO config write for site site-bm because brandalf or brandalf_migration is enabled/),
-      );
-      expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Skipping llmo-customer-analysis trigger for site site-bm because brandalf or brandalf_migration is enabled/),
+        sinon.match(/Skipping v1 LLMO config write and llmo-customer-analysis trigger for site site-bm, job job-bm-1 because brandalf or brandalf_migration is enabled/),
       );
     });
 
@@ -502,6 +507,20 @@ describe('DRS Prompt Generation Handler', () => {
 
       await drsPromptGenerationHandler(
         baseMessage({ source: 'onboarding', onboarding_mode: 'v1' }),
+        context,
+      );
+
+      expect(mockWriteDrsPromptsToLlmoConfig).to.not.have.been.called;
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('skips v1 write AND fan-out when brandalf is enabled (source=onboarding, no mode)', async () => {
+      // Periodic regen / dashboard retrigger paths can have source=onboarding
+      // without an onboarding_mode field; the gate must still skip.
+      mockIsBrandalfOrMigrationEnabled.resolves(true);
+
+      await drsPromptGenerationHandler(
+        baseMessage({ source: 'onboarding' }),
         context,
       );
 
@@ -568,7 +587,7 @@ describe('DRS Prompt Generation Handler', () => {
       expect(mockWriteDrsPromptsToLlmoConfig).to.not.have.been.called;
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Skipping v1 LLMO config write for site site-bm because onboarding_mode is v2/),
+        sinon.match(/Skipping v1 LLMO config write for site site-bm, job job-bm-1 because onboarding_mode is v2/),
       );
     });
 
