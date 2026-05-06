@@ -1069,8 +1069,28 @@ export async function processOpportunityAndSuggestions(
 ) {
   const { log } = context;
 
-  const { auditResult, scrapedUrlsSet } = auditData;
+  const { auditResult, scrapedUrlsSet: rawScrapedUrlsSet } = auditData;
   const { urlsNeedingPrerender } = auditResult;
+
+  // Normalize scrapedUrlsSet to match by pathname so that domain shifts
+  // (e.g. www.example.com → example.com) don't prevent existing suggestions
+  // from being correctly marked as outdated. The set uses pathname-based
+  // lookups: both stored values and .has() arguments are normalized to pathnames.
+  const scrapedUrlsSet = rawScrapedUrlsSet ? (() => {
+    const toPathname = (url) => {
+      try {
+        return new URL(url).pathname;
+      } catch {
+        return url;
+      }
+    };
+    const pathnames = new Set(
+      [...rawScrapedUrlsSet].map(toPathname),
+    );
+    return {
+      has: (url) => pathnames.has(toPathname(url)),
+    };
+  })() : null;
 
   /* c8 ignore next 4 */
   if (urlsNeedingPrerender === 0) {
@@ -1704,14 +1724,33 @@ export async function processContentAndGenerateOpportunities(context) {
       const existingOpportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
 
       if (existingOpportunity) {
-        // Include domain-wide URL so aggregate suggestion can be marked outdated when appropriate
-        const scrapedUrlsForNoOppty = new Set(scrapedUrlsSet);
-        scrapedUrlsForNoOppty.add(getDomainWideSuggestionUrl(site.getBaseURL()));
+        // Include domain-wide URL so aggregate suggestion can be marked outdated
+        // when appropriate. Normalize to pathnames so domain shifts don't prevent
+        // outdating.
+        const toPathname = (url) => {
+          try {
+            return new URL(url).pathname;
+          } catch {
+            return url;
+          }
+        };
+        const scrapedPathnames = new Set(
+          [...scrapedUrlsSet].map(toPathname),
+        );
+        scrapedPathnames.add(
+          toPathname(getDomainWideSuggestionUrl(site.getBaseURL())),
+        );
+        const scrapedUrlsForNoOppty = {
+          has: (url) => scrapedPathnames.has(toPathname(url)),
+        };
         await syncSuggestions({
           opportunity: existingOpportunity,
           newData: [],
           context,
-          buildKey: (suggestionData) => suggestionData.url,
+          buildKey: (suggestionData) => {
+            const pathname = toPathname(suggestionData.url);
+            return `${pathname}|${AUDIT_TYPE}`;
+          },
           mapNewSuggestion: () => ({}),
           scrapedUrlsSet: scrapedUrlsForNoOppty,
         });
