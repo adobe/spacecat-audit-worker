@@ -417,6 +417,39 @@ describe('preflight/links-checks - runLinksChecks', () => {
 
   // ── Invalid hrefs are silently skipped ────────────────────────────────────
 
+  it('does not flag mailto: links as broken', async () => {
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="mailto:someone@example.com">email</a>'),
+      context,
+    );
+
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    expect(fetchStub.callCount).to.equal(0);
+  });
+
+  it('does not flag tel: links as broken', async () => {
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="tel:+18005551212">call us</a>'),
+      context,
+    );
+
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    expect(fetchStub.callCount).to.equal(0);
+  });
+
+  it('does not flag javascript: links as broken', async () => {
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="javascript:void(0)">click</a>'),
+      context,
+    );
+
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    expect(fetchStub.callCount).to.equal(0);
+  });
+
   it('silently skips hrefs that cannot be parsed as URLs', async () => {
     fetchStub.resolves(makeResponse(200));
 

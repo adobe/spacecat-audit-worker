@@ -60,6 +60,14 @@ async function checkLinkStatus(href, pageUrl, context, options = {
   } = options;
   const linkType = isInternal ? 'internal' : 'external';
 
+  // Only probe http/https URLs. Non-web schemes (mailto:, tel:, javascript:,
+  // sms:, etc.) are not web links — fetch() cannot probe them and they should
+  // never be reported as broken.
+  const { protocol } = new URL(href);
+  if (protocol !== 'http:' && protocol !== 'https:') {
+    return null;
+  }
+
   const headers = { 'User-Agent': DEFAULT_USER_AGENT };
 
   // Add Authorization header only for internal links
