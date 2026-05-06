@@ -1,3 +1,10 @@
+## [1.433.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.433.0...v1.433.1) (2026-05-06)
+
+
+### Bug Fixes
+
+* **preflight:** report unreachable links as broken (status 0) instead of silently dropping them ([#2476](https://github.com/adobe/spacecat-audit-worker/issues/2476)) ([d83ffb1](https://github.com/adobe/spacecat-audit-worker/commit/d83ffb1940654b403bead1f1307fd73c7f0c8b7a))
+
 # [1.433.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.432.3...v1.433.0) (2026-05-06)
 
 
