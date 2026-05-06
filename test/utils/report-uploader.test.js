@@ -205,6 +205,23 @@ describe('Utils Report Uploader', () => {
       );
     });
 
+    it('should retry when SharePoint returns a buffer shorter than 4 bytes', async () => {
+      const validXlsx = Buffer.concat([xlsxMagic, Buffer.from('rest of file')]);
+      mockContext.sharepointDoc.getDocumentContent
+        .onFirstCall().resolves(Buffer.alloc(0))
+        .onSecondCall().resolves(validXlsx);
+
+      const result = await readFromSharePointWithRetry(
+        'sheet.xlsx',
+        'source-folder',
+        mockContext.sharepointClient,
+        mockContext.log,
+      );
+
+      expect(result).to.deep.equal(validXlsx);
+      expect(sleepStub).to.have.been.calledOnce;
+    });
+
     it('should propagate SharePoint network errors without retrying', async () => {
       mockContext.sharepointDoc.getDocumentContent.rejects(new Error('Network failure'));
 

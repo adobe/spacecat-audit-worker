@@ -312,13 +312,23 @@ describe('Geo Brand Presence Refresh Handler', () => {
         return Buffer.from('mock-sheet-data');
       });
 
-      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+      const result = await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
 
+      // Handler resolves (does not throw out of Promise.allSettled)
+      expect(result.status).to.equal(200);
       // Sibling sheet (gemini) still reaches DRS
       expect(uploadExcelToDrsStub).to.have.been.calledOnce;
-      // Failed sheet is recorded in S3
-      expect(s3Client.send).to.have.been.calledWith(sinon.match.instanceOf(PutObjectCommand));
-      // Handler does not throw out of Promise.allSettled
+      // Failed chatgpt sheet is recorded in S3 with a failure-record Key
+      expect(s3Client.send).to.have.been.calledWith(
+        sinon.match.has('input', sinon.match.has('Key', sinon.match(/brandpresence-chatgpt.*\.metadata\.json$/))),
+      );
+      // Retry-exhaustion rejection is logged by the results-processing loop
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/%s:Failed to process sheet/),
+        sinon.match.any,
+        sinon.match(/brandpresence-chatgpt/),
+        sinon.match(/non-XLSX content after 3 attempts/),
+      );
     });
 
     it('returns internalServerError when DRS S3 is not configured', async () => {
