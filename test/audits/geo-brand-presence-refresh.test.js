@@ -39,6 +39,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
   let publishBrandPresenceAnalyzeStub;
   let drsClientStub;
   let drsCreateFromStub;
+  let resolveBrandIdForSiteStub;
 
   // last 4 weeks used across most tests
   const LAST_4_WEEKS = [
@@ -65,6 +66,10 @@ describe('Geo Brand Presence Refresh Handler', () => {
     };
 
     drsCreateFromStub = sandbox.stub().returns(drsClientStub);
+
+    // Default: brand resolver returns null (v1 / brandalf-migration / no active brand).
+    // Tests that need a non-null brandId override per-test.
+    resolveBrandIdForSiteStub = sandbox.stub().resolves(null);
 
     log = {
       info: sandbox.stub(),
@@ -123,6 +128,9 @@ describe('Geo Brand Presence Refresh Handler', () => {
         createLLMOSharepointClient: createLLMOSharepointClientStub,
         readFromSharePoint: readFromSharePointStub,
       },
+      '../../src/utils/brand-resolver.js': {
+        resolveBrandIdForSite: resolveBrandIdForSiteStub,
+      },
     });
 
     refreshGeoBrandPresenceSheetsHandler = handlerModule.refreshGeoBrandPresenceSheetsHandler;
@@ -174,7 +182,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
       );
     });
 
-    it('calls publishBrandPresenceAnalyze with correct args including jobId, brand, imsOrgId', async () => {
+    it('calls publishBrandPresenceAnalyze with correct args including jobId, brand, imsOrgId, brandId', async () => {
       withSheets([SHEET_W45]);
 
       await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
@@ -191,7 +199,66 @@ describe('Geo Brand Presence Refresh Handler', () => {
         runFrequency: 'weekly',
         brand: 'test-brand',
         imsOrgId: 'test-ims-org-id',
+        brandId: null,
       });
+    });
+
+    it('forwards brandId resolved from spacecat-api-service to publishBrandPresenceAnalyze (v2 org)', async () => {
+      withSheets([SHEET_W45]);
+      resolveBrandIdForSiteStub.resolves('brand-uuid-42');
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      expect(resolveBrandIdForSiteStub).to.have.been.calledOnceWith(
+        'test-org-id',
+        'test-site-123',
+        context.env,
+        log,
+      );
+      expect(publishBrandPresenceAnalyzeStub).to.have.been.calledOnce;
+      expect(publishBrandPresenceAnalyzeStub.firstCall.args[1]).to.include({
+        brandId: 'brand-uuid-42',
+      });
+    });
+
+    it('passes brandId=null when resolver returns null (v1 org / no active brand)', async () => {
+      withSheets([SHEET_W45]);
+      resolveBrandIdForSiteStub.resolves(null);
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      expect(publishBrandPresenceAnalyzeStub.firstCall.args[1]).to.include({ brandId: null });
+    });
+
+    it('propagates resolver errors with original message so DLQ shows the real cause', async () => {
+      withSheets([SHEET_W45]);
+      const cause = new Error('SpaceCat 503');
+      resolveBrandIdForSiteStub.rejects(cause);
+
+      // Brand resolution runs BEFORE the S3 metadata write and outside the
+      // outer try/catch, so the original `[BrandResolver]` message is preserved
+      // for DLQ triage rather than being rewrapped as "Failed to create S3
+      // folder".
+      await expect(refreshGeoBrandPresenceSheetsHandler(MESSAGE, context))
+        .to.be.rejectedWith(/SpaceCat 503/);
+      expect(publishBrandPresenceAnalyzeStub).to.not.have.been.called;
+      // Metadata write must NOT fire when the resolver fails — otherwise we'd
+      // litter S3 with orphaned metadata.json files (one per SQS retry).
+      expect(s3Client.send).to.not.have.been.called;
+    });
+
+    it('skips brand resolution and logs warning when site has no organizationId', async () => {
+      withSheets([SHEET_W45]);
+      site.getOrganizationId = () => null;
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      expect(resolveBrandIdForSiteStub).to.not.have.been.called;
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/has no organizationId/),
+        sinon.match.any,
+      );
+      expect(publishBrandPresenceAnalyzeStub.firstCall.args[1]).to.include({ brandId: null });
     });
 
     it('normalizes hyphenated providers to underscores before publishing to DRS', async () => {
