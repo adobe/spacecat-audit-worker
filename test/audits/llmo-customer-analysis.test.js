@@ -274,7 +274,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
     });
 
-    it('should skip cdn-logs-report when categories change but the handler is disabled for the site', async () => {
+    it('should trigger cdn-logs-report when categories change even if handler is disabled for site', async () => {
       const auditContext = {
         configVersion: 'v2',
         previousConfigVersion: 'v1',
@@ -309,14 +309,13 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(sqs.sendMessage).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWith(
-        'LLMO config changes detected in categories; skipping cdn-logs-report because it is disabled for this site',
+      expect(sqs.sendMessage).to.have.been.calledWith(
+        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
+        sinon.match({ type: 'cdn-logs-report' }),
       );
       expect(result.auditResult.status).to.equal('completed');
-      // drs-brand-detection fires (categories = hasBrandPresenceChanges), so configChangesDetected is true
       expect(result.auditResult.configChangesDetected).to.equal(true);
-      expect(result.auditResult.triggeredSteps).to.not.include('cdn-logs-report');
+      expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
       expect(result.auditResult.triggeredSteps).to.include('drs-brand-detection');
     });
 
@@ -579,7 +578,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-trigger-refresh');
     });
 
-    it('should enable audits and trigger referral imports when no config version provided', async () => {
+    it('should trigger referral imports and brand presence when no config version provided', async () => {
       const auditContext = {};
 
       const result = await mockHandler.runLlmoCustomerAnalysis(
@@ -591,7 +590,7 @@ describe('LLMO Customer Analysis Handler', () => {
 
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(false);
-      expect(result.auditResult.message).to.equal('Audits enabled (no config version provided, skipping config comparison)');
+      expect(result.auditResult.message).to.equal('No config version provided; skipping config comparison');
       expect(result.auditResult.triggeredSteps).to.include('traffic-analysis');
       expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
       expect(result.auditResult.brandPresenceScheduleId).to.equal('sched-001');
@@ -1057,54 +1056,6 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('completed');
     });
 
-    it('should handle errors from enableAudits gracefully', async () => {
-      // Use previousConfigVersion to skip first-time onboarding path
-      const auditContext = {
-        configVersion: 'v2',
-        previousConfigVersion: 'v1',
-      };
-
-      mockLlmoConfig.readConfig.resolves({
-        config: {
-          entities: {},
-          categories: {},
-          topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      // Create a context with Configuration.findLatest that throws an error
-      const errorConfiguration = {
-        findLatest: sandbox.stub().rejects(new Error('Configuration service unavailable')),
-      };
-
-      const errorContext = {
-        sqs,
-        log,
-        dataAccess: {
-          Configuration: errorConfiguration,
-          Site: dataAccess.Site,
-          LatestAudit: dataAccess.LatestAudit,
-        },
-        s3Client: {},
-        env: context.env,
-      };
-
-      const result = await mockHandler.runLlmoCustomerAnalysis(
-        'https://example.com',
-        errorContext,
-        site,
-        auditContext,
-      );
-
-      // Should log the error
-      expect(log.error).to.have.been.calledWith('Failed to enable audits for site site-123: Configuration service unavailable');
-
-      // Should still complete successfully despite the error
-      expect(result.auditResult.status).to.equal('completed');
-    });
-
     it('should handle errors from enableImports gracefully', async () => {
       // Use previousConfigVersion to skip first-time onboarding path
       const auditContext = {
@@ -1252,7 +1203,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('completed');
     });
 
-    it('should enable audits and save configuration when enableAudits is called', async () => {
+    it('enables baseline LLMO audit handlers only on first-time analysis (no previousConfigVersion)', async () => {
       const auditContext = {
         configVersion: 'v1',
       };
@@ -1274,7 +1225,6 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      // Verify enableHandlerForSite was called for each expected audit type
       const expectedAudits = [
         'scrape-top-pages',
         'headings',
@@ -1286,13 +1236,97 @@ describe('LLMO Customer Analysis Handler', () => {
         'readability',
         'wikipedia-analysis',
       ];
-
-      for (const audit of expectedAudits) {
+      expectedAudits.forEach((audit) => {
         expect(configuration.enableHandlerForSite).to.have.been.calledWith(audit, site);
-      }
-
-      // Verify configuration.save was called
+      });
       expect(configuration.save).to.have.been.called;
+    });
+
+    it('does not enable handlers when previousConfigVersion is present', async () => {
+      const auditContext = {
+        configVersion: 'v2',
+        previousConfigVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.onFirstCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+      mockLlmoConfig.readConfig.onSecondCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(configuration.enableHandlerForSite).not.to.have.been.called;
+      expect(configuration.save).not.to.have.been.called;
+    });
+
+    it('should handle errors from enable audits on first-time analysis gracefully', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      // First findLatest drives enable audits (fails → caught). Later calls during the same
+      // analysis must succeed (e.g. geo refresh, CDN queues) — use resolving mock after first rejection.
+      let findLatestAttempts = 0;
+      const errorConfiguration = {
+        findLatest: sandbox.stub().callsFake(() => {
+          findLatestAttempts += 1;
+          if (findLatestAttempts === 1) {
+            return Promise.reject(new Error('Configuration service unavailable'));
+          }
+          return Promise.resolve(configuration);
+        }),
+      };
+
+      const errorContext = {
+        sqs,
+        log,
+        dataAccess: {
+          Configuration: errorConfiguration,
+          Site: dataAccess.Site,
+          LatestAudit: dataAccess.LatestAudit,
+        },
+        s3Client: {},
+        env: context.env,
+      };
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        errorContext,
+        site,
+        auditContext,
+      );
+
+      expect(log.error).to.have.been.calledWith('Failed to enable audits for site site-123: Configuration service unavailable');
+      expect(result.auditResult.status).to.equal('completed');
     });
 
     it('should create and trigger brand presence schedule on first-time onboarding', async () => {
