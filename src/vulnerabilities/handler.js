@@ -42,7 +42,7 @@ export async function fetchVulnerabilityReport(baseURL, context, site) {
   if (!hasText(imsOrg)) {
     throw new Error('Missing IMS org');
   } else if (imsOrg === 'default') {
-    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] site is configured with default IMS org`);
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] site is configured with default IMS org`);
   }
   const { programId, environmentId } = site.getDeliveryConfig();
   if (!hasText(programId) || !hasText(environmentId)) {
@@ -80,7 +80,7 @@ export async function fetchVulnerabilityReport(baseURL, context, site) {
     throw new Error('Failed to fetch vulnerability report');
   }
   if (resp.status === 404) {
-    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] vulnerability report not found`);
+    log.warn(`[${AUDIT_TYPE}] [Site: ${site.getId()}] vulnerability report not found`);
     return null;
   }
   if (!resp.ok) {
@@ -106,7 +106,7 @@ export async function vulnerabilityAuditRunner(context) {
 
   // This opportunity is only relevant for aem_cs delivery-type at the moment
   if (site.getDeliveryType() !== DELIVERY_TYPES.AEM_CS) {
-    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping vulnerability audit as site is of delivery type ${site.getDeliveryType()}`);
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping vulnerability audit as site is of delivery type ${site.getDeliveryType()}`);
     return {
       auditResult: {
         finalUrl: baseURL,
@@ -121,7 +121,7 @@ export async function vulnerabilityAuditRunner(context) {
     const vulnerabilityReport = await fetchVulnerabilityReport(baseURL, context, site);
     if (!vulnerabilityReport) {
       const errorMessage = `[${AUDIT_TYPE}] [Site: ${site.getId()}] fetch successful, but report was empty / null`;
-      log.debug(errorMessage);
+      log.warn(errorMessage);
       return {
         auditResult: {
           finalUrl: baseURL,
@@ -250,7 +250,14 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
   const { vulnerabilityReport } = auditResult;
 
-  if (!isNonEmptyArray(vulnerabilityReport.vulnerableComponents)) {
+  // Drop components whose active vulnerabilities list is null/empty — every CVE on them
+  // has been ignored and there is nothing the customer can act on. Routing the all-ignored
+  // case through the "no vulnerabilities" branch below also resolves any stale opportunity.
+  const actionableComponents = isNonEmptyArray(vulnerabilityReport.vulnerableComponents)
+    ? vulnerabilityReport.vulnerableComponents.filter((c) => isNonEmptyArray(c.vulnerabilities))
+    : [];
+
+  if (!isNonEmptyArray(actionableComponents)) {
     // No vulnerabilities found
     // Fetch opportunity
     let opportunity;
@@ -295,7 +302,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
   // Populate suggestions
   await syncSuggestions({
     opportunity,
-    newData: vulnerabilityReport.vulnerableComponents,
+    newData: actionableComponents,
     context,
     buildKey,
     mapNewSuggestion:
@@ -306,7 +313,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
   const configuration = await Configuration.findLatest();
   const generateSuggestions = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-suggest', site);
   if (!generateSuggestions) {
-    log.debug(
+    log.info(
       `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with starfish-auto-code, because
       'security-vulnerabilities-auto-suggest' not configured.`,
     );
@@ -315,7 +322,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
   const codeInfo = extractCodeInfo(data);
   if (!codeInfo) {
-    log.debug(
+    log.info(
       `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with starfish-auto-code, because
       import worker could not get code.`,
     );
@@ -351,7 +358,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
     },
   };
 
-  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] sending message to starfish-auto-code for code fix generation: ${JSON.stringify(message)}`);
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] sending message to starfish-auto-code for code fix generation: ${JSON.stringify(message)}`);
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_STARFISH_AUTO_CODE, message);
   return { status: 'complete' };
 };

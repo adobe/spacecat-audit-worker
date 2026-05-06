@@ -184,7 +184,7 @@ describe('Semantic Value Visibility Guidance Handler', () => {
       const mappedSuggestion = syncArgs.mapNewSuggestion(testData);
 
       expect(mappedSuggestion.opportunityId).to.equal('oppty-123');
-      expect(mappedSuggestion.type).to.equal('SUGGESTION_CODE');
+      expect(mappedSuggestion.type).to.equal('CODE_CHANGE');
       expect(mappedSuggestion.rank).to.equal(0);
       expect(mappedSuggestion.data).to.deep.equal(testData);
     });

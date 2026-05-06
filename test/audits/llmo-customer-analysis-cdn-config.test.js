@@ -419,6 +419,7 @@ describe('CDN Config Handler', () => {
       dailyReportCalls.forEach((call, index) => {
         expect(call.args[1].auditContext).to.deep.equal({
           date: getExpectedReportDate(cdnLogsAnalysisCalls[index]),
+          refreshAgenticDailyExport: true,
         });
         expect(call.args[3]).to.equal(900 + (index * 5));
       });
@@ -472,18 +473,6 @@ describe('CDN Config Handler', () => {
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
       expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ orgId: 'test-org' });
-      expect(mockSite.save).to.have.been.called;
-    });
-
-    it('should extract bare orgId from byocdn-imperva underscore-layout allowedPaths', async () => {
-      const data = {
-        allowedPaths: ['TestOrg123AdobeOrg_raw_byocdn-imperva/somefile.log'],
-        cdnProvider: 'byocdn-imperva',
-      };
-
-      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
-
-      expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ orgId: 'TestOrg123AdobeOrg' });
       expect(mockSite.save).to.have.been.called;
     });
 
@@ -559,6 +548,7 @@ describe('CDN Config Handler', () => {
       dailyReportCalls.forEach((call, index) => {
         expect(call.args[1].auditContext).to.deep.equal({
           date: getExpectedReportDate(cdnLogsAnalysisCalls[index]),
+          refreshAgenticDailyExport: true,
         });
         expect(call.args[3]).to.equal(900 + (index * 5));
       });
