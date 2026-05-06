@@ -1,3 +1,10 @@
+## [1.432.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.432.1...v1.432.2) (2026-05-06)
+
+
+### Bug Fixes
+
+* **semantic-value-visibility:** use CODE_CHANGE as suggestion type ([#2481](https://github.com/adobe/spacecat-audit-worker/issues/2481)) ([b99830b](https://github.com/adobe/spacecat-audit-worker/commit/b99830bcda66090d23eac433bb5946cd98714f1b))
+
 ## [1.432.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.432.0...v1.432.1) (2026-05-05)
 
 

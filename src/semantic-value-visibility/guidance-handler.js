@@ -107,7 +107,7 @@ export default async function handler(message, context) {
     buildKey: (suggestionData) => suggestionData.imageUrl,
     mapNewSuggestion: (suggestionData) => ({
       opportunityId: opportunity.getId(),
-      type: 'SUGGESTION_CODE',
+      type: 'CODE_CHANGE',
       rank: 0,
       data: suggestionData,
     }),
