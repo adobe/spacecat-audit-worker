@@ -380,7 +380,7 @@ async function finalizeFailed(job, error, log) {
     job.setEndedAt(new Date().toISOString());
     await job.save();
   } catch (saveErr) {
-    log.error(`[site-detection] failed to save error state: ${saveErr.message}`);
+    log.error(`[site-detection] event=site-detection.finalize_save_failed job=${job.getId()}: ${saveErr.message}`);
   }
 }
 
@@ -534,7 +534,7 @@ export async function siteDetectionRunner(message, context) {
     } catch (createErr) {
       const racedCandidate = await SiteCandidate.findByBaseURL(baseURL);
       if (racedCandidate !== null) {
-        log.info(`[site-detection] Job ${jobId}: concurrent duplicate detected for ${baseURL}, marking as duplicate`);
+        log.info(`[site-detection] Job ${jobId}: concurrent duplicate detected for ${baseURL} (cause: ${createErr.message}), marking as duplicate`);
         await finalizeCompleted(job, { action: 'duplicate', domain, reason: 'Site candidate already evaluated' }, log);
         return { auditResult: { action: 'duplicate', domain }, fullAuditRef: 'site-detection' };
       }

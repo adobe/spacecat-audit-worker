@@ -170,7 +170,7 @@ describe('[site-detection] runner tests', function () {
 
     // Runner completes successfully despite save() throwing (no poison pill).
     expect(mockJob.setStatus).to.have.been.calledWith(AsyncJob.Status.FAILED);
-    expect(context.log.error).to.have.been.calledWith(sinon.match(/failed to save error state/));
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/event=site-detection\.finalize_save_failed job=/));
     expect(result.auditResult.error).to.equal('Missing domain');
   });
 
@@ -604,7 +604,7 @@ describe('[site-detection] runner tests', function () {
     const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
 
     expect(context.log.error).to.have.been.calledWith(
-      sinon.match(/event=site-detection\.finalize_save_failed/),
+      sinon.match(/event=site-detection\.finalize_save_failed job=/),
     );
     expect(result.auditResult.action).to.equal('created');
   });
@@ -861,7 +861,7 @@ describe('[site-detection] runner tests', function () {
 
     const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
 
-    expect(context.log.error).to.have.been.calledWith(sinon.match(/failed to save error state/));
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/event=site-detection\.finalize_save_failed job=/));
     expect(result.auditResult.error).to.equal('DB error');
   });
 
@@ -872,7 +872,7 @@ describe('[site-detection] runner tests', function () {
 
     const result = await siteDetectionRunner({ jobId: JOB_ID }, context);
 
-    expect(context.log.error).to.have.been.calledWith(sinon.match(/failed to save error state/));
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/event=site-detection\.finalize_save_failed job=/));
     expect(result.auditResult.error).to.equal('DB write failed');
   });
 });
