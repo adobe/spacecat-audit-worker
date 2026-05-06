@@ -25,13 +25,10 @@ const CATEGORY_COMPARE_FIELDS = ['name', 'origin', 'status'];
 const TOPIC_COMPARE_FIELDS = ['name', 'description', 'status'];
 const PROMPT_COMPARE_FIELDS = ['name', 'regions', 'category_id', 'status', 'origin', 'source'];
 
-// Temporary: hardcoded site IDs for which the S3-to-DB config sync is enabled.
-const PROD_SITE_ID = '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3';
+// Sync is disabled: ALLOWED_SITE_IDS contains only placeholder IDs that never match real sites.
 const ALLOWED_SITE_IDS = [
-  '00000000-0000-0000-0000-000000000001', // dev
-  '00000000-0000-0000-0000-000000000002', // prod - to be removed
-  'c2473d89-e997-458d-a86d-b4096649c12b', // dev URL
-  PROD_SITE_ID, // prod URL
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000002',
 ];
 
 export function isSyncEnabledForSite(siteId) {
@@ -340,6 +337,7 @@ export default async function llmoConfigDbSync(message, context) {
     }
 
     // TODO: replace with dynamic brand resolution once brands exist in the S3 config
+    const PROD_SITE_ID = '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3';
     const PROD_BRAND_ID = '3e3556f0-6494-4e8f-858f-01f2c358861a';
     const DEV_BRAND_ID = '019cb903-1184-742b-9a16-bc7a8696962f';
     const brandId = siteId === PROD_SITE_ID
