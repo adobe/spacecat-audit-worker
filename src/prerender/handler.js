@@ -160,7 +160,14 @@ async function markDeployedUrlSuggestionsAsCovered(
   const suggestionsToCover = deployedAtEdgeUrls?.size > 0
     ? newSuggestions.filter((s) => {
       const data = s.getData();
-      return deployedAtEdgeUrls.has(data?.url) && !data?.edgeDeployed;
+      // Normalize to pathname for domain-shift-safe comparison
+      let urlKey;
+      try {
+        urlKey = new URL(data?.url).pathname;
+      } catch {
+        urlKey = data?.url;
+      }
+      return deployedAtEdgeUrls.has(urlKey) && !data?.edgeDeployed;
     })
     : [];
 
@@ -1763,7 +1770,13 @@ export async function processContentAndGenerateOpportunities(context) {
     const deployedAtEdgeUrls = new Set(
       successfulComparisons
         .filter((r) => r.isDeployedAtEdge)
-        .map((r) => r.url),
+        .map((r) => {
+          try {
+            return new URL(r.url).pathname;
+          } catch {
+            return r.url;
+          }
+        }),
     );
     await markNewSuggestionsAsCovered(opportunityWithSuggestions, context, deployedAtEdgeUrls);
 
