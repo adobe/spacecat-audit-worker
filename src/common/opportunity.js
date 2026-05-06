@@ -103,6 +103,9 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
           dataSources: opportunityInstance.data?.dataSources,
         });
       }
+      if (opportunityInstance.tags?.length) {
+        opportunity.setTags(opportunityInstance.tags);
+      }
       opportunity.setUpdatedBy('system');
       await opportunity.save();
       return opportunity;
