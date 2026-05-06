@@ -16,84 +16,85 @@ import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { describe } from 'mocha';
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
-import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
-import handler, {
-  inferRecommendationType,
-  reconcileOpportunities,
-  MAX_OPPORTUNITIES_PER_TYPE,
-} from '../../../src/paid-keyword-optimizer/guidance-handler.js';
+import handler from '../../../src/paid-keyword-optimizer/guidance-handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
 
 const TEST_URL = 'https://example-page/page1';
 
-// Helper to create a message in the GuidanceWithBody format
-function createMessage({ bodyOverrides, guidanceOverrides } = {}) {
+function makeCluster({
+  clusterId = 'cluster-1',
+  analysisStatus = 'ok',
+  recommendation = null,
+  clusterMisalignedSpend = 100,
+  clusterTraffic = 500,
+  clusterCpc = 2.0,
+  representativeKeyword = 'test keyword',
+  serpTitle = 'Test SERP Title',
+  keywords = [],
+  gapAnalysis = {},
+  overallAlignmentScore = 'fair',
+  keywordAnalysis = [],
+} = {}) {
+  return {
+    clusterId,
+    representativeKeyword,
+    serpTitle,
+    keywords,
+    clusterTraffic,
+    clusterCpc,
+    clusterMisalignedSpend,
+    analysisStatus,
+    gapAnalysis,
+    overallAlignmentScore,
+    keywordAnalysis,
+    ...(recommendation && { recommendation }),
+  };
+}
+
+function createClusterMessage({
+  clusterResults = [makeCluster()],
+  portfolioMetrics = { totalSpend: 1000 },
+  langfuseTraceId = 'trace-123',
+  langfuseTraceUrl = 'https://langfuse.example.com/trace/123',
+  observability,
+} = {}) {
+  const resolvedObservability = observability !== undefined
+    ? observability
+    : { langfuseTraceId, langfuseTraceUrl };
+
   return {
     auditId: 'auditId',
     siteId: 'site',
     data: {
       url: TEST_URL,
       guidance: [{
-        insight: 'test insight',
-        rationale: 'test rationale',
-        recommendation: 'test recommendation',
-        type: 'guidance',
-        ...guidanceOverrides,
         body: {
-          issueSeverity: 'medium',
-          url: TEST_URL,
-          suggestions: [
-            { id: 'original', name: 'Original', screenshotUrl: 'https://example.com/original.png' },
-            { id: 'variation-0', name: 'Variation 0', screenshotUrl: 'https://example.com/var0.png' },
-          ],
-          cpc: 0.075,
-          sumTraffic: 23423.5,
-          ...bodyOverrides,
+          clusterResults,
+          portfolioMetrics,
+          ...(resolvedObservability != null && { observability: resolvedObservability }),
         },
       }],
-      suggestions: [],
     },
   };
 }
 
-// Counter for unique suggestion IDs
-let suggestionCounter = 0;
-
-// Helper to create suggestion mocks with variations
-function makeSuggestionWithVariations(variations) {
-  suggestionCounter += 1;
-  return [{
-    getId: () => `suggestion-${suggestionCounter}`,
-    getData: () => ({ variations }),
-  }];
-}
-
 // Helper to create a fresh stubbed opportunity instance
 function makeOppty({
-  id, type, status = 'NEW', updatedBy = 'system', url = null,
-  sumTraffic = 0, suggestions = [], updatedAt = null,
+  id, type = 'ad-intent-mismatch', status = 'NEW', url = null,
 }) {
   return {
     getId: () => id,
-    getSuggestions: async () => suggestions,
-    setAuditId: sinon.stub(),
-    setData: sinon.stub(),
-    setGuidance: sinon.stub(),
-    setTitle: sinon.stub(),
-    setDescription: sinon.stub(),
     setStatus: sinon.stub(),
     save: sinon.stub().resolvesThis(),
     getType: () => type,
-    getData: () => ({ url, sumTraffic }),
+    getData: () => ({ url }),
     getStatus: () => status,
-    getUpdatedBy: () => updatedBy,
-    getUpdatedAt: () => updatedAt || new Date().toISOString(),
   };
 }
 
-describe('Paid Keyword Optimizer Guidance Handler', () => {
+describe('Paid Keyword Optimizer Guidance Handler (cluster format)', () => {
   let sandbox;
   let logStub;
   let context;
@@ -104,7 +105,6 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
-    suggestionCounter = 0;
     logStub = {
       info: sandbox.stub(),
       debug: sandbox.stub(),
@@ -113,31 +113,17 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     };
     Suggestion = {
       create: sandbox.stub().resolves(),
-      removeByIds: sandbox.stub().resolves(),
-      STATUSES: SuggestionDataAccess.STATUSES,
-      TYPES: SuggestionDataAccess.TYPES,
     };
     opportunityInstance = {
       getId: () => 'opptyId',
-      getSuggestions: async () => [],
-      setAuditId: sinon.stub(),
-      setData: sinon.stub(),
-      setGuidance: sinon.stub(),
-      setTitle: sinon.stub(),
-      setStatus: sinon.stub(),
-      setDescription: sinon.stub(),
-      save: sinon.stub().resolvesThis(),
       getType: () => 'ad-intent-mismatch',
       getData: () => ({ url: TEST_URL }),
       getStatus: () => 'NEW',
-      getUpdatedBy: () => 'system',
-      getUpdatedAt: () => new Date().toISOString(),
     };
     Opportunity = {
       allBySiteIdAndStatus: sandbox.stub().resolves([]),
       create: sandbox.stub(),
       saveMany: sandbox.stub().resolves(),
-      removeByIds: sandbox.stub().resolves(),
     };
     Audit = { findById: sandbox.stub() };
 
@@ -153,11 +139,6 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
       getAuditResult: () => ({
         totalPageViews: 10000,
         averageBounceRate: 0.45,
-        predominantlyPaidPages: [
-          { url: TEST_URL, bounceRate: 0.5, pageViews: 5000, trafficLoss: 2500 },
-        ],
-        predominantlyPaidCount: 1,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
       }),
     });
   });
@@ -167,196 +148,45 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     nock.cleanAll();
   });
 
-  describe('inferRecommendationType', () => {
-    it('should return audit_required when suggestions have suggestionText', () => {
-      const suggestions = [{ suggestionText: 'some text' }];
-      expect(inferRecommendationType(suggestions)).to.equal('audit_required');
-    });
+  describe('failure envelope', () => {
+    it('should return ok and log when receiving a failure envelope', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: {
+          status: 'failed',
+          url: TEST_URL,
+          error: {
+            type: 'GuidanceGenerationError',
+            message: 'Analysis failed.',
+            langfuseTraceId: 'test-trace-123',
+          },
+        },
+      };
 
-    it('should return modify_heading when suggestions have variationChanges', () => {
-      const suggestions = [{ variationChanges: [{ tag: 'h1', newValue: 'New' }] }];
-      expect(inferRecommendationType(suggestions)).to.equal('modify_heading');
-    });
+      const result = await handler(message, context);
 
-    it('should return unknown when neither field is present', () => {
-      const suggestions = [{ id: 'some-id' }];
-      expect(inferRecommendationType(suggestions)).to.equal('unknown');
-    });
-
-    it('should return unknown for empty array', () => {
-      expect(inferRecommendationType([])).to.equal('unknown');
-    });
-
-    it('should return unknown for null/undefined input', () => {
-      expect(inferRecommendationType(null)).to.equal('unknown');
-      expect(inferRecommendationType(undefined)).to.equal('unknown');
-    });
-
-    it('should prefer audit_required over modify_heading when both are present', () => {
-      const suggestions = [
-        { suggestionText: 'text', variationChanges: [{ tag: 'h1' }] },
-      ];
-      expect(inferRecommendationType(suggestions)).to.equal('audit_required');
-    });
-  });
-
-  describe('MAX_OPPORTUNITIES_PER_TYPE', () => {
-    it('should be 4', () => {
-      expect(MAX_OPPORTUNITIES_PER_TYPE).to.equal(4);
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).not.to.have.been.called;
+      expect(Suggestion.create).not.to.have.been.called;
+      expect(Audit.findById).not.to.have.been.called;
+      expect(logStub.info).to.have.been.calledWith(
+        sinon.match({
+          trace_id: 'test-trace-123',
+          audit_id: 'auditId',
+          site_id: 'site',
+          url: TEST_URL,
+          error_type: 'GuidanceGenerationError',
+        }),
+        '[ad-intent-mismatch] URL-level failure from Mystique',
+      );
     });
   });
 
-  describe('reconcileOpportunities', () => {
-    it('should not remove anything when audit_required count <= MAX', async () => {
-      const opptys = [];
-      for (let i = 0; i < 3; i += 1) {
-        opptys.push(makeOppty({
-          id: `o${i}`,
-          type: 'ad-intent-mismatch',
-          suggestions: makeSuggestionWithVariations([{ suggestionText: 'text' }]),
-          updatedAt: new Date(2025, 0, i + 1).toISOString(),
-        }));
-      }
-
-      await reconcileOpportunities(opptys, context.dataAccess, logStub, 'site');
-
-      expect(Opportunity.removeByIds).to.not.have.been.called;
-      expect(Suggestion.removeByIds).to.not.have.been.called;
-    });
-
-    it('should remove oldest excess audit_required opportunities and their suggestions', async () => {
-      const opptys = [];
-      for (let i = 0; i < 6; i += 1) {
-        opptys.push(makeOppty({
-          id: `o${i}`,
-          type: 'ad-intent-mismatch',
-          suggestions: makeSuggestionWithVariations([{ suggestionText: 'text' }]),
-          updatedAt: new Date(2025, 0, i + 1).toISOString(), // o0=oldest, o5=newest
-        }));
-      }
-
-      await reconcileOpportunities(opptys, context.dataAccess, logStub, 'site');
-
-      // Should remove o0 and o1 (oldest 2 excess beyond MAX of 4)
-      expect(Opportunity.removeByIds).to.have.been.calledOnce;
-      const removedIds = Opportunity.removeByIds.getCall(0).args[0];
-      expect(removedIds).to.have.lengthOf(2);
-      expect(removedIds).to.include('o0');
-      expect(removedIds).to.include('o1');
-
-      // Should also remove their suggestions
-      expect(Suggestion.removeByIds).to.have.been.calledOnce;
-      expect(Suggestion.removeByIds.getCall(0).args[0]).to.have.lengthOf(2);
-    });
-
-    it('should never remove modify_heading opportunities even if total count > MAX', async () => {
-      const opptys = [];
-      // 6 modify_heading opportunities (all have variationChanges)
-      for (let i = 0; i < 6; i += 1) {
-        opptys.push(makeOppty({
-          id: `mh${i}`,
-          type: 'ad-intent-mismatch',
-          suggestions: makeSuggestionWithVariations([{ variationChanges: [{ tag: 'h1' }] }]),
-          updatedAt: new Date(2025, 0, i + 1).toISOString(),
-        }));
-      }
-
-      await reconcileOpportunities(opptys, context.dataAccess, logStub, 'site');
-
-      // Nothing removed — modify_heading are protected
-      expect(Opportunity.removeByIds).to.not.have.been.called;
-      expect(Suggestion.removeByIds).to.not.have.been.called;
-    });
-
-    it('should only cap audit_required while keeping all modify_heading', async () => {
-      const opptys = [];
-
-      // 3 modify_heading (protected)
-      for (let i = 0; i < 3; i += 1) {
-        opptys.push(makeOppty({
-          id: `mh${i}`,
-          type: 'ad-intent-mismatch',
-          suggestions: makeSuggestionWithVariations([{ variationChanges: [{ tag: 'h1' }] }]),
-          updatedAt: new Date(2025, 0, i + 1).toISOString(),
-        }));
-      }
-
-      // 5 audit_required (should be capped at 4)
-      for (let i = 0; i < 5; i += 1) {
-        opptys.push(makeOppty({
-          id: `ar${i}`,
-          type: 'ad-intent-mismatch',
-          suggestions: makeSuggestionWithVariations([{ suggestionText: 'review' }]),
-          updatedAt: new Date(2025, 1, i + 1).toISOString(), // ar0=oldest, ar4=newest
-        }));
-      }
-
-      await reconcileOpportunities(opptys, context.dataAccess, logStub, 'site');
-
-      // Only ar0 (oldest excess) should be removed
-      expect(Opportunity.removeByIds).to.have.been.calledOnce;
-      const removedIds = Opportunity.removeByIds.getCall(0).args[0];
-      expect(removedIds).to.have.lengthOf(1);
-      expect(removedIds).to.include('ar0');
-
-      // None of the modify_heading should be touched
-      expect(removedIds).to.not.include('mh0');
-      expect(removedIds).to.not.include('mh1');
-      expect(removedIds).to.not.include('mh2');
-    });
-
-    it('should handle empty activeOpportunities', async () => {
-      await reconcileOpportunities([], context.dataAccess, logStub, 'site');
-
-      expect(Opportunity.removeByIds).to.not.have.been.called;
-      expect(Suggestion.removeByIds).to.not.have.been.called;
-    });
-
-    it('should handle opportunities with no suggestions (unknown type)', async () => {
-      const opptys = [];
-      for (let i = 0; i < 6; i += 1) {
-        opptys.push(makeOppty({
-          id: `u${i}`,
-          type: 'ad-intent-mismatch',
-          suggestions: [{ getId: () => `s-u${i}`, getData: () => ({}) }],
-          updatedAt: new Date(2025, 0, i + 1).toISOString(),
-        }));
-      }
-
-      await reconcileOpportunities(opptys, context.dataAccess, logStub, 'site');
-
-      // unknown type is not audit_required, so nothing is capped
-      expect(Opportunity.removeByIds).to.not.have.been.called;
-    });
-
-    it('should not call Suggestion.removeByIds when excess have no suggestions', async () => {
-      const opptys = [];
-      for (let i = 0; i < 5; i += 1) {
-        opptys.push(makeOppty({
-          id: `o${i}`,
-          type: 'ad-intent-mismatch',
-          // getSuggestions returns items with suggestionText but no getId for the removal
-          suggestions: [{
-            getId: () => `s${i}`,
-            getData: () => ({ variations: [{ suggestionText: 'text' }] }),
-          }],
-          updatedAt: new Date(2025, 0, i + 1).toISOString(),
-        }));
-      }
-
-      await reconcileOpportunities(opptys, context.dataAccess, logStub, 'site');
-
-      // Should remove o0 (oldest excess)
-      expect(Opportunity.removeByIds).to.have.been.calledOnce;
-      expect(Suggestion.removeByIds).to.have.been.calledOnce;
-      expect(Suggestion.removeByIds.getCall(0).args[0]).to.deep.equal(['s0']);
-    });
-  });
-
-  describe('handler', () => {
+  describe('audit lookup', () => {
     it('should return notFound if no audit is found', async () => {
       Audit.findById.resolves(null);
-      const message = createMessage();
+      const message = createClusterMessage();
 
       const result = await handler(message, context);
 
@@ -369,127 +199,53 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
         getAuditType: () => 'paid-keyword-optimizer',
         getAuditResult: () => null,
       });
-      const message = createMessage();
+      const message = createClusterMessage();
 
       const result = await handler(message, context);
 
       expect(Opportunity.create).not.to.have.been.called;
-      expect(Suggestion.create).not.to.have.been.called;
       expect(result.status).to.equal(ok().status);
     });
+  });
 
-    it('should create a new opportunity and suggestion', async () => {
-      Opportunity.create.resolves(opportunityInstance);
-      const message = createMessage();
+  describe('missing data guard', () => {
+    it('should return ok when message has no data', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+      };
 
       const result = await handler(message, context);
 
-      expect(Opportunity.create).to.have.been.called;
-      expect(Suggestion.create).to.have.been.called;
       expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).not.to.have.been.called;
+      expect(logStub.warn).to.have.been.calledWithMatch(/no data/);
     });
 
-    it('should mark existing opportunities for the same URL as IGNORED', async () => {
-      const existingOpptyForSameUrl = makeOppty({
-        id: 'opptyId-1',
-        type: 'ad-intent-mismatch',
-        status: 'NEW',
-        updatedBy: 'system',
-        url: TEST_URL,
-      });
-
-      Opportunity.allBySiteIdAndStatus.resolves([existingOpptyForSameUrl]);
-      Opportunity.create.resolves(opportunityInstance);
-      const message = createMessage();
+    it('should return ok when data is null', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: null,
+      };
 
       const result = await handler(message, context);
 
-      expect(Opportunity.create).to.have.been.called;
-      expect(Suggestion.create).to.have.been.called;
-      expect(existingOpptyForSameUrl.setStatus).to.have.been.calledWith('IGNORED');
-      expect(Opportunity.saveMany).to.have.been.calledWith([existingOpptyForSameUrl]);
       expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).not.to.have.been.called;
     });
+  });
 
-    it('should NOT mark existing opportunities for different URLs as IGNORED', async () => {
-      const existingOpptyForDifferentUrl = makeOppty({
-        id: 'opptyId-1',
-        type: 'ad-intent-mismatch',
-        status: 'NEW',
-        updatedBy: 'system',
-        url: 'https://example-page/different-page',
-      });
-
-      Opportunity.allBySiteIdAndStatus.resolves([existingOpptyForDifferentUrl]);
-      Opportunity.create.resolves(opportunityInstance);
-      const message = createMessage();
-
-      const result = await handler(message, context);
-
-      expect(existingOpptyForDifferentUrl.setStatus).to.not.have.been.called;
-      expect(result.status).to.equal(ok().status);
-    });
-
-    it('should only mark same-URL system opportunities as IGNORED, not user-modified ones', async () => {
-      const systemOpptyForSameUrl = makeOppty({
-        id: 'opptyId-system',
-        type: 'ad-intent-mismatch',
-        status: 'NEW',
-        updatedBy: 'system',
-        url: TEST_URL,
-      });
-      const userOpptyForSameUrl = makeOppty({
-        id: 'opptyId-user',
-        type: 'ad-intent-mismatch',
-        status: 'NEW',
-        updatedBy: 'user',
-        url: TEST_URL,
-      });
-
-      Opportunity.allBySiteIdAndStatus.resolves([systemOpptyForSameUrl, userOpptyForSameUrl]);
-      Opportunity.create.resolves(opportunityInstance);
-      const message = createMessage();
-
-      const result = await handler(message, context);
-
-      expect(systemOpptyForSameUrl.setStatus).to.have.been.calledWith('IGNORED');
-      expect(Opportunity.saveMany).to.have.been.calledWith([systemOpptyForSameUrl]);
-      expect(userOpptyForSameUrl.setStatus).to.not.have.been.called;
-      expect(result.status).to.equal(ok().status);
-    });
-
-    it('should not mark opportunities of different types as IGNORED', async () => {
-      const wrongTypeOppty = makeOppty({
-        id: 'opptyId-3',
-        type: 'other-type',
-        status: 'NEW',
-        updatedBy: 'system',
-        url: TEST_URL,
-      });
-
-      Opportunity.allBySiteIdAndStatus.resolves([wrongTypeOppty]);
-      Opportunity.create.resolves(opportunityInstance);
-      const message = createMessage();
-
-      const result = await handler(message, context);
-
-      expect(wrongTypeOppty.setStatus).to.not.have.been.called;
-      expect(result.status).to.equal(ok().status);
-    });
-
-    it('should create opportunity for low severity (low now qualifies)', async () => {
-      Opportunity.create.resolves(opportunityInstance);
-      const message = createMessage({ bodyOverrides: { issueSeverity: 'low' } });
-
-      const result = await handler(message, context);
-
-      expect(Opportunity.create).to.have.been.called;
-      expect(Suggestion.create).to.have.been.called;
-      expect(result.status).to.equal(ok().status);
-    });
-
-    it('should skip opportunity creation for none severity', async () => {
-      const message = createMessage({ bodyOverrides: { issueSeverity: 'none' } });
+  describe('clusterResults gate', () => {
+    it('should skip when guidance body is null', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: {
+          url: TEST_URL,
+          guidance: [{ body: null }],
+        },
+      };
 
       const result = await handler(message, context);
 
@@ -497,32 +253,111 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
       expect(result.status).to.equal(ok().status);
     });
 
-    it('should create opportunity if severity is medium', async () => {
-      Opportunity.create.resolves(opportunityInstance);
-      const message = createMessage({ bodyOverrides: { issueSeverity: 'Medium' } });
+    it('should skip when clusterResults is absent from body', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: {
+          url: TEST_URL,
+          guidance: [{ body: { portfolioMetrics: {} } }],
+        },
+      };
 
       const result = await handler(message, context);
 
-      expect(Opportunity.create).to.have.been.called;
-      expect(Suggestion.create).to.have.been.called;
+      expect(Opportunity.create).not.to.have.been.called;
       expect(result.status).to.equal(ok().status);
     });
 
-    it('should create opportunity if severity is high', async () => {
-      Opportunity.create.resolves(opportunityInstance);
-      const message = createMessage({ bodyOverrides: { issueSeverity: 'high' } });
+    it('should skip when clusterResults is an empty array', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: {
+          url: TEST_URL,
+          guidance: [{ body: { clusterResults: [], portfolioMetrics: {} } }],
+        },
+      };
 
       const result = await handler(message, context);
 
-      expect(Opportunity.create).to.have.been.called;
-      expect(Suggestion.create).to.have.been.called;
+      expect(Opportunity.create).not.to.have.been.called;
       expect(result.status).to.equal(ok().status);
+    });
+
+    it('should skip when guidance array is empty', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: {
+          url: TEST_URL,
+          guidance: [],
+        },
+      };
+
+      const result = await handler(message, context);
+
+      expect(Opportunity.create).not.to.have.been.called;
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should skip when guidance is undefined', async () => {
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: {
+          url: TEST_URL,
+        },
+      };
+
+      const result = await handler(message, context);
+
+      expect(Opportunity.create).not.to.have.been.called;
+      expect(result.status).to.equal(ok().status);
+    });
+  });
+
+  describe('opportunity and suggestion creation', () => {
+    it('should create 1 opportunity and 1 suggestion per cluster', async () => {
+      const clusters = [
+        makeCluster({ clusterId: 'c1', recommendation: { type: 'modify_heading', changes: [] } }),
+        makeCluster({ clusterId: 'c2' }),
+      ];
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage({ clusterResults: clusters });
+
+      const result = await handler(message, context);
+
+      expect(Opportunity.create).to.have.been.calledOnce;
+      expect(Suggestion.create).to.have.been.calledTwice;
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should create suggestions with composite ranks', async () => {
+      const clusters = [
+        makeCluster({ clusterId: 'aligned', clusterTraffic: 200 }),
+        makeCluster({
+          clusterId: 'mismatched',
+          recommendation: { type: 'modify_heading', changes: [] },
+          clusterMisalignedSpend: 500,
+        }),
+      ];
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage({ clusterResults: clusters });
+
+      await handler(message, context);
+
+      // mismatched cluster should be rank 1 (tier 0), aligned should be rank 2 (tier 1)
+      const call0 = Suggestion.create.getCall(0).args[0];
+      const call1 = Suggestion.create.getCall(1).args[0];
+      expect(call0.rank).to.equal(1);
+      expect(call1.rank).to.equal(2);
     });
 
     it('should set suggestion status to PENDING_VALIDATION when site requires validation', async () => {
       Opportunity.create.resolves(opportunityInstance);
       context.site = { requiresValidation: true };
-      const message = createMessage();
+      const message = createClusterMessage();
 
       await handler(message, context);
 
@@ -532,202 +367,236 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     it('should set suggestion status to NEW when site does not require validation', async () => {
       Opportunity.create.resolves(opportunityInstance);
       context.site = { requiresValidation: false };
-      const message = createMessage();
+      const message = createClusterMessage();
 
       await handler(message, context);
 
       expect(Suggestion.create).to.have.been.calledWith(sinon.match.has('status', 'NEW'));
     });
+  });
 
-    it('should not mark the newly created opportunity as IGNORED', async () => {
-      const existingOppty = makeOppty({
-        id: 'existing-oppty-id',
-        type: 'ad-intent-mismatch',
-        status: 'NEW',
-        updatedBy: 'system',
+  describe('observability logging', () => {
+    it('should log observability data when present', async () => {
+      Opportunity.create.resolves(opportunityInstance);
+      const observability = { duration_ms: 1200, model: 'gpt-4' };
+      const message = createClusterMessage({ observability });
+
+      await handler(message, context);
+
+      expect(logStub.info).to.have.been.calledWith(
+        sinon.match({
+          duration_ms: 1200,
+          model: 'gpt-4',
+          site_id: 'site',
+          url: TEST_URL,
+          audit_id: 'auditId',
+        }),
+        '[ad-intent-mismatch] Mystique observability data',
+      );
+    });
+
+    it('should not log observability data when absent', async () => {
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage({ observability: null });
+
+      await handler(message, context);
+
+      const observabilityCalls = logStub.info.getCalls().filter(
+        (c) => typeof c.args[1] === 'string' && c.args[1].includes('observability'),
+      );
+      expect(observabilityCalls).to.have.lengthOf(0);
+    });
+  });
+
+  describe('replace-on-re-audit', () => {
+    it('should mark existing NEW opportunity for same URL as IGNORED', async () => {
+      const existingNew = makeOppty({ id: 'old-new', url: TEST_URL });
+      Opportunity.allBySiteIdAndStatus
+        .withArgs('site', 'NEW').resolves([existingNew])
+        .withArgs('site', 'IN_PROGRESS').resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage();
+
+      const result = await handler(message, context);
+
+      expect(existingNew.setStatus).to.have.been.calledWith('IGNORED');
+      expect(Opportunity.saveMany).to.have.been.calledWith([existingNew]);
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should mark existing IN_PROGRESS opportunity for same URL as IGNORED', async () => {
+      const existingInProgress = makeOppty({ id: 'old-ip', status: 'IN_PROGRESS', url: TEST_URL });
+      Opportunity.allBySiteIdAndStatus
+        .withArgs('site', 'NEW').resolves([])
+        .withArgs('site', 'IN_PROGRESS').resolves([existingInProgress]);
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage();
+
+      const result = await handler(message, context);
+
+      expect(existingInProgress.setStatus).to.have.been.calledWith('IGNORED');
+      expect(Opportunity.saveMany).to.have.been.calledWith([existingInProgress]);
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should NOT mark RESOLVED opportunities as IGNORED (different status query)', async () => {
+      // RESOLVED opportunities are not returned by allBySiteIdAndStatus for NEW/IN_PROGRESS
+      Opportunity.allBySiteIdAndStatus
+        .withArgs('site', 'NEW').resolves([])
+        .withArgs('site', 'IN_PROGRESS').resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage();
+
+      const result = await handler(message, context);
+
+      expect(Opportunity.saveMany).not.to.have.been.called;
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should NOT mark opportunities for different URLs as IGNORED', async () => {
+      const differentUrl = makeOppty({ id: 'diff-url', url: 'https://example.com/other' });
+      Opportunity.allBySiteIdAndStatus
+        .withArgs('site', 'NEW').resolves([differentUrl])
+        .withArgs('site', 'IN_PROGRESS').resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage();
+
+      const result = await handler(message, context);
+
+      expect(differentUrl.setStatus).not.to.have.been.called;
+      expect(Opportunity.saveMany).not.to.have.been.called;
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should NOT mark any opportunities as IGNORED when url is undefined', async () => {
+      const existingNoUrl = makeOppty({ id: 'no-url', url: undefined });
+      const existingWithUrl = makeOppty({ id: 'with-url', url: TEST_URL });
+      Opportunity.allBySiteIdAndStatus
+        .withArgs('site', 'NEW').resolves([existingNoUrl, existingWithUrl])
+        .withArgs('site', 'IN_PROGRESS').resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+
+      // Message with missing url
+      const message = {
+        auditId: 'auditId',
+        siteId: 'site',
+        data: {
+          guidance: [{
+            body: {
+              clusterResults: [makeCluster()],
+              portfolioMetrics: { totalSpend: 1000 },
+              observability: { langfuseTraceId: 'trace-123', langfuseTraceUrl: 'https://example.com' },
+            },
+          }],
+        },
+      };
+
+      const result = await handler(message, context);
+
+      expect(existingNoUrl.setStatus).not.to.have.been.called;
+      expect(existingWithUrl.setStatus).not.to.have.been.called;
+      expect(Opportunity.saveMany).not.to.have.been.called;
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should NOT mark opportunities of different types as IGNORED', async () => {
+      const wrongType = makeOppty({ id: 'wrong-type', type: 'other-type', url: TEST_URL });
+      Opportunity.allBySiteIdAndStatus
+        .withArgs('site', 'NEW').resolves([wrongType])
+        .withArgs('site', 'IN_PROGRESS').resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage();
+
+      const result = await handler(message, context);
+
+      expect(wrongType.setStatus).not.to.have.been.called;
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should handle old-format opportunity in DB without crashing', async () => {
+      // Old format: data has gapAnalysis at top level, no portfolioMetrics
+      const oldFormatOppty = makeOppty({ id: 'old-format', url: TEST_URL });
+      // Override getData to return old-format shape
+      oldFormatOppty.getData = () => ({
         url: TEST_URL,
+        gapAnalysis: { severity: 'high' },
+        cpc: 4.50,
+        sumTraffic: 150,
+      });
+      Opportunity.allBySiteIdAndStatus
+        .withArgs('site', 'NEW').resolves([oldFormatOppty])
+        .withArgs('site', 'IN_PROGRESS').resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage();
+
+      const result = await handler(message, context);
+
+      // Old opportunity marked IGNORED, new opportunity created, no errors
+      expect(oldFormatOppty.setStatus).to.have.been.calledWith('IGNORED');
+      expect(Opportunity.saveMany).to.have.been.calledWith([oldFormatOppty]);
+      expect(Opportunity.create).to.have.been.calledOnce;
+      expect(result.status).to.equal(ok().status);
+    });
+
+    it('should mark multiple existing opportunities as IGNORED in one saveMany call', async () => {
+      const old1 = makeOppty({ id: 'old1', url: TEST_URL });
+      const old2 = makeOppty({ id: 'old2', status: 'IN_PROGRESS', url: TEST_URL });
+      Opportunity.allBySiteIdAndStatus
+        .withArgs('site', 'NEW').resolves([old1])
+        .withArgs('site', 'IN_PROGRESS').resolves([old2]);
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage();
+
+      await handler(message, context);
+
+      expect(old1.setStatus).to.have.been.calledWith('IGNORED');
+      expect(old2.setStatus).to.have.been.calledWith('IGNORED');
+      expect(Opportunity.saveMany).to.have.been.calledOnce;
+      expect(Opportunity.saveMany).to.have.been.calledWith([old1, old2]);
+    });
+  });
+
+  describe('langfuseTraceId and hasConflictingHeadlineRecommendations', () => {
+    it('should pass langfuseTraceId to opportunity data', async () => {
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage({
+        langfuseTraceId: 'trace-abc',
+        langfuseTraceUrl: 'https://langfuse.example.com/trace/abc',
       });
 
-      Opportunity.allBySiteIdAndStatus.resolves([existingOppty]);
+      await handler(message, context);
+
+      const createCall = Opportunity.create.getCall(0).args[0];
+      expect(createCall.data.langfuseTraceId).to.equal('trace-abc');
+      expect(createCall.data.langfuseTraceUrl).to.equal('https://langfuse.example.com/trace/abc');
+    });
+
+    it('should compute hasConflictingHeadlineRecommendations=true when multiple modify_heading clusters', async () => {
       Opportunity.create.resolves(opportunityInstance);
-      const message = createMessage();
-
-      const result = await handler(message, context);
-
-      expect(existingOppty.setStatus).to.have.been.calledWith('IGNORED');
-      expect(Opportunity.saveMany).to.have.been.calledWith([existingOppty]);
-      expect(result.status).to.equal(ok().status);
-    });
-
-    it('should skip opportunity creation when guidance is empty', async () => {
-      const message = {
-        auditId: 'auditId',
-        siteId: 'site',
-        data: {
-          url: TEST_URL,
-          guidance: [],
-          suggestions: [],
-        },
-      };
-
-      const result = await handler(message, context);
-
-      expect(Opportunity.create).not.to.have.been.called;
-      expect(Suggestion.create).not.to.have.been.called;
-      expect(result.status).to.equal(ok().status);
-    });
-
-    it('should skip opportunity creation when guidance is missing', async () => {
-      const message = {
-        auditId: 'auditId',
-        siteId: 'site',
-        data: {
-          url: TEST_URL,
-          suggestions: [],
-        },
-      };
-
-      const result = await handler(message, context);
-
-      expect(Opportunity.create).not.to.have.been.called;
-      expect(Suggestion.create).not.to.have.been.called;
-      expect(result.status).to.equal(ok().status);
-    });
-
-    it('should store suggestions as variations in the suggestion data', async () => {
-      Opportunity.create.resolves(opportunityInstance);
-      const suggestions = [
-        { id: 'original', name: 'Original', screenshotUrl: 'https://example.com/original.png' },
-        { id: 'variation-0', name: 'Variation 0', screenshotUrl: 'https://example.com/var0.png' },
+      const clusters = [
+        makeCluster({ clusterId: 'c1', recommendation: { type: 'modify_heading', changes: [] } }),
+        makeCluster({ clusterId: 'c2', recommendation: { type: 'modify_heading', changes: [] } }),
       ];
-      const message = createMessage({ bodyOverrides: { suggestions } });
+      const message = createClusterMessage({ clusterResults: clusters });
 
       await handler(message, context);
 
-      const suggestionCreateCall = Suggestion.create.getCall(0);
-      expect(suggestionCreateCall.args[0].data.variations).to.deep.equal(suggestions);
+      const createCall = Opportunity.create.getCall(0).args[0];
+      expect(createCall.data.hasConflictingHeadlineRecommendations).to.be.true;
     });
 
-    it('should pass the full message to the opportunity mapper', async () => {
+    it('should compute hasConflictingHeadlineRecommendations=false when one or zero modify_heading clusters', async () => {
       Opportunity.create.resolves(opportunityInstance);
-      const message = createMessage();
+      const clusters = [
+        makeCluster({ clusterId: 'c1', recommendation: { type: 'modify_heading', changes: [] } }),
+        makeCluster({ clusterId: 'c2' }),
+      ];
+      const message = createClusterMessage({ clusterResults: clusters });
 
       await handler(message, context);
 
-      const opportunityCreateCall = Opportunity.create.getCall(0);
-      const createdOpportunity = opportunityCreateCall.args[0];
-
-      expect(createdOpportunity.data).to.have.property('url', TEST_URL);
-      expect(createdOpportunity.data).to.have.property('cpc', 0.075);
-      expect(createdOpportunity.data).to.have.property('sumTraffic', 23423.5);
-    });
-
-    it('should include insight, rationale, and recommendation in opportunity guidance', async () => {
-      Opportunity.create.resolves(opportunityInstance);
-      const message = createMessage({
-        guidanceOverrides: {
-          insight: 'custom insight',
-          rationale: 'custom rationale',
-          recommendation: 'custom recommendation',
-        },
-      });
-
-      await handler(message, context);
-
-      const opportunityCreateCall = Opportunity.create.getCall(0);
-      const createdOpportunity = opportunityCreateCall.args[0];
-
-      expect(createdOpportunity.guidance.recommendations[0]).to.deep.include({
-        insight: 'custom insight',
-        rationale: 'custom rationale',
-        recommendation: 'custom recommendation',
-        type: 'guidance',
-      });
-    });
-
-    describe('reconciliation in handler flow', () => {
-      it('should run reconciliation after creating opportunity', async () => {
-        // 5 audit_required opportunities (including the newly created one)
-        const opptys = [];
-        for (let i = 0; i < 5; i += 1) {
-          opptys.push(makeOppty({
-            id: `existing-${i}`,
-            type: 'ad-intent-mismatch',
-            url: `https://other${i}.com`,
-            suggestions: makeSuggestionWithVariations([{ suggestionText: 'review' }]),
-            updatedAt: new Date(2025, 0, i + 1).toISOString(),
-          }));
-        }
-
-        Opportunity.allBySiteIdAndStatus.resolves(opptys);
-        Opportunity.create.resolves(opportunityInstance);
-        const message = createMessage();
-
-        const result = await handler(message, context);
-
-        // Should have created then reconciled (removing newest excess)
-        expect(Opportunity.create).to.have.been.called;
-        expect(Opportunity.removeByIds).to.have.been.calledOnce;
-        expect(result.status).to.equal(ok().status);
-      });
-
-      it('should never remove modify_heading opportunities during reconciliation', async () => {
-        // 6 modify_heading opportunities — all protected
-        const opptys = [];
-        for (let i = 0; i < 6; i += 1) {
-          opptys.push(makeOppty({
-            id: `mh${i}`,
-            type: 'ad-intent-mismatch',
-            url: `https://page${i}.com`,
-            suggestions: makeSuggestionWithVariations([{ variationChanges: [{ tag: 'h1' }] }]),
-            updatedAt: new Date(2025, 0, i + 1).toISOString(),
-          }));
-        }
-
-        Opportunity.allBySiteIdAndStatus.resolves(opptys);
-        Opportunity.create.resolves(opportunityInstance);
-        const message = createMessage();
-
-        const result = await handler(message, context);
-
-        // modify_heading are never removed
-        expect(Opportunity.removeByIds).to.not.have.been.called;
-        expect(result.status).to.equal(ok().status);
-      });
-
-      it('should exclude IGNORED opportunities from reconciliation', async () => {
-        // 2 opportunities for same URL (one will be IGNORED) + 3 others = 5 total
-        const sameUrlOppty = makeOppty({
-          id: 'same-url-old',
-          type: 'ad-intent-mismatch',
-          url: TEST_URL,
-          suggestions: makeSuggestionWithVariations([{ suggestionText: 'old' }]),
-          updatedAt: new Date(2025, 0, 1).toISOString(),
-        });
-
-        const others = [];
-        for (let i = 0; i < 3; i += 1) {
-          others.push(makeOppty({
-            id: `other-${i}`,
-            type: 'ad-intent-mismatch',
-            url: `https://other${i}.com`,
-            suggestions: makeSuggestionWithVariations([{ suggestionText: 'text' }]),
-            updatedAt: new Date(2025, 0, i + 2).toISOString(),
-          }));
-        }
-
-        Opportunity.allBySiteIdAndStatus.resolves([sameUrlOppty, ...others]);
-        Opportunity.create.resolves(opportunityInstance);
-        const message = createMessage();
-
-        const result = await handler(message, context);
-
-        // sameUrlOppty should be IGNORED (same URL)
-        expect(sameUrlOppty.setStatus).to.have.been.calledWith('IGNORED');
-        // Reconciliation should only see 3 active (others), which is under cap
-        expect(Opportunity.removeByIds).to.not.have.been.called;
-        expect(result.status).to.equal(ok().status);
-      });
+      const createCall = Opportunity.create.getCall(0).args[0];
+      expect(createCall.data.hasConflictingHeadlineRecommendations).to.be.false;
     });
   });
 });
