@@ -1138,6 +1138,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       save: sandbox.stub().resolves(),
       setData: () => { },
       getData: () => { },
+      setTags: sinon.stub(),
       setUpdatedBy: sandbox.stub().returnsThis(),
     };
 
@@ -1518,6 +1519,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       save: sandbox.spy(sandbox.stub().resolves()),
       getType: () => 'broken-internal-links',
       getSuggestions: sandbox.stub().resolves(mockSuggestions),
+      setTags: sinon.stub(),
       setUpdatedBy: sandbox.stub().returnsThis(),
     };
 
@@ -1633,6 +1635,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       getData: () => suggestion.data,
       setData: sinon.stub(),
       getStatus: sinon.stub().returns('NEW'),
+      setTags: sinon.stub(),
       setUpdatedBy: sinon.stub().returnsThis(),
     }));
     opportunity.getSuggestions.resolves(existingSuggestions);

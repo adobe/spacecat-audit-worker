@@ -568,6 +568,7 @@ describe('Product MetaTags', () => {
         finalUrl: 'http://example.com',
         audit,
         opportunity: {
+          setTags: sinon.stub(),
           setUpdatedBy: sinon.stub(),
         },
       };
@@ -1402,6 +1403,7 @@ describe('Product MetaTags', () => {
           getType: () => 'product-metatags',
           setData: () => {},
           getData: () => {},
+          setTags: sinon.stub(),
           setUpdatedBy: sinon.stub().returnsThis(),
         };
         logStub = {
@@ -1552,6 +1554,7 @@ describe('Product MetaTags', () => {
           remove: sinon.stub(),
           setData: sinon.stub(),
           save: sinon.stub(),
+          setTags: sinon.stub(),
           setUpdatedBy: sinon.stub().returnsThis(),
         };
 
@@ -4859,6 +4862,7 @@ describe('Product MetaTags', () => {
         getType: () => 'product-metatags',
         setData: () => {},
         getData: () => {},
+        setTags: sinon.stub(),
         setUpdatedBy: sinon.stub().returnsThis(),
       };
       dataAccessStub = {
@@ -5100,6 +5104,7 @@ describe('Product MetaTags', () => {
             getType: () => 'product-metatags',
             setData: () => {},
             getData: () => {},
+            setTags: sinon.stub(),
             setUpdatedBy: sinon.stub().returnsThis(),
           }),
         },

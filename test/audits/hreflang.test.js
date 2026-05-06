@@ -773,6 +773,7 @@ describe('Hreflang Audit', () => {
         getData: sinon.stub().returns({}),
         setData: sinon.stub(),
         setStatus: sinon.stub(),
+        setTags: sinon.stub(),
         setUpdatedBy: sinon.stub(),
       };
 
@@ -875,6 +876,7 @@ describe('Hreflang Audit', () => {
         }),
         setData: sinon.stub(),
         setStatus: sinon.stub(),
+        setTags: sinon.stub(),
         setUpdatedBy: sinon.stub(),
         setAuditId: sinon.stub(),
       };
@@ -939,6 +941,7 @@ describe('Hreflang Audit', () => {
         getStatus: sinon.stub().returns('NEW'),
         setData: sinon.stub(),
         setAuditId: sinon.stub(),
+        setTags: sinon.stub(),
         setUpdatedBy: sinon.stub(),
         save: sinon.stub().resolves(),
         getSuggestions: sinon.stub().resolves([]),

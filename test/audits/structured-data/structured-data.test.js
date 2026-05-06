@@ -340,6 +340,7 @@ describe('Structured Data Audit', () => {
         getType: () => 'structured-data',
         getData: () => ({ dataSources: ['SEO', 'Site'] }),
         setData: () => {},
+        setTags: sinon.stub(),
         setUpdatedBy: () => {},
         save: () => {},
         getId: () => 'opportunity-id-12345',

@@ -1883,6 +1883,7 @@ describe('Canonical URL Tests', () => {
         }),
         setData: sinon.stub(),
         setStatus: sinon.stub(),
+        setTags: sinon.stub(),
         setUpdatedBy: sinon.stub(),
         setAuditId: sinon.stub(),
       };
@@ -1947,6 +1948,7 @@ describe('Canonical URL Tests', () => {
         getStatus: sinon.stub().returns('NEW'),
         setData: sinon.stub(),
         setAuditId: sinon.stub(),
+        setTags: sinon.stub(),
         setUpdatedBy: sinon.stub(),
         save: sinon.stub().resolves(),
         getSuggestions: sinon.stub().resolves([]),
@@ -3063,6 +3065,7 @@ describe('Canonical URL Tests', () => {
           getStatus: sinon.stub().returns('NEW'),
           setData: sinon.stub(),
           setAuditId: sinon.stub(),
+          setTags: sinon.stub(),
           setUpdatedBy: sinon.stub(),
           save: sinon.stub().resolves(),
           getSuggestions: sinon.stub().resolves([]),

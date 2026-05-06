@@ -379,6 +379,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
         getData: sandbox.stub().returns(opptyData),
         setData: sandbox.stub(),
         save: sandbox.stub().resolves(),
+        setTags: sinon.stub(),
         setUpdatedBy: sandbox.stub().returnsThis(),
         setLastAuditedAt: sandbox.stub(),
         siteId: 'site-id',
@@ -505,6 +506,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
         getData: () => (suggestion.data),
         setData: sinon.stub(),
         getStatus: sinon.stub().returns('NEW'),
+        setTags: sinon.stub(),
         setUpdatedBy: sinon.stub().returnsThis(),
       }));
       oppty.getSuggestions.resolves(existingSuggestions);

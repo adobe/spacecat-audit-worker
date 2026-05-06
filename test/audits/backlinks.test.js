@@ -137,6 +137,7 @@ describe('Backlinks Tests', function () {
       getType: () => 'broken-backlinks',
       setData: () => { },
       getData: () => { },
+      setTags: sinon.stub(),
       setUpdatedBy: sinon.stub().returnsThis(),
       setLastAuditedAt: sinon.stub(),
     };
@@ -995,6 +996,7 @@ describe('Backlinks Tests', function () {
         getType: () => 'broken-backlinks',
         setData: () => {},
         getData: () => {},
+        setTags: sinon.stub(),
         setUpdatedBy: sinon.stub().returnsThis(),
         setLastAuditedAt: sinon.stub(),
       };
@@ -1071,6 +1073,7 @@ describe('Backlinks Tests', function () {
         getType: () => 'broken-backlinks',
         setData: () => {},
         getData: () => {},
+        setTags: sinon.stub(),
         setUpdatedBy: sinon.stub().returnsThis(),
         setLastAuditedAt: sinon.stub(),
       };
@@ -1159,6 +1162,7 @@ describe('Backlinks Tests', function () {
         getType: () => 'broken-backlinks',
         setData: () => {},
         getData: () => {},
+        setTags: sinon.stub(),
         setUpdatedBy: sinon.stub().returnsThis(),
         setLastAuditedAt: sinon.stub(),
       };
