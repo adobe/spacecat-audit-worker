@@ -10,6 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
+import { sleep } from '../support/utils.js';
+
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 500;
+
 function normalizeRuleRows(rows = []) {
   return (rows || []).map((row, index) => ({
     name: row.name,
@@ -32,43 +37,50 @@ export async function fetchAgenticUrlClassificationRules(site, context = {}) {
     return null;
   }
 
-  try {
-    const [categoryResult, pageTypeResult] = await Promise.all([
-      postgrestClient
-        .from('agentic_url_category_rules')
-        .select('name,regex,sort_order')
-        .eq('site_id', siteId)
-        .order('sort_order', { ascending: true })
-        .order('name', { ascending: true }),
-      postgrestClient
-        .from('agentic_url_page_type_rules')
-        .select('name,regex,sort_order')
-        .eq('site_id', siteId)
-        .order('sort_order', { ascending: true })
-        .order('name', { ascending: true }),
-    ]);
+  for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const [categoryResult, pageTypeResult] = await Promise.all([
+        postgrestClient
+          .from('agentic_url_category_rules')
+          .select('name,regex,sort_order')
+          .eq('site_id', siteId)
+          .order('sort_order', { ascending: true })
+          .order('name', { ascending: true }),
+        postgrestClient
+          .from('agentic_url_page_type_rules')
+          .select('name,regex,sort_order')
+          .eq('site_id', siteId)
+          .order('sort_order', { ascending: true })
+          .order('name', { ascending: true }),
+      ]);
 
-    if (categoryResult.error) {
-      throw categoryResult.error;
+      if (categoryResult.error) {
+        throw categoryResult.error;
+      }
+      if (pageTypeResult.error) {
+        throw pageTypeResult.error;
+      }
+
+      const topicPatterns = normalizeRuleRows(categoryResult.data);
+      const pagePatterns = normalizeRuleRows(pageTypeResult.data);
+
+      log.info(`fetchAgenticUrlClassificationRules: loaded ${pagePatterns.length} page patterns, ${topicPatterns.length} topic patterns for site ${siteId}`);
+
+      return {
+        pagePatterns,
+        topicPatterns,
+      };
+    } catch (error) {
+      if (attempt <= MAX_RETRIES) {
+        log.warn(`fetchAgenticUrlClassificationRules: attempt ${attempt} failed for site ${siteId}: ${error.message}, retrying in ${RETRY_DELAY_MS * attempt}ms...`);
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(RETRY_DELAY_MS * attempt);
+      } else {
+        log.error(`fetchAgenticUrlClassificationRules: failed to load rules for site ${siteId} after ${attempt} attempts: ${error.message}`);
+      }
     }
-    if (pageTypeResult.error) {
-      throw pageTypeResult.error;
-    }
-
-    const topicPatterns = normalizeRuleRows(categoryResult.data);
-    const pagePatterns = normalizeRuleRows(pageTypeResult.data);
-
-    log.info(`fetchAgenticUrlClassificationRules: loaded ${pagePatterns.length} page patterns, ${topicPatterns.length} topic patterns for site ${siteId}`);
-
-    return {
-      pagePatterns,
-      topicPatterns,
-    };
-  } catch (error) {
-    log.error(`fetchAgenticUrlClassificationRules: failed to load rules for site ${siteId}: ${error.message}`);
-    return {
-      error: true,
-      source: 'postgres',
-    };
   }
+
+  return { error: true, source: 'postgres' };
 }
