@@ -1,3 +1,37 @@
+# [1.433.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.432.3...v1.433.0) (2026-05-06)
+
+
+### Bug Fixes
+
+* cap cdn-config-handler SQS delays at 900s ([#2484](https://github.com/adobe/spacecat-audit-worker/issues/2484)) ([72e69fe](https://github.com/adobe/spacecat-audit-worker/commit/72e69fe3f7311f3b9b63e7bb2f61a730c87617e8))
+
+
+### Features
+
+* disabled LLMO updater between s3 file and db | LLMO-4587 ([#2485](https://github.com/adobe/spacecat-audit-worker/issues/2485)) ([60383b0](https://github.com/adobe/spacecat-audit-worker/commit/60383b073c91c1952682297d7f104e405d853578))
+* replace Coralogix site detection poller with async job handler … ([#2382](https://github.com/adobe/spacecat-audit-worker/issues/2382)) ([18a6a23](https://github.com/adobe/spacecat-audit-worker/commit/18a6a2312c27352baa7b65ae4ef20a3be08854db))
+
+## [1.432.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.432.2...v1.432.3) (2026-05-06)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.115.1 ([#2482](https://github.com/adobe/spacecat-audit-worker/issues/2482)) ([a21fa8c](https://github.com/adobe/spacecat-audit-worker/commit/a21fa8ccfdd6240b7c04f2388ae0f7c36483c2fe))
+
+## [1.432.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.432.1...v1.432.2) (2026-05-06)
+
+
+### Bug Fixes
+
+* **semantic-value-visibility:** use CODE_CHANGE as suggestion type ([#2481](https://github.com/adobe/spacecat-audit-worker/issues/2481)) ([b99830b](https://github.com/adobe/spacecat-audit-worker/commit/b99830bcda66090d23eac433bb5946cd98714f1b))
+
+## [1.432.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.432.0...v1.432.1) (2026-05-05)
+
+
+### Bug Fixes
+
+* fix CWV audit to only flag and explain metrics that are actually failing ([#2418](https://github.com/adobe/spacecat-audit-worker/issues/2418)) ([38e3afa](https://github.com/adobe/spacecat-audit-worker/commit/38e3afae2e7baeda248fc4554c18630dc15028c1))
+
 # [1.432.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.431.3...v1.432.0) (2026-05-05)
 
 

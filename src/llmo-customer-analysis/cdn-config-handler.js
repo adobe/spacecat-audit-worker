@@ -16,8 +16,12 @@ import {
 import { getImsOrgId } from '../utils/data-access.js';
 import { SERVICE_PROVIDER_TYPES } from '../utils/cdn-utils.js';
 
+const SQS_MAX_DELAY_SECONDS = 900;
 const CDN_LOGS_ANALYSIS_DELAY_SECONDS = 5;
-const CDN_LOGS_REPORT_DELAY_SECONDS = 900;
+// Base wait so cdn-logs-report fires after cdn-logs-analysis has had time to
+// complete. Kept under SQS_MAX_DELAY_SECONDS so per-day staggering can still
+// add headroom without exceeding the SQS DelaySeconds hard limit.
+const CDN_LOGS_REPORT_DELAY_SECONDS = 800;
 
 function getAdobeFastlyBackfillDays(referenceDate = new Date()) {
   const lastMonday = startOfWeek(subWeeks(referenceDate, 1), { weekStartsOn: 1 });
@@ -121,7 +125,10 @@ async function handleAdobeFastly(
           hour: 8,
           processFullDay: true,
         },
-      }, null, index * CDN_LOGS_ANALYSIS_DELAY_SECONDS));
+      }, null, Math.min(
+        index * CDN_LOGS_ANALYSIS_DELAY_SECONDS,
+        SQS_MAX_DELAY_SECONDS,
+      )));
     }
 
     await Promise.all(analysisPromises);
@@ -141,7 +148,10 @@ async function handleAdobeFastly(
       date: backfillDay.reportDate,
       refreshAgenticDailyExport: true,
     },
-  }, null, CDN_LOGS_REPORT_DELAY_SECONDS + (index * CDN_LOGS_ANALYSIS_DELAY_SECONDS)));
+  }, null, Math.min(
+    CDN_LOGS_REPORT_DELAY_SECONDS + (index * CDN_LOGS_ANALYSIS_DELAY_SECONDS),
+    SQS_MAX_DELAY_SECONDS,
+  )));
 
   await Promise.all(reportPromises);
 }
