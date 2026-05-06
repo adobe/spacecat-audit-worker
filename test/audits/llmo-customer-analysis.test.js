@@ -2436,6 +2436,26 @@ describe('LLMO Customer Analysis Handler', () => {
         expect(log.warn).to.have.been.calledWithMatch(/DRS not configured/);
       });
 
+      it('returns triggeredSteps=[] and logs "triggered: none" when DRS is unconfigured for a non-prompts changeKind', async () => {
+        drsCreateFromStub.returns({
+          isConfigured: sandbox.stub().returns(false),
+          triggerBrandDetection: triggerBrandDetectionStub,
+        });
+
+        const result = await mockHandler.runLlmoCustomerAnalysis(
+          'https://example.com',
+          context,
+          site,
+          { onboardingMode: 'v2', changeKind: 'categories', organizationId: 'org-123' },
+        );
+
+        expect(triggerBrandDetectionStub).to.not.have.been.called;
+        expect(findSqsCall('geo-brand-presence-trigger-refresh')).to.not.exist;
+        expect(result.auditResult.triggeredSteps).to.deep.equal([]);
+        expect(result.auditResult.configChangesDetected).to.equal(false);
+        expect(log.info).to.have.been.calledWithMatch(/triggered: none/);
+      });
+
       it('does not affect v1 path when changeKind is absent', async () => {
         // Sanity check: regular v1 audit context still triggers the diff path
         mockLlmoConfig.readConfig.resolves({
