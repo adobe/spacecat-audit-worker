@@ -1,3 +1,10 @@
+## [1.432.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.432.0...v1.432.1) (2026-05-05)
+
+
+### Bug Fixes
+
+* fix CWV audit to only flag and explain metrics that are actually failing ([#2418](https://github.com/adobe/spacecat-audit-worker/issues/2418)) ([38e3afa](https://github.com/adobe/spacecat-audit-worker/commit/38e3afae2e7baeda248fc4554c18630dc15028c1))
+
 # [1.432.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.431.3...v1.432.0) (2026-05-05)
 
 
