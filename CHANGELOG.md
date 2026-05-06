@@ -1,3 +1,87 @@
+# [1.433.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.432.3...v1.433.0) (2026-05-06)
+
+
+### Bug Fixes
+
+* cap cdn-config-handler SQS delays at 900s ([#2484](https://github.com/adobe/spacecat-audit-worker/issues/2484)) ([72e69fe](https://github.com/adobe/spacecat-audit-worker/commit/72e69fe3f7311f3b9b63e7bb2f61a730c87617e8))
+
+
+### Features
+
+* disabled LLMO updater between s3 file and db | LLMO-4587 ([#2485](https://github.com/adobe/spacecat-audit-worker/issues/2485)) ([60383b0](https://github.com/adobe/spacecat-audit-worker/commit/60383b073c91c1952682297d7f104e405d853578))
+* replace Coralogix site detection poller with async job handler … ([#2382](https://github.com/adobe/spacecat-audit-worker/issues/2382)) ([18a6a23](https://github.com/adobe/spacecat-audit-worker/commit/18a6a2312c27352baa7b65ae4ef20a3be08854db))
+
+## [1.432.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.432.2...v1.432.3) (2026-05-06)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.115.1 ([#2482](https://github.com/adobe/spacecat-audit-worker/issues/2482)) ([a21fa8c](https://github.com/adobe/spacecat-audit-worker/commit/a21fa8ccfdd6240b7c04f2388ae0f7c36483c2fe))
+
+## [1.432.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.432.1...v1.432.2) (2026-05-06)
+
+
+### Bug Fixes
+
+* **semantic-value-visibility:** use CODE_CHANGE as suggestion type ([#2481](https://github.com/adobe/spacecat-audit-worker/issues/2481)) ([b99830b](https://github.com/adobe/spacecat-audit-worker/commit/b99830bcda66090d23eac433bb5946cd98714f1b))
+
+## [1.432.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.432.0...v1.432.1) (2026-05-05)
+
+
+### Bug Fixes
+
+* fix CWV audit to only flag and explain metrics that are actually failing ([#2418](https://github.com/adobe/spacecat-audit-worker/issues/2418)) ([38e3afa](https://github.com/adobe/spacecat-audit-worker/commit/38e3afae2e7baeda248fc4554c18630dc15028c1))
+
+# [1.432.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.431.3...v1.432.0) (2026-05-05)
+
+
+### Features
+
+* **geo-brand-presence:** forward v2 brand_id to DRS (LLMO-4716) ([#2473](https://github.com/adobe/spacecat-audit-worker/issues/2473)) ([c2f5717](https://github.com/adobe/spacecat-audit-worker/commit/c2f5717c421d82ed492938fb915dfb2ff69082e0))
+
+## [1.431.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.431.2...v1.431.3) (2026-05-05)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2472](https://github.com/adobe/spacecat-audit-worker/issues/2472)) ([8dfcb36](https://github.com/adobe/spacecat-audit-worker/commit/8dfcb36e945853019fd2aaaac56c28f9f3b5af83))
+
+## [1.431.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.431.1...v1.431.2) (2026-05-05)
+
+
+### Bug Fixes
+
+* imperva path does not require underscore path to work ([#2474](https://github.com/adobe/spacecat-audit-worker/issues/2474)) ([6f3349f](https://github.com/adobe/spacecat-audit-worker/commit/6f3349fb55d4f8587fbc1c00865383d1a6b49c6a))
+
+## [1.431.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.431.0...v1.431.1) (2026-05-05)
+
+
+### Bug Fixes
+
+* broken-backlinks - support two-level locale URL structures in Bright Data ([#2457](https://github.com/adobe/spacecat-audit-worker/issues/2457)) ([cec528a](https://github.com/adobe/spacecat-audit-worker/commit/cec528ac9041c2459ed36f5ad26d6bf4a3284d58))
+* toc audit update to scrape client ([#2415](https://github.com/adobe/spacecat-audit-worker/issues/2415)) ([6423c64](https://github.com/adobe/spacecat-audit-worker/commit/6423c647f5bd144dfb0b5dd1b0c6f13d4b9a67ed))
+
+# [1.431.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.430.2...v1.431.0) (2026-05-05)
+
+
+### Features
+
+* **paid-keyword-optimizer:** multi-keyword cluster support ([#2437](https://github.com/adobe/spacecat-audit-worker/issues/2437)) ([0eba1ce](https://github.com/adobe/spacecat-audit-worker/commit/0eba1ce65af361b0521cef9136b3128f9d135b8c))
+
+## [1.430.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.430.1...v1.430.2) (2026-05-04)
+
+
+### Bug Fixes
+
+* skip suggestion regeneration when scraped content is unchanged ([#2446](https://github.com/adobe/spacecat-audit-worker/issues/2446)) ([5460507](https://github.com/adobe/spacecat-audit-worker/commit/546050763371176d208371be37c7a52a0943a78c))
+
+## [1.430.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.430.0...v1.430.1) (2026-05-04)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2469](https://github.com/adobe/spacecat-audit-worker/issues/2469)) ([794e7c9](https://github.com/adobe/spacecat-audit-worker/commit/794e7c99ef309d61852e5e013b1a2ab9d11ed5f8))
+
 # [1.430.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.429.5...v1.430.0) (2026-05-04)
 
 

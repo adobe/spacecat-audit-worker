@@ -413,7 +413,7 @@ describe('CDN Config Handler', () => {
       expect(cdnLogsAnalysisCalls.length).to.be.greaterThan(0);
       expect(weeklyReportCalls).to.have.length(1);
       expect(weeklyReportCalls[0].args[1].auditContext).to.deep.equal({ weekOffset: -1 });
-      expect(weeklyReportCalls[0].args[3]).to.equal(900);
+      expect(weeklyReportCalls[0].args[3]).to.equal(800);
       expect(dailyReportCalls).to.have.length(cdnLogsAnalysisCalls.length);
 
       dailyReportCalls.forEach((call, index) => {
@@ -421,7 +421,9 @@ describe('CDN Config Handler', () => {
           date: getExpectedReportDate(cdnLogsAnalysisCalls[index]),
           refreshAgenticDailyExport: true,
         });
-        expect(call.args[3]).to.equal(900 + (index * 5));
+        // Daily report delay is base (800s) + per-day staggering, capped at
+        // the SQS 900s hard limit so total stays valid even for long backfills.
+        expect(call.args[3]).to.equal(Math.min(800 + (index * 5), 900));
       });
     });
 
@@ -473,18 +475,6 @@ describe('CDN Config Handler', () => {
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
       expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ orgId: 'test-org' });
-      expect(mockSite.save).to.have.been.called;
-    });
-
-    it('should extract bare orgId from byocdn-imperva underscore-layout allowedPaths', async () => {
-      const data = {
-        allowedPaths: ['TestOrg123AdobeOrg_raw_byocdn-imperva/somefile.log'],
-        cdnProvider: 'byocdn-imperva',
-      };
-
-      await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
-
-      expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ orgId: 'TestOrg123AdobeOrg' });
       expect(mockSite.save).to.have.been.called;
     });
 
@@ -562,7 +552,30 @@ describe('CDN Config Handler', () => {
           date: getExpectedReportDate(cdnLogsAnalysisCalls[index]),
           refreshAgenticDailyExport: true,
         });
-        expect(call.args[3]).to.equal(900 + (index * 5));
+        // Daily report delay is base (800s) + per-day staggering, capped at
+        // the SQS 900s hard limit so total stays valid even for long backfills.
+        expect(call.args[3]).to.equal(Math.min(800 + (index * 5), 900));
+      });
+
+      clock.restore();
+    });
+
+    it('caps every queued message delay at the SQS 900s hard limit', async () => {
+      const clock = sandbox.useFakeTimers(new Date('2025-01-10T12:00:00Z'));
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({
+        getAuditResult: () => ({}),
+        getFullAuditRef: () => '',
+      });
+
+      await cdnConfigHandler.handleCdnBucketConfigChanges(
+        context,
+        { cdnProvider: 'aem-cs-fastly' },
+      );
+
+      const allDelays = context.sqs.sendMessage.getCalls().map((c) => c.args[3]);
+      expect(allDelays.length).to.be.greaterThan(0);
+      allDelays.forEach((delay) => {
+        expect(delay).to.be.at.most(900);
       });
 
       clock.restore();
@@ -589,7 +602,9 @@ describe('CDN Config Handler', () => {
       expect(dailyReportCalls.length).to.be.greaterThan(0);
       dailyReportCalls.forEach((call, index) => {
         expect(call.args[1].auditContext.date).to.match(/T00:00:00\.000Z$/);
-        expect(call.args[3]).to.equal(900 + (index * 5));
+        // Daily report delay is base (800s) + per-day staggering, capped at
+        // the SQS 900s hard limit so total stays valid even for long backfills.
+        expect(call.args[3]).to.equal(Math.min(800 + (index * 5), 900));
       });
       // Verify it checked for cdn-logs-analysis
       expect(context.dataAccess.LatestAudit.findBySiteIdAndAuditType).to.have.been.calledWith(
@@ -629,7 +644,9 @@ describe('CDN Config Handler', () => {
       expect(dailyReportCalls.length).to.be.greaterThan(0);
       dailyReportCalls.forEach((call, index) => {
         expect(call.args[1].auditContext.date).to.match(/T00:00:00\.000Z$/);
-        expect(call.args[3]).to.equal(900 + (index * 5));
+        // Daily report delay is base (800s) + per-day staggering, capped at
+        // the SQS 900s hard limit so total stays valid even for long backfills.
+        expect(call.args[3]).to.equal(Math.min(800 + (index * 5), 900));
       });
       expect(context.dataAccess.LatestAudit.findBySiteIdAndAuditType).to.have.been.calledWith(
         'site-123',
