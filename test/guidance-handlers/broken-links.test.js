@@ -1016,4 +1016,58 @@ describe('guidance-broken-links-remediation handler', () => {
       aiRationale: 'This URL works',
     });
   });
+
+  it('should pass through invalid URLs unchanged when stripping tracking params', async () => {
+    const messageWithInvalidUrl = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          brokenUrl: 'https://foo.com/broken',
+          suggestedUrls: ['not-a-valid-url', 'https://foo.com/fixed'],
+          aiRationale: 'Some rationale',
+        }],
+      },
+    };
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
+    });
+    const mockSetData = sandbox.stub();
+    mockContext.dataAccess.Suggestion.batchGetByKeys = sandbox.stub().resolves({
+      data: [{
+        getId: () => 'test-suggestion-id-1',
+        setData: mockSetData,
+        getData: sandbox.stub().returns({
+          url_to: 'https://foo.com/broken',
+          url_from: 'https://referrer.com/page',
+        }),
+      }],
+    });
+    mockContext.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+    nock('https://foo.com')
+      .get('/fixed')
+      .reply(200);
+
+    const response = await brokenLinksGuidanceHandler(messageWithInvalidUrl, mockContext);
+    expect(response.status).to.equal(200);
+    // invalid URL is filtered out by filterBrokenSuggestedUrls; only the valid one survives
+    expect(mockSetData).to.have.been.calledWith({
+      url_to: 'https://foo.com/broken',
+      url_from: 'https://referrer.com/page',
+      urlsSuggested: ['https://foo.com/fixed'],
+      aiRationale: 'Some rationale',
+    });
+  });
 });
