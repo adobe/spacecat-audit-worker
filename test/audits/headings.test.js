@@ -3273,6 +3273,7 @@ describe('Headings Audit', () => {
                 }),
                 setAuditId: sinon.stub(),
                 setData: sinon.stub(),
+                setTags: sinon.stub(),
                 setUpdatedBy: sinon.stub(),
                 save: sinon.stub().resolves(),
                 getId: () => 'test-existing-opportunity-id'
