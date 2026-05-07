@@ -1,3 +1,10 @@
+# [1.435.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.434.1...v1.435.0) (2026-05-07)
+
+
+### Features
+
+* Sitemap audit will suggest canonical URL for redirects ([#2487](https://github.com/adobe/spacecat-audit-worker/issues/2487)) ([07c88af](https://github.com/adobe/spacecat-audit-worker/commit/07c88afc2eca9f230e64531cd7eaf3e4bd840f31))
+
 ## [1.434.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.434.0...v1.434.1) (2026-05-07)
 
 
