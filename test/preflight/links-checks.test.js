@@ -301,7 +301,7 @@ describe('preflight/links-checks - runLinksChecks', () => {
     expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
   });
 
-  it('returns null (not broken) when both HEAD and GET throw network errors', async () => {
+  it('flags as broken (status 0) when both HEAD and GET throw network errors', async () => {
     fetchStub.onFirstCall().rejects(new Error('network error'));
     fetchStub.onSecondCall().rejects(new Error('still failing'));
 
@@ -311,8 +311,25 @@ describe('preflight/links-checks - runLinksChecks', () => {
       context,
     );
 
-    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
-    expect(context.log.error).to.have.been.called;
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
+    expect(result.auditResult.brokenExternalLinks[0].status).to.equal(0);
+    expect(context.log.info).to.have.been.calledWith(sinon.match(/unreachable/));
+    expect(context.log.error).to.not.have.been.called;
+  });
+
+  it('flags internal link as broken (status 0) when both HEAD and GET throw network errors', async () => {
+    fetchStub.onFirstCall().rejects(new Error('getaddrinfo ENOTFOUND internal.example.com'));
+    fetchStub.onSecondCall().rejects(new Error('getaddrinfo ENOTFOUND internal.example.com'));
+
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects(`<a href="${pageUrl}/unreachable">internal broken</a>`),
+      context,
+    );
+
+    expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+    expect(result.auditResult.brokenInternalLinks[0].status).to.equal(0);
+    expect(context.log.info).to.have.been.calledWith(sinon.match(/unreachable/));
   });
 
   // ── Broken internal links ─────────────────────────────────────────────────
@@ -399,6 +416,39 @@ describe('preflight/links-checks - runLinksChecks', () => {
   });
 
   // ── Invalid hrefs are silently skipped ────────────────────────────────────
+
+  it('does not flag mailto: links as broken', async () => {
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="mailto:someone@example.com">email</a>'),
+      context,
+    );
+
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    expect(fetchStub.callCount).to.equal(0);
+  });
+
+  it('does not flag tel: links as broken', async () => {
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="tel:+18005551212">call us</a>'),
+      context,
+    );
+
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    expect(fetchStub.callCount).to.equal(0);
+  });
+
+  it('does not flag javascript: links as broken', async () => {
+    const result = await runLinksChecks(
+      [pageUrl],
+      makeScrapedObjects('<a href="javascript:void(0)">click</a>'),
+      context,
+    );
+
+    expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(0);
+    expect(fetchStub.callCount).to.equal(0);
+  });
 
   it('silently skips hrefs that cannot be parsed as URLs', async () => {
     fetchStub.resolves(makeResponse(200));

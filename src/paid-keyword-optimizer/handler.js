@@ -105,8 +105,19 @@ async function fetchPaidPagesFromS3(context, siteId) {
       cpc: page.cpc || 0,
       sumTraffic: page.sum_traffic || 0,
       serpTitle: page.topKeywordBestPositionTitle,
+      keywords: page.keywords || [],
     });
   }
+
+  // Filter out entries without keywords data — required for aggregate WSIS scoring
+  const filtered = [];
+  for (const [url, data] of map) {
+    if (data.keywords.length === 0) {
+      context.log.info(`[ad-intent-mismatch] Filtered out page without keywords data: ${url}`);
+      filtered.push(url);
+    }
+  }
+  filtered.forEach((url) => map.delete(url));
 
   if (map.size === 0) {
     return null;
@@ -116,14 +127,17 @@ async function fetchPaidPagesFromS3(context, siteId) {
 }
 
 /**
- * Computes a Wasted-Spend Intent Score (WSIS) for a page
- * @param {Object} page - Page data with pageViews, bounceRate, engagedScrollRate
- * @param {Object} seoData - SEO data with cpc
+ * Computes a Wasted-Spend Intent Score (WSIS) for a page using aggregate keyword data.
+ * Aggregates spend across all keywords for the page rather than using a single top keyword.
+ * @param {Object} page - Page data with bounceRate, engagedScrollRate
+ * @param {Object} seoData - SEO data with keywords array
  * @returns {number} Priority score
  */
 function computePriorityScore(page, seoData) {
-  const cpc = seoData?.cpc || 0;
-  const wastedSpend = cpc * page.pageViews * page.bounceRate;
+  const keywords = seoData?.keywords || [];
+  // Aggregate spend across all keywords — null CPC treated as zero (intentional)
+  const aggSpend = keywords.reduce((sum, kw) => sum + ((kw.cpc || 0) * (kw.traffic || 0)), 0);
+  const wastedSpend = aggSpend * page.bounceRate;
   const alignmentSignal = Math.max(0.1, 1 - (page.engagedScrollRate ?? 0.5));
   // Normalize to ~$-thousands so scores stay in a human-readable range;
   // the downstream filter (priorityScore > 0.01) is calibrated to this scale.
@@ -351,6 +365,7 @@ function buildMystiqueMessage(site, auditId, page) {
       topKeyword: page.topKeyword,
       serpTitle: page.serpTitle,
       engagedScrollRate: page.engagedScrollRate,
+      keywords: page.keywords,
     },
   };
 }
@@ -631,6 +646,7 @@ export async function runPaidKeywordAnalysisStep(context) {
         sumTraffic: seoData.sumTraffic || 0,
         topKeyword: seoData.topKeyword || '',
         serpTitle: seoData.serpTitle || '',
+        keywords: seoData.keywords || [],
         priorityScore: computePriorityScore(page, seoData),
       };
     })
