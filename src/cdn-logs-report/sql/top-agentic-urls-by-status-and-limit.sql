@@ -13,7 +13,7 @@ aggregated AS (
   FROM filtered
   WHERE url IS NOT NULL
     AND url <> 'Other'
-    AND status = 200
+    {{statusFilter}}
     {{excludedUrlSuffixesFilter}}
   GROUP BY url
 )
