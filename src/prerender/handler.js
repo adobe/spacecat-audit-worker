@@ -85,6 +85,100 @@ export async function importTopPages(context) {
   };
 }
 
+function buildScrapeResult(urls, siteId) {
+  return {
+    urls: urls.map((url) => ({ url })),
+    siteId,
+    processingType: AUDIT_TYPE,
+    maxScrapeAge: 0,
+    options: { pageLoadTimeout: 20000, storagePrefix: AUDIT_TYPE },
+  };
+}
+
+function buildSlackBatch(rebasedTopPagesUrls, rebasedIncludedURLs) {
+  const { urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls([
+    ...rebasedTopPagesUrls,
+    ...rebasedIncludedURLs,
+  ]);
+  return {
+    finalUrls,
+    filteredCount,
+    agenticUrlsCount: 0,
+    currentAgentic: 0,
+    currentOrganic: rebasedTopPagesUrls.length,
+    currentIncludedUrls: rebasedIncludedURLs.length,
+    isFirstRunOfCycle: true,
+    agenticNewThisCycle: 0,
+    goneUrlsCount: 0,
+  };
+}
+
+async function buildDailyBatch(
+  site,
+  context,
+  rebasedTopPagesUrls,
+  rebasedIncludedURLs,
+  topPagesUrls,
+) {
+  const { log, s3Client, env } = context;
+  const siteId = site.getId();
+
+  // Fix 3 — proactive bot-block check: skip domain if a known WAF is actively blocking crawlers
+  const { crawlable, confidence } = await detectBotBlocker({ baseUrl: site.getBaseURL() });
+  if (!crawlable && confidence >= 0.95) {
+    return { domainBlocked: true, confidence };
+  }
+
+  // Fix 2 — permanent 410 exclusion: build set of URLs to exclude from all future batches
+  const { existingPages } = await readSiteStatusJson(
+    s3Client,
+    env.S3_SCRAPER_BUCKET_NAME,
+    siteId,
+    log,
+  );
+  const gonePathnames = new Set(
+    existingPages.filter((p) => p.gone).map((p) => normalizePathname(p.url)),
+  );
+
+  const agenticUrls = await getTopAgenticUrls(site, context);
+  const recentPathnames = await getRecentlyProcessedPathnames(context, siteId);
+
+  const filteredOrganicUrls = rebasedTopPagesUrls
+    .filter((url) => isNotRecentUrl(url, recentPathnames))
+    .filter((url) => !gonePathnames.has(normalizePathname(url)));
+  const filteredIncludedURLs = rebasedIncludedURLs
+    .filter((url) => isNotRecentUrl(url, recentPathnames))
+    .filter((url) => !gonePathnames.has(normalizePathname(url)));
+  const filteredAgenticUrls = agenticUrls
+    .filter((url) => isNotRecentUrl(url, recentPathnames))
+    .filter((url) => !gonePathnames.has(normalizePathname(url)));
+
+  const orderedCandidateUrls = [
+    ...filteredOrganicUrls,
+    ...filteredIncludedURLs,
+    ...filteredAgenticUrls,
+  ];
+  const batchedUrls = orderedCandidateUrls.slice(0, DAILY_BATCH_SIZE);
+
+  const organicUrlSet = new Set(filteredOrganicUrls);
+  const includedUrlSet = new Set(filteredIncludedURLs);
+  const { urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(batchedUrls);
+
+  return {
+    finalUrls,
+    filteredCount,
+    agenticUrlsCount: agenticUrls.length,
+    currentOrganic: batchedUrls.filter((url) => organicUrlSet.has(url)).length,
+    currentIncludedUrls: batchedUrls.filter((url) => includedUrlSet.has(url)).length,
+    currentAgentic: batchedUrls.filter(
+      (url) => !organicUrlSet.has(url) && !includedUrlSet.has(url),
+    ).length,
+    isFirstRunOfCycle: filteredOrganicUrls.length === topPagesUrls.length,
+    agenticNewThisCycle: filteredAgenticUrls.length,
+    goneUrlsCount: gonePathnames.size,
+  };
+}
+
 /**
  * Step 2: Submit URLs for scraping OR skip if in ai-only mode
  * @param {Object} context - Audit context with site and dataAccess
@@ -92,12 +186,7 @@ export async function importTopPages(context) {
  */
 export async function submitForScraping(context) {
   const {
-    site,
-    log,
-    data,
-    auditContext,
-    s3Client,
-    env,
+    site, log, data, auditContext,
   } = context;
 
   // Check for AI-only mode - skip scraping step (step 1 already triggered Mystique)
@@ -108,11 +197,12 @@ export async function submitForScraping(context) {
   }
 
   const siteId = site.getId();
+
+  // CSV explicit URLs path (triggered via audit context override)
   if (Array.isArray(auditContext?.urls) && auditContext.urls.length > 0) {
     const preferredBase = getPreferredBaseUrl(site, context);
     const rebasedCsvUrls = auditContext.urls.map((url) => rebaseUrl(url, preferredBase, log));
     const { urls: explicitUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(rebasedCsvUrls);
-
     log.info(`
     ${LOG_PREFIX} prerender_submit_scraping_metrics:
     submittedUrls=${explicitUrls.length},
@@ -123,17 +213,7 @@ export async function submitForScraping(context) {
     baseUrl=${site.getBaseURL()},
     siteId=${siteId},
     csvUrls=${auditContext.urls.length},`);
-
-    return {
-      urls: explicitUrls.map((url) => ({ url })),
-      siteId,
-      processingType: AUDIT_TYPE,
-      maxScrapeAge: 0,
-      options: {
-        pageLoadTimeout: 20000,
-        storagePrefix: AUDIT_TYPE,
-      },
-    };
+    return buildScrapeResult(explicitUrls, siteId);
   }
 
   const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
@@ -144,92 +224,19 @@ export async function submitForScraping(context) {
 
   // When triggered from Slack, skip agentic sources and daily batching
   const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
+  const batch = isSlackTriggered
+    ? buildSlackBatch(rebasedTopPagesUrls, rebasedIncludedURLs)
+    : await buildDailyBatch(site, context, rebasedTopPagesUrls, rebasedIncludedURLs, topPagesUrls);
 
-  let finalUrls;
-  let filteredCount;
-  let agenticUrlsCount = 0;
-  let currentAgentic = 0;
-  let currentOrganic;
-  let currentIncludedUrls;
-  let isFirstRunOfCycle;
-  let agenticNewThisCycle = 0;
-
-  if (isSlackTriggered) {
-    ({ urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls([
-      ...rebasedTopPagesUrls,
-      ...rebasedIncludedURLs,
-    ]));
-    currentOrganic = rebasedTopPagesUrls.length;
-    currentIncludedUrls = rebasedIncludedURLs.length;
-    isFirstRunOfCycle = true;
-  } else {
-    // Fix 3 — proactive bot-block check: skip domain if a known WAF is actively blocking crawlers
-    const { crawlable, confidence } = await detectBotBlocker({ baseUrl: site.getBaseURL() });
-    if (!crawlable && confidence >= 0.95) {
-      log.info(`${LOG_PREFIX} Domain blocked (confidence=${confidence}), skipping siteId=${siteId}`);
-      return {
-        urls: [],
-        siteId,
-        processingType: AUDIT_TYPE,
-        maxScrapeAge: 0,
-        options: { pageLoadTimeout: 20000, storagePrefix: AUDIT_TYPE },
-        skippedReason: 'domainBlocked',
-      };
-    }
-
-    // Read status.json for Fix 2 (410 circuit breaker set)
-    const { existingPages } = await readSiteStatusJson(
-      s3Client,
-      env.S3_SCRAPER_BUCKET_NAME,
-      siteId,
-      log,
-    );
-
-    // Fix 2 — permanent 410 exclusion: build set of URLs to exclude from all future batches
-    const gonePathnames = new Set(
-      existingPages
-        .filter((p) => p.gone)
-        .map((p) => normalizePathname(p.url)),
-    );
-
-    // getTopAgenticUrls internally handles errors and returns [] on failure
-    const agenticUrls = await getTopAgenticUrls(site, context);
-    agenticUrlsCount = agenticUrls.length;
-
-    // Daily batching: filter URLs recently processed within the rolling recent window
-    const recentPathnames = await getRecentlyProcessedPathnames(context, siteId);
-
-    const filteredOrganicUrls = rebasedTopPagesUrls
-      .filter((url) => isNotRecentUrl(url, recentPathnames))
-      .filter((url) => !gonePathnames.has(normalizePathname(url)));
-    const filteredIncludedURLs = rebasedIncludedURLs
-      .filter((url) => isNotRecentUrl(url, recentPathnames))
-      .filter((url) => !gonePathnames.has(normalizePathname(url)));
-    const filteredAgenticUrls = agenticUrls
-      .filter((url) => isNotRecentUrl(url, recentPathnames))
-      .filter((url) => !gonePathnames.has(normalizePathname(url)));
-
-    const hasRecentOrganic = filteredOrganicUrls.length !== topPagesUrls.length;
-    isFirstRunOfCycle = !hasRecentOrganic;
-    agenticNewThisCycle = filteredAgenticUrls.length;
-
-    const orderedCandidateUrls = [
-      ...filteredOrganicUrls,
-      ...filteredIncludedURLs,
-      ...filteredAgenticUrls,
-    ];
-    const batchedUrls = orderedCandidateUrls.slice(0, DAILY_BATCH_SIZE);
-
-    const organicUrlSet = new Set(filteredOrganicUrls);
-    const includedUrlSet = new Set(filteredIncludedURLs);
-    currentOrganic = batchedUrls.filter((url) => organicUrlSet.has(url)).length;
-    currentIncludedUrls = batchedUrls.filter((url) => includedUrlSet.has(url)).length;
-    currentAgentic = batchedUrls.filter(
-      (url) => !organicUrlSet.has(url) && !includedUrlSet.has(url),
-    ).length;
-
-    ({ urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(batchedUrls));
+  if (batch.domainBlocked) {
+    log.info(`${LOG_PREFIX} Domain blocked (confidence=${batch.confidence}), skipping siteId=${siteId}, baseUrl=${site.getBaseURL()}`);
+    return { ...buildScrapeResult([], siteId), skippedReason: 'domainBlocked' };
   }
+
+  const {
+    finalUrls, filteredCount, agenticUrlsCount, currentAgentic,
+    currentOrganic, currentIncludedUrls, isFirstRunOfCycle, agenticNewThisCycle, goneUrlsCount,
+  } = batch;
 
   log.info(`${LOG_PREFIX} prerender_submit_scraping_metrics:
     submittedUrls=${finalUrls.length},
@@ -242,6 +249,7 @@ export async function submitForScraping(context) {
     currentIncludedUrls=${currentIncludedUrls},
     isFirstRunOfCycle=${isFirstRunOfCycle},
     agenticNewThisCycle=${agenticNewThisCycle},
+    goneUrls=${goneUrlsCount},
     baseUrl=${site.getBaseURL()},
     siteId=${siteId}`);
 
@@ -252,16 +260,7 @@ export async function submitForScraping(context) {
     finalUrls.push(baseURL);
   }
 
-  return {
-    urls: finalUrls.map((url) => ({ url })),
-    siteId,
-    processingType: AUDIT_TYPE,
-    maxScrapeAge: 0,
-    options: {
-      pageLoadTimeout: 20000,
-      storagePrefix: AUDIT_TYPE,
-    },
-  };
+  return buildScrapeResult(finalUrls, siteId);
 }
 
 /**
