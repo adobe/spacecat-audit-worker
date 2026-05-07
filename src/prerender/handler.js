@@ -123,12 +123,6 @@ async function buildDailyBatch(
   const { log, s3Client, env } = context;
   const siteId = site.getId();
 
-  // Fix 3 — proactive bot-block check: skip domain if a known WAF is actively blocking crawlers
-  const { crawlable, confidence } = await detectBotBlocker({ baseUrl: site.getBaseURL() });
-  if (!crawlable && confidence >= 0.95) {
-    return { domainBlocked: true, confidence };
-  }
-
   // Fix 2 — permanent 410 exclusion: build set of URLs to exclude from all future batches
   const { existingPages } = await readSiteStatusJson(
     s3Client,
@@ -216,22 +210,27 @@ export async function submitForScraping(context) {
     return buildScrapeResult(explicitUrls, siteId);
   }
 
+  // When triggered from Slack, skip agentic sources, daily batching, and domain block check
+  const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
+
+  // Fix 3 — proactive bot-block check before expensive URL fetches (not applicable for Slack)
+  if (!isSlackTriggered) {
+    const { crawlable, confidence } = await detectBotBlocker({ baseUrl: site.getBaseURL() });
+    if (!crawlable && confidence >= 0.95) {
+      log.info(`${LOG_PREFIX} Domain blocked (confidence=${confidence}), skipping siteId=${siteId}, baseUrl=${site.getBaseURL()}`);
+      return { ...buildScrapeResult([], siteId), skippedReason: 'domainBlocked' };
+    }
+  }
+
   const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
   const preferredBase = getPreferredBaseUrl(site, context);
   const rebasedTopPagesUrls = topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log));
   const rebasedIncludedURLs = ((await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [])
     .map((url) => rebaseUrl(url, preferredBase, log));
 
-  // When triggered from Slack, skip agentic sources and daily batching
-  const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
   const batch = isSlackTriggered
     ? buildSlackBatch(rebasedTopPagesUrls, rebasedIncludedURLs)
     : await buildDailyBatch(site, context, rebasedTopPagesUrls, rebasedIncludedURLs, topPagesUrls);
-
-  if (batch.domainBlocked) {
-    log.info(`${LOG_PREFIX} Domain blocked (confidence=${batch.confidence}), skipping siteId=${siteId}, baseUrl=${site.getBaseURL()}`);
-    return { ...buildScrapeResult([], siteId), skippedReason: 'domainBlocked' };
-  }
 
   const {
     finalUrls, filteredCount, agenticUrlsCount, currentAgentic,
