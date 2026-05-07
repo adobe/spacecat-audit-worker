@@ -44,8 +44,7 @@ export async function readSiteStatusJson(s3Client, bucketName, siteId, log) {
 
 /**
  * Post processor to upload a status JSON file to S3 after audit completion.
- * Merges the current scrape results with existing pages, applies rate-limit (Fix 5) state,
- * then writes status.json back to S3.
+ * Merges the current scrape results with existing pages and writes status.json back to S3.
  *
  * @param {string} auditUrl - Audited URL (site base URL)
  * @param {Object} auditData - Audit data with results
@@ -142,12 +141,6 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     const has403Urls = currentPages.some((p) => p.scrapeError?.statusCode === 403);
     const latestScrapeForbidden = auditResult.scrapeForbidden ?? has403Urls;
 
-    // Fix 5 — domain-level 429 rate limit
-    const first429 = currentPages.find((p) => p.scrapeError?.statusCode === 429);
-    const rateLimitedUntil = first429
-      ? new Date(Date.now() + (first429.scrapeError?.retryAfter ?? 3600) * 1000).toISOString()
-      : undefined;
-
     const statusSummary = {
       baseUrl: auditUrl,
       siteId,
@@ -161,7 +154,6 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       scrapeForbidden: latestScrapeForbidden,
       scrapeForbiddenCount,
       lastAuditSuccess: auditResult.lastAuditSuccess !== false,
-      ...(rateLimitedUntil && { rateLimitedUntil }),
       pages: mergedPages,
     };
     await s3Client.send(new PutObjectCommand({

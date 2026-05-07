@@ -177,28 +177,13 @@ export async function submitForScraping(context) {
       };
     }
 
-    // Read status.json for Fix 5 (rate limit window) and Fix 2 (410 circuit breaker set)
-    const { existingStatus, existingPages } = await readSiteStatusJson(
+    // Read status.json for Fix 2 (410 circuit breaker set)
+    const { existingPages } = await readSiteStatusJson(
       s3Client,
       env.S3_SCRAPER_BUCKET_NAME,
       siteId,
       log,
     );
-
-    // Fix 5 — domain-level rate limit: skip if Retry-After window from a previous run is active
-    const { rateLimitedUntil } = existingStatus;
-    const now = new Date().toISOString();
-    if (rateLimitedUntil && rateLimitedUntil > now) {
-      log.info(`${LOG_PREFIX} Domain rate-limited until ${rateLimitedUntil}, skipping siteId=${siteId}`);
-      return {
-        urls: [],
-        siteId,
-        processingType: AUDIT_TYPE,
-        maxScrapeAge: 0,
-        options: { pageLoadTimeout: 20000, storagePrefix: AUDIT_TYPE },
-        skippedReason: 'rateLimited',
-      };
-    }
 
     // Fix 2 — permanent 410 circuit breaker: build set of URLs to exclude from all future batches
     const circuitBreakerPathnames = new Set(
