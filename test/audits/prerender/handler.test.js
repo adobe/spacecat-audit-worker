@@ -21,11 +21,11 @@ import prerenderHandler, {
   submitForScraping,
   processContentAndGenerateOpportunities,
   processOpportunityAndSuggestions,
-  createScrapeForbiddenOpportunity,
-  uploadStatusSummaryToS3,
-  writeToCitabilityRecords,
-  getScrapeJobStats,
 } from '../../../src/prerender/handler.js';
+import { createScrapeForbiddenOpportunity } from '../../../src/prerender/utils/opportunity-utils.js';
+import { uploadStatusSummaryToS3 } from '../../../src/prerender/utils/status-json.js';
+import { writeToCitabilityRecords } from '../../../src/prerender/utils/citability.js';
+import { getScrapeJobStats } from '../../../src/prerender/utils/scrape-utils.js';
 import { analyzeHtmlForPrerender } from '../../../src/prerender/utils/html-comparator.js';
 import { createOpportunityData } from '../../../src/prerender/opportunity-data-mapper.js';
 import {

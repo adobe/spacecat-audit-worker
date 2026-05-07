@@ -44,12 +44,6 @@ import { writeToCitabilityRecords } from './utils/citability.js';
 import { handleAiOnlyMode } from './ai-only-handler.js';
 import { sendPrerenderGuidanceRequestToMystique } from './guidance-handler.js';
 
-export { uploadStatusSummaryToS3 };
-export { createScrapeForbiddenOpportunity } from './utils/opportunity-utils.js';
-export { getScrapeJobStats } from './utils/scrape-utils.js';
-export { writeToCitabilityRecords } from './utils/citability.js';
-export { handleAiOnlyMode } from './ai-only-handler.js';
-
 const LOG_PREFIX = 'Prerender -';
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
