@@ -1,3 +1,37 @@
+## [1.433.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.433.1...v1.433.2) (2026-05-07)
+
+
+### Bug Fixes
+
+* use default processingType for TOC scrape submission ([#2486](https://github.com/adobe/spacecat-audit-worker/issues/2486)) ([55401ef](https://github.com/adobe/spacecat-audit-worker/commit/55401effa923ae61bf0691ce528bbe681395ae97))
+
+## [1.433.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.433.0...v1.433.1) (2026-05-06)
+
+
+### Bug Fixes
+
+* **preflight:** report unreachable links as broken (status 0) instead of silently dropping them ([#2476](https://github.com/adobe/spacecat-audit-worker/issues/2476)) ([d83ffb1](https://github.com/adobe/spacecat-audit-worker/commit/d83ffb1940654b403bead1f1307fd73c7f0c8b7a))
+
+# [1.433.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.432.3...v1.433.0) (2026-05-06)
+
+
+### Bug Fixes
+
+* cap cdn-config-handler SQS delays at 900s ([#2484](https://github.com/adobe/spacecat-audit-worker/issues/2484)) ([72e69fe](https://github.com/adobe/spacecat-audit-worker/commit/72e69fe3f7311f3b9b63e7bb2f61a730c87617e8))
+
+
+### Features
+
+* disabled LLMO updater between s3 file and db | LLMO-4587 ([#2485](https://github.com/adobe/spacecat-audit-worker/issues/2485)) ([60383b0](https://github.com/adobe/spacecat-audit-worker/commit/60383b073c91c1952682297d7f104e405d853578))
+* replace Coralogix site detection poller with async job handler … ([#2382](https://github.com/adobe/spacecat-audit-worker/issues/2382)) ([18a6a23](https://github.com/adobe/spacecat-audit-worker/commit/18a6a2312c27352baa7b65ae4ef20a3be08854db))
+
+## [1.432.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.432.2...v1.432.3) (2026-05-06)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.115.1 ([#2482](https://github.com/adobe/spacecat-audit-worker/issues/2482)) ([a21fa8c](https://github.com/adobe/spacecat-audit-worker/commit/a21fa8ccfdd6240b7c04f2388ae0f7c36483c2fe))
+
 ## [1.432.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.432.1...v1.432.2) (2026-05-06)
 
 
