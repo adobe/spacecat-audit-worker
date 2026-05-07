@@ -10,9 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
-import { addDays, subDays } from 'date-fns';
+import { subDays } from 'date-fns';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -20,7 +20,8 @@ import { getObjectFromKey } from '../utils/s3-utils.js';
 import { getTopAgenticUrlsFromAthena, getPreferredBaseUrl } from '../utils/agentic-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
-import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
+import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls, normalizePathname } from './utils/utils.js';
+import { readSiteStatusJson, uploadStatusSummaryToS3 } from './utils/status-json.js';
 import {
   CONTENT_GAIN_THRESHOLD,
   DAILY_BATCH_SIZE,
@@ -30,6 +31,8 @@ import {
   MODE_AI_ONLY,
   MYSTIQUE_BATCH_SIZE,
 } from './utils/constants.js';
+
+export { uploadStatusSummaryToS3 };
 
 function rebaseUrl(url, preferredBase, log) {
   try {
@@ -299,15 +302,6 @@ function isNotRecentUrl(url, recentPathnames) {
     return !recentPathnames.has(new URL(url).pathname);
   } catch {
     return true;
-  }
-}
-
-function normalizePathname(url) {
-  try {
-    const { pathname } = new URL(url);
-    return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
-  } catch {
-    return url;
   }
 }
 
@@ -807,39 +801,6 @@ export async function importTopPages(context) {
       }
       : {}),
   };
-}
-
-/**
- * Reads the prerender status.json for a site from S3.
- * Returns empty defaults on NoSuchKey; warns on other errors.
- */
-async function readSiteStatusJson(s3Client, bucketName, siteId, log) {
-  try {
-    const key = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
-    const response = await s3Client.send(new GetObjectCommand({ Bucket: bucketName, Key: key }));
-    const parsed = JSON.parse(await response.Body.transformToString());
-    const existingPages = Array.isArray(parsed.pages) ? parsed.pages : [];
-    return { existingStatus: parsed, existingPages };
-  } catch (e) {
-    if (e.name !== 'NoSuchKey') {
-      log.warn(`${LOG_PREFIX} Could not read status.json for siteId=${siteId}: ${e.message}`);
-    }
-    return { existingStatus: {}, existingPages: [] };
-  }
-}
-
-/**
- * Computes the next domain-level 403 block entry, or null if threshold not met (auto-restore).
- * Backoff: 2d → 4d → 8d (capped).
- */
-function computeDomainBlock(existingDomainBlock, batch403Count, batchSize) {
-  const threshold = Math.max(50, Math.ceil(batchSize * 0.5));
-  if (batch403Count < threshold) {
-    return null;
-  }
-  const consecutiveBlocks = (existingDomainBlock?.consecutiveBlocks ?? 0) + 1;
-  const skipDays = [2, 4, 8][Math.min(consecutiveBlocks - 1, 2)];
-  return { skipUntil: addDays(new Date(), skipDays).toISOString(), consecutiveBlocks };
 }
 
 /**
@@ -1362,151 +1323,6 @@ export async function writeToCitabilityRecords(comparisonResults, siteId, contex
   }
 
   log.info(`${LOG_PREFIX} Wrote PageCitability records: ${written}/${successful.length}`);
-}
-
-/**
- * Post processor to upload a status JSON file to S3 after audit completion
- * @param {string} auditUrl - Audited URL (site base URL)
- * @param {Object} auditData - Audit data with results
- * @param {Object} context - Processing context
- * @returns {Promise<void>}
- */
-export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
-  const {
-    log, s3Client, env,
-  } = context;
-  const {
-    auditResult,
-    siteId,
-    auditedAt,
-    scrapeJobId,
-    submittedUrlSet,
-  } = auditData;
-
-  try {
-    if (!auditResult) {
-      log.warn(`${LOG_PREFIX} Missing auditResult, skipping status summary upload`);
-      return;
-    }
-
-    const scrapedAt = auditedAt || new Date().toISOString();
-    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
-    const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
-
-    // Read existing status.json before building currentPages so we can look up prior scrapeJobIds.
-    // Pages from the current run overwrite any prior entry for the same URL.
-    const { existingStatus, existingPages } = await readSiteStatusJson(
-      s3Client,
-      bucketName,
-      siteId,
-      log,
-    );
-
-    const existingPageMap = new Map(existingPages.map((p) => [normalizePathname(p.url), p]));
-
-    const currentPages = (auditResult.results ?? []).map((result) => {
-      // Only stamp the current scrapeJobId for URLs actually submitted to this job.
-      // For fallback URLs that weren't submitted, preserve the existing scrapeJobId.
-      const wasSubmitted = !submittedUrlSet || submittedUrlSet.has(result.url);
-      // Fix 2: preserve circuitBreakerOpen from existing entry; set it permanently for 410 errors
-      const existingEntry = existingPageMap.get(normalizePathname(result.url));
-      const isGone = result.scrapeError?.statusCode === 410;
-      const wasCircuitBroken = existingEntry?.circuitBreakerOpen === true;
-      return {
-        url: result.url,
-        scrapingStatus: result.error ? 'error' : 'success',
-        needsPrerender: result.needsPrerender || false,
-        isDeployedAtEdge: !!result.isDeployedAtEdge,
-        usedEarlyClientSideHtml: !!result.usedEarlyClientSideHtml,
-        wordCountBefore: result.wordCountBefore || 0,
-        wordCountAfter: result.wordCountAfter || 0,
-        contentGainRatio: result.contentGainRatio || 0,
-        scrapedAt,
-        scrapeJobId: wasSubmitted
-          ? (scrapeJobId || null)
-          : (existingEntry?.scrapeJobId ?? null),
-        ...(result.scrapeError && { scrapeError: result.scrapeError }),
-        ...((isGone || wasCircuitBroken) && { circuitBreakerOpen: true }),
-      };
-    });
-
-    // missingPages should be precomputed by getScrapeJobStats and passed via auditResult.
-    if (Array.isArray(auditResult.missingPages)) {
-      currentPages.push(
-        ...auditResult.missingPages.map((page) => ({
-          ...page,
-          scrapedAt: page.scrapedAt || scrapedAt,
-          scrapeJobId: page.scrapeJobId || scrapeJobId || null,
-        })),
-      );
-    }
-
-    const currentUrlSet = new Set(currentPages.map((p) => normalizePathname(p.url)));
-    const mergedPages = [
-      ...currentPages,
-      ...existingPages.filter((p) => !currentUrlSet.has(normalizePathname(p.url))),
-    ];
-
-    // Derive aggregate metrics from the full merged page set and latest audit metadata.
-    const urlsNeedingPrerender = mergedPages.filter((p) => p.needsPrerender).length;
-    const urlsScrapedSuccessfully = mergedPages.filter((p) => p.scrapingStatus === 'success').length;
-    const urlsSubmittedForScraping = mergedPages.length;
-    const scrapingErrorRate = urlsSubmittedForScraping > 0
-      ? ((urlsSubmittedForScraping - urlsScrapedSuccessfully) / urlsSubmittedForScraping) * 100
-      : null;
-    const scrapeForbiddenCount = mergedPages.filter(
-      (p) => p.scrapeError?.statusCode === 403,
-    ).length;
-
-    // Fix 3 — domain-level 403 circuit breaker (null = threshold not met → auto-restore)
-    const batch403Count = currentPages.filter((p) => p.scrapeError?.statusCode === 403).length;
-    const domainBlock = computeDomainBlock(
-      existingStatus.domainBlock,
-      batch403Count,
-      currentPages.length,
-    );
-
-    const has403Urls = currentPages.some((p) => p.scrapeError?.statusCode === 403);
-    const latestScrapeForbidden = domainBlock !== null
-      || (auditResult.scrapeForbidden ?? has403Urls);
-
-    // Fix 5 — domain-level 429 rate limit
-    const first429 = currentPages.find((p) => p.scrapeError?.statusCode === 429);
-    const rateLimitedUntil = first429
-      ? new Date(Date.now() + (first429.scrapeError?.retryAfter ?? 3600) * 1000).toISOString()
-      : undefined;
-
-    const statusSummary = {
-      baseUrl: auditUrl,
-      siteId,
-      auditType: AUDIT_TYPE,
-      scrapeJobId: scrapeJobId || existingStatus.scrapeJobId || null,
-      lastUpdated: scrapedAt,
-      urlsNeedingPrerender,
-      urlsSubmittedForScraping,
-      urlsScrapedSuccessfully,
-      scrapingErrorRate,
-      scrapeForbidden: latestScrapeForbidden,
-      scrapeForbiddenCount,
-      lastAuditSuccess: auditResult.lastAuditSuccess !== false,
-      ...(domainBlock && { domainBlock }),
-      ...(rateLimitedUntil && { rateLimitedUntil }),
-      pages: mergedPages,
-    };
-    await s3Client.send(new PutObjectCommand({
-      Bucket: bucketName,
-      Key: statusKey,
-      Body: JSON.stringify(statusSummary, null, 2),
-      ContentType: 'application/json',
-    }));
-
-    const { pages: _, ...logSummary } = statusSummary;
-    const logFields = Object.entries(logSummary).map(([k, v]) => `${k}=${v}`).join(', ');
-    log.info(`${LOG_PREFIX} prerender_status_upload: statusKey=${statusKey}, pagesCount=${statusSummary.pages.length}, ${logFields}`);
-  } catch (error) {
-    log.error(`${LOG_PREFIX} Failed to upload status summary to S3: ${error.message}. baseUrl=${auditUrl}, siteId=${siteId}`, error);
-    // Don't throw - this is a non-critical post-processing step
-  }
 }
 
 /**

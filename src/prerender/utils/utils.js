@@ -53,6 +53,21 @@ function hasNonHtmlExtension(pathname) {
  *   - urls: Array of unique HTML URLs (by path), preserving original URLs
  *   - filteredCount: Number of non-HTML URLs that were filtered out
  */
+/**
+ * Normalizes a URL to its pathname, stripping trailing slashes (except root).
+ * Falls back to the raw string on parse failure.
+ * @param {string} url
+ * @returns {string}
+ */
+export function normalizePathname(url) {
+  try {
+    const { pathname } = new URL(url);
+    return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  } catch {
+    return url;
+  }
+}
+
 export function mergeAndGetUniqueHtmlUrls(...urlArrays) {
   const seenPaths = new Set();
   const uniqueUrls = [];
