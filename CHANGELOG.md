@@ -1,3 +1,10 @@
+## [1.433.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.433.1...v1.433.2) (2026-05-07)
+
+
+### Bug Fixes
+
+* use default processingType for TOC scrape submission ([#2486](https://github.com/adobe/spacecat-audit-worker/issues/2486)) ([55401ef](https://github.com/adobe/spacecat-audit-worker/commit/55401effa923ae61bf0691ce528bbe681395ae97))
+
 ## [1.433.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.433.0...v1.433.1) (2026-05-06)
 
 
