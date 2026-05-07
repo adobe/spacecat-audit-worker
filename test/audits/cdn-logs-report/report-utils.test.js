@@ -336,7 +336,7 @@ describe('CDN Logs Report Utils', () => {
     });
 
     it('returns an error state when page type rule loading fails', async () => {
-      const log = { error: sandbox.stub() };
+      const log = { error: sandbox.stub(), warn: sandbox.stub() };
       const context = {
         log,
         dataAccess: {
@@ -352,12 +352,12 @@ describe('CDN Logs Report Utils', () => {
 
       expect(result).to.deep.equal({ error: true, source: 'postgres' });
       expect(log.error).to.have.been.calledWith(
-        'fetchAgenticUrlClassificationRules: failed to load rules for site test-site-id: page type boom',
+        'fetchAgenticUrlClassificationRules: failed to load rules for site test-site-id after 3 attempts: page type boom',
       );
     });
 
     it('returns an error state when category rule loading fails', async () => {
-      const log = { error: sandbox.stub() };
+      const log = { error: sandbox.stub(), warn: sandbox.stub() };
       const context = {
         log,
         dataAccess: {
@@ -373,7 +373,7 @@ describe('CDN Logs Report Utils', () => {
 
       expect(result).to.deep.equal({ error: true, source: 'postgres' });
       expect(log.error).to.have.been.calledWith(
-        'fetchAgenticUrlClassificationRules: failed to load rules for site test-site-id: category boom',
+        'fetchAgenticUrlClassificationRules: failed to load rules for site test-site-id after 3 attempts: category boom',
       );
     });
   });
