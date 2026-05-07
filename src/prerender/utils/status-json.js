@@ -36,7 +36,7 @@ export async function readSiteStatusJson(s3Client, bucketName, siteId, log) {
     return { existingStatus: parsed, existingPages };
   } catch (e) {
     if (e.name !== 'NoSuchKey') {
-      log.warn(`${LOG_PREFIX} Could not read status.json for siteId=${siteId}: ${e.message}`);
+      log.warn(`${LOG_PREFIX} Could not read existing status.json for siteId=${siteId}: ${e.message} — starting fresh`);
     }
     return { existingStatus: {}, existingPages: [] };
   }
@@ -88,7 +88,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       // Only stamp the current scrapeJobId for URLs actually submitted to this job.
       // For fallback URLs that weren't submitted, preserve the existing scrapeJobId.
       const wasSubmitted = !submittedUrlSet || submittedUrlSet.has(result.url);
-      // Fix 2: preserve gone from existing entry; set it permanently for 410 errors
+      // Preserve gone from existing entry; set it permanently for 410 errors
       const existingEntry = existingPageMap.get(normalizePathname(result.url));
       const isGone = result.scrapeError?.statusCode === 410;
       const wasGone = existingEntry?.gone === true;

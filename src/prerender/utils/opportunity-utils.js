@@ -52,6 +52,17 @@ export function shouldPreserveDomainWideSuggestion(suggestion) {
 }
 
 /**
+ * Returns the active prerender Opportunity for a site, or null if none exists.
+ * @param {Object} dataAccess - Data access layer
+ * @param {string} siteId - Site ID
+ * @returns {Promise<Object|null>}
+ */
+export async function findPrerenderOpportunity(dataAccess, siteId) {
+  const opportunities = await dataAccess?.Opportunity?.allBySiteIdAndStatus?.(siteId, 'NEW') ?? [];
+  return opportunities.find((o) => o.getType() === AUDIT_TYPE) ?? null;
+}
+
+/**
  * Diagnostic: detects and warns if any non-NEW suggestions have edgeDeployed set.
  * This should never happen — edgeDeployed is set when a URL is deployed at the CDN edge,
  * and the suggestion status should not be changed away from NEW after that point.
@@ -61,8 +72,7 @@ export function shouldPreserveDomainWideSuggestion(suggestion) {
  * @param {Object} log - Logger
  */
 export async function detectWrongEdgeDeployedStatus(dataAccess, siteId, auditUrl, log) {
-  const opportunities = await dataAccess?.Opportunity?.allBySiteIdAndStatus?.(siteId, 'NEW') ?? [];
-  const opportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
+  const opportunity = await findPrerenderOpportunity(dataAccess, siteId);
   if (!opportunity) {
     return;
   }
@@ -76,20 +86,30 @@ export async function detectWrongEdgeDeployedStatus(dataAccess, siteId, auditUrl
 }
 
 /**
- * Checks if the domain-wide suggestion (isDomainWide=true) has edgeDeployed set.
- * @param {Object} opportunity - The opportunity object
- * @returns {Promise<boolean>}
+ * Returns the deployed domain-wide suggestion from an already-fetched suggestions array,
+ * or null if none exists.
+ * @param {Object[]} suggestions - Already-fetched suggestion entities
+ * @returns {Object|null}
  */
-export async function getDomainWideSuggestionDeployedAtEdge(opportunity) {
-  if (!opportunity || typeof opportunity.getSuggestions !== 'function') {
-    return null;
-  }
-  const suggestions = await opportunity.getSuggestions();
+export function findDeployedDomainWideSuggestion(suggestions) {
   return suggestions.find((s) => {
     const d = s.getData();
     return s.getStatus() !== Suggestion.STATUSES.OUTDATED
       && isDomainWideSuggestionData(d) && !!d?.edgeDeployed;
   }) ?? null;
+}
+
+/**
+ * Checks if the domain-wide suggestion (isDomainWide=true) has edgeDeployed set.
+ * @param {Object} opportunity - The opportunity object
+ * @returns {Promise<Object|null>}
+ */
+export async function getDomainWideSuggestionDeployedAtEdge(opportunity) {
+  if (!opportunity) {
+    return null;
+  }
+  const suggestions = await opportunity.getSuggestions();
+  return findDeployedDomainWideSuggestion(suggestions);
 }
 
 /**

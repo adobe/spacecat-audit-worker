@@ -11,12 +11,14 @@
  */
 
 import { subDays } from 'date-fns';
+import { Suggestion } from '@adobe/spacecat-shared-data-access';
 import { getTopAgenticLiveUrlsFromAthena } from '../../utils/agentic-urls.js';
 import {
   TOP_AGENTIC_URLS_LIMIT,
   TOP_ORGANIC_URLS_LIMIT,
   PRERENDER_RECENT_PROCESSING_TIME_DAYS,
 } from './constants.js';
+import { findPrerenderOpportunity, findDeployedDomainWideSuggestion } from './opportunity-utils.js';
 
 const LOG_PREFIX = 'Prerender -';
 
@@ -71,6 +73,44 @@ export async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_
   } catch (e) {
     context.log.warn(`${LOG_PREFIX} Failed to fetch agentic URLs: ${e.message}. baseUrl=${site.getBaseURL()}`);
     return [];
+  }
+}
+
+/**
+ * Returns a Set of URL pathnames whose suggestions are already deployed at the CDN edge
+ * (individual `edgeDeployed` timestamp) or covered by an active domain-wide deployment
+ * (`coveredByDomainWide` pointing to a domain-wide suggestion that still has `edgeDeployed`).
+ * These URLs should be skipped in the scrape batch — re-scraping adds no value and wastes budget.
+ * @param {Object} context - Audit context with dataAccess and log
+ * @param {string} siteId - Site identifier
+ * @returns {Promise<Set<string>>}
+ */
+export async function getDeployedOrCoveredPathnames(context, siteId) {
+  const { dataAccess, log } = context;
+  try {
+    const opportunity = await findPrerenderOpportunity(dataAccess, siteId);
+    if (!opportunity) {
+      return new Set();
+    }
+
+    const suggestions = await opportunity.getSuggestions();
+    const domainWideDeployed = !!findDeployedDomainWideSuggestion(suggestions);
+
+    const pathnames = new Set();
+    for (const s of suggestions) {
+      const data = s.getData();
+      if (s.getStatus() === Suggestion.STATUSES.NEW && data?.url
+        && (data.edgeDeployed || (data.coveredByDomainWide && domainWideDeployed))) {
+        try {
+          const { pathname } = new URL(data.url);
+          pathnames.add(pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname);
+        } catch { /* skip malformed URLs */ }
+      }
+    }
+    return pathnames;
+  } catch (e) {
+    log?.warn?.(`${LOG_PREFIX} Failed to load deployed/covered pathnames: ${e.message}. siteId=${siteId}`);
+    return new Set();
   }
 }
 

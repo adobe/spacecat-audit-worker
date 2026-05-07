@@ -33,6 +33,7 @@ import {
   getTopAgenticUrls,
   getRecentlyProcessedPathnames,
   isNotRecentUrl,
+  getDeployedOrCoveredPathnames,
 } from './utils/url-selector.js';
 import {
   getS3Path,
@@ -123,10 +124,10 @@ async function buildDailyBatch(
   const { log, s3Client, env } = context;
   const siteId = site.getId();
 
-  // Fix 2 — permanent 410 exclusion: build set of URLs to exclude from all future batches
+  // Permanent 410 exclusion: build set of pathnames to exclude from all future batches
   const { existingPages } = await readSiteStatusJson(
     s3Client,
-    env.S3_SCRAPER_BUCKET_NAME,
+    env?.S3_SCRAPER_BUCKET_NAME,
     siteId,
     log,
   );
@@ -136,16 +137,20 @@ async function buildDailyBatch(
 
   const agenticUrls = await getTopAgenticUrls(site, context);
   const recentPathnames = await getRecentlyProcessedPathnames(context, siteId);
+  const deployedOrCoveredPathnames = await getDeployedOrCoveredPathnames(context, siteId);
 
   const filteredOrganicUrls = rebasedTopPagesUrls
     .filter((url) => isNotRecentUrl(url, recentPathnames))
-    .filter((url) => !gonePathnames.has(normalizePathname(url)));
+    .filter((url) => !gonePathnames.has(normalizePathname(url)))
+    .filter((url) => !deployedOrCoveredPathnames.has(normalizePathname(url)));
   const filteredIncludedURLs = rebasedIncludedURLs
     .filter((url) => isNotRecentUrl(url, recentPathnames))
-    .filter((url) => !gonePathnames.has(normalizePathname(url)));
+    .filter((url) => !gonePathnames.has(normalizePathname(url)))
+    .filter((url) => !deployedOrCoveredPathnames.has(normalizePathname(url)));
   const filteredAgenticUrls = agenticUrls
     .filter((url) => isNotRecentUrl(url, recentPathnames))
-    .filter((url) => !gonePathnames.has(normalizePathname(url)));
+    .filter((url) => !gonePathnames.has(normalizePathname(url)))
+    .filter((url) => !deployedOrCoveredPathnames.has(normalizePathname(url)));
 
   const orderedCandidateUrls = [
     ...filteredOrganicUrls,
@@ -213,8 +218,8 @@ export async function submitForScraping(context) {
   // When triggered from Slack, skip agentic sources, daily batching, and domain block check
   const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
 
-  // Fix 3 — proactive bot-block check before expensive URL fetches (not applicable for Slack)
-  if (!isSlackTriggered) {
+  // Proactive bot-block check before expensive URL fetches (not applicable for Slack)
+  if (!isSlackTriggered && site.getBaseURL()) {
     const { crawlable, confidence } = await detectBotBlocker({ baseUrl: site.getBaseURL() });
     if (!crawlable && confidence >= 0.95) {
       log.info(`${LOG_PREFIX} Domain blocked (confidence=${confidence}), skipping siteId=${siteId}, baseUrl=${site.getBaseURL()}`);
@@ -646,7 +651,7 @@ export async function processContentAndGenerateOpportunities(context) {
       submittedUrlSet,
     };
 
-    // Upload status summary to S3 (post-processing)
+    // Upload status summary to S3 (post-processing).
     await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);
 
     return {
