@@ -44,8 +44,19 @@ import { parseArgs } from 'node:util';
 import { writeFile } from 'node:fs/promises';
 
 const PREFIX = 'config/llmo/';
-// config/llmo/<siteId>/lmmo-config.json
+// `lmmo-config.json` is the on-disk filename produced by llmoConfigPath in
+// @adobe/spacecat-shared-utils — the swapped letters are intentional and
+// historical. Do NOT "fix" the regex; it must match what's actually in S3.
 const KEY_RE = /^config\/llmo\/([^/]+)\/lmmo-config\.json$/;
+
+function parsePositiveInt(raw, name) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
+    console.error(`error: --${name} must be a positive integer (got ${JSON.stringify(raw)})`);
+    process.exit(2);
+  }
+  return n;
+}
 
 function parseCliArgs() {
   const { values } = parseArgs({
@@ -70,12 +81,15 @@ function parseCliArgs() {
     console.error('error: --bucket or S3_BUCKET_NAME env var is required');
     process.exit(2);
   }
+  // Reject non-numeric --concurrency / --limit explicitly: a silent zero-result
+  // run would be indistinguishable from "bucket is clean" and that is the
+  // worst possible failure mode for an evidence-gathering tool.
   return {
     bucket,
     region: values.region,
     outPath: values.out,
-    limit: values.limit ? Number(values.limit) : Infinity,
-    concurrency: Math.max(1, Number(values.concurrency)),
+    limit: values.limit !== undefined ? parsePositiveInt(values.limit, 'limit') : Infinity,
+    concurrency: parsePositiveInt(values.concurrency, 'concurrency'),
   };
 }
 
@@ -105,36 +119,53 @@ async function classifyKey(s3, bucket, key) {
   try {
     resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
   } catch (e) {
-    return { siteId, status: 'fetch-error', error: e.message };
+    return {
+      siteId, key, status: 'fetch-error', error: e.message, errorName: e.name,
+    };
   }
 
   let text;
   try {
     text = await resp.Body.transformToString();
   } catch (e) {
-    return { siteId, status: 'fetch-error', error: e.message };
+    return {
+      siteId, key, status: 'fetch-error', error: e.message, errorName: e.name,
+    };
   }
 
   let parsed;
   try {
     parsed = JSON.parse(text);
   } catch (e) {
-    return { siteId, status: 'json-error', error: e.message };
+    return {
+      siteId, key, status: 'json-error', error: e.message,
+    };
   }
 
   const result = schemas.llmoConfig.safeParse(parsed);
   if (!result.success) {
-    return { siteId, status: 'schema-invalid', issues: result.error.issues };
+    return {
+      siteId, key, status: 'schema-invalid', issues: result.error.issues,
+    };
   }
-  return { siteId, status: 'valid' };
+  return { siteId, key, status: 'valid' };
 }
 
 async function runWorkers(queue, concurrency, onResult, onProgress) {
   const workers = Array.from({ length: concurrency }, async () => {
     while (queue.length > 0) {
       const item = queue.shift();
-      // eslint-disable-next-line no-await-in-loop
-      const r = await item();
+      let r;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        r = await item();
+      } catch (e) {
+        // Defensive backstop. classifyKey is already try/catch internally;
+        // this catch ensures one unexpected throw from a future change to
+        // classifyKey or its dependencies does not reject Promise.all and
+        // discard every result collected so far.
+        r = { status: 'unexpected-error', error: e?.message ?? String(e) };
+      }
       onResult(r);
       onProgress();
     }
@@ -142,15 +173,18 @@ async function runWorkers(queue, concurrency, onResult, onProgress) {
   await Promise.all(workers);
 }
 
-function summarize(results, bucket, elapsedMs) {
+function summarize(results, bucket, elapsedMs, limit) {
   return {
     bucket,
+    limitApplied: limit !== Infinity,
+    limit: limit === Infinity ? null : limit,
     total: results.length,
     valid: results.filter((r) => r.status === 'valid').length,
     schemaInvalid: results.filter((r) => r.status === 'schema-invalid').length,
     jsonError: results.filter((r) => r.status === 'json-error').length,
     fetchError: results.filter((r) => r.status === 'fetch-error').length,
-    elapsedSeconds: (elapsedMs / 1000).toFixed(1),
+    unexpectedError: results.filter((r) => r.status === 'unexpected-error').length,
+    elapsedSeconds: Number((elapsedMs / 1000).toFixed(1)),
   };
 }
 
@@ -209,7 +243,7 @@ async function main() {
     },
   );
 
-  const summary = summarize(results, bucket, Date.now() - start);
+  const summary = summarize(results, bucket, Date.now() - start, limit);
   console.log('\n=== Summary ===');
   console.log(JSON.stringify(summary, null, 2));
 
@@ -225,9 +259,15 @@ async function main() {
   }
 
   if (outPath) {
-    const failures = results.filter((r) => r.status !== 'valid');
-    await writeFile(outPath, JSON.stringify({ summary, failures }, null, 2));
-    console.log(`\n[sweep] wrote ${failures.length} failure entries to ${outPath}`);
+    // Write report failures separately from the sweep itself: a successful
+    // sweep with an unwritable --out path must not be misreported as fatal.
+    try {
+      const failures = results.filter((r) => r.status !== 'valid');
+      await writeFile(outPath, JSON.stringify({ summary, failures }, null, 2));
+      console.log(`\n[sweep] wrote ${failures.length} failure entries to ${outPath}`);
+    } catch (e) {
+      console.error(`[sweep] WARNING: failed to write ${outPath}: ${e.message}`);
+    }
   }
 }
 
