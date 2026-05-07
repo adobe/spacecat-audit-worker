@@ -12,7 +12,6 @@
 
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit } from '@adobe/spacecat-shared-data-access';
-import { computeDomainBlock } from './domain-block.js';
 import { normalizePathname } from './utils.js';
 
 const LOG_PREFIX = 'Prerender -';
@@ -45,8 +44,8 @@ export async function readSiteStatusJson(s3Client, bucketName, siteId, log) {
 
 /**
  * Post processor to upload a status JSON file to S3 after audit completion.
- * Merges the current scrape results with existing pages, applies domain-level circuit breaker
- * (Fix 3) and rate-limit (Fix 5) state, then writes status.json back to S3.
+ * Merges the current scrape results with existing pages, applies rate-limit (Fix 5) state,
+ * then writes status.json back to S3.
  *
  * @param {string} auditUrl - Audited URL (site base URL)
  * @param {Object} auditData - Audit data with results
@@ -140,17 +139,8 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       (p) => p.scrapeError?.statusCode === 403,
     ).length;
 
-    // Fix 3 — domain-level 403 circuit breaker (null = threshold not met → auto-restore)
-    const batch403Count = currentPages.filter((p) => p.scrapeError?.statusCode === 403).length;
-    const domainBlock = computeDomainBlock(
-      existingStatus.domainBlock,
-      batch403Count,
-      currentPages.length,
-    );
-
     const has403Urls = currentPages.some((p) => p.scrapeError?.statusCode === 403);
-    const latestScrapeForbidden = domainBlock !== null
-      || (auditResult.scrapeForbidden ?? has403Urls);
+    const latestScrapeForbidden = auditResult.scrapeForbidden ?? has403Urls;
 
     // Fix 5 — domain-level 429 rate limit
     const first429 = currentPages.find((p) => p.scrapeError?.statusCode === 429);
@@ -171,7 +161,6 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       scrapeForbidden: latestScrapeForbidden,
       scrapeForbiddenCount,
       lastAuditSuccess: auditResult.lastAuditSuccess !== false,
-      ...(domainBlock && { domainBlock }),
       ...(rateLimitedUntil && { rateLimitedUntil }),
       pages: mergedPages,
     };

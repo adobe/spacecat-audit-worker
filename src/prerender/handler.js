@@ -12,6 +12,7 @@
 
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
+import { detectBotBlocker } from '@adobe/spacecat-shared-utils';
 import { subDays } from 'date-fns';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
@@ -881,7 +882,21 @@ export async function submitForScraping(context) {
     currentIncludedUrls = rebasedIncludedURLs.length;
     isFirstRunOfCycle = true;
   } else {
-    // Read status.json once — shared by domain block, rate limit, and circuit breaker checks
+    // Fix 3 — proactive bot-block check: skip domain if a known WAF is actively blocking crawlers
+    const { crawlable, confidence } = await detectBotBlocker({ baseUrl: site.getBaseURL() });
+    if (!crawlable && confidence >= 0.95) {
+      log.info(`${LOG_PREFIX} Domain blocked (confidence=${confidence}), skipping siteId=${siteId}`);
+      return {
+        urls: [],
+        siteId,
+        processingType: AUDIT_TYPE,
+        maxScrapeAge: 0,
+        options: { pageLoadTimeout: 20000, storagePrefix: AUDIT_TYPE },
+        skippedReason: 'domainBlocked',
+      };
+    }
+
+    // Read status.json for Fix 5 (rate limit window) and Fix 2 (410 circuit breaker set)
     const { existingStatus, existingPages } = await readSiteStatusJson(
       s3Client,
       env.S3_SCRAPER_BUCKET_NAME,
@@ -889,22 +904,9 @@ export async function submitForScraping(context) {
       log,
     );
 
-    // Fix 3 — domain-level 403 circuit breaker: skip entire domain if block is active
-    const { domainBlock, rateLimitedUntil } = existingStatus;
+    // Fix 5 — domain-level rate limit: skip if Retry-After window from a previous run is active
+    const { rateLimitedUntil } = existingStatus;
     const now = new Date().toISOString();
-    if (domainBlock?.skipUntil && domainBlock.skipUntil > now) {
-      log.info(`${LOG_PREFIX} Domain blocked until ${domainBlock.skipUntil}, skipping siteId=${siteId}`);
-      return {
-        urls: [],
-        siteId,
-        processingType: AUDIT_TYPE,
-        maxScrapeAge: 0,
-        options: { pageLoadTimeout: 20000, storagePrefix: AUDIT_TYPE },
-        skippedReason: 'domainBlock',
-      };
-    }
-
-    // Fix 5 — domain-level rate limit: skip entire domain if Retry-After window is active
     if (rateLimitedUntil && rateLimitedUntil > now) {
       log.info(`${LOG_PREFIX} Domain rate-limited until ${rateLimitedUntil}, skipping siteId=${siteId}`);
       return {
