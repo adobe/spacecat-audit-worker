@@ -26,6 +26,8 @@ import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
 import {
   filterBrokenSuggestedUrls,
+  isHtmlContentType,
+  isSoft404Body,
   urlsMatch,
 } from '../utils/url-utils.js';
 import BrightDataClient, { buildLocaleSearchUrl } from '../support/bright-data-client.js';
@@ -51,6 +53,62 @@ function getEnvInt(env, key, defaultValue) {
   return Number.isFinite(value) ? value : defaultValue;
 }
 
+/**
+ * Detects whether a 2xx response is actually a soft 404.
+ * Checks (in order): X-Robots-Tag noindex header, <meta robots noindex>, title pattern.
+ *
+ * @param {Response} response - Fetch response (must be ok/2xx).
+ * @param {string} url - The URL that was fetched (used for logging only).
+ * @param {Object} log - Logger instance.
+ * @returns {Promise<boolean>} True if the page appears to be a soft 404.
+ */
+async function isSoft404(response, url, log) {
+  // 1. X-Robots-Tag: noindex header (no body read needed)
+  const robotsHeader = response.headers?.get?.('x-robots-tag') ?? '';
+  if (robotsHeader.toLowerCase().includes('noindex')) {
+    log.info(`Backlink ${url} is a soft 404 (X-Robots-Tag: noindex)`);
+    return true;
+  }
+
+  // 2 & 3. Body-based signals — only for HTML responses
+  const contentType = response.headers?.get?.('content-type') ?? '';
+  if (!isHtmlContentType(contentType)) {
+    return false;
+  }
+
+  let body;
+  try {
+    body = await response.text();
+  } catch {
+    return false;
+  }
+
+  if (isSoft404Body(body)) {
+    log.info(`Backlink ${url} is a soft 404 (body pattern matched)`);
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Returns true when url_to is on a subdomain that differs from the site's base URL hostname.
+ * www and bare domain are treated as equivalent (both are normalised via stripWWW).
+ *
+ * @param {string} urlTo - The broken backlink target URL.
+ * @param {string} siteBaseURL - The site's canonical base URL.
+ * @returns {boolean}
+ */
+function isOnDifferentSubdomain(urlTo, siteBaseURL) {
+  try {
+    const siteHostname = stripWWW(new URL(prependSchema(siteBaseURL)).hostname).toLowerCase();
+    const backlinkHostname = stripWWW(new URL(prependSchema(urlTo)).hostname).toLowerCase();
+    return backlinkHostname !== siteHostname;
+  } catch {
+    return false;
+  }
+}
+
 async function filterOutValidBacklinks(backlinks, log) {
   const fetchWithTimeout = async (url, timeout) => {
     try {
@@ -68,11 +126,14 @@ async function filterOutValidBacklinks(backlinks, log) {
 
   const isStillBrokenBacklink = async (backlink) => {
     const response = await fetchWithTimeout(backlink.url_to, TIMEOUT);
-    if (!response.ok && response.status !== 404
-      && response.status >= 400 && response.status < 500) {
-      log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
+    if (!response.ok) {
+      if (response.status !== 404 && response.status >= 400 && response.status < 500) {
+        log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
+      }
+      return true;
     }
-    return !response.ok;
+    // 2xx — verify the page is not a soft 404
+    return isSoft404(response, backlink.url_to, log);
   };
 
   const backlinkStatuses = [];
@@ -190,7 +251,7 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
       }
     };
 
-    const filteredBacklinks = result?.backlinks?.filter((backlink) => {
+    const excludedFilteredBacklinks = result?.backlinks?.filter((backlink) => {
       if (!excludedURLs || excludedURLs.length === 0) {
         return true;
       }
@@ -200,6 +261,17 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
         const normalizedExcluded = normalizeUrl(excludedUrl);
         return normalizedBacklink === normalizedExcluded;
       });
+    });
+
+    // Drop backlinks whose target belongs to a different subdomain than the audited site.
+    // www and the bare domain are treated as the same host and are never filtered.
+    const siteBaseURL = site.getBaseURL();
+    const filteredBacklinks = excludedFilteredBacklinks?.filter((backlink) => {
+      if (isOnDifferentSubdomain(backlink.url_to, siteBaseURL)) {
+        log.debug(`Excluding backlink ${backlink.url_to}: different subdomain from ${siteBaseURL}`);
+        return false;
+      }
+      return true;
     });
 
     return {

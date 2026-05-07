@@ -377,6 +377,216 @@ describe('Backlinks Tests', function () {
       .equal(auditDataMock.auditResult.brokenBacklinks.concat(brokenBacklinkWithTimeout));
   });
 
+  describe('subdomain filtering', () => {
+    it('should exclude backlinks whose url_to is on a different subdomain', async () => {
+      const backlinks = [
+        {
+          title: 'same domain',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://foo.com/some-page',
+          traffic_domain: 50,
+        },
+        {
+          title: 'www variant – should not be filtered',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://www.foo.com/some-page',
+          traffic_domain: 40,
+        },
+        {
+          title: 'different subdomain – should be excluded',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://careers.foo.com/jobs',
+          traffic_domain: 30,
+        },
+        {
+          title: 'another subdomain – should be excluded',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://blog.foo.com/post',
+          traffic_domain: 20,
+        },
+      ];
+
+      nock('https://foo.com')
+        .get('/some-page')
+        .reply(404);
+
+      nock('https://www.foo.com')
+        .get('/some-page')
+        .reply(404);
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(auditUrl, context, site2);
+      const resultUrls = result.auditResult.brokenBacklinks.map((b) => b.url_to);
+
+      expect(resultUrls).to.include('https://foo.com/some-page');
+      expect(resultUrls).to.include('https://www.foo.com/some-page');
+      expect(resultUrls).to.not.include('https://careers.foo.com/jobs');
+      expect(resultUrls).to.not.include('https://blog.foo.com/post');
+    });
+
+    it('should keep all backlinks when site uses www and url_to uses bare domain', async () => {
+      const backlinks = [
+        {
+          title: 'bare domain – must not be filtered',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://example.com/page',
+          traffic_domain: 50,
+        },
+      ];
+
+      nock('https://example.com')
+        .get('/page')
+        .reply(404);
+
+      const wwwSite = {
+        getId: () => 'www-site',
+        getBaseURL: () => 'https://www.example.com',
+        getConfig: () => ({ getExcludedURLs: () => [] }),
+      };
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(auditUrl, context, wwwSite);
+      expect(result.auditResult.brokenBacklinks).to.have.length(1);
+      expect(result.auditResult.brokenBacklinks[0].url_to).to.equal('https://example.com/page');
+    });
+  });
+
+  describe('soft-404 detection', () => {
+    it('should keep backlink when 200 response has X-Robots-Tag: noindex', async () => {
+      nock('https://foo.com')
+        .get('/soft-404-robots-header')
+        .reply(200, '<html><body>Custom 404</body></html>', {
+          'content-type': 'text/html',
+          'x-robots-tag': 'noindex',
+        });
+
+      const backlinks = [
+        {
+          title: 'soft 404 via X-Robots-Tag',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://foo.com/soft-404-robots-header',
+          traffic_domain: 50,
+        },
+      ];
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(auditUrl, context, site2);
+      expect(result.auditResult.brokenBacklinks).to.have.length(1);
+      expect(result.auditResult.brokenBacklinks[0].url_to)
+        .to.equal('https://foo.com/soft-404-robots-header');
+    });
+
+    it('should keep backlink when 200 response has <meta robots noindex>', async () => {
+      const html = '<html><head><meta name="robots" content="noindex, nofollow"></head><body>Oops</body></html>';
+      nock('https://foo.com')
+        .get('/soft-404-meta')
+        .reply(200, html, { 'content-type': 'text/html' });
+
+      const backlinks = [
+        {
+          title: 'soft 404 via meta noindex',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://foo.com/soft-404-meta',
+          traffic_domain: 50,
+        },
+      ];
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(auditUrl, context, site2);
+      expect(result.auditResult.brokenBacklinks).to.have.length(1);
+    });
+
+    it('should keep backlink when 200 response title contains "404 Not Found"', async () => {
+      const html = '<html><head><title>404 Not Found</title></head><body>The page you requested was not found.</body></html>';
+      nock('https://foo.com')
+        .get('/soft-404-title')
+        .reply(200, html, { 'content-type': 'text/html' });
+
+      const backlinks = [
+        {
+          title: 'soft 404 via title',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://foo.com/soft-404-title',
+          traffic_domain: 50,
+        },
+      ];
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(auditUrl, context, site2);
+      expect(result.auditResult.brokenBacklinks).to.have.length(1);
+    });
+
+    it('should drop backlink when 200 response is a real page (no soft-404 signals)', async () => {
+      const html = '<html><head><title>Welcome to Foo</title></head><body>Content here.</body></html>';
+      nock('https://foo.com')
+        .get('/real-page')
+        .reply(200, html, { 'content-type': 'text/html' });
+
+      const backlinks = [
+        {
+          title: 'real page returning 200',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://foo.com/real-page',
+          traffic_domain: 50,
+        },
+      ];
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(auditUrl, context, site2);
+      expect(result.auditResult.brokenBacklinks).to.have.length(0);
+    });
+
+    it('should keep backlink when 200 non-HTML response has noindex in x-robots-tag', async () => {
+      nock('https://foo.com')
+        .get('/soft-404-non-html')
+        .reply(200, 'some plain text', {
+          'content-type': 'text/plain',
+          'x-robots-tag': 'noindex',
+        });
+
+      const backlinks = [
+        {
+          title: 'soft 404 non-HTML noindex header',
+          url_from: 'https://ref.com/page',
+          url_to: 'https://foo.com/soft-404-non-html',
+          traffic_domain: 50,
+        },
+      ];
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(auditUrl, context, site2);
+      expect(result.auditResult.brokenBacklinks).to.have.length(1);
+    });
+  });
+
   it('should handle audit api errors gracefully', async () => {
     mockSeoClient.getBrokenBacklinks.rejects(new Error('SEO API request failed with status: 500'));
 
