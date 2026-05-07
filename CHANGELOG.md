@@ -1,3 +1,10 @@
+# [1.434.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.433.3...v1.434.0) (2026-05-07)
+
+
+### Features
+
+* **cdn-logs-report:** read agentic patterns from Postgres ([#2439](https://github.com/adobe/spacecat-audit-worker/issues/2439)) ([e6fdf21](https://github.com/adobe/spacecat-audit-worker/commit/e6fdf216a791a739f0c5ab6614ec840445e47ebe)), closes [adobe/mysticat-data-service#487](https://github.com/adobe/mysticat-data-service/issues/487)
+
 ## [1.433.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.433.2...v1.433.3) (2026-05-07)
 
 
