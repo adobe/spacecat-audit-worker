@@ -342,8 +342,6 @@ export async function submitForScraping(context) {
   return {
     urls: topPages.map((url) => ({ url })),
     siteId: site.getId(),
-    processingType: auditType,
-    options: { storagePrefix: auditType },
     maxScrapeAge: 24,
   };
 }
