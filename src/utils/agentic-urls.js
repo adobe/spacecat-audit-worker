@@ -59,15 +59,6 @@ export const EXCLUDED_URL_SUFFIXES = [
  * @param {Object} site - Site object
  * @param {Object} context - Context with log, env, etc.
  * @param {number} limit - Maximum number of URLs to return
- * @returns {Promise<Array<string>>} Array of top agentic URLs
- */
-/**
- * Fetch top Agentic URLs using Athena.
- * Find last week's top agentic URLs, filters out pooled 'Other',
- * groups by URL, and returns the top URLs by total hits.
- * @param {Object} site - Site object
- * @param {Object} context - Context with log, env, etc.
- * @param {number} limit - Maximum number of URLs to return
  * @param {number[]} statuses - Optional HTTP status codes to filter by (e.g. [200])
  * @returns {Promise<Array<string>>} Array of top agentic URLs
  */
