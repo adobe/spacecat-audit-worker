@@ -137,6 +137,14 @@ export async function replaceAgenticUrlClassificationRules({
   return Array.isArray(data) ? data[0] : data;
 }
 
+// Default intent categories that are always present and carry no site-specific signal.
+// If config contains only these, treat it as unconfigured so the LLM generates its own.
+const DEFAULT_INTENT_CATEGORIES = new Set([
+  'usage & troubleshooting',
+  'comparison & decision',
+  'discovery & research',
+]);
+
 /**
  * Fetches config categories from the latest LLMO config
  */
@@ -156,7 +164,8 @@ export async function getConfigCategories(site, context) {
       return [];
     }
 
-    return Object.values(config.categories).map((category) => category.name);
+    const categories = Object.values(config.categories).map((category) => category.name);
+    return categories.filter((cat) => !DEFAULT_INTENT_CATEGORIES.has(cat.toLowerCase()));
   } catch (error) {
     log.warn(`Failed to fetch config categories: ${error.message}`);
     return [];

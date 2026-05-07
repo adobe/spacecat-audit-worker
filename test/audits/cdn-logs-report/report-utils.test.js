@@ -233,6 +233,38 @@ describe('CDN Logs Report Utils', () => {
       expect(await mockedReportUtils.getConfigCategories(mockSite, mockContext)).to.deep.equal([]);
     });
 
+    it('returns empty array when only default intent categories are present', async () => {
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          categories: {
+            'cat-1': { name: 'Usage & Troubleshooting' },
+            'cat-2': { name: 'Comparison & Decision' },
+            'cat-3': { name: 'Discovery & Research' },
+          },
+        },
+      });
+
+      const result = await mockedReportUtils.getConfigCategories(mockSite, mockContext);
+      expect(result).to.deep.equal([]);
+    });
+
+    it('filters out default intent categories when mixed with custom ones', async () => {
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          categories: {
+            'cat-1': { name: 'Usage & Troubleshooting' },
+            'cat-2': { name: 'Comparison & Decision' },
+            'cat-3': { name: 'Discovery & Research' },
+            'cat-4': { name: 'Analytics' },
+            'cat-5': { name: 'Cloud' },
+          },
+        },
+      });
+
+      const result = await mockedReportUtils.getConfigCategories(mockSite, mockContext);
+      expect(result).to.deep.equal(['Analytics', 'Cloud']);
+    });
+
     it('returns empty array and logs warning on error', async () => {
       mockLlmoConfig.readConfig.rejects(new Error('S3 fetch failed'));
 
