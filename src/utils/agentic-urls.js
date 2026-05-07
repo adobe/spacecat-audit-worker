@@ -141,3 +141,92 @@ export async function getTopAgenticUrlsFromAthena(
     return [];
   }
 }
+
+/**
+ * Like getTopAgenticUrlsFromAthena but restricted to URLs that returned HTTP 200
+ * during the period — excludes 404s, 410s, and other error responses.
+ * @param {Object} site - Site object
+ * @param {Object} context - Context with log, env, etc.
+ * @param {number} limit - Maximum number of URLs to return
+ * @returns {Promise<Array<string>>} Array of successfully-served agentic URLs
+ */
+export async function getTopAgenticLiveUrlsFromAthena(
+  site,
+  context,
+  limit = DEFAULT_TOP_AGENTIC_URLS_LIMIT,
+) {
+  const { log } = context;
+  const baseUrl = getPreferredBaseUrl(site, context);
+
+  try {
+    const configuration = await context.dataAccess.Configuration.findLatest();
+    if (!configuration) {
+      log.warn(`Agentic URLs - Skipping Athena query because no configuration was found for site ${site.getId()}`);
+      return [];
+    }
+    if (!configuration.isHandlerEnabledForSite('cdn-logs-analysis', site)) {
+      log.info(`Agentic URLs - Skipping Athena query because cdn-logs-analysis is disabled for site ${site.getId()}`);
+      return [];
+    }
+
+    const awsRuntime = getCdnAwsRuntime(site, context);
+    const s3Config = getS3Config(site, context);
+    const periods = generateReportingPeriods();
+    const recentWeeks = periods.weeks;
+    const oneWeekPeriods = { weeks: [recentWeeks[0]] };
+    const athenaClient = awsRuntime.createAthenaClient(s3Config.getAthenaTempLocation());
+    const query = await weeklyBreakdownQueries.createTopLiveUrlsQueryWithLimit({
+      periods: oneWeekPeriods,
+      databaseName: s3Config.databaseName,
+      tableName: s3Config.tableName,
+      site,
+      limit,
+      excludedUrlSuffixes: EXCLUDED_URL_SUFFIXES,
+    });
+    log.info(`Agentic URLs - Executing Athena query for top live agentic URLs... baseUrl=${baseUrl}`);
+    const results = await athenaClient.query(
+      query,
+      s3Config.databaseName,
+      '[Athena Query] Top Live Agentic URLs',
+    );
+
+    if (!Array.isArray(results) || results.length === 0) {
+      log.warn(`Agentic URLs - Athena returned no live agentic rows. baseUrl=${baseUrl}`);
+      return [];
+    }
+
+    // Validate baseUrl before constructing URLs
+    let resolvedBaseUrl = baseUrl;
+    try {
+      // eslint-disable-next-line no-new
+      new URL(baseUrl);
+    } catch {
+      log.warn(`Agentic URLs - Invalid baseUrl: ${baseUrl}, cannot construct absolute URLs`);
+      resolvedBaseUrl = null;
+    }
+
+    const topUrls = results
+      .filter((row) => typeof row?.url === 'string' && row.url.length > 0)
+      .map((row) => {
+        const path = row.url;
+        // If path is already an absolute URL, return it as-is
+        if (path.startsWith('http://') || path.startsWith('https://')) {
+          return path;
+        }
+        // If we have a valid base URL, construct the full URL
+        if (resolvedBaseUrl) {
+          return new URL(path, resolvedBaseUrl).toString();
+        }
+        // No valid base URL, return null to filter out
+        return null;
+      })
+      .filter((url) => url !== null);
+
+    log.info(`Agentic URLs - Selected ${topUrls.length} top live agentic URLs via Athena. baseUrl=${baseUrl}`);
+    log.info(`Agentic URLs - Top #1 URL: ${topUrls[0]}`);
+    return topUrls;
+  } catch (e) {
+    log?.warn?.(`Agentic URLs - Athena agentic URL fetch failed: ${e.message}. baseUrl=${baseUrl}`);
+    return [];
+  }
+}
