@@ -340,6 +340,30 @@ describe('LLM Error Pages Utils', () => {
   });
 
   describe('buildLlmErrorPagesQuery with site patterns', () => {
+    it('escapes single quotes in pattern regex and name to prevent SQL injection', async () => {
+      const site = { getId: () => 'site-id' };
+      mockGetStaticContent = sinon.stub().returns('SELECT ...');
+      const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
+        '@adobe/spacecat-shared-utils': {
+          getStaticContent: mockGetStaticContent,
+        },
+        '../../../src/common/agentic-url-classification-rules.js': {
+          fetchAgenticUrlClassificationRules: sinon.stub().resolves({
+            pagePatterns: [{ name: "O'Brien Page", regex: "/o'brien/.*" }],
+            topicPatterns: [{ name: "Can't Stop", regex: "/can't/" }],
+          }),
+        },
+      });
+
+      await mocked.buildLlmErrorPagesQuery({ databaseName: 'db', tableName: 'tbl', site });
+
+      const callArg = mockGetStaticContent.firstCall.args[0];
+      expect(callArg.pageCategoryClassification).to.include("THEN 'O''Brien Page'");
+      expect(callArg.pageCategoryClassification).to.include("/o''brien/.*");
+      expect(callArg.topicExtraction).to.include("THEN 'Can''t Stop'");
+      expect(callArg.topicExtraction).to.include("/can''t/");
+    });
+
     it('injects classification SQL when site is provided', async () => {
       const site = { getId: () => 'site-id' };
       mockGetStaticContent = sinon.stub().returns('SELECT ...');

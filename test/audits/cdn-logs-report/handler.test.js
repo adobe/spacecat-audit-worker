@@ -435,6 +435,79 @@ describe('CDN Logs Report Handler', function test() {
       expect(result.auditResult).to.have.length(1);
     });
 
+    it('generates DB rules when only one table has rules', async () => {
+      const refreshedPatterns = {
+        pagePatterns: [{ name: 'Documentation', regex: '/docs', sort_order: 0 }],
+        topicPatterns: [{ name: 'Products', regex: '/products', sort_order: 0 }],
+      };
+      const fetchRulesStub = sandbox.stub();
+      fetchRulesStub.onFirstCall().resolves({
+        pagePatterns: [{ name: 'Documentation', regex: '/docs', sort_order: 0 }],
+        topicPatterns: [],
+      });
+      fetchRulesStub.onSecondCall().resolves(refreshedPatterns);
+      const generatePatternsWorkbookStub = sandbox.stub().resolves(true);
+      const runWeeklyReportStub = sandbox.stub().resolves({ success: true, uploadResult: null });
+      const localHandler = await esmock('../../../src/cdn-logs-report/handler.js', {
+        '../../../src/cdn-logs-report/utils/report-utils.js': {
+          loadSql: sandbox.stub().resolves('SELECT 1'),
+          generateReportingPeriods: sandbox.stub().returns({ weeks: [], periodIdentifier: 'w12-2026' }),
+          getConfigCategories: sandbox.stub().resolves([]),
+        },
+        '../../../src/common/agentic-url-classification-rules.js': {
+          fetchAgenticUrlClassificationRules: fetchRulesStub,
+        },
+        '../../../src/utils/cdn-utils.js': {
+          pathHasData: sandbox.stub().resolves(true),
+          getS3Config: sandbox.stub().returns({
+            bucket: 'test-bucket',
+            siteKey: 'example_com',
+            siteName: 'example',
+            databaseName: 'cdn_logs_example_com',
+            getAthenaTempLocation: () => 's3://temp',
+          }),
+          getCdnAwsRuntime: sandbox.stub().returns({
+            s3Client: {},
+            createAthenaClient: sandbox.stub().returns({ execute: sandbox.stub().resolves() }),
+          }),
+        },
+        '../../../src/cdn-logs-report/utils/report-runner.js': {
+          runWeeklyReport: runWeeklyReportStub,
+        },
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: sandbox.stub().resolves(createMockSharepointClient(sandbox)),
+          bulkPublishToAdminHlx: sandbox.stub().resolves(),
+        },
+        '../../../src/cdn-logs-report/constants/report-configs.js': {
+          getConfigs: sandbox.stub().returns([{
+            name: 'agentic',
+            aggregatedLocation: 's3://bucket/aggregated/test-site/',
+            tableName: 'aggregated_logs_example_com_consolidated',
+            filePrefix: 'agentictraffic',
+            folderSuffix: 'agentic-traffic',
+            workbookCreator: 'Spacecat Agentic Flat Report',
+            queryFunction: sandbox.stub(),
+            sheetName: 'shared-all',
+          }]),
+        },
+        '../../../src/cdn-logs-report/patterns/patterns-uploader.js': {
+          generatePatternsWorkbook: generatePatternsWorkbookStub,
+        },
+      });
+
+      const result = await localHandler.runner(
+        'https://example.com',
+        context,
+        site,
+        createAuditContext(sandbox, { weekOffset: 0, categoriesUpdated: false }),
+      );
+
+      expect(fetchRulesStub).to.have.been.calledTwice;
+      expect(generatePatternsWorkbookStub).to.have.been.calledOnce;
+      expect(runWeeklyReportStub.firstCall.args[0].remotePatterns).to.deep.equal(refreshedPatterns);
+      expect(result.auditResult).to.have.length(1);
+    });
+
     it('generates DB rules when DB has no existing rules', async () => {
       const refreshedPatterns = {
         pagePatterns: [{ name: 'Documentation', regex: '/docs', sort_order: 0 }],

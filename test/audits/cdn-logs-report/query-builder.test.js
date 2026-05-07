@@ -210,6 +210,42 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.include("THEN 'Products'");
   });
 
+  it('escapes single quotes in pattern regex and name to prevent SQL injection', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(createMockOptions({
+      remotePatterns: {
+        pagePatterns: [{ name: "O'Brien Page", regex: "/o'brien/.*", sort_order: 0 }],
+        topicPatterns: [{ name: "Can't Stop", regex: "/can't/", sort_order: 0 }],
+      },
+    }));
+
+    expect(query).to.include("THEN 'O''Brien Page'");
+    expect(query).to.include("/o''brien/.*");
+    expect(query).to.include("THEN 'Can''t Stop'");
+    expect(query).to.include("/can''t/");
+  });
+
+  it('falls back to default classification when remotePatterns has an error', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(createMockOptions({
+      remotePatterns: { error: true, source: 'postgres' },
+    }));
+
+    expect(query).to.include("'Other'");
+    expect(query).to.not.include("REGEXP_LIKE(url, 'undefined')");
+  });
+
+  it('falls back to default classification on daily query when remotePatterns has an error', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery({
+      trafficDate: new Date('2025-01-07T00:00:00Z'),
+      databaseName: 'test_db',
+      tableName: 'test_table',
+      site: createMockSite(),
+      remotePatterns: { error: true, source: 'postgres' },
+    });
+
+    expect(query).to.include("'Other'");
+    expect(query).to.not.include("REGEXP_LIKE(url, 'undefined')");
+  });
+
   it('handles topic patterns with named patterns', async () => {
     const categoryRules = [
       { regex: '/products/', name: 'Products', sort_order: 0 },
