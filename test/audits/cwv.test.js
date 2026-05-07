@@ -524,15 +524,19 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been
         .calledOnceWith([existingSuggestions[0]], 'OUTDATED');
 
-      // make sure that 1 existing suggestion is updated
+      // make sure that 1 existing suggestion is updated (group with cls metric)
       expect(existingSuggestions[1].setData).to.have.been.calledOnce;
-      expect(existingSuggestions[1].setData.firstCall.args[0]).to.deep.equal(suggestions[1].data);
+      const updatedData = existingSuggestions[1].setData.firstCall.args[0];
+      expect(updatedData.metric).to.equal('cls');
+      expect(updatedData.type).to.equal('group');
+      expect(updatedData.pattern).to.equal('https://www.aem.live/home/*');
       expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledOnce;
 
-      // make sure that 1 new suggestion is created (/docs/ — the only new failing-metric page)
+      // make sure that 1 new per-metric suggestion is created (/docs/:lcp — mobile LCP failing)
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
       expect(suggestionsArg).to.be.an('array').with.lengthOf(1);
+      expect(suggestionsArg[0].data.metric).to.equal('lcp');
     });
 
     it('creates a new opportunity object when GSC connection returns null', async () => {
@@ -644,15 +648,19 @@ describe('collectCWVDataAndImportCode Tests', () => {
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
       expect(suggestionsArg).to.be.an('array').with.lengthOf(2);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/2 of 4 CWV entries have failing metrics/),
+        sinon.match(/2 per-metric suggestions from 4 CWV entries/),
       );
 
-      // Both failing entries (group + /docs/) each had an all-green desktop row alongside
-      // a failing mobile row. filterToFailingDeviceMetrics must have stripped the desktop
-      // row from each — only the failing mobile row should survive in the suggestion data.
+      // Each per-metric suggestion carries the metric field and that metric's values
+      // for all devices (both passing and failing) so the UI shows the full picture.
+      // Group: cls on mobile (0.27, failing) + desktop (0.011, passing)
+      // /docs/: lcp on mobile (26276, failing) only — desktop lcp=665 is present too
       suggestionsArg.forEach((s) => {
-        expect(s.data.metrics).to.have.lengthOf(1);
-        expect(s.data.metrics[0].deviceType).to.equal('mobile');
+        expect(s.data).to.have.property('metric');
+        expect(s.data).to.have.property('aggregationKey');
+        // At least the failing device must be present
+        const failingDevice = s.data.metrics.find((m) => m.deviceType === 'mobile');
+        expect(failingDevice).to.exist;
       });
     });
 
