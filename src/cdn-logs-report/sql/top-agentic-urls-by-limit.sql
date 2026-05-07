@@ -1,7 +1,8 @@
 WITH filtered AS (
   SELECT
     url,
-    count AS hits
+    count AS hits,
+    status
   FROM {{databaseName}}.{{tableName}}
   {{whereClause}}
 ),
@@ -12,6 +13,7 @@ aggregated AS (
   FROM filtered
   WHERE url IS NOT NULL
     AND url <> 'Other'
+    AND status = 200
     {{excludedUrlSuffixesFilter}}
   GROUP BY url
 )

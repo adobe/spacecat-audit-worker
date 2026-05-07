@@ -12,7 +12,7 @@
 
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
-import { subDays } from 'date-fns';
+import { addDays, subDays } from 'date-fns';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -810,6 +810,39 @@ export async function importTopPages(context) {
 }
 
 /**
+ * Reads the prerender status.json for a site from S3.
+ * Returns empty defaults on NoSuchKey; warns on other errors.
+ */
+async function readSiteStatusJson(s3Client, bucketName, siteId, log) {
+  try {
+    const key = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
+    const response = await s3Client.send(new GetObjectCommand({ Bucket: bucketName, Key: key }));
+    const parsed = JSON.parse(await response.Body.transformToString());
+    const existingPages = Array.isArray(parsed.pages) ? parsed.pages : [];
+    return { existingStatus: parsed, existingPages };
+  } catch (e) {
+    if (e.name !== 'NoSuchKey') {
+      log.warn(`${LOG_PREFIX} Could not read status.json for siteId=${siteId}: ${e.message}`);
+    }
+    return { existingStatus: {}, existingPages: [] };
+  }
+}
+
+/**
+ * Computes the next domain-level 403 block entry, or null if threshold not met (auto-restore).
+ * Backoff: 2d → 4d → 8d (capped).
+ */
+function computeDomainBlock(existingDomainBlock, batch403Count, batchSize) {
+  const threshold = Math.max(50, Math.ceil(batchSize * 0.5));
+  if (batch403Count < threshold) {
+    return null;
+  }
+  const consecutiveBlocks = (existingDomainBlock?.consecutiveBlocks ?? 0) + 1;
+  const skipDays = [2, 4, 8][Math.min(consecutiveBlocks - 1, 2)];
+  return { skipUntil: addDays(new Date(), skipDays).toISOString(), consecutiveBlocks };
+}
+
+/**
  * Step 2: Submit URLs for scraping OR skip if in ai-only mode
  * @param {Object} context - Audit context with site and dataAccess
  * @returns {Promise<Object>} - URLs to scrape and metadata OR ai-only result
@@ -820,6 +853,8 @@ export async function submitForScraping(context) {
     log,
     data,
     auditContext,
+    s3Client,
+    env,
   } = context;
 
   // Check for AI-only mode - skip scraping step (step 1 already triggered Mystique)
@@ -885,6 +920,49 @@ export async function submitForScraping(context) {
     currentIncludedUrls = rebasedIncludedURLs.length;
     isFirstRunOfCycle = true;
   } else {
+    // Read status.json once — shared by domain block, rate limit, and circuit breaker checks
+    const { existingStatus, existingPages } = await readSiteStatusJson(
+      s3Client,
+      env.S3_SCRAPER_BUCKET_NAME,
+      siteId,
+      log,
+    );
+
+    // Fix 3 — domain-level 403 circuit breaker: skip entire domain if block is active
+    const { domainBlock, rateLimitedUntil } = existingStatus;
+    const now = new Date().toISOString();
+    if (domainBlock?.skipUntil && domainBlock.skipUntil > now) {
+      log.info(`${LOG_PREFIX} Domain blocked until ${domainBlock.skipUntil}, skipping siteId=${siteId}`);
+      return {
+        urls: [],
+        siteId,
+        processingType: AUDIT_TYPE,
+        maxScrapeAge: 0,
+        options: { pageLoadTimeout: 20000, storagePrefix: AUDIT_TYPE },
+        skippedReason: 'domainBlock',
+      };
+    }
+
+    // Fix 5 — domain-level rate limit: skip entire domain if Retry-After window is active
+    if (rateLimitedUntil && rateLimitedUntil > now) {
+      log.info(`${LOG_PREFIX} Domain rate-limited until ${rateLimitedUntil}, skipping siteId=${siteId}`);
+      return {
+        urls: [],
+        siteId,
+        processingType: AUDIT_TYPE,
+        maxScrapeAge: 0,
+        options: { pageLoadTimeout: 20000, storagePrefix: AUDIT_TYPE },
+        skippedReason: 'rateLimited',
+      };
+    }
+
+    // Fix 2 — permanent 410 circuit breaker: build set of URLs to exclude from all future batches
+    const circuitBreakerPathnames = new Set(
+      existingPages
+        .filter((p) => p.circuitBreakerOpen)
+        .map((p) => normalizePathname(p.url)),
+    );
+
     // getTopAgenticUrls internally handles errors and returns [] on failure
     const agenticUrls = await getTopAgenticUrls(site, context);
     agenticUrlsCount = agenticUrls.length;
@@ -893,10 +971,14 @@ export async function submitForScraping(context) {
     const recentPathnames = await getRecentlyProcessedPathnames(context, siteId);
 
     const filteredOrganicUrls = rebasedTopPagesUrls
-      .filter((url) => isNotRecentUrl(url, recentPathnames));
+      .filter((url) => isNotRecentUrl(url, recentPathnames))
+      .filter((url) => !circuitBreakerPathnames.has(normalizePathname(url)));
     const filteredIncludedURLs = rebasedIncludedURLs
-      .filter((url) => isNotRecentUrl(url, recentPathnames));
-    const filteredAgenticUrls = agenticUrls.filter((url) => isNotRecentUrl(url, recentPathnames));
+      .filter((url) => isNotRecentUrl(url, recentPathnames))
+      .filter((url) => !circuitBreakerPathnames.has(normalizePathname(url)));
+    const filteredAgenticUrls = agenticUrls
+      .filter((url) => isNotRecentUrl(url, recentPathnames))
+      .filter((url) => !circuitBreakerPathnames.has(normalizePathname(url)));
 
     const hasRecentOrganic = filteredOrganicUrls.length !== topPagesUrls.length;
     isFirstRunOfCycle = !hasRecentOrganic;
@@ -1313,20 +1395,12 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
 
     // Read existing status.json before building currentPages so we can look up prior scrapeJobIds.
     // Pages from the current run overwrite any prior entry for the same URL.
-    let existingStatus = {};
-    let existingPages = [];
-    try {
-      const existing = await s3Client.send(new GetObjectCommand({
-        Bucket: bucketName,
-        Key: statusKey,
-      }));
-      existingStatus = JSON.parse(await existing.Body.transformToString());
-      existingPages = Array.isArray(existingStatus.pages) ? existingStatus.pages : [];
-    } catch (e) {
-      if (e.name !== 'NoSuchKey') {
-        log.warn(`${LOG_PREFIX} Could not read existing status.json for merge, starting fresh: ${e.message}`);
-      }
-    }
+    const { existingStatus, existingPages } = await readSiteStatusJson(
+      s3Client,
+      bucketName,
+      siteId,
+      log,
+    );
 
     const existingPageMap = new Map(existingPages.map((p) => [normalizePathname(p.url), p]));
 
@@ -1334,6 +1408,10 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       // Only stamp the current scrapeJobId for URLs actually submitted to this job.
       // For fallback URLs that weren't submitted, preserve the existing scrapeJobId.
       const wasSubmitted = !submittedUrlSet || submittedUrlSet.has(result.url);
+      // Fix 2: preserve circuitBreakerOpen from existing entry; set it permanently for 410 errors
+      const existingEntry = existingPageMap.get(normalizePathname(result.url));
+      const isGone = result.scrapeError?.statusCode === 410;
+      const wasCircuitBroken = existingEntry?.circuitBreakerOpen === true;
       return {
         url: result.url,
         scrapingStatus: result.error ? 'error' : 'success',
@@ -1346,8 +1424,9 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
         scrapedAt,
         scrapeJobId: wasSubmitted
           ? (scrapeJobId || null)
-          : (existingPageMap.get(normalizePathname(result.url))?.scrapeJobId ?? null),
+          : (existingEntry?.scrapeJobId ?? null),
         ...(result.scrapeError && { scrapeError: result.scrapeError }),
+        ...((isGone || wasCircuitBroken) && { circuitBreakerOpen: true }),
       };
     });
 
@@ -1378,8 +1457,24 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     const scrapeForbiddenCount = mergedPages.filter(
       (p) => p.scrapeError?.statusCode === 403,
     ).length;
-    const latestScrapeForbidden = auditResult.scrapeForbidden
-      ?? currentPages.some((p) => p.scrapeError?.statusCode === 403);
+
+    // Fix 3 — domain-level 403 circuit breaker (null = threshold not met → auto-restore)
+    const batch403Count = currentPages.filter((p) => p.scrapeError?.statusCode === 403).length;
+    const domainBlock = computeDomainBlock(
+      existingStatus.domainBlock,
+      batch403Count,
+      currentPages.length,
+    );
+
+    const has403Urls = currentPages.some((p) => p.scrapeError?.statusCode === 403);
+    const latestScrapeForbidden = domainBlock !== null
+      || (auditResult.scrapeForbidden ?? has403Urls);
+
+    // Fix 5 — domain-level 429 rate limit
+    const first429 = currentPages.find((p) => p.scrapeError?.statusCode === 429);
+    const rateLimitedUntil = first429
+      ? new Date(Date.now() + (first429.scrapeError?.retryAfter ?? 3600) * 1000).toISOString()
+      : undefined;
 
     const statusSummary = {
       baseUrl: auditUrl,
@@ -1394,6 +1489,8 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       scrapeForbidden: latestScrapeForbidden,
       scrapeForbiddenCount,
       lastAuditSuccess: auditResult.lastAuditSuccess !== false,
+      ...(domainBlock && { domainBlock }),
+      ...(rateLimitedUntil && { rateLimitedUntil }),
       pages: mergedPages,
     };
     await s3Client.send(new PutObjectCommand({
