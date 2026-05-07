@@ -1,3 +1,10 @@
+## [1.435.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.435.0...v1.435.1) (2026-05-07)
+
+
+### Bug Fixes
+
+* **geo-brand-presence:** retry SharePoint XLSX download on non-XLSX response ([#2477](https://github.com/adobe/spacecat-audit-worker/issues/2477)) ([4982a43](https://github.com/adobe/spacecat-audit-worker/commit/4982a43249fb9cc26444e12fd1a591c9ac905724))
+
 # [1.435.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.434.1...v1.435.0) (2026-05-07)
 
 
