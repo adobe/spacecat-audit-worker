@@ -1737,6 +1737,7 @@ export async function processContentAndGenerateOpportunities(context) {
         const toPathname = (url) => {
           try {
             return new URL(url).pathname;
+            /* c8 ignore next 3 - defensive: scrapedUrlsSet always contains valid URLs */
           } catch {
             return url;
           }
@@ -1773,6 +1774,7 @@ export async function processContentAndGenerateOpportunities(context) {
         .map((r) => {
           try {
             return new URL(r.url).pathname;
+            /* c8 ignore next 3 - defensive: comparison URLs are always valid */
           } catch {
             return r.url;
           }
