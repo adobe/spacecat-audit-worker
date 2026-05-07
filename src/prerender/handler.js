@@ -17,7 +17,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
-import { getTopAgenticUrlsFromAthena, getPreferredBaseUrl } from '../utils/agentic-urls.js';
+import { getTopAgenticLiveUrlsFromAthena, getPreferredBaseUrl } from '../utils/agentic-urls.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
 import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
@@ -245,7 +245,7 @@ async function getTopOrganicUrlsFromSeo(context, limit = TOP_ORGANIC_URLS_LIMIT)
 
 async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
   try {
-    return await getTopAgenticUrlsFromAthena(site, context, limit);
+    return await getTopAgenticLiveUrlsFromAthena(site, context, limit);
   } catch (e) {
     context.log.warn(`${LOG_PREFIX} Failed to fetch agentic URLs: ${e.message}. baseUrl=${site.getBaseURL()}`);
     return [];
