@@ -11,7 +11,7 @@
  */
 
 import { subDays } from 'date-fns';
-import { getTopAgenticUrlsFromAthena } from '../../utils/agentic-urls.js';
+import { getTopAgenticLiveUrlsFromAthena } from '../../utils/agentic-urls.js';
 import {
   TOP_AGENTIC_URLS_LIMIT,
   TOP_ORGANIC_URLS_LIMIT,
@@ -67,7 +67,7 @@ export async function getTopOrganicUrlsFromSeo(context, limit = TOP_ORGANIC_URLS
  */
 export async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
   try {
-    return await getTopAgenticUrlsFromAthena(site, context, limit);
+    return await getTopAgenticLiveUrlsFromAthena(site, context, limit);
   } catch (e) {
     context.log.warn(`${LOG_PREFIX} Failed to fetch agentic URLs: ${e.message}. baseUrl=${site.getBaseURL()}`);
     return [];
