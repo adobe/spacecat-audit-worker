@@ -185,10 +185,10 @@ export async function submitForScraping(context) {
       log,
     );
 
-    // Fix 2 — permanent 410 circuit breaker: build set of URLs to exclude from all future batches
-    const circuitBreakerPathnames = new Set(
+    // Fix 2 — permanent 410 exclusion: build set of URLs to exclude from all future batches
+    const gonePathnames = new Set(
       existingPages
-        .filter((p) => p.circuitBreakerOpen)
+        .filter((p) => p.gone)
         .map((p) => normalizePathname(p.url)),
     );
 
@@ -201,13 +201,13 @@ export async function submitForScraping(context) {
 
     const filteredOrganicUrls = rebasedTopPagesUrls
       .filter((url) => isNotRecentUrl(url, recentPathnames))
-      .filter((url) => !circuitBreakerPathnames.has(normalizePathname(url)));
+      .filter((url) => !gonePathnames.has(normalizePathname(url)));
     const filteredIncludedURLs = rebasedIncludedURLs
       .filter((url) => isNotRecentUrl(url, recentPathnames))
-      .filter((url) => !circuitBreakerPathnames.has(normalizePathname(url)));
+      .filter((url) => !gonePathnames.has(normalizePathname(url)));
     const filteredAgenticUrls = agenticUrls
       .filter((url) => isNotRecentUrl(url, recentPathnames))
-      .filter((url) => !circuitBreakerPathnames.has(normalizePathname(url)));
+      .filter((url) => !gonePathnames.has(normalizePathname(url)));
 
     const hasRecentOrganic = filteredOrganicUrls.length !== topPagesUrls.length;
     isFirstRunOfCycle = !hasRecentOrganic;

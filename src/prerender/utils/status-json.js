@@ -88,10 +88,10 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       // Only stamp the current scrapeJobId for URLs actually submitted to this job.
       // For fallback URLs that weren't submitted, preserve the existing scrapeJobId.
       const wasSubmitted = !submittedUrlSet || submittedUrlSet.has(result.url);
-      // Fix 2: preserve circuitBreakerOpen from existing entry; set it permanently for 410 errors
+      // Fix 2: preserve gone from existing entry; set it permanently for 410 errors
       const existingEntry = existingPageMap.get(normalizePathname(result.url));
       const isGone = result.scrapeError?.statusCode === 410;
-      const wasCircuitBroken = existingEntry?.circuitBreakerOpen === true;
+      const wasGone = existingEntry?.gone === true;
       return {
         url: result.url,
         scrapingStatus: result.error ? 'error' : 'success',
@@ -106,7 +106,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
           ? (scrapeJobId || null)
           : (existingEntry?.scrapeJobId ?? null),
         ...(result.scrapeError && { scrapeError: result.scrapeError }),
-        ...((isGone || wasCircuitBroken) && { circuitBreakerOpen: true }),
+        ...((isGone || wasGone) && { gone: true }),
       };
     });
 
