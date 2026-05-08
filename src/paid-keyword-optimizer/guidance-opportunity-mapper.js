@@ -108,7 +108,7 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
     origin: 'AUTOMATION',
     title: 'Ad intent mismatch detected across keyword clusters',
     description,
-    guidance: {},
+    guidance: null,
     data: {
       dataSources: [
         DATA_SOURCES.SITE,
