@@ -766,5 +766,27 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(mockOpportunity.setScopeType).to.have.been.calledWith(null);
       expect(mockOpportunity.setScopeId).to.have.been.calledWith(null);
     });
+
+    it('should use server-side re-resolved brand, not inbound brandId', async () => {
+      resolveBrandForSiteStub.resolves({ brandId: 'current-uuid' });
+
+      const message = {
+        siteId,
+        auditId,
+        brandId: 'stale-uuid',
+        data: {
+          companyName: 'Test Corp',
+          analysis: {
+            suggestions: [{ id: 's1', type: 'CONTENT_UPDATE', rank: 1 }],
+          },
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(resolveBrandForSiteStub).to.have.been.called;
+      expect(mockOpportunity.setScopeId).to.have.been.calledWith('current-uuid');
+      expect(mockOpportunity.setScopeId).not.to.have.been.calledWith('stale-uuid');
+    });
   });
 });
