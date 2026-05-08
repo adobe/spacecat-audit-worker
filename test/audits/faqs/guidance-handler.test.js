@@ -208,7 +208,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'unknown-site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -230,7 +230,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -254,7 +254,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -294,7 +294,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -309,7 +309,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -332,7 +332,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -373,7 +373,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -399,7 +399,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -422,7 +422,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -469,7 +469,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -492,7 +492,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -510,7 +510,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -540,7 +540,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -568,7 +568,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -611,7 +611,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -653,7 +653,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -687,7 +687,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -756,7 +756,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -820,7 +820,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -926,7 +926,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     }, context);
 
@@ -946,7 +946,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -963,7 +963,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1020,7 +1020,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1068,7 +1068,7 @@ describe('FAQs guidance handler', () => {
       siteId: 'site-123',
       auditId: 'audit-456',
       data: {
-        presignedUrl: 'https://s3.example.com/faqs.json?signature=xyz',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json?signature=xyz',
       },
     };
 
@@ -1098,7 +1098,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1128,7 +1128,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1158,7 +1158,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1188,7 +1188,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1216,7 +1216,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1245,7 +1245,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1286,7 +1286,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1309,7 +1309,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1335,7 +1335,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1357,7 +1357,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1386,7 +1386,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1431,7 +1431,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1485,7 +1485,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1540,7 +1540,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1581,7 +1581,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1691,7 +1691,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1709,7 +1709,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 
@@ -1747,7 +1747,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json',
       },
     };
 

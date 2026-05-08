@@ -15,6 +15,7 @@ import {
 } from '@adobe/spacecat-shared-http-utils';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import ExcelJS from 'exceljs';
+import { assertPresignedUrl } from '../utils/presigned-url.js';
 import { getPreviousWeekTriples } from '../utils/date-utils.js';
 import {
   createLLMOSharepointClient,
@@ -231,6 +232,7 @@ export default async function handler(message, context) {
     : `${site.getConfig().getLlmoDataFolder()}/brand-presence`;
 
   try {
+    assertPresignedUrl(presignedUrl);
     const response = await fetch(presignedUrl);
     if (!response.ok) {
       log.error(

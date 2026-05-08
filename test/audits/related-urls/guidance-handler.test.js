@@ -135,6 +135,9 @@ describe('Related URLs Guidance Handler', function testSuite() {
       '@adobe/spacecat-shared-utils': {
         tracingFetch,
       },
+      '../../../src/utils/presigned-url.js': {
+        assertPresignedUrl: sandbox.stub(),
+      },
       '../../../src/utils/date-utils.js': {
         getPreviousWeekTriples: sandbox.stub().returns([{ year: 2026, week: 9 }]),
       },
@@ -230,7 +233,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
     const { handler, context, stubs } = await loadHandler({ workbook, fetchResponse });
     const result = await handler({
       siteId: 'site-1',
-      data: { presignedUrl: 'https://example.com/file.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
     }, context);
 
     expect(result.status).to.equal('ok');
@@ -275,7 +278,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
 
     const result = await handler({
       siteId: 'site-1',
-      data: { presignedUrl: 'https://example.com/file.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
     }, context);
 
     expect(result.status).to.equal('ok');
@@ -287,7 +290,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
 
     const result = await handler({
       siteId: 'missing-site',
-      data: { presignedUrl: 'https://example.com/file.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
     }, context);
 
     expect(result.status).to.equal('notFound');
@@ -305,7 +308,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
 
     const result = await handler({
       siteId: 'site-1',
-      data: { presignedUrl: 'https://example.com/file.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
     }, context);
 
     expect(result.status).to.equal('badRequest');
@@ -322,7 +325,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
 
     const result = await handler({
       siteId: 'site-1',
-      data: { presignedUrl: 'https://example.com/file.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
     }, context);
 
     expect(result.status).to.equal('noContent');
@@ -344,7 +347,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
 
     const result = await handler({
       siteId: 'site-1',
-      data: { presignedUrl: 'https://example.com/file.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
     }, context);
 
     expect(result.status).to.equal('noContent');
@@ -367,7 +370,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
 
     const result = await handler({
       siteId: 'site-1',
-      data: { presignedUrl: 'https://example.com/file.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
     }, context);
 
     expect(result.status).to.equal('notFound');
@@ -397,7 +400,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
 
     const result = await handler({
       siteId: 'site-1',
-      data: { presignedUrl: 'https://example.com/file.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
     }, context);
 
     expect(result.status).to.equal('noContent');
@@ -430,7 +433,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
 
     const result = await handler({
       siteId: 'site-1',
-      data: { presignedUrl: 'https://example.com/file.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
     }, context);
 
     expect(result.status).to.equal('badRequest');
@@ -444,7 +447,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
 
     const result = await handler({
       siteId: 'site-1',
-      data: { presignedUrl: 'https://example.com/file.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
     }, context);
 
     expect(result.status).to.equal('badRequest');
@@ -468,7 +471,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
 
     const result = await handler({
       siteId: 'site-1',
-      data: { presignedUrl: 'https://example.com/file.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
     }, context);
 
     expect(result.status).to.equal('notFound');
@@ -522,7 +525,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
 
     const result = await handler({
       siteId: 'site-1',
-      data: { presignedUrl: 'https://example.com/file.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
     }, context);
 
     expect(result.status).to.equal('ok');
@@ -570,7 +573,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
 
       const result = await handler({
         siteId: 'site-1',
-        data: { presignedUrl: 'https://example.com/file.json' },
+        data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
       }, context);
 
       expect(result.status).to.equal('ok');
@@ -591,7 +594,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
 
     const result = await handler({
       siteId: 'site-1',
-      data: { presignedUrl: 'https://example.com/file.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
     }, context);
 
     expect(result.status).to.equal('noContent');
@@ -628,7 +631,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
 
     const result = await handler({
       siteId: 'site-1',
-      data: { presignedUrl: 'https://example.com/file.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
     }, context);
 
     expect(result.status).to.equal('noContent');
@@ -666,7 +669,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
 
     const result = await handler({
       siteId: 'site-1',
-      data: { presignedUrl: 'https://example.com/file.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/file.json' },
     }, context);
 
     expect(result.status).to.equal('noContent');

@@ -156,7 +156,7 @@ describe('YouTube Analysis Guidance Handler', () => {
 
   describe('Presigned URL Handling', () => {
     it('should fetch analysis data from presigned URL when provided', async () => {
-      const presignedUrl = 'https://s3.example.com/analysis.json';
+      const presignedUrl = 'https://s3.amazonaws.com/bucket/analysis.json';
       mockFetch.resolves({
         ok: true,
         json: sandbox.stub().resolves(mockAnalysisData),
@@ -178,7 +178,7 @@ describe('YouTube Analysis Guidance Handler', () => {
     });
 
     it('should return badRequest when presigned URL fetch fails', async () => {
-      const presignedUrl = 'https://s3.example.com/analysis.json';
+      const presignedUrl = 'https://s3.amazonaws.com/bucket/analysis.json';
       mockFetch.resolves({
         ok: false,
         status: 404,
@@ -203,7 +203,7 @@ describe('YouTube Analysis Guidance Handler', () => {
     });
 
     it('should return badRequest when presigned URL fetch throws error', async () => {
-      const presignedUrl = 'https://s3.example.com/analysis.json';
+      const presignedUrl = 'https://s3.amazonaws.com/bucket/analysis.json';
       mockFetch.rejects(new Error('Network error'));
 
       const message = {
@@ -679,7 +679,7 @@ describe('YouTube Analysis Guidance Handler', () => {
 
   describe('Complete Flow', () => {
     it('should handle complete successful flow with presigned URL', async () => {
-      const presignedUrl = 'https://s3.example.com/analysis.json';
+      const presignedUrl = 'https://s3.amazonaws.com/bucket/analysis.json';
       mockFetch.resolves({
         ok: true,
         json: sandbox.stub().resolves(mockAnalysisData),

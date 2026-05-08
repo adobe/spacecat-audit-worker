@@ -163,7 +163,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'unknown-site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
     await handler(message, context);
@@ -178,7 +178,7 @@ describe('summarization guidance handler', () => {
       auditId: 'unknown-audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
     await handler(message, context);
@@ -198,7 +198,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
 
@@ -218,7 +218,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
 
@@ -248,7 +248,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
 
@@ -268,7 +268,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
     await handler(message, context);
@@ -290,7 +290,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
     await handler(message, context);
@@ -337,7 +337,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
     await handler(message, context);
@@ -367,7 +367,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
     await handler(message, context);
@@ -385,7 +385,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
     await handler(message, context);
@@ -461,7 +461,7 @@ describe('summarization guidance handler', () => {
       siteId: dummySite.getId(),
       auditId: dummyAudit.auditId,
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
     
@@ -496,7 +496,7 @@ describe('summarization guidance handler', () => {
       siteId: dummySite.getId(),
       auditId: dummyAudit.auditId,
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
 
@@ -533,7 +533,7 @@ describe('summarization guidance handler', () => {
       siteId: dummySite.getId(),
       auditId: dummyAudit.auditId,
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
 
@@ -573,7 +573,7 @@ describe('summarization guidance handler', () => {
     const message = {
       siteId: dummySite.getId(),
       auditId: dummyAudit.auditId,
-      data: { presignedUrl: 'https://s3.aws.com/summaries.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json' },
     };
 
     await handler(message, context);
@@ -588,7 +588,7 @@ describe('summarization guidance handler', () => {
     const message = {
       siteId: dummySite.getId(),
       auditId: dummyAudit.auditId,
-      data: { presignedUrl: 'https://s3.aws.com/summaries.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json' },
     };
 
     await handler(message, context);
@@ -604,7 +604,7 @@ describe('summarization guidance handler', () => {
     const message = {
       siteId: dummySite.getId(),
       auditId: legacyAudit.auditId,
-      data: { presignedUrl: 'https://s3.aws.com/summaries.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json' },
     };
 
     await handler(message, context);
@@ -624,7 +624,7 @@ describe('summarization guidance handler', () => {
     const message = {
       siteId: dummySite.getId(),
       auditId: dummyAudit.auditId,
-      data: { presignedUrl: 'https://s3.aws.com/summaries.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json' },
     };
 
     await handler(message, context);
@@ -642,7 +642,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
     

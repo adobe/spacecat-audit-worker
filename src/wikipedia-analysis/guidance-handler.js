@@ -20,6 +20,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import { resolveBrandForSite, applyScopeToOpportunity } from '../utils/brand-resolver.js';
+import { assertPresignedUrl } from '../utils/presigned-url.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS;
 
@@ -84,6 +85,7 @@ export default async function handler(message, context) {
   // If presigned URL is provided, fetch the data
   if (data?.presignedUrl) {
     try {
+      assertPresignedUrl(data.presignedUrl);
       log.info(`[Wikipedia] Fetching analysis data from presigned URL: ${data.presignedUrl}`);
       const response = await fetch(data.presignedUrl);
 
@@ -111,9 +113,6 @@ export default async function handler(message, context) {
     return notFound('Site not found');
   }
 
-  const brand = await resolveBrandForSite(context, site);
-  const baseUrl = site.getBaseURL();
-
   // Check if audit exists
   if (auditId) {
     const audit = await AuditModel.findById(auditId);
@@ -124,6 +123,8 @@ export default async function handler(message, context) {
   }
 
   try {
+    const brand = await resolveBrandForSite(context, site);
+    const baseUrl = site.getBaseURL();
     const { suggestions = [], company, industryAnalysis } = analysisData;
 
     // If no suggestions, return early

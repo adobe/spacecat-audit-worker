@@ -16,6 +16,7 @@ import {
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { load as cheerioLoad } from 'cheerio';
 import ExcelJS from 'exceljs';
+import { assertPresignedUrl } from '../utils/presigned-url.js';
 
 import { syncSuggestions } from '../utils/data-access.js';
 import { getPreviousWeekTriples } from '../utils/date-utils.js';
@@ -380,6 +381,7 @@ export default async function handler(message, context) {
 
   try {
     // Fetch FAQ data from presigned URL
+    assertPresignedUrl(presignedUrl);
     log.info(`[FAQ] Fetching FAQ data from presigned URL: ${presignedUrl}`);
     const response = await fetch(presignedUrl);
 

@@ -14,6 +14,7 @@ import {
   badRequest, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { assertPresignedUrl } from '../utils/presigned-url.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getJsonSummarySuggestion } from './utils.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -108,6 +109,7 @@ export default async function handler(message, context) {
 
   try {
     // Fetch summarization data from presigned URL
+    assertPresignedUrl(presignedUrl);
     log.info(`[Summarization] Fetching summarization data from presigned URL: ${presignedUrl}`);
     const response = await fetch(presignedUrl);
 

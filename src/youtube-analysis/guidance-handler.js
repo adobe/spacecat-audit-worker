@@ -19,6 +19,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import { resolveBrandForSite, applyScopeToOpportunity } from '../utils/brand-resolver.js';
+import { assertPresignedUrl } from '../utils/presigned-url.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS;
 
@@ -47,6 +48,7 @@ export default async function handler(message, context) {
 
   if (presignedUrl) {
     try {
+      assertPresignedUrl(presignedUrl);
       log.info(`[YouTube] Fetching analysis data from presigned URL: ${presignedUrl}`);
       const response = await fetch(presignedUrl);
 
@@ -75,9 +77,6 @@ export default async function handler(message, context) {
     return notFound('Site not found');
   }
 
-  const brand = await resolveBrandForSite(context, site);
-  const baseUrl = site.getBaseURL();
-
   if (auditId) {
     const audit = await AuditModel.findById(auditId);
     if (!audit) {
@@ -87,6 +86,8 @@ export default async function handler(message, context) {
   }
 
   try {
+    const brand = await resolveBrandForSite(context, site);
+    const baseUrl = site.getBaseURL();
     const suggestions = analysisData.suggestions || [];
     const opportunityData = analysisData.opportunity || {};
 
