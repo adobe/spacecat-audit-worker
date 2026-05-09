@@ -27,7 +27,7 @@ export async function sendToMystiqueForGeneration(context) {
 
   try {
     const message = {
-      type: 'detect:money-pages',
+      type: 'money-pages',
       siteId: site.getId(),
       auditId: audit.getId(),
       time: new Date().toISOString(),

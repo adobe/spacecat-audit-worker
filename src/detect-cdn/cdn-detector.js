@@ -34,19 +34,6 @@ const CDN_DOMAIN_SIGNATURES = [
 ];
 
 /**
- * CDN identification by ASN when the CNAME chain does not match a known provider domain.
- */
-const CDN_ASN_SIGNATURES = [
-  { asns: [13335], cdn: 'Cloudflare' },
-  { asns: [54113], cdn: 'Fastly' },
-  { asns: [16509], cdn: 'CloudFront' },
-  { asns: [20940, 16625, 21342], cdn: 'Akamai' },
-  { asns: [8075], cdn: 'Azure Front Door / Azure CDN' },
-  { asns: [15169], cdn: 'Google Cloud CDN' },
-  { asns: [24429, 37963], cdn: 'Alibaba Cloud CDN' },
-];
-
-/**
  * Substring keywords matched against lowercased DNS names, header-derived text, and PTR names.
  * First matching pattern wins.
  */
@@ -195,94 +182,6 @@ function headersFromResponse(response) {
   return { cdn };
 }
 
-/** Google Public DNS JSON API over HTTPS; used when the system resolver fails or times out. */
-const DOH_GOOGLE_RESOLVE = 'https://dns.google/resolve';
-
-/**
- * @param {string} name - Hostname to query.
- * @param {number} typeNum - DNS type (1=A, 5=CNAME).
- * @param {Function} fetchFn - Fetch implementation.
- * @param {object} [opts] - timeout, log.
- * @returns {Promise<{ Answer?: Array<{ type: number, data: string }> }>}
- */
-async function dohQuery(name, typeNum, fetchFn, opts = {}) {
-  const { timeout = 5000, log } = opts;
-  const url = `${DOH_GOOGLE_RESOLVE}?name=${encodeURIComponent(name)}&type=${typeNum}`;
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
-  try {
-    const response = await fetchFn(url, {
-      signal: controller.signal,
-      headers: { Accept: 'application/dns-json' },
-    });
-    clearTimeout(id);
-    if (!response.ok) {
-      return { Answer: [] };
-    }
-    const data = await response.json();
-    return data && Array.isArray(data.Answer) ? data : { Answer: [] };
-  } catch (err) {
-    clearTimeout(id);
-    log?.warn?.('[detect-cdn] DoH query failed', { name, type: typeNum, message: err?.message });
-    return { Answer: [] };
-  }
-}
-
-function normalizeDohName(data) {
-  if (typeof data !== 'string') {
-    return '';
-  }
-  return data.replace(/\.$/, '').trim();
-}
-
-/**
- * CNAME chain resolution via DNS-over-HTTPS (Google Public DNS JSON API).
- * @param {string} hostname - Hostname to resolve.
- * @param {Function} fetchFn - Fetch implementation.
- * @param {object} [log] - Optional logger.
- * @returns {Promise<string[]>} Hostnames in the CNAME chain (including original).
- */
-export async function getCnameChainDoh(hostname, fetchFn, log) {
-  const chain = [];
-  let current = hostname.replace(/\.$/, '');
-  const maxHops = 10;
-
-  /* eslint-disable no-await-in-loop -- Each CNAME hop depends on the previous answer. */
-  for (let hop = 0; hop < maxHops; hop += 1) {
-    chain.push(current);
-    const { Answer = [] } = await dohQuery(current, 5, fetchFn, { timeout: 5000, log });
-    const cname = Answer.find((a) => a.type === 5);
-    if (!cname?.data) {
-      break;
-    }
-    current = normalizeDohName(cname.data);
-    if (!current) {
-      break;
-    }
-  }
-  /* eslint-enable no-await-in-loop */
-
-  return chain;
-}
-
-/**
- * First IPv4 from A-record lookup via DNS-over-HTTPS.
- * @param {string} hostname - Hostname to resolve.
- * @param {Function} fetchFn - Fetch implementation.
- * @param {object} [log] - Optional logger.
- * @returns {Promise<string|null>}
- */
-export async function getOneIpDoh(hostname, fetchFn, log) {
-  const { Answer = [] } = await dohQuery(hostname, 1, fetchFn, { timeout: 5000, log });
-  const ipv4 = /^(\d{1,3}\.){3}\d{1,3}$/;
-  for (const a of Answer) {
-    if (a.type === 1 && typeof a.data === 'string' && ipv4.test(a.data)) {
-      return a.data;
-    }
-  }
-  return null;
-}
-
 /**
  * Resolves CNAME chain for a hostname (max 10 hops). Returns list of hostnames in the chain.
  * @param {string} hostname - Hostname to resolve.
@@ -350,40 +249,6 @@ export async function getPtrHostnames(ip, log) {
 }
 
 /**
- * Looks up ASN for an IP via ipinfo.io (free tier). Returns ASN number or null.
- * @param {string} ip - IPv4 address.
- * @param {Function} fetchFn - Fetch implementation.
- * @param {object} [options] - Optional timeout, log.
- * @returns {Promise<number|null>} ASN or null.
- */
-export async function getAsnForIp(ip, fetchFn, options = {}) {
-  const { timeout = 10000, log } = options;
-  const url = `https://ipinfo.io/${ip}/json`;
-
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
-
-  try {
-    const response = await fetchFn(url, { signal: controller.signal });
-    clearTimeout(id);
-    if (!response.ok) {
-      return null;
-    }
-    const data = await response.json();
-    const org = data?.org;
-    if (typeof org !== 'string') {
-      return null;
-    }
-    const match = org.match(/^AS(\d+)/);
-    return match ? parseInt(match[1], 10) : null;
-  } catch (err) {
-    clearTimeout(id);
-    log?.warn?.('[detect-cdn] ASN lookup failed', { ip, message: err?.message });
-    return null;
-  }
-}
-
-/**
  * Matches a CNAME chain against known CDN domain signatures.
  * @param {string[]} cnameChain - Hostnames from getCnameChain.
  * @returns {string|null} CDN name or null.
@@ -404,32 +269,14 @@ export function matchCdnByCname(cnameChain) {
 }
 
 /**
- * Matches an ASN number against known CDN ASN signatures.
- * @param {number} asn - Autonomous System Number.
- * @returns {string|null} CDN name or null.
- */
-export function matchCdnByAsn(asn) {
-  if (typeof asn !== 'number' || Number.isNaN(asn)) {
-    return null;
-  }
-  for (const { asns, cdn } of CDN_ASN_SIGNATURES) {
-    if (asns.includes(asn)) {
-      return cdn;
-    }
-  }
-  return null;
-}
-
-/**
- * Fallback CDN detection using DNS (CNAME chain) and optionally ASN when headers
+ * Fallback CDN detection using DNS (CNAME chain and PTR records) when headers
  * did not identify the CDN. Used only when detectCdnFromHeaders returns 'unknown'.
  *
  * @param {string} url - URL (hostname is extracted for DNS lookups).
- * @param {Function} fetchFn - Fetch implementation (for ASN lookup).
- * @param {object} [options] - Optional timeout, log.
+ * @param {object} [options] - Optional log.
  * @returns {Promise<{ cdn: string }>} Detected CDN or { cdn: 'unknown' }.
  */
-export async function detectCdnFromDnsFallback(url, fetchFn, options = {}) {
+export async function detectCdnFromDnsFallback(url, options = {}) {
   const { log } = options;
   let hostname;
   try {
@@ -445,7 +292,7 @@ export async function detectCdnFromDnsFallback(url, fetchFn, options = {}) {
   }
 
   const cnameChainSystem = await getCnameChain(hostname, log);
-  let cdnFromCname = matchCdnByCname(cnameChainSystem);
+  const cdnFromCname = matchCdnByCname(cnameChainSystem);
   if (cdnFromCname) {
     log?.info?.('[detect-cdn] Fallback: detected by CNAME', { cdn: cdnFromCname, hostname });
     return { cdn: cdnFromCname };
@@ -456,27 +303,8 @@ export async function detectCdnFromDnsFallback(url, fetchFn, options = {}) {
     return { cdn: cdnFromChainKw };
   }
 
-  const cnameChainDoh = await getCnameChainDoh(hostname, fetchFn, log);
-  cdnFromCname = matchCdnByCname(cnameChainDoh);
-  if (cdnFromCname) {
-    log?.info?.('[detect-cdn] Fallback: detected by CNAME (DoH)', { cdn: cdnFromCname, hostname });
-    return { cdn: cdnFromCname };
-  }
-  const cdnFromDohKw = matchCdnByKeywords(cnameChainDoh.join(' '));
-  if (cdnFromDohKw) {
-    log?.info?.('[detect-cdn] Fallback: detected by DNS name keywords (DoH)', { cdn: cdnFromDohKw, hostname });
-    return { cdn: cdnFromDohKw };
-  }
-
-  const ip = (await getOneIp(hostname, log)) || (await getOneIpDoh(hostname, fetchFn, log));
+  const ip = await getOneIp(hostname, log);
   if (ip) {
-    const asn = await getAsnForIp(ip, fetchFn, { timeout: 10000, log });
-    const cdnFromAsn = asn !== null ? matchCdnByAsn(asn) : null;
-    if (cdnFromAsn) {
-      log?.info?.('[detect-cdn] Fallback: detected by ASN', { cdn: cdnFromAsn, asn });
-      return { cdn: cdnFromAsn };
-    }
-
     const ptrHostnames = await getPtrHostnames(ip, log);
     for (const ptr of ptrHostnames) {
       const fromPtrKw = matchCdnByKeywords(ptr);
@@ -552,7 +380,7 @@ export async function detectCdnFromUrl(url, fetchFn, options = {}) {
 
   if (result.cdn === 'unknown') {
     const fallback = await Promise.race([
-      detectCdnFromDnsFallback(url, fetchFn, { log }),
+      detectCdnFromDnsFallback(url, { log }),
       new Promise((resolve) => {
         setTimeout(() => resolve({ cdn: 'unknown' }), fallbackTimeout);
       }),

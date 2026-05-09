@@ -87,7 +87,7 @@ describe('Money pages audit', () => {
       expect(mockSqs.sendMessage).to.have.been.calledOnce;
 
       const messageArg = mockSqs.sendMessage.getCall(0).args[1];
-      expect(messageArg).to.have.property('type', 'detect:money-pages');
+      expect(messageArg).to.have.property('type', 'money-pages');
       expect(messageArg).to.have.property('siteId', 'site-id-1');
       expect(messageArg).to.have.property('auditId', 'audit-id-1');
       expect(messageArg).to.not.have.property('deliveryType');

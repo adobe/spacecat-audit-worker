@@ -23,6 +23,7 @@ import {
   INCLUDE_COLUMNS,
   OFFSITE_DOMAINS,
   PROVIDERS_SET,
+  USER_AGENT,
 } from '../offsite-brand-presence/constants.js';
 
 const LOG_PREFIX = '[BrandPresenceEnrichment]';
@@ -59,7 +60,7 @@ async function fetchQueryIndex(siteId, env, log) {
   log.info(`${LOG_PREFIX} Fetching query-index from: ${url}`);
 
   try {
-    const headers = { 'x-api-key': apiKey };
+    const headers = { 'x-api-key': apiKey, 'User-Agent': USER_AGENT };
     const response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
 
     if (!response.ok) {
@@ -86,7 +87,7 @@ async function fetchQueryIndex(siteId, env, log) {
 async function fetchBrandPresenceData(siteId, fileName, env, log) {
   const apiBase = env.SPACECAT_API_BASE_URL;
   const apiKey = env.SPACECAT_API_KEY;
-  const headers = { 'x-api-key': apiKey };
+  const headers = { 'x-api-key': apiKey, 'User-Agent': USER_AGENT };
   const baseUrl = `${apiBase}/sites/${siteId}/llmo/data/${fileName}?sheet=all&include=${INCLUDE_COLUMNS}&source=offsite-audits`;
 
   let allRows = [];

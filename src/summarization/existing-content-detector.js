@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { createHash } from 'node:crypto';
 import { load as cheerioLoad } from 'cheerio';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 
@@ -26,15 +27,29 @@ const KEY_POINTS_HEADINGS = new Set([
 ]);
 
 /**
+ * Computes a SHA-256 hash of the raw page body for content-change detection.
+ * @param {string} rawBody - Raw page content
+ * @returns {string|null} Hex-encoded hash, or null if input is invalid
+ */
+export function computeContentHash(rawBody) {
+  if (!rawBody || typeof rawBody !== 'string') {
+    return null;
+  }
+  return createHash('sha256').update(rawBody).digest('hex');
+}
+
+/**
  * Extracts heading text from HTML and detects if summary/key-points sections exist.
+ * Also computes a content hash for change detection.
  * @param {string} rawBody - HTML content
- * @returns {{ hasSummary: boolean, hasKeyPoints: boolean }}
+ * @returns {{ hasSummary: boolean, hasKeyPoints: boolean, contentHash: string|null }}
  */
 function detectFromHtml(rawBody) {
-  const result = { hasSummary: false, hasKeyPoints: false };
   if (!rawBody || typeof rawBody !== 'string') {
-    return result;
+    return { hasSummary: false, hasKeyPoints: false, contentHash: null };
   }
+  const contentHash = computeContentHash(rawBody);
+  const result = { hasSummary: false, hasKeyPoints: false, contentHash };
   try {
     const $ = cheerioLoad(rawBody);
     const headings = $('h1, h2, h3, h4, h5, h6');
@@ -48,11 +63,10 @@ function detectFromHtml(rawBody) {
       }
     });
   } catch (err) {
-    // On parse error, return false for both
+    // On parse error, return defaults but preserve the hash
   }
   return result;
 }
-
 /**
  * Detects existing summary and key points content for each scraped page.
  * Fetches HTML from S3, parses with cheerio, and checks heading patterns.
@@ -77,13 +91,13 @@ export async function detectExistingContent(s3Client, bucketName, scrapeResultPa
       const rawBody = scrapedData?.scrapeResult?.rawBody;
       if (!rawBody) {
         log.warn(`[Summarization] No rawBody for ${url}`);
-        return [url, { hasSummary: false, hasKeyPoints: false }];
+        return [url, { hasSummary: false, hasKeyPoints: false, contentHash: null }];
       }
       const detected = detectFromHtml(rawBody);
       return [url, detected];
     } catch (error) {
       log.error(`[Summarization] Error detecting content for ${url}: ${error.message}`);
-      return [url, { hasSummary: false, hasKeyPoints: false }];
+      return [url, { hasSummary: false, hasKeyPoints: false, contentHash: null }];
     }
   });
 

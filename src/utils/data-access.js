@@ -19,6 +19,8 @@ import { limitConcurrencyAllSettled } from '../support/utils.js';
 // Max concurrent HTTP calls to prevent Lambda timeout (15 min)
 const MAX_CONCURRENT_CHECKS = 5;
 
+export const SUMMIT_PLG_HANDLER = 'summit-plg';
+
 /**
  * Opportunity types that only make changes in the author environment (no publish state).
  * For these types:
@@ -345,14 +347,41 @@ export const defaultMergeStatusFunction = (existing, newDataItem, context) => {
   if (currentStatus === SuggestionDataAccess.STATUSES.OUTDATED) {
     log.warn('Outdated suggestion found in audit. Possible regression.');
     const requiresValidation = Boolean(site?.requiresValidation);
-    const { isSummitPlg = false } = context;
-    return (requiresValidation && !isSummitPlg)
+    const { isTBYB = false } = context;
+    return (requiresValidation && !isTBYB)
       ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
       : SuggestionDataAccess.STATUSES.NEW;
   }
 
   return null; // Keep existing status
 };
+
+/**
+ * Checks whether a site is a TBYB (Try Before You Buy) site by verifying if the
+ * SUMMIT_PLG_HANDLER is enabled for it.
+ *
+ * @param {Object} context - The context object containing dataAccess and log.
+ * @returns {Promise<boolean>} True if the site is a TBYB site, false otherwise.
+ */
+async function checkIsTBYBSite(context) {
+  const { site, dataAccess, log } = context;
+  if (!site) {
+    return false;
+  }
+  const { Configuration } = dataAccess ?? {};
+  if (!Configuration) {
+    return false;
+  }
+  try {
+    const configuration = await Configuration.findLatest();
+    return configuration.isHandlerEnabledForSite(SUMMIT_PLG_HANDLER, site);
+  } catch (e) {
+    log.warn('Failed to check TBYB status', e);
+    return false;
+  }
+}
+
+export const isTBYBSite = checkIsTBYBSite;
 
 /**
  * Synchronizes existing suggestions with new data.
@@ -429,17 +458,15 @@ export async function syncSuggestions({
   const opportunityType = opportunity.getType();
 
   // Prepare new suggestions - O(N) with Set lookup
-  const { site, dataAccess } = context;
+  const { site } = context;
   const requiresValidation = Boolean(site?.requiresValidation);
 
   // PLG/Freemium sites bypass manual validation — suggestions go directly to NEW status
-  // Compute isSummitPlg before the update loop so it can be used in mergeStatusFunction too
-  let isSummitPlg = false;
+  // Compute isTBYB before the update loop so it can be used in mergeStatusFunction too
+  let isTBYB = false;
   if (bypassValidationForPlg && requiresValidation && site) {
-    const { Configuration } = dataAccess;
-    const configuration = await Configuration.findLatest();
-    isSummitPlg = configuration.isHandlerEnabledForSite('summit-plg', site);
-    if (isSummitPlg) {
+    isTBYB = await checkIsTBYBSite(context);
+    if (isTBYB) {
       log.info(`[syncSuggestions] PLG site ${site.getId()} - skipping manual validation for suggestions`);
     }
   }
@@ -460,8 +487,7 @@ export async function syncSuggestions({
     existing.setData(mergedData);
 
     // Use the merge status function to determine if status should change
-    // Pass isSummitPlg in context so mergeStatusFunction can apply the PLG bypass
-    const newStatus = mergeStatusFunction(existing, newDataItem, { ...context, isSummitPlg });
+    const newStatus = mergeStatusFunction(existing, newDataItem, { ...context, isTBYB });
     // null indicates to keep existing status
     if (newStatus !== null) {
       existing.setStatus(newStatus);
@@ -474,15 +500,19 @@ export async function syncSuggestions({
   }
   log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
+  const defaultNewSuggestionStatus = newSuggestionStatus
+    ?? ((requiresValidation && !isTBYB)
+      ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+      : SuggestionDataAccess.STATUSES.NEW);
+
   const newSuggestions = newData
     .filter((data) => !existingSuggestionKeys.has(buildKey(data)))
     .map((data) => {
       const suggestion = mapNewSuggestion(data);
       const result = {
         ...suggestion,
-        status: newSuggestionStatus || ((requiresValidation && !isSummitPlg)
-          ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
-          : SuggestionDataAccess.STATUSES.NEW),
+        // Allow mapNewSuggestion to pin status (e.g. SKIPPED for readability exclusions)
+        status: suggestion.status ?? defaultNewSuggestionStatus,
       };
       if (result.data != null) {
         warnOnInvalidSuggestionData(result.data, opportunityType, log);
@@ -795,18 +825,22 @@ export async function syncSuggestionsWithPublishDetection({
     buildKey,
   );
 
-  // Step 1: Reconcile disappeared suggestions
+  // Step 1: Reconcile disappeared suggestions (skip for TBYB sites)
   if (typeof isIssueFixedWithAISuggestion === 'function'
       && typeof buildFixEntityPayload === 'function') {
-    await reconcileDisappearedSuggestions({
-      opportunity,
-      disappearedSuggestions,
-      log,
-      isIssueFixedWithAISuggestion,
-      buildFixEntityPayload,
-      isAuthorOnly,
-      Suggestion: context.dataAccess?.Suggestion,
-    });
+    if (await checkIsTBYBSite(context)) {
+      log.debug('[syncSuggestionsWithPublishDetection] Skipping reconcile for TBYB site');
+    } else {
+      await reconcileDisappearedSuggestions({
+        opportunity,
+        disappearedSuggestions,
+        log,
+        isIssueFixedWithAISuggestion,
+        buildFixEntityPayload,
+        isAuthorOnly,
+        Suggestion: context.dataAccess?.Suggestion,
+      });
+    }
   }
 
   // Step 2: Publish deployed fix entities (skip for author-only)

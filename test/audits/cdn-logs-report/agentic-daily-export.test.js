@@ -159,6 +159,9 @@ describe('agentic daily export', () => {
         end_date: '2026-03-31',
         row_count: 1,
       }),
+      'agentic_traffic:9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+      0,
+      'batch-123',
     );
     expect(result).to.include({
       enabled: true,
@@ -166,6 +169,7 @@ describe('agentic daily export', () => {
       skipped: false,
       siteId: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
       trafficDate: '2026-03-31',
+      batchId: 'batch-123',
       rowCount: 1,
       classificationCount: 1,
       bundleUri: 's3://spacecat-dev-importer/agentic-traffic-daily-export/9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3/agentic-traffic/2026/03/31/20260401T100000000Z/',
@@ -218,6 +222,36 @@ describe('agentic daily export', () => {
       trafficDate: '2026-03-31',
       rowCount: 1,
     })).to.be.rejectedWith('analytics queue is not configured');
+  });
+
+  it('dispatches with FIFO MessageGroupId and MessageDeduplicationId', async () => {
+    const module = await esmock('../../../src/cdn-logs-report/agentic-daily-export.js');
+    const sendMessage = sandbox.stub().resolves();
+
+    const result = await module.testHelpers.dispatchAnalyticsEvent({
+      context: { sqs: { sendMessage } },
+      queueUrl: 'https://sqs.us-east-1.amazonaws.com/123/analytics-queue.fifo',
+      site: {
+        getId: () => 'site-1',
+        getOrganizationId: () => 'org-1',
+      },
+      batchId: 'batch-uuid-abc',
+      bundleUri: 's3://bucket/agentic-traffic-daily-export/site-1/agentic-traffic/2026/03/31/20260401T100000000Z/',
+      trafficDate: '2026-03-31',
+      rowCount: 7,
+    });
+
+    expect(sendMessage).to.have.been.calledOnceWith(
+      'https://sqs.us-east-1.amazonaws.com/123/analytics-queue.fifo',
+      sinon.match({ pipeline_id: 'agentic_traffic', site_id: 'site-1', row_count: 7 }),
+      'agentic_traffic:site-1',
+      0,
+      'batch-uuid-abc',
+    );
+    expect(result).to.include({
+      messageGroupId: 'agentic_traffic:site-1',
+      messageDeduplicationId: 'batch-uuid-abc',
+    });
   });
 
   it('requires an importer bucket before running the daily export', async () => {

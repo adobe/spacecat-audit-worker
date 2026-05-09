@@ -15,6 +15,7 @@ import vaultSecrets from '@adobe/spacecat-shared-vault-secrets';
 import { sqsEventAdapter, logWrapper } from '@adobe/spacecat-shared-utils';
 import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import dataAccess from './support/data-access.js';
+import postgrestSamTemplateOverride from './support/postgrest-sam-template-override.js';
 import { checkSiteRequiresValidation } from './utils/site-validation.js';
 
 import sqs from './support/sqs.js';
@@ -53,7 +54,10 @@ import deliveryConfigWriter from './delivery-config-writer/handler.js';
 import highFormViewsLowConversionsGuidance from './forms-opportunities/guidance-handlers/guidance-high-form-views-low-conversions.js';
 import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-nav.js';
 import highPageViewsLowFormViewsGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-views.js';
-import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
+// KILL SWITCH: HOTLCTR is disabled platform-wide; do not accept Mystique callbacks.
+// Re-enable by uncommenting this import and the HANDLERS entry below.
+// eslint-disable-next-line max-len
+// import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 import paidConsentGuidance from './paid-cookie-consent/guidance-handler.js';
 import noCTAAboveTheFoldGuidance from './no-cta-above-the-fold/guidance-handler.js';
 import paidTrafficAnalysisGuidance from './paid-traffic-analysis/guidance-handler.js';
@@ -74,6 +78,7 @@ import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-h
 import readabilityOpportunities from './readability/opportunities/handler.js';
 import unifiedReadabilityGuidance from './readability/shared/unified-guidance-handler.js';
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
+import llmoReferralTrafficDaily from './llmo-referral-traffic-daily/handler.js';
 import llmErrorPages from './llm-error-pages/handler.js';
 import llmErrorPagesGuidance from './llm-error-pages/guidance-handler.js';
 import paidTrafficAnalysis from './paid-traffic-analysis/handler.js';
@@ -117,6 +122,8 @@ import semanticValueVisibility from './semantic-value-visibility/handler.js';
 import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
 import drsPromptGeneration from './drs-prompt-generation/handler.js';
 import offsiteBrandPresence from './offsite-brand-presence/handler.js';
+import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
+import { refreshGeoBrandPresenceDailyHandler } from './geo-brand-presence-daily/geo-brand-presence-refresh-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -148,7 +155,8 @@ const HANDLERS = {
   'llm-blocked': llmBlocked,
   'forms-opportunities': formsOpportunities,
   'site-detection': siteDetection,
-  'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
+  // KILL SWITCH: HOTLCTR disabled — see import above.
+  // 'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
   'guidance:broken-links': brokenLinksGuidance,
   'guidance:metatags': metatagsGuidance,
   'alt-text': imageAltText,
@@ -179,6 +187,7 @@ const HANDLERS = {
   'detect:form-details': detectFormDetails,
   'page-intent': pageIntent,
   'llmo-referral-traffic': llmoReferralTraffic,
+  'llmo-referral-traffic-daily': llmoReferralTrafficDaily,
   'llm-error-pages': llmErrorPages,
   'guidance:llm-error-pages': llmErrorPagesGuidance,
   'optimization-report-callback': optimizationReportCallback,
@@ -220,6 +229,8 @@ const HANDLERS = {
   'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
   'drs:prompt_generation_base_url': drsPromptGeneration,
   'offsite-brand-presence': offsiteBrandPresence,
+  'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,
+  'refresh:geo-brand-presence-daily': refreshGeoBrandPresenceDailyHandler,
   dummy: (message) => ok(message),
 };
 
@@ -330,5 +341,6 @@ export const main = wrap(run)
   .with(logWrapper)
   .with(sqs)
   .with(s3Client)
+  .with(postgrestSamTemplateOverride)
   .with(vaultSecrets)
   .with(helixStatus);

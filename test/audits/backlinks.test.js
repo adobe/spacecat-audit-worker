@@ -1361,6 +1361,48 @@ describe('Backlinks Tests', function () {
 
       expect(context.log.info).to.have.been.calledWith(sinon.match(/maxResults=5/));
     });
+
+    it('should forward to Mystique with empty brokenLinks when all links resolved via Bright Data', async () => {
+      context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
+      context.env.BRIGHT_DATA_ZONE = 'test-zone';
+
+      // Bright Data successfully resolves the suggestion
+      mockBrightDataClient.googleSearchWithFallback.resolves({
+        results: [{ link: 'https://example.com/suggested-page', title: 'Suggested Page' }],
+        query: 'site:example.com broken page',
+        keywords: 'broken page',
+      });
+
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+
+      const mockSuggestion = {
+        getId: () => 'test-suggestion-bd-all',
+        getData: () => ({
+          url_from: 'https://from.com/page',
+          url_to: 'https://example.com/broken-page',
+        }),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves([mockSuggestion]);
+      context.dataAccess.Suggestion.findById = sinon.stub().resolves(mockSuggestion);
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+
+      const result = await mockedGenerateSuggestionData(context);
+
+      expect(result.status).to.equal('complete');
+      // Must still forward to Mystique so the bridge can enrich the BrightData suggestions
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.brokenLinks).to.deep.equal([]);
+      // Log must say Forwarding, not Skipping
+      expect(context.log.info).to.have.been.calledWith(
+        'All broken links resolved via Bright Data. Forwarding to Mystique.',
+      );
+    });
   });
 
   describe('calculateKpiMetrics', () => {
