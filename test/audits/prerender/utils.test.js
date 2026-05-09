@@ -394,3 +394,17 @@ describe('Prerender Utils', () => {
     });
   });
 });
+
+import { toPathname } from '../../../src/prerender/utils/shared.js';
+
+describe('Prerender Shared Utils', () => {
+  describe('toPathname', () => {
+    it('should return the pathname for a valid URL', () => {
+      expect(toPathname('https://www.adobe.com/test/page')).to.equal('/test/page');
+    });
+
+    it('should return the raw string for an invalid URL', () => {
+      expect(toPathname('not-a-valid-url')).to.equal('not-a-valid-url');
+    });
+  });
+});

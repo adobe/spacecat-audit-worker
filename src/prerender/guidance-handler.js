@@ -12,6 +12,7 @@
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { isPaidLLMOCustomer } from './utils/utils.js';
+import { toPathname } from './utils/shared.js';
 import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 const LOG_PREFIX = 'Prerender -';
@@ -127,13 +128,6 @@ export default async function handler(message, context) {
     // When the preferred base URL changes (e.g. www.example.com → example.com),
     // Mystique responses may use the new domain while stored suggestions still
     // carry the old domain — keying by pathname ensures they still match.
-    const toPathname = (url) => {
-      try {
-        return new URL(url).pathname;
-      } catch {
-        return url;
-      }
-    };
     const suggestionsByUrl = new Map();
     updateableSuggestions.forEach((s) => {
       const dataObj = s.getData();

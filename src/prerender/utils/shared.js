@@ -35,6 +35,21 @@ export function generateReportingPeriods(referenceDate = new Date()) {
 }
 
 /**
+ * Extracts the pathname from a URL string.
+ * Falls back to the raw string when the URL is not parseable (e.g. invalid or relative).
+ *
+ * @param {string} url
+ * @returns {string} pathname, or the original string on parse failure
+ */
+export function toPathname(url) {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return url;
+  }
+}
+
+/**
  * Load the latest week's agentic traffic sheet for a site
  * Returns the computed weekId, baseUrl, output location and parsed rows.
  */

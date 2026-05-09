@@ -21,6 +21,7 @@ import { getTopAgenticUrlsFromAthena, getPreferredBaseUrl } from '../utils/agent
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
 import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
+import { toPathname } from './utils/shared.js';
 import {
   CONTENT_GAIN_THRESHOLD,
   DAILY_BATCH_SIZE,
@@ -161,13 +162,7 @@ async function markDeployedUrlSuggestionsAsCovered(
     ? newSuggestions.filter((s) => {
       const data = s.getData();
       // Normalize to pathname for domain-shift-safe comparison
-      let urlKey;
-      try {
-        urlKey = new URL(data?.url).pathname;
-      } catch {
-        urlKey = data?.url;
-      }
-      return deployedAtEdgeUrls.has(urlKey) && !data?.edgeDeployed;
+      return deployedAtEdgeUrls.has(toPathname(data?.url)) && !data?.edgeDeployed;
     })
     : [];
 
@@ -1084,13 +1079,6 @@ export async function processOpportunityAndSuggestions(
   // from being correctly marked as outdated. The set uses pathname-based
   // lookups: both stored values and .has() arguments are normalized to pathnames.
   const scrapedUrlsSet = rawScrapedUrlsSet ? (() => {
-    const toPathname = (url) => {
-      try {
-        return new URL(url).pathname;
-      } catch {
-        return url;
-      }
-    };
     const pathnames = new Set(
       [...rawScrapedUrlsSet].map(toPathname),
     );
@@ -1147,7 +1135,7 @@ export async function processOpportunityAndSuggestions(
     // Key on pathname only so that domain shifts (e.g. after page-citability migration
     // switching from site.getBaseURL() to getPreferredBaseUrl()) don't produce duplicate
     // suggestions for the same page path.
-    return `${new URL(data.url).pathname}|${AUDIT_TYPE}`;
+    return `${toPathname(data.url)}|${AUDIT_TYPE}`;
   };
 
   // Helper function to extract only the fields we want in suggestions
@@ -1734,14 +1722,6 @@ export async function processContentAndGenerateOpportunities(context) {
         // Include domain-wide URL so aggregate suggestion can be marked outdated
         // when appropriate. Normalize to pathnames so domain shifts don't prevent
         // outdating.
-        const toPathname = (url) => {
-          try {
-            return new URL(url).pathname;
-            /* c8 ignore next 3 - defensive: scrapedUrlsSet always contains valid URLs */
-          } catch {
-            return url;
-          }
-        };
         const scrapedPathnames = new Set(
           [...scrapedUrlsSet].map(toPathname),
         );
@@ -1755,10 +1735,7 @@ export async function processContentAndGenerateOpportunities(context) {
           opportunity: existingOpportunity,
           newData: [],
           context,
-          buildKey: (suggestionData) => {
-            const pathname = toPathname(suggestionData.url);
-            return `${pathname}|${AUDIT_TYPE}`;
-          },
+          buildKey: (suggestionData) => `${toPathname(suggestionData.url)}|${AUDIT_TYPE}`,
           mapNewSuggestion: () => ({}),
           scrapedUrlsSet: scrapedUrlsForNoOppty,
         });
@@ -1771,14 +1748,7 @@ export async function processContentAndGenerateOpportunities(context) {
     const deployedAtEdgeUrls = new Set(
       successfulComparisons
         .filter((r) => r.isDeployedAtEdge)
-        .map((r) => {
-          try {
-            return new URL(r.url).pathname;
-            /* c8 ignore next 3 - defensive: comparison URLs are always valid */
-          } catch {
-            return r.url;
-          }
-        }),
+        .map((r) => toPathname(r.url)),
     );
     await markNewSuggestionsAsCovered(opportunityWithSuggestions, context, deployedAtEdgeUrls);
 
