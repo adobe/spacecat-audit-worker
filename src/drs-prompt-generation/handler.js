@@ -13,8 +13,34 @@
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import writeDrsPromptsToLlmoConfig from './drs-config-writer.js';
 import { postMessageSafe } from '../utils/slack-utils.js';
+import { isBrandalfOrMigrationEnabled } from '../utils/feature-flags.js';
 
 const RUNBOOK_URL = 'https://github.com/adobe/spacecat-audit-worker/blob/main/docs/runbooks/resubmit-drs-prompt-generation.md';
+
+/**
+ * Resolves whether the org behind a site is under brandalf or brandalf_migration.
+ * When either flag is on, v1 LLMO config writes (and the llmo-customer-analysis
+ * fan-out that follows) must be skipped — the v1 config bucket is read-only for
+ * those orgs (LLMO-4587 / LLMO-4743).
+ *
+ * Fail-open: any lookup or API failure returns false so non-brandalf orgs keep
+ * working. Matches the fail-open posture of isBrandalfOrMigrationEnabled.
+ */
+async function isV1WriteBlockedByBrandalf(siteId, dataAccess, env, log) {
+  try {
+    const { Site } = dataAccess;
+    const site = await Site.findById(siteId);
+    const orgId = site?.getOrganizationId?.();
+    if (!orgId) {
+      log.warn(`Cannot determine brandalf flag for site ${siteId}: no organization`);
+      return false;
+    }
+    return await isBrandalfOrMigrationEnabled(orgId, env, log);
+  } catch (error) {
+    log.warn(`Error resolving brandalf flag for site ${siteId}: ${error.message}`);
+    return false;
+  }
+}
 
 /**
  * Sends a Slack alert to the LLMO onboarding channel when prompt generation fails.
@@ -130,7 +156,9 @@ function resolveOnboardingMode(auditContext = {}) {
  * @returns {Response}
  */
 export default async function drsPromptGenerationHandler(message, context) {
-  const { log, sqs, dataAccess } = context;
+  const {
+    log, sqs, dataAccess, env,
+  } = context;
   const { siteId, auditContext = {} } = message;
   const {
     drsEventType, drsJobId, resultLocation, source,
@@ -155,6 +183,14 @@ export default async function drsPromptGenerationHandler(message, context) {
 
   log.info(`DRS prompt generation completed for site ${siteId}, job ${drsJobId}, result: ${resultLocation}`);
 
+  // Single org lookup: drives both the v1 write gate and the fan-out gate.
+  // Under brandalf / brandalf_migration the v1 config bucket is read-only and
+  // the llmo-customer-analysis fan-out is owned by the brandalf-migration path.
+  if (await isV1WriteBlockedByBrandalf(siteId, dataAccess, env, log)) {
+    log.info(`Skipping v1 LLMO config write and llmo-customer-analysis trigger for site ${siteId}, job ${drsJobId} because brandalf or brandalf_migration is enabled`);
+    return ok();
+  }
+
   let configVersion;
   const shouldWriteLegacyConfig = source !== 'onboarding' || onboardingMode !== 'v2';
 
@@ -173,7 +209,7 @@ export default async function drsPromptGenerationHandler(message, context) {
       );
     }
   } else {
-    log.info(`Skipping v1 LLMO config write for site ${siteId} because onboarding_mode is v2`);
+    log.info(`Skipping v1 LLMO config write for site ${siteId}, job ${drsJobId} because onboarding_mode is v2`);
   }
 
   if (source !== 'onboarding') {

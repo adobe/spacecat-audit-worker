@@ -26,6 +26,8 @@ describe('DRS Prompt Generation Handler', () => {
   let drsPromptGenerationHandler;
   let mockPostMessageSafe;
   let mockWriteDrsPromptsToLlmoConfig;
+  let mockIsBrandalfOrMigrationEnabled;
+  let mockSite;
 
   const AUDITS_QUEUE_URL = 'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue';
   const PRESIGNED_URL = 'https://drs-bucket.s3.amazonaws.com/results/job-1/data.json?X-Amz-Signature=abc';
@@ -47,10 +49,15 @@ describe('DRS Prompt Generation Handler', () => {
   beforeEach(async () => {
     mockPostMessageSafe = sandbox.stub().resolves({ success: true });
     mockWriteDrsPromptsToLlmoConfig = sandbox.stub().resolves({ success: true, version: 'v1' });
+    // Default: brandalf disabled. Tests that exercise brandalf paths re-stub.
+    mockIsBrandalfOrMigrationEnabled = sandbox.stub().resolves(false);
 
     const handler = await esmock('../../src/drs-prompt-generation/handler.js', {
       '../../src/utils/slack-utils.js': { postMessageSafe: mockPostMessageSafe },
       '../../src/drs-prompt-generation/drs-config-writer.js': { default: mockWriteDrsPromptsToLlmoConfig },
+      '../../src/utils/feature-flags.js': {
+        isBrandalfOrMigrationEnabled: mockIsBrandalfOrMigrationEnabled,
+      },
     });
     drsPromptGenerationHandler = handler.default;
 
@@ -63,6 +70,10 @@ describe('DRS Prompt Generation Handler', () => {
       .build();
 
     context.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
+    mockSite = {
+      getOrganizationId: sandbox.stub().returns('org-uuid-1'),
+    };
+    context.dataAccess.Site.findById.resolves(mockSite);
     context.s3Client = { send: sandbox.stub().resolves() };
     context.env.S3_IMPORTER_BUCKET_NAME = 'importer-bucket';
     context.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID = 'C-TEST-CHANNEL';
@@ -418,11 +429,15 @@ describe('DRS Prompt Generation Handler', () => {
       sandbox.restore();
 
       const localPostMessageSafe = sandbox.stub().resolves({ success: true });
+      const localIsBrandalfOrMigrationEnabled = sandbox.stub().resolves(false);
 
       // eslint-disable-next-line no-await-in-loop
       const handler = await esmock('../../src/drs-prompt-generation/handler.js', {
         '../../src/utils/slack-utils.js': { postMessageSafe: localPostMessageSafe },
         '../../src/drs-prompt-generation/drs-config-writer.js': { default: sandbox.stub().resolves() },
+        '../../src/utils/feature-flags.js': {
+          isBrandalfOrMigrationEnabled: localIsBrandalfOrMigrationEnabled,
+        },
       });
       const localHandler = handler.default;
 
@@ -430,6 +445,9 @@ describe('DRS Prompt Generation Handler', () => {
         .withSandbox(sandbox)
         .build();
       context.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
+      context.dataAccess.Site.findById.resolves({
+        getOrganizationId: sandbox.stub().returns('org-uuid-loop'),
+      });
       context.s3Client = { send: sandbox.stub().resolves() };
       context.env.S3_IMPORTER_BUCKET_NAME = 'importer-bucket';
       context.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID = 'C-TEST-CHANNEL';
@@ -454,6 +472,194 @@ describe('DRS Prompt Generation Handler', () => {
       await localHandler(message, context);
 
       expect(fetchStub, `fetch should be called for source=${source}`).to.have.been.calledOnceWith(PRESIGNED_URL);
+      expect(localIsBrandalfOrMigrationEnabled, `brandalf check should run for source=${source}`).to.have.been.calledOnceWith('org-uuid-loop');
     }
+  });
+
+  describe('brandalf v1-write ban (LLMO-4743)', () => {
+    const baseMessage = (overrides = {}) => ({
+      siteId: 'site-bm',
+      auditContext: {
+        drsEventType: 'JOB_COMPLETED',
+        drsJobId: 'job-bm-1',
+        resultLocation: PRESIGNED_URL,
+        ...overrides,
+      },
+    });
+
+    it('skips v1 write AND fan-out when brandalf is enabled (source=onboarding, mode=v2)', async () => {
+      mockIsBrandalfOrMigrationEnabled.resolves(true);
+
+      await drsPromptGenerationHandler(
+        baseMessage({ source: 'onboarding', onboarding_mode: 'v2' }),
+        context,
+      );
+
+      expect(mockWriteDrsPromptsToLlmoConfig).to.not.have.been.called;
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Skipping v1 LLMO config write and llmo-customer-analysis trigger for site site-bm, job job-bm-1 because brandalf or brandalf_migration is enabled/),
+      );
+    });
+
+    it('skips v1 write AND fan-out when brandalf is enabled (source=onboarding, mode=v1)', async () => {
+      mockIsBrandalfOrMigrationEnabled.resolves(true);
+
+      await drsPromptGenerationHandler(
+        baseMessage({ source: 'onboarding', onboarding_mode: 'v1' }),
+        context,
+      );
+
+      expect(mockWriteDrsPromptsToLlmoConfig).to.not.have.been.called;
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('skips v1 write AND fan-out when brandalf is enabled (source=onboarding, no mode)', async () => {
+      // Periodic regen / dashboard retrigger paths can have source=onboarding
+      // without an onboarding_mode field; the gate must still skip.
+      mockIsBrandalfOrMigrationEnabled.resolves(true);
+
+      await drsPromptGenerationHandler(
+        baseMessage({ source: 'onboarding' }),
+        context,
+      );
+
+      expect(mockWriteDrsPromptsToLlmoConfig).to.not.have.been.called;
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('skips v1 write when brandalf is enabled (source=manual, no mode)', async () => {
+      mockIsBrandalfOrMigrationEnabled.resolves(true);
+
+      await drsPromptGenerationHandler(
+        baseMessage({ source: 'manual' }),
+        context,
+      );
+
+      expect(mockWriteDrsPromptsToLlmoConfig).to.not.have.been.called;
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('passes brandalf_migration check via the same gate (helper returns true for either flag)', async () => {
+      // The helper unifies brandalf || brandalf_migration. We verify the gate
+      // honors any positive return — the per-flag distinction lives in feature-flags.test.js.
+      mockIsBrandalfOrMigrationEnabled.resolves(true);
+
+      await drsPromptGenerationHandler(
+        baseMessage({ source: 'manual' }),
+        context,
+      );
+
+      expect(mockIsBrandalfOrMigrationEnabled).to.have.been.calledOnceWith('org-uuid-1');
+      expect(mockWriteDrsPromptsToLlmoConfig).to.not.have.been.called;
+    });
+
+    it('writes v1 and skips fan-out for non-brandalf orgs on non-onboarding sources', async () => {
+      // mockIsBrandalfOrMigrationEnabled defaults to false
+      await drsPromptGenerationHandler(
+        baseMessage({ source: 'manual' }),
+        context,
+      );
+
+      expect(mockWriteDrsPromptsToLlmoConfig).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('writes v1 and triggers fan-out for non-brandalf onboarding (mode=v1)', async () => {
+      await drsPromptGenerationHandler(
+        baseMessage({ source: 'onboarding', onboarding_mode: 'v1' }),
+        context,
+      );
+
+      expect(mockWriteDrsPromptsToLlmoConfig).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).to.have.been.calledOnceWith(
+        AUDITS_QUEUE_URL,
+        sinon.match({ type: 'llmo-customer-analysis', siteId: 'site-bm' }),
+      );
+    });
+
+    it('skips v1 (mode=v2) but triggers fan-out for non-brandalf onboarding (mode=v2)', async () => {
+      await drsPromptGenerationHandler(
+        baseMessage({ source: 'onboarding', onboarding_mode: 'v2' }),
+        context,
+      );
+
+      expect(mockWriteDrsPromptsToLlmoConfig).to.not.have.been.called;
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Skipping v1 LLMO config write for site site-bm, job job-bm-1 because onboarding_mode is v2/),
+      );
+    });
+
+    it('fails open and writes v1 when Site.findById returns null', async () => {
+      context.dataAccess.Site.findById.resolves(null);
+
+      await drsPromptGenerationHandler(
+        baseMessage({ source: 'manual' }),
+        context,
+      );
+
+      expect(mockIsBrandalfOrMigrationEnabled).to.not.have.been.called;
+      expect(mockWriteDrsPromptsToLlmoConfig).to.have.been.calledOnce;
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Cannot determine brandalf flag for site site-bm: no organization/),
+      );
+    });
+
+    it('fails open and writes v1 when site has no organizationId', async () => {
+      mockSite.getOrganizationId.returns(null);
+
+      await drsPromptGenerationHandler(
+        baseMessage({ source: 'manual' }),
+        context,
+      );
+
+      expect(mockIsBrandalfOrMigrationEnabled).to.not.have.been.called;
+      expect(mockWriteDrsPromptsToLlmoConfig).to.have.been.calledOnce;
+    });
+
+    it('fails open and writes v1 when Site.findById throws', async () => {
+      context.dataAccess.Site.findById.rejects(new Error('DB unavailable'));
+
+      await drsPromptGenerationHandler(
+        baseMessage({ source: 'manual' }),
+        context,
+      );
+
+      expect(mockWriteDrsPromptsToLlmoConfig).to.have.been.calledOnce;
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Error resolving brandalf flag for site site-bm: DB unavailable/),
+      );
+    });
+
+    it('forwards imsOrgId on the fan-out message when present in auditContext', async () => {
+      await drsPromptGenerationHandler(
+        baseMessage({ source: 'onboarding', onboarding_mode: 'v1', imsOrgId: 'ims-org-1@AdobeOrg' }),
+        context,
+      );
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnceWith(
+        AUDITS_QUEUE_URL,
+        sinon.match({
+          type: 'llmo-customer-analysis',
+          siteId: 'site-bm',
+          auditContext: sinon.match({ imsOrgId: 'ims-org-1@AdobeOrg' }),
+        }),
+      );
+    });
+
+    it('fails open and writes v1 when isBrandalfOrMigrationEnabled throws', async () => {
+      mockIsBrandalfOrMigrationEnabled.rejects(new Error('feature-flags down'));
+
+      await drsPromptGenerationHandler(
+        baseMessage({ source: 'manual' }),
+        context,
+      );
+
+      expect(mockWriteDrsPromptsToLlmoConfig).to.have.been.calledOnce;
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Error resolving brandalf flag for site site-bm: feature-flags down/),
+      );
+    });
   });
 });
