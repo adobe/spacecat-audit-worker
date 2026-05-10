@@ -11,126 +11,104 @@
  */
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
-import ExcelJS from 'exceljs';
-import {
-  createLLMOSharepointClient, publishToAdminHlx, readFromSharePoint, uploadToSharePoint,
-} from '../utils/report-uploader.js';
-import {
-  generateReportingPeriods,
-  toPathOnly,
-  SPREADSHEET_COLUMNS,
-} from './utils.js';
-import { getS3Config } from '../utils/cdn-utils.js';
-
-function derivePeriodFromBrokenLinks(brokenLinks = []) {
-  const periodRegex = /llm-404-suggestion-(w\d{2}-\d{4})-/;
-  for (const link of brokenLinks) {
-    const match = periodRegex.exec(link.suggestionId || '');
-    if (match && match[1]) {
-      return match[1];
-    }
-  }
-  return null;
-}
+import { toPathOnly } from './utils.js';
 
 /**
- * Handles Mystique responses for LLM error pages and updates suggestions with AI data
- * @param {Object} message - Message from Mystique with AI suggestions
- * @param {Object} context - Context object with data access and logger
- * @returns {Promise<Object>} - HTTP response
+ * Handles Mystique responses for LLM error pages and persists AI enrichment
+ * directly to DB Suggestions.
+ *
+ * Replaces the legacy Excel/SharePoint read-modify-write with a DB update:
+ * each brokenLink in the Mystique response is matched to an existing Suggestion
+ * by URL, then suggestedUrls, aiRationale, and confidenceScore are written back
+ * via Suggestion.saveMany() in a single bulk operation.
+ *
+ * @param {Object} message - Message from Mystique containing AI guidance
+ * @param {Object} context - Lambda context with dataAccess and logger
+ * @returns {Promise<Response>} HTTP response
  */
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Site, Audit } = dataAccess;
-  const { siteId, data, auditId } = message;
-  const { brokenLinks } = data;
+  const {
+    Site, Audit, Opportunity, Suggestion,
+  } = dataAccess;
+  const { siteId, auditId, data } = message;
+  const { brokenLinks = [], opportunityId } = data;
 
-  log.debug(`Message received in LLM error pages guidance handler: ${JSON.stringify(message, null, 2)}`);
+  log.debug(`[LLM-ERROR-PAGES] Guidance handler received message: ${JSON.stringify(message, null, 2)}`);
 
   const site = await Site.findById(siteId);
   if (!site) {
-    log.error(`Site not found for siteId: ${siteId}`);
+    log.error(`[LLM-ERROR-PAGES] Site not found for siteId: ${siteId}`);
     return notFound('Site not found');
   }
-  const s3Config = getS3Config(site, context);
 
   const audit = await Audit.findById(auditId);
   if (!audit) {
-    log.warn(`No audit found for auditId: ${auditId}`);
-    return notFound();
+    log.warn(`[LLM-ERROR-PAGES] No audit found for auditId: ${auditId}`);
+    return notFound('Audit not found');
   }
 
-  // Read-modify-write the weekly 404 Excel file in SharePoint
-  try {
-    const sharepointClient = await createLLMOSharepointClient(context);
-    const derivedPeriod = derivePeriodFromBrokenLinks(brokenLinks)
-      || generateReportingPeriods(new Date(), [-1]).weeks[0].periodIdentifier;
-    const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.siteName;
-    const outputDir = `${llmoFolder}/agentic-traffic`;
-    const filename = `agentictraffic-errors-404-${derivedPeriod}.xlsx`;
+  if (!opportunityId) {
+    log.error('[LLM-ERROR-PAGES] No opportunityId provided in Mystique message');
+    return badRequest('Missing opportunityId');
+  }
 
-    const workbook = new ExcelJS.Workbook();
-    const existingBuffer = await readFromSharePoint(filename, outputDir, sharepointClient, log);
-    await workbook.xlsx.load(existingBuffer);
-    const sheet = workbook.worksheets[0] || workbook.addWorksheet('data');
+  const opportunity = await Opportunity.findById(opportunityId);
+  if (!opportunity) {
+    log.error(`[LLM-ERROR-PAGES] Opportunity not found for opportunityId: ${opportunityId}`);
+    return notFound('Opportunity not found');
+  }
 
-    const baseUrl = site.getBaseURL?.() || 'https://example.com';
-    const col = (name) => SPREADSHEET_COLUMNS.indexOf(name) + 1;
+  const existingSuggestions = await opportunity.getSuggestions();
+  const baseUrl = site.getBaseURL?.() || '';
 
-    // Create a map of broken URLs for quick lookup
-    const brokenUrlsMap = new Map();
-    log.debug(`Processing ${brokenLinks.length} broken links from Mystique`);
+  // Build a path → Suggestion map for O(1) lookup.
+  // Suggestions store their URL as a full URL in data.url; normalise to path-only
+  // so it matches the path-only urlTo values returned by Mystique.
+  const suggestionByPath = new Map(
+    existingSuggestions.map((s) => [toPathOnly(s.getData()?.url, baseUrl), s]),
+  );
 
-    brokenLinks.forEach((brokenLink) => {
-      const {
-        suggestedUrls, aiRationale, urlFrom, urlTo,
-      } = brokenLink;
-      const keyUrl = toPathOnly(urlTo, baseUrl);
+  const toUpdate = [];
 
-      if (!suggestedUrls || suggestedUrls.length === 0) {
-        log.warn(`No suggested URLs for broken link: ${urlTo}`);
-      }
+  for (const brokenLink of brokenLinks) {
+    const {
+      urlTo, suggestedUrls, aiRationale, confidenceScore,
+    } = brokenLink;
 
-      brokenUrlsMap.set(keyUrl, {
-        userAgents: urlFrom,
-        suggestedUrls: suggestedUrls || [],
-        aiRationale: aiRationale || '',
-      });
-    });
-
-    let updatedRows = 0;
-
-    for (let i = 2; i <= sheet.rowCount; i += 1) {
-      const urlCell = sheet.getCell(i, col('URL')).value?.toString?.() || '';
-      if (urlCell) {
-        const pathOnlyUrl = toPathOnly(urlCell, baseUrl);
-        // Look up the URL in brokenUrls and update if found
-        const brokenUrlData = brokenUrlsMap.get(pathOnlyUrl);
-        if (brokenUrlData) {
-          const suggested = brokenUrlData.suggestedUrls.join('\n');
-
-          sheet.getCell(i, col('Suggested URLs')).value = suggested;
-          sheet.getCell(i, col('AI Rationale')).value = brokenUrlData.aiRationale;
-          updatedRows += 1;
-
-          log.debug(`Updated row ${i} for URL: ${pathOnlyUrl} with ${brokenUrlData.suggestedUrls.length} suggestions`);
-        } else {
-          log.info(`No Mystique data found for URL: ${pathOnlyUrl}`);
-        }
-      }
+    if (!suggestedUrls || suggestedUrls.length === 0) {
+      log.warn(`[LLM-ERROR-PAGES] No suggested URLs returned by Mystique for: ${urlTo}`);
+      // eslint-disable-next-line no-continue
+      continue;
     }
 
-    log.debug(`Updated ${updatedRows} rows with Mystique suggestions`);
+    const path = toPathOnly(urlTo, baseUrl);
+    const suggestion = suggestionByPath.get(path);
 
-    // Overwrite the file
-    const buffer = await workbook.xlsx.writeBuffer();
-    await uploadToSharePoint(buffer, filename, outputDir, sharepointClient, log);
-    await publishToAdminHlx(filename, outputDir, log);
-    log.debug(`Updated Excel 404 file with Mystique guidance: ${filename}`);
-  } catch (e) {
-    log.error(`Failed to update 404 Excel on Mystique callback: ${e.message}`);
-    return badRequest('Failed to persist guidance');
+    if (!suggestion) {
+      log.info(`[LLM-ERROR-PAGES] No matching DB suggestion found for URL: ${urlTo} — skipping`);
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+
+    suggestion.setData({
+      ...suggestion.getData(),
+      suggestedUrls,
+      aiRationale: aiRationale || '',
+      ...(confidenceScore !== undefined && { confidenceScore }),
+    });
+
+    toUpdate.push(suggestion);
+    log.debug(`[LLM-ERROR-PAGES] Queued AI enrichment for suggestion: ${path} (${suggestedUrls.length} suggested URLs)`);
   }
+
+  if (toUpdate.length === 0) {
+    log.warn('[LLM-ERROR-PAGES] No suggestions matched Mystique response — nothing persisted');
+    return ok();
+  }
+
+  await Suggestion.saveMany(toUpdate);
+  log.info(`[LLM-ERROR-PAGES] Persisted Mystique AI enrichment for ${toUpdate.length} / ${brokenLinks.length} suggestions (opportunityId: ${opportunityId})`);
 
   return ok();
 }
