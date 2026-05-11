@@ -1,3 +1,10 @@
+# [1.436.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.435.4...v1.436.0) (2026-05-11)
+
+
+### Features
+
+* add LLMO config schema-sweep script (SITES-43238 step 3a) ([#2470](https://github.com/adobe/spacecat-audit-worker/issues/2470)) ([8c94649](https://github.com/adobe/spacecat-audit-worker/commit/8c94649aa0403d85997484bc3a836aab2f40434f)), closes [#2057](https://github.com/adobe/spacecat-audit-worker/issues/2057)
+
 ## [1.435.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.435.3...v1.435.4) (2026-05-11)
 
 
