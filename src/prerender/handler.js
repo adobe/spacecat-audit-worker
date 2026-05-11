@@ -175,7 +175,7 @@ async function markDeployedUrlSuggestionsAsCovered(
     s.setData({ ...s.getData(), coveredByDomainWide: domainWideSuggestionId });
   });
 
-  log.info(`${LOG_PREFIX} prerender_sync_case_breakdown: siteId=${siteId}, baseUrl=${baseUrl}, case4_covered_by_domain_wide=${suggestionsToCover.length}`);
+  log.info(`${LOG_PREFIX} All domain deployed: marking ${suggestionsToCover.length} NEW suggestions as coveredByDomainWide. baseUrl=${baseUrl}, siteId=${siteId}`);
   await SuggestionDA.saveMany(suggestionsToCover);
 }
 
