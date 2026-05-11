@@ -1217,7 +1217,6 @@ export async function processOpportunityAndSuggestions(
       data: suggestion.key ? suggestion.data : mapSuggestionData(suggestion),
     }),
     scrapedUrlsSet,
-    existingSuggestions: existingSuggestionsForSync,
     // Custom merge function: handle both types
     mergeDataFunction: (existingData, newDataItem) => {
       // Domain-wide suggestion: replace with new data
