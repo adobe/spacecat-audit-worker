@@ -7668,7 +7668,7 @@ describe('Prerender Audit', () => {
       expect(newSuggestion1.getData().coveredByDomainWide).to.equal('dw-1');
       expect(newSuggestion2.getData().coveredByDomainWide).to.equal('dw-1');
       expect(context.log.info).to.have.been.calledWith(sinon.match(/isAllDomainDeployedAtEdge=true/));
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/All domain deployed: marking 2 NEW suggestions as coveredByDomainWide/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/prerender_sync_case_breakdown.*case4_covered_by_domain_wide=2/));
     });
 
     it('should skip saveMany when no NEW suggestions exist', async () => {

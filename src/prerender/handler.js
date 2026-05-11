@@ -175,7 +175,7 @@ async function markDeployedUrlSuggestionsAsCovered(
     s.setData({ ...s.getData(), coveredByDomainWide: domainWideSuggestionId });
   });
 
-  log.info(`${LOG_PREFIX} All domain deployed: marking ${suggestionsToCover.length} NEW suggestions as coveredByDomainWide. baseUrl=${baseUrl}, siteId=${siteId}`);
+  log.info(`${LOG_PREFIX} prerender_sync_case_breakdown: siteId=${siteId}, baseUrl=${baseUrl}, case4_covered_by_domain_wide=${suggestionsToCover.length}`);
   await SuggestionDA.saveMany(suggestionsToCover);
 }
 
@@ -1166,6 +1166,45 @@ export async function processOpportunityAndSuggestions(
     ? [...preRenderSuggestions, domainWideSuggestion]
     : [...preRenderSuggestions];
 
+  // Pre-fetch existing suggestions once so we can compute per-case diagnostics and avoid a
+  // redundant DB round-trip inside syncSuggestions.
+  const existingSuggestionsForSync = await opportunity.getSuggestions();
+  const existingKeySet = new Set(
+    existingSuggestionsForSync.map((s) => s.getData()).filter(Boolean).map(buildKey),
+  );
+  const newDataKeySet = new Set(allSuggestions.map(buildKey));
+
+  // Case 1 — existing suggestions whose pathname key matches new audit data → updated in place
+  const syncCase1Updated = existingSuggestionsForSync.filter((s) => {
+    const data = s.getData();
+    return data && newDataKeySet.has(buildKey(data));
+  }).length;
+
+  // Case 2 — existing active suggestions not in new data, whose URL was scraped → marked OUTDATED
+  const skippedOutdatingStatuses = new Set([
+    Suggestion.STATUSES.OUTDATED,
+    Suggestion.STATUSES.FIXED,
+    Suggestion.STATUSES.ERROR,
+    Suggestion.STATUSES.SKIPPED,
+    Suggestion.STATUSES.REJECTED,
+    Suggestion.STATUSES.APPROVED,
+    Suggestion.STATUSES.IN_PROGRESS,
+  ]);
+  const syncCase2Outdated = existingSuggestionsForSync.filter((s) => {
+    const data = s.getData();
+    return data
+      && !newDataKeySet.has(buildKey(data))
+      && !skippedOutdatingStatuses.has(s.getStatus())
+      && !data?.tokowakaDeployed
+      && !data?.edgeDeployed
+      && scrapedUrlsSet?.has(data?.url);
+  }).length;
+
+  // Case 5 — new data items with no matching existing suggestion → created fresh
+  const syncCase5Created = allSuggestions.filter(
+    (data) => !existingKeySet.has(buildKey(data)),
+  ).length;
+
   await syncSuggestions({
     opportunity,
     newData: allSuggestions,
@@ -1178,6 +1217,7 @@ export async function processOpportunityAndSuggestions(
       data: suggestion.key ? suggestion.data : mapSuggestionData(suggestion),
     }),
     scrapedUrlsSet,
+    existingSuggestions: existingSuggestionsForSync,
     // Custom merge function: handle both types
     mergeDataFunction: (existingData, newDataItem) => {
       // Domain-wide suggestion: replace with new data
@@ -1200,6 +1240,8 @@ export async function processOpportunityAndSuggestions(
     isPaidLLMOCustomer=${isPaid},
     suggestions=${preRenderSuggestions.length},
     totalSuggestions=${allSuggestions.length},`);
+
+  log.info(`${LOG_PREFIX} prerender_sync_case_breakdown: siteId=${auditData.siteId}, baseUrl=${auditUrl}, case1_updated_in_place=${syncCase1Updated}, case2_marked_outdated=${syncCase2Outdated}, case4_covered_by_domain_wide=see_markDeployedUrlSuggestionsAsCovered, case5_created_new=${syncCase5Created}`);
 
   // Build Mystique candidates from individual URLs (domain-wide excluded).
   // The guidance handler matches Mystique responses back to suggestions by URL,
