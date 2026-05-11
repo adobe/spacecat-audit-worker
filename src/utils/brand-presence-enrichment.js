@@ -437,9 +437,14 @@ export async function computeTopicsFromBrandPresence(siteId, context, site) {
   }
 
   const baseURL = site?.getBaseURL?.();
-  const siteHostname = baseURL
-    ? new URL(baseURL).hostname.replace(/^www\./, '')
-    : undefined;
+  let siteHostname;
+  if (baseURL) {
+    try {
+      siteHostname = new URL(baseURL).hostname.replace(/^www\./, '');
+    } catch {
+      log.warn(`${LOG_PREFIX} Could not parse baseURL "${baseURL}", skipping site URL filter`);
+    }
+  }
 
   const aggregated = await fetchAndAggregateData(siteId, matchedFiles, env, log, siteHostname);
   return formatTopicsForEnrichment(aggregated.topicMap, aggregated.allUrls);

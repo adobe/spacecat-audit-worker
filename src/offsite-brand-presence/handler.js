@@ -691,7 +691,12 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
-  const siteHostname = new URL(baseURL).hostname.replace(/^www\./, '');
+  let siteHostname;
+  try {
+    siteHostname = new URL(baseURL).hostname.replace(/^www\./, '');
+  } catch {
+    log.warn(`${LOG_PREFIX} Could not parse baseURL "${baseURL}", skipping site URL filter`);
+  }
 
   log.info(`${LOG_PREFIX} Starting audit for site: ${siteId} (${baseURL})`);
 

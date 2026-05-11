@@ -849,6 +849,26 @@ describe('Offsite Brand Presence Handler', () => {
       expect(createCalls).to.have.lengthOf(2);
     });
 
+    it('should skip filtering and log a warning when baseURL is malformed', async () => {
+      site.getBaseURL.returns('not-a-url');
+      const sources = 'https://other.com/page';
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([sources]);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Could not parse baseURL/),
+      );
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(1);
+    });
+
     it('should handle www baseURL by filtering both www and bare hostname', async () => {
       site.getBaseURL.returns('https://www.example.com');
       const sources = 'https://example.com/page;https://www.example.com/page2;https://other.com/ok';
