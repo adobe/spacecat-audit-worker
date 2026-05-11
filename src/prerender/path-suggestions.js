@@ -61,7 +61,7 @@ export class RcvPathQualificationStrategy {
     this.scoreThreshold = scoreThreshold;
   }
 
-  qualify(pathPattern, urls) {
+  qualify(pathPattern, urls, log) { // eslint-disable-line no-unused-vars
     if (urls.length < this.minUrls) {
       return { qualifies: false, score: 0, reason: `urlCount ${urls.length} < minUrls ${this.minUrls}` };
     }

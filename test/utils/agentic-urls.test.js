@@ -61,7 +61,7 @@ describe('agentic-urls', () => {
 
     mockWeeklyBreakdownQueries = {
       createTopUrlsQueryWithLimit: sandbox.stub().resolves('SELECT * FROM test'),
-      createAgenticHitsMapQuery: sandbox.stub().resolves('SELECT url, total_hits FROM test'),
+      createTopUrlsWithHitsQuery: sandbox.stub().resolves('SELECT url, total_hits FROM test'),
     };
 
     const module = await esmock('../../src/utils/agentic-urls.js', {
@@ -699,8 +699,8 @@ describe('agentic-urls', () => {
 
       // generateReportingPeriods called 4 times (offsets -1 through -4)
       expect(mockGenerateReportingPeriods.callCount).to.equal(4);
-      expect(mockWeeklyBreakdownQueries.createAgenticHitsMapQuery).to.have.been.calledOnce;
-      const callArgs = mockWeeklyBreakdownQueries.createAgenticHitsMapQuery.firstCall.args[0];
+      expect(mockWeeklyBreakdownQueries.createTopUrlsWithHitsQuery).to.have.been.calledOnce;
+      const callArgs = mockWeeklyBreakdownQueries.createTopUrlsWithHitsQuery.firstCall.args[0];
       expect(callArgs).to.have.property('startDate');
       expect(callArgs).to.have.property('endDate');
     });

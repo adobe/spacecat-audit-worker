@@ -182,7 +182,7 @@ export async function getAgenticHitsMapFromAthena(
     const { endDate } = weekPeriods[0];
 
     const athenaClient = awsRuntime.createAthenaClient(s3Config.getAthenaTempLocation());
-    const query = await weeklyBreakdownQueries.createAgenticHitsMapQuery({
+    const query = await weeklyBreakdownQueries.createTopUrlsWithHitsQuery({
       startDate,
       endDate,
       databaseName: s3Config.databaseName,

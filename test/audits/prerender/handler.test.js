@@ -3821,6 +3821,7 @@ describe('Prerender Audit', () => {
       const syncSuggestionsStub = sinon.stub().resolves();
       const markSuggestionsStub = sinon.stub().resolves();
       const findPreservablePathStub = sinon.stub().resolves([]);
+      const buildPathTypeSuggestionsStub = sinon.stub().resolves([]);
 
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '../../../src/common/opportunity.js': {
@@ -3834,7 +3835,7 @@ describe('Prerender Audit', () => {
         },
         '../../../src/prerender/path-suggestions.js': {
           findPreservablePathSuggestions: findPreservablePathStub,
-          buildPathTypeSuggestions: sinon.stub().resolves([]),
+          buildPathTypeSuggestions: buildPathTypeSuggestionsStub,
           markSuggestionsAsCoveredByPaths: markSuggestionsStub,
         },
       });
@@ -3860,6 +3861,7 @@ describe('Prerender Audit', () => {
       await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
 
       expect(findPreservablePathStub.notCalled).to.be.true;
+      expect(buildPathTypeSuggestionsStub.notCalled).to.be.true;
       expect(syncSuggestionsStub).to.have.been.calledOnce;
       expect(markSuggestionsStub).to.have.been.calledOnce;
     });

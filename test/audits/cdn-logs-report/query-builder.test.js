@@ -533,9 +533,9 @@ describe('CDN Logs Query Builder', () => {
     });
   });
 
-  describe('createAgenticHitsMapQuery', () => {
+  describe('createTopUrlsWithHitsQuery', () => {
     it('generates a query that returns url and total_hits columns', async () => {
-      const query = await weeklyBreakdownQueries.createAgenticHitsMapQuery({
+      const query = await weeklyBreakdownQueries.createTopUrlsWithHitsQuery({
         startDate: new Date('2025-01-01'),
         endDate: new Date('2025-01-28'),
         databaseName: 'test_db',
@@ -559,7 +559,7 @@ describe('CDN Logs Query Builder', () => {
         }),
       });
 
-      const query = await weeklyBreakdownQueries.createAgenticHitsMapQuery({
+      const query = await weeklyBreakdownQueries.createTopUrlsWithHitsQuery({
         startDate: new Date('2025-01-01'),
         endDate: new Date('2025-01-28'),
         databaseName: 'test_db',
@@ -573,7 +573,7 @@ describe('CDN Logs Query Builder', () => {
     });
 
     it('excludes configured URL suffixes', async () => {
-      const query = await weeklyBreakdownQueries.createAgenticHitsMapQuery({
+      const query = await weeklyBreakdownQueries.createTopUrlsWithHitsQuery({
         startDate: new Date('2025-01-01'),
         endDate: new Date('2025-01-28'),
         databaseName: 'test_db',

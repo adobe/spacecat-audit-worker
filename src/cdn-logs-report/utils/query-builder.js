@@ -289,7 +289,7 @@ async function createTopUrlsQueryWithLimit(options) {
  * @param {Array<string>} [options.excludedUrlSuffixes]
  * @returns {Promise<string>} SQL query string
  */
-async function createAgenticHitsMapQuery(options) {
+async function createTopUrlsWithHitsQuery(options) {
   const {
     startDate, endDate, databaseName, tableName, site, limit, excludedUrlSuffixes = [],
   } = options;
@@ -319,5 +319,5 @@ export const weeklyBreakdownQueries = {
   createReferralDailyReportQuery,
   createTopUrlsQuery,
   createTopUrlsQueryWithLimit,
-  createAgenticHitsMapQuery,
+  createTopUrlsWithHitsQuery,
 };
