@@ -48,6 +48,7 @@ describe('rum-config-refresh handler', () => {
     );
 
     mockConfig = {
+      state: {},
       getRumConfig: sandbox.stub().returns(undefined),
       updateRumConfig: sandbox.stub(),
     };
@@ -55,6 +56,7 @@ describe('rum-config-refresh handler', () => {
     mockSite = {
       getBaseURL: sandbox.stub().returns(BASE_URL),
       getConfig: sandbox.stub().returns(mockConfig),
+      setConfig: sandbox.stub(),
       save: sandbox.stub().resolves(),
     };
 

@@ -12,7 +12,6 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { ok, internalServerError } from '@adobe/spacecat-shared-http-utils';
-import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 
 const STALENESS_DAYS = 7;
 const STALENESS_MS = STALENESS_DAYS * 24 * 60 * 60 * 1000;
@@ -65,7 +64,7 @@ export default async function rumConfigRefresh(message, context) {
   try {
     const siteConfig = site.getConfig();
     siteConfig.updateRumConfig(hasDomainKey);
-    site.setConfig(Config.toDynamoItem(siteConfig));
+    site.setConfig(siteConfig.state);
     await site.save();
     log.info(`[rum-config-refresh] Updated rumConfig for site ${siteId}: hasDomainKey=${hasDomainKey}`);
     return ok({ hasDomainKey, updated: true });
