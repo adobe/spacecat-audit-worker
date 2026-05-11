@@ -275,6 +275,43 @@ async function createTopUrlsQueryWithLimit(options) {
   });
 }
 
+/**
+ * Builds a SQL query that returns url + total_hits over a multi-week window.
+ * Used by getAgenticHitsMapFromAthena for path-level suggestion scoring.
+ *
+ * @param {Object} options
+ * @param {Object} options.startDate - Earliest date of the window (inclusive)
+ * @param {Object} options.endDate - Latest date of the window (inclusive)
+ * @param {string} options.databaseName
+ * @param {string} options.tableName
+ * @param {Object} options.site
+ * @param {number} options.limit
+ * @param {Array<string>} [options.excludedUrlSuffixes]
+ * @returns {Promise<string>} SQL query string
+ */
+async function createAgenticHitsMapQuery(options) {
+  const {
+    startDate, endDate, databaseName, tableName, site, limit, excludedUrlSuffixes = [],
+  } = options;
+
+  const filters = site.getConfig().getLlmoCdnlogsFilter();
+  const siteFilters = buildSiteFilters(filters, site);
+  const whereClause = buildWhereClause(
+    [buildDateFilter(startDate, endDate)],
+    siteFilters,
+  );
+
+  const excludedUrlSuffixesFilter = buildExcludedUrlSuffixesFilter(excludedUrlSuffixes);
+
+  return loadSql('top-agentic-urls-with-hits', {
+    databaseName,
+    tableName,
+    whereClause,
+    limit,
+    excludedUrlSuffixesFilter,
+  });
+}
+
 export const weeklyBreakdownQueries = {
   createAgenticReportQuery,
   createAgenticDailyReportQuery,
@@ -282,4 +319,5 @@ export const weeklyBreakdownQueries = {
   createReferralDailyReportQuery,
   createTopUrlsQuery,
   createTopUrlsQueryWithLimit,
+  createAgenticHitsMapQuery,
 };

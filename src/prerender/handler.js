@@ -22,6 +22,11 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
 import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
 import {
+  buildPathTypeSuggestions,
+  findPreservablePathSuggestions,
+  markSuggestionsAsCoveredByPaths,
+} from './path-suggestions.js';
+import {
   CONTENT_GAIN_THRESHOLD,
   DAILY_BATCH_SIZE,
   TOP_AGENTIC_URLS_LIMIT,
@@ -29,6 +34,7 @@ import {
   PRERENDER_RECENT_PROCESSING_TIME_DAYS,
   MODE_AI_ONLY,
   MYSTIQUE_BATCH_SIZE,
+  PATH_TYPE_SUGGESTION_RANK,
 } from './utils/constants.js';
 
 function rebaseUrl(url, preferredBase, log) {
@@ -1111,6 +1117,59 @@ export async function processOpportunityAndSuggestions(
     );
   }
 
+  // Path suggestions — opt-in per site via prerender.pathSuggestionsEnabled config
+  const pathSuggestionsEnabled = context.site?.getConfig?.()?.get?.('prerender.pathSuggestionsEnabled') ?? false;
+
+  let preservablePaths = [];
+  let newPathSuggestions = [];
+  if (pathSuggestionsEnabled) {
+    preservablePaths = await findPreservablePathSuggestions(opportunity, log);
+    const preservableByPattern = new Map(preservablePaths.map((s) => [s.getData().pathPattern, s]));
+
+    const builtSuggestions = await buildPathTypeSuggestions(
+      preRenderSuggestions,
+      opportunity,
+      context.site,
+      context,
+    );
+
+    // Refresh metrics on preserved paths (keep status + edgeDeployed untouched)
+    const metricsFields = [
+      'urlCount', 'valuableCount', 'valuablePercent',
+      'avgContentGainRatio', 'totalWordCountBefore', 'totalWordCountAfter',
+      'totalAgenticTraffic', 'pathScore',
+    ];
+    await Promise.all(
+      builtSuggestions
+        .filter((p) => preservableByPattern.has(p.data.pathPattern))
+        .map(async (p) => {
+          const existing = preservableByPattern.get(p.data.pathPattern);
+          const currentData = existing.getData();
+          const updatedData = { ...currentData };
+          let changed = false;
+          for (const field of metricsFields) {
+            if (p.data[field] !== undefined && p.data[field] !== currentData[field]) {
+              updatedData[field] = p.data[field];
+              changed = true;
+            }
+          }
+          if (changed) {
+            existing.setData(updatedData);
+            await existing.save();
+          }
+        }),
+    );
+
+    newPathSuggestions = builtSuggestions
+      .filter((p) => !preservableByPattern.has(p.data.pathPattern));
+    log.info(
+      `${LOG_PREFIX} Path suggestions: ${preservablePaths.length} preserved, `
+      + `${newPathSuggestions.length} new. baseUrl=${auditUrl}, siteId=${auditData.siteId}`,
+    );
+  } else {
+    log.info(`${LOG_PREFIX} Path suggestions disabled for site ${auditData.siteId} — skipping`);
+  }
+
   // Build key function that handles both individual and domain-wide suggestions
   /* c8 ignore next 7 */
   const buildKey = (data) => {
@@ -1146,9 +1205,12 @@ export async function processOpportunityAndSuggestions(
     ),
   });
 
-  const allSuggestions = domainWideSuggestion
-    ? [...preRenderSuggestions, domainWideSuggestion]
-    : [...preRenderSuggestions];
+  const allSuggestions = [
+    ...preRenderSuggestions,
+    ...(domainWideSuggestion ? [domainWideSuggestion] : []),
+    ...preservablePaths,
+    ...newPathSuggestions,
+  ];
 
   await syncSuggestions({
     opportunity,
@@ -1158,17 +1220,31 @@ export async function processOpportunityAndSuggestions(
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: Suggestion.TYPES.CONFIG_UPDATE,
-      rank: 0,
+      /* c8 ignore next 6 */
+      // eslint-disable-next-line no-nested-ternary
+      rank: suggestion.key && suggestion.data?.pathType
+        ? PATH_TYPE_SUGGESTION_RANK
+        : (suggestion.key ? 999999 : 0),
       data: suggestion.key ? suggestion.data : mapSuggestionData(suggestion),
     }),
     scrapedUrlsSet,
     // Custom merge function: handle both types
+    /* c8 ignore next 22 - syncSuggestions internals are complex to test */
     mergeDataFunction: (existingData, newDataItem) => {
-      // Domain-wide suggestion: replace with new data
+      // Path-type: preserve edgeDeployed, coveredByDomainWide, pathPattern, pathScore
+      if (newDataItem.key && newDataItem.data?.pathType) {
+        return {
+          ...newDataItem.data,
+          ...(existingData?.edgeDeployed !== undefined
+            && { edgeDeployed: existingData.edgeDeployed }),
+          ...(existingData?.coveredByDomainWide !== undefined
+            && { coveredByDomainWide: existingData.coveredByDomainWide }),
+        };
+      }
+      // Domain-wide: replace data (preserves own edgeDeployed via its own logic)
       if (newDataItem.key) {
         return { ...newDataItem.data };
       }
-      /* c8 ignore next 5 - Individual suggestion merge logic, difficult to test in isolation */
       // Individual suggestions: merge with existing
       return {
         ...existingData,
@@ -1176,6 +1252,9 @@ export async function processOpportunityAndSuggestions(
       };
     },
   });
+
+  // Mark per-URL suggestions covered by deployed path suggestions
+  await markSuggestionsAsCoveredByPaths(opportunity, context);
 
   log.info(`${LOG_PREFIX}
     prerender_suggestions_sync_metrics:

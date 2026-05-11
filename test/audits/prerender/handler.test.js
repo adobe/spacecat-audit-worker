@@ -3313,7 +3313,7 @@ describe('Prerender Audit', () => {
 
         expect(mappedSuggestion).to.have.property('opportunityId', 'test-opp-id');
         expect(mappedSuggestion).to.have.property('type', 'CONFIG_UPDATE');
-        expect(mappedSuggestion).to.have.property('rank', 0); // All suggestions have rank 0 (sorting handled in UI)
+        expect(mappedSuggestion).to.have.property('rank', 999999); // domain-wide ranks highest for ordering
         expect(mappedSuggestion).to.have.property('data');
         expect(mappedSuggestion.data).to.have.property('isDomainWide', true);
 
@@ -3809,6 +3809,179 @@ describe('Prerender Audit', () => {
           sinon.match(/Unexpected non-NEW suggestions with edgeDeployed set/),
         );
       });
+    });
+  });
+
+  describe('path-level suggestion integration in processOpportunityAndSuggestions', () => {
+    it('skips path suggestions when pathSuggestionsEnabled=false', async () => {
+      const mockOpportunity = {
+        getId: () => 'opp-1',
+        getSuggestions: sinon.stub().resolves([]),
+      };
+      const syncSuggestionsStub = sinon.stub().resolves();
+      const markSuggestionsStub = sinon.stub().resolves();
+      const findPreservablePathStub = sinon.stub().resolves([]);
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+        },
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sinon.stub().resolves(false),
+        },
+        '../../../src/prerender/path-suggestions.js': {
+          findPreservablePathSuggestions: findPreservablePathStub,
+          buildPathTypeSuggestions: sinon.stub().resolves([]),
+          markSuggestionsAsCoveredByPaths: markSuggestionsStub,
+        },
+      });
+
+      const auditData = {
+        siteId: 'test-site',
+        auditId: 'audit-1',
+        scrapeJobId: 'job-1',
+        auditResult: {
+          urlsNeedingPrerender: 1,
+          results: [{ url: 'https://example.com/page1', needsPrerender: true, contentGainRatio: 2 }],
+        },
+      };
+
+      const context = {
+        log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+        site: {
+          getId: () => 'test-site',
+          getConfig: () => ({ get: () => false }),
+        },
+      };
+
+      await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+      expect(findPreservablePathStub.notCalled).to.be.true;
+      expect(syncSuggestionsStub).to.have.been.calledOnce;
+      expect(markSuggestionsStub).to.have.been.calledOnce;
+    });
+
+    it('runs path suggestions when pathSuggestionsEnabled=true', async () => {
+      const mockOpportunity = {
+        getId: () => 'opp-1',
+        getSuggestions: sinon.stub().resolves([]),
+      };
+      const syncSuggestionsStub = sinon.stub().resolves();
+      const markSuggestionsStub = sinon.stub().resolves();
+      const findPreservablePathStub = sinon.stub().resolves([]);
+      const buildPathTypeSuggestionsStub = sinon.stub().resolves([]);
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+        },
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sinon.stub().resolves(false),
+        },
+        '../../../src/prerender/path-suggestions.js': {
+          findPreservablePathSuggestions: findPreservablePathStub,
+          buildPathTypeSuggestions: buildPathTypeSuggestionsStub,
+          markSuggestionsAsCoveredByPaths: markSuggestionsStub,
+        },
+      });
+
+      const auditData = {
+        siteId: 'test-site',
+        auditId: 'audit-1',
+        scrapeJobId: 'job-1',
+        auditResult: {
+          urlsNeedingPrerender: 1,
+          results: [{ url: 'https://example.com/page1', needsPrerender: true, contentGainRatio: 2 }],
+        },
+      };
+
+      const context = {
+        log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+        site: {
+          getId: () => 'test-site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ get: () => true }),
+        },
+      };
+
+      await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+      expect(findPreservablePathStub).to.have.been.calledOnce;
+      expect(buildPathTypeSuggestionsStub).to.have.been.calledOnce;
+      expect(syncSuggestionsStub).to.have.been.calledOnce;
+      expect(markSuggestionsStub).to.have.been.calledOnce;
+    });
+
+    it('refreshes metrics on preserved path suggestions', async () => {
+      const savedData = { pathPattern: '/products/*', pathScore: 1, urlCount: 5, edgeDeployed: true };
+      const saveStub = sinon.stub().resolves();
+      const preservedPath = {
+        getId: () => 'path-sug-1',
+        getStatus: () => 'NEW',
+        getData: () => ({ ...savedData }),
+        setData: sinon.stub().callsFake((d) => { Object.assign(savedData, d); }),
+        save: saveStub,
+      };
+
+      const mockOpportunity = {
+        getId: () => 'opp-1',
+        getSuggestions: sinon.stub().resolves([preservedPath]),
+      };
+      const syncSuggestionsStub = sinon.stub().resolves();
+
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
+        '../../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+        },
+        '../../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sinon.stub().resolves(false),
+        },
+        '../../../src/prerender/path-suggestions.js': {
+          findPreservablePathSuggestions: sinon.stub().resolves([preservedPath]),
+          buildPathTypeSuggestions: sinon.stub().resolves([{
+            key: '/products/*|prerender',
+            data: {
+              pathType: true, pathPattern: '/products/*', urlCount: 15, pathScore: 3,
+              valuableCount: 10, valuablePercent: 66.7, avgContentGainRatio: 2,
+              totalWordCountBefore: 1500, totalWordCountAfter: 3000, totalAgenticTraffic: 500,
+            },
+          }]),
+          markSuggestionsAsCoveredByPaths: sinon.stub().resolves(),
+        },
+      });
+
+      const auditData = {
+        siteId: 'test-site',
+        auditId: 'audit-1',
+        scrapeJobId: 'job-1',
+        auditResult: {
+          urlsNeedingPrerender: 1,
+          results: [{ url: 'https://example.com/products/item-1', needsPrerender: true, contentGainRatio: 2 }],
+        },
+      };
+
+      const context = {
+        log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+        site: {
+          getId: () => 'test-site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ get: () => true }),
+        },
+      };
+
+      await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+      // Save should have been called to refresh metrics on the preserved path
+      expect(saveStub).to.have.been.calledOnce;
     });
   });
 

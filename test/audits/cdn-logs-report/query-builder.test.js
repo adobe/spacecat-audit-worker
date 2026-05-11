@@ -532,4 +532,60 @@ describe('CDN Logs Query Builder', () => {
       expect(result).to.not.include('  ');
     });
   });
+
+  describe('createAgenticHitsMapQuery', () => {
+    it('generates a query that returns url and total_hits columns', async () => {
+      const query = await weeklyBreakdownQueries.createAgenticHitsMapQuery({
+        startDate: new Date('2025-01-01'),
+        endDate: new Date('2025-01-28'),
+        databaseName: 'test_db',
+        tableName: 'test_table',
+        site: createMockSite(),
+        limit: 200,
+        excludedUrlSuffixes: ['.pdf', '/robots.txt'],
+      });
+
+      expect(query).to.be.a('string');
+      expect(query).to.include('test_db.test_table');
+      expect(query).to.include('total_hits');
+      expect(query).to.include('url');
+      expect(query).to.include('200');
+    });
+
+    it('includes site filters in the WHERE clause', async () => {
+      const siteWithFilter = createMockSite({
+        getConfig: () => createMockSiteConfig({
+          getLlmoCdnlogsFilter: () => [{ value: ['www.custom.com'], key: 'host' }],
+        }),
+      });
+
+      const query = await weeklyBreakdownQueries.createAgenticHitsMapQuery({
+        startDate: new Date('2025-01-01'),
+        endDate: new Date('2025-01-28'),
+        databaseName: 'test_db',
+        tableName: 'test_table',
+        site: siteWithFilter,
+        limit: 100,
+        excludedUrlSuffixes: [],
+      });
+
+      expect(query).to.include('www.custom.com');
+    });
+
+    it('excludes configured URL suffixes', async () => {
+      const query = await weeklyBreakdownQueries.createAgenticHitsMapQuery({
+        startDate: new Date('2025-01-01'),
+        endDate: new Date('2025-01-28'),
+        databaseName: 'test_db',
+        tableName: 'test_table',
+        site: createMockSite(),
+        limit: 100,
+        excludedUrlSuffixes: ['.pdf', '.xlsx'],
+      });
+
+      expect(query).to.include('AND NOT regexp_like');
+      expect(query).to.include('\\.pdf');
+      expect(query).to.include('\\.xlsx');
+    });
+  });
 });

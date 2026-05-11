@@ -141,3 +141,90 @@ export async function getTopAgenticUrlsFromAthena(
     return [];
   }
 }
+
+/**
+ * Returns a Map of pathname → total agentic hits over a 4-week window.
+ * Used for path-level suggestion scoring.
+ *
+ * @param {Object} site
+ * @param {Object} context
+ * @param {number} [limit]
+ * @returns {Promise<Map<string, number>>}
+ */
+export async function getAgenticHitsMapFromAthena(
+  site,
+  context,
+  limit = DEFAULT_TOP_AGENTIC_URLS_LIMIT,
+) {
+  const { log } = context;
+  const baseUrl = getPreferredBaseUrl(site, context);
+
+  try {
+    const configuration = await context.dataAccess.Configuration.findLatest();
+    if (!configuration) {
+      log.warn(`Agentic URLs - Skipping hits map query because no configuration was found for site ${site.getId()}`);
+      return new Map();
+    }
+    if (!configuration.isHandlerEnabledForSite('cdn-logs-analysis', site)) {
+      log.info(`Agentic URLs - Skipping hits map query because cdn-logs-analysis is disabled for site ${site.getId()}`);
+      return new Map();
+    }
+
+    const awsRuntime = getCdnAwsRuntime(site, context);
+    const s3Config = getS3Config(site, context);
+
+    // Build a 4-week window: weeks at offsets -1, -2, -3, -4
+    const weekPeriods = [-1, -2, -3, -4].map((offset) => {
+      const { weeks } = generateReportingPeriods(new Date(), offset);
+      return weeks[0];
+    });
+    const { startDate } = weekPeriods[weekPeriods.length - 1];
+    const { endDate } = weekPeriods[0];
+
+    const athenaClient = awsRuntime.createAthenaClient(s3Config.getAthenaTempLocation());
+    const query = await weeklyBreakdownQueries.createAgenticHitsMapQuery({
+      startDate,
+      endDate,
+      databaseName: s3Config.databaseName,
+      tableName: s3Config.tableName,
+      site,
+      limit,
+      excludedUrlSuffixes: EXCLUDED_URL_SUFFIXES,
+    });
+
+    log.info(`Agentic URLs - Executing Athena hits map query (4-week window)... baseUrl=${baseUrl}`);
+    const results = await athenaClient.query(
+      query,
+      s3Config.databaseName,
+      '[Athena Query] Agentic Hits Map',
+    );
+
+    if (!Array.isArray(results) || results.length === 0) {
+      log.warn(`Agentic URLs - Athena returned no rows for hits map. baseUrl=${baseUrl}`);
+      return new Map();
+    }
+
+    const hitsMap = new Map();
+    for (const row of results) {
+      if (typeof row?.url === 'string' && row.url.length > 0) {
+        try {
+          // Rows may be absolute URLs or pathnames — normalise to pathname only
+          const rawPath = row.url.startsWith('http://') || row.url.startsWith('https://')
+            ? new URL(row.url).pathname
+            : row.url;
+          const pathname = rawPath.replace(/\/$/, '') || '/';
+          const hits = parseInt(row.total_hits, 10) || 0;
+          hitsMap.set(pathname, (hitsMap.get(pathname) || 0) + hits);
+        } catch {
+          // skip unparseable rows
+        }
+      }
+    }
+
+    log.info(`Agentic URLs - Built hits map with ${hitsMap.size} pathnames. baseUrl=${baseUrl}`);
+    return hitsMap;
+  } catch (e) {
+    log?.warn?.(`Agentic URLs - Athena hits map fetch failed: ${e.message}. baseUrl=${baseUrl}`);
+    return new Map();
+  }
+}
