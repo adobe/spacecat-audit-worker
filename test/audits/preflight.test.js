@@ -121,8 +121,9 @@ describe('Preflight Audit', () => {
       }];
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
-      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(0);
-      expect(context.log.error).to.have.been.calledWithMatch('[preflight-audit] Error checking internal link https://main--example--page.aem.page/fail from https://main--example--page.aem.page/page1 with GET fallback:', 'network fail');
+      expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenInternalLinks[0].status).to.equal(0);
+      expect(context.log.info).to.have.been.calledWithMatch(/internal link https:\/\/main--example--page\.aem\.page\/fail unreachable/);
     });
 
     it('handles HEAD failure with GET fallback success', async () => {
@@ -349,8 +350,10 @@ describe('Preflight Audit', () => {
       }];
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
-      expect(result.auditResult.brokenExternalLinks).to.deep.equal([]);
-      expect(context.log.error).to.have.been.calledWithMatch('[preflight-audit] Error checking external link https://external-site.com/fail from https://main--example--page.aem.page/page1 with GET fallback:', 'network fail');
+      expect(result.auditResult.brokenExternalLinks).to.have.lengthOf(1);
+      expect(result.auditResult.brokenExternalLinks[0].status).to.equal(0);
+      expect(result.auditResult.brokenExternalLinks[0].urlTo).to.equal('https://external-site.com/fail');
+      expect(context.log.info).to.have.been.calledWithMatch(/external link https:\/\/external-site\.com\/fail unreachable/);
     });
 
     it('handles external HEAD failure with GET fallback success', async () => {

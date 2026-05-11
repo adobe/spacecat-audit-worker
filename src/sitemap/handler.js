@@ -19,6 +19,7 @@ import {
   ERROR_CODES,
   filterValidUrls,
   getSitemapUrls,
+  REDIRECT_STATUSES,
   PAGE_URL_OTHER_STATUS_SLOWDOWN_MIN_URLS,
   PAGE_URL_OTHER_STATUS_SLOWDOWN_RATIO,
   PAGE_URL_TIMEOUT_MS,
@@ -36,7 +37,8 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 
 const auditType = Audit.AUDIT_TYPES.SITEMAP;
 
-const TRACKED_STATUS_CODES = Object.freeze([301, 302, 404]);
+// HTTP status codes explicitly handled by this audit for suggestion generation
+const TRACKED_STATUS_CODES = Object.freeze([...REDIRECT_STATUSES, 404]);
 
 const SLOW_PAGE_URL_BATCH_OPTIONS = Object.freeze({
   pageUrlBatchSize: SLOW_PAGE_URL_BATCH_SIZE,
@@ -134,7 +136,7 @@ export async function findSitemap(inputUrl, log) {
               ? ((100 * urlsToProbe.length) / urlsFromSampling.length).toFixed(0)
               : '0';
             log?.warn(`* Sitemap: since we are going slower, the slow probe uses ~${slowCapRetainPct}% of our original "fast" sampled page URLs (ex: ${urlsToProbe.length} of ${urlsFromSampling.length} from this current sitemap)`);
-            log?.warn(`* Sitemap: pausing ${SLOW_MODE_ENTRY_DELAY_MS / 1000}s for anticipated WAF rules before slow page URL re-probe for sitemap ${sitemapUrl}`);
+            log?.warn(`* Sitemap: pausing ${SLOW_MODE_ENTRY_DELAY_MS / 1000} seconds for anticipated WAF rules before switching into a slow page URL re-probe for sitemap ${sitemapUrl}`);
             // eslint-disable-next-line no-await-in-loop
             await sleep(SLOW_MODE_ENTRY_DELAY_MS); // allow any WAF blockage to cool off
             log?.warn(`* Sitemap: slow pausing complete; resuming page URL re-probe for sitemap ${sitemapUrl}`);
@@ -192,7 +194,7 @@ export async function findSitemap(inputUrl, log) {
 
         // Keep sitemap if it has valid URLs or acceptable redirects
         const hasValidUrls = existingPages.ok.length > 0
-          || existingPages.notOk.some((issue) => [301, 302].includes(issue.statusCode));
+          || existingPages.notOk.some((issue) => REDIRECT_STATUSES.includes(issue.statusCode));
         if (!hasValidUrls) {
           delete extractedPaths[sitemapUrl];
         } else {
@@ -301,7 +303,7 @@ export function generateSuggestions(auditUrl, auditData, context) {
     .map((issue) => ({
       ...issue,
       recommendedAction: issue.urlsSuggested
-        ? `use this url instead: ${issue.urlsSuggested}`
+        ? `use this URL instead: ${issue.urlsSuggested}`
         : 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
     }));
 
@@ -382,6 +384,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 
 export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
-  .withUrlResolver(noopUrlResolver) // Preserves full URL including subpath
+  .withUrlResolver(noopUrlResolver) // preserves full URL including subpath
   .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
   .build();
