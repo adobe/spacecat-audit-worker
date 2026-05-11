@@ -593,6 +593,79 @@ describe('brand-presence-enrichment', () => {
       expect(result[0].urls[0].url).to.equal('https://news.example.com/story');
     });
 
+    it('filters out URLs matching the site baseURL when site is provided', async () => {
+      const qi = makeQueryIndex(['copilot']);
+      const mockSite = {
+        getBaseURL: () => 'https://clientsite.com',
+      };
+      mockFetch
+        .onFirstCall()
+        .resolves(okJsonResponse(qi))
+        .onSecondCall()
+        .resolves(okJsonResponse({
+          data: [
+            {
+              Sources: 'https://clientsite.com/page;https://www.reddit.com/r/ok',
+              Region: 'US',
+              Topics: 'T',
+              Category: 'C',
+              Prompt: 'P',
+            },
+          ],
+        }));
+
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log }, mockSite);
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].urls).to.have.lengthOf(1);
+      expect(result[0].urls[0].url).to.equal('https://www.reddit.com/r/ok');
+    });
+
+    it('does not filter site URLs when site is not provided', async () => {
+      const qi = makeQueryIndex(['copilot']);
+      mockFetch
+        .onFirstCall()
+        .resolves(okJsonResponse(qi))
+        .onSecondCall()
+        .resolves(okJsonResponse({
+          data: [
+            {
+              Sources: 'https://clientsite.com/page',
+              Region: 'US',
+              Topics: 'T',
+            },
+          ],
+        }));
+
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].urls[0].url).to.equal('https://clientsite.com/page');
+    });
+
+    it('filters subdomain URLs when site is provided', async () => {
+      const qi = makeQueryIndex(['copilot']);
+      const mockSite = {
+        getBaseURL: () => 'https://www.clientsite.com',
+      };
+      mockFetch
+        .onFirstCall()
+        .resolves(okJsonResponse(qi))
+        .onSecondCall()
+        .resolves(okJsonResponse({
+          data: [
+            {
+              Sources: 'https://blog.clientsite.com/post;https://www.reddit.com/r/ok',
+              Region: 'US',
+              Topics: 'T',
+            },
+          ],
+        }));
+
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log }, mockSite);
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].urls).to.have.lengthOf(1);
+      expect(result[0].urls[0].url).to.equal('https://www.reddit.com/r/ok');
+    });
+
     it('merges duplicate trackTopicUrl entries for same url (subPrompts set)', async () => {
       const qi = makeQueryIndex(['copilot']);
       mockFetch
