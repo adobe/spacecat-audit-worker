@@ -101,12 +101,21 @@ describe('Related URLs Guidance Handler', function testSuite() {
     const notFound = sandbox.stub().callsFake((msg) => ({ status: 'notFound', msg }));
     const ok = sandbox.stub().callsFake(() => ({ status: 'ok' }));
 
-    const tracingFetch = fetchReject
-      ? sandbox.stub().rejects(fetchReject)
-      : sandbox.stub().resolves(fetchResponse || {
-        ok: true,
-        json: async () => ({ prompts: [] }),
-      });
+    // Stub the shared analysis-fetch helper directly. For backwards compatibility
+    // with existing test inputs that pass `{ ok, json, status, statusText }`-shaped
+    // fetchResponse, we translate those into a JSON resolve or a structured reject.
+    let fetchAnalysisFromPresignedUrl;
+    if (fetchReject) {
+      fetchAnalysisFromPresignedUrl = sandbox.stub().rejects(fetchReject);
+    } else if (fetchResponse && fetchResponse.ok === false) {
+      fetchAnalysisFromPresignedUrl = sandbox.stub().rejects(
+        new Error(`[RELATED_URLS] analysis fetch failed: ${fetchResponse.status} ${fetchResponse.statusText}`),
+      );
+    } else if (fetchResponse?.json) {
+      fetchAnalysisFromPresignedUrl = sandbox.stub().callsFake(async () => fetchResponse.json());
+    } else {
+      fetchAnalysisFromPresignedUrl = sandbox.stub().resolves(fetchResponse || { prompts: [] });
+    }
 
     const readFromSharePoint = readFromSharePointError
       ? sandbox.stub().rejects(readFromSharePointError)
@@ -132,11 +141,8 @@ describe('Related URLs Guidance Handler', function testSuite() {
         notFound,
         ok,
       },
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch,
-      },
-      '../../../src/utils/presigned-url.js': {
-        assertPresignedUrl: sandbox.stub(),
+      '../../../src/utils/analysis-fetch.js': {
+        fetchAnalysisFromPresignedUrl,
       },
       '../../../src/utils/date-utils.js': {
         getPreviousWeekTriples: sandbox.stub().returns([{ year: 2026, week: 9 }]),
@@ -173,7 +179,7 @@ describe('Related URLs Guidance Handler', function testSuite() {
         noContent,
         notFound,
         ok,
-        tracingFetch,
+        fetchAnalysisFromPresignedUrl,
         readFromSharePoint,
         uploadToSharePoint,
         publishToAdminHlx,
@@ -312,7 +318,8 @@ describe('Related URLs Guidance Handler', function testSuite() {
     }, context);
 
     expect(result.status).to.equal('badRequest');
-    expect(result.msg).to.equal('Failed to fetch related-urls data: Internal Server Error');
+    // fetchAnalysisFromPresignedUrl throws on non-ok; the outer catch wraps it.
+    expect(result.msg).to.match(/Error processing related-urls guidance.*analysis fetch failed: 500 Internal Server Error/);
   });
 
   it('returns noContent when payload has no prompts', async () => {

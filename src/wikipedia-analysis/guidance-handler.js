@@ -13,16 +13,16 @@
 import {
   badRequest, notFound, ok, noContent,
 } from '@adobe/spacecat-shared-http-utils';
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
-import { resolveBrandForSite, applyScopeToOpportunity } from '../utils/brand-resolver.js';
-import { assertPresignedUrl } from '../utils/presigned-url.js';
+import { resolveBrandResultForSite, applyScopeToOpportunity } from '../utils/brand-resolver.js';
+import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS;
+const LOG_PREFIX = '[Wikipedia]';
 
 /**
  * Creates an opportunity for Wikipedia analysis
@@ -73,11 +73,12 @@ function getRankFromPriority(priority) {
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Site, Audit: AuditModel } = dataAccess;
-  const {
-    siteId, auditId, brandId, data,
-  } = message;
+  // Note: any inbound `brandId` from Mystique is informational only. Scope is
+  // re-resolved server-side via resolveBrandResultForSite; trusting the inbound
+  // value would let a tampered message re-attribute the opportunity.
+  const { siteId, auditId, data } = message;
 
-  log.info(`[Wikipedia] Received Wikipedia analysis guidance for siteId: ${siteId}, auditId: ${auditId}${brandId ? `, brandId: ${brandId}` : ''}`);
+  log.info(`${LOG_PREFIX} Received Wikipedia analysis guidance for siteId: ${siteId}, auditId: ${auditId}`);
 
   // Handle presigned URL (large response) or direct analysis data
   let analysisData = data?.analysis;
@@ -85,18 +86,12 @@ export default async function handler(message, context) {
   // If presigned URL is provided, fetch the data
   if (data?.presignedUrl) {
     try {
-      assertPresignedUrl(data.presignedUrl);
-      log.info(`[Wikipedia] Fetching analysis data from presigned URL: ${data.presignedUrl}`);
-      const response = await fetch(data.presignedUrl);
-
-      if (!response.ok) {
-        log.error(`[Wikipedia] Failed to fetch analysis data: ${response.status} ${response.statusText}`);
-        return badRequest(`Failed to fetch analysis data: ${response.statusText}`);
-      }
-
-      analysisData = await response.json();
+      analysisData = await fetchAnalysisFromPresignedUrl(data.presignedUrl, {
+        log,
+        prefix: LOG_PREFIX,
+      });
     } catch (error) {
-      log.error(`[Wikipedia] Error fetching from presigned URL: ${error.message}`);
+      log.error(`${LOG_PREFIX} Error fetching from presigned URL: ${error.message}`);
       return badRequest(`Error fetching analysis data: ${error.message}`);
     }
   }
@@ -123,17 +118,17 @@ export default async function handler(message, context) {
   }
 
   try {
-    const brand = await resolveBrandForSite(context, site);
+    const brandResult = await resolveBrandResultForSite(context, site);
     const baseUrl = site.getBaseURL();
     const { suggestions = [], company, industryAnalysis } = analysisData;
 
     // If no suggestions, return early
     if (suggestions.length === 0) {
-      log.info('[Wikipedia] No suggestions found in analysis');
+      log.info(`${LOG_PREFIX} No suggestions found in analysis`);
       return noContent();
     }
 
-    log.info(`[Wikipedia] Processing ${suggestions.length} suggestions for ${company}`);
+    log.info(`${LOG_PREFIX} Processing ${suggestions.length} suggestions for ${company}`);
 
     // Create guidance object (must be an object, not an array, per Opportunity schema)
     const guidance = {
@@ -154,6 +149,15 @@ export default async function handler(message, context) {
       context,
     );
 
+    // Persist the opportunity (with scope) BEFORE syncing suggestions; see
+    // cited-analysis/guidance-handler.js for the same reordering rationale.
+    applyScopeToOpportunity(opportunity, brandResult, log, LOG_PREFIX);
+    opportunity.setData({
+      ...opportunity.getData(),
+      fullAnalysis: analysisData,
+    });
+    await opportunity.save();
+
     await syncSuggestions({
       context,
       opportunity,
@@ -167,15 +171,7 @@ export default async function handler(message, context) {
       }),
     });
 
-    applyScopeToOpportunity(opportunity, brand, log, '[Wikipedia]');
-    // Store the full analysis in the opportunity data
-    opportunity.setData({
-      ...opportunity.getData(),
-      fullAnalysis: analysisData,
-    });
-    await opportunity.save();
-
-    log.info(`[Wikipedia] Successfully processed Wikipedia analysis for site: ${siteId}, company: ${company}, ${suggestions.length} suggestions`);
+    log.info(`${LOG_PREFIX} Successfully processed Wikipedia analysis for site: ${siteId}, company: ${company}, ${suggestions.length} suggestions`);
 
     if (auditId) {
       const auditRecord = await AuditModel.findById(auditId);

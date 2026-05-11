@@ -15,6 +15,8 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
+// Use the REAL applyScopeToOpportunity (see cited-analysis test for rationale).
+import { applyScopeToOpportunity as realApplyScopeToOpportunity } from '../../../src/utils/brand-resolver.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
@@ -29,9 +31,9 @@ describe('Reddit Analysis Guidance Handler', () => {
   let handler;
   let syncSuggestionsStub;
   let convertToOpportunityStub;
-  let fetchStub;
+  let fetchAnalysisStub;
   let mockPostMessageOptional;
-  let resolveBrandForSiteStub;
+  let resolveBrandResultForSiteStub;
 
   const baseURL = 'https://example.com';
   const siteId = 'test-site-id';
@@ -62,9 +64,9 @@ describe('Reddit Analysis Guidance Handler', () => {
 
     syncSuggestionsStub = sandbox.stub().resolves();
     convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
-    fetchStub = sandbox.stub();
+    fetchAnalysisStub = sandbox.stub();
     mockPostMessageOptional = sandbox.stub().resolves({ success: true });
-    resolveBrandForSiteStub = sandbox.stub().resolves(null);
+    resolveBrandResultForSiteStub = sandbox.stub().resolves({ brand: null, resolved: true });
 
     handler = await esmock('../../../src/reddit-analysis/guidance-handler.js', {
       '../../../src/utils/data-access.js': {
@@ -74,19 +76,12 @@ describe('Reddit Analysis Guidance Handler', () => {
         convertToOpportunity: convertToOpportunityStub,
       },
       '../../../src/utils/slack-utils.js': { postMessageOptional: mockPostMessageOptional },
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: fetchStub,
+      '../../../src/utils/analysis-fetch.js': {
+        fetchAnalysisFromPresignedUrl: fetchAnalysisStub,
       },
       '../../../src/utils/brand-resolver.js': {
-        resolveBrandForSite: resolveBrandForSiteStub,
-        applyScopeToOpportunity: (opp, brand, l, prefix) => {
-          try {
-            opp.setScopeType(brand ? 'brand' : null);
-            opp.setScopeId(brand?.brandId ?? null);
-          } catch (err) {
-            l?.warn?.(`${prefix} Failed to set brand scope; continuing without: ${err.message}`);
-          }
-        },
+        resolveBrandResultForSite: resolveBrandResultForSiteStub,
+        applyScopeToOpportunity: realApplyScopeToOpportunity,
       },
     });
 
@@ -330,10 +325,7 @@ describe('Reddit Analysis Guidance Handler', () => {
         ],
       };
 
-      fetchStub.resolves({
-        ok: true,
-        json: sandbox.stub().resolves(boJson),
-      });
+      fetchAnalysisStub.resolves(boJson);
 
       const message = {
         siteId,
@@ -347,7 +339,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(200);
-      expect(fetchStub).to.have.been.calledWith('https://s3.amazonaws.com/bucket/bo.json');
+      expect(fetchAnalysisStub).to.have.been.calledWith('https://s3.amazonaws.com/bucket/bo.json', sinon.match.object);
       expect(convertToOpportunityStub).to.have.been.calledOnce;
 
       const propsArg = convertToOpportunityStub.firstCall.args[5];
@@ -355,11 +347,7 @@ describe('Reddit Analysis Guidance Handler', () => {
     });
 
     it('should return badRequest when presigned URL fetch fails with non-ok response', async () => {
-      fetchStub.resolves({
-        ok: false,
-        status: 500,
-        statusText: 'Internal Server Error',
-      });
+      fetchAnalysisStub.rejects(new Error('[Reddit] analysis fetch failed: 500 Internal Server Error'));
 
       const message = {
         siteId,
@@ -373,11 +361,29 @@ describe('Reddit Analysis Guidance Handler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      expect(context.log.error).to.have.been.calledWith(sinon.match(/Failed to fetch analysis data/));
+      expect(context.log.error).to.have.been.calledWith(sinon.match(/Error fetching from presigned URL/));
+    });
+
+    it('should return badRequest when presigned URL hostname is not allowlisted (SSRF guard)', async () => {
+      fetchAnalysisStub.rejects(new Error('presignedUrl hostname is not an allowlisted S3 hostname: internal.example'));
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          presignedUrl: 'https://internal.example/analysis.json',
+        },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(400);
+      expect(context.log.error).to.have.been.calledWith(sinon.match(/hostname is not an allowlisted/));
     });
 
     it('should return badRequest when presigned URL fetch throws error', async () => {
-      fetchStub.rejects(new Error('Network error'));
+      fetchAnalysisStub.rejects(new Error('Network error'));
 
       const message = {
         siteId,
@@ -705,7 +711,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       );
     });
 
-    it('should include brandId in log when present', async () => {
+    it('should NOT log inbound brandId from message (trust boundary)', async () => {
       const message = {
         siteId,
         auditId,
@@ -720,15 +726,15 @@ describe('Reddit Analysis Guidance Handler', () => {
 
       await handler.default(message, context);
 
-      expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/brandId: brand-uuid-123/),
-      );
+      const infoCalls = context.log.info.getCalls();
+      const found = infoCalls.find((c) => /brandId: brand-uuid-123/.test(String(c.args[0])));
+      expect(found, 'inbound brandId should not be logged from message').to.equal(undefined);
     });
   });
 
   describe('Brand scope', () => {
     it('should set scope when brand is resolved server-side', async () => {
-      resolveBrandForSiteStub.resolves({ brandId: 'brand-uuid-123' });
+      resolveBrandResultForSiteStub.resolves({ brand: { brandId: 'brand-uuid-123' }, resolved: true });
 
       const message = {
         siteId,
@@ -747,8 +753,8 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(mockOpportunity.setScopeId).to.have.been.calledWith('brand-uuid-123');
     });
 
-    it('should clear scope (null) when no brand is resolved', async () => {
-      resolveBrandForSiteStub.resolves(null);
+    it('should clear scope (null) when no brand is resolved AND resolution succeeded', async () => {
+      resolveBrandResultForSiteStub.resolves({ brand: null, resolved: true });
 
       const message = {
         siteId,
@@ -767,8 +773,50 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(mockOpportunity.setScopeId).to.have.been.calledWith(null);
     });
 
-    it('should use server-side re-resolved brand, not inbound brandId', async () => {
-      resolveBrandForSiteStub.resolves({ brandId: 'current-uuid' });
+    it('should PRESERVE existing scope when PostgREST resolution fails (transient outage)', async () => {
+      resolveBrandResultForSiteStub.resolves({ brand: null, resolved: false });
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Test Corp',
+          analysis: {
+            suggestions: [{ id: 's1', type: 'CONTENT_UPDATE', rank: 1 }],
+          },
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockOpportunity.setScopeType).to.not.have.been.called;
+      expect(mockOpportunity.setScopeId).to.not.have.been.called;
+    });
+
+    it('should rollback scopeType when setScopeId throws (partial-write rollback)', async () => {
+      resolveBrandResultForSiteStub.resolves({ brand: { brandId: 'brand-uuid-123' }, resolved: true });
+      mockOpportunity.setScopeId.throws(new Error('invalid uuid'));
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Test Corp',
+          analysis: {
+            suggestions: [{ id: 's1', type: 'CONTENT_UPDATE', rank: 1 }],
+          },
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(mockOpportunity.setScopeType).to.have.been.calledTwice;
+      expect(mockOpportunity.setScopeType.firstCall).to.have.been.calledWith('brand');
+      expect(mockOpportunity.setScopeType.secondCall).to.have.been.calledWith(null);
+    });
+
+    it('should ignore inbound brandId from message and use server-side resolved brand', async () => {
+      resolveBrandResultForSiteStub.resolves({ brand: { brandId: 'current-uuid' }, resolved: true });
 
       const message = {
         siteId,
@@ -784,7 +832,7 @@ describe('Reddit Analysis Guidance Handler', () => {
 
       await handler.default(message, context);
 
-      expect(resolveBrandForSiteStub).to.have.been.called;
+      expect(resolveBrandResultForSiteStub).to.have.been.called;
       expect(mockOpportunity.setScopeId).to.have.been.calledWith('current-uuid');
       expect(mockOpportunity.setScopeId).not.to.have.been.calledWith('stale-uuid');
     });

@@ -13,10 +13,9 @@
 import {
   badRequest, notFound, ok, noContent,
 } from '@adobe/spacecat-shared-http-utils';
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { load as cheerioLoad } from 'cheerio';
 import ExcelJS from 'exceljs';
-import { assertPresignedUrl } from '../utils/presigned-url.js';
+import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
 
 import { syncSuggestions } from '../utils/data-access.js';
 import { getPreviousWeekTriples } from '../utils/date-utils.js';
@@ -380,17 +379,11 @@ export default async function handler(message, context) {
   const includedURLsSet = new Set(includedURLs);
 
   try {
-    // Fetch FAQ data from presigned URL
-    assertPresignedUrl(presignedUrl);
-    log.info(`[FAQ] Fetching FAQ data from presigned URL: ${presignedUrl}`);
-    const response = await fetch(presignedUrl);
-
-    if (!response.ok) {
-      log.error(`[FAQ] Failed to fetch FAQ data: ${response.status} ${response.statusText}`);
-      return badRequest(`Failed to fetch FAQ data: ${response.statusText}`);
-    }
-
-    const faqData = await response.json();
+    // Fetch FAQ data from presigned URL (SSRF guard + size cap + log scrub)
+    const faqData = await fetchAnalysisFromPresignedUrl(presignedUrl, {
+      log,
+      prefix: '[FAQ]',
+    });
     const { suggestions } = faqData;
 
     // Validate the fetched data

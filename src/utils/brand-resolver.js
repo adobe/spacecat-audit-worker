@@ -226,6 +226,9 @@ export async function findActiveBrandForSite(context, { orgId, siteId } = {}) {
  *
  * Pulls `orgId` and `siteId` off the Site and delegates to `findActiveBrandForSite`.
  *
+ * Producer-side wrapper used by `*-analysis/handler.js` to tag outbound SQS messages.
+ * Fail-open (null on error) is safe here: scopeless message → Mystique applies site default.
+ *
  * @param {object} context - Lambda context
  * @param {object} site - Site model (uses `getId()` and `getOrganizationId()`)
  * @returns {Promise<{brandId: string} | null>}
@@ -237,21 +240,139 @@ export async function resolveBrandForSite(context, site) {
 }
 
 /**
- * Apply resolved brand scope to an opportunity, always assigning (including null to clear
- * stale scope on re-runs). Wrapped in try/catch so a model validation error never
- * prevents the opportunity from being saved.
+ * Resolve the active brand AND report whether the resolution itself succeeded.
+ *
+ * Consumer-side wrapper used by `*-analysis/guidance-handler.js`. Unlike
+ * `resolveBrandForSite`, this returns a discriminated outcome so the caller can
+ * distinguish "confirmed no brand" (clear stale scope) from "resolution failed"
+ * (preserve existing scope to avoid data loss during transient PostgREST outages).
+ *
+ * - { brand: { brandId }, resolved: true }  — match found
+ * - { brand: null, resolved: true }          — confirmed no active brand
+ * - { brand: null, resolved: false }         — resolution failed (timeout / error / no client)
+ *
+ * @param {object} context - Lambda context
+ * @param {object} site - Site model
+ * @returns {Promise<{ brand: {brandId: string}|null, resolved: boolean }>}
+ */
+export async function resolveBrandResultForSite(context, site) {
+  const orgId = site?.getOrganizationId?.();
+  const siteId = site?.getId?.();
+  const { log, dataAccess } = context || {};
+
+  if (!orgId || !siteId) {
+    // Caller-bug guard; nothing to resolve.
+    logOutcome(log, {
+      result: 'missing_input', orgId, siteId, durationMs: 0,
+    });
+    return { brand: null, resolved: false };
+  }
+
+  if (!dataAccess?.services?.postgrestClient?.from) {
+    logOutcome(log, {
+      result: 'no_client', orgId, siteId, durationMs: 0,
+    });
+    return { brand: null, resolved: false };
+  }
+
+  const startedAt = Date.now();
+  let timeoutHandle;
+  try {
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutHandle = setTimeout(() => {
+        const e = new Error(`brand resolution timed out after ${BRAND_RESOLUTION_TIMEOUT_MS}ms`);
+        e.name = 'TimeoutError';
+        reject(e);
+      }, BRAND_RESOLUTION_TIMEOUT_MS);
+    });
+    const match = await Promise.race([
+      resolveQueries(dataAccess.services.postgrestClient, orgId, siteId),
+      timeoutPromise,
+    ]);
+    clearTimeout(timeoutHandle);
+    const durationMs = Date.now() - startedAt;
+    if (!match) {
+      logOutcome(log, {
+        result: 'no_match', orgId, siteId, durationMs,
+      });
+      return { brand: null, resolved: true };
+    }
+    logOutcome(log, {
+      result: 'success', orgId, siteId, durationMs, brandId: match.brandId, via: match.via,
+    });
+    return { brand: { brandId: match.brandId }, resolved: true };
+  } catch (e) {
+    clearTimeout(timeoutHandle);
+    const durationMs = Date.now() - startedAt;
+    const isTimeout = e?.name === 'TimeoutError';
+    logOutcome(log, {
+      result: isTimeout ? 'timeout' : 'error',
+      orgId,
+      siteId,
+      durationMs,
+      errorName: e?.name,
+    });
+    if (!isTimeout) {
+      log?.debug?.(`${LOG_PREFIX} error detail`, { errorMessage: e?.message, stack: e?.stack });
+    }
+    return { brand: null, resolved: false };
+  }
+}
+
+/**
+ * Apply resolved brand scope to an opportunity.
+ *
+ * Discriminated input avoids two well-known data-loss bugs:
+ *
+ * 1. **Transient-error preservation** — when `resolved=false` (PostgREST timeout / outage),
+ *    existing scope on the opportunity is preserved. A short-lived outage no longer wipes
+ *    correct scope from every re-run during the incident.
+ *
+ * 2. **Setter rollback** — `setScopeType` and `setScopeId` are wrapped separately so a
+ *    failure on the second setter does not leave the opportunity in a half-scoped state.
+ *    On second-setter throw, the first setter is rolled back to null.
  *
  * @param {object} opportunity - Opportunity model instance
- * @param {{brandId: string}|null} brand - Resolved brand, or null when none
+ * @param {{ brand: {brandId: string}|null, resolved: boolean } | null} result
+ *   Resolution outcome from `resolveBrandResultForSite`. A bare null or undefined is
+ *   treated as `{ brand: null, resolved: false }` (preserve existing scope).
  * @param {object} log - Lambda logger
  * @param {string} [logPrefix=''] - Log prefix for context
  */
-export function applyScopeToOpportunity(opportunity, brand, log, logPrefix = '') {
-  try {
-    opportunity.setScopeType(brand ? 'brand' : null);
-    opportunity.setScopeId(brand?.brandId ?? null);
-  } catch (err) {
-    log?.warn?.(`${logPrefix} Failed to set brand scope; continuing without: ${err.message}`);
+export function applyScopeToOpportunity(opportunity, result, log, logPrefix = '') {
+  const { brand = null, resolved = false } = result || {};
+
+  if (brand?.brandId) {
+    try {
+      opportunity.setScopeType('brand');
+    } catch (err) {
+      log?.warn?.(`${logPrefix} Failed to set scopeType; preserving existing scope: ${err.message}`);
+      return;
+    }
+    try {
+      opportunity.setScopeId(brand.brandId);
+    } catch (err) {
+      // Rollback the scopeType so the opportunity is not left half-scoped.
+      try {
+        opportunity.setScopeType(null);
+      } catch {
+        // Best-effort rollback; the primary error is logged below.
+      }
+      log?.warn?.(`${logPrefix} Failed to set scopeId; rolled back scopeType: ${err.message}`);
+    }
+    return;
+  }
+
+  // Only clear when resolution succeeded with no match. On resolution failure
+  // (timeout / error / no client), preserve existing scope — silently clearing
+  // it during a transient outage would corrupt every re-run during the incident.
+  if (resolved === true) {
+    try {
+      opportunity.setScopeType(null);
+      opportunity.setScopeId(null);
+    } catch (err) {
+      log?.warn?.(`${logPrefix} Failed to clear stale scope: ${err.message}`);
+    }
   }
 }
 

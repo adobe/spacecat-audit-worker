@@ -24,6 +24,7 @@ import {
   BRAND_RESOLUTION_TIMEOUT_MS,
   findActiveBrandForSite,
   resolveBrandForSite,
+  resolveBrandResultForSite,
 } from '../../src/utils/brand-resolver.js';
 
 use(sinonChai);
@@ -360,6 +361,68 @@ describe('brand-resolver (PostgREST)', () => {
     });
   });
 
+  describe('resolveBrandResultForSite (discriminated result)', () => {
+    it('returns { brand, resolved: true } on a direct match', async () => {
+      const ctx = buildContext({ directBrands: [{ id: 'brand-1' }] });
+      const result = await resolveBrandResultForSite(ctx, site);
+      expect(result).to.deep.equal({ brand: { brandId: 'brand-1' }, resolved: true });
+    });
+
+    it('returns { brand: null, resolved: true } when both queries miss', async () => {
+      const ctx = buildContext({ directBrands: [], joinBrands: [] });
+      const result = await resolveBrandResultForSite(ctx, site);
+      expect(result).to.deep.equal({ brand: null, resolved: true });
+    });
+
+    it('returns { brand: null, resolved: false } when site getters are missing', async () => {
+      const ctx = buildContext({ directBrands: [] });
+      const result = await resolveBrandResultForSite(ctx, undefined);
+      expect(result).to.deep.equal({ brand: null, resolved: false });
+    });
+
+    it('returns { brand: null, resolved: false } when context lacks dataAccess.services.postgrestClient', async () => {
+      // Note `no_client` outcome path.
+      const result = await resolveBrandResultForSite({ log }, site);
+      expect(result).to.deep.equal({ brand: null, resolved: false });
+    });
+
+    it('returns { brand: null, resolved: false } when context itself is undefined', async () => {
+      const result = await resolveBrandResultForSite(undefined, site);
+      expect(result).to.deep.equal({ brand: null, resolved: false });
+    });
+
+    it('returns { brand: null, resolved: false } when PostgREST throws', async () => {
+      const ctx = buildContext({ throws: new Error('connection refused') });
+      const result = await resolveBrandResultForSite(ctx, site);
+      expect(result).to.deep.equal({ brand: null, resolved: false });
+      expect(log.warn).to.have.been.calledWithMatch(/outcome/, sinon.match({ result: 'error' }));
+    });
+
+    it('returns { brand: null, resolved: false } when the query times out', async () => {
+      // Simulate a never-resolving promise to trip the timeout path.
+      const ctx = buildContext({});
+      // Replace the first chain's `.limit()` with a never-resolving promise.
+      ctx.dataAccess.services.postgrestClient.from = sandbox.stub().returns({
+        select: sandbox.stub().returnsThis(),
+        eq: sandbox.stub().returnsThis(),
+        order: sandbox.stub().returnsThis(),
+        limit: sandbox.stub().returns(new Promise(() => {})),
+      });
+      const result = await resolveBrandResultForSite(ctx, site);
+      expect(result).to.deep.equal({ brand: null, resolved: false });
+      expect(log.warn).to.have.been.calledWithMatch(/outcome/, sinon.match({ result: 'timeout' }));
+    }).timeout(BRAND_RESOLUTION_TIMEOUT_MS + 1000);
+
+    it('falls back to the brand_sites join when the direct match misses', async () => {
+      const ctx = buildContext({
+        directBrands: [],
+        joinBrands: [{ id: 'brand-joined' }],
+      });
+      const result = await resolveBrandResultForSite(ctx, site);
+      expect(result).to.deep.equal({ brand: { brandId: 'brand-joined' }, resolved: true });
+    });
+  });
+
   describe('applyBrandScope', () => {
     it('returns the message unchanged when brand is null', () => {
       const message = { type: 't', siteId: 'orig', data: { foo: 1 } };
@@ -413,31 +476,122 @@ describe('brand-resolver (PostgREST)', () => {
     });
 
     it("sets scopeType='brand' and scopeId when brand is resolved", () => {
-      applyScopeToOpportunity(mockOpportunity, { brandId: 'brand-abc' }, log, '[Test]');
+      applyScopeToOpportunity(
+        mockOpportunity,
+        { brand: { brandId: 'brand-abc' }, resolved: true },
+        log,
+        '[Test]',
+      );
 
       expect(mockOpportunity.setScopeType).to.have.been.calledWith('brand');
       expect(mockOpportunity.setScopeId).to.have.been.calledWith('brand-abc');
     });
 
-    it('sets scopeType=null and scopeId=null when brand is null (ghost scope cleanup)', () => {
-      applyScopeToOpportunity(mockOpportunity, null, log, '[Test]');
+    it('clears scope only when resolved=true and no brand matched', () => {
+      applyScopeToOpportunity(
+        mockOpportunity,
+        { brand: null, resolved: true },
+        log,
+        '[Test]',
+      );
 
       expect(mockOpportunity.setScopeType).to.have.been.calledWith(null);
       expect(mockOpportunity.setScopeId).to.have.been.calledWith(null);
     });
 
-    it('does not throw when setScopeType throws; emits warn log', () => {
+    it('PRESERVES existing scope when resolution failed (resolved=false)', () => {
+      applyScopeToOpportunity(
+        mockOpportunity,
+        { brand: null, resolved: false },
+        log,
+        '[Test]',
+      );
+
+      // Neither setter is called — existing scope on the opportunity is intact.
+      expect(mockOpportunity.setScopeType).to.not.have.been.called;
+      expect(mockOpportunity.setScopeId).to.not.have.been.called;
+    });
+
+    it('treats null/undefined result as "preserve existing scope"', () => {
+      applyScopeToOpportunity(mockOpportunity, null, log, '[Test]');
+      applyScopeToOpportunity(mockOpportunity, undefined, log, '[Test]');
+
+      // Defensive null-default: a bare null is treated as resolved=false, NOT as
+      // "confirmed no brand". This avoids accidentally wiping scope on a caller bug.
+      expect(mockOpportunity.setScopeType).to.not.have.been.called;
+      expect(mockOpportunity.setScopeId).to.not.have.been.called;
+    });
+
+    it('rolls back scopeType to null when setScopeId throws (partial-write rollback)', () => {
+      mockOpportunity.setScopeId.throws(new Error('invalid uuid'));
+
+      expect(() => applyScopeToOpportunity(
+        mockOpportunity,
+        { brand: { brandId: 'b' }, resolved: true },
+        log,
+        '[Test]',
+      )).to.not.throw();
+
+      expect(mockOpportunity.setScopeType).to.have.been.calledTwice;
+      expect(mockOpportunity.setScopeType.firstCall).to.have.been.calledWith('brand');
+      expect(mockOpportunity.setScopeType.secondCall).to.have.been.calledWith(null);
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to set scopeId; rolled back scopeType/);
+    });
+
+    it('swallows rollback failures and still logs the original setScopeId error', () => {
+      // Worst case: setScopeId throws, then the rollback setScopeType(null) ALSO throws.
+      // applyScopeToOpportunity must not propagate either error.
+      mockOpportunity.setScopeType.onFirstCall().returns(undefined); // initial 'brand' succeeds
+      mockOpportunity.setScopeId.throws(new Error('invalid uuid'));
+      mockOpportunity.setScopeType.onSecondCall().throws(new Error('rollback also failed'));
+
+      expect(() => applyScopeToOpportunity(
+        mockOpportunity,
+        { brand: { brandId: 'b' }, resolved: true },
+        log,
+        '[Test]',
+      )).to.not.throw();
+
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to set scopeId; rolled back scopeType/);
+    });
+
+    it('does not throw when setScopeType throws on a brand match', () => {
       mockOpportunity.setScopeType.throws(new Error('validation error'));
 
-      expect(() => applyScopeToOpportunity(mockOpportunity, { brandId: 'b' }, log, '[Test]')).to.not.throw();
-      expect(log.warn).to.have.been.calledWithMatch(/Failed to set brand scope/);
+      expect(() => applyScopeToOpportunity(
+        mockOpportunity,
+        { brand: { brandId: 'b' }, resolved: true },
+        log,
+        '[Test]',
+      )).to.not.throw();
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to set scopeType; preserving existing scope/);
+      // setScopeId never runs because the first setter failed.
+      expect(mockOpportunity.setScopeId).to.not.have.been.called;
     });
 
     it('uses empty logPrefix when not provided', () => {
       mockOpportunity.setScopeType.throws(new Error('oops'));
 
-      expect(() => applyScopeToOpportunity(mockOpportunity, { brandId: 'b' }, log)).to.not.throw();
-      expect(log.warn).to.have.been.calledWithMatch(/Failed to set brand scope/);
+      expect(() => applyScopeToOpportunity(
+        mockOpportunity,
+        { brand: { brandId: 'b' }, resolved: true },
+        log,
+      )).to.not.throw();
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to set scopeType/);
+    });
+
+    it('logs a warning when the clear-scope path itself throws (resolved=true, brand=null)', () => {
+      // Defensive: the model's setScopeType can throw on invalid state — even when
+      // we're clearing scope on confirmed-no-brand. The function must not propagate.
+      mockOpportunity.setScopeType.throws(new Error('model rejected null'));
+
+      expect(() => applyScopeToOpportunity(
+        mockOpportunity,
+        { brand: null, resolved: true },
+        log,
+        '[Test]',
+      )).to.not.throw();
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to clear stale scope/);
     });
   });
 });

@@ -13,9 +13,8 @@
 import {
   badRequest, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import ExcelJS from 'exceljs';
-import { assertPresignedUrl } from '../utils/presigned-url.js';
+import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
 import { getPreviousWeekTriples } from '../utils/date-utils.js';
 import {
   createLLMOSharepointClient,
@@ -232,16 +231,11 @@ export default async function handler(message, context) {
     : `${site.getConfig().getLlmoDataFolder()}/brand-presence`;
 
   try {
-    assertPresignedUrl(presignedUrl);
-    const response = await fetch(presignedUrl);
-    if (!response.ok) {
-      log.error(
-        `[RELATED_URLS] Failed to fetch related-urls data: ${response.status} ${response.statusText}`,
-      );
-      return badRequest(`Failed to fetch related-urls data: ${response.statusText}`);
-    }
-
-    const payload = await response.json();
+    // SSRF guard + size cap + log scrub via shared helper.
+    const payload = await fetchAnalysisFromPresignedUrl(presignedUrl, {
+      log,
+      prefix: '[RELATED_URLS]',
+    });
     const promptItems = normalizePromptItems(payload);
     if (promptItems.length === 0) {
       return noContent();

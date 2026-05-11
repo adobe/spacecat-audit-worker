@@ -13,12 +13,13 @@
 import {
   badRequest, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
-import { assertPresignedUrl } from '../utils/presigned-url.js';
+import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getJsonSummarySuggestion } from './utils.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
+
+const LOG_PREFIX = '[Summarization]';
 
 async function createOpportunity(siteId, auditId, baseUrl, guidance, context) {
   const opportunity = await convertToOpportunity(
@@ -108,17 +109,11 @@ export default async function handler(message, context) {
   const scrapedUrlsSet = Array.isArray(sentUrls) ? new Set(sentUrls) : null;
 
   try {
-    // Fetch summarization data from presigned URL
-    assertPresignedUrl(presignedUrl);
-    log.info(`[Summarization] Fetching summarization data from presigned URL: ${presignedUrl}`);
-    const response = await fetch(presignedUrl);
-
-    if (!response.ok) {
-      log.error(`[Summarization] Failed to fetch summarization data: ${response.status} ${response.statusText}`);
-      return badRequest(`Failed to fetch summarization data: ${response.statusText}`);
-    }
-
-    const summarizationData = await response.json();
+    // Fetch summarization data from presigned URL (SSRF guard + size cap + log scrub)
+    const summarizationData = await fetchAnalysisFromPresignedUrl(presignedUrl, {
+      log,
+      prefix: LOG_PREFIX,
+    });
     const { guidance, suggestions } = summarizationData;
 
     // Validate the fetched data

@@ -79,11 +79,8 @@ describe('FAQs guidance handler', () => {
     this.timeout(10000); // Increase timeout for esmock loading
     syncSuggestionsStub = sinon.stub().resolves();
     convertToOpportunityStub = sinon.stub();
-    fetchStub = sinon.stub().resolves({
-      ok: true,
-      status: 200,
-      json: sinon.stub().resolves(mockFaqData),
-    });
+    // Stub the shared analysis-fetch helper directly (no need to fake a Response).
+    fetchStub = sinon.stub().resolves(mockFaqData);
     getObjectKeysUsingPrefixStub = sinon.stub();
     getObjectFromKeyStub = sinon.stub();
     createLLMOSharepointClientStub = sinon.stub().resolves({ client: 'mock' });
@@ -114,8 +111,8 @@ describe('FAQs guidance handler', () => {
         createLLMOSharepointClient: createLLMOSharepointClientStub,
         readFromSharePoint: readFromSharePointStub,
       },
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: fetchStub,
+      '../../../src/utils/analysis-fetch.js': {
+        fetchAnalysisFromPresignedUrl: fetchStub,
       },
       exceljs: {
         Workbook: class {
@@ -220,11 +217,7 @@ describe('FAQs guidance handler', () => {
   });
 
   it('should return badRequest when fetch fails', async () => {
-    fetchStub.resolves({
-      ok: false,
-      status: 404,
-      statusText: 'Not Found',
-    });
+    fetchStub.rejects(new Error("[FAQ] analysis fetch failed: 404 Not Found"));
 
     const message = {
       auditId: 'audit-123',
@@ -237,18 +230,16 @@ describe('FAQs guidance handler', () => {
     const result = await handler(message, context);
 
     expect(result.status).to.equal(400);
-    expect(log.error).to.have.been.calledWith(sinon.match(/\[FAQ\] Failed to fetch FAQ data: 404 Not Found/));
+    // fetchAnalysisFromPresignedUrl throws on non-ok; the FAQ catch logs "Error processing FAQ guidance: …"
+    expect(log.error).to.have.been.calledWith(sinon.match(/\[FAQ\] Error processing FAQ guidance.*analysis fetch failed: 404 Not Found/));
   });
 
   it('should return noContent when no FAQs are found', async () => {
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         opportunity_id: 'oppty-123',
         url: 'https://adobe.com',
         suggestions: [],
-      }),
-    });
+      });
 
     const message = {
       auditId: 'audit-123',
@@ -285,10 +276,7 @@ describe('FAQs guidance handler', () => {
       ],
     };
 
-    fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves(dataWithUnsuitableSuggestions),
-    });
+    fetchStub.resolves(dataWithUnsuitableSuggestions);
 
     const message = {
       auditId: 'audit-123',
@@ -665,8 +653,6 @@ describe('FAQs guidance handler', () => {
 
   it('should handle generic suggestions with missing URL and topic', async () => {
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             faqs: [
@@ -680,8 +666,7 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     const result = await handler({
       auditId: 'audit-123',
@@ -730,8 +715,6 @@ describe('FAQs guidance handler', () => {
     };
 
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             url: 'https://www.adobe.com/original',
@@ -749,8 +732,7 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     await handler({
       auditId: 'audit-123',
@@ -794,8 +776,6 @@ describe('FAQs guidance handler', () => {
     };
 
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             url: 'https://www.adobe.com/original',
@@ -813,8 +793,7 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     await handler({
       auditId: 'audit-123',
@@ -876,8 +855,6 @@ describe('FAQs guidance handler', () => {
     };
 
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             url: 'https://www.adobe.com/original-a',
@@ -919,8 +896,7 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     await handler({
       auditId: 'audit-123',
@@ -1011,10 +987,7 @@ describe('FAQs guidance handler', () => {
       ],
     };
 
-    fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves(mixedQualityData),
-    });
+    fetchStub.resolves(mixedQualityData);
 
     const message = {
       auditId: 'audit-123',
@@ -1059,10 +1032,7 @@ describe('FAQs guidance handler', () => {
       ],
     };
 
-    fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves(faqData),
-    });
+    fetchStub.resolves(faqData);
 
     const message = {
       siteId: 'site-123',
@@ -1262,8 +1232,6 @@ describe('FAQs guidance handler', () => {
   it('should set shouldOptimize to false when FAQ has topic only (no URL)', async () => {
     // Mock FAQ data with no URL (topic only)
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             topic: 'general-topic',
@@ -1279,8 +1247,7 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     const message = {
       auditId: 'audit-123',
@@ -1404,8 +1371,6 @@ describe('FAQs guidance handler', () => {
   it('should set shouldOptimize to false when URL is not in sources', async () => {
     // Mock FAQ data where the suggestion URL is NOT in the sources
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             url: 'https://www.adobe.com/products/photoshop',
@@ -1424,8 +1389,7 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     const message = {
       auditId: 'audit-123',
@@ -1458,8 +1422,6 @@ describe('FAQs guidance handler', () => {
     getObjectFromKeyStub.resolves(mockScrapeData);
 
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             url: 'https://www.adobe.com/products/photoshop',
@@ -1478,8 +1440,7 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     const message = {
       auditId: 'audit-123',
@@ -1513,8 +1474,6 @@ describe('FAQs guidance handler', () => {
     getObjectFromKeyStub.resolves(mockScrapeData);
 
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             url: 'https://www.adobe.com/products/photoshop',
@@ -1533,8 +1492,7 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     const message = {
       auditId: 'audit-123',
@@ -1557,8 +1515,6 @@ describe('FAQs guidance handler', () => {
   it('should handle empty sources array', async () => {
     // Mock FAQ data with empty sources array
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             url: 'https://www.adobe.com/products/photoshop',
@@ -1574,8 +1530,7 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     const message = {
       auditId: 'audit-123',
@@ -1645,8 +1600,8 @@ describe('FAQs guidance handler', () => {
         createLLMOSharepointClient: createLLMOSharepointClientStub,
         readFromSharePoint: readFromSharePointStub,
       },
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: fetchStub,
+      '../../../src/utils/analysis-fetch.js': {
+        fetchAnalysisFromPresignedUrl: fetchStub,
       },
       '../../../src/faqs/utils.js': {
         getJsonFaqSuggestion: getJsonFaqSuggestionStub,
@@ -1668,8 +1623,6 @@ describe('FAQs guidance handler', () => {
     });
 
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         suggestions: [
           {
             url: 'https://www.adobe.com/products/photoshop',
@@ -1684,8 +1637,7 @@ describe('FAQs guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     const message = {
       auditId: 'audit-123',
