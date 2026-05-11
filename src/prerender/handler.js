@@ -209,8 +209,8 @@ async function markNewSuggestionsAsCovered(opportunity, context, deployedAtEdgeU
  * @param {Object} log - Logger instance.
  * @returns {Promise<Object|null>} The existing suggestion to preserve, or null if none found.
  */
-async function findPreservableDomainWideSuggestion(opportunity, log, prefetchedSuggestions = null) {
-  const existingSuggestions = prefetchedSuggestions ?? await opportunity.getSuggestions();
+async function findPreservableDomainWideSuggestion(opportunity, log) {
+  const existingSuggestions = await opportunity.getSuggestions();
   const domainWideSuggestions = existingSuggestions.filter(
     (s) => isDomainWideSuggestionData(s.getData()),
   );
@@ -1113,12 +1113,7 @@ export async function processOpportunityAndSuggestions(
     auditData, // Pass auditData as props so createOpportunityData receives it
   );
 
-  // Fetch once — reused by findPreservableDomainWideSuggestion, the diagnostic block,
-  // and syncSuggestions to avoid redundant DB round-trips.
-  const existingSuggestionsForSync = await opportunity.getSuggestions();
-
-  // eslint-disable-next-line max-len
-  const existingPreservable = await findPreservableDomainWideSuggestion(opportunity, log, existingSuggestionsForSync);
+  const existingPreservable = await findPreservableDomainWideSuggestion(opportunity, log);
 
   let domainWideSuggestion = null;
   if (existingPreservable) {
@@ -1171,8 +1166,9 @@ export async function processOpportunityAndSuggestions(
     ? [...preRenderSuggestions, domainWideSuggestion]
     : [...preRenderSuggestions];
 
-  // existingSuggestionsForSync is pre-fetched above — reused here for diagnostics and
-  // passed into syncSuggestions to avoid any further DB round-trips.
+  // Pre-fetch existing suggestions once so we can compute per-case diagnostics and avoid a
+  // redundant DB round-trip inside syncSuggestions.
+  const existingSuggestionsForSync = await opportunity.getSuggestions();
   const existingKeySet = new Set(
     existingSuggestionsForSync.map((s) => s.getData()).filter(Boolean).map(buildKey),
   );
