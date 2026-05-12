@@ -79,8 +79,8 @@ async function isSoft404(response, url, log) {
   let body;
   try {
     body = await response.text();
+  /* c8 ignore next 3 - Defensive: response body read rarely fails */
   } catch {
-    /* c8 ignore next 2 */
     return false;
   }
 
@@ -105,8 +105,8 @@ function isOnDifferentSubdomain(urlTo, siteBaseURL) {
     const siteHostname = stripWWW(new URL(prependSchema(siteBaseURL)).hostname).toLowerCase();
     const backlinkHostname = stripWWW(new URL(prependSchema(urlTo)).hostname).toLowerCase();
     return backlinkHostname !== siteHostname;
+  /* c8 ignore next 3 - Defensive: URL parsing rarely fails with well-formed base URLs */
   } catch {
-    /* c8 ignore next 2 */
     return false;
   }
 }
