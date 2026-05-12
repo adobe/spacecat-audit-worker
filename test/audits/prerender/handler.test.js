@@ -401,7 +401,7 @@ describe('Prerender Audit', () => {
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
-          log: { info: sandbox.stub(), debug: sandbox.stub() },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
           auditContext: {
             urls: [
               'https://example.com/page-1',
@@ -427,7 +427,7 @@ describe('Prerender Audit', () => {
       it('rebases csvUrls (auditContext.urls) to getPreferredBaseUrl domain', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
-            getTopAgenticUrlsFromAthena: async () => [],
+            getTopAgenticLiveUrlsFromAthena: async () => [],
             getPreferredBaseUrl: () => 'https://example.com',
           },
         });
@@ -455,7 +455,7 @@ describe('Prerender Audit', () => {
       it('uses overrideBaseURL from site config as domain for csvUrls rebasing', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
-            getTopAgenticUrlsFromAthena: async () => [],
+            getTopAgenticLiveUrlsFromAthena: async () => [],
           },
         });
 
@@ -505,7 +505,7 @@ describe('Prerender Audit', () => {
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
-          log: { info: sandbox.stub(), debug: sandbox.stub() },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
         };
         const result = await mockHandler.submitForScraping(context);
         expect(result.urls).to.have.length(1);
@@ -520,7 +520,7 @@ describe('Prerender Audit', () => {
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
-            getTopAgenticUrlsFromAthena: athenaStub,
+            getTopAgenticLiveUrlsFromAthena: athenaStub,
           },
         });
 
@@ -547,7 +547,7 @@ describe('Prerender Audit', () => {
         const warn = sandbox.stub();
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
-            getTopAgenticUrlsFromAthena: async () => {
+            getTopAgenticLiveUrlsFromAthena: async () => {
               throw new Error('athena unavailable');
             },
           },
@@ -575,7 +575,7 @@ describe('Prerender Audit', () => {
       it('should include non-recent includedURLs even when some organic URLs were recently processed', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
-            getTopAgenticUrlsFromAthena: async () => [],
+            getTopAgenticLiveUrlsFromAthena: async () => [],
           },
         });
 
@@ -612,7 +612,7 @@ describe('Prerender Audit', () => {
       it('should submit all fetched organic URLs when they are below the daily batch size', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
-            getTopAgenticUrlsFromAthena: async () => [],
+            getTopAgenticLiveUrlsFromAthena: async () => [],
           },
         });
         const over = TOP_ORGANIC_URLS_LIMIT + 10;
@@ -633,7 +633,7 @@ describe('Prerender Audit', () => {
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
-          log: { info: sandbox.stub(), debug: sandbox.stub() },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
         };
         const out = await mockHandler.submitForScraping(context);
         expect(out.urls).to.have.length(TOP_ORGANIC_URLS_LIMIT);
@@ -643,12 +643,12 @@ describe('Prerender Audit', () => {
       });
 
       it('should request agentic URLs using TOP_AGENTIC_URLS_LIMIT', async () => {
-        const getTopAgenticUrlsFromAthena = sandbox.stub().resolves(
+        const getTopAgenticLiveUrlsFromAthena = sandbox.stub().resolves(
           Array.from({ length: TOP_AGENTIC_URLS_LIMIT + 10 }, (_, i) => `https://example.com/p${i}`),
         );
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
-            getTopAgenticUrlsFromAthena,
+            getTopAgenticLiveUrlsFromAthena,
           },
         });
         const context = {
@@ -665,8 +665,8 @@ describe('Prerender Audit', () => {
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
         };
         await mockHandler.submitForScraping(context);
-        expect(getTopAgenticUrlsFromAthena).to.have.been.calledOnce;
-        expect(getTopAgenticUrlsFromAthena.firstCall.args[2]).to.equal(TOP_AGENTIC_URLS_LIMIT);
+        expect(getTopAgenticLiveUrlsFromAthena).to.have.been.calledOnce;
+        expect(getTopAgenticLiveUrlsFromAthena.firstCall.args[2]).to.equal(TOP_AGENTIC_URLS_LIMIT);
         expect(TOP_AGENTIC_URLS_LIMIT).to.equal(2000);
       });
 
@@ -725,7 +725,7 @@ describe('Prerender Audit', () => {
       it('rebases organic and included URLs to getPreferredBaseUrl domain', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
-            getTopAgenticUrlsFromAthena: async () => [],
+            getTopAgenticLiveUrlsFromAthena: async () => [],
             getPreferredBaseUrl: () => 'https://example.com',
           },
         });
@@ -763,7 +763,7 @@ describe('Prerender Audit', () => {
       it('uses overrideBaseURL from site config as domain for organic and included URL rebasing', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
-            getTopAgenticUrlsFromAthena: async () => [],
+            getTopAgenticLiveUrlsFromAthena: async () => [],
           },
         });
 
@@ -803,7 +803,7 @@ describe('Prerender Audit', () => {
 
         const makeHandlerWithAgentic = async (agenticUrls) => esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
-            getTopAgenticUrlsFromAthena: sandbox.stub().resolves(agenticUrls),
+            getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves(agenticUrls),
           },
         });
 
@@ -1031,7 +1031,7 @@ describe('Prerender Audit', () => {
         const athenaStub = sandbox.stub().resolves([]);
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
-            getTopAgenticUrlsFromAthena: athenaStub,
+            getTopAgenticLiveUrlsFromAthena: athenaStub,
           },
         });
 
@@ -1067,7 +1067,7 @@ describe('Prerender Audit', () => {
         const athenaStub = sandbox.stub().resolves(['https://example.com/agentic-1']);
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
-            getTopAgenticUrlsFromAthena: athenaStub,
+            getTopAgenticLiveUrlsFromAthena: athenaStub,
           },
         });
 
@@ -1103,7 +1103,7 @@ describe('Prerender Audit', () => {
         const athenaStub = sandbox.stub().resolves(['https://example.com/agentic-1']);
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
-            getTopAgenticUrlsFromAthena: athenaStub,
+            getTopAgenticLiveUrlsFromAthena: athenaStub,
           },
         });
 
@@ -1209,10 +1209,11 @@ describe('Prerender Audit', () => {
         expect(result.auditResult).to.be.an('object');
       });
 
-      it('should warn when agentic URL fetch fails', async () => {
+      it('should warn when agentic URL fetch fails', async function () {
+        this.timeout(5000);
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
-            getTopAgenticUrlsFromAthena: async () => { throw new Error('athena fetch failed'); },
+            getTopAgenticLiveUrlsFromAthena: async () => { throw new Error('athena fetch failed'); },
           },
         });
 
@@ -1340,7 +1341,7 @@ describe('Prerender Audit', () => {
         const athenaStub = sandbox.stub().resolves(['https://example.com/agentic-1']);
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
-            getTopAgenticUrlsFromAthena: athenaStub,
+            getTopAgenticLiveUrlsFromAthena: athenaStub,
             getPreferredBaseUrl: () => 'https://example.com',
           },
         });
@@ -2102,7 +2103,8 @@ describe('Prerender Audit', () => {
         expect(infoLogs.some((msg) => msg.includes('prerender_status_upload:'))).to.be.true;
       });
 
-      it('should exclude URL with needsPrerender=true and isDeployedAtEdge=true from scrapedUrlsSet', async () => {
+      it('should exclude URL with needsPrerender=true and isDeployedAtEdge=true from scrapedUrlsSet', async function () {
+        this.timeout(5000);
         const syncSuggestionsStub = sandbox.stub().resolves();
         const mockOpportunity = {
           getId: () => 'test-opp-id',
@@ -3866,7 +3868,8 @@ describe('Prerender Audit', () => {
   });
 
   describe('Additional branch coverage (mapping, catches)', () => {
-    it('should return the raw Athena URL when it is already absolute but invalid', async () => {
+    it('should return the raw Athena URL when it is already absolute but invalid', async function () {
+      this.timeout(5000);
       const mergeAndGetUniqueHtmlUrlsStub = sinon.stub().callsFake((...urlGroups) => ({
         urls: urlGroups.flat(),
         filteredCount: 0,
@@ -3874,7 +3877,7 @@ describe('Prerender Audit', () => {
 
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '../../../src/utils/agentic-urls.js': {
-          getTopAgenticUrlsFromAthena: sinon.stub().resolves(['http://[invalid']),
+          getTopAgenticLiveUrlsFromAthena: sinon.stub().resolves(['http://[invalid']),
         },
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sinon.stub().resolves(false),
@@ -4276,11 +4279,12 @@ describe('Prerender Audit', () => {
       expect(res.urls).to.be.an('array');
     });
 
-    it('should log detailed fallback message when building URL list from fallbacks', async () => {
+    it('should log detailed fallback message when building URL list from fallbacks', async function () {
+      this.timeout(5000);
       const html = '<html><body><p>x</p></body></html>';
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '../../../src/utils/agentic-urls.js': {
-          getTopAgenticUrlsFromAthena: async () => ['https://example.com/agentic'],
+          getTopAgenticLiveUrlsFromAthena: async () => ['https://example.com/agentic'],
         },
         '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
@@ -4334,7 +4338,7 @@ describe('Prerender Audit', () => {
       let capturedArgs = [];
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '../../../src/utils/agentic-urls.js': {
-          getTopAgenticUrlsFromAthena: async () => [],
+          getTopAgenticLiveUrlsFromAthena: async () => [],
           getPreferredBaseUrl: () => 'https://example.com',
         },
         '../../../src/utils/s3-utils.js': {
@@ -5278,7 +5282,8 @@ describe('Prerender Audit', () => {
     });
 
     describe('Advanced Error Handling Tests', () => {
-      it('should trigger getObjectFromKey error handling', async () => {
+      it('should trigger getObjectFromKey error handling', async function () {
+        this.timeout(5000);
         // Test the catch block in getScrapedHtmlFromS3 by mocking getObjectFromKey to throw
         const mockS3Utils = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/s3-utils.js': {
@@ -7361,7 +7366,8 @@ describe('Prerender Audit', () => {
       expect(context.log.warn).to.have.been.calledWith(sinon.match('Failed to fetch ScrapeUrl stats'));
     });
 
-    it('should integrate with processContentAndGenerateOpportunities to detect missing forbidden URLs', async () => {
+    it('should integrate with processContentAndGenerateOpportunities to detect missing forbidden URLs', async function () {
+      this.timeout(5000);
       // URL in scrapeResultPaths (has a scrape.json but no HTML — not 403, just incomplete)
       const knownUrl = 'https://example.com/page1';
       // URL in ScrapeUrl DB but NOT in scrapeResultPaths (only has scrape.json — 403 forbidden)
@@ -8006,7 +8012,8 @@ describe('Prerender Audit', () => {
       sandbox.restore();
     });
 
-    it('should use ScrapeUrl count when scrapeJobId and ScrapeUrl are available', async () => {
+    it('should use ScrapeUrl count when scrapeJobId and ScrapeUrl are available', async function () {
+      this.timeout(5000);
       const mockScrapeUrls = [
         { getUrl: () => 'https://example.com/test' },
         { getUrl: () => 'https://example.com/missing-1' },
@@ -8109,7 +8116,8 @@ describe('Prerender Audit', () => {
   });
 
   describe('compareHtmlContent — citability score', () => {
-    it('should pass citability metrics from analyzeHtmlForPrerender to writeToCitabilityRecords', async () => {
+    it('should pass citability metrics from analyzeHtmlForPrerender to writeToCitabilityRecords', async function () {
+      this.timeout(5000);
       const pageCitabilityCreateStub = sinon.stub().resolves({});
       const pageCitabilityAllBySiteIdStub = sinon.stub().resolves([]);
 

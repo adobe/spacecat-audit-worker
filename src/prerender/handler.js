@@ -353,7 +353,7 @@ async function getScrapedHtmlFromS3(url, context) {
   } = context;
 
   try {
-    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+    const bucketName = env?.S3_SCRAPER_BUCKET_NAME;
     const { scrapeJobId: storageId } = auditContext || {};
     const serverSideKey = getS3Path(url, storageId, 'server-side.html');
     const clientSideKey = getS3Path(url, storageId, 'client-side.html');
@@ -478,7 +478,7 @@ async function fetchLatestScrapeJobId(siteId, context) {
   const { log, s3Client, env } = context;
 
   try {
-    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+    const bucketName = env?.S3_SCRAPER_BUCKET_NAME;
     const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
 
     log.info(`${LOG_PREFIX} ai-only: Fetching status.json from s3://${bucketName}/${statusKey}`);
@@ -822,7 +822,7 @@ async function readSiteStatusJson(s3Client, bucketName, siteId, log) {
     return { existingStatus: parsed, existingPages };
   } catch (e) {
     if (e.name !== 'NoSuchKey') {
-      log.warn(`${LOG_PREFIX} Could not read status.json for siteId=${siteId}: ${e.message}`);
+      log.warn(`${LOG_PREFIX} Could not read existing status.json for siteId=${siteId}: ${e.message} — starting fresh`);
     }
     return { existingStatus: {}, existingPages: [] };
   }
@@ -923,7 +923,7 @@ export async function submitForScraping(context) {
     // Read status.json once — shared by domain block, rate limit, and circuit breaker checks
     const { existingStatus, existingPages } = await readSiteStatusJson(
       s3Client,
-      env.S3_SCRAPER_BUCKET_NAME,
+      env?.S3_SCRAPER_BUCKET_NAME,
       siteId,
       log,
     );
@@ -1390,7 +1390,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     }
 
     const scrapedAt = auditedAt || new Date().toISOString();
-    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+    const bucketName = env?.S3_SCRAPER_BUCKET_NAME;
     const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
 
     // Read existing status.json before building currentPages so we can look up prior scrapeJobIds.
@@ -1555,7 +1555,7 @@ export async function getScrapeJobStats(
       + ` (scrapeJobId=${scrapeJobId}), urlsToCheck=${urlsToCheckLength}`);
 
     // Find FAILED-status URLs absent from comparisonResults and read their scrape.json
-    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+    const bucketName = env?.S3_SCRAPER_BUCKET_NAME;
     const comparisonUrlSet = new Set(comparisonResults.map((r) => r.url));
     const missingUrls = allScrapeUrls.filter((su) => !comparisonUrlSet.has(su.getUrl()));
 
