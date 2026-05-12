@@ -1,3 +1,17 @@
+# [1.438.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.437.2...v1.438.0) (2026-05-12)
+
+
+### Features
+
+* filter out URLs to client's own site ([#2499](https://github.com/adobe/spacecat-audit-worker/issues/2499)) ([62d0966](https://github.com/adobe/spacecat-audit-worker/commit/62d0966ea71f65316cfef9cfbf4a1584255c6694))
+
+## [1.437.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.437.1...v1.437.2) (2026-05-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-http-utils to v1.27.1 ([#2506](https://github.com/adobe/spacecat-audit-worker/issues/2506)) ([0a1d428](https://github.com/adobe/spacecat-audit-worker/commit/0a1d428f3888c93cdade4ded5b2a9cf190795d21))
+
 ## [1.437.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.437.0...v1.437.1) (2026-05-12)
 
 
