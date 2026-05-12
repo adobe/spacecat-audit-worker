@@ -140,6 +140,16 @@ describe('analysis-fetch helper', () => {
       ).to.be.rejectedWith(/unexpected content-type/);
     });
 
+    it('accepts binary/octet-stream content-type', async () => {
+      fetchStub.resolves({
+        ok: true,
+        headers: headers({ 'content-type': 'binary/octet-stream' }),
+        text: async () => '{"key":"value"}',
+      });
+      const result = await fetchAnalysisFromPresignedUrl(validUrl, { log, prefix: '[T]' });
+      expect(result).to.deep.equal({ key: 'value' });
+    });
+
     it('rejects bodies that are not JSON', async () => {
       fetchStub.resolves({
         ok: true,

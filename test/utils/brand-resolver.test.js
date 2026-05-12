@@ -535,7 +535,10 @@ describe('brand-resolver (PostgREST)', () => {
       expect(mockOpportunity.setScopeType).to.have.been.calledTwice;
       expect(mockOpportunity.setScopeType.firstCall).to.have.been.calledWith('brand');
       expect(mockOpportunity.setScopeType.secondCall).to.have.been.calledWith(null);
-      expect(log.warn).to.have.been.calledWithMatch(/Failed to set scopeId; rolled back scopeType/);
+      expect(mockOpportunity.setScopeId).to.have.been.calledTwice;
+      expect(mockOpportunity.setScopeId.firstCall).to.have.been.calledWith('b');
+      expect(mockOpportunity.setScopeId.secondCall).to.have.been.calledWith(null);
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to set scopeId; rolled back scope/);
     });
 
     it('swallows rollback failures and still logs the original setScopeId error', () => {
@@ -552,7 +555,7 @@ describe('brand-resolver (PostgREST)', () => {
         '[Test]',
       )).to.not.throw();
 
-      expect(log.warn).to.have.been.calledWithMatch(/Failed to set scopeId; rolled back scopeType/);
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to set scopeId; rolled back scope/);
     });
 
     it('does not throw when setScopeType throws on a brand match', () => {

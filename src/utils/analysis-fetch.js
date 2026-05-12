@@ -121,7 +121,7 @@ export async function fetchAnalysisFromPresignedUrl(url, {
   const contentType = (response.headers?.get?.('content-type') ?? '').toLowerCase();
   // Allow JSON, plain text (S3 often serves raw JSON as text/plain), or octet-stream.
   // Explicitly reject text/html and other content types that signal a misdirected fetch.
-  const ALLOWED_CONTENT_TYPES = /^(application\/json|text\/json|text\/plain|application\/octet-stream)\b/;
+  const ALLOWED_CONTENT_TYPES = /^(application\/json|text\/json|text\/plain|application\/octet-stream|binary\/octet-stream)\b/;
   if (contentType && !ALLOWED_CONTENT_TYPES.test(contentType)) {
     throw new Error(`${prefix} analysis response has unexpected content-type: ${contentType}`);
   }

@@ -352,13 +352,16 @@ export function applyScopeToOpportunity(opportunity, result, log, logPrefix = ''
     try {
       opportunity.setScopeId(brand.brandId);
     } catch (err) {
-      // Rollback the scopeType so the opportunity is not left half-scoped.
+      // Rollback both fields so the opportunity is not left half-scoped.
+      // scopeType was already set to 'brand'; scopeId may still hold a stale value
+      // from a prior run — clear both to satisfy the co-presence constraint on save().
       try {
         opportunity.setScopeType(null);
-      } catch {
-        // Best-effort rollback; the primary error is logged below.
-      }
-      log?.warn?.(`${logPrefix} Failed to set scopeId; rolled back scopeType: ${err.message}`);
+      } catch { /* best-effort */ }
+      try {
+        opportunity.setScopeId(null);
+      } catch { /* best-effort */ }
+      log?.warn?.(`${logPrefix} Failed to set scopeId; rolled back scope: ${err.message}`);
     }
     return;
   }
