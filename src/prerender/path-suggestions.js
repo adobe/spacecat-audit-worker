@@ -267,6 +267,10 @@ export async function buildPathTypeSuggestions(
  * Marks NEW per-URL suggestions as coveredByDomainWide for each deployed path suggestion.
  * Also self-heals: clears stale coveredByDomainWide refs where the path is no longer deployed.
  *
+ * Note: `coveredByDomainWide` is a shared field used by both domain-wide and path suggestions.
+ * When set by this function it holds a path suggestion ID (not a domain-wide suggestion ID).
+ * The self-heal distinguishes the two by checking `ref.getData()?.pathType === true`.
+ *
  * @param {Object} opportunity - SpaceCat opportunity entity
  * @param {Object} context - Audit context
  * @returns {Promise<void>}
