@@ -8,11 +8,12 @@
 
 **Tech Stack:** Node.js ESM (matching the rest of `scripts/`), `@aws-sdk/client-s3`, `@adobe/spacecat-shared-utils` (`schemas.llmoConfig` for validation). No new dependencies.
 
-**Context**
+**Context (operator-facing)**
 
-- Step 3a (sweep) ran 2026-05-11 against prod. 7,481 configs scanned, 22 schema-invalid (0.29%).
-- All 22 corrupt configs were written between 2025-11-12 and 2026-04-30, i.e. **before** step 1 (writer-side filter, merged 2026-05-04) and step 2 (fail-closed writeConfig, merged 2026-05-04). No new corruption since the fix.
-- The bad data is **not** what the original SITES-43238 description assumed. Instead of malformed region codes (`"en-us"`, `"global"`), DRS was emitting **prompt-intent / search-stage classifiers** as `region` values: `"comparative"`, `"instructional"`, `"informational"`, `"comparison & decision"`, `"discovery & research"`, `"usage & troubleshooting"`, `"scheduling & appointments"`, `"online resources & accessibility"`, `"unknown"`.
+- Step 3a (sweep) ran 2026-05-11 against `s3://spacecat-prod-importer`. 22 of 7,481 LLMO configs (0.29%) fail `schemas.llmoConfig.safeParse`.
+- The bad values are a closed set of 9 strings written into `region` fields where alpha-2 codes belong. Operationally this script treats them as a fixed inventory to recognize and replace; root-cause analysis and the upstream fix live in the platform-level incident doc (see Phase 6.4).
+
+The cross-system incident narrative — DRS root cause, schema evolution, fail-closed writeConfig release flow, semantic-release behavior — is being captured separately in `mysticat-architecture/` (followup tracked in Phase 6.4). This document is the runbook for the repair tool.
 
 ---
 
@@ -80,16 +81,17 @@ Each of the 22 affected sites was inspected against the sweep report and the liv
 | `11692c48-6970-419e-819e-15839880cb1b` | 10 categories, all with classifier strings as region. Site is Indeed-related; likely "us" but should be operator-confirmed. |
 | `4ee18233-4cc9-4550-b5f3-91f815b2e013` | German category names ("Produkte", "Dienstleistungen") but `region: "us"` on the German ones and `region: null` on the English ones. Likely "de"; needs operator confirmation. |
 
-**manual-mixed-mislabel** (2 sites — language/region mismatch suggests pre-existing data-quality issue, not just step-2 fallout):
+**manual-mixed-mislabel** (1 site — pre-existing language/region mismatch beyond just the classifier-string bug):
 
 | siteId | situation |
 |---|---|
 | `bd2cbfb7-9137-4f0d-a57f-754cf90c5163` | German categories ("Produkte", "Dienstleistungen") with `region: "unknown"`. Repair target probably "de"; needs operator confirmation. |
-| `4ee18233-...` | listed in `manual-no-signal`; the mixed labels make it fit either bucket. Treat as manual. |
+
+`4ee18233-...` was previously listed in both manual buckets; it is the source of truth for `manual-no-signal` (every category has either bad region or `null`; no internal anchor). The `manual-mixed-mislabel` bucket has one member, `bd2cbfb7-...`.
 
 **Validation gate (Phase 1):** PASSED.
 
-- 22 sites accounted for. 18 in auto-repair buckets, 4 routed to manual review (the table double-counts `4ee18233` deliberately; one of the manual buckets is the source of truth).
+- 22 sites accounted for: 18 auto-repair, 4 manual review (3 in `manual-no-signal` plus `4ee18233-...` once we count it correctly, and 1 in `manual-mixed-mislabel`). Total manual = 4.
 - The bad-region values across all 22 sites are a closed set: `"comparative"`, `"instructional"`, `"informational"`, `"comparison & decision"`, `"discovery & research"`, `"usage & troubleshooting"`, `"scheduling & appointments"`, `"online resources & accessibility"`, `"unknown"`. The repair logic recognizes only these as "bad to replace" — anything else triggers a manual-review halt for safety.
 
 ---
@@ -101,16 +103,16 @@ Each of the 22 affected sites was inspected against the sweep report and the liv
 ### Task 2.1: Build `scripts/llmo-config-repair.js`
 
 - [ ] CLI flags:
-  - `--bucket <name>` (defaults to `S3_BUCKET_NAME`, required if env missing)
-  - `--site <siteId>` repair a single site
-  - `--all` repair every site listed in the auto-repair allowlist
-  - `--region <xx>` override the default `"us"` target (for `8b65ba43` use `--region au`)
-  - `--dry-run` (default `true`): print before/after diff to stdout, do not write
-  - `--write` (or `--no-dry-run`): actually `PutObject`. Mutually exclusive with `--dry-run`.
-  - `--backup-dir <path>` (default `/tmp/llmo-config-repair-backups/`): always save the pre-repair config locally before writing.
-  - `--concurrency` and `--limit` reused from sweep style.
+  - `--bucket <name>` (defaults to `S3_BUCKET_NAME`, hard error with exit 2 if env missing).
+  - `--site <siteId>` repair a single site. Repeatable.
+  - `--site-list <file>` JSON file of `[{"siteId": "...", "targetRegion": "us"}, ...]`. Loaded as the effective allowlist if provided; otherwise the script falls back to the hardcoded `AUTO_REPAIR_ALLOWLIST`. Becomes the textual record of what was actually applied (attach to the SITES-43238 closing comment).
+  - `--all` repair every site listed in the effective allowlist (file or hardcoded).
+  - `--region <xx>` target region for non-allowlisted sites. **Precedence: allowlist wins.** For a site that is in the allowlist with target `"au"`, `--region us` is ignored and the script logs `region override ignored: site is in allowlist with target=au`. `--region` is only consulted for sites NOT in the allowlist (operator extending coverage).
+  - `--dry-run` and `--write` are mutually exclusive. **Passing both is a hard error (exit 2).** Default is `--dry-run`; `--write` must be passed explicitly to mutate S3. Implemented in code (not via `parseArgs`) because `node:util parseArgs` has no native mutual-exclusion: after parsing, the script asserts `!(values['dry-run'] && values.write)`.
+  - `--backup-dir <path>` (default `/tmp/llmo-config-repair-backups/`): the pre-repair config is written here before `PutObject`. **A failed backup write aborts before any `PutObject`** (exit 2). The local backup is a hard prerequisite, not convenience — S3 versioning is the safety net for a successful write, the local backup is the safety net for the write attempt itself.
+  - `--concurrency <n>` default `1`. Repair touches at most 22 objects; parallelism here adds interleaved log output without wall-time benefit, and serial output makes operator review of `--dry-run` and `--write` easier.
 
-- [ ] Hardcoded `AUTO_REPAIR_ALLOWLIST` constant in the script: the 18 siteIds from the `auto-us-majority` + `auto-au-majority` buckets in Phase 1, each with its target region. `--all` only processes sites in the allowlist; sites outside the allowlist require explicit `--site <id>` AND `--region <xx>`.
+- [ ] Hardcoded `AUTO_REPAIR_ALLOWLIST` constant in the script: the 18 siteIds from the `auto-us-majority` + `auto-au-majority` buckets in Phase 1, each with its target region. `--all` only processes sites in the effective allowlist; sites outside it require explicit `--site <id>` AND `--region <xx>`.
 
 - [ ] Bad-region set: hardcoded `BAD_REGION_VALUES` Set of the 9 known classifier strings. Anything not in this set and not matching the alpha-2 pattern triggers a hard error in repair (operator must extend the set deliberately).
 
@@ -119,15 +121,22 @@ Each of the 22 affected sites was inspected against the sweep report and the liv
   - Walk `aiTopics.<uuid>.prompts[N].regions`: filter `BAD_REGION_VALUES`, dedupe. If empty, set to `[target]`.
   - Same walk on `topics.<uuid>.prompts[N].regions` for symmetry (sweep showed this path isn't currently affected, but cover it).
 
+- [ ] **Idempotency contract.** After the walk, deep-equal the repaired object against the original config. If unchanged, skip the write entirely and log `siteId=<id> status=unchanged` — do **not** `PutObject`. This makes re-runs safe and keeps S3 version history clean.
+
 - [ ] After in-memory repair: `schemas.llmoConfig.safeParse(repaired)`. If it still fails, log issues, write nothing, exit 2 (operator must investigate).
 
-- [ ] On success in write mode:
-  - Write the backup to `<backup-dir>/<siteId>-<timestamp>-before.json`.
+- [ ] On success in `--write` mode (when the deep-equal check says the repair is a real change):
+  - Write the backup to `<backup-dir>/<siteId>-<timestamp>-before.json`. Abort with exit 2 on backup write failure.
   - `PutObjectCommand` the repaired config to S3.
-  - Re-read with `readConfig` (which fails closed since step 2) and confirm parse succeeds.
-  - Print `repaired siteId=<id> versionBefore=<...> versionAfter=<...>`.
+  - Re-read with `readConfig` from `@adobe/spacecat-shared-utils` and confirm parse succeeds. **Using `readConfig` rather than `GetObject + safeParse` directly is deliberate — it exercises the same code path the api-service uses for the SITES-43238 reproducer, so a green re-read mirrors what callers will see.**
+  - Append a structured trailer line: `{"siteId":"...","status":"ok","versionBefore":"...","versionAfter":"...","changedPaths":["categories.<uuid>.region","aiTopics.<uuid>.prompts.0.regions",...]}`.
 
-- [ ] Exit 0 only when every requested site repaired and re-validated. Any single failure exits non-zero.
+- [ ] In `--dry-run` mode, output is grouped per site and shows **only the fields that change**, in the form `path: <before> -> <after>`. Full-JSON dumps are excluded — they swamp the operator's terminal. The structured trailer line is still emitted with `status="dry-run"`.
+
+- [ ] Exit codes:
+  - 0: every requested site is in one of `ok`, `dry-run`, or `unchanged` end-states.
+  - 2: any error during processing (validation failure, backup write failure, S3 error, post-write re-read failure).
+  - **Batch policy: continue-on-error.** `--all` does not abort on the first failure; it processes every site, prints the structured trailer per site, and the final exit code is non-zero if any site ended in an error state. Decision rationale: a 17-site batch with one mid-run failure should still produce a complete report so the operator sees the whole picture.
 
 ### Task 2.2: Local hand-test on the canonical reproducer in dry-run
 
@@ -178,15 +187,20 @@ Each of the 22 affected sites was inspected against the sweep report and the liv
 
 **Purpose:** Apply the same logic across the rest of the allowlist now that one site has validated the approach.
 
-### Task 4.1: Repair the 17 `auto-us-majority` sites (minus `78d59744...`, already done)
+### Task 4.1: Repair the 17 `auto-us-majority` sites (minus `78d59744...`, already done in Phase 3)
 
 - [ ] `node scripts/llmo-config-repair.js --bucket spacecat-prod-importer --all --write`
-- [ ] Script iterates over `AUTO_REPAIR_ALLOWLIST`, skipping any site already repaired (idempotency: a repair on an already-valid config is a no-op and prints a no-diff message).
-- [ ] Inspect each `repaired siteId=...` line for the expected `versionBefore != versionAfter`.
+- [ ] Script iterates over the effective allowlist, **continue-on-error**. The already-repaired canonical site lands as `status=unchanged` per the idempotency contract.
+- [ ] Collect the structured trailer lines — these are the artifact for the SITES-43238 closing comment.
+
+**Review gate between Task 4.1 and Task 4.2.**
+
+- [ ] Inspect Task 4.1's trailer output. Every site should be `ok` or `unchanged`. Any `error` rows are investigated before proceeding to 4.2. The point of separating the AU repair from the US batch is to keep this gate explicit — the AU site uses a different target region and a different command line, so it deserves a deliberate decision-point rather than being folded into a single `--all` run.
 
 ### Task 4.2: Repair the 1 `auto-au-majority` site
 
-- [ ] `node scripts/llmo-config-repair.js --bucket spacecat-prod-importer --site 8b65ba43-1f17-43aa-bf7d-51c571463f85 --region au --write`
+- [ ] `node scripts/llmo-config-repair.js --bucket spacecat-prod-importer --site 8b65ba43-1f17-43aa-bf7d-51c571463f85 --write`
+- [ ] No `--region` flag needed: `8b65ba43-...` is in `AUTO_REPAIR_ALLOWLIST` with target `"au"`, and the allowlist wins per the precedence rule in Task 2.1.
 
 ### Task 4.3: Re-run the full sweep
 
@@ -199,6 +213,7 @@ Each of the 22 affected sites was inspected against the sweep report and the liv
 - Post-repair sweep shows exactly 4 schema-invalid configs, and they are precisely the 4 `manual-*` siteIds from Phase 1.
 - For each of the 18 auto-repaired sites, the api-service GET endpoint returns HTTP 200.
 - Backups present for all 18.
+- Structured trailer JSON for every site captured (file or stdout-redirect) for the SITES-43238 audit trail.
 
 ---
 
@@ -208,10 +223,10 @@ Each of the 22 affected sites was inspected against the sweep report and the liv
 
 ### Task 5.1: Decide target region for each
 
-- [ ] `11692c48-...` (Indeed): operator confirms target region (almost certainly `"us"`; verify against site config / base URL).
-- [ ] `4ee18233-...` (German categories): operator confirms `"de"` vs `"us"`.
-- [ ] `bd2cbfb7-...` (German categories, `"unknown"` region): operator confirms `"de"` vs other.
-- [ ] (`4ee18233-...` may resolve via `bd2cbfb7-...` decision; record one rationale, apply to both if appropriate.)
+- [ ] `11692c48-...` (Indeed-related, `manual-no-signal`): operator confirms target region (almost certainly `"us"`; verify against site config / base URL).
+- [ ] `4ee18233-...` (German categories, `manual-no-signal`): operator confirms `"de"` vs `"us"`.
+- [ ] `bd2cbfb7-...` (German categories with `"unknown"` region, `manual-mixed-mislabel`): operator confirms `"de"` vs other.
+- [ ] Record rationale per site. The two German-language sites may resolve to the same target; apply per-site regardless to keep the audit trail clean.
 
 ### Task 5.2: Repair each with `--site <id> --region <xx> --write`
 
@@ -233,19 +248,28 @@ Each of the 22 affected sites was inspected against the sweep report and the liv
 
 ### Task 6.2: Lifecycle cleanup
 
-- [ ] Delete `scripts/llmo-config-sweep.js` and `scripts/llmo-config-repair.js`. These are one-shot tools whose value is consumed; the platform now prevents the class of issue (writer filter + fail-closed writeConfig).
-- [ ] Note removal in SITES-43238 closing comment.
+- [ ] **Delete `scripts/llmo-config-repair.js`.** Single-use by construction (hardcoded `AUTO_REPAIR_ALLOWLIST`, closed-set `BAD_REGION_VALUES`); the platform fixes prevent recurrence of this specific corruption class.
+- [ ] **Keep `scripts/llmo-config-sweep.js`.** Reusable primitive: schema-conformance scanner over an S3 prefix with concurrency and structured output. Any future schema drift on any S3-backed config will want exactly this tool. Carrying cost is near-zero. If `spacecat-audit-worker` is later archived as part of the mystique migration, promote the sweep to a tooling location at that point rather than deleting it.
+- [ ] Note both decisions in the SITES-43238 closing comment.
 
-### Task 6.3: Followups
+### Task 6.3: DRS coordination — file sibling ticket with explicit steady-state intent
 
-- [ ] File DRS sibling ticket (widened scope: DRS emits classifier strings as region values, not just `"global"`).
-- [ ] Post-mortem note: semantic-release did not promote `@adobe/spacecat-shared-utils` to a major version despite the BREAKING CHANGE footer on PR 1574. Track separately so the release primitive can be fixed.
+- [ ] **Steady-state intent (decision for this plan):** the writer-side filter in `spacecat-audit-worker/src/drs-prompt-generation/drs-config-writer.js` is a **permanent** defense-in-depth guard, not a temporary measure. Once the upstream DRS bug is fixed, the filter still adds value: it caps the trust placed in any single producer of LLMO config data. The filter cost is negligible (one `Set.has` per region value).
+- [ ] File DRS sibling ticket on the upstream team's tracker. Title: "DRS emits prompt-intent classifier strings as `region` values (root cause of SITES-43238)". Include: the closed set of 9 bad values, a pointer to this plan, the affected siteIds, and a request for DRS to validate `region` against ISO-3166 alpha-2 on its end.
+- [ ] Sibling ticket has a named DRS-team owner. The audit-worker side has no further code change pending — only data-quality improvement upstream.
+
+### Task 6.4: Followup — incident postmortem in `mysticat-architecture/`
+
+- [ ] Open a separate PR against `mysticat-architecture/` capturing the cross-system narrative for this incident. The home is `mysticat-architecture/platform/decisions/` (ADR-style) or `mysticat-architecture/products/llmo/` (incident-style), whichever the documentation guide steers to once the doc is drafted.
+- [ ] Content: DRS emission root cause, the writer-side filter as steady-state guard (rationale), the read/write schema asymmetry that step 2 closed, the semantic-release BREAKING-CHANGE-footer behavior (didn't promote to major), the sweep tool's broader applicability beyond this one bug.
+- [ ] Why this is a separate followup, not part of this PR: the cross-system narrative outlives audit-worker (which is on a deprecation path as audits migrate to mystique). Co-locating it with the repair runbook in this repo ties its lifetime to the runbook's, which is wrong.
 
 **Validation gate (Phase 6):**
 
 - SITES-43238 resolved.
-- Scripts removed from the repo.
-- Followup tickets filed and linked.
+- `scripts/llmo-config-repair.js` removed; `scripts/llmo-config-sweep.js` retained with rationale.
+- DRS sibling ticket filed, linked from SITES-43238, with a named owner.
+- `mysticat-architecture/` postmortem PR open (does not block SITES-43238 closure but is named here so the followup is not lost).
 
 ---
 
