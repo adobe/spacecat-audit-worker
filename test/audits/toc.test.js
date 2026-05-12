@@ -331,6 +331,104 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(tocIssue).to.not.have.property('transformRules');
       expect(tocIssue.url).to.equal(url);
     });
+
+    it('skips suggestion when page has only one heading (LLMO-4542)', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":8,"reasoning":"No TOC"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
+        },
+      });
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<body><h1 id="title">Only Heading</h1><p>Some content</p></body>',
+                  tags: { title: 'Page', description: 'Desc', h1: ['Only Heading'] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
+
+      expect(result.auditResult).to.exist;
+      expect(result.auditResult.toc).to.deep.equal({});
+    });
+
+    it('skips suggestion when page has only null/empty headings (LLMO-4542)', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":8,"reasoning":"No TOC"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
+        },
+      });
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<body><h1></h1><h2>   </h2><p>Some content</p></body>',
+                  tags: { title: 'Page', description: 'Desc', h1: [] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
+
+      expect(result.auditResult).to.exist;
+      expect(result.auditResult.toc).to.deep.equal({});
+    });
   });
 
   describe('TOC Placement Strategy', () => {
@@ -2854,6 +2952,18 @@ describe('TOC (Table of Contents) Audit', () => {
         );
         const result = extractTocData($, stubGetHeadingSelector);
         expect(result).to.deep.equal([]);
+      });
+      it('excludes headings with empty text', () => {
+        const $ = cheerioLoad('<body><h1 id="a">   </h1><h1 id="b">Title</h1><h2 id="c">Section</h2></body>');
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Title', 'Section']);
+      });
+      it('excludes headings with no text content', () => {
+        const $ = cheerioLoad('<body><h2 id="a"></h2><h1 id="b">Title</h1><h2 id="c">Section</h2></body>');
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Title', 'Section']);
       });
       it('includes selector from getHeadingSelectorFn', () => {
         const $ = cheerioLoad('<body><h1 id="main">Title</h1></body>');
