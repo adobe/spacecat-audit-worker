@@ -127,9 +127,12 @@ describe('User Agent Patterns', () => {
       expect(inferProviderFromUserAgent('ClaudeBot')).to.equal('Anthropic');
       expect(inferProviderFromUserAgent('Anthropic-SearchBot')).to.equal('Anthropic');
       expect(inferProviderFromUserAgent('Gemini-Deep-Research')).to.equal('Gemini');
+      expect(inferProviderFromUserAgent('GoogleAgent-Chrome')).to.equal('Gemini');
+      expect(inferProviderFromUserAgent('GoogleAgent-Mariner')).to.equal('Gemini');
+      expect(inferProviderFromUserAgent('GoogleAgent-URLContext')).to.equal('Gemini');
+      expect(inferProviderFromUserAgent('GoogleAgent-Shopping')).to.equal('Gemini');
+      expect(inferProviderFromUserAgent('Google-Agent')).to.equal('Gemini');
       expect(inferProviderFromUserAgent('Google-AI-Mode')).to.equal('Google AI Mode');
-      expect(inferProviderFromUserAgent('GoogleAgent-Chrome')).to.equal('Google');
-      expect(inferProviderFromUserAgent('Google-Agent')).to.equal('Google');
       expect(inferProviderFromUserAgent('google-notebooklm')).to.equal('Google');
       expect(inferProviderFromUserAgent('CopilotBot')).to.equal('Copilot');
       expect(inferProviderFromUserAgent('BingBot')).to.equal('Bing');
