@@ -121,7 +121,7 @@ describe('LLM Content Gaps Handler', function () {
       });
 
       expect(() => loadTopicsForSite('https://unknown.com')).to.throw(
-        'No topic data available for https://unknown.com (expected unknown-com-sample.json)',
+        'No topic data available for https://unknown.com (expected src/llm-content-gaps/data/unknown-com-sample.json)',
       );
     });
   });
@@ -171,13 +171,13 @@ describe('LLM Content Gaps Handler', function () {
     it('propagates an error when no data file is available for the site', async () => {
       const { auditRunner } = await esmock('../../../src/llm-content-gaps/handler.js', {
         '../../../src/llm-content-gaps/topics.js': {
-          loadTopicsForSite: () => { throw new Error('No topic data available for https://adobe.com (expected adobe-com-sample.json)'); },
+          loadTopicsForSite: () => { throw new Error('No topic data available for https://adobe.com (expected src/llm-content-gaps/data/adobe-com-sample.json)'); },
           selectTopTopics,
         },
       });
 
       await expect(auditRunner(auditUrl, context, site)).to.be.rejectedWith(
-        'No topic data available for https://adobe.com',
+        'No topic data available for https://adobe.com (expected src/llm-content-gaps/data/adobe-com-sample.json)',
       );
     });
   });

@@ -11,10 +11,7 @@
  */
 
 import { existsSync, readFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
-
-const dirName = dirname(fileURLToPath(import.meta.url));
+import { join } from 'path';
 
 /**
  * Loads the per-site topic dataset from the bundled data directory.
@@ -23,9 +20,9 @@ const dirName = dirname(fileURLToPath(import.meta.url));
  */
 export function loadTopicsForSite(baseUrl) {
   const hostname = new URL(baseUrl).hostname.replace(/\./g, '-');
-  const dataFile = join(dirName, `data/${hostname}-sample.json`);
+  const dataFile = join(process.cwd(), `src/llm-content-gaps/data/${hostname}-sample.json`);
   if (!existsSync(dataFile)) {
-    throw new Error(`No topic data available for ${baseUrl} (expected ${hostname}-sample.json)`);
+    throw new Error(`No topic data available for ${baseUrl} (expected src/llm-content-gaps/data/${hostname}-sample.json)`);
   }
   return JSON.parse(readFileSync(dataFile, 'utf-8'));
 }

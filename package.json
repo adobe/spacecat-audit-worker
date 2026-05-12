@@ -64,7 +64,8 @@
       "src/page-intent/sql",
       "src/llm-error-pages/sql",
       "src/llmo-customer-analysis/sql",
-      "src/page-citability/sql"
+      "src/page-citability/sql",
+      "src/llm-content-gaps/data"
     ]
   },
   "repository": {
