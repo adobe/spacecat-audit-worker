@@ -10,12 +10,45 @@
  * governing permissions and limitations under the License.
  */
 
+// ⚠️  DEMO ONLY — DO NOT USE IN PRODUCTION ⚠️
+// This audit contains hardcoded stub data and is intended solely for
+// prototyping and demonstration purposes. It must be replaced with a real
+// implementation before being enabled on any production site.
+
+import { existsSync, readFileSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { AUDIT_TYPE } from './constants.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
+
+const dirName = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Scores and selects the top content-gap topics from the dataset.
+ * Opportunity score = volume × (1 − citation_share) × (1 − owned_keywords_share).
+ * High volume with low existing AI and organic presence signals an untapped gap.
+ */
+export function selectTopTopics(topics, count = 5) {
+  const seen = new Set();
+  return topics
+    .filter(({ adobe_topic: t }) => {
+      if (seen.has(t)) {
+        return false;
+      }
+      seen.add(t);
+      return true;
+    })
+    .map((t) => ({
+      ...t,
+      opportunityScore: t.volume * (1 - t.citation_share) * (1 - t.owned_keywords_share),
+    }))
+    .sort((a, b) => b.opportunityScore - a.opportunityScore)
+    .slice(0, count);
+}
 
 // Example: custom Spacecat API request
 // import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
@@ -95,11 +128,34 @@ export function checkLlmContentGaps(url, _scrapeData, log) {
   ];
 }
 
+export function loadTopicsForSite(baseUrl) {
+  const hostname = new URL(baseUrl).hostname.replace(/\./g, '-');
+  const dataFile = join(dirName, `data/${hostname}-sample.json`);
+  if (!existsSync(dataFile)) {
+    throw new Error(`No topic data available for ${baseUrl} (expected ${hostname}-sample.json)`);
+  }
+  return JSON.parse(readFileSync(dataFile, 'utf-8'));
+}
+
 export async function auditRunner(auditUrl, context, site) {
   const { log } = context;
-  log.info(`[${AUDIT_TYPE}] hello world`);
+  log.info(`[${AUDIT_TYPE}] selecting top content-gap topics`);
 
-  const findings = checkLlmContentGaps(auditUrl, null, log);
+  const allTopics = loadTopicsForSite(site.getBaseURL());
+  const topTopics = selectTopTopics(allTopics);
+  const findings = topTopics.map((t) => ({
+    success: false,
+    check: 'content-gap',
+    checkTitle: `Content gap: ${t.adobe_topic}`,
+    description: `Topic "${t.adobe_topic}" has low AI citation share (${t.citation_share}) and low owned keyword share (${t.owned_keywords_share}) with a search volume of ${t.volume}.`,
+    explanation: 'Expand content coverage for this topic to capture untapped search and AI citation opportunities.',
+    topic: t.adobe_topic,
+    topicLabel: t.semrush_topic,
+    volume: t.volume,
+    citationShare: t.citation_share,
+    ownedKeywordsShare: t.owned_keywords_share,
+    opportunityScore: t.opportunityScore,
+  }));
 
   return {
     auditResult: {
@@ -134,12 +190,15 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     mapNewSuggestion: (gap) => ({
       opportunityId: opportunity.getId(),
       type: 'CONTENT_UPDATE',
-      rank: gap.coverageScore,
+      rank: Math.round(gap.opportunityScore),
       data: {
         url: auditUrl,
         topic: gap.topic,
-        coverageScore: gap.coverageScore,
-        contentBrief: gap.contentBrief,
+        topicLabel: gap.topicLabel,
+        volume: gap.volume,
+        citationShare: gap.citationShare,
+        ownedKeywordsShare: gap.ownedKeywordsShare,
+        opportunityScore: gap.opportunityScore,
       },
     }),
     log,

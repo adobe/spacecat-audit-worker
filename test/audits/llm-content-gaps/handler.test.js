@@ -14,10 +14,43 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
+import {
+  checkLlmContentGaps,
+  selectTopTopics,
+} from '../../../src/llm-content-gaps/handler.js';
 import { createOpportunityData } from '../../../src/llm-content-gaps/opportunity-data-mapper.js';
 
 use(sinonChai);
+use(chaiAsPromised);
+
+// 7 rows, 6 unique topics; Topic A appears twice to exercise deduplication.
+// Scores (volume * (1-citation) * (1-owned)): A=1000, B=500, C=400, D=300, E=200, F=100
+const fixtureTopics = [
+  {
+    adobe_topic: 'Topic A', semrush_topic: 'Label A', volume: 1000, citation_share: 0, owned_keywords_share: 0, keywords: 10,
+  },
+  {
+    adobe_topic: 'Topic B', semrush_topic: 'Label B', volume: 500, citation_share: 0, owned_keywords_share: 0, keywords: 5,
+  },
+  {
+    adobe_topic: 'Topic C', semrush_topic: 'Label C', volume: 400, citation_share: 0, owned_keywords_share: 0, keywords: 4,
+  },
+  {
+    adobe_topic: 'Topic D', semrush_topic: 'Label D', volume: 300, citation_share: 0, owned_keywords_share: 0, keywords: 3,
+  },
+  {
+    adobe_topic: 'Topic E', semrush_topic: 'Label E', volume: 200, citation_share: 0, owned_keywords_share: 0, keywords: 2,
+  },
+  {
+    adobe_topic: 'Topic F', semrush_topic: 'Label F', volume: 100, citation_share: 0, owned_keywords_share: 0, keywords: 1,
+  },
+  // duplicate — should be dropped before scoring
+  {
+    adobe_topic: 'Topic A', semrush_topic: 'Label A', volume: 1000, citation_share: 0, owned_keywords_share: 0, keywords: 10,
+  },
+];
 
 describe('LLM Content Gaps Handler', function () {
   this.timeout(10000);
@@ -25,61 +58,11 @@ describe('LLM Content Gaps Handler', function () {
   let context;
   let site;
 
-  const auditUrl = 'https://example.com';
+  const auditUrl = 'https://adobe.com';
   const siteId = 'site-123';
 
-  const expectedFindings = [
-    {
-      success: false,
-      check: 'content-gap',
-      checkTitle: 'Content gap: AI-powered analytics',
-      description: 'Page has insufficient coverage for topic "AI-powered analytics" (coverage score: 18%).',
-      explanation: 'Expand the page to address key subtopics identified in the Semrush content brief.',
-      topic: 'AI-powered analytics',
-      coverageScore: 18,
-      contentBrief: {
-        recommendedWordCount: 1200,
-        missingSubtopics: ['real-time dashboards', 'predictive insights', 'data connectors'],
-        suggestedHeadings: [
-          'What is AI-powered analytics?',
-          'Key features of AI analytics platforms',
-          'How to integrate AI analytics into your workflow',
-        ],
-        rewriteInstructions: 'Add sections covering real-time dashboards and predictive insights. Include concrete examples and a comparison table of data connectors.',
-      },
-    },
-    {
-      success: false,
-      check: 'content-gap',
-      checkTitle: 'Content gap: enterprise data governance',
-      description: 'Page has insufficient coverage for topic "enterprise data governance" (coverage score: 31%).',
-      explanation: 'Expand the page to address key subtopics identified in the Semrush content brief.',
-      topic: 'enterprise data governance',
-      coverageScore: 31,
-      contentBrief: {
-        recommendedWordCount: 900,
-        missingSubtopics: ['compliance frameworks', 'data lineage', 'role-based access'],
-        suggestedHeadings: [
-          'Data governance in enterprise environments',
-          'Compliance and regulatory requirements',
-          'Implementing role-based access control',
-        ],
-        rewriteInstructions: 'Introduce a dedicated section on compliance frameworks (GDPR, CCPA). Add a data lineage diagram and explain role-based access control.',
-      },
-    },
-    {
-      success: true,
-      check: 'content-gap',
-      checkTitle: 'Sufficient coverage: cloud deployment',
-      description: 'Page adequately covers topic "cloud deployment" (coverage score: 74%).',
-      explanation: 'No action required.',
-      topic: 'cloud deployment',
-      coverageScore: 74,
-    },
-  ];
-
   beforeEach(() => {
-    site = { getId: () => siteId };
+    site = { getId: () => siteId, getBaseURL: () => 'https://adobe.com' };
     context = { log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() } };
   });
 
@@ -87,64 +70,174 @@ describe('LLM Content Gaps Handler', function () {
     sandbox.restore();
   });
 
-  it('logs hello world and returns a completed result with findings', async () => {
-    const { auditRunner } = await import('../../../src/llm-content-gaps/handler.js');
-    const result = await auditRunner(auditUrl, context, site);
+  // ─── selectTopTopics ────────────────────────────────────────────────────────
 
-    expect(context.log.info).to.have.been.calledWith('[llm-content-gaps] hello world');
-    expect(context.log.info).to.have.been.calledWith(`[llm-content-gaps] checking ${auditUrl}`);
-    expect(result).to.deep.equal({
-      auditResult: { siteId, url: auditUrl, status: 'completed', findings: expectedFindings },
-      fullAuditRef: auditUrl,
+  describe('selectTopTopics', () => {
+    it('returns top 5 unique topics sorted by opportunity score', () => {
+      const result = selectTopTopics(fixtureTopics);
+      expect(result).to.have.length(5);
+      expect(result.map((t) => t.adobe_topic)).to.deep.equal(
+        ['Topic A', 'Topic B', 'Topic C', 'Topic D', 'Topic E'],
+      );
+    });
+
+    it('deduplicates by adobe_topic, keeping the first occurrence', () => {
+      const result = selectTopTopics(fixtureTopics);
+      const names = result.map((t) => t.adobe_topic);
+      expect(new Set(names).size).to.equal(names.length);
+    });
+
+    it('computes opportunityScore as volume * (1 - citation_share) * (1 - owned_keywords_share)', () => {
+      const topics = [{
+        adobe_topic: 'X', semrush_topic: 'X', volume: 1000, citation_share: 0.2, owned_keywords_share: 0.5, keywords: 1,
+      }];
+      const [result] = selectTopTopics(topics, 1);
+      expect(result.opportunityScore).to.equal(1000 * 0.8 * 0.5);
+    });
+
+    it('respects a custom count', () => {
+      const result = selectTopTopics(fixtureTopics, 3);
+      expect(result).to.have.length(3);
+      expect(result[0].adobe_topic).to.equal('Topic A');
     });
   });
 
-  it('checkLlmContentGaps logs the url and returns dummy findings', async () => {
-    const { checkLlmContentGaps } = await import('../../../src/llm-content-gaps/handler.js');
-    const findings = checkLlmContentGaps(auditUrl, null, context.log);
+  // ─── loadTopicsForSite ──────────────────────────────────────────────────────
 
-    expect(context.log.info).to.have.been.calledWith(`[llm-content-gaps] checking ${auditUrl}`);
-    expect(findings).to.deep.equal(expectedFindings);
+  describe('loadTopicsForSite', () => {
+    it('returns parsed JSON when the data file exists', async () => {
+      const existsSyncStub = sandbox.stub().returns(true);
+      const readFileSyncStub = sandbox.stub().returns(JSON.stringify(fixtureTopics));
+
+      const { loadTopicsForSite } = await esmock('../../../src/llm-content-gaps/handler.js', {
+        fs: { existsSync: existsSyncStub, readFileSync: readFileSyncStub },
+      });
+
+      const result = loadTopicsForSite('https://adobe.com');
+      expect(result).to.deep.equal(fixtureTopics);
+      expect(existsSyncStub.firstCall.args[0]).to.include('adobe-com-sample.json');
+    });
+
+    it('throws when no data file is available for the site', async () => {
+      const { loadTopicsForSite } = await esmock('../../../src/llm-content-gaps/handler.js', {
+        fs: { existsSync: sandbox.stub().returns(false), readFileSync: sandbox.stub() },
+      });
+
+      expect(() => loadTopicsForSite('https://unknown.com')).to.throw(
+        'No topic data available for https://unknown.com (expected unknown-com-sample.json)',
+      );
+    });
   });
+
+  // ─── auditRunner ────────────────────────────────────────────────────────────
+
+  describe('auditRunner', () => {
+    it('loads topics for the site and returns the top 5 findings', async () => {
+      const { auditRunner } = await esmock('../../../src/llm-content-gaps/handler.js', {
+        fs: {
+          existsSync: sandbox.stub().returns(true),
+          readFileSync: sandbox.stub().returns(JSON.stringify(fixtureTopics)),
+        },
+      });
+
+      const result = await auditRunner(auditUrl, context, site);
+
+      expect(context.log.info).to.have.been.calledWith('[llm-content-gaps] selecting top content-gap topics');
+      expect(result.fullAuditRef).to.equal(auditUrl);
+      expect(result.auditResult.siteId).to.equal(siteId);
+      expect(result.auditResult.status).to.equal('completed');
+
+      const { findings } = result.auditResult;
+      expect(findings).to.have.length(5);
+      expect(findings[0]).to.deep.equal({
+        success: false,
+        check: 'content-gap',
+        checkTitle: 'Content gap: Topic A',
+        description: 'Topic "Topic A" has low AI citation share (0) and low owned keyword share (0) with a search volume of 1000.',
+        explanation: 'Expand content coverage for this topic to capture untapped search and AI citation opportunities.',
+        topic: 'Topic A',
+        topicLabel: 'Label A',
+        volume: 1000,
+        citationShare: 0,
+        ownedKeywordsShare: 0,
+        opportunityScore: 1000,
+      });
+    });
+
+    it('propagates an error when no data file is available for the site', async () => {
+      const { auditRunner } = await esmock('../../../src/llm-content-gaps/handler.js', {
+        fs: { existsSync: sandbox.stub().returns(false), readFileSync: sandbox.stub() },
+      });
+
+      await expect(auditRunner(auditUrl, context, site)).to.be.rejectedWith(
+        'No topic data available for https://adobe.com',
+      );
+    });
+  });
+
+  // ─── checkLlmContentGaps ───────────────────────────────────────────────────
+
+  describe('checkLlmContentGaps', () => {
+    it('logs the url and returns the stub findings', () => {
+      const findings = checkLlmContentGaps(auditUrl, null, context.log);
+      expect(context.log.info).to.have.been.calledWith(`[llm-content-gaps] checking ${auditUrl}`);
+      expect(findings).to.be.an('array').with.length(3);
+      expect(findings.filter((f) => !f.success)).to.have.length(2);
+      expect(findings.filter((f) => f.success)).to.have.length(1);
+    });
+  });
+
+  // ─── opportunityAndSuggestions ─────────────────────────────────────────────
 
   describe('opportunityAndSuggestions', () => {
     let convertToOpportunityStub;
     let syncSuggestionsStub;
     let opportunityAndSuggestions;
 
+    const gapFinding = {
+      success: false,
+      check: 'content-gap',
+      checkTitle: 'Content gap: Topic A',
+      topic: 'Topic A',
+      topicLabel: 'Label A',
+      volume: 1000,
+      citationShare: 0,
+      ownedKeywordsShare: 0,
+      opportunityScore: 1000,
+    };
+    const successFinding = { success: true, check: 'content-gap', topic: 'Topic X' };
+
     beforeEach(async () => {
       convertToOpportunityStub = sinon.stub().resolves({ getId: () => 'opportunity-id' });
       syncSuggestionsStub = sinon.stub().resolves();
 
-      const mockedHandler = await esmock('../../../src/llm-content-gaps/handler.js', {
+      ({ opportunityAndSuggestions } = await esmock('../../../src/llm-content-gaps/handler.js', {
         '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
         '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
-      });
-      opportunityAndSuggestions = mockedHandler.opportunityAndSuggestions;
+      }));
     });
 
     it('skips opportunity creation when there are no failed findings', async () => {
-      const auditData = { auditResult: { findings: [expectedFindings[2]] } };
-
+      const auditData = { auditResult: { findings: [successFinding] } };
       const result = await opportunityAndSuggestions(auditUrl, auditData, context);
 
       expect(result).to.deep.equal(auditData);
       expect(convertToOpportunityStub).not.to.have.been.called;
-      expect(syncSuggestionsStub).not.to.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        '[llm-content-gaps] no content gaps found, skipping opportunity creation',
+      );
     });
 
     it('skips opportunity creation when findings are absent', async () => {
       const auditData = { auditResult: {} };
-
       const result = await opportunityAndSuggestions(auditUrl, auditData, context);
 
       expect(result).to.deep.equal(auditData);
       expect(convertToOpportunityStub).not.to.have.been.called;
     });
 
-    it('creates opportunity and syncs one suggestion per failed finding', async () => {
-      const auditData = { auditResult: { findings: expectedFindings } };
-
+    it('creates opportunity and syncs one suggestion per gap with the correct shape', async () => {
+      const auditData = { auditResult: { findings: [gapFinding, successFinding] } };
       const result = await opportunityAndSuggestions(auditUrl, auditData, context);
 
       expect(result).to.deep.equal(auditData);
@@ -152,37 +245,38 @@ describe('LLM Content Gaps Handler', function () {
       expect(syncSuggestionsStub).to.have.been.calledOnce;
 
       const { newData, buildKey, mapNewSuggestion } = syncSuggestionsStub.getCall(0).args[0];
-      const gaps = expectedFindings.filter((f) => !f.success);
-      expect(newData).to.deep.equal(gaps);
-      expect(buildKey(gaps[0])).to.equal(`${gaps[0].topic}|${auditUrl}`);
-
-      const mapped = mapNewSuggestion(gaps[0]);
-      expect(mapped).to.deep.equal({
+      expect(newData).to.deep.equal([gapFinding]);
+      expect(buildKey(gapFinding)).to.equal(`Topic A|${auditUrl}`);
+      expect(mapNewSuggestion(gapFinding)).to.deep.equal({
         opportunityId: 'opportunity-id',
         type: 'CONTENT_UPDATE',
-        rank: gaps[0].coverageScore,
+        rank: 1000,
         data: {
           url: auditUrl,
-          topic: gaps[0].topic,
-          coverageScore: gaps[0].coverageScore,
-          contentBrief: gaps[0].contentBrief,
+          topic: 'Topic A',
+          topicLabel: 'Label A',
+          volume: 1000,
+          citationShare: 0,
+          ownedKeywordsShare: 0,
+          opportunityScore: 1000,
         },
       });
     });
 
     it('logs completion after syncing', async () => {
-      const auditData = { auditResult: { findings: expectedFindings } };
-
+      const auditData = { auditResult: { findings: [gapFinding] } };
       await opportunityAndSuggestions(auditUrl, auditData, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        '[llm-content-gaps] opportunity created and 2 suggestions synced for https://example.com',
+        '[llm-content-gaps] opportunity created and 1 suggestions synced for https://adobe.com',
       );
     });
   });
 
+  // ─── createOpportunityData ─────────────────────────────────────────────────
+
   describe('createOpportunityData', () => {
-    it('returns the expected opportunity metadata', () => {
+    it('returns expected opportunity metadata', () => {
       const data = createOpportunityData();
       expect(data.origin).to.equal('AUTOMATION');
       expect(data.tags).to.include('isElmo');
