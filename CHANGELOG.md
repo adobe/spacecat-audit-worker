@@ -1,3 +1,11 @@
+## [1.438.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.438.1...v1.438.2) (2026-05-12)
+
+
+### Bug Fixes
+
+* **toc:** fix DOM heuristic false positives in hasTocInDom (LLMO-4848) ([#2508](https://github.com/adobe/spacecat-audit-worker/issues/2508)) ([42cb82c](https://github.com/adobe/spacecat-audit-worker/commit/42cb82c37bb28c63b94e60f0c590dab97c1aaa7e))
+* **toc:** skip suggestions for single or null headings (LLMO-4542) ([#2509](https://github.com/adobe/spacecat-audit-worker/issues/2509)) ([a5e28eb](https://github.com/adobe/spacecat-audit-worker/commit/a5e28eb031fd2e032d95f21e9540f92e552b6eda))
+
 ## [1.438.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.438.0...v1.438.1) (2026-05-12)
 
 
