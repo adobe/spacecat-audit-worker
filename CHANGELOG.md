@@ -1,3 +1,10 @@
+# [1.437.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.436.0...v1.437.0) (2026-05-12)
+
+
+### Features
+
+* Broken internal link cross locale ([#2455](https://github.com/adobe/spacecat-audit-worker/issues/2455)) ([78baed1](https://github.com/adobe/spacecat-audit-worker/commit/78baed1bdc590d890112388d25043acf0eebc3ec))
+
 # [1.436.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.435.4...v1.436.0) (2026-05-11)
 
 
