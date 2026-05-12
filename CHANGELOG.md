@@ -1,3 +1,10 @@
+# [1.438.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.437.2...v1.438.0) (2026-05-12)
+
+
+### Features
+
+* filter out URLs to client's own site ([#2499](https://github.com/adobe/spacecat-audit-worker/issues/2499)) ([62d0966](https://github.com/adobe/spacecat-audit-worker/commit/62d0966ea71f65316cfef9cfbf4a1584255c6694))
+
 ## [1.437.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.437.1...v1.437.2) (2026-05-12)
 
 
