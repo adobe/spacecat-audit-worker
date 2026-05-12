@@ -64,6 +64,7 @@ import paidTrafficAnalysisGuidance from './paid-traffic-analysis/guidance-handle
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
 import llmBlocked from './llm-blocked/handler.js';
+import llmContentGaps from './llm-content-gaps/handler.js';
 import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
 import detectFormDetails from './forms-opportunities/form-details-handler/detect-form-details.js';
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
@@ -153,6 +154,7 @@ const HANDLERS = {
   'delivery-config-writer': deliveryConfigWriter,
   'structured-data': structuredData,
   'llm-blocked': llmBlocked,
+  'llm-content-gaps': llmContentGaps,
   'forms-opportunities': formsOpportunities,
   'site-detection': siteDetection,
   // KILL SWITCH: HOTLCTR disabled — see import above.
