@@ -289,6 +289,49 @@ async function getRecentlyProcessedPathnames(context, siteId) {
 }
 
 /**
+ * Returns a Set of URL pathnames whose suggestions are already deployed at the CDN edge
+ * (individual `edgeDeployed` timestamp) or covered by an active domain-wide deployment
+ * (`coveredByDomainWide` pointing to a domain-wide suggestion that still has `edgeDeployed`).
+ * These URLs gain nothing from re-scraping and are excluded from the daily batch.
+ * @param {Object} context - Audit context with dataAccess and log
+ * @param {string} siteId - Site identifier
+ * @returns {Promise<Set<string>>}
+ */
+async function getDeployedOrCoveredPathnames(context, siteId) {
+  const { dataAccess, log } = context;
+  try {
+    const opportunities = await dataAccess?.Opportunity?.allBySiteIdAndStatus?.(siteId, 'NEW') ?? [];
+    const opportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE) ?? null;
+    if (!opportunity) {
+      return new Set();
+    }
+
+    const suggestions = await opportunity.getSuggestions();
+    const domainWideDeployed = !!suggestions.find((s) => {
+      const d = s.getData();
+      return s.getStatus() !== Suggestion.STATUSES.OUTDATED
+        && isDomainWideSuggestionData(d) && !!d?.edgeDeployed;
+    });
+
+    const pathnames = new Set();
+    for (const s of suggestions) {
+      const data = s.getData();
+      if (s.getStatus() === Suggestion.STATUSES.NEW && data?.url
+        && (data.edgeDeployed || (data.coveredByDomainWide && domainWideDeployed))) {
+        try {
+          const { pathname } = new URL(data.url);
+          pathnames.add(pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname);
+        } catch { /* skip malformed URLs */ }
+      }
+    }
+    return pathnames;
+  } catch (e) {
+    log?.warn?.(`${LOG_PREFIX} Failed to load deployed/covered pathnames: ${e.message}. siteId=${siteId}`);
+    return new Set();
+  }
+}
+
+/**
  * Returns true when the URL's pathname is NOT in the set of recently processed pathnames.
  * URLs that cannot be parsed are treated as not recent (included by default).
  * @param {string} url
@@ -918,6 +961,7 @@ export async function submitForScraping(context) {
   let isFirstRunOfCycle;
   let agenticNewThisCycle = 0;
   let goneUrlsCount = 0;
+  let deployedOrCoveredPathnames = new Set();
 
   if (isSlackTriggered) {
     ({ urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls([
@@ -950,16 +994,20 @@ export async function submitForScraping(context) {
 
     // Daily batching: filter URLs recently processed within the rolling recent window
     const recentPathnames = await getRecentlyProcessedPathnames(context, siteId);
+    deployedOrCoveredPathnames = await getDeployedOrCoveredPathnames(context, siteId);
 
     const filteredOrganicUrls = rebasedTopPagesUrls
       .filter((url) => isNotRecentUrl(url, recentPathnames))
-      .filter((url) => !gonePathnames.has(normalizePathname(url)));
+      .filter((url) => !gonePathnames.has(normalizePathname(url)))
+      .filter((url) => !deployedOrCoveredPathnames.has(normalizePathname(url)));
     const filteredIncludedURLs = rebasedIncludedURLs
       .filter((url) => isNotRecentUrl(url, recentPathnames))
-      .filter((url) => !gonePathnames.has(normalizePathname(url)));
+      .filter((url) => !gonePathnames.has(normalizePathname(url)))
+      .filter((url) => !deployedOrCoveredPathnames.has(normalizePathname(url)));
     const filteredAgenticUrls = agenticUrls
       .filter((url) => isNotRecentUrl(url, recentPathnames))
-      .filter((url) => !gonePathnames.has(normalizePathname(url)));
+      .filter((url) => !gonePathnames.has(normalizePathname(url)))
+      .filter((url) => !deployedOrCoveredPathnames.has(normalizePathname(url)));
 
     const hasRecentOrganic = filteredOrganicUrls.length !== topPagesUrls.length;
     isFirstRunOfCycle = !hasRecentOrganic;
@@ -995,6 +1043,7 @@ export async function submitForScraping(context) {
     isFirstRunOfCycle=${isFirstRunOfCycle},
     agenticNewThisCycle=${agenticNewThisCycle},
     goneUrls=${goneUrlsCount},
+    deployedOrCoveredUrls=${deployedOrCoveredPathnames.size},
     baseUrl=${site.getBaseURL()},
     siteId=${siteId}`);
 

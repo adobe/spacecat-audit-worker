@@ -1047,6 +1047,247 @@ describe('Prerender Audit', () => {
           expect(resultUrls).to.include('https://example.com/valid');
         });
 
+        describe('deployed/covered URL filtering', () => {
+          const makeOpportunity = (suggestions) => ({
+            getType: () => 'prerender',
+            getSuggestions: sandbox.stub().resolves(suggestions),
+          });
+          const makeSuggestion = (url, data = {}) => ({
+            getStatus: () => 'NEW',
+            getData: () => ({ url, ...data }),
+          });
+          const makeDomainWideSuggestion = (edgeDeployed) => ({
+            getStatus: () => 'NEW',
+            getData: () => ({ isDomainWide: true, ...(edgeDeployed && { edgeDeployed }) }),
+          });
+
+          it('filters organic URLs whose suggestion has edgeDeployed set', async () => {
+            const deployedUrl = 'https://example.com/deployed-page';
+            const freshUrl = 'https://example.com/fresh-page';
+            const mockHandler = await makeHandlerWithAgentic([]);
+            const context = {
+              ...makeContext([]),
+              dataAccess: {
+                SiteTopPage: {
+                  allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                    { getUrl: () => deployedUrl },
+                    { getUrl: () => freshUrl },
+                  ]),
+                },
+                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+                Opportunity: {
+                  allBySiteIdAndStatus: sandbox.stub().resolves([
+                    makeOpportunity([makeSuggestion(deployedUrl, { edgeDeployed: 1234567890 })]),
+                  ]),
+                },
+              },
+            };
+
+            const result = await mockHandler.submitForScraping(context);
+            const resultUrls = result.urls.map((u) => u.url);
+            expect(resultUrls).to.not.include(deployedUrl);
+            expect(resultUrls).to.include(freshUrl);
+          });
+
+          it('filters agentic URLs whose suggestion has edgeDeployed set', async () => {
+            const deployedUrl = 'https://example.com/deployed-agentic';
+            const freshUrl = 'https://example.com/fresh-agentic';
+            const mockHandler = await makeHandlerWithAgentic([deployedUrl, freshUrl]);
+            const context = {
+              ...makeContext([]),
+              dataAccess: {
+                SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+                Opportunity: {
+                  allBySiteIdAndStatus: sandbox.stub().resolves([
+                    makeOpportunity([makeSuggestion(deployedUrl, { edgeDeployed: 1234567890 })]),
+                  ]),
+                },
+              },
+            };
+
+            const result = await mockHandler.submitForScraping(context);
+            const resultUrls = result.urls.map((u) => u.url);
+            expect(resultUrls).to.not.include(deployedUrl);
+            expect(resultUrls).to.include(freshUrl);
+          });
+
+          it('filters URLs with coveredByDomainWide when domain-wide suggestion has edgeDeployed', async () => {
+            const coveredUrl = 'https://example.com/covered-page';
+            const freshUrl = 'https://example.com/fresh-page';
+            const domainWide = makeDomainWideSuggestion(1234567890);
+            const covered = makeSuggestion(coveredUrl, { coveredByDomainWide: 'dw-id-123' });
+            const fresh = makeSuggestion(freshUrl);
+            const mockHandler = await makeHandlerWithAgentic([]);
+            const context = {
+              ...makeContext([]),
+              dataAccess: {
+                SiteTopPage: {
+                  allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                    { getUrl: () => coveredUrl },
+                    { getUrl: () => freshUrl },
+                  ]),
+                },
+                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+                Opportunity: {
+                  allBySiteIdAndStatus: sandbox.stub().resolves([
+                    makeOpportunity([domainWide, covered, fresh]),
+                  ]),
+                },
+              },
+            };
+
+            const result = await mockHandler.submitForScraping(context);
+            const resultUrls = result.urls.map((u) => u.url);
+            expect(resultUrls).to.not.include(coveredUrl);
+            expect(resultUrls).to.include(freshUrl);
+          });
+
+          it('does NOT filter coveredByDomainWide URLs when domain-wide suggestion is not deployed', async () => {
+            const coveredUrl = 'https://example.com/covered-page';
+            const domainWide = makeDomainWideSuggestion(null);
+            const covered = makeSuggestion(coveredUrl, { coveredByDomainWide: 'dw-id-123' });
+            const mockHandler = await makeHandlerWithAgentic([]);
+            const context = {
+              ...makeContext([]),
+              dataAccess: {
+                SiteTopPage: {
+                  allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                    { getUrl: () => coveredUrl },
+                  ]),
+                },
+                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+                Opportunity: {
+                  allBySiteIdAndStatus: sandbox.stub().resolves([
+                    makeOpportunity([domainWide, covered]),
+                  ]),
+                },
+              },
+            };
+
+            const result = await mockHandler.submitForScraping(context);
+            expect(result.urls.map((u) => u.url)).to.include(coveredUrl);
+          });
+
+          it('does not filter any URLs when Opportunity is absent from dataAccess', async () => {
+            const url = 'https://example.com/some-page';
+            const mockHandler = await makeHandlerWithAgentic([]);
+            const context = {
+              ...makeContext([]),
+              dataAccess: {
+                SiteTopPage: {
+                  allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => url }]),
+                },
+                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+              },
+            };
+
+            const result = await mockHandler.submitForScraping(context);
+            expect(result.urls.map((u) => u.url)).to.include(url);
+          });
+
+          it('does not filter any URLs when no prerender opportunity exists', async () => {
+            const url = 'https://example.com/some-page';
+            const mockHandler = await makeHandlerWithAgentic([]);
+            const context = {
+              ...makeContext([]),
+              dataAccess: {
+                SiteTopPage: {
+                  allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => url }]),
+                },
+                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+                Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+              },
+            };
+
+            const result = await mockHandler.submitForScraping(context);
+            expect(result.urls.map((u) => u.url)).to.include(url);
+          });
+
+          it('logs a warning and does not filter when getSuggestions throws', async () => {
+            const url = 'https://example.com/some-page';
+            const brokenOpportunity = {
+              getType: () => 'prerender',
+              getSuggestions: sandbox.stub().rejects(new Error('DB error')),
+            };
+            const mockHandler = await makeHandlerWithAgentic([]);
+            const log = { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() };
+            const context = {
+              ...makeContext([]),
+              log,
+              dataAccess: {
+                SiteTopPage: {
+                  allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => url }]),
+                },
+                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+                Opportunity: {
+                  allBySiteIdAndStatus: sandbox.stub().resolves([brokenOpportunity]),
+                },
+              },
+            };
+
+            const result = await mockHandler.submitForScraping(context);
+            expect(result.urls.map((u) => u.url)).to.include(url);
+            expect(log.warn).to.have.been.calledWithMatch(/deployed\/covered/i);
+          });
+
+          it('skips suggestions with malformed URLs without throwing', async () => {
+            const validUrl = 'https://example.com/valid-page';
+            const mockHandler = await makeHandlerWithAgentic([]);
+            const context = {
+              ...makeContext([]),
+              dataAccess: {
+                SiteTopPage: {
+                  allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                    { getUrl: () => validUrl },
+                  ]),
+                },
+                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+                Opportunity: {
+                  allBySiteIdAndStatus: sandbox.stub().resolves([
+                    makeOpportunity([
+                      { getStatus: () => 'NEW', getData: () => ({ url: 'not-a-url', edgeDeployed: 1 }) },
+                      makeSuggestion(validUrl, { edgeDeployed: 1234567890 }),
+                    ]),
+                  ]),
+                },
+              },
+            };
+
+            const result = await mockHandler.submitForScraping(context);
+            expect(result.urls.map((u) => u.url)).to.not.include(validUrl);
+          });
+
+          it('handles root-pathname suggestion URLs (pathname === "/")', async () => {
+            const rootUrl = 'https://example.com/';
+            const freshUrl = 'https://example.com/other-page';
+            const mockHandler = await makeHandlerWithAgentic([]);
+            const context = {
+              ...makeContext([]),
+              dataAccess: {
+                SiteTopPage: {
+                  allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                    { getUrl: () => rootUrl },
+                    { getUrl: () => freshUrl },
+                  ]),
+                },
+                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+                Opportunity: {
+                  allBySiteIdAndStatus: sandbox.stub().resolves([
+                    makeOpportunity([makeSuggestion(rootUrl, { edgeDeployed: 1234567890 })]),
+                  ]),
+                },
+              },
+            };
+
+            const result = await mockHandler.submitForScraping(context);
+            const resultUrls = result.urls.map((u) => u.url);
+            expect(resultUrls).to.not.include(rootUrl);
+            expect(resultUrls).to.not.include('https://example.com/');
+            expect(resultUrls).to.include(freshUrl);
+          });
+        });
+
       });
 
       it('should include organic URLs even when all are in the recency window when triggered from Slack', async () => {
