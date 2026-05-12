@@ -65,69 +65,6 @@ export function selectTopTopics(topics, count = 5) {
 // const client = StoreClient.createFrom(context);
 // const urls = await client.getUrls(site.getId(), 'llm-content-gaps');
 
-/**
- * Detects LLM content gaps for a single page.
- * Exported so the preflight audit can import and call this directly
- * with its own scrape data, without going through the full audit runner.
- *
- * @param {string} url - Page URL being checked
- * @param {object} scrapeData - Scraped page data from the scraper
- * @param {object} log - Logger instance
- * @returns {Array<object>} Array of detected content gap issues
- */
-export function checkLlmContentGaps(url, _scrapeData, log) {
-  log.info(`[${AUDIT_TYPE}] checking ${url}`);
-  return [
-    {
-      success: false,
-      check: 'content-gap',
-      checkTitle: 'Content gap: AI-powered analytics',
-      description: 'Page has insufficient coverage for topic "AI-powered analytics" (coverage score: 18%).',
-      explanation: 'Expand the page to address key subtopics identified in the Semrush content brief.',
-      topic: 'AI-powered analytics',
-      coverageScore: 18,
-      contentBrief: {
-        recommendedWordCount: 1200,
-        missingSubtopics: ['real-time dashboards', 'predictive insights', 'data connectors'],
-        suggestedHeadings: [
-          'What is AI-powered analytics?',
-          'Key features of AI analytics platforms',
-          'How to integrate AI analytics into your workflow',
-        ],
-        rewriteInstructions: 'Add sections covering real-time dashboards and predictive insights. Include concrete examples and a comparison table of data connectors.',
-      },
-    },
-    {
-      success: false,
-      check: 'content-gap',
-      checkTitle: 'Content gap: enterprise data governance',
-      description: 'Page has insufficient coverage for topic "enterprise data governance" (coverage score: 31%).',
-      explanation: 'Expand the page to address key subtopics identified in the Semrush content brief.',
-      topic: 'enterprise data governance',
-      coverageScore: 31,
-      contentBrief: {
-        recommendedWordCount: 900,
-        missingSubtopics: ['compliance frameworks', 'data lineage', 'role-based access'],
-        suggestedHeadings: [
-          'Data governance in enterprise environments',
-          'Compliance and regulatory requirements',
-          'Implementing role-based access control',
-        ],
-        rewriteInstructions: 'Introduce a dedicated section on compliance frameworks (GDPR, CCPA). Add a data lineage diagram and explain role-based access control.',
-      },
-    },
-    {
-      success: true,
-      check: 'content-gap',
-      checkTitle: 'Sufficient coverage: cloud deployment',
-      description: 'Page adequately covers topic "cloud deployment" (coverage score: 74%).',
-      explanation: 'No action required.',
-      topic: 'cloud deployment',
-      coverageScore: 74,
-    },
-  ];
-}
-
 export function loadTopicsForSite(baseUrl) {
   const hostname = new URL(baseUrl).hostname.replace(/\./g, '-');
   const dataFile = join(dirName, `data/${hostname}-sample.json`);
@@ -137,25 +74,50 @@ export function loadTopicsForSite(baseUrl) {
   return JSON.parse(readFileSync(dataFile, 'utf-8'));
 }
 
+/**
+ * Preflight-compatible handler: loads and scores topics for the site, then
+ * maps them to content-gap findings for each URL in auditContext.previewUrls.
+ * Can be registered directly in PREFLIGHT_HANDLERS or called from auditRunner.
+ *
+ * @param {object} context - Audit context with site and log
+ * @param {object} auditContext - Preflight context with previewUrls and scrapedObjects
+ * @returns {Array<object>} Flat array of content-gap findings across all URLs
+ */
+export function llmContentGapsHandler(context, auditContext) {
+  const { site, log } = context;
+  const { previewUrls, scrapedObjects = {} } = auditContext;
+
+  const allTopics = loadTopicsForSite(site.getBaseURL());
+  const topTopics = selectTopTopics(allTopics);
+
+  return previewUrls.flatMap((url) => {
+    log.info(`[${AUDIT_TYPE}] checking ${url}`);
+    return topTopics.map((t) => ({
+      success: false,
+      check: 'content-gap',
+      checkTitle: `Content gap: ${t.adobe_topic}`,
+      description: `Topic "${t.adobe_topic}" has low AI citation share (${t.citation_share}) and low owned keyword share (${t.owned_keywords_share}) with a search volume of ${t.volume}.`,
+      explanation: 'Expand content coverage for this topic to capture untapped search and AI citation opportunities.',
+      url,
+      scrapeData: scrapedObjects[url],
+      topic: t.adobe_topic,
+      topicLabel: t.semrush_topic,
+      volume: t.volume,
+      citationShare: t.citation_share,
+      ownedKeywordsShare: t.owned_keywords_share,
+      opportunityScore: t.opportunityScore,
+    }));
+  });
+}
+
 export async function auditRunner(auditUrl, context, site) {
   const { log } = context;
   log.info(`[${AUDIT_TYPE}] selecting top content-gap topics`);
 
-  const allTopics = loadTopicsForSite(site.getBaseURL());
-  const topTopics = selectTopTopics(allTopics);
-  const findings = topTopics.map((t) => ({
-    success: false,
-    check: 'content-gap',
-    checkTitle: `Content gap: ${t.adobe_topic}`,
-    description: `Topic "${t.adobe_topic}" has low AI citation share (${t.citation_share}) and low owned keyword share (${t.owned_keywords_share}) with a search volume of ${t.volume}.`,
-    explanation: 'Expand content coverage for this topic to capture untapped search and AI citation opportunities.',
-    topic: t.adobe_topic,
-    topicLabel: t.semrush_topic,
-    volume: t.volume,
-    citationShare: t.citation_share,
-    ownedKeywordsShare: t.owned_keywords_share,
-    opportunityScore: t.opportunityScore,
-  }));
+  const findings = llmContentGapsHandler(
+    { ...context, site },
+    { previewUrls: [auditUrl] },
+  );
 
   return {
     auditResult: {

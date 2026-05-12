@@ -17,7 +17,7 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import {
-  checkLlmContentGaps,
+  llmContentGapsHandler,
   selectTopTopics,
 } from '../../../src/llm-content-gaps/handler.js';
 import { createOpportunityData } from '../../../src/llm-content-gaps/opportunity-data-mapper.js';
@@ -155,6 +155,8 @@ describe('LLM Content Gaps Handler', function () {
         checkTitle: 'Content gap: Topic A',
         description: 'Topic "Topic A" has low AI citation share (0) and low owned keyword share (0) with a search volume of 1000.',
         explanation: 'Expand content coverage for this topic to capture untapped search and AI citation opportunities.',
+        url: auditUrl,
+        scrapeData: undefined,
         topic: 'Topic A',
         topicLabel: 'Label A',
         volume: 1000,
@@ -175,15 +177,59 @@ describe('LLM Content Gaps Handler', function () {
     });
   });
 
-  // ─── checkLlmContentGaps ───────────────────────────────────────────────────
+  // ─── llmContentGapsHandler ─────────────────────────────────────────────────
 
-  describe('checkLlmContentGaps', () => {
-    it('logs the url and returns the stub findings', () => {
-      const findings = checkLlmContentGaps(auditUrl, null, context.log);
+  describe('llmContentGapsHandler', () => {
+    it('returns 5 findings per URL and logs each check', async () => {
+      const { llmContentGapsHandler: handler } = await esmock('../../../src/llm-content-gaps/handler.js', {
+        fs: {
+          existsSync: sandbox.stub().returns(true),
+          readFileSync: sandbox.stub().returns(JSON.stringify(fixtureTopics)),
+        },
+      });
+
+      const findings = handler(
+        { site, log: context.log },
+        { previewUrls: [auditUrl] },
+      );
+
+      expect(findings).to.have.length(5);
       expect(context.log.info).to.have.been.calledWith(`[llm-content-gaps] checking ${auditUrl}`);
-      expect(findings).to.be.an('array').with.length(3);
-      expect(findings.filter((f) => !f.success)).to.have.length(2);
-      expect(findings.filter((f) => f.success)).to.have.length(1);
+      expect(findings[0].url).to.equal(auditUrl);
+      expect(findings[0].scrapeData).to.be.undefined;
+    });
+
+    it('returns findings for every URL in previewUrls', async () => {
+      const { llmContentGapsHandler: handler } = await esmock('../../../src/llm-content-gaps/handler.js', {
+        fs: {
+          existsSync: sandbox.stub().returns(true),
+          readFileSync: sandbox.stub().returns(JSON.stringify(fixtureTopics)),
+        },
+      });
+
+      const urls = [`${auditUrl}/page1`, `${auditUrl}/page2`];
+      const findings = handler({ site, log: context.log }, { previewUrls: urls });
+
+      expect(findings).to.have.length(10); // 2 URLs × 5 topics
+      expect(findings.slice(0, 5).every((f) => f.url === urls[0])).to.be.true;
+      expect(findings.slice(5).every((f) => f.url === urls[1])).to.be.true;
+    });
+
+    it('attaches scrapeData from scrapedObjects to each finding', async () => {
+      const { llmContentGapsHandler: handler } = await esmock('../../../src/llm-content-gaps/handler.js', {
+        fs: {
+          existsSync: sandbox.stub().returns(true),
+          readFileSync: sandbox.stub().returns(JSON.stringify(fixtureTopics)),
+        },
+      });
+
+      const scrapeData = { body: '<p>test</p>' };
+      const findings = handler(
+        { site, log: context.log },
+        { previewUrls: [auditUrl], scrapedObjects: { [auditUrl]: scrapeData } },
+      );
+
+      expect(findings[0].scrapeData).to.deep.equal(scrapeData);
     });
   });
 
@@ -198,6 +244,8 @@ describe('LLM Content Gaps Handler', function () {
       success: false,
       check: 'content-gap',
       checkTitle: 'Content gap: Topic A',
+      url: auditUrl,
+      scrapeData: undefined,
       topic: 'Topic A',
       topicLabel: 'Label A',
       volume: 1000,
