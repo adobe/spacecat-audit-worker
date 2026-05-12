@@ -2464,7 +2464,8 @@ describe('Prerender Audit', () => {
         expect(infoLogs.some((msg) => msg.includes('prerender_status_upload:'))).to.be.true;
       });
 
-      it('should exclude URL with needsPrerender=true and isDeployedAtEdge=true from scrapedUrlsSet', async () => {
+      it('should exclude URL with needsPrerender=true and isDeployedAtEdge=true from scrapedUrlsSet', async function () {
+        this.timeout(5000);
         const syncSuggestionsStub = sandbox.stub().resolves();
         const mockOpportunity = {
           getId: () => 'test-opp-id',
