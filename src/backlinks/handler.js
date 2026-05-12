@@ -41,6 +41,12 @@ const BRIGHT_DATA_VALIDATE_URLS = 'BRIGHT_DATA_VALIDATE_URLS';
 const BRIGHT_DATA_MAX_RESULTS = 'BRIGHT_DATA_MAX_RESULTS';
 const BRIGHT_DATA_REQUEST_DELAY_MS = 'BRIGHT_DATA_REQUEST_DELAY_MS';
 
+// Matches <meta name="robots" content="...noindex..."> in both attribute orderings.
+const NOINDEX_META_RE = [
+  /<meta[^>]+name=["']robots["'][^>]*content=["'][^"']*noindex/i,
+  /<meta[^>]+content=["'][^"']*noindex[^"']*["'][^>]*name=["']robots["']/i,
+];
+
 function getEnvBool(env, key, defaultValue) {
   if (env?.[key] === undefined) {
     return defaultValue;
@@ -55,7 +61,7 @@ function getEnvInt(env, key, defaultValue) {
 
 /**
  * Detects whether a 2xx response is actually a soft 404.
- * Checks (in order): X-Robots-Tag noindex header, <meta robots noindex>, title pattern.
+ * Checks (in order): X-Robots-Tag noindex header, <meta robots noindex>, body text patterns.
  *
  * @param {Response} response - Fetch response (must be ok/2xx).
  * @param {string} url - The URL that was fetched (used for logging only).
@@ -84,6 +90,13 @@ async function isSoft404(response, url, log) {
     return false;
   }
 
+  // 2. <meta name="robots" content="noindex">
+  if (NOINDEX_META_RE.some((re) => re.test(body))) {
+    log.info(`Backlink ${url} is a soft 404 (noindex meta tag)`);
+    return true;
+  }
+
+  // 3. Body text patterns (strips tags, multilingual)
   if (isSoft404Body(body)) {
     log.info(`Backlink ${url} is a soft 404 (body pattern matched)`);
     return true;
