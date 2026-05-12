@@ -1560,11 +1560,12 @@ describe('Prerender Audit', () => {
 
       it('should warn when agentic URL fetch fails', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js',
-          {},
           {
             '../../../src/prerender/utils/utils.js': {
               isPaidLLMOCustomer: sandbox.stub().resolves(false),
             },
+          },
+          {
             '../../../src/utils/agentic-urls.js': {
               getTopAgenticLiveUrlsFromAthena: async () => { throw new Error('athena fetch failed'); },
               getPreferredBaseUrl: (site, ctx) => ctx?.finalUrl || site.getBaseURL(),
@@ -1836,11 +1837,12 @@ describe('Prerender Audit', () => {
         getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata); // scrape.json with 403 error
 
         const mockHandlerWithS3 = await esmock('../../../src/prerender/handler.js',
-          {},
           {
             '../../../src/prerender/utils/utils.js': {
               isPaidLLMOCustomer: sandbox.stub().resolves(false),
             },
+          },
+          {
             '../../../src/common/opportunity.js': {
               convertToOpportunity: convertToOpportunityStub,
             },
@@ -2477,11 +2479,11 @@ describe('Prerender Audit', () => {
             '../../../src/common/opportunity.js': {
               convertToOpportunity: sandbox.stub().resolves(mockOpportunity),
             },
-          },
-          {
             '../../../src/prerender/utils/utils.js': {
               isPaidLLMOCustomer: sandbox.stub().resolves(false),
             },
+          },
+          {
             '../../../src/prerender/utils/html-comparator.js': {
               analyzeHtmlForPrerender: sandbox.stub().resolves({
                 needsPrerender: true,
@@ -4317,7 +4319,6 @@ describe('Prerender Audit', () => {
         '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
         },
-      }, {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sandbox.stub().resolves(false),
         },
@@ -4379,7 +4380,6 @@ describe('Prerender Audit', () => {
         '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
         },
-      }, {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sandbox.stub().resolves(false),
         },
@@ -4436,7 +4436,6 @@ describe('Prerender Audit', () => {
         '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
         },
-      }, {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sandbox.stub().resolves(false),
         },
@@ -4496,7 +4495,6 @@ describe('Prerender Audit', () => {
             return null;
           },
         },
-      }, {
         '../../../src/prerender/utils/utils.js': {
           isPaidLLMOCustomer: sandbox.stub().resolves(false),
         },
@@ -4671,13 +4669,13 @@ describe('Prerender Audit', () => {
       const html = '<html><body><p>x</p></body></html>';
       const mockHandler = await esmock('../../../src/prerender/handler.js',
         {
-          '../../../src/utils/s3-utils.js': {
-            getObjectFromKey: async () => html,
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sandbox.stub().resolves(false),
           },
         },
         {
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: sandbox.stub().resolves(false),
+          '../../../src/utils/s3-utils.js': {
+            getObjectFromKey: async () => html,
           },
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: async () => ['https://example.com/agentic'],
@@ -5680,11 +5678,12 @@ describe('Prerender Audit', () => {
       it('should trigger getObjectFromKey error handling', async () => {
         // Test the catch block in getScrapedHtmlFromS3 by mocking getObjectFromKey to throw
         const mockS3Utils = await esmock('../../../src/prerender/handler.js',
-          {},
           {
             '../../../src/prerender/utils/utils.js': {
               isPaidLLMOCustomer: sandbox.stub().resolves(false),
             },
+          },
+          {
             '../../../src/utils/s3-utils.js': {
               getObjectFromKey: sinon.stub().throws(new Error('S3 connection failed')),
             },
@@ -5739,7 +5738,6 @@ describe('Prerender Audit', () => {
           '../../../src/utils/s3-utils.js': {
             getObjectFromKey: getObjectFromKeyStub,
           },
-        }, {
           '../../../src/prerender/utils/utils.js': {
             isPaidLLMOCustomer: sandbox.stub().resolves(false),
           },
@@ -7869,11 +7867,12 @@ describe('Prerender Audit', () => {
       });
 
       const mockHandler = await esmock('../../../src/prerender/handler.js',
-        {},
         {
           '../../../src/prerender/utils/utils.js': {
             isPaidLLMOCustomer: sandbox.stub().resolves(false),
           },
+        },
+        {
           '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
         },
       );
@@ -7919,11 +7918,12 @@ describe('Prerender Audit', () => {
 
       const mockConvertToOpportunity = sandbox.stub().resolves({ getId: () => 'opp-1', getSuggestions: sandbox.stub().resolves([]) });
       const mockHandlerWithOppty = await esmock('../../../src/prerender/handler.js',
-        {},
         {
           '../../../src/prerender/utils/utils.js': {
             isPaidLLMOCustomer: sandbox.stub().resolves(false),
           },
+        },
+        {
           '../../../src/common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
           '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
         },
@@ -8635,11 +8635,12 @@ describe('Prerender Audit', () => {
       const pageCitabilityAllBySiteIdStub = sinon.stub().resolves([]);
 
       const mockHandler = await esmock('../../../src/prerender/handler.js',
-        {},
         {
           '../../../src/prerender/utils/utils.js': {
             isPaidLLMOCustomer: sandbox.stub().resolves(false),
           },
+        },
+        {
           '../../../src/prerender/utils/html-comparator.js': {
             analyzeHtmlForPrerender: sinon.stub().resolves({
               needsPrerender: false,
