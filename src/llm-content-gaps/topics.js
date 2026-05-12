@@ -13,18 +13,32 @@
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
+const FALLBACK_HOSTNAME = 'adobe-com';
+
 /**
  * Loads the per-site topic dataset from the bundled data directory.
  * The filename is derived from the site hostname (e.g. adobe.com → adobe-com-sample.json).
- * Throws if no data file exists for the given site.
+ * Falls back to the adobe.com dataset if no data file exists for the given site.
  */
 export function loadTopicsForSite(baseUrl) {
   const hostname = new URL(baseUrl).hostname.replace(/\./g, '-');
-  const dataFile = join(process.cwd(), `src/llm-content-gaps/data/${hostname}-sample.json`);
-  if (!existsSync(dataFile)) {
-    throw new Error(`No topic data available for ${baseUrl} (expected src/llm-content-gaps/data/${hostname}-sample.json)`);
-  }
-  return JSON.parse(readFileSync(dataFile, 'utf-8'));
+  const dataDir = join(process.cwd(), 'src/llm-content-gaps/data');
+  const dataFile = join(dataDir, `${hostname}-sample.json`);
+  const file = existsSync(dataFile) ? dataFile : join(dataDir, `${FALLBACK_HOSTNAME}-sample.json`);
+  return JSON.parse(readFileSync(file, 'utf-8'));
+}
+
+/**
+ * Loads the per-site content example from the bundled data directory.
+ * The filename is derived from the site hostname (e.g. adobe.com → adobe-com-content-example.json).
+ * Falls back to the adobe.com content example if no file exists for the given site.
+ */
+export function loadContentForSite(baseUrl) {
+  const hostname = new URL(baseUrl).hostname.replace(/\./g, '-');
+  const dataDir = join(process.cwd(), 'src/llm-content-gaps/data');
+  const dataFile = join(dataDir, `${hostname}-content-example.json`);
+  const file = existsSync(dataFile) ? dataFile : join(dataDir, `${FALLBACK_HOSTNAME}-content-example.json`);
+  return JSON.parse(readFileSync(file, 'utf-8'));
 }
 
 /**

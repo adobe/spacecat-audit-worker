@@ -21,7 +21,7 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { AUDIT_TYPE } from './constants.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { loadTopicsForSite, selectTopTopics } from './topics.js';
+import { loadTopicsForSite, selectTopTopics, loadContentForSite } from './topics.js';
 
 /**
  * Preflight-compatible handler: loads and scores topics for the site, then
@@ -38,6 +38,7 @@ export function llmContentGapsHandler(context, auditContext) {
 
   const allTopics = loadTopicsForSite(site.getBaseURL());
   const topTopics = selectTopTopics(allTopics);
+  const contentExample = loadContentForSite(site.getBaseURL());
 
   return previewUrls.flatMap((url) => {
     log.info(`[${AUDIT_TYPE}] checking ${url}`);
@@ -55,6 +56,7 @@ export function llmContentGapsHandler(context, auditContext) {
       citationShare: t.citation_share,
       ownedKeywordsShare: t.owned_keywords_share,
       opportunityScore: t.opportunityScore,
+      contentExample,
     }));
   });
 }
