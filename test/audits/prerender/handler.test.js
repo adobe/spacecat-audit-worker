@@ -358,7 +358,25 @@ describe('Prerender Audit', () => {
         expect(result.urls).to.deep.equal([{ url: 'https://example.com' }]);
       });
 
-      it('should use overrideBaseURL as fallback URL when no URLs found', async () => {
+      it('should use overrideBaseURL as fallback URL when no URLs found', async function () {
+        this.timeout(5000);
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-utils': {
+            detectBotBlocker: sandbox.stub().resolves({ crawlable: true, confidence: 0 }),
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sandbox.stub().resolves(false),
+          },
+        }, {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
+            getPreferredBaseUrl: (site) => {
+              const override = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL;
+              return override || site.getBaseURL();
+            },
+          },
+        });
+
         const context = {
           site: {
             getId: () => 'test-site-id',
@@ -379,7 +397,7 @@ describe('Prerender Audit', () => {
           auditContext: { next: 'process-content-and-generate-opportunities', auditId: 'test-audit-id', auditType: 'prerender' },
         };
 
-        const result = await submitForScraping(context);
+        const result = await mockHandler.submitForScraping(context);
         expect(result.urls).to.deep.equal([{ url: 'https://www.override.com' }]);
       });
 
@@ -760,8 +778,12 @@ describe('Prerender Audit', () => {
         submittedUrls.forEach((u) => expect(u).to.not.include('www.'));
       });
 
-      it('uses overrideBaseURL from site config as domain for organic and included URL rebasing', async () => {
+      it('uses overrideBaseURL from site config as domain for organic and included URL rebasing', async function () {
+        this.timeout(5000);
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-utils': {
+            detectBotBlocker: sandbox.stub().resolves({ crawlable: true, confidence: 0 }),
+          },
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: async () => [],
           },
