@@ -859,7 +859,10 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(mockOpportunity.setScopeType).to.have.been.calledTwice;
       expect(mockOpportunity.setScopeType.firstCall).to.have.been.calledWith('brand');
       expect(mockOpportunity.setScopeType.secondCall).to.have.been.calledWith(null);
-      expect(mockOpportunity.setScopeId).to.have.been.calledOnceWith('brand-uuid-123');
+      // setScopeId is called twice: first with the brand (throws), then with null (rollback).
+      expect(mockOpportunity.setScopeId).to.have.been.calledTwice;
+      expect(mockOpportunity.setScopeId.firstCall).to.have.been.calledWith('brand-uuid-123');
+      expect(mockOpportunity.setScopeId.secondCall).to.have.been.calledWith(null);
     });
 
     it('should ignore inbound brandId from message and use server-side resolved brand', async () => {
