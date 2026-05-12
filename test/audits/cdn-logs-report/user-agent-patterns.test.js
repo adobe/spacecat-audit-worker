@@ -127,6 +127,7 @@ describe('User Agent Patterns', () => {
       expect(inferProviderFromUserAgent('ClaudeBot')).to.equal('Anthropic');
       expect(inferProviderFromUserAgent('Anthropic-SearchBot')).to.equal('Anthropic');
       expect(inferProviderFromUserAgent('Gemini-Deep-Research')).to.equal('Gemini');
+      expect(inferProviderFromUserAgent('Google-AI-Mode')).to.equal('Google AI Mode');
       expect(inferProviderFromUserAgent('GoogleAgent-Chrome')).to.equal('Google');
       expect(inferProviderFromUserAgent('Google-Agent')).to.equal('Google');
       expect(inferProviderFromUserAgent('google-notebooklm')).to.equal('Google');
