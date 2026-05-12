@@ -22,6 +22,8 @@ import { createOpportunityData } from '../../../src/llm-content-gaps/opportunity
 use(sinonChai);
 use(chaiAsPromised);
 
+const fixtureContent = { id: 1, name: 'Test content', text: 'Sample text' };
+
 // 7 rows, 6 unique topics; Topic A appears twice to exercise deduplication.
 // Scores (volume * (1-citation) * (1-owned)): A=1000, B=500, C=400, D=300, E=200, F=100
 const fixtureTopics = [
@@ -115,14 +117,41 @@ describe('LLM Content Gaps Handler', function () {
       expect(existsSyncStub.firstCall.args[0]).to.include('adobe-com-sample.json');
     });
 
-    it('throws when no data file is available for the site', async () => {
+    it('falls back to adobe-com when no data file exists for the site', async () => {
+      const readFileSyncStub = sandbox.stub().returns(JSON.stringify(fixtureTopics));
       const { loadTopicsForSite } = await esmock('../../../src/llm-content-gaps/topics.js', {
-        fs: { existsSync: sandbox.stub().returns(false), readFileSync: sandbox.stub() },
+        fs: { existsSync: sandbox.stub().returns(false), readFileSync: readFileSyncStub },
       });
 
-      expect(() => loadTopicsForSite('https://unknown.com')).to.throw(
-        'No topic data available for https://unknown.com (expected src/llm-content-gaps/data/unknown-com-sample.json)',
-      );
+      const result = loadTopicsForSite('https://unknown.com');
+      expect(result).to.deep.equal(fixtureTopics);
+      expect(readFileSyncStub.firstCall.args[0]).to.include('adobe-com-sample.json');
+    });
+  });
+
+  // ─── loadContentForSite ─────────────────────────────────────────────────────
+
+  describe('loadContentForSite', () => {
+    it('returns parsed JSON when the content file exists', async () => {
+      const readFileSyncStub = sandbox.stub().returns(JSON.stringify(fixtureContent));
+      const { loadContentForSite } = await esmock('../../../src/llm-content-gaps/topics.js', {
+        fs: { existsSync: sandbox.stub().returns(true), readFileSync: readFileSyncStub },
+      });
+
+      const result = loadContentForSite('https://adobe.com');
+      expect(result).to.deep.equal(fixtureContent);
+      expect(readFileSyncStub.firstCall.args[0]).to.include('adobe-com-content-example.json');
+    });
+
+    it('falls back to adobe-com when no content file exists for the site', async () => {
+      const readFileSyncStub = sandbox.stub().returns(JSON.stringify(fixtureContent));
+      const { loadContentForSite } = await esmock('../../../src/llm-content-gaps/topics.js', {
+        fs: { existsSync: sandbox.stub().returns(false), readFileSync: readFileSyncStub },
+      });
+
+      const result = loadContentForSite('https://unknown.com');
+      expect(result).to.deep.equal(fixtureContent);
+      expect(readFileSyncStub.firstCall.args[0]).to.include('adobe-com-content-example.json');
     });
   });
 
@@ -132,6 +161,7 @@ describe('LLM Content Gaps Handler', function () {
   const topicsMock = {
     '../../../src/llm-content-gaps/topics.js': {
       loadTopicsForSite: () => fixtureTopics,
+      loadContentForSite: () => fixtureContent,
       selectTopTopics,
     },
   };
@@ -165,6 +195,7 @@ describe('LLM Content Gaps Handler', function () {
         citationShare: 0,
         ownedKeywordsShare: 0,
         opportunityScore: 1000,
+        contentExample: fixtureContent,
       });
     });
 
