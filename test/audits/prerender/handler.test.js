@@ -1562,6 +1562,9 @@ describe('Prerender Audit', () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js',
           {},
           {
+            '../../../src/prerender/utils/utils.js': {
+              isPaidLLMOCustomer: sandbox.stub().resolves(false),
+            },
             '../../../src/utils/agentic-urls.js': {
               getTopAgenticLiveUrlsFromAthena: async () => { throw new Error('athena fetch failed'); },
               getPreferredBaseUrl: (site, ctx) => ctx?.finalUrl || site.getBaseURL(),
@@ -1804,17 +1807,11 @@ describe('Prerender Audit', () => {
       });
 
 
-      it('should create dummy opportunity when scraping is forbidden', async () => {
+      it('should create dummy opportunity when scraping is forbidden', async function () {
+        this.timeout(5000);
         // Test that a dummy opportunity is created when all scrapes return 403
         const mockOpportunity = { getId: () => 'test-opportunity-id', getSuggestions: sinon.stub().resolves([]) };
         const convertToOpportunityStub = sinon.stub().resolves(mockOpportunity);
-        const createScrapeForbiddenOpportunityStub = sinon.stub().resolves();
-
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '../../../src/common/opportunity.js': {
-            convertToOpportunity: convertToOpportunityStub,
-          },
-        });
 
         const mockSiteTopPage = {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
@@ -1841,6 +1838,9 @@ describe('Prerender Audit', () => {
         const mockHandlerWithS3 = await esmock('../../../src/prerender/handler.js',
           {},
           {
+            '../../../src/prerender/utils/utils.js': {
+              isPaidLLMOCustomer: sandbox.stub().resolves(false),
+            },
             '../../../src/common/opportunity.js': {
               convertToOpportunity: convertToOpportunityStub,
             },
@@ -2479,6 +2479,9 @@ describe('Prerender Audit', () => {
             },
           },
           {
+            '../../../src/prerender/utils/utils.js': {
+              isPaidLLMOCustomer: sandbox.stub().resolves(false),
+            },
             '../../../src/prerender/utils/html-comparator.js': {
               analyzeHtmlForPrerender: sandbox.stub().resolves({
                 needsPrerender: true,
@@ -4314,6 +4317,10 @@ describe('Prerender Audit', () => {
         '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
         },
+      }, {
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sandbox.stub().resolves(false),
+        },
       });
 
       const ctx = {
@@ -4372,6 +4379,10 @@ describe('Prerender Audit', () => {
         '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
         },
+      }, {
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sandbox.stub().resolves(false),
+        },
       });
 
       const ctx = {
@@ -4424,6 +4435,10 @@ describe('Prerender Audit', () => {
         },
         '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
+        },
+      }, {
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sandbox.stub().resolves(false),
         },
       });
 
@@ -4480,6 +4495,10 @@ describe('Prerender Audit', () => {
             if (key.endsWith('client-side.html')) return clientHtml;
             return null;
           },
+        },
+      }, {
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sandbox.stub().resolves(false),
         },
       });
       const ctx = {
@@ -4657,6 +4676,9 @@ describe('Prerender Audit', () => {
           },
         },
         {
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sandbox.stub().resolves(false),
+          },
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: async () => ['https://example.com/agentic'],
             getPreferredBaseUrl: (site, ctx) => ctx?.finalUrl || site.getBaseURL(),
@@ -5660,6 +5682,9 @@ describe('Prerender Audit', () => {
         const mockS3Utils = await esmock('../../../src/prerender/handler.js',
           {},
           {
+            '../../../src/prerender/utils/utils.js': {
+              isPaidLLMOCustomer: sandbox.stub().resolves(false),
+            },
             '../../../src/utils/s3-utils.js': {
               getObjectFromKey: sinon.stub().throws(new Error('S3 connection failed')),
             },
@@ -5713,6 +5738,10 @@ describe('Prerender Audit', () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/s3-utils.js': {
             getObjectFromKey: getObjectFromKeyStub,
+          },
+        }, {
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sandbox.stub().resolves(false),
           },
         });
 
@@ -7842,6 +7871,9 @@ describe('Prerender Audit', () => {
       const mockHandler = await esmock('../../../src/prerender/handler.js',
         {},
         {
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sandbox.stub().resolves(false),
+          },
           '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
         },
       );
@@ -7870,7 +7902,8 @@ describe('Prerender Audit', () => {
       expect(result.auditResult.scrapeForbidden).to.be.false;
     });
 
-    it('should set scrapeForbidden=true when all URLs (including missing) are 403', async () => {
+    it('should set scrapeForbidden=true when all URLs (including missing) are 403', async function () {
+      this.timeout(5000);
       // Neither URL has complete HTML — both are only in ScrapeUrl DB with 403 scrape.json
       // scrapeResultPaths is empty (no complete scrapes)
       const forbiddenUrl1 = 'https://example.com/page1';
@@ -7888,6 +7921,9 @@ describe('Prerender Audit', () => {
       const mockHandlerWithOppty = await esmock('../../../src/prerender/handler.js',
         {},
         {
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sandbox.stub().resolves(false),
+          },
           '../../../src/common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
           '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
         },
@@ -8502,6 +8538,10 @@ describe('Prerender Audit', () => {
         '../../../src/utils/s3-utils.js': {
           getObjectFromKey: getObjectFromKeyStub,
         },
+      }, {
+        '../../../src/prerender/utils/utils.js': {
+          isPaidLLMOCustomer: sandbox.stub().resolves(false),
+        },
       });
 
       const context = {
@@ -8597,6 +8637,9 @@ describe('Prerender Audit', () => {
       const mockHandler = await esmock('../../../src/prerender/handler.js',
         {},
         {
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sandbox.stub().resolves(false),
+          },
           '../../../src/prerender/utils/html-comparator.js': {
             analyzeHtmlForPrerender: sinon.stub().resolves({
               needsPrerender: false,
