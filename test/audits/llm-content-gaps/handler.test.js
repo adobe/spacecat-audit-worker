@@ -16,10 +16,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
-import {
-  llmContentGapsHandler,
-  selectTopTopics,
-} from '../../../src/llm-content-gaps/handler.js';
+import { selectTopTopics } from '../../../src/llm-content-gaps/topics.js';
 import { createOpportunityData } from '../../../src/llm-content-gaps/opportunity-data-mapper.js';
 
 use(sinonChai);
@@ -109,7 +106,7 @@ describe('LLM Content Gaps Handler', function () {
       const existsSyncStub = sandbox.stub().returns(true);
       const readFileSyncStub = sandbox.stub().returns(JSON.stringify(fixtureTopics));
 
-      const { loadTopicsForSite } = await esmock('../../../src/llm-content-gaps/handler.js', {
+      const { loadTopicsForSite } = await esmock('../../../src/llm-content-gaps/topics.js', {
         fs: { existsSync: existsSyncStub, readFileSync: readFileSyncStub },
       });
 
@@ -119,7 +116,7 @@ describe('LLM Content Gaps Handler', function () {
     });
 
     it('throws when no data file is available for the site', async () => {
-      const { loadTopicsForSite } = await esmock('../../../src/llm-content-gaps/handler.js', {
+      const { loadTopicsForSite } = await esmock('../../../src/llm-content-gaps/topics.js', {
         fs: { existsSync: sandbox.stub().returns(false), readFileSync: sandbox.stub() },
       });
 
@@ -129,16 +126,21 @@ describe('LLM Content Gaps Handler', function () {
     });
   });
 
+  // Shared topics mock used by auditRunner and llmContentGapsHandler tests.
+  // Provides loadTopicsForSite returning raw fixture data so selectTopTopics
+  // runs against a real, controlled dataset.
+  const topicsMock = {
+    '../../../src/llm-content-gaps/topics.js': {
+      loadTopicsForSite: () => fixtureTopics,
+      selectTopTopics,
+    },
+  };
+
   // ─── auditRunner ────────────────────────────────────────────────────────────
 
   describe('auditRunner', () => {
     it('loads topics for the site and returns the top 5 findings', async () => {
-      const { auditRunner } = await esmock('../../../src/llm-content-gaps/handler.js', {
-        fs: {
-          existsSync: sandbox.stub().returns(true),
-          readFileSync: sandbox.stub().returns(JSON.stringify(fixtureTopics)),
-        },
-      });
+      const { auditRunner } = await esmock('../../../src/llm-content-gaps/handler.js', topicsMock);
 
       const result = await auditRunner(auditUrl, context, site);
 
@@ -168,7 +170,10 @@ describe('LLM Content Gaps Handler', function () {
 
     it('propagates an error when no data file is available for the site', async () => {
       const { auditRunner } = await esmock('../../../src/llm-content-gaps/handler.js', {
-        fs: { existsSync: sandbox.stub().returns(false), readFileSync: sandbox.stub() },
+        '../../../src/llm-content-gaps/topics.js': {
+          loadTopicsForSite: () => { throw new Error('No topic data available for https://adobe.com (expected adobe-com-sample.json)'); },
+          selectTopTopics,
+        },
       });
 
       await expect(auditRunner(auditUrl, context, site)).to.be.rejectedWith(
@@ -181,12 +186,7 @@ describe('LLM Content Gaps Handler', function () {
 
   describe('llmContentGapsHandler', () => {
     it('returns 5 findings per URL and logs each check', async () => {
-      const { llmContentGapsHandler: handler } = await esmock('../../../src/llm-content-gaps/handler.js', {
-        fs: {
-          existsSync: sandbox.stub().returns(true),
-          readFileSync: sandbox.stub().returns(JSON.stringify(fixtureTopics)),
-        },
-      });
+      const { llmContentGapsHandler: handler } = await esmock('../../../src/llm-content-gaps/handler.js', topicsMock);
 
       const findings = handler(
         { site, log: context.log },
@@ -200,12 +200,7 @@ describe('LLM Content Gaps Handler', function () {
     });
 
     it('returns findings for every URL in previewUrls', async () => {
-      const { llmContentGapsHandler: handler } = await esmock('../../../src/llm-content-gaps/handler.js', {
-        fs: {
-          existsSync: sandbox.stub().returns(true),
-          readFileSync: sandbox.stub().returns(JSON.stringify(fixtureTopics)),
-        },
-      });
+      const { llmContentGapsHandler: handler } = await esmock('../../../src/llm-content-gaps/handler.js', topicsMock);
 
       const urls = [`${auditUrl}/page1`, `${auditUrl}/page2`];
       const findings = handler({ site, log: context.log }, { previewUrls: urls });
@@ -216,12 +211,7 @@ describe('LLM Content Gaps Handler', function () {
     });
 
     it('attaches scrapeData from scrapedObjects to each finding', async () => {
-      const { llmContentGapsHandler: handler } = await esmock('../../../src/llm-content-gaps/handler.js', {
-        fs: {
-          existsSync: sandbox.stub().returns(true),
-          readFileSync: sandbox.stub().returns(JSON.stringify(fixtureTopics)),
-        },
-      });
+      const { llmContentGapsHandler: handler } = await esmock('../../../src/llm-content-gaps/handler.js', topicsMock);
 
       const scrapeData = { body: '<p>test</p>' };
       const findings = handler(

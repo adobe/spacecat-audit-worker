@@ -15,64 +15,13 @@
 // prototyping and demonstration purposes. It must be replaced with a real
 // implementation before being enabled on any production site.
 
-import { existsSync, readFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { AUDIT_TYPE } from './constants.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-
-const dirName = dirname(fileURLToPath(import.meta.url));
-
-/**
- * Scores and selects the top content-gap topics from the dataset.
- * Opportunity score = volume × (1 − citation_share) × (1 − owned_keywords_share).
- * High volume with low existing AI and organic presence signals an untapped gap.
- */
-export function selectTopTopics(topics, count = 5) {
-  const seen = new Set();
-  return topics
-    .filter(({ adobe_topic: t }) => {
-      if (seen.has(t)) {
-        return false;
-      }
-      seen.add(t);
-      return true;
-    })
-    .map((t) => ({
-      ...t,
-      opportunityScore: t.volume * (1 - t.citation_share) * (1 - t.owned_keywords_share),
-    }))
-    .sort((a, b) => b.opportunityScore - a.opportunityScore)
-    .slice(0, count);
-}
-
-// Example: custom Spacecat API request
-// import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
-//
-// const { SPACECAT_API_BASE_URL: apiBase, SPACECAT_API_KEY: apiKey } = context.env;
-// const response = await fetch(`${apiBase}/your/custom/endpoint`, {
-//   headers: { 'x-api-key': apiKey },
-// });
-// if (!response.ok) { throw new Error(`API request failed: ${response.status}`); }
-// const data = await response.json();
-//
-// For paginated store endpoints (url-store, sentiment/config), use StoreClient instead:
-// import StoreClient from '../utils/store-client.js';
-// const client = StoreClient.createFrom(context);
-// const urls = await client.getUrls(site.getId(), 'llm-content-gaps');
-
-export function loadTopicsForSite(baseUrl) {
-  const hostname = new URL(baseUrl).hostname.replace(/\./g, '-');
-  const dataFile = join(dirName, `data/${hostname}-sample.json`);
-  if (!existsSync(dataFile)) {
-    throw new Error(`No topic data available for ${baseUrl} (expected ${hostname}-sample.json)`);
-  }
-  return JSON.parse(readFileSync(dataFile, 'utf-8'));
-}
+import { loadTopicsForSite, selectTopTopics } from './topics.js';
 
 /**
  * Preflight-compatible handler: loads and scores topics for the site, then
