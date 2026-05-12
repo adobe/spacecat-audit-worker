@@ -2254,6 +2254,16 @@ describe('TOC (Table of Contents) Audit', () => {
         expect(hasTocInDom($)).to.equal(false);
       });
 
+      it('returns false when list links use bare href="#" (JS tab placeholders, not section anchors)', () => {
+        const $ = cheerioLoad(
+          '<ul class="search-menu__mobile-navtabs-container">'
+          + '<li><a href="#" data-nav="popular">Popular search</a></li>'
+          + '<li><a href="#" data-nav="latest">Must have</a></li>'
+          + '</ul>',
+        );
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
       it('returns false when nav menu has links without # anchors', () => {
         const $ = cheerioLoad(
           '<nav><ul>'
@@ -2305,6 +2315,57 @@ describe('TOC (Table of Contents) Audit', () => {
       it('returns true for element with class containing "cmp-toc__content"', () => {
         const $ = cheerioLoad('<div class="cmp-toc__content"><ul><li>Item</li></ul></div>');
         expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class "abc-toc-xyz" (toc between hyphens)', () => {
+        const $ = cheerioLoad('<nav class="abc-toc-xyz"><ul><li>Item</li></ul></nav>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class "site-toc" (toc at end after hyphen)', () => {
+        const $ = cheerioLoad('<div class="site-toc"><ul><li>Item</li></ul></div>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class "toc-wrapper" (toc at start before hyphen)', () => {
+        const $ = cheerioLoad('<div class="toc-wrapper"><ul><li>Item</li></ul></div>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class "my_toc" (underscore boundary)', () => {
+        const $ = cheerioLoad('<div class="my_toc"><ul><li>Item</li></ul></div>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with multiple classes where one is "toc"', () => {
+        const $ = cheerioLoad('<nav class="nav-bar toc active"><ul><li>Item</li></ul></nav>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+    });
+
+    describe('false positives — must not detect as TOC', () => {
+      it('returns false for Algolia autocomplete widget (class "aa-Autocomplete" contains "toc" as substring)', () => {
+        const $ = cheerioLoad(
+          '<div class="aa-Autocomplete" role="combobox">'
+          + '<input id="autocomplete-0-input" type="search">'
+          + '</div>',
+        );
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns false for element with id "autocomplete-0-label"', () => {
+        const $ = cheerioLoad('<label id="autocomplete-0-label">Search</label>');
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns false for class "doctor" (contains "toc" but not at a word boundary)', () => {
+        const $ = cheerioLoad('<div class="doctor"><p>Content</p></div>');
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns false for class "protocol" (contains "toc" as substring)', () => {
+        const $ = cheerioLoad('<div class="protocol"><p>Content</p></div>');
+        expect(hasTocInDom($)).to.equal(false);
       });
     });
 
