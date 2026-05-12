@@ -27,6 +27,7 @@ describe('Utils Report Uploader', () => {
   let saveExcelReport;
   let uploadAndPublishFile;
   let readFromSharePoint;
+  let readFromSharePointWithRetry;
   let bulkPublishToAdminHlx;
   let sleepStub;
 
@@ -48,6 +49,7 @@ describe('Utils Report Uploader', () => {
     saveExcelReport = reportUploaderModule.saveExcelReport;
     uploadAndPublishFile = reportUploaderModule.uploadAndPublishFile;
     readFromSharePoint = reportUploaderModule.readFromSharePoint;
+    readFromSharePointWithRetry = reportUploaderModule.readFromSharePointWithRetry;
     bulkPublishToAdminHlx = reportUploaderModule.bulkPublishToAdminHlx;
 
     mockContext = {
@@ -136,6 +138,103 @@ describe('Utils Report Uploader', () => {
       );
 
       expect(mockContext.sharepointClient.getDocument).to.have.been.calledWith('/sites/elmo-ui-data/monthly-reports/report-2025.xlsx');
+    });
+  });
+
+  describe('readFromSharePointWithRetry', () => {
+    // PK\x03\x04 — valid XLSX magic bytes
+    const xlsxMagic = Buffer.from([0x50, 0x4B, 0x03, 0x04]);
+    const htmlContent = Buffer.from('<!DOCTYPE html><html>error</html>');
+
+    it('should return buffer immediately when XLSX magic bytes are valid', async () => {
+      const validXlsx = Buffer.concat([xlsxMagic, Buffer.from('rest of file')]);
+      mockContext.sharepointDoc.getDocumentContent.resolves(validXlsx);
+
+      const result = await readFromSharePointWithRetry(
+        'sheet.xlsx',
+        'source-folder',
+        mockContext.sharepointClient,
+        mockContext.log,
+      );
+
+      expect(result).to.deep.equal(validXlsx);
+      expect(mockContext.sharepointDoc.getDocumentContent).to.have.been.calledOnce;
+      expect(sleepStub).to.not.have.been.called;
+    });
+
+    it('should retry and succeed when first response is non-XLSX', async () => {
+      const validXlsx = Buffer.concat([xlsxMagic, Buffer.from('rest of file')]);
+      mockContext.sharepointDoc.getDocumentContent
+        .onFirstCall().resolves(htmlContent)
+        .onSecondCall().resolves(validXlsx);
+
+      const result = await readFromSharePointWithRetry(
+        'sheet.xlsx',
+        'source-folder',
+        mockContext.sharepointClient,
+        mockContext.log,
+      );
+
+      expect(result).to.deep.equal(validXlsx);
+      expect(mockContext.sharepointDoc.getDocumentContent).to.have.been.calledTwice;
+      expect(sleepStub).to.have.been.calledOnce;
+      expect(mockContext.log.warn).to.have.been.calledWith(
+        sinon.match(/sheet=sheet\.xlsx.*folder=source-folder/),
+        'REPORT_UPLOADER',
+      );
+    });
+
+    it('should throw after all retries are exhausted with non-XLSX content', async () => {
+      mockContext.sharepointDoc.getDocumentContent.resolves(htmlContent);
+
+      await expect(
+        readFromSharePointWithRetry(
+          'sheet.xlsx',
+          'source-folder',
+          mockContext.sharepointClient,
+          mockContext.log,
+        ),
+      ).to.be.rejectedWith('SharePoint returned non-XLSX content after 3 attempts -- aborting S3 upload');
+
+      expect(mockContext.sharepointDoc.getDocumentContent).to.have.been.calledThrice;
+      expect(sleepStub).to.have.been.calledTwice;
+      expect(mockContext.log.error).to.have.been.calledWith(
+        sinon.match(/non-XLSX content after 3 attempts/),
+        'REPORT_UPLOADER',
+        sinon.match({ sheetName: 'sheet.xlsx', sourceFolder: 'source-folder' }),
+      );
+    });
+
+    it('should retry when SharePoint returns a buffer shorter than 4 bytes', async () => {
+      const validXlsx = Buffer.concat([xlsxMagic, Buffer.from('rest of file')]);
+      mockContext.sharepointDoc.getDocumentContent
+        .onFirstCall().resolves(Buffer.alloc(0))
+        .onSecondCall().resolves(validXlsx);
+
+      const result = await readFromSharePointWithRetry(
+        'sheet.xlsx',
+        'source-folder',
+        mockContext.sharepointClient,
+        mockContext.log,
+      );
+
+      expect(result).to.deep.equal(validXlsx);
+      expect(sleepStub).to.have.been.calledOnce;
+    });
+
+    it('should propagate SharePoint network errors without retrying', async () => {
+      mockContext.sharepointDoc.getDocumentContent.rejects(new Error('Network failure'));
+
+      await expect(
+        readFromSharePointWithRetry(
+          'sheet.xlsx',
+          'source-folder',
+          mockContext.sharepointClient,
+          mockContext.log,
+        ),
+      ).to.be.rejectedWith('Network failure');
+
+      expect(mockContext.sharepointDoc.getDocumentContent).to.have.been.calledOnce;
     });
   });
 

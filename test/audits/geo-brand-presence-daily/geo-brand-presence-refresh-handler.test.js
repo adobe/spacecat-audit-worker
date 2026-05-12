@@ -34,7 +34,7 @@ describe('Geo Brand Presence Daily Refresh Handler', () => {
   let getLastNumberOfWeeksStub;
   let refreshGeoBrandPresenceDailyHandler;
   let createLLMOSharepointClientStub;
-  let readFromSharePointStub;
+  let readFromSharePointWithRetryStub;
   let uploadExcelToDrsStub;
   let publishBrandPresenceAnalyzeStub;
   let drsClientStub;
@@ -53,7 +53,7 @@ describe('Geo Brand Presence Daily Refresh Handler', () => {
 
     getLastNumberOfWeeksStub = sandbox.stub().returns(LAST_4_WEEKS);
     createLLMOSharepointClientStub = sandbox.stub();
-    readFromSharePointStub = sandbox.stub();
+    readFromSharePointWithRetryStub = sandbox.stub();
 
     uploadExcelToDrsStub = sandbox.stub().resolves('s3://drs-bucket/external/spacecat/test-site-123/job-id/source.xlsx');
     publishBrandPresenceAnalyzeStub = sandbox.stub().resolves('spacecat-job-daily-123');
@@ -107,7 +107,7 @@ describe('Geo Brand Presence Daily Refresh Handler', () => {
     };
 
     createLLMOSharepointClientStub.resolves(sharepointClient);
-    readFromSharePointStub.callsFake(async (filename) => {
+    readFromSharePointWithRetryStub.callsFake(async (filename) => {
       if (filename === 'query-index.xlsx') {
         return createMockQueryIndexExcel([]);
       }
@@ -123,7 +123,7 @@ describe('Geo Brand Presence Daily Refresh Handler', () => {
       },
       '../../../src/utils/report-uploader.js': {
         createLLMOSharepointClient: createLLMOSharepointClientStub,
-        readFromSharePoint: readFromSharePointStub,
+        readFromSharePointWithRetry: readFromSharePointWithRetryStub,
       },
       '../../../src/utils/brand-resolver.js': {
         resolveBrandIdForSite: resolveBrandIdForSiteStub,
@@ -146,7 +146,7 @@ describe('Geo Brand Presence Daily Refresh Handler', () => {
   }
 
   function withSheets(paths) {
-    readFromSharePointStub.callsFake(async (filename) => {
+    readFromSharePointWithRetryStub.callsFake(async (filename) => {
       if (filename === 'query-index.xlsx') return createMockQueryIndexExcel(paths);
       return Buffer.from('mock-sheet-data');
     });
@@ -377,7 +377,7 @@ describe('Geo Brand Presence Daily Refresh Handler', () => {
     });
 
     it('throws when SharePoint query-index fetch fails', async () => {
-      readFromSharePointStub.rejects(new Error('SharePoint unavailable'));
+      readFromSharePointWithRetryStub.rejects(new Error('SharePoint unavailable'));
 
       await expect(refreshGeoBrandPresenceDailyHandler(MESSAGE, context))
         .to.be.rejectedWith(/Failed to read query-index from SharePoint/);

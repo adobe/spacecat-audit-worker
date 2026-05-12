@@ -1,3 +1,66 @@
+## [1.437.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.437.0...v1.437.1) (2026-05-12)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2503](https://github.com/adobe/spacecat-audit-worker/issues/2503)) ([d386779](https://github.com/adobe/spacecat-audit-worker/commit/d3867793b23bfc8de2056088cd05795df93974cc))
+
+# [1.437.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.436.0...v1.437.0) (2026-05-12)
+
+
+### Features
+
+* Broken internal link cross locale ([#2455](https://github.com/adobe/spacecat-audit-worker/issues/2455)) ([78baed1](https://github.com/adobe/spacecat-audit-worker/commit/78baed1bdc590d890112388d25043acf0eebc3ec))
+
+# [1.436.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.435.4...v1.436.0) (2026-05-11)
+
+
+### Features
+
+* add LLMO config schema-sweep script (SITES-43238 step 3a) ([#2470](https://github.com/adobe/spacecat-audit-worker/issues/2470)) ([8c94649](https://github.com/adobe/spacecat-audit-worker/commit/8c94649aa0403d85997484bc3a836aab2f40434f)), closes [#2057](https://github.com/adobe/spacecat-audit-worker/issues/2057)
+
+## [1.435.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.435.3...v1.435.4) (2026-05-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.60.0 ([#2498](https://github.com/adobe/spacecat-audit-worker/issues/2498)) ([cb2eafa](https://github.com/adobe/spacecat-audit-worker/commit/cb2eafa81b1ce571d0656670604b4960786c9558))
+
+## [1.435.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.435.2...v1.435.3) (2026-05-09)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2496](https://github.com/adobe/spacecat-audit-worker/issues/2496)) ([b9e9397](https://github.com/adobe/spacecat-audit-worker/commit/b9e939731c5a387a150f6852bff0b0d6b25b460d))
+
+## [1.435.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.435.1...v1.435.2) (2026-05-08)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-drs-client to v1.7.1 ([#2492](https://github.com/adobe/spacecat-audit-worker/issues/2492)) ([631533c](https://github.com/adobe/spacecat-audit-worker/commit/631533cdaeecc6547b0b570c1fed8a1f899149cd))
+
+## [1.435.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.435.0...v1.435.1) (2026-05-07)
+
+
+### Bug Fixes
+
+* **geo-brand-presence:** retry SharePoint XLSX download on non-XLSX response ([#2477](https://github.com/adobe/spacecat-audit-worker/issues/2477)) ([4982a43](https://github.com/adobe/spacecat-audit-worker/commit/4982a43249fb9cc26444e12fd1a591c9ac905724))
+
+# [1.435.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.434.1...v1.435.0) (2026-05-07)
+
+
+### Features
+
+* Sitemap audit will suggest canonical URL for redirects ([#2487](https://github.com/adobe/spacecat-audit-worker/issues/2487)) ([07c88af](https://github.com/adobe/spacecat-audit-worker/commit/07c88afc2eca9f230e64531cd7eaf3e4bd840f31))
+
+## [1.434.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.434.0...v1.434.1) (2026-05-07)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.59.0 ([#2490](https://github.com/adobe/spacecat-audit-worker/issues/2490)) ([73b800c](https://github.com/adobe/spacecat-audit-worker/commit/73b800c76be057f22feeb6a851add4aa12237176))
+
 # [1.434.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.433.3...v1.434.0) (2026-05-07)
 
 
