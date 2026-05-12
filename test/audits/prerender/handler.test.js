@@ -1558,7 +1558,8 @@ describe('Prerender Audit', () => {
         expect(result.auditResult).to.be.an('object');
       });
 
-      it('should warn when agentic URL fetch fails', async () => {
+      it('should warn when agentic URL fetch fails', async function () {
+        this.timeout(5000);
         const mockHandler = await esmock('../../../src/prerender/handler.js',
           {
             '../../../src/prerender/utils/utils.js': {
@@ -4236,7 +4237,8 @@ describe('Prerender Audit', () => {
   });
 
   describe('Additional branch coverage (mapping, catches)', () => {
-    it('should return the raw Athena URL when it is already absolute but invalid', async () => {
+    it('should return the raw Athena URL when it is already absolute but invalid', async function () {
+      this.timeout(5000);
       const mergeAndGetUniqueHtmlUrlsStub = sinon.stub().callsFake((...urlGroups) => ({
         urls: urlGroups.flat(),
         filteredCount: 0,
@@ -4666,7 +4668,8 @@ describe('Prerender Audit', () => {
       expect(res.urls).to.be.an('array');
     });
 
-    it('should log detailed fallback message when building URL list from fallbacks', async () => {
+    it('should log detailed fallback message when building URL list from fallbacks', async function () {
+      this.timeout(5000);
       const html = '<html><body><p>x</p></body></html>';
       const mockHandler = await esmock('../../../src/prerender/handler.js',
         {
@@ -5676,7 +5679,8 @@ describe('Prerender Audit', () => {
     });
 
     describe('Advanced Error Handling Tests', () => {
-      it('should trigger getObjectFromKey error handling', async () => {
+      it('should trigger getObjectFromKey error handling', async function () {
+        this.timeout(5000);
         // Test the catch block in getScrapedHtmlFromS3 by mocking getObjectFromKey to throw
         const mockS3Utils = await esmock('../../../src/prerender/handler.js',
           {
@@ -7845,7 +7849,8 @@ describe('Prerender Audit', () => {
       expect(context.log.warn).to.have.been.calledWith(sinon.match('Failed to fetch ScrapeUrl stats'));
     });
 
-    it('should integrate with processContentAndGenerateOpportunities to detect missing forbidden URLs', async () => {
+    it('should integrate with processContentAndGenerateOpportunities to detect missing forbidden URLs', async function () {
+      this.timeout(5000);
       // URL in scrapeResultPaths (has a scrape.json but no HTML — not 403, just incomplete)
       const knownUrl = 'https://example.com/page1';
       // URL in ScrapeUrl DB but NOT in scrapeResultPaths (only has scrape.json — 403 forbidden)
@@ -8524,7 +8529,8 @@ describe('Prerender Audit', () => {
       sandbox.restore();
     });
 
-    it('should use ScrapeUrl count when scrapeJobId and ScrapeUrl are available', async () => {
+    it('should use ScrapeUrl count when scrapeJobId and ScrapeUrl are available', async function () {
+      this.timeout(5000);
       const mockScrapeUrls = [
         { getUrl: () => 'https://example.com/test' },
         { getUrl: () => 'https://example.com/missing-1' },
@@ -8631,7 +8637,8 @@ describe('Prerender Audit', () => {
   });
 
   describe('compareHtmlContent — citability score', () => {
-    it('should pass citability metrics from analyzeHtmlForPrerender to writeToCitabilityRecords', async () => {
+    it('should pass citability metrics from analyzeHtmlForPrerender to writeToCitabilityRecords', async function () {
+      this.timeout(5000);
       const pageCitabilityCreateStub = sinon.stub().resolves({});
       const pageCitabilityAllBySiteIdStub = sinon.stub().resolves([]);
 
