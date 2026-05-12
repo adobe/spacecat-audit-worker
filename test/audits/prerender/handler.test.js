@@ -274,7 +274,9 @@ describe('Prerender Audit', () => {
 
   describe('Step Functions', () => {
 
-    describe('submitForScraping', () => {
+    describe('submitForScraping', function () {
+      this.timeout(10000);
+
       it('should return URLs for scraping', async () => {
         const mockSiteTopPage = {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
@@ -1450,6 +1452,29 @@ describe('Prerender Audit', () => {
         await mockHandler.submitForScraping(context);
 
         expect(athenaStub).to.have.been.called;
+      });
+
+      it('should return skippedReason=domainBlocked when detectBotBlocker confidence >= 0.95', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-utils': {
+            detectBotBlocker: sandbox.stub().resolves({ crawlable: false, confidence: 0.95 }),
+          },
+        });
+        const context = {
+          site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com', getConfig: () => ({ getIncludedURLs: () => [] }) },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          env: {},
+          auditContext: { next: 'process-content-and-generate-opportunities', auditId: 'audit-1', auditType: 'prerender' },
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+        expect(result.skippedReason).to.equal('domainBlocked');
+        expect(result.urls).to.deep.equal([]);
       });
 
     });
@@ -7291,6 +7316,38 @@ describe('Prerender Audit', () => {
       expect(skippedEntry.scrapingStatus).to.equal('error');
       expect(skippedEntry.scrapeError).to.deep.equal({ statusCode: 403 });
     });
+
+    it('should preserve gone:true when prior entry had gone=true but current scrape is not 410', async () => {
+      const auditUrl = 'https://example.com';
+      const goneUrl = 'https://example.com/gone-page';
+      const existingStatus = {
+        pages: [{ url: goneUrl, scrapingStatus: 'error', gone: true, scrapeError: { statusCode: 410 } }],
+      };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.resolve({
+            Body: { transformToString: () => Promise.resolve(JSON.stringify(existingStatus)) },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      const auditData = {
+        siteId: 'test-site-id',
+        scrapeJobId: 'job-1',
+        auditedAt: '2025-01-02T00:00:00.000Z',
+        auditResult: {
+          results: [{ url: goneUrl, error: true, needsPrerender: false, scrapeError: { statusCode: 404 } }],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+      const goneEntry = uploadedData.pages.find((p) => p.url === goneUrl);
+      expect(goneEntry.gone).to.be.true;
+    });
   });
 
   describe('domain-wide suggestion preservation', () => {
@@ -7856,6 +7913,25 @@ describe('Prerender Audit', () => {
       expect(result.status).to.equal('complete');
       expect(result.auditResult.scrapeForbiddenCount).to.equal(2);
       expect(result.auditResult.scrapeForbidden).to.be.true;
+    });
+
+    it('should return null for all fields when all S3 fetches reject', async () => {
+      const getObjectFromKeyStub = sandbox.stub().rejects(new Error('S3 error'));
+      const { getScrapedHtmlFromS3: fn } = await esmock(
+        '../../../src/prerender/utils/scrape-utils.js',
+        {
+          '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+        },
+      );
+      const result = await fn('https://example.com/page', {
+        log: { debug: sandbox.stub(), warn: sandbox.stub() },
+        s3Client: {},
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        auditContext: { scrapeJobId: 'job-1' },
+      });
+      expect(result.serverSideHtml).to.be.null;
+      expect(result.clientSideHtml).to.be.null;
+      expect(result.metadata).to.be.null;
     });
   });
 

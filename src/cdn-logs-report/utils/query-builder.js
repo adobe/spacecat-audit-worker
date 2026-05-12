@@ -240,10 +240,7 @@ export function buildExcludedUrlSuffixesFilter(suffixes = []) {
   return `AND NOT regexp_like(url, '${pattern}')`;
 }
 
-function buildStatusFilter(statuses = []) {
-  if (!Array.isArray(statuses) || statuses.length === 0) {
-    return '';
-  }
+function buildStatusFilter(statuses) {
   return `AND status IN (${statuses.join(', ')})`;
 }
 
