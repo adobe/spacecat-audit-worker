@@ -205,8 +205,8 @@ async function getTocDetails($, url, pageTags, log, context, scrapedAt) {
       const placement = determineTocPlacement($, getHeadingSelector);
       const headingsData = extractTocData($, getHeadingSelector);
 
-      if (headingsData.length === 0) {
-        log.debug(`[TOC Detection] No headings found for TOC suggestion for ${url}, skipping`);
+      if (headingsData.length <= 1) {
+        log.debug(`[TOC Detection] ${headingsData.length === 0 ? 'No headings' : 'Only one heading'} found for TOC suggestion for ${url}, skipping`);
       } else {
         result.suggestedPlacement = placement;
         result.transformRules = {
