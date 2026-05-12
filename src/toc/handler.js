@@ -96,10 +96,12 @@ export const TOPPAGES_CHECK = {
  * @returns {boolean} True if a TOC is detected in the DOM
  */
 export function hasTocInDom($) {
-  // Signal 1: list (ul/ol) with 2+ internal anchor links (href="#...")
+  // Signal 1: list (ul/ol) with 2+ internal anchor links (href="#section-id").
+  // Exclude bare href="#" (JavaScript tab/nav placeholders) — only count links
+  // with a non-empty fragment so search menus and tab widgets don't false-positive.
   let anchorListFound = false;
   $('ul, ol').each((_, listEl) => {
-    if ($(listEl).find('a[href^="#"]').length >= 2) {
+    if ($(listEl).find('a[href^="#"]:not([href="#"])').length >= 2) {
       anchorListFound = true;
       return false; // break the each loop
     }
@@ -109,16 +111,28 @@ export function hasTocInDom($) {
     return true;
   }
 
-  // Signal 2: elements with TOC-related class or id names
-  const tocPatterns = [
-    'toc',
+  // Signal 2: elements with TOC-related class or id names.
+  // Use a regex with hyphen/underscore word boundaries for the short "toc" token to avoid
+  // false positives from substrings like "autocomplete" (au-toc-omplete has letters, not
+  // separators, around "toc"). Longer compound patterns are safe with CSS *=.
+  const TOC_WORD_RE = /(?:^|[-_\s])toc(?:[-_\s]|$)/i;
+  const tocWordMatch = $('[class], [id]').toArray().some((el) => {
+    const cls = $(el).attr('class') || '';
+    const id = $(el).attr('id') || '';
+    return TOC_WORD_RE.test(cls) || TOC_WORD_RE.test(id);
+  });
+  if (tocWordMatch) {
+    return true;
+  }
+
+  const substringPatterns = [
     'table-of-contents',
     'tableofcontents',
     'anchor-list',
     'anchor__list',
     'cmp-toc__content',
   ];
-  return tocPatterns.some(
+  return substringPatterns.some(
     (pattern) => $(`[class*="${pattern}"], [id*="${pattern}"]`).length > 0,
   );
 }
@@ -205,8 +219,8 @@ async function getTocDetails($, url, pageTags, log, context, scrapedAt) {
       const placement = determineTocPlacement($, getHeadingSelector);
       const headingsData = extractTocData($, getHeadingSelector);
 
-      if (headingsData.length === 0) {
-        log.debug(`[TOC Detection] No headings found for TOC suggestion for ${url}, skipping`);
+      if (headingsData.length <= 1) {
+        log.debug(`[TOC Detection] ${headingsData.length === 0 ? 'No headings' : 'Only one heading'} found for TOC suggestion for ${url}, skipping`);
       } else {
         result.suggestedPlacement = placement;
         result.transformRules = {
@@ -342,8 +356,6 @@ export async function submitForScraping(context) {
   return {
     urls: topPages.map((url) => ({ url })),
     siteId: site.getId(),
-    processingType: auditType,
-    options: { storagePrefix: auditType },
     maxScrapeAge: 24,
   };
 }
@@ -537,6 +549,7 @@ export async function processTocResults(context) {
       );
       return { fullAuditRef: baseURL, auditResult };
     }
+
     const auditPromises = Array.from(scrapeResultPaths.entries()).map(async ([url, s3Path]) => {
       const scrapeJsonObject = await getObjectFromKey(
         s3Client,

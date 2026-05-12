@@ -18,7 +18,7 @@ import { randomUUID } from 'crypto';
 import ExcelJS from 'exceljs';
 import { getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
 import DrsClient from '@adobe/spacecat-shared-drs-client';
-import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
+import { createLLMOSharepointClient, readFromSharePointWithRetry } from '../utils/report-uploader.js';
 import { getImsOrgId } from '../utils/data-access.js';
 import { resolveBrandIdForSite } from '../utils/brand-resolver.js';
 import {
@@ -98,7 +98,7 @@ async function fetchQueryIndexPaths(site, context, sharepointClient) {
 
   // Read the query-index.xlsx file from SharePoint
   const readStartTime = Date.now();
-  const queryIndexBuffer = await readFromSharePoint('query-index.xlsx', dataFolder, sharepointClient, log);
+  const queryIndexBuffer = await readFromSharePointWithRetry('query-index.xlsx', dataFolder, sharepointClient, log);
   const readDuration = Date.now() - readStartTime;
 
   log.info(`%s: Query-index file downloaded for siteId: ${siteId} (${queryIndexBuffer.length} bytes in ${readDuration}ms)`, AUDIT_NAME);
@@ -326,7 +326,7 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
 
       log.info(`%s: Reading sheet from SharePoint for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName}, source: ${sourceFolder}`, AUDIT_NAME);
       const readStartTime = Date.now();
-      const sheet = await readFromSharePoint(`${sheetName}.xlsx`, sourceFolder, sharepointClient, log);
+      const sheet = await readFromSharePointWithRetry(`${sheetName}.xlsx`, sourceFolder, sharepointClient, log);
       const readDuration = Date.now() - readStartTime;
 
       log.info(`%s: Sheet read from SharePoint for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName} (${sheet.length} bytes in ${readDuration}ms)`, AUDIT_NAME);

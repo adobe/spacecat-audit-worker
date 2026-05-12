@@ -331,6 +331,104 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(tocIssue).to.not.have.property('transformRules');
       expect(tocIssue.url).to.equal(url);
     });
+
+    it('skips suggestion when page has only one heading (LLMO-4542)', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":8,"reasoning":"No TOC"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
+        },
+      });
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<body><h1 id="title">Only Heading</h1><p>Some content</p></body>',
+                  tags: { title: 'Page', description: 'Desc', h1: ['Only Heading'] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
+
+      expect(result.auditResult).to.exist;
+      expect(result.auditResult.toc).to.deep.equal({});
+    });
+
+    it('skips suggestion when page has only null/empty headings (LLMO-4542)', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":8,"reasoning":"No TOC"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
+        },
+      });
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<body><h1></h1><h2>   </h2><p>Some content</p></body>',
+                  tags: { title: 'Page', description: 'Desc', h1: [] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
+
+      expect(result.auditResult).to.exist;
+      expect(result.auditResult.toc).to.deep.equal({});
+    });
   });
 
   describe('TOC Placement Strategy', () => {
@@ -2254,6 +2352,16 @@ describe('TOC (Table of Contents) Audit', () => {
         expect(hasTocInDom($)).to.equal(false);
       });
 
+      it('returns false when list links use bare href="#" (JS tab placeholders, not section anchors)', () => {
+        const $ = cheerioLoad(
+          '<ul class="search-menu__mobile-navtabs-container">'
+          + '<li><a href="#" data-nav="popular">Popular search</a></li>'
+          + '<li><a href="#" data-nav="latest">Must have</a></li>'
+          + '</ul>',
+        );
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
       it('returns false when nav menu has links without # anchors', () => {
         const $ = cheerioLoad(
           '<nav><ul>'
@@ -2305,6 +2413,57 @@ describe('TOC (Table of Contents) Audit', () => {
       it('returns true for element with class containing "cmp-toc__content"', () => {
         const $ = cheerioLoad('<div class="cmp-toc__content"><ul><li>Item</li></ul></div>');
         expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class "abc-toc-xyz" (toc between hyphens)', () => {
+        const $ = cheerioLoad('<nav class="abc-toc-xyz"><ul><li>Item</li></ul></nav>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class "site-toc" (toc at end after hyphen)', () => {
+        const $ = cheerioLoad('<div class="site-toc"><ul><li>Item</li></ul></div>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class "toc-wrapper" (toc at start before hyphen)', () => {
+        const $ = cheerioLoad('<div class="toc-wrapper"><ul><li>Item</li></ul></div>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with class "my_toc" (underscore boundary)', () => {
+        const $ = cheerioLoad('<div class="my_toc"><ul><li>Item</li></ul></div>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+
+      it('returns true for element with multiple classes where one is "toc"', () => {
+        const $ = cheerioLoad('<nav class="nav-bar toc active"><ul><li>Item</li></ul></nav>');
+        expect(hasTocInDom($)).to.equal(true);
+      });
+    });
+
+    describe('false positives — must not detect as TOC', () => {
+      it('returns false for Algolia autocomplete widget (class "aa-Autocomplete" contains "toc" as substring)', () => {
+        const $ = cheerioLoad(
+          '<div class="aa-Autocomplete" role="combobox">'
+          + '<input id="autocomplete-0-input" type="search">'
+          + '</div>',
+        );
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns false for element with id "autocomplete-0-label"', () => {
+        const $ = cheerioLoad('<label id="autocomplete-0-label">Search</label>');
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns false for class "doctor" (contains "toc" but not at a word boundary)', () => {
+        const $ = cheerioLoad('<div class="doctor"><p>Content</p></div>');
+        expect(hasTocInDom($)).to.equal(false);
+      });
+
+      it('returns false for class "protocol" (contains "toc" as substring)', () => {
+        const $ = cheerioLoad('<div class="protocol"><p>Content</p></div>');
+        expect(hasTocInDom($)).to.equal(false);
       });
     });
 
@@ -2855,6 +3014,18 @@ describe('TOC (Table of Contents) Audit', () => {
         const result = extractTocData($, stubGetHeadingSelector);
         expect(result).to.deep.equal([]);
       });
+      it('excludes headings with empty text', () => {
+        const $ = cheerioLoad('<body><h1 id="a">   </h1><h1 id="b">Title</h1><h2 id="c">Section</h2></body>');
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Title', 'Section']);
+      });
+      it('excludes headings with no text content', () => {
+        const $ = cheerioLoad('<body><h2 id="a"></h2><h1 id="b">Title</h1><h2 id="c">Section</h2></body>');
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Title', 'Section']);
+      });
       it('includes selector from getHeadingSelectorFn', () => {
         const $ = cheerioLoad('<body><h1 id="main">Title</h1></body>');
         const result = extractTocData($, getHeadingSelector);
@@ -3403,8 +3574,8 @@ describe('TOC (Table of Contents) Audit', () => {
       const result = await submitForScraping(context);
 
       expect(result.urls).to.deep.equal([{ url }]);
-      expect(result.processingType).to.equal('toc');
-      expect(result.options).to.deep.equal({ storagePrefix: 'toc' });
+      expect(result.processingType).to.be.undefined;
+      expect(result.options).to.be.undefined;
       expect(result.maxScrapeAge).to.equal(24);
       expect(logSpy.info).to.have.been.calledWith('[TOC] Submitting 1 URLs for scraping');
     });
