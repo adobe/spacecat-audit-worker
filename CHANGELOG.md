@@ -1,3 +1,10 @@
+# [1.439.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.438.3...v1.439.0) (2026-05-13)
+
+
+### Features
+
+* **vulnerabilities:** include imsOrg in codefix message (CQ-4363440) ([#2512](https://github.com/adobe/spacecat-audit-worker/issues/2512)) ([999cbaa](https://github.com/adobe/spacecat-audit-worker/commit/999cbaae0e6431005d769e77a1af2d14a0945b39))
+
 ## [1.438.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.438.2...v1.438.3) (2026-05-12)
 
 
