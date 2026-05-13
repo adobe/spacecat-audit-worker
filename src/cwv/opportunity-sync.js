@@ -10,11 +10,27 @@
  * governing permissions and limitations under the License.
  */
 
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import calculateKpiDeltasForAudit, { THRESHOLDS, METRICS, calculateConfidenceScore } from './kpi-metrics.js';
+
+/**
+ * Per-issue statuses that should NOT be overwritten when re-audit detects a metric
+ * has resolved. Mirrors the skip list used by `handleOutdatedSuggestions` for
+ * suggestion-level statuses — preserves customer/system intent on issues that
+ * already moved past NEW.
+ */
+const ISSUE_STATUSES_TO_PRESERVE = new Set([
+  Suggestion.STATUSES.OUTDATED,
+  Suggestion.STATUSES.FIXED,
+  Suggestion.STATUSES.ERROR,
+  Suggestion.STATUSES.SKIPPED,
+  Suggestion.STATUSES.REJECTED,
+  Suggestion.STATUSES.APPROVED,
+  Suggestion.STATUSES.IN_PROGRESS,
+]);
 
 /**
  * Returns true if the CWV entry has at least one metric that exceeds the "good" threshold
@@ -44,6 +60,77 @@ function filterToFailingDeviceMetrics(entry) {
       return value !== null && value !== undefined && value > THRESHOLDS[metric];
     })),
   };
+}
+
+/**
+ * Returns true if the named metric (lcp/cls/inp) exceeds threshold on any device
+ * in the entry. Null/undefined values are treated as passing.
+ * @param {Object} entry - CWV audit entry with a metrics array
+ * @param {string} metric - One of lcp / cls / inp
+ * @returns {boolean}
+ */
+export function isMetricFailing(entry, metric) {
+  if (!entry || !Array.isArray(entry.metrics)) {
+    return false;
+  }
+  return entry.metrics.some((deviceMetrics) => {
+    const value = deviceMetrics[metric];
+    return value !== null && value !== undefined && value > THRESHOLDS[metric];
+  });
+}
+
+/**
+ * For each existing issue in `data.issues[]`, if its metric type no longer exceeds
+ * threshold in the new audit data, mark it OUTDATED — unless its status is in
+ * ISSUE_STATUSES_TO_PRESERVE, in which case it's untouched.
+ *
+ * Issues without a `type` field (legacy data) are left untouched: we can't tell
+ * which metric they describe, so the safe behaviour is "no change."
+ *
+ * @param {Object[]} existingIssues - issues array from existing suggestion.data
+ * @param {Object} newDataItem - the new CWV entry for this URL/pattern
+ * @returns {Object[]} a new array (does not mutate input) with updated statuses
+ */
+export function applyPerIssueOutdated(existingIssues, newDataItem) {
+  if (!Array.isArray(existingIssues) || existingIssues.length === 0) {
+    return existingIssues || [];
+  }
+  return existingIssues.map((issue) => {
+    if (!issue || !issue.type) {
+      return issue;
+    }
+    if (issue.status && ISSUE_STATUSES_TO_PRESERVE.has(issue.status)) {
+      return issue;
+    }
+    if (isMetricFailing(newDataItem, issue.type)) {
+      return issue;
+    }
+    return { ...issue, status: Suggestion.STATUSES.OUTDATED };
+  });
+}
+
+/**
+ * Custom mergeDataFunction for CWV suggestions used by syncSuggestions on re-audit.
+ *
+ * Default behaviour is a shallow `{...existing, ...new}` spread. We extend it with
+ * per-issue OUTDATED detection: when a URL still fails some metrics but others
+ * resolved between audits, only the resolved metrics' issues flip to OUTDATED.
+ * The suggestion itself stays NEW because the URL is still failing overall.
+ *
+ * The newDataItem (raw CWV entry) doesn't carry `issues`, so the existing
+ * `data.issues[]` is preserved via the spread; we then post-process it.
+ *
+ * Backwards-compat: if existing data has no issues at all (fresh suggestion or
+ * legacy row from before Mystique populated `data.issues[]`), we don't add an
+ * empty `issues` key — keep the shallow-merge output identical to the previous
+ * default so existing consumers and tests are unaffected.
+ */
+export function mergeCwvData(existingData, newDataItem) {
+  const merged = { ...existingData, ...newDataItem };
+  if (Array.isArray(existingData?.issues) && existingData.issues.length > 0) {
+    merged.issues = applyPerIssueOutdated(existingData.issues, newDataItem);
+  }
+  return merged;
 }
 
 /**
@@ -102,6 +189,10 @@ export async function syncOpportunitiesAndSuggestions(context) {
     context,
     buildKey,
     bypassValidationForPlg: true,
+    // On re-audit: shallow-merge new fields onto existing data, then mark issues
+    // OUTDATED for any metric whose failure has resolved (skip list preserves
+    // APPROVED/REJECTED/FIXED/SKIPPED/IN_PROGRESS/ERROR/OUTDATED).
+    mergeDataFunction: mergeCwvData,
     mapNewSuggestion: (entry) => ({
       opportunityId: opportunity.getId(),
       type: 'CODE_CHANGE',
@@ -113,9 +204,11 @@ export async function syncOpportunitiesAndSuggestions(context) {
       rank: entry.type === 'group'
         ? maxConfidenceForUrls + calculateConfidenceScore(entry)
         : calculateConfidenceScore(entry),
+      // jiraLink starts null (no Jira ticket yet). Schema allows null or a URI;
+      // empty string fails Joi's uri() validator.
       data: {
         ...entry,
-        jiraLink: '',
+        jiraLink: null,
       },
     }),
   });
