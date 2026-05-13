@@ -267,9 +267,16 @@ export const handleOutdatedSuggestions = async ({
       SuggestionDataAccess.STATUSES.IN_PROGRESS,
     ].includes(existing.getStatus()))
     .filter((existing) => {
-      // Preserve suggestions that have been deployed (tokowakaDeployed or edgeDeployed)
+      // Preserve prerender suggestions that are already deployed or covered by
+      // domain-wide deployment. Domain-wide rows are synthetic aggregate records,
+      // not real scraped URLs, so generic stale-page cleanup should not age them out.
       const data = existing.getData?.();
-      return !(data?.tokowakaDeployed || data?.edgeDeployed);
+      return !(
+        data?.tokowakaDeployed
+        || data?.edgeDeployed
+        || data?.coveredByDomainWide
+        || data?.isDomainWide
+      );
     })
     .filter((existing) => {
       // mark suggestions as outdated only if their URL was actually scraped
