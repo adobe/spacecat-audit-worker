@@ -19,6 +19,25 @@ import {
 } from '../utils/url-utils.js';
 import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
+const TRACKING_PARAMS = new Set([
+  'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'utm_id',
+  'srsltid', 'fbclid', 'gclid', 'gbraid', 'wbraid', 'msclkid',
+]);
+
+function stripTrackingParams(url) {
+  try {
+    const parsed = new URL(url);
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (TRACKING_PARAMS.has(key.toLowerCase())) {
+        parsed.searchParams.delete(key);
+      }
+    }
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Audit, Suggestion, Site } = dataAccess;
@@ -105,7 +124,8 @@ export default async function handler(message, context) {
     const existingData = suggestion.getData() || {};
     const brokenUrl = existingData.url_to || '';
 
-    const validSuggestedUrls = (Array.isArray(suggestedUrls) ? suggestedUrls : [])
+    // 1. Drop entity-replacement siblings (e.g. /contact/john-smith → /contact/jane-doe)
+    const entityFiltered = (Array.isArray(suggestedUrls) ? suggestedUrls : [])
       .filter((url) => {
         if (brokenUrl && isEntityReplacementSuggestion(brokenUrl, url)) {
           log.info(`[${opportunity.getType()}] Dropping entity-replacement sibling: ${url} (broken: ${brokenUrl})`);
@@ -113,8 +133,21 @@ export default async function handler(message, context) {
         }
         return true;
       });
+
+    // 2. Strip tracking params and deduplicate
+    const seen = new Set();
+    const cleanedUrls = entityFiltered
+      .map(stripTrackingParams)
+      .filter((url) => {
+        if (seen.has(url)) {
+          return false;
+        }
+        seen.add(url);
+        return true;
+      });
+
     const filteredSuggestedUrls = await filterBrokenSuggestedUrls(
-      validSuggestedUrls,
+      cleanedUrls,
       effectiveBaseURL,
     );
     const existingSuggestedUrls = Array.isArray(existingData.urlsSuggested)
@@ -126,7 +159,7 @@ export default async function handler(message, context) {
         nextSuggestedUrls = existingSuggestedUrls;
       } else {
         const parentFallback = brokenUrl
-          ? await resolveParentPathFallback(brokenUrl, effectiveBaseURL)
+          ? await resolveParentPathFallback(brokenUrl)
           : null;
         if (parentFallback) {
           log.info(`[${opportunity.getType()}] Using parent path fallback: ${parentFallback} (broken: ${brokenUrl})`);
@@ -140,13 +173,13 @@ export default async function handler(message, context) {
     // Handle AI rationale - omit it if all URLs were filtered out or none were provided
     // This prevents storing an empty string which fails schema validation
     let aiRationale = brokenLink.aiRationale || undefined;
-    if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length > 0) {
+    if (filteredSuggestedUrls.length === 0 && cleanedUrls.length > 0) {
       // All URLs were filtered out (likely invalid/broken):
       // fall back to base URL with no rationale, unless a previous run already stored valid URLs
       log.info('All the suggested URLs were filtered out');
       aiRationale = existingSuggestedUrls.length > 0
         ? existingData.aiRationale || undefined : undefined;
-    } else if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length === 0) {
+    } else if (filteredSuggestedUrls.length === 0 && cleanedUrls.length === 0) {
       // No URLs provided by Mystique (LLM/Bright Data found nothing):
       // fall back to base URL with no rationale, unless a previous run already stored valid URLs
       log.info('No suggested URLs provided by Mystique');
