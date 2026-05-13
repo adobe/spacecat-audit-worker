@@ -936,7 +936,7 @@ export async function submitForScraping(context) {
   if (!isSlackTriggered && site.getBaseURL()) {
     try {
       const { crawlable, confidence } = await detectBotBlocker({ baseUrl: site.getBaseURL() });
-      if (!crawlable && confidence >= 0.95) {
+      if (!crawlable && confidence >= 0.99) {
         log.info(`${LOG_PREFIX} Domain blocked (confidence=${confidence}), skipping siteId=${siteId}, baseUrl=${site.getBaseURL()}`);
         return {
           urls: [],

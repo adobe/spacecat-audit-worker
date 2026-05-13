@@ -831,11 +831,11 @@ describe('Prerender Audit', () => {
         expect(submittedUrls).to.include('https://www.override.com/included');
       });
 
-      it('returns domainBlocked result when detectBotBlocker confidence >= 0.95', async function () {
+      it('returns domainBlocked result when detectBotBlocker confidence >= 0.99', async function () {
         this.timeout(5000);
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-utils': {
-            detectBotBlocker: sandbox.stub().resolves({ crawlable: false, confidence: 0.95 }),
+            detectBotBlocker: sandbox.stub().resolves({ crawlable: false, confidence: 0.99 }),
           },
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
@@ -864,12 +864,12 @@ describe('Prerender Audit', () => {
         expect(result.processingType).to.equal('prerender');
         expect(result.maxScrapeAge).to.equal(0);
         expect(result.auditContext).to.deep.include({ skippedReason: 'domainBlocked' });
-        expect(log.info).to.have.been.calledWithMatch(/Domain blocked.*confidence=0\.95/);
+        expect(log.info).to.have.been.calledWithMatch(/Domain blocked.*confidence=0\.99/);
       });
 
-      it('does not skip when detectBotBlocker confidence is below 0.95 (branch coverage)', async function () {
+      it('does not skip when detectBotBlocker confidence is below 0.99 (branch coverage)', async function () {
         this.timeout(5000);
-        const detectBotBlocker = sandbox.stub().resolves({ crawlable: false, confidence: 0.94 });
+        const detectBotBlocker = sandbox.stub().resolves({ crawlable: false, confidence: 0.95 });
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-utils': { detectBotBlocker },
           '../../../src/utils/agentic-urls.js': {
