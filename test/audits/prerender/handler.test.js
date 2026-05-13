@@ -1519,10 +1519,10 @@ describe('Prerender Audit', () => {
         });
 
         describe('gonePathnames filtering', () => {
-          const makeS3WithGonePages = (goneUrls) => ({
+          const makeS3WithGonePages = (goneUrls, scrapedAt = new Date().toISOString()) => ({
             send: sandbox.stub().callsFake((cmd) => {
               if (cmd.constructor.name === 'GetObjectCommand') {
-                const pages = goneUrls.map((url) => ({ url, gone: true }));
+                const pages = goneUrls.map((url) => ({ url, gone: true, scrapedAt }));
                 return Promise.resolve({
                   Body: { transformToString: () => Promise.resolve(JSON.stringify({ pages })) },
                 });
@@ -1554,6 +1554,84 @@ describe('Prerender Audit', () => {
             const resultUrls = result.urls.map((u) => u.url);
             expect(resultUrls).to.not.include(goneUrl);
             expect(resultUrls).to.include(freshUrl);
+          });
+
+          it('retries gone URLs whose scrapedAt is older than 30 days', async () => {
+            const oldGoneUrl = 'https://example.com/old-gone-page';
+            const recentGoneUrl = 'https://example.com/recent-gone-page';
+            const thirtyOneDaysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+            const s3Client = {
+              send: sandbox.stub().callsFake((cmd) => {
+                if (cmd.constructor.name === 'GetObjectCommand') {
+                  return Promise.resolve({
+                    Body: {
+                      transformToString: () => Promise.resolve(JSON.stringify({
+                        pages: [
+                          { url: oldGoneUrl, gone: true, scrapedAt: thirtyOneDaysAgo },
+                          { url: recentGoneUrl, gone: true, scrapedAt: new Date().toISOString() },
+                        ],
+                      })),
+                    },
+                  });
+                }
+                return Promise.resolve({});
+              }),
+            };
+            const mockHandler = await makeHandlerWithAgentic([]);
+            const context = {
+              ...makeContext([]),
+              s3Client,
+              dataAccess: {
+                SiteTopPage: {
+                  allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                    { getUrl: () => oldGoneUrl },
+                    { getUrl: () => recentGoneUrl },
+                  ]),
+                },
+                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+                Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+              },
+            };
+
+            const result = await mockHandler.submitForScraping(context);
+            const resultUrls = result.urls.map((u) => u.url);
+            expect(resultUrls).to.include(oldGoneUrl);
+            expect(resultUrls).to.not.include(recentGoneUrl);
+          });
+
+          it('excludes gone URLs with no scrapedAt (conservative fallback)', async () => {
+            const noTimestampGoneUrl = 'https://example.com/no-timestamp-gone';
+            const s3Client = {
+              send: sandbox.stub().callsFake((cmd) => {
+                if (cmd.constructor.name === 'GetObjectCommand') {
+                  return Promise.resolve({
+                    Body: {
+                      transformToString: () => Promise.resolve(JSON.stringify({
+                        pages: [{ url: noTimestampGoneUrl, gone: true }],
+                      })),
+                    },
+                  });
+                }
+                return Promise.resolve({});
+              }),
+            };
+            const mockHandler = await makeHandlerWithAgentic([]);
+            const context = {
+              ...makeContext([]),
+              s3Client,
+              dataAccess: {
+                SiteTopPage: {
+                  allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                    { getUrl: () => noTimestampGoneUrl },
+                  ]),
+                },
+                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+                Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+              },
+            };
+
+            const result = await mockHandler.submitForScraping(context);
+            expect(result.urls.map((u) => u.url)).to.not.include(noTimestampGoneUrl);
           });
 
           it('does not exclude non-gone URLs from status.json', async () => {

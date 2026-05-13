@@ -51,6 +51,7 @@ const AUDIT_ERROR_MESSAGE = 'Audit failed';
 const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`;
 
 const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
+const GONE_URL_RETRY_DAYS = 30;
 
 /**
  * Checks if a suggestion's data represents a domain-wide suggestion.
@@ -980,10 +981,12 @@ export async function submitForScraping(context) {
       log,
     );
 
-    // Permanent 410 exclusion: build set of pathnames to exclude from all future batches
+    // 410 exclusion: exclude gone URLs unless last scraped more than GONE_URL_RETRY_DAYS ago
+    const goneRetryThreshold = Date.now() - GONE_URL_RETRY_DAYS * 24 * 60 * 60 * 1000;
     const gonePathnames = new Set(
       existingPages
-        .filter((p) => p.gone)
+        .filter((p) => p.gone
+          && (!p.scrapedAt || new Date(p.scrapedAt).getTime() > goneRetryThreshold))
         .map((p) => normalizePathname(p.url)),
     );
     goneUrlsCount = gonePathnames.size;
