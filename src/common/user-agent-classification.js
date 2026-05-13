@@ -132,10 +132,13 @@ export function inferProviderFromUserAgent(userAgent = '') {
   if (/(anthropic|claude)/.test(ua)) {
     return 'Anthropic';
   }
-  if (/gemini/.test(ua)) {
+  if (/(gemini-deep-research|google-?agent)/.test(ua)) {
     return 'Gemini';
   }
-  if (/(google|googlebot|googleagent|google-agent|notebooklm)/.test(ua)) {
+  if (/google-ai-mode/.test(ua)) {
+    return 'Google AI Mode';
+  }
+  if (/(google|googlebot|notebooklm)/.test(ua)) {
     return 'Google';
   }
   if (/copilot/.test(ua)) {
