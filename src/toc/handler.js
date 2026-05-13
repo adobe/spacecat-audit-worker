@@ -341,7 +341,7 @@ export async function submitForScraping(context) {
       check: TOPPAGES_CHECK.check, success: false, explanation: TOPPAGES_CHECK.explanation,
     };
     await AuditModel.updateByKeys({ auditId: audit.getId() }, { auditResult: terminalResult });
-    return { auditResult: terminalResult, fullAuditRef: site.getBaseURL() };
+    return { auditResult: terminalResult, fullAuditRef: site.getBaseURL(), urls: [] };
   }
 
   if (topPages.length === 0) {
@@ -350,11 +350,15 @@ export async function submitForScraping(context) {
       check: TOPPAGES_CHECK.check, success: false, explanation: TOPPAGES_CHECK.explanation,
     };
     await AuditModel.updateByKeys({ auditId: audit.getId() }, { auditResult: terminalResult });
-    return { auditResult: terminalResult, fullAuditRef: site.getBaseURL() };
+    return { auditResult: terminalResult, fullAuditRef: site.getBaseURL(), urls: [] };
   }
 
-  // Limit to 5 URLs for testing; remove slice before full rollout (LLMO-4880)
-  const urlsToScrape = topPages.slice(0, 5);
+  // TODO(LLMO-4880): remove hardcoded URLs before full rollout
+  const urlsToScrape = [
+    'https://careinsurance.com/health-insurance/ultcr/ultimate-care-health-insurance.html',
+    'https://careinsurance.com/health-insurance/health-insurance-in-solapur',
+    'https://careinsurance.com/health-insurance/health-insurance-in-vijayawada',
+  ];
   log.info(`[TOC] Submitting ${urlsToScrape.length} URLs for scraping (processingType=prerender)`);
   return {
     urls: urlsToScrape.map((url) => ({ url })),

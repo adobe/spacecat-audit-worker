@@ -4199,11 +4199,16 @@ describe('TOC (Table of Contents) Audit', () => {
       const { submitForScraping } = await import('../../src/toc/handler.js');
       const result = await submitForScraping(context);
 
-      expect(result.urls).to.deep.equal([{ url }]);
+      const expectedUrls = [
+        'https://careinsurance.com/health-insurance/ultcr/ultimate-care-health-insurance.html',
+        'https://careinsurance.com/health-insurance/health-insurance-in-solapur',
+        'https://careinsurance.com/health-insurance/health-insurance-in-vijayawada',
+      ].map((u) => ({ url: u }));
+      expect(result.urls).to.deep.equal(expectedUrls);
       expect(result.processingType).to.equal('prerender');
       expect(result.options).to.be.undefined;
       expect(result.maxScrapeAge).to.equal(24);
-      expect(logSpy.info).to.have.been.calledWith('[TOC] Submitting 1 URLs for scraping (processingType=prerender)');
+      expect(logSpy.info).to.have.been.calledWith('[TOC] Submitting 3 URLs for scraping (processingType=prerender)');
     });
 
     it('persists terminal result and returns when previous audit step failed', async () => {
@@ -4218,7 +4223,7 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(result.auditResult.success).to.equal(false);
       expect(result.auditResult.check).to.equal('top-pages');
       expect(result.fullAuditRef).to.equal(site.getBaseURL());
-      expect(result).to.not.have.property('urls');
+      expect(result.urls).to.deep.equal([]);
       expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledOnce;
       expect(logSpy.warn).to.have.been.calledWith('[TOC] Audit failed in previous step, skipping scraping');
     });
@@ -4235,7 +4240,7 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(result.auditResult.success).to.equal(false);
       expect(result.auditResult.check).to.equal('top-pages');
       expect(result.fullAuditRef).to.equal(site.getBaseURL());
-      expect(result).to.not.have.property('urls');
+      expect(result.urls).to.deep.equal([]);
       expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledOnce;
       expect(logSpy.warn).to.have.been.calledWith('[TOC] No top pages found, ending audit');
     });
@@ -4252,7 +4257,7 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(result.auditResult.success).to.equal(false);
       expect(result.auditResult.check).to.equal('top-pages');
       expect(result.fullAuditRef).to.equal(site.getBaseURL());
-      expect(result).to.not.have.property('urls');
+      expect(result.urls).to.deep.equal([]);
       expect(context.dataAccess.Audit.updateByKeys).to.have.been.calledOnce;
       expect(logSpy.warn).to.have.been.calledWith('[TOC] No top pages found, ending audit');
     });
