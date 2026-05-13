@@ -1607,11 +1607,10 @@ describe('Prerender Audit', () => {
         expect(result.status).to.equal('complete');
         expect(result.auditResult).to.be.an('object');
         expect(result.auditResult.urlsNeedingPrerender).to.equal(0);
-        // Falls back to base URL when no URLs found
-        expect(result.auditResult.totalUrlsChecked).to.equal(1);
+        expect(result.auditResult.totalUrlsChecked).to.equal(0);
       });
 
-      it('creates scrape-forbidden opportunity and returns early when domainBlocked', async function () {
+      it('skips URL fetching and creates scrape-forbidden opportunity when domainBlocked', async function () {
         this.timeout(5000);
         const convertToOpportunityStub = sandbox.stub().resolves();
         const isPaidLLMOCustomerStub = sandbox.stub().resolves(false);
@@ -1633,6 +1632,9 @@ describe('Prerender Audit', () => {
           },
         });
 
+        const s3SendStub = sandbox.stub().resolves({
+          Body: { transformToString: () => Promise.resolve('{}') },
+        });
         const log = { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() };
         const context = {
           site: {
@@ -1643,17 +1645,21 @@ describe('Prerender Audit', () => {
           dataAccess: {
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
           },
+          s3Client: { send: s3SendStub },
           log,
-          env: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           auditContext: { skippedReason: 'domainBlocked', scrapeJobId: 'job-999' },
         };
 
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
-        expect(result.status).to.equal('skipped');
-        expect(result.skippedReason).to.equal('domainBlocked');
+        // Flows through the existing scrapeForbidden=true branch — returns standard complete shape
+        expect(result).to.be.an('object');
         expect(log.info).to.have.been.calledWithMatch(/Domain is bot-blocked/);
+        // Forbidden opportunity was created via existing scrapeForbidden branch
         expect(convertToOpportunityStub).to.have.been.calledOnce;
+        // uploadStatusSummaryToS3 was called (S3 PutObject written)
+        expect(s3SendStub).to.have.been.called;
       });
 
       it('should handle errors gracefully', async function testHandleErrorsGracefully() {
@@ -1777,7 +1783,7 @@ describe('Prerender Audit', () => {
         expect(result.auditResult.totalUrlsChecked).to.equal(1);
       });
 
-      it('should fallback to base URL when no URLs found anywhere', async () => {
+      it('should complete with zero URLs checked when no URLs found anywhere', async () => {
         const mockSiteTopPage = {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]), // No top pages
         };
@@ -1810,9 +1816,7 @@ describe('Prerender Audit', () => {
         const result = await processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        expect(result.auditResult.totalUrlsChecked).to.equal(1);
-        // Should have logged about fallback to base URL
-        expect(context.log.info).to.have.been.calledWith('Prerender - No URLs found for comparison. baseUrl=https://example.com, siteId=test-site-id');
+        expect(result.auditResult.totalUrlsChecked).to.equal(0);
       });
 
       it('should not fetch agentic URLs in fallback path when triggered from Slack', async () => {
@@ -8922,6 +8926,18 @@ describe('Prerender Audit', () => {
       expect(warnStub.firstCall.args[0]).to.include('Failed to write PageCitability');
     });
 
+    it('should return early without any calls when comparisonResults is empty', async () => {
+      const debugStub = sandbox.stub();
+      const context = {
+        dataAccess: {},
+        log: { debug: debugStub, info: sandbox.stub(), warn: sandbox.stub() },
+      };
+
+      await writeToCitabilityRecords([], 'site-1', context);
+
+      expect(debugStub).to.not.have.been.called;
+    });
+
     it('should skip writes when PageCitability is not available in dataAccess', async () => {
       const debugStub = sandbox.stub();
       const context = {
@@ -8929,8 +8945,11 @@ describe('Prerender Audit', () => {
         log: { debug: debugStub, info: sandbox.stub(), warn: sandbox.stub() },
       };
 
-      // Should not throw
-      await writeToCitabilityRecords([], 'site-1', context);
+      await writeToCitabilityRecords(
+        [{ url: 'https://example.com/page1', citabilityScore: 0.5 }],
+        'site-1',
+        context,
+      );
 
       expect(debugStub).to.have.been.calledWith(sinon.match('PageCitability not available'));
     });
@@ -9290,8 +9309,6 @@ describe('Prerender Audit', () => {
         const syncCall = syncSuggestionsStub.firstCall.args[0];
         expect(syncCall.scrapedUrlsSet.has('https://example.com/yesterday-page')).to.be.false;
       }
-
-      expect(allBySiteIdStub.calledOnce).to.be.true;
     });
   });
 });

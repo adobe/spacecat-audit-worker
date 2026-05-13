@@ -1329,6 +1329,10 @@ export async function processOpportunityAndSuggestions(
  * @returns {Promise<void>}
  */
 export async function writeToCitabilityRecords(comparisonResults, siteId, context) {
+  if (!comparisonResults?.length) {
+    return;
+  }
+
   const { dataAccess, log } = context;
   const { PageCitability } = dataAccess;
 
@@ -1541,7 +1545,18 @@ export async function getScrapeJobStats(
   comparisonResults,
   urlsToCheckLength,
   context,
+  isDomainBlocked = false,
 ) {
+  if (isDomainBlocked) {
+    return {
+      urlsSubmittedForScraping: 0,
+      scrapeForbiddenCount: 0,
+      scrapeForbidden: true,
+      missingPages: [],
+      submittedUrlSet: new Set(),
+    };
+  }
+
   const {
     log, dataAccess, s3Client, env,
   } = context;
@@ -1644,20 +1659,7 @@ export async function processContentAndGenerateOpportunities(context) {
   const siteId = site.getId();
   const startTime = process.hrtime();
   const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
-
-  // Domain was bot-blocked in step 1 — create the forbidden opportunity so the UI shows a banner
-  if (auditContext?.skippedReason === 'domainBlocked') {
-    log.info(`${LOG_PREFIX} Domain is bot-blocked, creating scrape-forbidden opportunity. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
-    const isPaidEarly = await isPaidLLMOCustomer(context);
-    await createScrapeForbiddenOpportunity(site.getBaseURL(), {
-      siteId,
-      id: audit.getId(),
-      auditId: audit.getId(),
-      auditResult: {},
-      scrapeJobId: auditContext?.scrapeJobId ?? null,
-    }, context, isPaidEarly);
-    return { status: 'skipped', skippedReason: 'domainBlocked' };
-  }
+  const isDomainBlocked = auditContext?.skippedReason === 'domainBlocked';
 
   // Diagnostic: detect non-NEW suggestions with edgeDeployed before syncing.
   // Runs unconditionally so audits with no prerender findings still catch pre-existing issues.
@@ -1666,6 +1668,10 @@ export async function processContentAndGenerateOpportunities(context) {
   // Check if this is a paid LLMO customer early so we can use it in all logs
   const isPaid = await isPaidLLMOCustomer(context);
 
+  if (isDomainBlocked) {
+    log.info(`${LOG_PREFIX} Domain is bot-blocked, treating as fully forbidden scrape. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
+  }
+
   log.info(`${LOG_PREFIX} Generate opportunities for baseUrl=${site.getBaseURL()}, siteId=${siteId}, isPaidLLMOCustomer=${isPaid}`);
 
   try {
@@ -1673,57 +1679,55 @@ export async function processContentAndGenerateOpportunities(context) {
     /* c8 ignore next */
     let agenticUrls = [];
 
-    // Try to get URLs from the audit context first
-    if (scrapeResultPaths?.size > 0) {
-      urlsToCheck = Array.from(context.scrapeResultPaths.keys());
-      log.info(`${LOG_PREFIX} Found ${urlsToCheck.length} URLs from scrape results`);
-    } else {
-      /* c8 ignore start */
-      // Fetch agentic URLs for URL list fallback (skipped for Slack-triggered runs)
-      if (!isSlackTriggered) {
-        try {
-          agenticUrls = await getTopAgenticUrls(site, context);
-        } catch (e) {
-          log.warn(`${LOG_PREFIX} Failed to fetch agentic URLs for fallback: ${e.message}. baseUrl=${site.getBaseURL()}`);
+    // Skip expensive URL fetching and comparison when domain is known to be bot-blocked
+    if (!isDomainBlocked) {
+      // Try to get URLs from the audit context first
+      if (scrapeResultPaths?.size > 0) {
+        urlsToCheck = Array.from(context.scrapeResultPaths.keys());
+        log.info(`${LOG_PREFIX} Found ${urlsToCheck.length} URLs from scrape results`);
+      } else {
+        /* c8 ignore start */
+        // Fetch agentic URLs for URL list fallback (skipped for Slack-triggered runs)
+        if (!isSlackTriggered) {
+          try {
+            agenticUrls = await getTopAgenticUrls(site, context);
+          } catch (e) {
+            log.warn(`${LOG_PREFIX} Failed to fetch agentic URLs for fallback: ${e.message}. baseUrl=${site.getBaseURL()}`);
+          }
         }
+
+        // Load top organic pages cache for fallback merging
+        const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
+        const preferredBase = getPreferredBaseUrl(site, context);
+        const rebasedFallbackOrganicUrls = topPagesUrls
+          .map((url) => rebaseUrl(url, preferredBase, log));
+        const fallbackIncludedURLs = (
+          await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)
+        ) || [];
+        const rebasedFallbackIncludedURLs = fallbackIncludedURLs
+          .map((url) => rebaseUrl(url, preferredBase, log));
+        // Use the same normalization and filtering logic for consistency
+        const { urls: filteredUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
+          rebasedFallbackOrganicUrls,
+          agenticUrls,
+          rebasedFallbackIncludedURLs,
+        );
+        urlsToCheck = filteredUrls;
+
+        /* c8 ignore stop */
+        const msg = `Fallback for baseUrl=${site.getBaseURL()}, siteId=${siteId}. `
+          + `Using agenticURLs=${agenticUrls.length}, `
+          + `topPages=${rebasedFallbackOrganicUrls.length}, `
+          + `includedURLs=${rebasedFallbackIncludedURLs.length}, `
+          + `filteredOutUrls=${filteredCount}, `
+          + `total=${urlsToCheck.length}`;
+        log.info(`${LOG_PREFIX} ${msg}`);
       }
-
-      // Load top organic pages cache for fallback merging
-      const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
-      const preferredBase = getPreferredBaseUrl(site, context);
-      const rebasedFallbackOrganicUrls = topPagesUrls
-        .map((url) => rebaseUrl(url, preferredBase, log));
-      const fallbackIncludedURLs = (await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [];
-      const rebasedFallbackIncludedURLs = fallbackIncludedURLs
-        .map((url) => rebaseUrl(url, preferredBase, log));
-      // Use the same normalization and filtering logic for consistency
-      const { urls: filteredUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
-        rebasedFallbackOrganicUrls,
-        agenticUrls,
-        rebasedFallbackIncludedURLs,
-      );
-      urlsToCheck = filteredUrls;
-
-      /* c8 ignore stop */
-      const msg = `Fallback for baseUrl=${site.getBaseURL()}, siteId=${siteId}. `
-        + `Using agenticURLs=${agenticUrls.length}, `
-        + `topPages=${rebasedFallbackOrganicUrls.length}, `
-        + `includedURLs=${rebasedFallbackIncludedURLs.length}, `
-        + `filteredOutUrls=${filteredCount}, `
-        + `total=${urlsToCheck.length}`;
-      log.info(`${LOG_PREFIX} ${msg}`);
     }
 
-    /* c8 ignore next 5 - Edge case: empty URLs fallback, difficult to reach in tests */
-    if (urlsToCheck.length === 0) {
-      // Final fallback to base URL
-      urlsToCheck = [getPreferredBaseUrl(site, context)];
-      log.info(`${LOG_PREFIX} No URLs found for comparison. baseUrl=${getPreferredBaseUrl(site, context)}, siteId=${siteId}`);
-    }
-
-    const comparisonResults = await Promise.all(
-      urlsToCheck.map((url) => compareHtmlContent(url, context)),
-    );
+    const comparisonResults = isDomainBlocked
+      ? []
+      : await Promise.all(urlsToCheck.map((url) => compareHtmlContent(url, context)));
 
     // Phase 2c: write citability metrics to PageCitability entity.
     await writeToCitabilityRecords(comparisonResults, siteId, context);
@@ -1737,13 +1741,14 @@ export async function processContentAndGenerateOpportunities(context) {
     // getScrapeJobStats combines 403s from COMPLETE-status URLs (already in comparisonResults)
     // and FAILED-status URLs (absent from comparisonResults, fetched from ScrapeUrl table).
     // missingPages is reused by uploadStatusSummaryToS3 to avoid a redundant DB + S3 round-trip.
+    const urlCount = urlsToCheck.length;
     const {
       urlsSubmittedForScraping,
       scrapeForbiddenCount,
       scrapeForbidden,
       missingPages,
       submittedUrlSet,
-    } = await getScrapeJobStats(scrapeJobId, comparisonResults, urlsToCheck.length, context);
+    } = await getScrapeJobStats(scrapeJobId, comparisonResults, urlCount, context, isDomainBlocked);
 
     log.info(`${LOG_PREFIX} Scrape analysis for baseUrl=${site.getBaseURL()}, siteId=${siteId}. scrapeForbidden=${scrapeForbidden}, scrapeForbiddenCount=${scrapeForbiddenCount}, totalUrlsChecked=${comparisonResults.length}, isPaidLLMOCustomer=${isPaid}`);
 
