@@ -228,11 +228,14 @@ function normalizeUrl(parsed, domain) {
 
 /**
  * Classifies a URL into its matching offsite domain (if any) and normalizes it.
+ * Filters out URLs belonging to the client's own site when siteHostname is provided.
  *
  * @param {string} rawUrl - The raw URL string to classify and normalize
+ * @param {string} [siteHostname] - The client site's hostname (www-stripped); URLs
+ *   matching this hostname or any subdomain of it are excluded
  * @returns {{ url: string, domain: string|null } | null} Normalized URL with domain, or null
  */
-function classifyAndNormalize(rawUrl) {
+function classifyAndNormalize(rawUrl, siteHostname) {
   let parsed;
   try {
     parsed = new URL(rawUrl);
@@ -242,6 +245,13 @@ function classifyAndNormalize(rawUrl) {
   }
 
   const { hostname } = parsed;
+
+  if (siteHostname) {
+    const bare = hostname.replace(/^www\./, '');
+    if (bare === siteHostname || bare.endsWith(`.${siteHostname}`)) {
+      return null;
+    }
+  }
   for (const domain of Object.keys(OFFSITE_DOMAINS)) {
     if (hostname === domain || hostname.endsWith(`.${domain}`)) {
       return { url: normalizeUrl(parsed, domain), domain };
@@ -289,8 +299,9 @@ function trackTopicUrl(topicMap, topicName, url, category, prompt) {
  * @param {Map<string, {count: number, domain: string|null}>} allUrls - Global URL map (mutated)
  * @param {Map<string, {category: string, urlMap: Map}>} topicMap - Topic map (mutated)
  * @param {object} log - Logger instance
+ * @param {string} [siteHostname] - Client site hostname to exclude
  */
-function extractUrlsAndTopics(data, allUrls, topicMap, log) {
+function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname) {
   const rows = data.data;
   for (const row of rows) {
     const sources = row.Sources?.trim();
@@ -310,7 +321,7 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log) {
         continue;
       }
 
-      const result = classifyAndNormalize(trimmed);
+      const result = classifyAndNormalize(trimmed, siteHostname);
       if (!result) {
         // eslint-disable-next-line no-continue
         continue;
@@ -453,11 +464,13 @@ export function formatTopicsForEnrichment(topicMap, allUrls) {
  *
  * @param {string} siteId - Site ID
  * @param {{ env: object, log: object }} context - Lambda context
- * @param {object} [site] - Site entity; when provided, avoids an extra DB lookup for the org ID
+ * @param {object} [site] - Site entity; when provided, URLs matching the site's own
+ *   hostname are filtered out
  * @returns {Promise<Array<{ name: string, urls: object[] }>>}
  */
 export async function computeTopicsFromBrandPresence(siteId, context, site) {
   const { log } = context;
+
   const previousWeeks = getPreviousWeeks();
   const weekLabels = previousWeeks
     .map(({ week, year }) => `w${String(week).padStart(2, '0')}-${year}`)
@@ -471,9 +484,19 @@ export async function computeTopicsFromBrandPresence(siteId, context, site) {
     return [];
   }
 
+  const baseURL = site?.getBaseURL?.();
+  let siteHostname;
+  if (baseURL) {
+    try {
+      siteHostname = new URL(baseURL).hostname.replace(/^www\./, '');
+    } catch {
+      log.warn(`${LOG_PREFIX} Could not parse baseURL "${baseURL}", skipping site URL filter`);
+    }
+  }
+
   const allUrls = new Map();
   const topicMap = new Map();
-  extractUrlsAndTopics(brandPresenceData, allUrls, topicMap, log);
-  log.info(`${LOG_PREFIX} Loaded brand presence data for site ${siteId}`);
+  extractUrlsAndTopics(brandPresenceData, allUrls, topicMap, log, siteHostname);
+
   return formatTopicsForEnrichment(topicMap, allUrls);
 }

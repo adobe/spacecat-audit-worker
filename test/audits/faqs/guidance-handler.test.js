@@ -1703,4 +1703,76 @@ describe('FAQs guidance handler', () => {
     // Should set shouldOptimize to false because sources are undefined
     expect(newData[0].shouldOptimize).to.equal(false);
   });
+
+  it('should pass a mergeDataFunction that preserves edge-deployed suggestions unchanged', async () => {
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const mergeDataFn = syncCall.args[0].mergeDataFunction;
+    expect(mergeDataFn).to.be.a('function');
+
+    // When edgeDeployed is true, return existing data unchanged (shouldOptimize must not be overwritten)
+    const existingData = {
+      url: 'https://www.adobe.com/products/photoshop',
+      topic: 'photoshop',
+      shouldOptimize: true,
+      edgeDeployed: true,
+      selector: 'main',
+    };
+    const newData = {
+      url: 'https://www.adobe.com/products/photoshop',
+      topic: 'photoshop',
+      shouldOptimize: false,
+      selector: 'body',
+    };
+
+    const result = mergeDataFn(existingData, newData);
+
+    expect(result.edgeDeployed).to.equal(true);
+    expect(result.shouldOptimize).to.equal(true);
+    expect(result.selector).to.equal('main');
+  });
+
+  it('should pass a mergeDataFunction that merges normally when edgeDeployed is not set', async () => {
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+    // When edgeDeployed is not set, new data should overwrite existing
+    const existingData = {
+      url: 'https://www.adobe.com/products/photoshop',
+      topic: 'photoshop',
+      shouldOptimize: true,
+      selector: 'main',
+    };
+    const newData = {
+      url: 'https://www.adobe.com/products/photoshop',
+      topic: 'photoshop',
+      shouldOptimize: false,
+      selector: 'body',
+    };
+
+    const result = mergeDataFn(existingData, newData);
+
+    expect(result.shouldOptimize).to.equal(false);
+    expect(result.selector).to.equal('body');
+  });
 });

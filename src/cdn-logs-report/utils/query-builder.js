@@ -11,9 +11,14 @@
  */
 
 import { DEFAULT_COUNTRY_PATTERNS } from '../../common/country-patterns.js';
-import { loadSql, fetchRemotePatterns } from './report-utils.js';
+import { fetchAgenticUrlClassificationRules } from '../../common/agentic-url-classification-rules.js';
+import { loadSql } from './report-utils.js';
 import { buildAgentTypeClassificationSQL, buildUserAgentDisplaySQL } from '../../common/user-agent-classification.js';
 import { buildDateFilter, buildUserAgentFilter, buildSiteFilters } from '../../utils/cdn-utils.js';
+
+function sqlEscape(s) {
+  return String(s).replace(/'/g, "''");
+}
 
 function buildWhereClause(conditions = [], siteFilters = []) {
   const allConditions = [...conditions];
@@ -37,7 +42,7 @@ function generatePageTypeClassification(remotePatterns = null) {
   }
 
   const caseConditions = patterns
-    .map((pattern) => `      WHEN REGEXP_LIKE(url, '${pattern.regex}') THEN '${pattern.name}'`)
+    .map((pattern) => `      WHEN REGEXP_LIKE(url, '${sqlEscape(pattern.regex)}') THEN '${sqlEscape(pattern.name)}'`)
     .join('\n');
 
   return `CASE\n${caseConditions}\n      ELSE 'Other'\n    END`;
@@ -62,9 +67,9 @@ function buildTopicExtractionSQL(remotePatterns = null) {
 
     patterns.forEach(({ regex, name }) => {
       if (name) {
-        namedPatterns.push(`WHEN REGEXP_LIKE(url, '${regex}') THEN '${name}'`);
+        namedPatterns.push(`WHEN REGEXP_LIKE(url, '${sqlEscape(regex)}') THEN '${sqlEscape(name)}'`);
       } else {
-        extractPatterns.push(`NULLIF(REGEXP_EXTRACT(url, '${regex}', 1), '')`);
+        extractPatterns.push(`NULLIF(REGEXP_EXTRACT(url, '${sqlEscape(regex)}', 1), '')`);
       }
     });
 
@@ -83,7 +88,7 @@ function buildTopicExtractionSQL(remotePatterns = null) {
 
 async function createAgenticReportQuery(options) {
   const {
-    periods, databaseName, tableName, site,
+    periods, databaseName, tableName, site, context,
   } = options;
 
   const filters = site.getConfig().getLlmoCdnlogsFilter();
@@ -95,7 +100,10 @@ async function createAgenticReportQuery(options) {
     siteFilters,
   );
 
-  const remotePatterns = await fetchRemotePatterns(site);
+  const rawPatterns = Object.hasOwn(options, 'remotePatterns')
+    ? options.remotePatterns
+    : await fetchAgenticUrlClassificationRules(site, context);
+  const remotePatterns = rawPatterns?.error ? null : rawPatterns;
 
   return loadSql('agentic-traffic-report', {
     agentTypeClassification: buildAgentTypeClassificationSQL(),
@@ -111,7 +119,7 @@ async function createAgenticReportQuery(options) {
 
 async function createAgenticDailyReportQuery(options) {
   const {
-    trafficDate, databaseName, tableName, site,
+    trafficDate, databaseName, tableName, site, context,
   } = options;
 
   const filters = site.getConfig().getLlmoCdnlogsFilter();
@@ -124,7 +132,10 @@ async function createAgenticDailyReportQuery(options) {
     siteFilters,
   );
 
-  const remotePatterns = await fetchRemotePatterns(site);
+  const rawPatterns = Object.hasOwn(options, 'remotePatterns')
+    ? options.remotePatterns
+    : await fetchAgenticUrlClassificationRules(site, context);
+  const remotePatterns = rawPatterns?.error ? null : rawPatterns;
 
   return loadSql('agentic-traffic-daily-report', {
     agentTypeClassification: buildAgentTypeClassificationSQL(),
@@ -163,6 +174,29 @@ async function createReferralReportQuery(options) {
   );
 
   return loadSql('referral-traffic-report', {
+    databaseName,
+    tableName,
+    whereClause,
+    countryExtraction: buildCountryExtractionSQL(),
+  });
+}
+
+async function createReferralDailyReportQuery(options) {
+  const {
+    trafficDate, databaseName, tableName, site,
+  } = options;
+
+  const filters = site.getConfig().getLlmoCdnlogsFilter();
+  const siteFilters = buildSiteFilters(filters, site);
+  const year = trafficDate.getUTCFullYear().toString();
+  const month = String(trafficDate.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(trafficDate.getUTCDate()).padStart(2, '0');
+  const whereClause = buildWhereClauseReferral(
+    [`(year = '${year}' AND month = '${month}' AND day = '${day}')`],
+    siteFilters,
+  );
+
+  return loadSql('referral-traffic-daily-report', {
     databaseName,
     tableName,
     whereClause,
@@ -245,6 +279,7 @@ export const weeklyBreakdownQueries = {
   createAgenticReportQuery,
   createAgenticDailyReportQuery,
   createReferralReportQuery,
+  createReferralDailyReportQuery,
   createTopUrlsQuery,
   createTopUrlsQueryWithLimit,
 };

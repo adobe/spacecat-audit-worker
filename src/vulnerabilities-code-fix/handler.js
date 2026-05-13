@@ -43,7 +43,7 @@ export default async function handler(message, context) {
   const { siteId, data } = message;
   const { Site, Opportunity, Suggestion } = dataAccess;
 
-  log.debug(`[${AUDIT_TYPE} Code-Fix] Message received: ${JSON.stringify(message, null, 2)}`);
+  log.info(`[${AUDIT_TYPE} Code-Fix] Message received: ${JSON.stringify(message, null, 2)}`);
 
   // Validate siteId
   if (!siteId) {

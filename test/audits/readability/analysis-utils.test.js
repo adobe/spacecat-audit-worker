@@ -707,6 +707,89 @@ describe('Readability Analysis Utils', () => {
       expect(mockIsSupportedLanguage).to.have.been.called;
     });
 
+    it('excludes paragraphs whose class matches nav chrome substring heuristics', async () => {
+      const body = makeLongText('Editorial copy that would be analyzed if the element were not filtered by class.');
+      const html = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <p class="region-sidebar-primary">${body}</p>
+        </body>
+      </html>`;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(15);
+
+      const result = await analyzePageContent(
+        html,
+        'https://example.com/page',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result).to.deep.equal([]);
+      expect(mockFranc).to.not.have.been.called;
+    });
+
+    it('does not exclude paragraphs with compound review/rating class names', async () => {
+      const body = makeLongText('This editorial paragraph reviews product sustainability impact for readers.');
+      const html = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <p class="product-review-text">${body}</p>
+          <p class="customer-rating-summary">${body}</p>
+        </body>
+      </html>`;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(15);
+
+      const result = await analyzePageContent(
+        html,
+        'https://example.com/page',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result.length).to.equal(2);
+    });
+
+    it('excludes paragraphs where link text is most of the element text', async () => {
+      const filler = 'Lead in sentence text that is not inside any anchor tag at all. ';
+      const linkInner = Array.from({ length: 40 }, () => 'Linkedphrase ').join('');
+      const trailing = ' End tail words outside anchor.';
+      const html = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <p>${filler}<a href="https://example.com/list">${linkInner}</a>${trailing}</p>
+        </body>
+      </html>`;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(15);
+
+      const result = await analyzePageContent(
+        html,
+        'https://example.com/page',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result).to.deep.equal([]);
+      expect(mockFranc).to.not.have.been.called;
+    });
+
     it('should categorize issues as Important for poor readability with medium traffic', async () => {
       const text = makeLongText('This is a moderately complex sentence with some difficult vocabulary for readers to understand.');
       const html = createHtmlWithParagraph(text);
@@ -1354,6 +1437,40 @@ Save it for your next mountain escape!
       expect(normalizeReadabilityText(null)).to.equal('');
       expect(normalizeReadabilityText(undefined)).to.equal('');
       expect(normalizeReadabilityText(123)).to.equal('');
+    });
+  });
+
+  describe('isLikelyNavigationElement (direct module import)', () => {
+    it('returns true when a descendant matches navHdr / nav-hdr paragraph selectors', async () => {
+      const { isLikelyNavigationElement } = await import('../../../src/readability/shared/analysis-utils.js');
+      const $ = cheerioLoad(`
+        <div id="region">
+          <p class="navHdr">Shop categories</p>
+          <p id="sibling">Other marketing copy in the same container as the nav header row.</p>
+        </div>
+      `);
+      const region = $('#region').get(0);
+      expect(isLikelyNavigationElement($, region)).to.equal(true);
+    });
+
+    it('returns true when element is inside a navigation landmark', async () => {
+      const { isLikelyNavigationElement } = await import('../../../src/readability/shared/analysis-utils.js');
+      const $ = cheerioLoad(`
+        <nav>
+          <p id="in-nav">Paragraph copy that lives under a nav landmark for site menus.</p>
+        </nav>
+      `);
+      expect(isLikelyNavigationElement($, $('#in-nav').get(0))).to.equal(true);
+    });
+
+    it('returns true when an ancestor id matches navigation class/id heuristics', async () => {
+      const { isLikelyNavigationElement } = await import('../../../src/readability/shared/analysis-utils.js');
+      const $ = cheerioLoad(`
+        <div id="primary-nav">
+          <p id="leaf">Body-looking paragraph nested under a bar whose id signals main navigation.</p>
+        </div>
+      `);
+      expect(isLikelyNavigationElement($, $('#leaf').get(0))).to.equal(true);
     });
   });
 });
