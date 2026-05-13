@@ -1,3 +1,36 @@
+# [1.440.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.439.1...v1.440.0) (2026-05-13)
+
+
+### Bug Fixes
+
+* **prerender:** guard domain-wide suggestions from stale-page cleanup ([#2515](https://github.com/adobe/spacecat-audit-worker/issues/2515)) ([42655aa](https://github.com/adobe/spacecat-audit-worker/commit/42655aadbb6daca7cd71e61722792b55e72d46b9))
+
+
+### Features
+
+* **offsite:** include brand scope fields in mystique SQS messages ([#2427](https://github.com/adobe/spacecat-audit-worker/issues/2427)) ([bb3d002](https://github.com/adobe/spacecat-audit-worker/commit/bb3d002925ac3732e5ff28fc3159bb101920a4d2)), closes [spacecat-shared#1576](https://github.com/spacecat-shared/issues/1576) [spacecat-api-service#2316](https://github.com/spacecat-api-service/issues/2316)
+
+## [1.439.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.439.0...v1.439.1) (2026-05-13)
+
+
+### Bug Fixes
+
+* **user-agent:** narrow Gemini pattern and add Google AI Mode platform ([#2505](https://github.com/adobe/spacecat-audit-worker/issues/2505)) ([e142bc3](https://github.com/adobe/spacecat-audit-worker/commit/e142bc3ef72b49f12321e7e9a05b5ccf18f8a080))
+
+# [1.439.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.438.3...v1.439.0) (2026-05-13)
+
+
+### Features
+
+* **vulnerabilities:** include imsOrg in codefix message (CQ-4363440) ([#2512](https://github.com/adobe/spacecat-audit-worker/issues/2512)) ([999cbaa](https://github.com/adobe/spacecat-audit-worker/commit/999cbaae0e6431005d769e77a1af2d14a0945b39))
+
+## [1.438.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.438.2...v1.438.3) (2026-05-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.62.0 ([#2511](https://github.com/adobe/spacecat-audit-worker/issues/2511)) ([69f8e99](https://github.com/adobe/spacecat-audit-worker/commit/69f8e99208c2bd43167905eea3322a4348f8b285))
+
 ## [1.438.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.438.1...v1.438.2) (2026-05-12)
 
 
