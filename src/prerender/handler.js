@@ -29,6 +29,8 @@ import {
   PRERENDER_RECENT_PROCESSING_TIME_DAYS,
   MODE_AI_ONLY,
   MYSTIQUE_BATCH_SIZE,
+  PRERENDER_NO_OPP_OUTDATE_MIN_SUCCESSFUL_SCRAPES,
+  PRERENDER_NO_OPP_OUTDATE_SCRAPE_ERROR_RATE_PCT,
 } from './utils/constants.js';
 
 function rebaseUrl(url, preferredBase, log) {
@@ -50,6 +52,32 @@ const AUDIT_ERROR_MESSAGE = 'Audit failed';
 const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`;
 
 const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
+
+/**
+ * Whether the no-opportunity `syncSuggestions` pass (marks prior suggestions OUTDATED) should run.
+ * When most submitted URLs failed to produce a successful comparison, the remaining successes
+ * are not treated as an authoritative "prerender resolved" signal — same thresholds ELMO uses
+ * for unreliable scrape stats (`hasEnoughScrapedPages` / `scrapingErrorRateHigh`).
+ *
+ * @param {object} params
+ * @param {number} params.urlsSubmittedForScraping
+ * @param {number} params.successfulComparisonsCount
+ * @param {number} params.scrapingErrorRate
+ * @returns {boolean}
+ */
+export function shouldSyncOutdatedForNoPrerenderFindings({
+  urlsSubmittedForScraping,
+  successfulComparisonsCount,
+  scrapingErrorRate,
+}) {
+  if (urlsSubmittedForScraping <= 0) {
+    return true;
+  }
+  const tooFewSuccessfulReviews = successfulComparisonsCount
+    < PRERENDER_NO_OPP_OUTDATE_MIN_SUCCESSFUL_SCRAPES;
+  const highScrapeFailureRate = scrapingErrorRate >= PRERENDER_NO_OPP_OUTDATE_SCRAPE_ERROR_RATE_PCT;
+  return !(tooFewSuccessfulReviews && highScrapeFailureRate);
+}
 
 /**
  * Checks if a suggestion's data represents a domain-wide suggestion.
@@ -1703,18 +1731,34 @@ export async function processContentAndGenerateOpportunities(context) {
       const existingOpportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
 
       if (existingOpportunity) {
-        // Include domain-wide URL so aggregate suggestion can be marked outdated when appropriate
-        const scrapedUrlsForNoOppty = new Set(scrapedUrlsSet);
-        scrapedUrlsForNoOppty.add(getDomainWideSuggestionUrl(site.getBaseURL()));
-        await syncSuggestions({
-          opportunity: existingOpportunity,
-          newData: [],
-          context,
-          buildKey: (suggestionData) => suggestionData.url,
-          mapNewSuggestion: () => ({}),
-          scrapedUrlsSet: scrapedUrlsForNoOppty,
-        });
         opportunityWithSuggestions = existingOpportunity;
+        const runOutdatedSync = shouldSyncOutdatedForNoPrerenderFindings({
+          urlsSubmittedForScraping,
+          successfulComparisonsCount: successfulComparisons.length,
+          scrapingErrorRate,
+        });
+        if (!runOutdatedSync) {
+          log.warn(
+            `${LOG_PREFIX} Skipping no-opportunity OUTDATED sync: scrape outcomes too noisy to infer `
+            + `"prerender resolved" reliably. baseUrl=${site.getBaseURL()}, siteId=${siteId}, `
+            + `urlsSubmittedForScraping=${urlsSubmittedForScraping}, `
+            + `urlsScrapedSuccessfully=${successfulComparisons.length}, scrapingErrorRate=${scrapingErrorRate}%. `
+            + `Guard: successfulScrapes < ${PRERENDER_NO_OPP_OUTDATE_MIN_SUCCESSFUL_SCRAPES} AND `
+            + `scrapingErrorRate >= ${PRERENDER_NO_OPP_OUTDATE_SCRAPE_ERROR_RATE_PCT}%.`,
+          );
+        } else {
+          // Include domain-wide URL so aggregate suggestion can be marked outdated when appropriate
+          const scrapedUrlsForNoOppty = new Set(scrapedUrlsSet);
+          scrapedUrlsForNoOppty.add(getDomainWideSuggestionUrl(site.getBaseURL()));
+          await syncSuggestions({
+            opportunity: existingOpportunity,
+            newData: [],
+            context,
+            buildKey: (suggestionData) => suggestionData.url,
+            mapNewSuggestion: () => ({}),
+            scrapedUrlsSet: scrapedUrlsForNoOppty,
+          });
+        }
       }
     }
 

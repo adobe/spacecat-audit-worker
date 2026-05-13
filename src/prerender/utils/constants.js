@@ -20,3 +20,17 @@ export const TOP_ORGANIC_URLS_LIMIT = 200;
 export const PRERENDER_RECENT_PROCESSING_TIME_DAYS = 7;
 export const MODE_AI_ONLY = 'ai-only';
 export const MYSTIQUE_BATCH_SIZE = DAILY_BATCH_SIZE;
+
+/**
+ * Minimum successful HTML comparisons required before the no-opportunity OUTDATED sync runs
+ * when scrape failures are also high. Aligns with ELMO `hasEnoughScrapedPages` (50 URLs).
+ */
+export const PRERENDER_NO_OPP_OUTDATE_MIN_SUCCESSFUL_SCRAPES = 50;
+
+/**
+ * Scrape error rate (percent of submitted URLs without a successful comparison) above which
+ * the no-opportunity OUTDATED sync is skipped when successful scrapes are below
+ * PRERENDER_NO_OPP_OUTDATE_MIN_SUCCESSFUL_SCRAPES.
+ * Aligns with ELMO `scrapingErrorRateHigh` (30%).
+ */
+export const PRERENDER_NO_OPP_OUTDATE_SCRAPE_ERROR_RATE_PCT = 30;
