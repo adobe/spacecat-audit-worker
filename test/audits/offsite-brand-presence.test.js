@@ -278,6 +278,7 @@ describe('Offsite Brand Presence Handler', () => {
       );
       expect(options.headers).to.deep.equal({
         'x-api-key': env.SPACECAT_API_KEY,
+        'User-Agent': 'Offsite Audits - Spacecat/1.0',
       });
     });
   });
@@ -428,7 +429,7 @@ describe('Offsite Brand Presence Handler', () => {
         (call) => call.args[0].includes('brandpresence-'),
       );
       expect(providerCall.args[0]).to.equal(
-        `${env.SPACECAT_API_BASE_URL}/sites/${SITE_ID}/llmo/data/${expectedFilePath(PROVIDERS[0])}?sheet=all&include=${INCLUDE_COLUMNS}&limit=${FETCH_PAGE_SIZE}&offset=0`,
+        `${env.SPACECAT_API_BASE_URL}/sites/${SITE_ID}/llmo/data/${expectedFilePath(PROVIDERS[0])}?sheet=all&include=${INCLUDE_COLUMNS}&source=offsite-audits&limit=${FETCH_PAGE_SIZE}&offset=0`,
       );
     });
 
@@ -784,6 +785,108 @@ describe('Offsite Brand Presence Handler', () => {
     });
   });
 
+  describe('Site URL Filtering', () => {
+    it('should filter out URLs matching the site baseURL', async () => {
+      const sources = 'https://example.com/page1;https://other.com/page2';
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([sources]);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(1);
+      expect(createCalls[0].args[0].url).to.equal('https://other.com/page2');
+    });
+
+    it('should filter out URLs with www prefix matching the site baseURL', async () => {
+      const sources = 'https://www.example.com/page;https://other.com/ok';
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([sources]);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(1);
+      expect(createCalls[0].args[0].url).to.equal('https://other.com/ok');
+    });
+
+    it('should filter out subdomain URLs matching the site baseURL', async () => {
+      const sources = 'https://blog.example.com/post;https://other.com/ok';
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([sources]);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(1);
+      expect(createCalls[0].args[0].url).to.equal('https://other.com/ok');
+    });
+
+    it('should not filter URLs from domains that merely contain the site hostname as a substring', async () => {
+      const sources = 'https://notexample.com/page;https://other.com/ok';
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([sources]);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(2);
+    });
+
+    it('should skip filtering and log a warning when baseURL is malformed', async () => {
+      site.getBaseURL.returns('not-a-url');
+      const sources = 'https://other.com/page';
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([sources]);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Could not parse baseURL/),
+      );
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(1);
+    });
+
+    it('should handle www baseURL by filtering both www and bare hostname', async () => {
+      site.getBaseURL.returns('https://www.example.com');
+      const sources = 'https://example.com/page;https://www.example.com/page2;https://other.com/ok';
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([sources]);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({ providerResponses });
+      stubFetchSequence(responses);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const createCalls = dataAccess.AuditUrl.create.getCalls();
+      expect(createCalls).to.have.lengthOf(1);
+      expect(createCalls[0].args[0].url).to.equal('https://other.com/ok');
+    });
+  });
+
   describe('URL Normalization', () => {
     it('should normalize youtube.com/watch URLs to youtu.be short form', async () => {
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
@@ -833,7 +936,7 @@ describe('Offsite Brand Presence Handler', () => {
 
     it('should preserve trailing slash for domain-root URLs', async () => {
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://example.com/']);
+        if (i === 0) return stubProviderData(['https://thirdparty.com/']);
         return okJsonResponse({});
       });
       const responses = buildHappyResponses({ providerResponses });
@@ -842,7 +945,7 @@ describe('Offsite Brand Presence Handler', () => {
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
       const createCalls = dataAccess.AuditUrl.create.getCalls();
-      expect(createCalls[0].args[0].url).to.equal('https://example.com/');
+      expect(createCalls[0].args[0].url).to.equal('https://thirdparty.com/');
     });
 
     it('should strip trailing slash and query parameters from reddit URLs', async () => {
@@ -1132,7 +1235,7 @@ describe('Offsite Brand Presence Handler', () => {
   describe('Top Cited URLs', () => {
     it('should add non-offsite URLs to URL store with cited-analysis audit type', async () => {
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://example.com/page1;https://other.com/page2']);
+        if (i === 0) return stubProviderData(['https://thirdparty.com/page1;https://other.com/page2']);
         return okJsonResponse({});
       });
       const responses = buildHappyResponses({ providerResponses });
@@ -1148,7 +1251,7 @@ describe('Offsite Brand Presence Handler', () => {
     });
 
     it('should exclude offsite domain URLs from top-cited bucket', async () => {
-      const sources = 'https://youtube.com/watch?v=abc;https://reddit.com/r/test/;https://en.wikipedia.org/wiki/Adobe;https://example.com/page';
+      const sources = 'https://youtube.com/watch?v=abc;https://reddit.com/r/test/;https://en.wikipedia.org/wiki/Adobe;https://thirdparty.com/page';
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
         if (i === 0) return stubProviderData([sources]);
         return okJsonResponse({});
@@ -1163,12 +1266,12 @@ describe('Offsite Brand Presence Handler', () => {
       const createCalls = dataAccess.AuditUrl.create.getCalls();
       const topCitedCalls = createCalls.filter((c) => c.args[0].audits[0] === 'cited-analysis');
       expect(topCitedCalls).to.have.lengthOf(1);
-      expect(topCitedCalls[0].args[0].url).to.equal('https://example.com/page');
+      expect(topCitedCalls[0].args[0].url).to.equal('https://thirdparty.com/page');
     });
 
     it('should trigger DRS scraping for top-cited URLs', async () => {
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
-        if (i === 0) return stubProviderData(['https://example.com/page1;https://other.com/page2']);
+        if (i === 0) return stubProviderData(['https://thirdparty.com/page1;https://other.com/page2']);
         return okJsonResponse({});
       });
       const responses = buildHappyResponses({ providerResponses });
@@ -1187,7 +1290,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(mockSubmitScrapeJob).to.have.been.calledWith(sinon.match({
         datasetId: SCRAPE_DATASET_IDS.TOP_CITED,
         siteId: SITE_ID,
-        urls: [{ url: 'https://example.com/page1' }, { url: 'https://other.com/page2' }],
+        urls: [{ url: 'https://thirdparty.com/page1' }, { url: 'https://other.com/page2' }],
       }));
     });
 
@@ -1742,7 +1845,7 @@ describe('Offsite Brand Presence Handler', () => {
     it('should complete full audit with URLs from multiple domains', async () => {
       const sources = [
         'https://www.youtube.com/watch?v=abc;https://reddit.com/r/adobe/post1',
-        'https://youtube.com/watch?v=def;https://example.com/unrelated;https://en.wikipedia.org/wiki/Adobe',
+        'https://youtube.com/watch?v=def;https://thirdparty.com/unrelated;https://en.wikipedia.org/wiki/Adobe',
       ];
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
         if (i === 0) return stubProviderData(sources);
@@ -1765,7 +1868,7 @@ describe('Offsite Brand Presence Handler', () => {
       const createCalls = dataAccess.AuditUrl.create.getCalls();
       const topCitedCalls = createCalls.filter((c) => c.args[0].audits[0] === 'cited-analysis');
       expect(topCitedCalls).to.have.lengthOf(1);
-      expect(topCitedCalls[0].args[0].url).to.equal('https://example.com/unrelated');
+      expect(topCitedCalls[0].args[0].url).to.equal('https://thirdparty.com/unrelated');
 
       const topCitedJob = result.auditResult.drsJobs.find((j) => j.datasetId === SCRAPE_DATASET_IDS.TOP_CITED);
       expect(topCitedJob).to.deep.include({

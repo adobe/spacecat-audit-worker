@@ -16,6 +16,11 @@ import { sleep } from '../support/utils.js';
 const SHAREPOINT_URL = 'https://adobe.sharepoint.com/:x:/r/sites/HelixProjects/Shared%20Documents/sites/elmo-ui-data';
 const AUDIT_NAME = 'REPORT_UPLOADER';
 
+// ZIP/XLSX magic bytes: PK\x03\x04
+const XLSX_MAGIC = Buffer.from([0x50, 0x4B, 0x03, 0x04]);
+const XLSX_RETRY_MAX = 3;
+const XLSX_RETRY_DELAY_MS = 60_000;
+
 /**
  * @import { SharepointClient } from '@adobe/spacecat-helix-content-sdk/src/sharepoint/client.js'
  */
@@ -81,6 +86,47 @@ export async function readFromSharePoint(filename, outputLocation, sharepointCli
     });
     throw error;
   }
+}
+
+/**
+ * Downloads a document from SharePoint and validates it is a valid XLSX file.
+ * Retries up to XLSX_RETRY_MAX times with a fixed delay when SharePoint returns
+ * a non-XLSX response (e.g. an HTML error page from a transient outage).
+ *
+ * Note: only magic-byte failures trigger a retry. Network errors or SDK throws
+ * from the underlying readFromSharePoint call propagate immediately without retrying.
+ * @param {string} sheetName - The sheet filename (without .xlsx extension)
+ * @param {string} sourceFolder - The SharePoint source folder path
+ * @param {SharepointClient} sharepointClient - The SharePoint client instance
+ * @param {Pick<Console, 'debug' | 'info' | 'warn' | 'error'>} log - Logger instance
+ * @returns {Promise<Buffer>} - The XLSX file content as a buffer
+ */
+export async function readFromSharePointWithRetry(sheetName, sourceFolder, sharepointClient, log) {
+  for (let attempt = 1; attempt <= XLSX_RETRY_MAX; attempt += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const buffer = await readFromSharePoint(sheetName, sourceFolder, sharepointClient, log);
+    if (buffer.subarray(0, 4).equals(XLSX_MAGIC)) {
+      return buffer;
+    }
+    log.warn(
+      `%s: SharePoint returned non-XLSX content on attempt ${attempt}/${XLSX_RETRY_MAX} `
+      + `(size=${buffer.length}, magic=${buffer.subarray(0, 4).toString('hex')}, `
+      + `sheet=${sheetName}, folder=${sourceFolder})`,
+      AUDIT_NAME,
+    );
+    if (attempt < XLSX_RETRY_MAX) {
+      // Fixed delay tuned for the SharePoint cache-flip recovery window observed in LLMO-4739;
+      // exponential backoff offers no benefit when the outage resolves on a known ~60s cadence.
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(XLSX_RETRY_DELAY_MS);
+    }
+  }
+  log.error(
+    `%s: SharePoint returned non-XLSX content after ${XLSX_RETRY_MAX} attempts -- aborting S3 upload`,
+    AUDIT_NAME,
+    { sheetName, sourceFolder },
+  );
+  throw new Error(`SharePoint returned non-XLSX content after ${XLSX_RETRY_MAX} attempts -- aborting S3 upload`);
 }
 
 async function fetchWithRetry(url, options, endpointName, log, maxRetries = 3) {

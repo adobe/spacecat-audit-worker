@@ -37,8 +37,8 @@ describe('agentic-urls', () => {
     mockGetS3Config = sandbox.stub().returns({
       region: 'us-east-1',
       bucket: 'test-bucket',
-      customerName: 'example',
-      customerDomain: 'example_com',
+      siteName: 'example',
+      siteKey: 'example_com',
       databaseName: 'cdn_logs_example_com',
       getAthenaTempLocation: () => 's3://test-bucket/temp/athena-results/',
     });
@@ -374,8 +374,8 @@ describe('agentic-urls', () => {
       mockGetS3Config.returns({
         region: 'us-east-1',
         bucket: 'test-bucket',
-        customerName: 'example',
-        customerDomain: 'www_example_com',
+        siteName: 'example',
+        siteKey: 'www_example_com',
         databaseName: 'cdn_logs_www_example_com',
         getAthenaTempLocation: () => 's3://test-bucket/temp/athena-results/',
       });
@@ -383,7 +383,7 @@ describe('agentic-urls', () => {
 
       await getTopAgenticUrlsFromAthena(site, context);
 
-      // The S3 config should use 'example' as customerName (second part when first is 'www')
+      // The S3 config should use 'example' as siteName (second part when first is 'www')
       expect(mockGetS3Config).to.have.been.calledWith(site, context);
     });
 

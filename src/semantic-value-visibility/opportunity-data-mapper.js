@@ -18,14 +18,14 @@ export function createOpportunityData(props = {}) {
   return {
     runbook: '',
     origin: 'AUTOMATION',
-    title: 'Improve image semantic visibility for LLMs',
-    description: 'Marketing images on this site contain text that is not represented in HTML. Adding semantic HTML makes this content visible to search engines and AI models.',
+    title: 'Expose in-image text to AI search and LLMs',
+    description: 'Make text inside images readable to AI search engines, without changing how the page looks to visitors. Images often contain valuable copy (headlines, offers, or calls-to-action) that only humans can see; adding semantic HTML makes it indexable too.',
     guidance: {
       insight: guidance.insight,
       rationale: guidance.rationale,
       recommendation: guidance.recommendation,
     },
-    tags: ['LLMO', 'SEO', 'Images'],
+    tags: ['isElmo', 'content', 'edgeOptimize'],
     data: {
       dataSources: [DATA_SOURCES.SITE],
     },

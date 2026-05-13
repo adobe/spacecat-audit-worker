@@ -30,3 +30,8 @@ export const MIN_TEXT_LENGTH = 150;
 
 // Maximum characters to display in the audit report
 export const MAX_CHARACTERS_DISPLAY = 200;
+
+// Elements whose anchor text exceeds this fraction of total text are treated
+// as navigation (not prose) and skipped during readability analysis.
+// Targets AEM vertical-nav components that render as plain <div>s instead of <nav> tags.
+export const MAX_LINK_DENSITY_RATIO = 0.5;

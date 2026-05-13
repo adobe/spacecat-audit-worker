@@ -14,6 +14,7 @@ import {
   getLastNumberOfWeeks, llmoConfig, tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
@@ -25,6 +26,7 @@ import { handleCdnBucketConfigChanges } from './cdn-config-handler.js';
 import { sendOnboardingNotification } from './onboarding-notifications.js';
 
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
+const REFERRAL_TRAFFIC_DAILY_AUDIT = 'llmo-referral-traffic-daily';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
 
 /**
@@ -273,10 +275,25 @@ export async function triggerCdnLogsReport(context, site) {
     auditContext: {
       weekOffset: -1,
       categoriesUpdated: true,
+      refreshAgenticDailyExport: true,
     },
   });
 
   log.info('Successfully triggered cdn-logs-report audit');
+}
+
+async function triggerGeoBrandPresenceRefresh(context, site, configVersion) {
+  const { sqs, dataAccess, log } = context;
+  const { Configuration } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  const siteId = site.getSiteId();
+  log.info('Triggering geo-brand-presence-trigger-refresh for site: %s', siteId);
+  await sqs.sendMessage(configuration.getQueues().audits, {
+    type: 'geo-brand-presence-trigger-refresh',
+    siteId,
+    auditContext: { configVersion },
+  });
+  log.info('Successfully triggered geo-brand-presence-trigger-refresh');
 }
 
 export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditContext = {}) {
@@ -299,6 +316,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       'llm-error-pages',
       'summarization',
       REFERRAL_TRAFFIC_AUDIT,
+      REFERRAL_TRAFFIC_DAILY_AUDIT,
       'readability',
       'wikipedia-analysis',
     ];
@@ -321,33 +339,43 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   const triggeredSteps = [];
   const hasOptelData = await checkOptelData(domain, context);
-  const { configVersion, previousConfigVersion } = auditContext;
+  const { configVersion, previousConfigVersion, onboardingMode } = auditContext;
   const isFirstTimeOnboarding = !previousConfigVersion;
 
-  // For brandalf-enabled orgs, resolve brand ID so the DRS scheduler can use v2 prompts
+  // For brandalf-enabled orgs, resolve brand ID so the DRS scheduler can use v2 prompts.
+  // If onboardingMode is explicitly 'v1' (set by api-service for mixed-state orgs with
+  // pre-Brandalf sites), skip v2 brand resolution — the org has brandalf=true but was
+  // onboarded via the v1 path, so no customer config brand exists yet.
   let brandId;
   let organizationId;
   if (isFirstTimeOnboarding) {
     const orgId = site.getOrganizationId?.() || auditContext.imsOrgId;
     if (orgId) {
-      const isV2 = await isBrandalfEnabled(orgId, env, log);
+      const isV2 = onboardingMode !== 'v1' && await isBrandalfEnabled(orgId, env, log);
       if (isV2) {
         organizationId = orgId;
         try {
           const { postgrestClient } = context.dataAccess?.services || {};
           if (postgrestClient?.from) {
+            // Prefer the brand whose baseSiteId (site_id column) matches this
+            // site — this is the primary brand created during onboarding with
+            // the correct base URL.  Fall back to brand_sites join if no
+            // baseSiteId match exists (backward compat for brands created
+            // before baseSiteId was set during onboarding).
             const { data: brands } = await postgrestClient
               .from('brands')
-              .select('id, brand_sites(site_id)')
+              .select('id, site_id, brand_sites(site_id)')
               .eq('organization_id', organizationId)
               .eq('status', 'active');
 
-            const match = brands?.find(
+            const baseSiteMatch = brands?.find((b) => b.site_id === siteId);
+            const brandSiteMatch = !baseSiteMatch && brands?.find(
               (b) => b.brand_sites?.some((bs) => bs.site_id === siteId),
             );
+            const match = baseSiteMatch || brandSiteMatch;
             if (match) {
               brandId = match.id;
-              log.info(`Resolved brand ${brandId} for site ${siteId} (v2 onboarding)`);
+              log.info(`Resolved brand ${brandId} for site ${siteId} (v2 onboarding, via ${baseSiteMatch ? 'baseSiteId' : 'brand_sites'})`);
             } else {
               log.warn(`No brand found matching site ${siteId} in org ${organizationId} for v2 BP schedule`);
             }
@@ -476,8 +504,19 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   const needsBrandPresenceRefresh = previousConfigVersion
     && (changes.brands || changes.competitors);
 
-  if (hasBrandPresenceChanges || needsBrandPresenceRefresh) {
-    log.info('LLMO config changes detected affecting brand presence; data collection will pick up changes on the next scheduled run');
+  if (hasBrandPresenceChanges) {
+    const drsClient = DrsClient.createFrom(context);
+    if (drsClient.isConfigured()) {
+      await drsClient.triggerBrandDetection(siteId);
+      triggeredSteps.push('drs-brand-detection');
+    } else {
+      log.warn('DRS not configured; skipping brand detection trigger');
+    }
+  }
+
+  if (needsBrandPresenceRefresh) {
+    await triggerGeoBrandPresenceRefresh(context, site, configVersion);
+    triggeredSteps.push('geo-brand-presence-trigger-refresh');
   }
 
   if (triggeredSteps.length > 0) {

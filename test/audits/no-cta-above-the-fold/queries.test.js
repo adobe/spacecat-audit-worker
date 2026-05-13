@@ -44,5 +44,23 @@ describe("No Engageable Content query template", () => {
     expect(query).to.include("5000");
     expect(query).to.include("(year = 2024 AND month = 8)");
   });
+
+  it("applies the minimum bounces threshold", () => {
+    const query = getNoCTAAboveTheFoldAnalysisQuery(defaultParams);
+
+    expect(query).to.include("p.bounces >= 25");
+  });
+
+  it("applies the absolute bounce-rate floor against the channel baseline", () => {
+    const query = getNoCTAAboveTheFoldAnalysisQuery(defaultParams);
+
+    expect(query).to.include("GREATEST(ss.channel_bounce_rate, 0.5)");
+  });
+
+  it("ranks candidates by projected traffic lost", () => {
+    const query = getNoCTAAboveTheFoldAnalysisQuery(defaultParams);
+
+    expect(query).to.include("ORDER BY projected_traffic_lost DESC");
+  });
 });
 

@@ -360,6 +360,58 @@ export function isSelfReferencing(url1, url2) {
 }
 
 /**
+ * Validates the structure and types of canonical metadata returned by the scraper.
+ * Returns false (and logs a warning) for any of these conditions:
+ *  - metadata is missing or not a plain object
+ *  - any of exists / count / inHead keys are absent
+ *  - exists or inHead are not booleans
+ *  - count is not a number
+ *  - href key is absent when exists is true
+ *
+ * @param {*} metadata - The canonical metadata object from the scrape result.
+ * @param {object} log - Logger.
+ * @param {string} key - S3 key (used in log messages).
+ * @returns {boolean} True if the metadata is structurally valid, false otherwise.
+ */
+export function isValidCanonicalMetadata(metadata, log, key) {
+  if (!metadata || typeof metadata !== 'object') {
+    log.warn(`[canonical] No canonical metadata in S3 object: ${key}, skipping page`);
+    return false;
+  }
+
+  const requiredFields = ['exists', 'count', 'inHead'];
+  for (const field of requiredFields) {
+    if (!(field in metadata)) {
+      log.warn(`[canonical] Canonical metadata missing required field '${field}' in ${key}, skipping page`);
+      return false;
+    }
+  }
+
+  if (typeof metadata.exists !== 'boolean') {
+    log.warn(`[canonical] Canonical metadata 'exists' is not a boolean in ${key}, skipping page`);
+    return false;
+  }
+
+  if (typeof metadata.count !== 'number') {
+    log.warn(`[canonical] Canonical metadata 'count' is not a number in ${key}, skipping page`);
+    return false;
+  }
+
+  if (typeof metadata.inHead !== 'boolean') {
+    log.warn(`[canonical] Canonical metadata 'inHead' is not a boolean in ${key}, skipping page`);
+    return false;
+  }
+
+  // href is only required when exists is true; a page with no canonical tag won't have one
+  if (metadata.exists && !('href' in metadata)) {
+    log.warn(`[canonical] Canonical metadata 'href' is absent when exists=true in ${key}, skipping page`);
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Generates a suggestion for fixing a canonical issue based on the check type.
  *
  * @param {string} checkType - The type of canonical check that failed.
@@ -442,16 +494,9 @@ export async function processScrapedContent(context) {
         return null;
       }
 
-      if (!scrapedObject?.scrapeResult?.canonical) {
-        log.warn(`[canonical] No canonical metadata in S3 object: ${key}`);
-        return {
-          url: finalUrl,
-          checks: [{
-            check: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
-            success: false,
-            explanation: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.explanation,
-          }],
-        };
+      const canonicalMetadata = scrapedObject?.scrapeResult?.canonical;
+      if (!isValidCanonicalMetadata(canonicalMetadata, log, key)) {
+        return null;
       }
 
       // Filter out scraped pages that redirected to auth/login pages or PDFs
@@ -470,9 +515,6 @@ export async function processScrapedContent(context) {
         log.info(`[canonical] Skipping ${finalUrl} - disallowed by robots.txt`);
         return null;
       }
-
-      // Use canonical metadata already extracted by the scraper (Puppeteer)
-      const canonicalMetadata = scrapedObject.scrapeResult.canonical;
       const canonicalUrl = canonicalMetadata.href || null;
       const canonicalTagChecks = [];
 

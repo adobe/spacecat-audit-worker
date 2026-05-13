@@ -792,6 +792,53 @@ describe('importAhrefPaidStep', () => {
 
     expect(logStub.info).to.have.been.calledWithMatch(/Triggering ahref-paid-pages import/);
   });
+
+  it('should enable ahref-paid-pages import when not already enabled', async () => {
+    const stepContext = {
+      site,
+      log: logStub,
+      finalUrl: auditUrl,
+    };
+
+    await importAhrefPaidStep(stepContext);
+
+    expect(site.getConfig().enableImport).to.have.been.calledWith('ahref-paid-pages');
+    expect(site.save).to.have.been.called;
+  });
+
+  it('should not enable import when ahref-paid-pages is already enabled', async () => {
+    const mockConfigWithImport = createMockConfig(sandbox, {
+      getImports: () => [{ type: 'ahref-paid-pages', enabled: true }],
+    });
+    const siteWithImport = getSite(sandbox, {
+      getConfig: () => mockConfigWithImport,
+    });
+
+    const stepContext = {
+      site: siteWithImport,
+      log: logStub,
+      finalUrl: auditUrl,
+    };
+
+    await importAhrefPaidStep(stepContext);
+
+    expect(mockConfigWithImport.enableImport).to.not.have.been.called;
+  });
+
+  it('should throw error when site config is null', async () => {
+    const siteWithNullConfig = getSite(sandbox, {
+      getConfig: () => null,
+    });
+
+    const stepContext = {
+      site: siteWithNullConfig,
+      log: logStub,
+      finalUrl: auditUrl,
+    };
+
+    await expect(importAhrefPaidStep(stepContext))
+      .to.be.rejectedWith(/site config is null/);
+  });
 });
 
 describe('importWeekStep1/2/3 (subsequent import steps)', () => {

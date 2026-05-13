@@ -96,7 +96,7 @@ describe('LLM Error Pages Handler', function () {
 
     mockGetS3Config = sandbox.stub().returns({
       bucket: 'test-bucket',
-      customerName: 'test-customer',
+      siteName: 'test-customer',
       databaseName: 'test_db',
       tableName: 'test_table',
       getAthenaTempLocation: () => 's3://test-bucket/temp/',
@@ -912,7 +912,7 @@ describe('LLM Error Pages Handler - Athena/SEO fallback', function () {
       },
       '../../../src/llm-error-pages/utils.js': {
         getS3Config: sandbox.stub().resolves({
-          bucket: 'test', customerName: 'test', databaseName: 'test_db', tableName: 'test_table',
+          bucket: 'test', siteName: 'test', databaseName: 'test_db', tableName: 'test_table',
           getAthenaTempLocation: () => 's3://test/temp/',
         }),
         generateReportingPeriods: sandbox.stub().returns({ weeks: [{ weekNumber: 1, year: 2025, startDate: new Date(), endDate: new Date(), periodIdentifier: 'w01-2025' }] }),
@@ -932,7 +932,7 @@ describe('LLM Error Pages Handler - Athena/SEO fallback', function () {
       '../../../src/utils/cdn-utils.js': {
         buildSiteFilters: sandbox.stub().returns(''),
         getS3Config: sandbox.stub().returns({
-          bucket: 'test', customerName: 'test', databaseName: 'test_db', tableName: 'test_table',
+          bucket: 'test', siteName: 'test', databaseName: 'test_db', tableName: 'test_table',
           getAthenaTempLocation: () => 's3://test/temp/',
         }),
         getCdnAwsRuntime: () => ({
@@ -1012,7 +1012,7 @@ describe('LLM Error Pages Handler - Athena/SEO fallback', function () {
       '../../../src/utils/cdn-utils.js': {
         buildSiteFilters: sandbox.stub().returns(''),
         getS3Config: sandbox.stub().returns({
-          bucket: 'test', customerName: 'test', databaseName: 'test_db', tableName: 'test_table',
+          bucket: 'test', siteName: 'test', databaseName: 'test_db', tableName: 'test_table',
           getAthenaTempLocation: () => 's3://test/temp/',
         }),
         getCdnAwsRuntime: () => ({
@@ -1088,7 +1088,7 @@ describe('LLM Error Pages Handler (isolated)', function () {
     const mockAthenaClient = { query: sandbox.stub().resolves([]) };
     const mockGetS3Config = sandbox.stub().returns({
       bucket: 'test-bucket',
-      customerName: 'test-customer',
+      siteName: 'test-customer',
       databaseName: 'test_db',
       tableName: 'test_table',
       getAthenaTempLocation: () => 's3://test-bucket/temp/',
@@ -1252,7 +1252,7 @@ describe('LLM Error Pages Handler – default export routing', function () {
       },
       '../../../src/llm-error-pages/utils.js': {
         getS3Config: sandbox.stub().resolves({
-          databaseName: 'db', tableName: 'tbl', customerName: 'test',
+          databaseName: 'db', tableName: 'tbl', siteName: 'test',
           getAthenaTempLocation: () => 's3://tmp/',
         }),
         generateReportingPeriods: sandbox.stub().returns({

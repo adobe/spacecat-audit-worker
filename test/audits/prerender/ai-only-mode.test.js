@@ -459,6 +459,14 @@ describe('Prerender AI-Only Mode', () => {
       expect(message.deliveryType).to.equal('unknown');
     });
 
+    it('should include the site base URL as top-level url in the SQS message', async () => {
+      const result = await importTopPages(context);
+
+      expect(result.status).to.equal('complete');
+      const message = mockSqs.sendMessage.getCall(0).args[1];
+      expect(message.url).to.equal('https://example.com');
+    });
+
     it('should handle missing getId method on suggestion', async () => {
       mockSuggestions[0].getId = undefined;
 
@@ -645,12 +653,12 @@ describe('Prerender AI-Only Mode', () => {
       );
 
       expect(opportunity).to.equal(mockOpportunityNormal);
-      // getSuggestions is called twice: once by findPreservableDomainWideSuggestion and once
-      // after syncSuggestions to resolve suggestionId for each candidate URL.
-      expect(getSuggestionsStub).to.have.been.calledTwice;
+      // getSuggestions is called once by findPreservableDomainWideSuggestion only —
+      // suggestionId is now the URL itself, no post-sync DB fetch needed.
+      expect(getSuggestionsStub).to.have.been.calledOnce;
       // One candidate per URL in the current batch — plain objects with S3 keys and suggestionId
       expect(auditRunCandidates).to.have.lengthOf(1);
-      expect(auditRunCandidates[0].suggestionId).to.equal('page1-suggestion-id');
+      expect(auditRunCandidates[0].suggestionId).to.equal('https://example.com/page1');
       expect(auditRunCandidates[0].url).to.equal('https://example.com/page1');
       expect(auditRunCandidates[0].originalHtmlMarkdownKey).to.include('current-job-id');
       expect(auditRunCandidates[0].markdownDiffKey).to.include('current-job-id');

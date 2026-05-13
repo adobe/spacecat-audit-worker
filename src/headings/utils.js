@@ -309,6 +309,9 @@ export function extractTocData($, getHeadingSelectorFn) {
   return headings
     .filter((h) => {
       const text = $(h).text().trim();
+      if (!text) {
+        return false;
+      }
       if (isHeadingInExcludedContainer(h, $)) {
         return false;
       }

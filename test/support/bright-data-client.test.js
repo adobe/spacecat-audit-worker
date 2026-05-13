@@ -126,6 +126,19 @@ describe('BrightDataClient', () => {
       expect(client.extractLocale('https://example.com/emea/page')).to.equal('emea');
     });
 
+    it('extracts two-level locale from path (region/language)', () => {
+      expect(client.extractLocale('https://example.com/us/en/products')).to.equal('us/en');
+      expect(client.extractLocale('https://example.com/de/de/about')).to.equal('de/de');
+      expect(client.extractLocale('https://example.com/jp/ja/docs')).to.equal('jp/ja');
+      expect(client.extractLocale('https://example.com/hk/zh/page')).to.equal('hk/zh');
+    });
+
+    it('extracts two-level locale with composite second segment (region/lang-region)', () => {
+      expect(client.extractLocale('https://example.com/hk/zh_hk/page')).to.equal('hk/zh_hk');
+      expect(client.extractLocale('https://example.com/hk/zh_HK/manage/flight')).to.equal('hk/zh_hk');
+      expect(client.extractLocale('https://example.com/jp/ja-jp/shoe-guide')).to.equal('jp/ja-jp');
+    });
+
     it('returns null for codes not in any locale list', () => {
       expect(client.extractLocale('https://example.com/xy/products')).to.be.null;
       expect(client.extractLocale('https://example.com/zz/about')).to.be.null;
@@ -163,6 +176,12 @@ describe('BrightDataClient', () => {
       expect(client.extractLocaleFromBaseUrl('https://www.bulk.com/uk')).to.equal('uk');
       expect(client.extractLocaleFromBaseUrl('https://www.bulk.com/eu/')).to.equal('eu');
       expect(client.extractLocaleFromBaseUrl('https://www.bulk.com/apac')).to.equal('apac');
+    });
+
+    it('extracts two-level locale from base URL (region/language)', () => {
+      expect(client.extractLocaleFromBaseUrl('https://example.com/us/en')).to.equal('us/en');
+      expect(client.extractLocaleFromBaseUrl('https://example.com/hk/zh_hk')).to.equal('hk/zh_hk');
+      expect(client.extractLocaleFromBaseUrl('https://example.com/jp/ja-jp')).to.equal('jp/ja-jp');
     });
 
     it('returns null for base URL without locale', () => {
@@ -473,6 +492,13 @@ describe('BrightDataClient', () => {
       expect(extractLocaleFromUrl('https://example.com/pt-br/page')).to.equal('pt-br');
     });
 
+    it('extracts two-level locale from URL path (region/language)', () => {
+      expect(extractLocaleFromUrl('https://example.com/us/en/page')).to.equal('us/en');
+      expect(extractLocaleFromUrl('https://example.com/de/de/sustainability')).to.equal('de/de');
+      expect(extractLocaleFromUrl('https://example.com/hk/zh_HK/manage/flight')).to.equal('hk/zh_hk');
+      expect(extractLocaleFromUrl('https://example.com/jp/ja-jp/shoe-guide')).to.equal('jp/ja-jp');
+    });
+
     it('returns null when first segment is not a locale', () => {
       expect(extractLocaleFromUrl('https://example.com/blog/page')).to.be.null;
       expect(extractLocaleFromUrl('https://example.com/products/item')).to.be.null;
@@ -513,6 +539,15 @@ describe('BrightDataClient', () => {
         .to.equal('https://example.com/fr');
       expect(buildLocaleSearchUrl('https://example.com', 'https://example.com/ko-kr/page'))
         .to.equal('https://example.com/ko-kr');
+    });
+
+    it('appends two-level locale from broken link (region/language)', () => {
+      expect(buildLocaleSearchUrl('https://example.com', 'https://example.com/us/en/page'))
+        .to.equal('https://example.com/us/en');
+      expect(buildLocaleSearchUrl('https://example.com', 'https://example.com/de/de/sustainability'))
+        .to.equal('https://example.com/de/de');
+      expect(buildLocaleSearchUrl('https://example.com', 'https://example.com/hk/zh_HK/manage/flight'))
+        .to.equal('https://example.com/hk/zh_hk');
     });
 
     it('returns base URL unchanged when base already has a subpath', () => {
@@ -597,10 +632,27 @@ describe('BrightDataClient', () => {
       expect(client.resolveGoogleLocaleParams('ja')).to.deep.equal({ hl: 'ja', gl: 'JP' });
     });
 
+    it('maps two-level locale (region/language) to hl/gl using last segment', () => {
+      expect(client.resolveGoogleLocaleParams('us/en')).to.deep.equal({ hl: 'en', gl: 'US' });
+      expect(client.resolveGoogleLocaleParams('de/de')).to.deep.equal({ hl: 'de', gl: 'DE' });
+      expect(client.resolveGoogleLocaleParams('jp/ja')).to.deep.equal({ hl: 'ja', gl: 'JP' });
+    });
+
+    it('maps two-level locale with composite second segment (region/lang-region) to hl/gl', () => {
+      expect(client.resolveGoogleLocaleParams('hk/zh_hk')).to.deep.equal({ hl: 'zh', gl: 'HK' });
+      expect(client.resolveGoogleLocaleParams('jp/ja-jp')).to.deep.equal({ hl: 'ja', gl: 'JP' });
+      expect(client.resolveGoogleLocaleParams('us/en-us')).to.deep.equal({ hl: 'en', gl: 'US' });
+    });
+
     it('returns null for invalid locale formats', () => {
       expect(client.resolveGoogleLocaleParams('xyz')).to.deep.equal({ hl: null, gl: null });
       expect(client.resolveGoogleLocaleParams('xy_zz')).to.deep.equal({ hl: null, gl: null });
       expect(client.resolveGoogleLocaleParams('toolong')).to.deep.equal({ hl: null, gl: null });
+    });
+
+    it('returns null for two-level locale where last segment is unrecognized', () => {
+      expect(client.resolveGoogleLocaleParams('us/xy')).to.deep.equal({ hl: null, gl: null });
+      expect(client.resolveGoogleLocaleParams('hk/zz_zz')).to.deep.equal({ hl: null, gl: null });
     });
   });
 

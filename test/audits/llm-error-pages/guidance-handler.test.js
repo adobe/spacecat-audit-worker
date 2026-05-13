@@ -869,8 +869,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     expect(resp.status).to.equal(200);
   });
 
-  it('covers getLlmoDataFolder fallback to s3Config.customerName', async () => {
-    // Test the || s3Config.customerName fallback when getLlmoDataFolder returns null
+  it('covers getLlmoDataFolder fallback to s3Config.siteName', async () => {
+    // Test the || s3Config.siteName fallback when getLlmoDataFolder returns null
     const existingWorkbook = new ExcelJS.Workbook();
     const sheet = existingWorkbook.addWorksheet('data');
     sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
@@ -890,7 +890,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
           getId: () => 'site-1',
           getConfig: () => ({
             getCdnLogsConfig: () => null,
-            getLlmoDataFolder: () => null, // This will trigger the || s3Config.customerName fallback
+            getLlmoDataFolder: () => null, // This will trigger the || s3Config.siteName fallback
             getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
           }),
         }),
