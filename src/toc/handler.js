@@ -353,11 +353,13 @@ export async function submitForScraping(context) {
     return { auditResult: terminalResult, fullAuditRef: site.getBaseURL() };
   }
 
-  const pagesToScrape = topPages.slice(0, MAX_TOP_PAGES);
-  log.info(`[TOC] Submitting ${pagesToScrape.length} URLs for scraping`);
+  // Limit to 5 URLs for testing; remove slice before full rollout (LLMO-4880)
+  const urlsToScrape = topPages.slice(0, 5);
+  log.info(`[TOC] Submitting ${urlsToScrape.length} URLs for scraping (processingType=prerender)`);
   return {
-    urls: pagesToScrape.map((url) => ({ url })),
+    urls: urlsToScrape.map((url) => ({ url })),
     siteId: site.getId(),
+    processingType: 'prerender',
     maxScrapeAge: 24,
   };
 }
