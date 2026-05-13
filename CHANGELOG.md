@@ -1,3 +1,15 @@
+# [1.440.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.439.1...v1.440.0) (2026-05-13)
+
+
+### Bug Fixes
+
+* **prerender:** guard domain-wide suggestions from stale-page cleanup ([#2515](https://github.com/adobe/spacecat-audit-worker/issues/2515)) ([42655aa](https://github.com/adobe/spacecat-audit-worker/commit/42655aadbb6daca7cd71e61722792b55e72d46b9))
+
+
+### Features
+
+* **offsite:** include brand scope fields in mystique SQS messages ([#2427](https://github.com/adobe/spacecat-audit-worker/issues/2427)) ([bb3d002](https://github.com/adobe/spacecat-audit-worker/commit/bb3d002925ac3732e5ff28fc3159bb101920a4d2)), closes [spacecat-shared#1576](https://github.com/spacecat-shared/issues/1576) [spacecat-api-service#2316](https://github.com/spacecat-api-service/issues/2316)
+
 ## [1.439.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.439.0...v1.439.1) (2026-05-13)
 
 
