@@ -12,6 +12,7 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { ok, internalServerError } from '@adobe/spacecat-shared-http-utils';
+import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 
 const STALENESS_DAYS = 7;
 const STALENESS_MS = STALENESS_DAYS * 24 * 60 * 60 * 1000;
@@ -29,6 +30,11 @@ export default async function rumConfigRefresh(message, context) {
   const { log } = context;
   const { siteId } = message;
 
+  if (!siteId) {
+    log.error('[rum-config-refresh] Missing siteId in message payload');
+    return ok({ skipped: true, reason: 'missing siteId' });
+  }
+
   const { Site } = context.dataAccess;
   const site = await Site.findById(siteId);
   if (!site) {
@@ -45,26 +51,37 @@ export default async function rumConfigRefresh(message, context) {
     }
   }
 
-  const domain = site.getBaseURL().replace(/^https?:\/\//, '');
+  const domain = new URL(site.getBaseURL()).hostname;
   let hasDomainKey = false;
+  let timeoutId;
+  let timedOut = false;
 
   try {
     const rumApiClient = RUMAPIClient.createFrom(context);
     await Promise.race([
       rumApiClient.retrieveDomainkey(domain),
       new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('RUM check timed out')), RUM_CHECK_TIMEOUT_MS);
+        timeoutId = setTimeout(() => {
+          timedOut = true;
+          reject(new Error('RUM check timed out'));
+        }, RUM_CHECK_TIMEOUT_MS);
       }),
     ]);
     hasDomainKey = true;
   } catch (e) {
+    if (timedOut) {
+      log.error(`[rum-config-refresh] RUM check timed out for ${domain}, skipping config update`);
+      return ok({ skipped: true, reason: 'timeout' });
+    }
     log.warn(`[rum-config-refresh] RUM check failed for ${domain}: ${e.message}`);
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   try {
     const siteConfig = site.getConfig();
     siteConfig.updateRumConfig(hasDomainKey);
-    site.setConfig(siteConfig.state);
+    site.setConfig(Config.toDynamoItem(siteConfig));
     await site.save();
     log.info(`[rum-config-refresh] Updated rumConfig for site ${siteId}: hasDomainKey=${hasDomainKey}`);
     return ok({ hasDomainKey, updated: true });
