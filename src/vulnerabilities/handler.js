@@ -344,6 +344,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
     SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
   ].includes(s.getStatus()));
   const suggestionIds = newSuggestions.map((s) => s.getId());
+  const imsOrg = await getImsOrgId(site, dataAccess, log);
   const message = {
     type: 'codefix:security-vulnerabilities',
     siteId: site.getId(),
@@ -355,6 +356,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
       suggestionIds,
       codeBucket: codeInfo.codeBucket,
       codePath: codeInfo.codePath,
+      imsOrg,
     },
   };
 

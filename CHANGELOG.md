@@ -1,3 +1,17 @@
+## [1.439.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.439.0...v1.439.1) (2026-05-13)
+
+
+### Bug Fixes
+
+* **user-agent:** narrow Gemini pattern and add Google AI Mode platform ([#2505](https://github.com/adobe/spacecat-audit-worker/issues/2505)) ([e142bc3](https://github.com/adobe/spacecat-audit-worker/commit/e142bc3ef72b49f12321e7e9a05b5ccf18f8a080))
+
+# [1.439.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.438.3...v1.439.0) (2026-05-13)
+
+
+### Features
+
+* **vulnerabilities:** include imsOrg in codefix message (CQ-4363440) ([#2512](https://github.com/adobe/spacecat-audit-worker/issues/2512)) ([999cbaa](https://github.com/adobe/spacecat-audit-worker/commit/999cbaae0e6431005d769e77a1af2d14a0945b39))
+
 ## [1.438.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.438.2...v1.438.3) (2026-05-12)
 
 
