@@ -388,6 +388,32 @@ describe('CDN Logs Query Builder', () => {
       expect(query).to.include('LIMIT 50');
     });
 
+    it('throws on invalid HTTP status code in statuses filter', async () => {
+      let err;
+      try {
+        await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+          createMockOptions({ limit: 10, statuses: ['injection; DROP TABLE'] }),
+        );
+      } catch (e) { err = e; }
+      expect(err).to.be.instanceOf(Error);
+      expect(err.message).to.match(/Invalid HTTP status code/);
+    });
+
+    it('throws on out-of-range status code in statuses filter', async () => {
+      for (const bad of [99, 600]) {
+        // eslint-disable-next-line no-await-in-loop
+        let err;
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+            createMockOptions({ limit: 10, statuses: [bad] }),
+          );
+        } catch (e) { err = e; }
+        expect(err).to.be.instanceOf(Error);
+        expect(err.message).to.match(/Invalid HTTP status code/);
+      }
+    });
+
     it('creates query without excluded URL suffixes filter when not provided', async () => {
       const customOptions = createMockOptions({
         limit: 50,

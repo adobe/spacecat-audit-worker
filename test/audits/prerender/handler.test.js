@@ -524,6 +524,8 @@ describe('Prerender Audit', () => {
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
         const result = await mockHandler.submitForScraping(context);
         expect(result.urls).to.have.length(1);
@@ -555,6 +557,8 @@ describe('Prerender Audit', () => {
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         });
 
         expect(topPagesStub).to.have.been.calledOnce;
@@ -584,6 +588,8 @@ describe('Prerender Audit', () => {
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), warn, debug: sandbox.stub() },
+          s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         });
 
         expect(result.urls).to.deep.equal([{ url: 'https://example.com' }]);
@@ -620,6 +626,8 @@ describe('Prerender Audit', () => {
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
         const result = await mockHandler.submitForScraping(context);
@@ -652,6 +660,8 @@ describe('Prerender Audit', () => {
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
         const out = await mockHandler.submitForScraping(context);
         expect(out.urls).to.have.length(TOP_ORGANIC_URLS_LIMIT);
@@ -681,6 +691,8 @@ describe('Prerender Audit', () => {
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
         await mockHandler.submitForScraping(context);
         expect(getTopAgenticLiveUrlsFromAthena).to.have.been.calledOnce;
@@ -733,6 +745,8 @@ describe('Prerender Audit', () => {
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
         const result = await mockHandler.submitForScraping(context);
@@ -987,6 +1001,39 @@ describe('Prerender Audit', () => {
         expect(result.urls.map((u) => u.url)).to.include('https://slack.example/page');
       });
 
+      it('proceeds with scraping when detectBotBlocker throws (malformed URL guard)', async function () {
+        this.timeout(5000);
+        const detectBotBlockerStub = sandbox.stub().rejects(new Error('Invalid baseUrl'));
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-utils': { detectBotBlocker: detectBotBlockerStub },
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+          },
+          s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+
+        expect(detectBotBlockerStub).to.have.been.calledOnce;
+        expect(context.log.warn).to.have.been.calledWithMatch(/Bot block detection failed/);
+        expect(result).to.have.property('urls');
+      });
+
       describe('daily batching', () => {
         const makeAgenticUrls = (n, base = 'https://example.com/agentic-') => Array.from({ length: n }, (_, i) => `${base}${i}`);
         const makeCitabilityRecord = (path) => ({
@@ -994,6 +1041,9 @@ describe('Prerender Audit', () => {
         });
 
         const makeHandlerWithAgentic = async (agenticUrls) => esmock('../../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-utils': {
+            detectBotBlocker: sandbox.stub().resolves({ crawlable: true, confidence: 0 }),
+          },
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves(agenticUrls),
           },
@@ -1009,6 +1059,8 @@ describe('Prerender Audit', () => {
             SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
             PageCitability: { allByIndexKeys: sandbox.stub().resolves(pageCitabilityRecords) },
           },
+          s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
         });
 
@@ -1078,6 +1130,8 @@ describe('Prerender Audit', () => {
               PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             },
             log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+            s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           };
 
           const result = await mockHandler.submitForScraping(context);
@@ -1107,6 +1161,8 @@ describe('Prerender Audit', () => {
               PageCitability: { allByIndexKeys: sandbox.stub().resolves([recentRecord]) },
             },
             log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+            s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           };
 
           const result = await mockHandler.submitForScraping(context);
@@ -1151,6 +1207,8 @@ describe('Prerender Audit', () => {
               PageCitability: { allByIndexKeys: sandbox.stub().resolves(recentRecords) },
             },
             log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+            s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           };
 
           const result = await mockHandler.submitForScraping(context);
@@ -1197,6 +1255,8 @@ describe('Prerender Audit', () => {
               PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
             },
             log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+            s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+            env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           };
 
           // Should not throw; the invalid organic URL is treated as not-recently-processed
@@ -1455,6 +1515,80 @@ describe('Prerender Audit', () => {
             expect(resultUrls).to.not.include(rootUrl);
             expect(resultUrls).to.not.include('https://example.com/');
             expect(resultUrls).to.include(freshUrl);
+          });
+        });
+
+        describe('gonePathnames filtering', () => {
+          const makeS3WithGonePages = (goneUrls) => ({
+            send: sandbox.stub().callsFake((cmd) => {
+              if (cmd.constructor.name === 'GetObjectCommand') {
+                const pages = goneUrls.map((url) => ({ url, gone: true }));
+                return Promise.resolve({
+                  Body: { transformToString: () => Promise.resolve(JSON.stringify({ pages })) },
+                });
+              }
+              return Promise.resolve({});
+            }),
+          });
+
+          it('excludes URLs marked as gone in status.json from scraping batch', async () => {
+            const goneUrl = 'https://example.com/gone-page';
+            const freshUrl = 'https://example.com/fresh-page';
+            const mockHandler = await makeHandlerWithAgentic([]);
+            const context = {
+              ...makeContext([]),
+              s3Client: makeS3WithGonePages([goneUrl]),
+              dataAccess: {
+                SiteTopPage: {
+                  allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                    { getUrl: () => goneUrl },
+                    { getUrl: () => freshUrl },
+                  ]),
+                },
+                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+                Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+              },
+            };
+
+            const result = await mockHandler.submitForScraping(context);
+            const resultUrls = result.urls.map((u) => u.url);
+            expect(resultUrls).to.not.include(goneUrl);
+            expect(resultUrls).to.include(freshUrl);
+          });
+
+          it('does not exclude non-gone URLs from status.json', async () => {
+            const normalUrl = 'https://example.com/normal-page';
+            const s3Client = {
+              send: sandbox.stub().callsFake((cmd) => {
+                if (cmd.constructor.name === 'GetObjectCommand') {
+                  return Promise.resolve({
+                    Body: {
+                      transformToString: () => Promise.resolve(JSON.stringify({
+                        pages: [{ url: normalUrl, gone: false }],
+                      })),
+                    },
+                  });
+                }
+                return Promise.resolve({});
+              }),
+            };
+            const mockHandler = await makeHandlerWithAgentic([]);
+            const context = {
+              ...makeContext([]),
+              s3Client,
+              dataAccess: {
+                SiteTopPage: {
+                  allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                    { getUrl: () => normalUrl },
+                  ]),
+                },
+                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+                Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+              },
+            };
+
+            const result = await mockHandler.submitForScraping(context);
+            expect(result.urls.map((u) => u.url)).to.include(normalUrl);
           });
         });
 
@@ -4382,6 +4516,8 @@ describe('Prerender Audit', () => {
           warn: sinon.stub(),
           debug: sinon.stub(),
         },
+        s3Client: { send: sinon.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
       };
 
       const res = await mockHandler.submitForScraping(ctx);
@@ -4705,6 +4841,8 @@ describe('Prerender Audit', () => {
         // Intentionally omit SiteTopPage to exercise the "no top pages" branch in getTopOrganicUrlsFromSeo
         dataAccess: {},
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+        s3Client: { send: sinon.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
       };
 
       const res = await mockHandler.submitForScraping(ctx);
@@ -4754,6 +4892,8 @@ describe('Prerender Audit', () => {
           debug: sinon.stub(),
           warn: sinon.stub(),
         },
+        s3Client: { send: sinon.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
       };
 
       const res = await mockHandler.submitForScraping(ctx);
@@ -5528,6 +5668,8 @@ describe('Prerender Audit', () => {
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
         const result = await submitForScraping(context);
@@ -5553,6 +5695,8 @@ describe('Prerender Audit', () => {
             LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
         const result = await submitForScraping(context);
@@ -7131,7 +7275,7 @@ describe('Prerender Audit', () => {
       expect(page2.scrapedAt).to.equal('2025-01-01T00:00:00.000Z'); // preserved
     });
 
-    it('should preserve gone: true from prior status when current scrape succeeds (wasGone branch)', async () => {
+    it('should clear gone: true when current scrape succeeds (self-healing)', async () => {
       const auditUrl = 'https://example.com';
       const auditData = {
         siteId: 'test-site-id',
@@ -7172,8 +7316,54 @@ describe('Prerender Audit', () => {
 
       const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
       const page = uploadedData.pages.find((p) => p.url === 'https://example.com/was-gone-page');
-      expect(page).to.have.property('gone', true);
+      expect(page).to.not.have.property('gone');
       expect(page.scrapingStatus).to.equal('success');
+    });
+
+    it('should preserve gone: true when current scrape still fails after prior gone', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-02-01T00:00:00.000Z',
+        auditResult: {
+          results: [
+            {
+              url: 'https://example.com/still-gone-page',
+              error: true,
+              scrapeError: { statusCode: 500, message: 'Server error' },
+              needsPrerender: false,
+            },
+          ],
+        },
+      };
+
+      const existingStatus = {
+        pages: [
+          {
+            url: 'https://example.com/still-gone-page',
+            gone: true,
+            scrapingStatus: 'error',
+            needsPrerender: false,
+            scrapedAt: '2025-01-01T00:00:00.000Z',
+          },
+        ],
+      };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.resolve({
+            Body: { transformToString: () => Promise.resolve(JSON.stringify(existingStatus)) },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+      const page = uploadedData.pages.find((p) => p.url === 'https://example.com/still-gone-page');
+      expect(page).to.have.property('gone', true);
+      expect(page.scrapingStatus).to.equal('error');
     });
 
     it('should merge status pages by pathname so www and non-www variants do not duplicate', async () => {

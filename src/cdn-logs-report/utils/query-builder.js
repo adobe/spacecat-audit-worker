@@ -252,7 +252,14 @@ export function buildExcludedUrlSuffixesFilter(suffixes = []) {
 }
 
 function buildStatusFilter(statuses) {
-  return `AND status IN (${statuses.join(', ')})`;
+  const safe = statuses.map((s) => {
+    const n = Number(s);
+    if (!Number.isInteger(n) || n < 100 || n > 599) {
+      throw new Error(`Invalid HTTP status code for SQL filter: ${s}`);
+    }
+    return n;
+  });
+  return `AND status IN (${safe.join(', ')})`;
 }
 
 async function createTopUrlsQueryWithLimit(options) {

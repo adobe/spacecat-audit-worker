@@ -309,7 +309,7 @@ async function getDeployedOrCoveredPathnames(context, siteId) {
     const suggestions = await opportunity.getSuggestions();
     const domainWideDeployed = !!suggestions.find((s) => {
       const d = s.getData();
-      return s.getStatus() !== Suggestion.STATUSES.OUTDATED
+      return s.getStatus() === Suggestion.STATUSES.NEW
         && isDomainWideSuggestionData(d) && !!d?.edgeDeployed;
     });
 
@@ -873,10 +873,6 @@ async function readSiteStatusJson(s3Client, bucketName, siteId, log) {
 }
 
 /**
- * Computes the next domain-level 403 block entry, or null if threshold not met (auto-restore).
- * Backoff: 2d → 4d → 8d (capped).
- */
-/**
  * Step 2: Submit URLs for scraping OR skip if in ai-only mode
  * @param {Object} context - Audit context with site and dataAccess
  * @returns {Promise<Object>} - URLs to scrape and metadata OR ai-only result
@@ -938,17 +934,21 @@ export async function submitForScraping(context) {
 
   // Proactive bot-block check before expensive URL fetches (not applicable for Slack)
   if (!isSlackTriggered && site.getBaseURL()) {
-    const { crawlable, confidence } = await detectBotBlocker({ baseUrl: site.getBaseURL() });
-    if (!crawlable && confidence >= 0.95) {
-      log.info(`${LOG_PREFIX} Domain blocked (confidence=${confidence}), skipping siteId=${siteId}, baseUrl=${site.getBaseURL()}`);
-      return {
-        urls: [],
-        siteId,
-        processingType: AUDIT_TYPE,
-        maxScrapeAge: 0,
-        options: { pageLoadTimeout: 20000, storagePrefix: AUDIT_TYPE },
-        auditContext: { skippedReason: 'domainBlocked' },
-      };
+    try {
+      const { crawlable, confidence } = await detectBotBlocker({ baseUrl: site.getBaseURL() });
+      if (!crawlable && confidence >= 0.95) {
+        log.info(`${LOG_PREFIX} Domain blocked (confidence=${confidence}), skipping siteId=${siteId}, baseUrl=${site.getBaseURL()}`);
+        return {
+          urls: [],
+          siteId,
+          processingType: AUDIT_TYPE,
+          maxScrapeAge: 0,
+          options: { pageLoadTimeout: 20000, storagePrefix: AUDIT_TYPE },
+          auditContext: { skippedReason: 'domainBlocked' },
+        };
+      }
+    } catch (e) {
+      log.warn(`${LOG_PREFIX} Bot block detection failed: ${e.message}. baseUrl=${site.getBaseURL()} - proceeding`);
     }
   }
 
@@ -975,7 +975,7 @@ export async function submitForScraping(context) {
     // Read status.json to get permanently-gone URLs (410) to exclude from future batches
     const { existingPages } = await readSiteStatusJson(
       s3Client,
-      env?.S3_SCRAPER_BUCKET_NAME,
+      env.S3_SCRAPER_BUCKET_NAME,
       siteId,
       log,
     );
@@ -1446,6 +1446,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       const existingEntry = existingPageMap.get(normalizePathname(result.url));
       const isGone = result.scrapeError?.statusCode === 410;
       const wasGone = existingEntry?.gone === true;
+      const isNowSuccessful = !result.error && !result.scrapeError;
       return {
         url: result.url,
         scrapingStatus: result.error ? 'error' : 'success',
@@ -1460,7 +1461,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
           ? (scrapeJobId || null)
           : (existingEntry?.scrapeJobId ?? null),
         ...(result.scrapeError && { scrapeError: result.scrapeError }),
-        ...((isGone || wasGone) && { gone: true }),
+        ...((isGone || (wasGone && !isNowSuccessful)) && { gone: true }),
       };
     });
 
