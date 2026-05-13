@@ -371,18 +371,18 @@ describe('CDN Logs Query Builder', () => {
       expect(query).to.not.include('AND status IN');
     });
 
-    it('creates live variant query with AND status = 200 using createTopLiveUrlsQueryWithLimit', async () => {
-      const query = await weeklyBreakdownQueries.createTopLiveUrlsQueryWithLimit(
-        createMockOptions({ limit: 100 }),
+    it('creates live variant query with AND status IN (200) when statuses=[200]', async () => {
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+        createMockOptions({ limit: 100, statuses: [200] }),
       );
 
-      expect(query).to.include('AND status = 200');
+      expect(query).to.include('AND status IN (200)');
       expect(query).to.include('LIMIT 100');
     });
 
-    it('createTopLiveUrlsQueryWithLimit respects limit parameter', async () => {
-      const query = await weeklyBreakdownQueries.createTopLiveUrlsQueryWithLimit(
-        createMockOptions({ limit: 50 }),
+    it('createTopUrlsQueryWithLimit with statuses respects limit parameter', async () => {
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+        createMockOptions({ limit: 50, statuses: [200] }),
       );
 
       expect(query).to.include('LIMIT 50');

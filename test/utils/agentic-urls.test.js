@@ -61,7 +61,6 @@ describe('agentic-urls', () => {
 
     mockWeeklyBreakdownQueries = {
       createTopUrlsQueryWithLimit: sandbox.stub().resolves('SELECT * FROM test'),
-      createTopLiveUrlsQueryWithLimit: sandbox.stub().resolves('SELECT * FROM test_live'),
     };
 
     const module = await esmock('../../src/utils/agentic-urls.js', {
@@ -576,12 +575,11 @@ describe('agentic-urls', () => {
       await getTopAgenticUrlsFromAthena(site, context);
 
       expect(mockWeeklyBreakdownQueries.createTopUrlsQueryWithLimit).to.have.been.called;
-      expect(mockWeeklyBreakdownQueries.createTopLiveUrlsQueryWithLimit).to.not.have.been.called;
     });
   });
 
   describe('getTopAgenticLiveUrlsFromAthena', () => {
-    it('should call createTopLiveUrlsQueryWithLimit (not the base variant)', async () => {
+    it('should call createTopUrlsQueryWithLimit with statuses=[200]', async () => {
       const site = createMockSite();
       const context = createMockContext();
 
@@ -589,8 +587,9 @@ describe('agentic-urls', () => {
 
       await getTopAgenticLiveUrlsFromAthena(site, context);
 
-      expect(mockWeeklyBreakdownQueries.createTopLiveUrlsQueryWithLimit).to.have.been.called;
-      expect(mockWeeklyBreakdownQueries.createTopUrlsQueryWithLimit).to.not.have.been.called;
+      expect(mockWeeklyBreakdownQueries.createTopUrlsQueryWithLimit).to.have.been.calledWith(
+        sinon.match({ statuses: [200] }),
+      );
     });
 
     it('should return URLs using the same resolution logic as getTopAgenticUrlsFromAthena', async () => {
@@ -612,8 +611,8 @@ describe('agentic-urls', () => {
 
       await getTopAgenticLiveUrlsFromAthena(site, context);
 
-      expect(mockWeeklyBreakdownQueries.createTopLiveUrlsQueryWithLimit).to.have.been.calledWith(
-        sinon.match({ limit: 200 }),
+      expect(mockWeeklyBreakdownQueries.createTopUrlsQueryWithLimit).to.have.been.calledWith(
+        sinon.match({ limit: 200, statuses: [200] }),
       );
     });
 

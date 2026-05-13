@@ -57,10 +57,10 @@ export const EXCLUDED_URL_SUFFIXES = [
  * @param {Object} site
  * @param {Object} context
  * @param {number} limit
- * @param {Function} queryCreator - async fn(options) => SQL string
+ * @param {number[]} statuses - Optional HTTP status codes to filter by (e.g. [200])
  * @returns {Promise<Array<string>>}
  */
-async function runTopAgenticUrlsQuery(site, context, limit, queryCreator) {
+async function runTopAgenticUrlsQuery(site, context, limit, statuses = []) {
   const { log } = context;
   const baseUrl = getPreferredBaseUrl(site, context);
 
@@ -80,13 +80,14 @@ async function runTopAgenticUrlsQuery(site, context, limit, queryCreator) {
     const periods = generateReportingPeriods();
     const oneWeekPeriods = { weeks: [periods.weeks[0]] };
     const athenaClient = awsRuntime.createAthenaClient(s3Config.getAthenaTempLocation());
-    const query = await queryCreator({
+    const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit({
       periods: oneWeekPeriods,
       databaseName: s3Config.databaseName,
       tableName: s3Config.tableName,
       site,
       limit,
       excludedUrlSuffixes: EXCLUDED_URL_SUFFIXES,
+      statuses,
     });
     log.info(`Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=${baseUrl}`);
     const results = await athenaClient.query(
@@ -139,19 +140,16 @@ async function runTopAgenticUrlsQuery(site, context, limit, queryCreator) {
  * @param {Object} site - Site object
  * @param {Object} context - Context with log, env, etc.
  * @param {number} limit - Maximum number of URLs to return
+ * @param {number[]} statuses - Optional HTTP status codes to filter by (e.g. [200])
  * @returns {Promise<Array<string>>} Array of top agentic URLs
  */
 export async function getTopAgenticUrlsFromAthena(
   site,
   context,
   limit = DEFAULT_TOP_AGENTIC_URLS_LIMIT,
+  statuses = [],
 ) {
-  return runTopAgenticUrlsQuery(
-    site,
-    context,
-    limit,
-    weeklyBreakdownQueries.createTopUrlsQueryWithLimit,
-  );
+  return runTopAgenticUrlsQuery(site, context, limit, statuses);
 }
 
 /**
@@ -167,10 +165,5 @@ export async function getTopAgenticLiveUrlsFromAthena(
   context,
   limit = DEFAULT_TOP_AGENTIC_URLS_LIMIT,
 ) {
-  return runTopAgenticUrlsQuery(
-    site,
-    context,
-    limit,
-    weeklyBreakdownQueries.createTopLiveUrlsQueryWithLimit,
-  );
+  return getTopAgenticUrlsFromAthena(site, context, limit, [200]);
 }

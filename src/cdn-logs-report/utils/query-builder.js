@@ -251,9 +251,13 @@ export function buildExcludedUrlSuffixesFilter(suffixes = []) {
   return `AND NOT regexp_like(url, '${pattern}')`;
 }
 
-async function buildTopUrlsQuery(sqlName, options) {
+function buildStatusFilter(statuses) {
+  return `AND status IN (${statuses.join(', ')})`;
+}
+
+async function createTopUrlsQueryWithLimit(options) {
   const {
-    periods, databaseName, tableName, site, limit, excludedUrlSuffixes = [],
+    periods, databaseName, tableName, site, limit, excludedUrlSuffixes = [], statuses = [],
   } = options;
 
   const filters = site.getConfig().getLlmoCdnlogsFilter();
@@ -266,25 +270,24 @@ async function buildTopUrlsQuery(sqlName, options) {
 
   const excludedUrlSuffixesFilter = buildExcludedUrlSuffixesFilter(excludedUrlSuffixes);
 
-  return loadSql(sqlName, {
+  if (statuses.length > 0) {
+    return loadSql('top-agentic-urls-by-status-and-limit', {
+      databaseName,
+      tableName,
+      whereClause,
+      limit,
+      excludedUrlSuffixesFilter,
+      statusFilter: buildStatusFilter(statuses),
+    });
+  }
+
+  return loadSql('top-agentic-urls-by-limit', {
     databaseName,
     tableName,
     whereClause,
     limit,
     excludedUrlSuffixesFilter,
   });
-}
-
-async function createTopUrlsQueryWithLimit(options) {
-  return buildTopUrlsQuery('top-agentic-urls-by-limit', options);
-}
-
-/**
- * Like createTopUrlsQueryWithLimit but filters to status=200 rows only,
- * returning URLs that were successfully served during the period.
- */
-async function createTopLiveUrlsQueryWithLimit(options) {
-  return buildTopUrlsQuery('top-agentic-live-urls-by-limit', options);
 }
 
 export const weeklyBreakdownQueries = {
@@ -294,5 +297,4 @@ export const weeklyBreakdownQueries = {
   createReferralDailyReportQuery,
   createTopUrlsQuery,
   createTopUrlsQueryWithLimit,
-  createTopLiveUrlsQueryWithLimit,
 };
