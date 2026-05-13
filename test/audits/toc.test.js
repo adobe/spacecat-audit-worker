@@ -3574,10 +3574,10 @@ describe('TOC (Table of Contents) Audit', () => {
       const result = await submitForScraping(context);
 
       expect(result.urls).to.deep.equal([{ url }]);
-      expect(result.processingType).to.be.undefined;
+      expect(result.processingType).to.equal('prerender');
       expect(result.options).to.be.undefined;
       expect(result.maxScrapeAge).to.equal(24);
-      expect(logSpy.info).to.have.been.calledWith('[TOC] Submitting 1 URLs for scraping');
+      expect(logSpy.info).to.have.been.calledWith('[TOC] Submitting 1 URLs for scraping (processingType=prerender)');
     });
 
     it('persists terminal result and returns when previous audit step failed', async () => {
