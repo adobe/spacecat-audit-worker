@@ -127,31 +127,23 @@ export function isEntityReplacementSuggestion(brokenUrl, suggestedUrl) {
 
 /**
  * Walks up the broken URL's path hierarchy, returning the first parent path
- * that responds with HTTP 200. Stops before the root (root is the existing
- * effectiveBaseURL fallback and is not tried here).
+ * that responds with HTTP 200. Stops before the root (depth 0 is never tried).
  *
  * e.g. brokenUrl = https://example.com/contact/john-smith
  *   → tries https://example.com/contact/  (returns it if 200)
  *   → stops (next level is root)
  *
- * @param {string} brokenUrl      - The original broken target URL.
- * @param {string} effectiveBaseURL - The site's base URL (root fallback, not retried here).
+ * @param {string} brokenUrl - The original broken target URL.
  * @returns {Promise<string|null>} - A valid parent URL, or null if none found.
  */
-export async function resolveParentPathFallback(brokenUrl, effectiveBaseURL) {
+export async function resolveParentPathFallback(brokenUrl) {
   try {
     const parsed = new URL(brokenUrl);
     const segs = parsed.pathname.replace(/\/$/, '').split('/').filter(Boolean);
-    const baseOrigin = new URL(effectiveBaseURL).origin;
 
     for (let depth = segs.length - 1; depth >= 1; depth -= 1) {
       const parentPath = `/${segs.slice(0, depth).join('/')}/`;
       const parentUrl = `${parsed.origin}${parentPath}`;
-
-      // Skip if it resolves to the same origin+path as effectiveBaseURL
-      if (parsed.origin === baseOrigin && parentPath === '/') {
-        break;
-      }
 
       try {
         // Sequential by design: stop at the first parent that responds 200

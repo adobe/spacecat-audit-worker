@@ -542,6 +542,30 @@ describe('isEntityReplacementSuggestion', () => {
   it('should return false for malformed URLs', () => {
     expect(isEntityReplacementSuggestion('not-a-url', 'also-not-a-url')).to.be.false;
   });
+
+  it('should not flag when slug contains a dot (e.g. file extension)', () => {
+    // john.smith has a dot — looksLikePersonSlug returns false for both slugs
+    expect(isEntityReplacementSuggestion(
+      'https://example.com/archives/john.smith',
+      'https://example.com/archives/jane.doe',
+    )).to.be.false;
+  });
+
+  it('should not flag when slug has more than three hyphen-separated parts', () => {
+    // four-part slug is not a person name
+    expect(isEntityReplacementSuggestion(
+      'https://example.com/contact/john-william-adam-smith',
+      'https://example.com/contact/jane-mary-ann-doe',
+    )).to.be.false;
+  });
+
+  it('should detect two person-name slugs under a non-entity-section parent', () => {
+    // 'archives' is not in ENTITY_SECTIONS — relies on bPerson && sPerson path
+    expect(isEntityReplacementSuggestion(
+      'https://example.com/archives/john-smith',
+      'https://example.com/archives/jane-doe',
+    )).to.be.true;
+  });
 });
 
 describe('resolveParentPathFallback', () => {
@@ -596,5 +620,40 @@ describe('resolveParentPathFallback', () => {
     expect(result).to.be.null;
     expect(scope.isDone()).to.be.false;
     nock.cleanAll();
+  });
+
+  it('should continue to next level when fetch throws a network error', async () => {
+    nock('https://example.com').get('/en/contact/').replyWithError('connection reset');
+    nock('https://example.com').get('/en/').reply(200);
+
+    const result = await resolveParentPathFallback(
+      'https://example.com/en/contact/john-smith',
+      'https://example.com',
+    );
+    expect(result).to.equal('https://example.com/en/');
+  });
+});
+
+describe('removeTrailingSlash', () => {
+  it('removes a trailing slash', () => {
+    expect(utils.removeTrailingSlash('https://example.com/')).to.equal('https://example.com');
+  });
+
+  it('returns the url unchanged when there is no trailing slash', () => {
+    expect(utils.removeTrailingSlash('https://example.com')).to.equal('https://example.com');
+  });
+});
+
+describe('getBaseUrl', () => {
+  it('returns url without trailing slash by default', () => {
+    expect(utils.getBaseUrl('https://example.com/')).to.equal('https://example.com');
+  });
+
+  it('returns protocol + host when useHostnameOnly is true', () => {
+    expect(utils.getBaseUrl('https://example.com/some/path?q=1', true)).to.equal('https://example.com');
+  });
+
+  it('falls back to removeTrailingSlash when URL is invalid and useHostnameOnly is true', () => {
+    expect(utils.getBaseUrl('not-a-valid-url/', true)).to.equal('not-a-valid-url');
   });
 });
