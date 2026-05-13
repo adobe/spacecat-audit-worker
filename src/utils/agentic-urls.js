@@ -59,12 +59,14 @@ export const EXCLUDED_URL_SUFFIXES = [
  * @param {Object} site - Site object
  * @param {Object} context - Context with log, env, etc.
  * @param {number} limit - Maximum number of URLs to return
+ * @param {number[]} statuses - Optional HTTP status codes to filter by (e.g. [200])
  * @returns {Promise<Array<string>>} Array of top agentic URLs
  */
 export async function getTopAgenticUrlsFromAthena(
   site,
   context,
   limit = DEFAULT_TOP_AGENTIC_URLS_LIMIT,
+  statuses = [],
 ) {
   const { log } = context;
   const baseUrl = getPreferredBaseUrl(site, context);
@@ -93,6 +95,7 @@ export async function getTopAgenticUrlsFromAthena(
       site,
       limit,
       excludedUrlSuffixes: EXCLUDED_URL_SUFFIXES,
+      statuses,
     });
     log.info(`Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=${baseUrl}`);
     const results = await athenaClient.query(
@@ -140,4 +143,16 @@ export async function getTopAgenticUrlsFromAthena(
     log?.warn?.(`Agentic URLs - Athena agentic URL fetch failed: ${e.message}. baseUrl=${baseUrl}`);
     return [];
   }
+}
+
+/**
+ * Like getTopAgenticUrlsFromAthena but restricted to URLs that returned HTTP 200
+ * during the period — excludes 404s, 410s, and other error responses.
+ * @param {Object} site - Site object
+ * @param {Object} context - Context with log, env, etc.
+ * @param {number} limit - Maximum number of URLs to return
+ * @returns {Promise<Array<string>>} Array of successfully-served agentic URLs
+ */
+export async function getTopAgenticLiveUrlsFromAthena(site, context, limit) {
+  return getTopAgenticUrlsFromAthena(site, context, limit, [200]);
 }

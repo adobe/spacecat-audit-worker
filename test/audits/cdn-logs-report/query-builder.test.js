@@ -354,6 +354,41 @@ describe('CDN Logs Query Builder', () => {
       expect(query).to.include('test_db.test_table');
     });
 
+    it('creates query without status filter when statuses is not provided', async () => {
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+        createMockOptions({ limit: 100 }),
+      );
+
+      expect(query).to.not.include('AND status IN');
+      expect(query).to.not.include('status');
+    });
+
+    it('creates query without status filter when statuses is empty array', async () => {
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+        createMockOptions({ limit: 100, statuses: [] }),
+      );
+
+      expect(query).to.not.include('AND status IN');
+    });
+
+    it('creates query with status filter and status column when statuses are provided', async () => {
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+        createMockOptions({ limit: 100, statuses: [200] }),
+      );
+
+      expect(query).to.include('AND status IN (200)');
+      expect(query).to.include('status');
+      expect(query).to.include('LIMIT 100');
+    });
+
+    it('creates query with multiple statuses in the filter', async () => {
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(
+        createMockOptions({ limit: 100, statuses: [200, 301] }),
+      );
+
+      expect(query).to.include('AND status IN (200, 301)');
+    });
+
     it('creates query without excluded URL suffixes filter when not provided', async () => {
       const customOptions = createMockOptions({
         limit: 50,
