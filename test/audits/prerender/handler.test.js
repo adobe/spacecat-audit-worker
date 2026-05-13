@@ -849,7 +849,7 @@ describe('Prerender Audit', () => {
         expect(result.siteId).to.equal('test-site-id');
         expect(result.processingType).to.equal('prerender');
         expect(result.maxScrapeAge).to.equal(0);
-        expect(result.skippedReason).to.equal('domainBlocked');
+        expect(result.auditContext).to.deep.include({ skippedReason: 'domainBlocked' });
         expect(log.info).to.have.been.calledWithMatch(/Domain blocked.*confidence=0\.95/);
       });
 
@@ -1609,6 +1609,51 @@ describe('Prerender Audit', () => {
         expect(result.auditResult.urlsNeedingPrerender).to.equal(0);
         // Falls back to base URL when no URLs found
         expect(result.auditResult.totalUrlsChecked).to.equal(1);
+      });
+
+      it('creates scrape-forbidden opportunity and returns early when domainBlocked', async function () {
+        this.timeout(5000);
+        const convertToOpportunityStub = sandbox.stub().resolves();
+        const isPaidLLMOCustomerStub = sandbox.stub().resolves(false);
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: convertToOpportunityStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: isPaidLLMOCustomerStub,
+            mergeAndGetUniqueHtmlUrls: sandbox.stub().returns([]),
+          },
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
+            getPreferredBaseUrl: sandbox.stub().returns('https://blocked.com'),
+          },
+          '../../../src/prerender/opportunity-data-mapper.js': {
+            createOpportunityData: sandbox.stub().returns({}),
+          },
+        });
+
+        const log = { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() };
+        const context = {
+          site: {
+            getId: () => 'blocked-site-id',
+            getBaseURL: () => 'https://blocked.com',
+          },
+          audit: { getId: () => 'audit-123' },
+          dataAccess: {
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+          },
+          log,
+          env: {},
+          auditContext: { skippedReason: 'domainBlocked', scrapeJobId: 'job-999' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(result.status).to.equal('skipped');
+        expect(result.skippedReason).to.equal('domainBlocked');
+        expect(log.info).to.have.been.calledWithMatch(/Domain is bot-blocked/);
+        expect(convertToOpportunityStub).to.have.been.calledOnce;
       });
 
       it('should handle errors gracefully', async function testHandleErrorsGracefully() {

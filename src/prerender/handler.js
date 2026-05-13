@@ -947,7 +947,7 @@ export async function submitForScraping(context) {
         processingType: AUDIT_TYPE,
         maxScrapeAge: 0,
         options: { pageLoadTimeout: 20000, storagePrefix: AUDIT_TYPE },
-        skippedReason: 'domainBlocked',
+        auditContext: { skippedReason: 'domainBlocked' },
       };
     }
   }
@@ -1644,6 +1644,20 @@ export async function processContentAndGenerateOpportunities(context) {
   const siteId = site.getId();
   const startTime = process.hrtime();
   const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
+
+  // Domain was bot-blocked in step 1 — create the forbidden opportunity so the UI shows a banner
+  if (auditContext?.skippedReason === 'domainBlocked') {
+    log.info(`${LOG_PREFIX} Domain is bot-blocked, creating scrape-forbidden opportunity. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
+    const isPaidEarly = await isPaidLLMOCustomer(context);
+    await createScrapeForbiddenOpportunity(site.getBaseURL(), {
+      siteId,
+      id: audit.getId(),
+      auditId: audit.getId(),
+      auditResult: {},
+      scrapeJobId: auditContext?.scrapeJobId ?? null,
+    }, context, isPaidEarly);
+    return { status: 'skipped', skippedReason: 'domainBlocked' };
+  }
 
   // Diagnostic: detect non-NEW suggestions with edgeDeployed before syncing.
   // Runs unconditionally so audits with no prerender findings still catch pre-existing issues.
