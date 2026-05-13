@@ -1,3 +1,46 @@
+## [1.438.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.438.2...v1.438.3) (2026-05-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.62.0 ([#2511](https://github.com/adobe/spacecat-audit-worker/issues/2511)) ([69f8e99](https://github.com/adobe/spacecat-audit-worker/commit/69f8e99208c2bd43167905eea3322a4348f8b285))
+
+## [1.438.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.438.1...v1.438.2) (2026-05-12)
+
+
+### Bug Fixes
+
+* **toc:** fix DOM heuristic false positives in hasTocInDom (LLMO-4848) ([#2508](https://github.com/adobe/spacecat-audit-worker/issues/2508)) ([42cb82c](https://github.com/adobe/spacecat-audit-worker/commit/42cb82c37bb28c63b94e60f0c590dab97c1aaa7e))
+* **toc:** skip suggestions for single or null headings (LLMO-4542) ([#2509](https://github.com/adobe/spacecat-audit-worker/issues/2509)) ([a5e28eb](https://github.com/adobe/spacecat-audit-worker/commit/a5e28eb031fd2e032d95f21e9540f92e552b6eda))
+
+## [1.438.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.438.0...v1.438.1) (2026-05-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.61.0 ([#2507](https://github.com/adobe/spacecat-audit-worker/issues/2507)) ([4e60520](https://github.com/adobe/spacecat-audit-worker/commit/4e60520224212d4b1288f26d037f77aa02128e08))
+
+# [1.438.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.437.2...v1.438.0) (2026-05-12)
+
+
+### Features
+
+* filter out URLs to client's own site ([#2499](https://github.com/adobe/spacecat-audit-worker/issues/2499)) ([62d0966](https://github.com/adobe/spacecat-audit-worker/commit/62d0966ea71f65316cfef9cfbf4a1584255c6694))
+
+## [1.437.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.437.1...v1.437.2) (2026-05-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-http-utils to v1.27.1 ([#2506](https://github.com/adobe/spacecat-audit-worker/issues/2506)) ([0a1d428](https://github.com/adobe/spacecat-audit-worker/commit/0a1d428f3888c93cdade4ded5b2a9cf190795d21))
+
+## [1.437.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.437.0...v1.437.1) (2026-05-12)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2503](https://github.com/adobe/spacecat-audit-worker/issues/2503)) ([d386779](https://github.com/adobe/spacecat-audit-worker/commit/d3867793b23bfc8de2056088cd05795df93974cc))
+
 # [1.437.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.436.0...v1.437.0) (2026-05-12)
 
 
