@@ -667,6 +667,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
         'codePath',
         'code/ad3d5bb7-9e85-4195-94e8-833cc5a73253/github/adobe/mystique-project/main/repository.zip',
       );
+      expect(message.data).to.have.property('imsOrg', 'test-ims-org');
     });
 
     it('should skip starfish-auto-code when queue env var is not configured', async () => {
