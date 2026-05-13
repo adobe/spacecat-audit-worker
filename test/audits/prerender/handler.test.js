@@ -6536,6 +6536,41 @@ describe('Prerender Audit', () => {
 
         expect(result.auditResult.results[0].scrapeError).to.be.undefined;
       });
+
+      it('should build S3 path without path segment for root URLs', async () => {
+        const getObjectFromKeyStub = sinon.stub();
+        getObjectFromKeyStub.resolves(null);
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+        });
+
+        const context = {
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                { getUrl: () => 'https://example.com/', getTraffic: () => 100 },
+              ]),
+            },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: {
+            info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(),
+          },
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(result.status).to.equal('complete');
+        const keys = getObjectFromKeyStub.args.map((args) => args[2]);
+        expect(keys.some((k) => k === 'prerender/scrapes/test-job-id/server-side.html')).to.be.true;
+      });
     });
   });
 
