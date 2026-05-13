@@ -1,3 +1,10 @@
+## [1.440.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.440.0...v1.440.1) (2026-05-13)
+
+
+### Bug Fixes
+
+* strip tracking params and reject session-token URLs from broken backlinks suggestions ([#2478](https://github.com/adobe/spacecat-audit-worker/issues/2478)) ([3b5edee](https://github.com/adobe/spacecat-audit-worker/commit/3b5edee4bcf04e80b9461418577c8bf375e330ef))
+
 # [1.440.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.439.1...v1.440.0) (2026-05-13)
 
 
