@@ -18,6 +18,8 @@ import {
   parseCustomUrls,
   findBestMatchingPath,
   isPdfUrl,
+  isEntityReplacementSuggestion,
+  resolveParentPathFallback,
 } from '../../src/utils/url-utils.js';
 import * as utils from '../../src/utils/url-utils.js';
 
@@ -462,5 +464,137 @@ describe('urlsMatch', () => {
       'https://example.com/page',
       'https://other.com/page',
     )).to.be.false;
+  });
+});
+
+describe('isEntityReplacementSuggestion', () => {
+  it('should detect person-name sibling in known entity section', () => {
+    expect(isEntityReplacementSuggestion(
+      'https://example.com/contact/john-smith',
+      'https://example.com/contact/jeremy-williams',
+    )).to.be.true;
+  });
+
+  it('should detect person-name sibling in team section', () => {
+    expect(isEntityReplacementSuggestion(
+      'https://example.com/team/jane-doe',
+      'https://example.com/team/bob-jones',
+    )).to.be.true;
+  });
+
+  it('should detect two person-name slugs even outside known entity sections', () => {
+    expect(isEntityReplacementSuggestion(
+      'https://example.com/speakers/alice-wong',
+      'https://example.com/speakers/carol-chen',
+    )).to.be.true;
+  });
+
+  it('should not flag when broken and suggested slugs are the same', () => {
+    expect(isEntityReplacementSuggestion(
+      'https://example.com/contact/john-smith',
+      'https://example.com/contact/john-smith',
+    )).to.be.false;
+  });
+
+  it('should not flag article/blog sibling suggestions', () => {
+    expect(isEntityReplacementSuggestion(
+      'https://example.com/blog/seo-tips-2024',
+      'https://example.com/blog/web-analytics',
+    )).to.be.false;
+  });
+
+  it('should not flag suggestion under a different parent path', () => {
+    expect(isEntityReplacementSuggestion(
+      'https://example.com/contact/john-smith',
+      'https://example.com/about/john-smith',
+    )).to.be.false;
+  });
+
+  it('should not flag suggestion that is the parent directory', () => {
+    expect(isEntityReplacementSuggestion(
+      'https://example.com/contact/john-smith',
+      'https://example.com/contact/',
+    )).to.be.false;
+  });
+
+  it('should not flag when suggested URL is on a different domain', () => {
+    expect(isEntityReplacementSuggestion(
+      'https://example.com/team/john-smith',
+      'https://other.com/team/jane-doe',
+    )).to.be.false;
+  });
+
+  it('should not flag single-segment URLs', () => {
+    expect(isEntityReplacementSuggestion(
+      'https://example.com/john-smith',
+      'https://example.com/jane-doe',
+    )).to.be.false;
+  });
+
+  it('should not flag slugs containing stop words', () => {
+    // "how-to" has stop word "how" and "to" — not a person name
+    expect(isEntityReplacementSuggestion(
+      'https://example.com/blog/how-to-seo',
+      'https://example.com/blog/get-started',
+    )).to.be.false;
+  });
+
+  it('should return false for malformed URLs', () => {
+    expect(isEntityReplacementSuggestion('not-a-url', 'also-not-a-url')).to.be.false;
+  });
+});
+
+describe('resolveParentPathFallback', () => {
+  afterEach(() => {
+    nock.cleanAll();
+  });
+
+  it('should return the parent path when it responds 200', async () => {
+    nock('https://example.com').get('/contact/').reply(200);
+
+    const result = await resolveParentPathFallback(
+      'https://example.com/contact/john-smith',
+      'https://example.com',
+    );
+    expect(result).to.equal('https://example.com/contact/');
+  });
+
+  it('should walk up another level if parent 404s', async () => {
+    nock('https://example.com').get('/en/contact/').reply(404);
+    nock('https://example.com').get('/en/').reply(200);
+
+    const result = await resolveParentPathFallback(
+      'https://example.com/en/contact/john-smith',
+      'https://example.com',
+    );
+    expect(result).to.equal('https://example.com/en/');
+  });
+
+  it('should return null when all parent paths fail', async () => {
+    nock('https://example.com').get('/contact/').reply(404);
+
+    const result = await resolveParentPathFallback(
+      'https://example.com/contact/john-smith',
+      'https://example.com',
+    );
+    expect(result).to.be.null;
+  });
+
+  it('should return null for malformed broken URL', async () => {
+    const result = await resolveParentPathFallback('not-a-url', 'https://example.com');
+    expect(result).to.be.null;
+  });
+
+  it('should not try root path (that is the effectiveBaseURL fallback)', async () => {
+    // Only one level deep — parent IS root, should not be tried
+    const scope = nock('https://example.com').get('/').reply(200);
+
+    const result = await resolveParentPathFallback(
+      'https://example.com/john-smith',
+      'https://example.com',
+    );
+    expect(result).to.be.null;
+    expect(scope.isDone()).to.be.false;
+    nock.cleanAll();
   });
 });
