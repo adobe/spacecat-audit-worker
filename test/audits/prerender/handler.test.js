@@ -817,6 +817,176 @@ describe('Prerender Audit', () => {
         expect(submittedUrls).to.include('https://www.override.com/included');
       });
 
+      it('returns domainBlocked result when detectBotBlocker confidence >= 0.95', async function () {
+        this.timeout(5000);
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-utils': {
+            detectBotBlocker: sandbox.stub().resolves({ crawlable: false, confidence: 0.95 }),
+          },
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
+          },
+        });
+
+        const log = { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() };
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://blocked-domain.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+          },
+          log,
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+
+        expect(result.urls).to.deep.equal([]);
+        expect(result.siteId).to.equal('test-site-id');
+        expect(result.processingType).to.equal('prerender');
+        expect(result.maxScrapeAge).to.equal(0);
+        expect(result.skippedReason).to.equal('domainBlocked');
+        expect(log.info).to.have.been.calledWithMatch(/Domain blocked.*confidence=0\.95/);
+      });
+
+      it('does not skip when detectBotBlocker confidence is below 0.95 (branch coverage)', async function () {
+        this.timeout(5000);
+        const detectBotBlocker = sandbox.stub().resolves({ crawlable: false, confidence: 0.94 });
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-utils': { detectBotBlocker },
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
+            getPreferredBaseUrl: () => 'https://prefer.example',
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-low-confidence',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+
+        expect(detectBotBlocker).to.have.been.calledOnce;
+        expect(result.skippedReason).to.equal(undefined);
+        expect(result.urls).to.deep.equal([{ url: 'https://prefer.example' }]);
+      });
+
+      it('does not skip when detectBotBlocker reports crawlable (branch coverage)', async function () {
+        this.timeout(5000);
+        const detectBotBlocker = sandbox.stub().resolves({ crawlable: true, confidence: 1 });
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-utils': { detectBotBlocker },
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
+            getPreferredBaseUrl: () => 'https://prefer.example',
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-crawlable',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+
+        expect(detectBotBlocker).to.have.been.calledOnce;
+        expect(result.skippedReason).to.equal(undefined);
+        expect(result.urls).to.deep.equal([{ url: 'https://prefer.example' }]);
+      });
+
+      it('skips detectBotBlocker when site base URL is falsy (branch coverage)', async function () {
+        this.timeout(5000);
+        const detectBotBlocker = sandbox.stub().resolves({ crawlable: false, confidence: 1 });
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-utils': { detectBotBlocker },
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
+            getPreferredBaseUrl: () => 'https://from-final-url.example',
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-no-base',
+            getBaseURL: () => null,
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+          },
+          finalUrl: 'https://from-final-url.example',
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+
+        expect(detectBotBlocker).to.not.have.been.called;
+        expect(result.skippedReason).to.equal(undefined);
+        expect(result.urls).to.deep.equal([{ url: 'https://from-final-url.example' }]);
+      });
+
+      it('skips detectBotBlocker for Slack-triggered runs (branch coverage)', async function () {
+        this.timeout(5000);
+        const detectBotBlocker = sandbox.stub().resolves({ crawlable: false, confidence: 1 });
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-utils': { detectBotBlocker },
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
+            getPreferredBaseUrl: () => 'https://slack.example',
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-slack',
+            getBaseURL: () => 'https://slack.example',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                { getUrl: () => 'https://slack.example/page' },
+              ]),
+            },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+          },
+          auditContext: { slackContext: { channelId: 'C01234567' } },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+
+        expect(detectBotBlocker).to.not.have.been.called;
+        expect(result.skippedReason).to.equal(undefined);
+        expect(result.urls.map((u) => u.url)).to.include('https://slack.example/page');
+      });
+
       describe('daily batching', () => {
         const makeAgenticUrls = (n, base = 'https://example.com/agentic-') => Array.from({ length: n }, (_, i) => `${base}${i}`);
         const makeCitabilityRecord = (path) => ({
@@ -6875,6 +7045,51 @@ describe('Prerender Audit', () => {
       expect(page1.scrapedAt).to.equal('2025-02-01T00:00:00.000Z');
       expect(page1.needsPrerender).to.equal(true);
       expect(page2.scrapedAt).to.equal('2025-01-01T00:00:00.000Z'); // preserved
+    });
+
+    it('should preserve gone: true from prior status when current scrape succeeds (wasGone branch)', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-02-01T00:00:00.000Z',
+        auditResult: {
+          results: [
+            {
+              url: 'https://example.com/was-gone-page',
+              error: false,
+              needsPrerender: false,
+            },
+          ],
+        },
+      };
+
+      const existingStatus = {
+        pages: [
+          {
+            url: 'https://example.com/was-gone-page',
+            gone: true,
+            scrapingStatus: 'error',
+            needsPrerender: false,
+            scrapedAt: '2025-01-01T00:00:00.000Z',
+          },
+        ],
+      };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.resolve({
+            Body: { transformToString: () => Promise.resolve(JSON.stringify(existingStatus)) },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+      const page = uploadedData.pages.find((p) => p.url === 'https://example.com/was-gone-page');
+      expect(page).to.have.property('gone', true);
+      expect(page.scrapingStatus).to.equal('success');
     });
 
     it('should merge status pages by pathname so www and non-www variants do not duplicate', async () => {
