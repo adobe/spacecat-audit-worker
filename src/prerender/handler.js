@@ -854,25 +854,6 @@ export async function importTopPages(context) {
 }
 
 /**
- * Reads the prerender status.json for a site from S3.
- * Returns empty defaults on NoSuchKey; warns on other errors.
- */
-async function readSiteStatusJson(s3Client, bucketName, siteId, log) {
-  try {
-    const key = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
-    const response = await s3Client.send(new GetObjectCommand({ Bucket: bucketName, Key: key }));
-    const parsed = JSON.parse(await response.Body.transformToString());
-    const existingPages = Array.isArray(parsed.pages) ? parsed.pages : [];
-    return { existingStatus: parsed, existingPages };
-  } catch (e) {
-    if (e.name !== 'NoSuchKey') {
-      log.warn(`${LOG_PREFIX} Could not read existing status.json for siteId=${siteId}: ${e.message} — starting fresh`);
-    }
-    return { existingStatus: {}, existingPages: [] };
-  }
-}
-
-/**
  * Step 2: Submit URLs for scraping OR skip if in ai-only mode
  * @param {Object} context - Audit context with site and dataAccess
  * @returns {Promise<Object>} - URLs to scrape and metadata OR ai-only result
@@ -1405,14 +1386,21 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     const bucketName = env?.S3_SCRAPER_BUCKET_NAME;
     const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
 
-    // Read existing status.json to look up prior scrapeJobIds and gone-URL history.
+    // Read existing status.json to preserve scrapeJobId and scrapedAt across cycles.
     // Pages from the current run overwrite any prior entry for the same URL.
-    const { existingStatus, existingPages } = await readSiteStatusJson(
-      s3Client,
-      bucketName,
-      siteId,
-      log,
-    );
+    let existingStatus = {};
+    let existingPages = [];
+    try {
+      const existing = await s3Client.send(
+        new GetObjectCommand({ Bucket: bucketName, Key: statusKey }),
+      );
+      existingStatus = JSON.parse(await existing.Body.transformToString());
+      existingPages = Array.isArray(existingStatus.pages) ? existingStatus.pages : [];
+    } catch (e) {
+      if (e.name !== 'NoSuchKey') {
+        log.warn(`${LOG_PREFIX} Could not read existing status.json for siteId=${siteId}: ${e.message} — starting fresh`);
+      }
+    }
 
     const existingPageMap = new Map(existingPages.map((p) => [normalizePathname(p.url), p]));
 
