@@ -13,26 +13,25 @@
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { isPaidLLMOCustomer } from './utils/utils.js';
 import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
+import { fetchAnalysisFromPresignedUrl } from '../utils/analysis-fetch.js';
 
 const LOG_PREFIX = 'Prerender -';
 
 /**
- * Downloads JSON data from a presigned URL
+ * Downloads JSON data from a presigned URL using the shared analysis-fetch helper
+ * (SSRF guard, size cap, log scrub of query-string credentials).
+ *
  * @param {string} presignedUrl - The presigned S3 URL
  * @param {Object} log - Logger instance
  * @returns {Promise<Object>} - The parsed JSON data
- * @throws {Error} - If download fails or response is not OK
+ * @throws {Error} - If the URL is not allowlisted, fetch fails, response is too
+ *   large, or the body is missing the required `suggestions` array.
  */
 async function downloadFromPresignedUrl(presignedUrl, log) {
-  const response = await fetch(presignedUrl);
-
-  if (!response.ok) {
-    const errorMsg = `Failed to download from presigned URL: ${response.status} ${response.statusText}`;
-    log.error(`${LOG_PREFIX} ${errorMsg}`);
-    throw new Error(errorMsg);
-  }
-
-  const data = await response.json();
+  const data = await fetchAnalysisFromPresignedUrl(presignedUrl, {
+    log,
+    prefix: LOG_PREFIX,
+  });
 
   if (!data || !data.suggestions) {
     const errorMsg = 'Downloaded data is missing required suggestions array';
