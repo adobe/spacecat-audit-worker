@@ -55,11 +55,19 @@ const SLUG_STOP_WORDS = new Set([
  * @returns {boolean}
  */
 function looksLikePersonSlug(slug) {
-  if (!slug || slug.includes('.')) return false;
+  if (!slug || slug.includes('.')) {
+    return false;
+  }
   const parts = slug.split('-');
-  if (parts.length < 2 || parts.length > 3) return false;
-  if (!parts.every((p) => /^[a-z]{2,15}$/.test(p))) return false;
-  if (parts.some((p) => SLUG_STOP_WORDS.has(p))) return false;
+  if (parts.length < 2 || parts.length > 3) {
+    return false;
+  }
+  if (!parts.every((p) => /^[a-z]{2,15}$/.test(p))) {
+    return false;
+  }
+  if (parts.some((p) => SLUG_STOP_WORDS.has(p))) {
+    return false;
+  }
   return true;
 }
 
@@ -81,24 +89,36 @@ export function isEntityReplacementSuggestion(brokenUrl, suggestedUrl) {
   try {
     const bParsed = new URL(brokenUrl);
     const sParsed = new URL(suggestedUrl);
-    if (stripWWW(bParsed.hostname) !== stripWWW(sParsed.hostname)) return false;
+    if (stripWWW(bParsed.hostname) !== stripWWW(sParsed.hostname)) {
+      return false;
+    }
     const bSegs = bParsed.pathname.replace(/\/$/, '').split('/').filter(Boolean);
     const sSegs = sParsed.pathname.replace(/\/$/, '').split('/').filter(Boolean);
 
-    if (bSegs.length !== sSegs.length || bSegs.length < 2) return false;
-    if (bSegs.slice(0, -1).join('/') !== sSegs.slice(0, -1).join('/')) return false;
+    if (bSegs.length !== sSegs.length || bSegs.length < 2) {
+      return false;
+    }
+    if (bSegs.slice(0, -1).join('/') !== sSegs.slice(0, -1).join('/')) {
+      return false;
+    }
 
     const bSlug = bSegs.at(-1);
     const sSlug = sSegs.at(-1);
-    if (bSlug === sSlug) return false;
+    if (bSlug === sSlug) {
+      return false;
+    }
 
     const parent = bSegs.at(-2).toLowerCase();
     const inEntitySection = ENTITY_SECTIONS.has(parent);
     const bPerson = looksLikePersonSlug(bSlug);
     const sPerson = looksLikePersonSlug(sSlug);
 
-    if (inEntitySection && (bPerson || sPerson)) return true;
-    if (bPerson && sPerson) return true;
+    if (inEntitySection && (bPerson || sPerson)) {
+      return true;
+    }
+    if (bPerson && sPerson) {
+      return true;
+    }
     return false;
   } catch {
     return false;
@@ -129,13 +149,17 @@ export async function resolveParentPathFallback(brokenUrl, effectiveBaseURL) {
       const parentUrl = `${parsed.origin}${parentPath}`;
 
       // Skip if it resolves to the same origin+path as effectiveBaseURL
-      if (parsed.origin === baseOrigin && parentPath === '/') break;
+      if (parsed.origin === baseOrigin && parentPath === '/') {
+        break;
+      }
 
       try {
         // Sequential by design: stop at the first parent that responds 200
         // eslint-disable-next-line no-await-in-loop
         const response = await fetch(parentUrl);
-        if (response.ok) return parentUrl;
+        if (response.ok) {
+          return parentUrl;
+        }
       } catch {
         // network/SSL error — try next level up
       }
