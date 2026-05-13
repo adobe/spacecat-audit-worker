@@ -68,19 +68,16 @@ describe('summarization guidance handler', () => {
   beforeEach(async function () {
     this.timeout(10000);
     syncSuggestionsStub = sinon.stub().resolves();
-    fetchStub = sinon.stub().resolves({
-      ok: true,
-      status: 200,
-      json: sinon.stub().resolves(mockSummarizationData),
-    });
+    // Stub the shared analysis-fetch helper directly (no need to fake a Response).
+    fetchStub = sinon.stub().resolves(mockSummarizationData);
 
     // Mock the handler with stubbed dependencies
     const mockedHandler = await esmock('../../../src/summarization/guidance-handler.js', {
       '../../../src/utils/data-access.js': {
         syncSuggestions: syncSuggestionsStub,
       },
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: fetchStub,
+      '../../../src/utils/analysis-fetch.js': {
+        fetchAnalysisFromPresignedUrl: fetchStub,
       },
     });
 
@@ -163,7 +160,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'unknown-site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
     await handler(message, context);
@@ -178,7 +175,7 @@ describe('summarization guidance handler', () => {
       auditId: 'unknown-audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
     await handler(message, context);
@@ -188,50 +185,43 @@ describe('summarization guidance handler', () => {
   });
 
   it('should return badRequest when fetch fails', async () => {
-    fetchStub.resolves({
-      ok: false,
-      status: 404,
-      statusText: 'Not Found',
-    });
+    fetchStub.rejects(new Error("[Summarization] analysis fetch failed: 404 Not Found"));
 
     const message = {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
 
     const result = await handler(message, context);
 
     expect(result.status).to.equal(400);
-    expect(log.error).to.have.been.calledWith(sinon.match(/\[Summarization\] Failed to fetch summarization data: 404 Not Found/));
+    // fetchAnalysisFromPresignedUrl throws on non-ok; the catch logs "Error processing summarization guidance: …"
+    expect(log.error).to.have.been.calledWith(sinon.match(/\[Summarization\] Error processing summarization guidance.*analysis fetch failed: 404 Not Found/));
   });
 
   it('should return badRequest when JSON parsing fails', async () => {
-    fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().rejects(new Error('Invalid JSON')),
-    });
+    // fetchAnalysisFromPresignedUrl rejects when the body cannot be parsed as JSON.
+    fetchStub.rejects(new Error('[Summarization] analysis response is not JSON: Invalid JSON'));
 
     const message = {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
 
     const result = await handler(message, context);
 
     expect(result.status).to.equal(400);
-    expect(log.error).to.have.been.calledWith(sinon.match(/\[Summarization\] Error processing summarization guidance: Invalid JSON/));
+    expect(log.error).to.have.been.calledWith(sinon.match(/\[Summarization\] Error processing summarization guidance.*analysis response is not JSON/));
   });
 
   it('should return noContent when no suggestions are found', async () => {
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         guidance: [
           {
             insight: 'Content analysis reveals opportunities',
@@ -241,14 +231,13 @@ describe('summarization guidance handler', () => {
           },
         ],
         suggestions: [],
-      }),
-    });
+      });
 
     const message = {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
 
@@ -268,7 +257,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
     await handler(message, context);
@@ -290,7 +279,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
     await handler(message, context);
@@ -312,8 +301,6 @@ describe('summarization guidance handler', () => {
     Opportunity.allBySiteId.resolves([dummyOpportunity]);
     
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         guidance: [],
         suggestions: [
           {
@@ -330,14 +317,13 @@ describe('summarization guidance handler', () => {
             sectionSummaries: [],
           },
         ],
-      }),
-    });
+      });
 
     const message = {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
     await handler(message, context);
@@ -347,18 +333,14 @@ describe('summarization guidance handler', () => {
 
   it('should filter out suggestions when page_summary_present or key_points_present is true', async () => {
     fetchStub.resolves({
-      ok: true,
-      status: 200,
-      json: sinon.stub().resolves({
-        guidance: mockSummarizationData.guidance,
-        suggestions: [
-          {
-            ...mockSummarizationData.suggestions[0],
-            page_summary_present: true,
-            key_points_present: true,
-          },
-        ],
-      }),
+      guidance: mockSummarizationData.guidance,
+      suggestions: [
+        {
+          ...mockSummarizationData.suggestions[0],
+          page_summary_present: true,
+          key_points_present: true,
+        },
+      ],
     });
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(dummyOpportunity);
@@ -367,7 +349,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
     await handler(message, context);
@@ -385,7 +367,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
     await handler(message, context);
@@ -423,8 +405,6 @@ describe('summarization guidance handler', () => {
     context.site = { requiresValidation: false };
     
     fetchStub.resolves({
-      ok: true,
-      json: sinon.stub().resolves({
         guidance: [
           {
             insight: 'Test insight',
@@ -454,14 +434,13 @@ describe('summarization guidance handler', () => {
             ],
           },
         ],
-      }),
-    });
+      });
 
     const message = {
       siteId: dummySite.getId(),
       auditId: dummyAudit.auditId,
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
     
@@ -496,7 +475,7 @@ describe('summarization guidance handler', () => {
       siteId: dummySite.getId(),
       auditId: dummyAudit.auditId,
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
 
@@ -533,7 +512,7 @@ describe('summarization guidance handler', () => {
       siteId: dummySite.getId(),
       auditId: dummyAudit.auditId,
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
 
@@ -573,7 +552,7 @@ describe('summarization guidance handler', () => {
     const message = {
       siteId: dummySite.getId(),
       auditId: dummyAudit.auditId,
-      data: { presignedUrl: 'https://s3.aws.com/summaries.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json' },
     };
 
     await handler(message, context);
@@ -588,7 +567,7 @@ describe('summarization guidance handler', () => {
     const message = {
       siteId: dummySite.getId(),
       auditId: dummyAudit.auditId,
-      data: { presignedUrl: 'https://s3.aws.com/summaries.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json' },
     };
 
     await handler(message, context);
@@ -604,7 +583,7 @@ describe('summarization guidance handler', () => {
     const message = {
       siteId: dummySite.getId(),
       auditId: legacyAudit.auditId,
-      data: { presignedUrl: 'https://s3.aws.com/summaries.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json' },
     };
 
     await handler(message, context);
@@ -624,7 +603,7 @@ describe('summarization guidance handler', () => {
     const message = {
       siteId: dummySite.getId(),
       auditId: dummyAudit.auditId,
-      data: { presignedUrl: 'https://s3.aws.com/summaries.json' },
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json' },
     };
 
     await handler(message, context);
@@ -642,7 +621,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        presignedUrl: 'https://s3.aws.com/summaries.json',
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
       },
     };
     
