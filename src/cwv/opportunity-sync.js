@@ -30,52 +30,20 @@ function hasFailingMetrics(entry) {
 }
 
 /**
- * Explodes a single CWV entry (one URL, all metrics bundled) into N per-metric entries,
- * one for each metric that exceeds the "good" threshold on any device.
- *
- * Each per-metric entry carries:
- * - metric: which metric this entry represents (lcp, cls, inp)
- * - metrics[]: both device values for that single metric only
- * - aggregationKey: stable key for dedup across audit runs
- * - All other fields from the original entry (url, type, pageviews, organic, etc.)
- *
- * @param {Object} entry - CWV audit entry with all metrics bundled
- * @returns {Object[]} Array of per-metric entries
+ * Returns a copy of the entry where the metrics array only contains device entries
+ * that have at least one metric above the "good" threshold. This prevents suggestions
+ * from containing green device-level data alongside failing ones.
+ * @param {Object} entry - CWV audit entry
+ * @returns {Object} Entry with metrics filtered to failing device types only
  */
-function splitEntryByMetric(entry) {
-  const key = entry.type === 'url' ? entry.url : entry.pattern;
-  const perMetricEntries = [];
-
-  for (const metric of METRICS) {
-    // Collect device values for this metric, only where the metric exceeds threshold
-    const deviceValues = entry.metrics
-      .filter((dm) => {
-        const value = dm[metric];
-        return value !== null && value !== undefined && value > THRESHOLDS[metric];
-      })
-      .map((dm) => ({ deviceType: dm.deviceType, [metric]: dm[metric] }));
-
-    if (deviceValues.length === 0) {
-      // This metric is not failing on any device — skip
-      // eslint-disable-next-line no-continue
-      continue;
-    }
-
-    // Also include devices where the metric is present but passing,
-    // so the UI shows the full picture for this metric across all devices
-    const allDeviceValues = entry.metrics
-      .filter((dm) => dm[metric] != null)
-      .map((dm) => ({ deviceType: dm.deviceType, [metric]: dm[metric] }));
-
-    perMetricEntries.push({
-      ...entry,
-      metric,
-      metrics: allDeviceValues,
-      aggregationKey: `cwv#${key}#${metric}`,
-    });
-  }
-
-  return perMetricEntries;
+function filterToFailingDeviceMetrics(entry) {
+  return {
+    ...entry,
+    metrics: entry.metrics.filter((deviceMetrics) => METRICS.some((metric) => {
+      const value = deviceMetrics[metric];
+      return value !== null && value !== undefined && value > THRESHOLDS[metric];
+    })),
+  };
 }
 
 /**
@@ -93,13 +61,16 @@ export async function syncOpportunitiesAndSuggestions(context) {
   const groupedURLs = site.getConfig().getGroupedURLs(Audit.AUDIT_TYPES.CWV);
 
   // Only sync suggestions for pages where at least one CWV metric is failing.
-  // Pages where all metrics pass are not actionable.
-  // Each failing metric on a URL becomes its own suggestion (per-metric split),
-  // enabling independent tracking, deployment, and Jira tickets per issue.
+  // Pages where all metrics pass are not actionable. Data is already sorted by
+  // page views descending from step 1.
+  // Additionally, strip device-level metrics that are all-green so that suggestions
+  // only contain data for device types with actual CWV issues. This prevents a page
+  // that is failing on one device but passing on another from surfacing green metric
+  // values in its suggestion, which would make it appear incorrectly resolved.
   const cwvData = auditResult.cwv
     .filter(hasFailingMetrics)
-    .flatMap(splitEntryByMetric);
-  log.info(`[syncOpportunitiesAndSuggestions] site ${site.getId()} - ${cwvData.length} per-metric suggestions from ${auditResult.cwv.length} CWV entries`);
+    .map(filterToFailingDeviceMetrics);
+  log.info(`[syncOpportunitiesAndSuggestions] site ${site.getId()} - ${cwvData.length} of ${auditResult.cwv.length} CWV entries have failing metrics`);
 
   // Build minimal audit data object for opportunity creation
   const auditData = {
@@ -118,11 +89,8 @@ export async function syncOpportunitiesAndSuggestions(context) {
     kpiDeltas,
   );
 
-  // Sync suggestions — buildKey includes metric for per-metric dedup
-  const buildKey = (data) => {
-    const base = data.type === 'url' ? data.url : data.pattern;
-    return data.metric ? `${base}:${data.metric}` : base;
-  };
+  // Sync suggestions
+  const buildKey = (data) => (data.type === 'url' ? data.url : data.pattern);
   const maxConfidenceForUrls = Math.max(
     0,
     ...cwvData.filter((entry) => entry.type === 'url').map((entry) => calculateConfidenceScore(entry)),
