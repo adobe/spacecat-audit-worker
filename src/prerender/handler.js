@@ -51,7 +51,6 @@ const AUDIT_ERROR_MESSAGE = 'Audit failed';
 const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`;
 
 const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
-const GONE_URL_RETRY_DAYS = 30;
 
 /**
  * Checks if a suggestion's data represents a domain-wide suggestion.
@@ -884,8 +883,6 @@ export async function submitForScraping(context) {
     log,
     data,
     auditContext,
-    s3Client,
-    env,
   } = context;
 
   // Check for AI-only mode - skip scraping step (step 1 already triggered Mystique)
@@ -961,7 +958,6 @@ export async function submitForScraping(context) {
   let currentIncludedUrls;
   let isFirstRunOfCycle;
   let agenticNewThisCycle = 0;
-  let goneUrlsCount = 0;
   let deployedOrCoveredPathnames = new Set();
 
   if (isSlackTriggered) {
@@ -973,24 +969,6 @@ export async function submitForScraping(context) {
     currentIncludedUrls = rebasedIncludedURLs.length;
     isFirstRunOfCycle = true;
   } else {
-    // Read status.json to get permanently-gone URLs (410) to exclude from future batches
-    const { existingPages } = await readSiteStatusJson(
-      s3Client,
-      env.S3_SCRAPER_BUCKET_NAME,
-      siteId,
-      log,
-    );
-
-    // 410 exclusion: exclude gone URLs unless last scraped more than GONE_URL_RETRY_DAYS ago
-    const goneRetryThreshold = Date.now() - GONE_URL_RETRY_DAYS * 24 * 60 * 60 * 1000;
-    const gonePathnames = new Set(
-      existingPages
-        .filter((p) => p.gone
-          && (!p.scrapedAt || new Date(p.scrapedAt).getTime() > goneRetryThreshold))
-        .map((p) => normalizePathname(p.url)),
-    );
-    goneUrlsCount = gonePathnames.size;
-
     // getTopAgenticUrls internally handles errors and returns [] on failure
     const agenticUrls = await getTopAgenticUrls(site, context);
     agenticUrlsCount = agenticUrls.length;
@@ -1001,15 +979,12 @@ export async function submitForScraping(context) {
 
     const filteredOrganicUrls = rebasedTopPagesUrls
       .filter((url) => isNotRecentUrl(url, recentPathnames))
-      .filter((url) => !gonePathnames.has(normalizePathname(url)))
       .filter((url) => !deployedOrCoveredPathnames.has(normalizePathname(url)));
     const filteredIncludedURLs = rebasedIncludedURLs
       .filter((url) => isNotRecentUrl(url, recentPathnames))
-      .filter((url) => !gonePathnames.has(normalizePathname(url)))
       .filter((url) => !deployedOrCoveredPathnames.has(normalizePathname(url)));
     const filteredAgenticUrls = agenticUrls
       .filter((url) => isNotRecentUrl(url, recentPathnames))
-      .filter((url) => !gonePathnames.has(normalizePathname(url)))
       .filter((url) => !deployedOrCoveredPathnames.has(normalizePathname(url)));
 
     const hasRecentOrganic = filteredOrganicUrls.length !== topPagesUrls.length;
@@ -1045,7 +1020,6 @@ export async function submitForScraping(context) {
     currentIncludedUrls=${currentIncludedUrls},
     isFirstRunOfCycle=${isFirstRunOfCycle},
     agenticNewThisCycle=${agenticNewThisCycle},
-    goneUrls=${goneUrlsCount},
     deployedOrCoveredUrls=${deployedOrCoveredPathnames.size},
     baseUrl=${site.getBaseURL()},
     siteId=${siteId}`);
@@ -1447,9 +1421,6 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       // For fallback URLs that weren't submitted, preserve the existing scrapeJobId.
       const wasSubmitted = !submittedUrlSet || submittedUrlSet.has(result.url);
       const existingEntry = existingPageMap.get(normalizePathname(result.url));
-      const isGone = result.scrapeError?.statusCode === 410;
-      const wasGone = existingEntry?.gone === true;
-      const isNowSuccessful = !result.error && !result.scrapeError;
       return {
         url: result.url,
         scrapingStatus: result.error ? 'error' : 'success',
@@ -1464,7 +1435,6 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
           ? (scrapeJobId || null)
           : (existingEntry?.scrapeJobId ?? null),
         ...(result.scrapeError && { scrapeError: result.scrapeError }),
-        ...((isGone || (wasGone && !isNowSuccessful)) && { gone: true }),
       };
     });
 
