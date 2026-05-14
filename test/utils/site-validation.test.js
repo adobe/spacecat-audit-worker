@@ -25,8 +25,11 @@ describe('utils/site-validation', () => {
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
+    delete process.env.ASO_PLG_EXCLUDED_ORGS;
+    delete process.env.LA_VALIDATION_SITE_IDS;
     context = {
       log: {
+        info: sandbox.spy(),
         warn: sandbox.spy(),
       },
     };
