@@ -87,6 +87,7 @@ import pageTypeGuidance from './page-type/guidance-handler.js';
 import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
 import llmoConfigDbSync from './llmo-config-db-sync/handler.js';
+import rumConfigRefresh from './rum-config-refresh/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import llmoOnboardingPublish from './llmo-onboarding-publish/handler.js';
 import headings from './headings/handler.js';
@@ -231,6 +232,7 @@ const HANDLERS = {
   'offsite-brand-presence': offsiteBrandPresence,
   'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,
   'refresh:geo-brand-presence-daily': refreshGeoBrandPresenceDailyHandler,
+  'rum-config-refresh': rumConfigRefresh,
   dummy: (message) => ok(message),
 };
 
