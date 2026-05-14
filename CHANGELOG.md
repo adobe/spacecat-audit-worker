@@ -1,3 +1,10 @@
+# [1.442.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.441.0...v1.442.0) (2026-05-14)
+
+
+### Features
+
+* per-issue Status + auto-suggest gating in data.issues[]  ([#2493](https://github.com/adobe/spacecat-audit-worker/issues/2493)) ([a925f8c](https://github.com/adobe/spacecat-audit-worker/commit/a925f8ce789a6f44114ee80074f64eac60e56a28))
+
 # [1.441.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.440.1...v1.441.0) (2026-05-14)
 
 
