@@ -403,6 +403,13 @@ async function runOneProbeMode(puppeteer, chromium, mode, probeUrl, log) {
 
     const page = await browser.newPage();
 
+    // Both DefaultHandler and PrerenderHandler always set this UA (abstract-handler.js:81).
+    // Set it in every mode so we test the same baseline the real scraper uses — otherwise
+    // the default HeadlessChrome UA would block all modes for the wrong reason.
+    const scrapeUA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Spacecat/1.0';
+    await page.setUserAgent(scrapeUA);
+    log.info(`[TOC][PROBE]    userAgent="${scrapeUA}"`);
+
     if (mode.addAcceptLanguage) {
       await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' });
       log.info('[TOC][PROBE]    set Accept-Language: en-US,en;q=0.9');
