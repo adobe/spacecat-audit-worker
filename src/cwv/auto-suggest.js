@@ -93,8 +93,16 @@ export function shouldSendAutoSuggestForSuggestion(suggestion) {
     return true;
   }
 
-  // If any issue has empty value, send for auto-suggest
-  return issues.some((issue) => !issue.value || !issue.value.trim());
+  // Send for auto-suggest if any issue is NEW (or lacks an explicit status — legacy data)
+  // AND has empty guidance. Issues whose status has moved past NEW (APPROVED, OUTDATED,
+  // FIXED, SKIPPED, REJECTED, IN_PROGRESS, ERROR) don't need regeneration — customer
+  // intent is already recorded, and OUTDATED issues are no longer actionable.
+  return issues.some((issue) => {
+    if (issue.status && issue.status !== 'NEW') {
+      return false;
+    }
+    return !issue.value || !issue.value.trim();
+  });
 }
 
 /**
