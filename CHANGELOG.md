@@ -1,3 +1,10 @@
+# [1.443.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.442.0...v1.443.0) (2026-05-14)
+
+
+### Features
+
+* Sitemap audit uses canonical URL as its suggested URL ([#2513](https://github.com/adobe/spacecat-audit-worker/issues/2513)) ([e5dbe8d](https://github.com/adobe/spacecat-audit-worker/commit/e5dbe8dbcc99f17c5b11bf54fc1aeb8634f7ac48))
+
 # [1.442.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.441.0...v1.442.0) (2026-05-14)
 
 
