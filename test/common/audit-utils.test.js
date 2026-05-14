@@ -185,7 +185,7 @@ describe('Audit Utils Tests', () => {
       });
       configuration.isHandlerEnabledForSite.returns(false);
       const mockTierClient = {
-        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: mockSiteEnrollment }),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
@@ -199,7 +199,7 @@ describe('Audit Utils Tests', () => {
       });
       configuration.isHandlerEnabledForSite.returns(true);
       const mockTierClient = {
-        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+        checkValidEntitlement: sandbox.stub().resolves({ siteEnrollment: mockSiteEnrollment }),
       };
       sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 

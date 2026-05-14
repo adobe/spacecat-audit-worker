@@ -144,8 +144,7 @@ export const preflightAudit = async (context) => {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
   }
 
-  // Single list for which checks run this execution (DOM gates + handler loop below).
-  const allAvailableChecks = [...AVAILABLE_CHECKS];
+  // Enabled checks for this run: site configuration, optionally narrowed by job payload.
   let enabledChecks = [];
   try {
     const siteEnabled = (await Promise.all(
@@ -170,7 +169,7 @@ export const preflightAudit = async (context) => {
       ...currentMetadata,
       payload: {
         ...currentPayload,
-        checks: allAvailableChecks,
+        checks: enabledChecks,
       },
     });
     await jobEntity.save();

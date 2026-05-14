@@ -39,17 +39,21 @@ describe('buildRunnerAuditContext', () => {
 describe('RunnerAudit', () => {
   let sandbox;
   let RunnerAudit;
-  let isAuditEnabledForSite;
+  let isAuditDisabledForSite;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
-    isAuditEnabledForSite = sandbox.stub().resolves(true);
-    const mod = await esmock('../../src/common/runner-audit.js', {
-      '../../src/common/audit-utils.js': {
-        isAuditEnabledForSite,
-        parseMessageDataForRunnerAudit,
+    isAuditDisabledForSite = sandbox.stub().resolves(false);
+    const mod = await esmock(
+      '../../src/common/runner-audit.js',
+      import.meta.url,
+      {
+        '../../src/common/audit-utils.js': {
+          isAuditDisabledForSite,
+          parseMessageDataForRunnerAudit,
+        },
       },
-    });
+    );
     RunnerAudit = mod.RunnerAudit;
   });
 
@@ -159,7 +163,7 @@ describe('RunnerAudit', () => {
   });
 
   it('returns ok when the audit is disabled for the site', async () => {
-    isAuditEnabledForSite.resolves(false);
+    isAuditDisabledForSite.resolves(true);
     const runner = sandbox.stub();
     const persister = sandbox.stub();
     const { instance } = buildInstance(runner, persister);

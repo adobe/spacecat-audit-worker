@@ -105,6 +105,32 @@ describe('CWV Auto-Suggest', () => {
       expect(message.data.device_type).to.equal('mobile');
     });
 
+    it('should skip processing when CWV auto-suggest is disabled for the site', async () => {
+      const isAuditEnabledStub = sandbox.stub().resolves(false);
+      const { processAutoSuggest: processDisabled } = await esmock('../../../src/cwv/auto-suggest.js', {
+        '../../../src/common/index.js': {
+          isAuditEnabledForSite: isAuditEnabledStub,
+        },
+      });
+
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getType: () => 'cwv',
+        getSuggestions: sandbox.stub().resolves([]),
+      };
+
+      await processDisabled(context, opportunity, site);
+
+      expect(isAuditEnabledStub).to.have.been.calledOnce;
+      expect(opportunity.getSuggestions).to.not.have.been.called;
+      expect(sqsStub).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWithMatch(
+        /CWV auto-suggest is disabled, skipping/,
+      );
+    });
+
     it('should include codeBucket and codePath when auto-fix is enabled', async () => {
       // Create a new instance with mocked getCodeInfo
       const getCodeInfoStub = sandbox.stub().resolves({
