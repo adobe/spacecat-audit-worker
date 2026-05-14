@@ -1383,22 +1383,23 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     }
 
     const scrapedAt = auditedAt || new Date().toISOString();
-    const bucketName = env?.S3_SCRAPER_BUCKET_NAME;
+    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
     const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
 
-    // Read existing status.json to preserve scrapeJobId and scrapedAt across cycles.
+    // Read existing status.json before building currentPages so we can look up prior scrapeJobIds.
     // Pages from the current run overwrite any prior entry for the same URL.
     let existingStatus = {};
     let existingPages = [];
     try {
-      const existing = await s3Client.send(
-        new GetObjectCommand({ Bucket: bucketName, Key: statusKey }),
-      );
+      const existing = await s3Client.send(new GetObjectCommand({
+        Bucket: bucketName,
+        Key: statusKey,
+      }));
       existingStatus = JSON.parse(await existing.Body.transformToString());
       existingPages = Array.isArray(existingStatus.pages) ? existingStatus.pages : [];
     } catch (e) {
       if (e.name !== 'NoSuchKey') {
-        log.warn(`${LOG_PREFIX} Could not read existing status.json for siteId=${siteId}: ${e.message} — starting fresh`);
+        log.warn(`${LOG_PREFIX} Could not read existing status.json for siteId=${siteId}, baseUrl=${auditUrl}: ${e.message} — starting fresh`);
       }
     }
 
@@ -1408,7 +1409,6 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       // Only stamp the current scrapeJobId for URLs actually submitted to this job.
       // For fallback URLs that weren't submitted, preserve the existing scrapeJobId.
       const wasSubmitted = !submittedUrlSet || submittedUrlSet.has(result.url);
-      const existingEntry = existingPageMap.get(normalizePathname(result.url));
       return {
         url: result.url,
         scrapingStatus: result.error ? 'error' : 'success',
@@ -1421,7 +1421,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
         scrapedAt,
         scrapeJobId: wasSubmitted
           ? (scrapeJobId || null)
-          : (existingEntry?.scrapeJobId ?? null),
+          : (existingPageMap.get(normalizePathname(result.url))?.scrapeJobId ?? null),
         ...(result.scrapeError && { scrapeError: result.scrapeError }),
       };
     });
@@ -1453,9 +1453,8 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     const scrapeForbiddenCount = mergedPages.filter(
       (p) => p.scrapeError?.statusCode === 403,
     ).length;
-
-    const has403Urls = currentPages.some((p) => p.scrapeError?.statusCode === 403);
-    const latestScrapeForbidden = auditResult.scrapeForbidden ?? has403Urls;
+    const latestScrapeForbidden = auditResult.scrapeForbidden
+      ?? currentPages.some((p) => p.scrapeError?.statusCode === 403);
 
     const statusSummary = {
       baseUrl: auditUrl,
