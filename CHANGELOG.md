@@ -1,3 +1,10 @@
+# [1.441.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.440.1...v1.441.0) (2026-05-14)
+
+
+### Features
+
+* **rum-config:** add periodic rum-config-refresh handler ([#2497](https://github.com/adobe/spacecat-audit-worker/issues/2497)) ([c3cafc7](https://github.com/adobe/spacecat-audit-worker/commit/c3cafc74091dc628ac1510159ff299a21d7f86c2))
+
 ## [1.440.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.440.0...v1.440.1) (2026-05-13)
 
 
