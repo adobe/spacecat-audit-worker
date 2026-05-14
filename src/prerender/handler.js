@@ -397,7 +397,7 @@ async function getScrapedHtmlFromS3(url, context) {
   } = context;
 
   try {
-    const bucketName = env?.S3_SCRAPER_BUCKET_NAME;
+    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
     const { scrapeJobId: storageId } = auditContext || {};
     const serverSideKey = getS3Path(url, storageId, 'server-side.html');
     const clientSideKey = getS3Path(url, storageId, 'client-side.html');
@@ -522,7 +522,7 @@ async function fetchLatestScrapeJobId(siteId, context) {
   const { log, s3Client, env } = context;
 
   try {
-    const bucketName = env?.S3_SCRAPER_BUCKET_NAME;
+    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
     const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
 
     log.info(`${LOG_PREFIX} ai-only: Fetching status.json from s3://${bucketName}/${statusKey}`);
@@ -1544,7 +1544,7 @@ export async function getScrapeJobStats(
       + ` (scrapeJobId=${scrapeJobId}), urlsToCheck=${urlsToCheckLength}`);
 
     // Find FAILED-status URLs absent from comparisonResults and read their scrape.json
-    const bucketName = env?.S3_SCRAPER_BUCKET_NAME;
+    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
     const comparisonUrlSet = new Set(comparisonResults.map((r) => r.url));
     const missingUrls = allScrapeUrls.filter((su) => !comparisonUrlSet.has(su.getUrl()));
 
