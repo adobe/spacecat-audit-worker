@@ -127,6 +127,12 @@ export function applyPerIssueOutdated(existingIssues, newDataItem) {
  */
 export function mergeCwvData(existingData, newDataItem) {
   const merged = { ...existingData, ...newDataItem };
+  // Self-heal legacy rows that have jiraLink='' (schema rejects empty string;
+  // canonical "unset" is null). Without this, re-audits keep emitting the
+  // "jiraLink is not allowed to be empty" validation warning indefinitely.
+  if (merged.jiraLink === '') {
+    merged.jiraLink = null;
+  }
   if (Array.isArray(existingData?.issues) && existingData.issues.length > 0) {
     merged.issues = applyPerIssueOutdated(existingData.issues, newDataItem);
   }

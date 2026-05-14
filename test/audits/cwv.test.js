@@ -940,6 +940,39 @@ describe('Per-issue OUTDATED merge helpers', () => {
       expect(result.issues).to.deep.equal([]);
     });
 
+    it('self-heals legacy jiraLink="" to null (stops the schema validation warning)', () => {
+      const existing = {
+        url: 'x',
+        metrics: [{ deviceType: 'mobile', lcp: 5000 }],
+        jiraLink: '', // legacy bad value
+      };
+      const newItem = { url: 'x', metrics: [{ deviceType: 'mobile', lcp: 5000 }] };
+      const result = mergeCwvData(existing, newItem);
+      expect(result.jiraLink).to.equal(null);
+    });
+
+    it('preserves a valid jiraLink URI on re-merge', () => {
+      const existing = {
+        url: 'x',
+        metrics: [{ deviceType: 'mobile', lcp: 5000 }],
+        jiraLink: 'https://jira.example.com/browse/CWV-123',
+      };
+      const newItem = { url: 'x', metrics: [{ deviceType: 'mobile', lcp: 5000 }] };
+      const result = mergeCwvData(existing, newItem);
+      expect(result.jiraLink).to.equal('https://jira.example.com/browse/CWV-123');
+    });
+
+    it('preserves an already-null jiraLink on re-merge', () => {
+      const existing = {
+        url: 'x',
+        metrics: [{ deviceType: 'mobile', lcp: 5000 }],
+        jiraLink: null,
+      };
+      const newItem = { url: 'x', metrics: [{ deviceType: 'mobile', lcp: 5000 }] };
+      const result = mergeCwvData(existing, newItem);
+      expect(result.jiraLink).to.equal(null);
+    });
+
     it('marks resolved-metric issues OUTDATED on re-merge', () => {
       const existing = {
         url: 'x',
