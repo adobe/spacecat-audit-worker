@@ -37,6 +37,17 @@ export async function checkSiteRequiresValidation(site, context, auditType) {
   if (auditType && IS_LLMO_OPPTY.includes(auditType)) {
     return false;
   }
+
+  // Internal/demo orgs bypass suggestion validation regardless of PAID tier
+  if (process.env.ASO_PLG_EXCLUDED_ORGS) {
+    const excludedOrgIds = process.env.ASO_PLG_EXCLUDED_ORGS.split(',')
+      .map((id) => id.trim()).filter((id) => id.length > 0);
+    const orgId = site.getOrganizationId?.();
+    if (orgId && excludedOrgIds.includes(orgId)) {
+      return false;
+    }
+  }
+
   // LA customers override via env
   let laSiteIds = [];
 

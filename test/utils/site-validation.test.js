@@ -86,6 +86,39 @@ describe('utils/site-validation', () => {
     expect(stub).to.not.have.been.called;
   });
 
+  it('returns false when org is listed in ASO_PLG_EXCLUDED_ORGS even if site is PAID tier', async () => {
+    process.env.ASO_PLG_EXCLUDED_ORGS = 'org-internal-1, org-internal-2 , org-internal-3';
+    const site = {
+      getId: sandbox.stub().returns('site-internal'),
+      getOrganizationId: sandbox.stub().returns('org-internal-2'),
+    };
+    const createStub = sandbox.stub(TierClient, 'createForSite');
+
+    const result = await checkSiteRequiresValidation(site, context);
+
+    expect(result).to.equal(false);
+    expect(createStub).to.not.have.been.called;
+  });
+
+  it('falls through to entitlement check when org is NOT in ASO_PLG_EXCLUDED_ORGS', async () => {
+    process.env.ASO_PLG_EXCLUDED_ORGS = 'org-internal-1,org-internal-2';
+    const site = {
+      getId: sandbox.stub().returns('site-paid'),
+      getOrganizationId: sandbox.stub().returns('org-external'),
+    };
+    const entitlementMock = {
+      getTier: sandbox.stub().returns('PAID'),
+      getProductCode: sandbox.stub().returns('ASO'),
+    };
+    sandbox.stub(TierClient, 'createForSite').returns({
+      checkValidEntitlement: sandbox.stub().resolves({ entitlement: entitlementMock }),
+    });
+
+    const result = await checkSiteRequiresValidation(site, context);
+
+    expect(result).to.equal(true);
+  });
+
   it('returns site.requiresValidation when explicitly set to false', async () => {
     const site = { getId: sandbox.stub().returns('site-1'), requiresValidation: false };
 
