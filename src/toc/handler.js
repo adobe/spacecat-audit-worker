@@ -29,47 +29,29 @@ import {
   cheerioLoad,
 } from '../headings/shared-utils.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
-import { getMergedAuditInputUrls, sortTopPagesByTraffic } from '../utils/audit-input-urls.js';
-import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 
 const auditType = Audit.AUDIT_TYPES.TOC;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-const MAX_TOP_PAGES = 200;
+
+// TODO(LLMO-4880): remove before full rollout — hardcoded test URLs for prerender validation
+const TOC_TEST_URLS = [
+  'https://careinsurance.com/health-insurance/ultcr/ultimate-care-health-insurance.html',
+  'https://careinsurance.com/health-insurance/health-insurance-in-solapur',
+  'https://careinsurance.com/health-insurance/health-insurance-in-vijayawada',
+];
 
 /**
- * Fetches and merges TOC audit input URLs from three sources in priority order:
- * 1. Customer desired URLs (from site config)
- * 2. Agentic traffic (Athena CDN logs)
- * 3. Organic SEO top pages (DB)
+ * Returns hardcoded test URLs for prerender scraper validation (LLMO-4880).
+ * TODO(LLMO-4880): replace with getMergedAuditInputUrls before full rollout.
  * @param {Object} context - Audit context
  * @param {Object} site - Site object
- * @returns {Promise<Object>} Merged URL result from getMergedAuditInputUrls
+ * @returns {Promise<Object>} { urls: string[] }
  */
 async function getTocInputUrls(context, site) {
-  const { dataAccess, log } = context;
-  const result = await getMergedAuditInputUrls({
-    site,
-    dataAccess,
-    auditType,
-    getAgenticUrls: () => getTopAgenticUrlsFromAthena(site, context, MAX_TOP_PAGES),
-    getTopPages: async () => {
-      const topPages = await dataAccess?.SiteTopPage?.allBySiteIdAndSourceAndGeo?.(
-        site.getId(),
-        'seo',
-        'global',
-      );
-      return sortTopPagesByTraffic(topPages || []);
-    },
-    topOrganicLimit: MAX_TOP_PAGES,
-  });
-
-  log.info(
-    `[TOC] URL inputs: topPages=${result.topPagesUrls.length}, `
-    + `agentic=${result.agenticUrls.length}, includedURLs=${result.includedURLs.length}, `
-    + `filteredOutUrls=${result.filteredCount}, finalUrls=${result.urls.length}`,
-  );
-
-  return result;
+  const { log } = context;
+  log.info(`[TOC] Using ${TOC_TEST_URLS.length} hardcoded test URLs (prerender validation) for site=${site.getBaseURL()}`);
+  TOC_TEST_URLS.forEach((url, i) => log.info(`[TOC]   url[${i}]: ${url}`));
+  return { urls: TOC_TEST_URLS };
 }
 
 export const TOC_CHECK = {
@@ -300,6 +282,7 @@ export async function validatePageTocFromScrapeJson(
  */
 export async function importTopPages(context) {
   const { site, log } = context;
+  log.info(`[TOC] Started Testing3 importTopPages: siteId=${site.getId()}, baseURL=${site.getBaseURL()}`);
   try {
     const { urls } = await getTocInputUrls(context, site);
     log.info(`[TOC] Found ${urls.length} URLs for audit`);
@@ -320,6 +303,264 @@ export async function importTopPages(context) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// LLMO-4880 Puppeteer probe — identifies which specific browser flags cause
+// 403 on careinsurance.com when running from Lambda IPs.
+// Runs 6 progressive modes (DefaultHandler → PrerenderHandler) and logs results
+// so we can see in Coralogix exactly which change fixes the issue.
+// Remove runPuppeteerProbe() and its call in submitForScraping once flags identified.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/* eslint-disable no-await-in-loop */
+
+// Each mode adds exactly one PrerenderHandler feature on top of the previous.
+// Mode-0 is the exact DefaultHandler baseline; Mode-5 is the exact PrerenderHandler.
+const PROBE_MODES = [
+  {
+    name: 'Mode-0-DefaultHandler',
+    desc: '--disable-web-security + headless:true + waitUntil:networkidle2 (DefaultHandler baseline)',
+    headless: true,
+    extraArgs: ['--disable-web-security'],
+    waitUntil: 'networkidle2',
+    addAcceptLanguage: false,
+    doOverridePermissions: false,
+    doCdpCors: false,
+  },
+  {
+    name: 'Mode-1-no-disable-web-security',
+    desc: 'Remove --disable-web-security only (single change vs Mode-0)',
+    headless: true,
+    extraArgs: [],
+    waitUntil: 'networkidle2',
+    addAcceptLanguage: false,
+    doOverridePermissions: false,
+    doCdpCors: false,
+  },
+  {
+    name: 'Mode-2-headless-shell',
+    desc: 'Mode-1 + headless:shell (new headless API vs deprecated headless:true)',
+    headless: 'shell',
+    extraArgs: [],
+    waitUntil: 'networkidle2',
+    addAcceptLanguage: false,
+    doOverridePermissions: false,
+    doCdpCors: false,
+  },
+  {
+    name: 'Mode-3-domcontentloaded',
+    desc: 'Mode-2 + waitUntil:domcontentloaded',
+    headless: 'shell',
+    extraArgs: [],
+    waitUntil: 'domcontentloaded',
+    addAcceptLanguage: false,
+    doOverridePermissions: false,
+    doCdpCors: false,
+  },
+  {
+    name: 'Mode-4-lang-permissions',
+    desc: 'Mode-3 + Accept-Language + overridePermissions + --deny-permission-prompts',
+    headless: 'shell',
+    extraArgs: ['--deny-permission-prompts'],
+    waitUntil: 'domcontentloaded',
+    addAcceptLanguage: true,
+    doOverridePermissions: true,
+    doCdpCors: false,
+  },
+  {
+    name: 'Mode-5-full-PrerenderHandler',
+    desc: 'Mode-4 + CDP Fetch CORS interception (exact PrerenderHandler — known to work)',
+    headless: 'shell',
+    extraArgs: ['--deny-permission-prompts'],
+    waitUntil: 'domcontentloaded',
+    addAcceptLanguage: true,
+    doOverridePermissions: true,
+    doCdpCors: true,
+  },
+];
+
+async function runOneProbeMode(puppeteer, chromium, mode, probeUrl, log) {
+  log.info(`[TOC][PROBE] ── ${mode.name}`);
+  log.info(`[TOC][PROBE]    ${mode.desc}`);
+
+  let browser;
+  try {
+    // eslint-disable-next-line import/no-unresolved
+    const executablePath = await chromium.executablePath();
+    const launchArgs = [...chromium.args, ...mode.extraArgs];
+    log.info(`[TOC][PROBE]    executablePath=${executablePath}`);
+    log.info(`[TOC][PROBE]    headless=${JSON.stringify(mode.headless)}  waitUntil=${mode.waitUntil}`);
+    log.info(`[TOC][PROBE]    --disable-web-security=${launchArgs.includes('--disable-web-security')}`);
+    log.info(`[TOC][PROBE]    extraArgs=${JSON.stringify(mode.extraArgs)}`);
+    log.info(`[TOC][PROBE]    lang=${mode.addAcceptLanguage}  permissions=${mode.doOverridePermissions}  cdpCors=${mode.doCdpCors}`);
+
+    browser = await puppeteer.launch({
+      args: launchArgs,
+      defaultViewport: chromium.defaultViewport,
+      executablePath,
+      headless: mode.headless,
+    });
+    log.info('[TOC][PROBE]    browser launched');
+
+    const page = await browser.newPage();
+
+    if (mode.addAcceptLanguage) {
+      await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' });
+      log.info('[TOC][PROBE]    set Accept-Language: en-US,en;q=0.9');
+    }
+
+    if (mode.doOverridePermissions) {
+      // eslint-disable-next-line no-await-in-loop
+      await browser.defaultBrowserContext().overridePermissions(probeUrl, ['geolocation', 'notifications']);
+      log.info('[TOC][PROBE]    overridePermissions done');
+    }
+
+    if (mode.doCdpCors) {
+      const cdpClient = await page.createCDPSession();
+      await cdpClient.send('Fetch.enable', { patterns: [{ requestStage: 'Response' }] });
+      cdpClient.on('Fetch.requestPaused', async ({
+        requestId, responseHeaders = [], responseStatusCode = 200,
+      }) => {
+        try {
+          const modified = responseHeaders.filter(
+            (h) => !h.name.toLowerCase().startsWith('access-control'),
+          );
+          modified.push({ name: 'Access-Control-Allow-Origin', value: '*' });
+          await cdpClient.send('Fetch.fulfillRequest', {
+            requestId,
+            responseCode: responseStatusCode,
+            responseHeaders: modified,
+          });
+        } catch (cdpErr) {
+          log.warn(`[TOC][PROBE]    CDP fulfillRequest error: ${cdpErr.message}`);
+        }
+      });
+      log.info('[TOC][PROBE]    CDP CORS interception enabled');
+    }
+
+    let httpStatus = null;
+    let httpStatusText = null;
+    page.on('response', (resp) => {
+      const respUrl = resp.url();
+      if (respUrl === probeUrl || respUrl.split('?')[0] === probeUrl.split('?')[0]) {
+        httpStatus = resp.status();
+        httpStatusText = resp.statusText();
+      }
+    });
+
+    const t0 = Date.now();
+    let navError = null;
+    try {
+      await page.goto(probeUrl, { waitUntil: mode.waitUntil, timeout: 30000 });
+    } catch (navErr) {
+      navError = navErr.message;
+      log.warn(`[TOC][PROBE]    navigation error: ${navError}`);
+    }
+    const elapsedMs = Date.now() - t0;
+
+    const title = await page.title().catch(() => '(title error)');
+    /* eslint-disable no-undef */
+    const bodyHtmlLen = await page
+      .evaluate(() => document.body?.innerHTML?.length ?? 0)
+      .catch(() => 0);
+    const bodySnippet = await page
+      .evaluate(() => (document.body?.innerText ?? '').replace(/\s+/g, ' ').trim().substring(0, 200))
+      .catch(() => '');
+    /* eslint-enable no-undef */
+
+    const botSignals = [
+      'access denied', 'just a moment', 'enable javascript',
+      'checking your browser', 'cloudflare', 'please wait', 'ddos-guard',
+    ];
+    const snippetLower = bodySnippet.toLowerCase();
+    const botBlocked = (httpStatus != null && httpStatus >= 400)
+      || botSignals.some((s) => snippetLower.includes(s));
+    const success = !navError && httpStatus === 200 && bodyHtmlLen > 2000 && !botBlocked;
+
+    let verdict;
+    if (success) {
+      verdict = 'SUCCESS';
+    } else if (botBlocked) {
+      verdict = 'BOT-BLOCKED';
+    } else {
+      verdict = 'FAILED';
+    }
+    log.info(`[TOC][PROBE]    ${verdict}  HTTP=${httpStatus ?? 'n/a'}(${httpStatusText ?? ''})  bodyHtmlLen=${bodyHtmlLen}  elapsed=${elapsedMs}ms`);
+    log.info(`[TOC][PROBE]    title="${title}"`);
+    log.info(`[TOC][PROBE]    body="${bodySnippet.replace(/\n/g, ' ')}"`);
+
+    return {
+      mode: mode.name, httpStatus, navError, bodyHtmlLen, elapsedMs, success, botBlocked,
+    };
+  } catch (modeErr) {
+    log.warn(`[TOC][PROBE]    LAUNCH/RUN ERROR: ${modeErr.message}`);
+    return {
+      mode: mode.name, error: modeErr.message, success: false, botBlocked: false,
+    };
+  } finally {
+    if (browser) {
+      await browser.close().catch((e) => log.warn(`[TOC][PROBE]    browser.close error: ${e.message}`));
+    }
+  }
+}
+
+/**
+ * LLMO-4880 diagnostic: launch Chromium in 6 progressive modes against the first probe URL.
+ * Each mode adds one PrerenderHandler feature on top of the previous mode so we can pinpoint
+ * the minimum flags needed to pass bot detection on careinsurance.com from Lambda IPs.
+ * All output uses the [TOC][PROBE] prefix for easy Coralogix filtering.
+ * @param {string[]} urls - URLs list (only first URL is used)
+ * @param {Object} log - Logger
+ */
+async function runPuppeteerProbe(urls, log) {
+  let puppeteer;
+  let chromium;
+  try {
+    // Dynamic import so missing packages don't break startup in other envs
+    /* eslint-disable import/no-unresolved */
+    ({ default: puppeteer } = await import('puppeteer-core'));
+    ({ default: chromium } = await import('@sparticuz/chromium'));
+    /* eslint-enable import/no-unresolved */
+  } catch (importErr) {
+    log.warn(`[TOC][PROBE] puppeteer-core/@sparticuz/chromium unavailable — skipping probe: ${importErr.message}`);
+    return;
+  }
+
+  const probeUrl = urls[0];
+  log.info('[TOC][PROBE] ════════════════════════════════════════════');
+  log.info(`[TOC][PROBE] Starting probe against: ${probeUrl}`);
+  log.info(`[TOC][PROBE] ${PROBE_MODES.length} modes — Mode-0=DefaultHandler, Mode-5=PrerenderHandler`);
+  log.info('[TOC][PROBE] ════════════════════════════════════════════');
+
+  const probeResults = [];
+  for (const mode of PROBE_MODES) {
+    const result = await runOneProbeMode(puppeteer, chromium, mode, probeUrl, log);
+    probeResults.push(result);
+  }
+
+  log.info('[TOC][PROBE] ═══════════════ SUMMARY ═══════════════════');
+  probeResults.forEach((r) => {
+    let icon;
+    if (r.success) {
+      icon = 'OK ';
+    } else if (r.botBlocked) {
+      icon = 'BOT';
+    } else {
+      icon = 'ERR';
+    }
+    log.info(`[TOC][PROBE]   [${icon}]  ${r.mode}  HTTP=${r.httpStatus ?? 'n/a'}  bodyLen=${r.bodyHtmlLen ?? 0}  ${r.error ?? ''}`);
+  });
+  const firstSuccess = probeResults.find((r) => r.success);
+  if (firstSuccess) {
+    log.info(`[TOC][PROBE] CONCLUSION: minimum working mode is ${firstSuccess.mode}`);
+    log.info('[TOC][PROBE] Apply only the changes up to that mode to DefaultHandler.');
+  } else {
+    log.info('[TOC][PROBE] CONCLUSION: all modes failed — IP not whitelisted or new protection rule.');
+  }
+  log.info('[TOC][PROBE] ════════════════════════════════════════════');
+}
+
+/* eslint-enable no-await-in-loop */
+
 /**
  * Step 2: Submit TOC URLs for scraping via ScrapeClient.
  * Reads topPages from the stored audit result (set by importTopPages in step 1).
@@ -329,38 +570,24 @@ export async function importTopPages(context) {
  * @returns {Promise<Object>}
  */
 export async function submitForScraping(context) {
-  const { site, audit, log } = context;
-  const { Audit: AuditModel } = context.dataAccess;
-  const auditResult = audit.getAuditResult();
-  const topPages = auditResult?.topPages ?? [];
+  const { site, log } = context;
+  // TODO(LLMO-4880): remove hardcoded URLs and restore import-top-pages step before full rollout
+  log.info(`[TOC] submitForScraping (step 1): siteId=${site.getId()}, baseURL=${site.getBaseURL()}`);
+  log.info(`[TOC] Using ${TOC_TEST_URLS.length} hardcoded test URLs (processingType=prerender)`);
+  TOC_TEST_URLS.forEach((url, i) => log.info(`[TOC]   scrape[${i}]: ${url}`));
 
-  if (auditResult?.success === false) {
-    log.warn('[TOC] Audit failed in previous step, skipping scraping');
-    const terminalResult = {
-      check: TOPPAGES_CHECK.check, success: false, explanation: TOPPAGES_CHECK.explanation,
-    };
-    await AuditModel.updateByKeys({ auditId: audit.getId() }, { auditResult: terminalResult });
-    return { auditResult: terminalResult, fullAuditRef: site.getBaseURL(), urls: [] };
+  // TODO(LLMO-4880): remove probe once minimum flags are identified
+  log.info('[TOC] Running Puppeteer flag probe from Lambda IPs — see [TOC][PROBE] logs for results');
+  try {
+    await runPuppeteerProbe(TOC_TEST_URLS, log);
+  } catch (probeErr) {
+    log.warn(`[TOC] Puppeteer probe threw unexpectedly: ${probeErr.message} — continuing with scrape`);
   }
 
-  if (topPages.length === 0) {
-    log.warn('[TOC] No top pages found, ending audit');
-    const terminalResult = {
-      check: TOPPAGES_CHECK.check, success: false, explanation: TOPPAGES_CHECK.explanation,
-    };
-    await AuditModel.updateByKeys({ auditId: audit.getId() }, { auditResult: terminalResult });
-    return { auditResult: terminalResult, fullAuditRef: site.getBaseURL(), urls: [] };
-  }
-
-  // TODO(LLMO-4880): remove hardcoded URLs before full rollout
-  const urlsToScrape = [
-    'https://careinsurance.com/health-insurance/ultcr/ultimate-care-health-insurance.html',
-    'https://careinsurance.com/health-insurance/health-insurance-in-solapur',
-    'https://careinsurance.com/health-insurance/health-insurance-in-vijayawada',
-  ];
-  log.info(`[TOC] Submitting ${urlsToScrape.length} URLs for scraping (processingType=prerender)`);
   return {
-    urls: urlsToScrape.map((url) => ({ url })),
+    auditResult: { success: true, topPages: TOC_TEST_URLS },
+    fullAuditRef: site.getBaseURL(),
+    urls: TOC_TEST_URLS.map((url) => ({ url })),
     siteId: site.getId(),
     processingType: 'prerender',
     maxScrapeAge: 24,
@@ -543,6 +770,8 @@ export async function processTocResults(context) {
   let auditResult;
 
   try {
+    log.info(`[TOC] processTocResults: auditId=${audit?.getId()}, siteId=${site.getId()}, baseURL=${baseURL}, scrapeResultPaths.size=${scrapeResultPaths?.size ?? 0}`);
+
     if (!scrapeResultPaths || scrapeResultPaths.size === 0) {
       log.warn('[TOC Audit] No scrape results available, ending audit.');
       auditResult = {
@@ -557,16 +786,30 @@ export async function processTocResults(context) {
       return { fullAuditRef: baseURL, auditResult };
     }
 
+    Array.from(scrapeResultPaths.entries()).forEach(([url, s3Path], i) => {
+      log.info(`[TOC]   result[${i}]: url=${url} s3Path=${s3Path}`);
+    });
+
     const auditPromises = Array.from(scrapeResultPaths.entries()).map(async ([url, s3Path]) => {
+      log.info(`[TOC] Fetching S3 scrape object: url=${url} s3Path=${s3Path}`);
       const scrapeJsonObject = await getObjectFromKey(
         s3Client,
         S3_SCRAPER_BUCKET_NAME,
         s3Path,
         log,
       );
+      log.info(`[TOC] S3 object fetched for ${url}: found=${!!scrapeJsonObject}, statusCode=${scrapeJsonObject?.scrapeResult?.statusCode ?? 'n/a'}, bodyLen=${scrapeJsonObject?.scrapeResult?.rawBody?.length ?? 0}`);
       return validatePageTocFromScrapeJson(url, scrapeJsonObject, log, context);
     });
     const auditResults = await Promise.allSettled(auditPromises);
+    log.info(`[TOC] allSettled: ${auditResults.length} results — fulfilled=${auditResults.filter((r) => r.status === 'fulfilled').length}, rejected=${auditResults.filter((r) => r.status === 'rejected').length}`);
+    auditResults.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        log.info(`[TOC]   result[${i}] REJECTED: ${r.reason?.message}`);
+      } else {
+        log.info(`[TOC]   result[${i}] OK: url=${r.value?.url}, tocPresent=${r.value?.tocDetails?.tocPresent}`);
+      }
+    });
 
     const aggregatedResults = {};
     let totalIssuesFound = 0;
@@ -651,7 +894,7 @@ export async function tocPersister(auditData, context) {
 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
-  .addStep('import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  // TODO(LLMO-4880): restore import-top-pages step before full rollout
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
   .addStep('process-toc-results', processTocResults)
   .build();
