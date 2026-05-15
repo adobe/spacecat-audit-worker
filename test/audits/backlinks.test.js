@@ -455,6 +455,7 @@ describe('Backlinks Tests', function () {
         success: true,
         brokenBacklinks: [],
       });
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
 
       const result = await generateSuggestionData(context);
 
@@ -468,6 +469,7 @@ describe('Backlinks Tests', function () {
         success: true,
         brokenBacklinks: null,
       });
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
 
       const result = await generateSuggestionData(context);
 
@@ -479,10 +481,57 @@ describe('Backlinks Tests', function () {
       context.audit.getAuditResult.returns({
         success: true,
       });
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
 
       const result = await generateSuggestionData(context);
 
       expect(result).to.deep.equal({ status: 'complete' });
+    });
+
+    it('resolves existing NEW opportunity and marks suggestions OUTDATED when no broken backlinks found', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: [],
+      });
+
+      const mockSuggestions = [{ getId: () => 'suggestion-1' }];
+      const mockOpportunity = {
+        getId: sinon.stub().returns('oppty-id-1'),
+        getType: sinon.stub().returns('broken-backlinks'),
+        setStatus: sinon.stub(),
+        getSuggestions: sinon.stub().resolves(mockSuggestions),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      const bulkUpdateStatusStub = sinon.stub().resolves();
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+      context.dataAccess.Suggestion.bulkUpdateStatus = bulkUpdateStatusStub;
+
+      const result = await generateSuggestionData(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(mockOpportunity.setStatus).to.have.been.calledOnce;
+      expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
+      expect(bulkUpdateStatusStub).to.have.been.calledOnceWith(mockSuggestions, 'OUTDATED');
+      expect(mockOpportunity.setUpdatedBy).to.have.been.calledOnceWith('system');
+      expect(mockOpportunity.save).to.have.been.calledOnce;
+    });
+
+    it('logs error and still returns complete when opportunity lookup fails on no-backlinks path', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: [],
+      });
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('DB error'));
+
+      const result = await generateSuggestionData(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Failed to resolve broken-backlinks opportunity.*DB error/),
+      );
     });
 
     it('processes suggestions for broken backlinks and send message to mystique', async () => {

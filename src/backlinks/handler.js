@@ -14,6 +14,7 @@ import { tracingFetch as fetch, prependSchema, stripWWW } from '@adobe/spacecat-
 import SeoClient from '@adobe/mysticat-shared-seo-client';
 import {
   Audit,
+  Opportunity as OpportunityModel,
   Suggestion as SuggestionModel,
   FixEntity as FixEntityModel,
 } from '@adobe/spacecat-shared-data-access';
@@ -294,6 +295,27 @@ export const generateSuggestionData = async (context) => {
     || !Array.isArray(auditResult.brokenBacklinks)
     || auditResult.brokenBacklinks.length === 0) {
     log.info(`No broken backlinks found for ${site.getId()}, skipping opportunity creation`);
+
+    try {
+      const opportunities = await dataAccess.Opportunity
+        .allBySiteIdAndStatus(site.getId(), OpportunityModel.STATUSES.NEW);
+      const opportunity = opportunities
+        .find((oppty) => oppty.getType() === Audit.AUDIT_TYPES.BROKEN_BACKLINKS);
+      if (opportunity) {
+        log.info(`Resolving existing broken-backlinks opportunity ${opportunity.getId()} for ${site.getId()}`);
+        await opportunity.setStatus(OpportunityModel.STATUSES.RESOLVED);
+        const suggestions = await opportunity.getSuggestions();
+        if (suggestions?.length > 0) {
+          await dataAccess.Suggestion
+            .bulkUpdateStatus(suggestions, SuggestionModel.STATUSES.OUTDATED);
+        }
+        opportunity.setUpdatedBy('system');
+        await opportunity.save();
+      }
+    } catch (e) {
+      log.error(`Failed to resolve broken-backlinks opportunity for ${site.getId()}: ${e.message}`);
+    }
+
     return {
       status: 'complete',
     };
