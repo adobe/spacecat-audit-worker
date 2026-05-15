@@ -831,11 +831,13 @@ describe('Prerender Audit', () => {
         expect(submittedUrls).to.include('https://www.override.com/included');
       });
 
-      it('returns domainBlocked result when detectBotBlocker confidence >= 0.99', async function () {
+      it('returns domainBlocked result for known CDN bot blocker at confidence >= 0.99', async function () {
         this.timeout(5000);
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-utils': {
-            detectBotBlocker: sandbox.stub().resolves({ crawlable: false, confidence: 0.99 }),
+            detectBotBlocker: sandbox.stub().resolves({
+              crawlable: false, confidence: 0.99, type: 'cloudflare',
+            }),
           },
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
@@ -864,7 +866,41 @@ describe('Prerender Audit', () => {
         expect(result.processingType).to.equal('prerender');
         expect(result.maxScrapeAge).to.equal(0);
         expect(result.auditContext).to.deep.include({ skippedReason: 'domainBlocked' });
-        expect(log.info).to.have.been.calledWithMatch(/Domain blocked.*confidence=0\.99/);
+        expect(log.info).to.have.been.calledWithMatch(/Domain blocked.*type=cloudflare.*confidence=0\.99/);
+      });
+
+      it('does not skip when detectBotBlocker confidence >= 0.99 but type is not a known CDN', async function () {
+        this.timeout(5000);
+        const detectBotBlocker = sandbox.stub().resolves({
+          crawlable: false, confidence: 0.99, type: 'redirect-limit-exceeded',
+        });
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-utils': { detectBotBlocker },
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
+            getPreferredBaseUrl: () => 'https://prefer.example',
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'site-redirect-loop',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+          },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+          env: {},
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+
+        expect(detectBotBlocker).to.have.been.calledOnce;
+        expect(result.auditContext?.skippedReason).to.equal(undefined);
+        expect(result.urls).to.deep.equal([{ url: 'https://prefer.example' }]);
       });
 
       it('does not skip when detectBotBlocker confidence is below 0.99 (branch coverage)', async function () {

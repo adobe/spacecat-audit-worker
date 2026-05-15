@@ -52,6 +52,19 @@ const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`
 
 const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
 
+/** CDN bot blockers that qualify for proactive skip (aligned with content-scraper). */
+const KNOWN_BOT_BLOCKER_TYPES = ['cloudflare', 'imperva', 'akamai', 'fastly', 'cloudfront'];
+
+/**
+ * @param {{ crawlable: boolean, confidence: number, type?: string }} result
+ * @returns {boolean}
+ */
+function isKnownBotBlockerResult({ crawlable, confidence, type }) {
+  return !crawlable
+    && confidence >= 0.99
+    && KNOWN_BOT_BLOCKER_TYPES.includes(type);
+}
+
 /**
  * Checks if a suggestion's data represents a domain-wide suggestion.
  * @param {Object} data - The suggestion data object.
@@ -914,9 +927,10 @@ export async function submitForScraping(context) {
   // Proactive bot-block check before expensive URL fetches (not applicable for Slack)
   if (!isSlackTriggered && site.getBaseURL()) {
     try {
-      const { crawlable, confidence } = await detectBotBlocker({ baseUrl: site.getBaseURL() });
-      if (!crawlable && confidence >= 0.99) {
-        log.info(`${LOG_PREFIX} Domain blocked (confidence=${confidence}), skipping siteId=${siteId}, baseUrl=${site.getBaseURL()}`);
+      const botBlockResult = await detectBotBlocker({ baseUrl: site.getBaseURL() });
+      if (isKnownBotBlockerResult(botBlockResult)) {
+        const { confidence, type } = botBlockResult;
+        log.info(`${LOG_PREFIX} Domain blocked (type=${type}, confidence=${confidence}), skipping siteId=${siteId}, baseUrl=${site.getBaseURL()}`);
         return {
           urls: [],
           siteId,
