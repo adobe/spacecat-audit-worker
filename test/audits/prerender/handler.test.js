@@ -874,7 +874,7 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.submitForScraping(context);
 
         expect(result.urls).to.deep.equal([]);
-        expect(result.auditContext).to.deep.include({ skippedReason: 'domainBlocked' });
+        expect(result.auditContext).to.deep.include({ domainBlocked: true });
         expect(log.info).to.have.been.calledWithMatch(/Sticky scrapeForbidden within 3d window/);
       });
 
@@ -1666,7 +1666,7 @@ describe('Prerender Audit', () => {
           s3Client: { send: s3SendStub },
           log,
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-          auditContext: { skippedReason: 'domainBlocked', scrapeJobId: 'job-999' },
+          auditContext: { domainBlocked: true, scrapeJobId: 'job-999' },
         };
 
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
@@ -1992,6 +1992,9 @@ describe('Prerender Audit', () => {
           },
           '../../../src/utils/s3-utils.js': {
             getObjectFromKey: getObjectFromKeyStub,
+          },
+          '@adobe/spacecat-shared-utils': {
+            detectBotBlocker: sandbox.stub().resolves({ crawlable: false, confidence: 1, type: 'cloudflare' }),
           },
         });
 
@@ -6646,6 +6649,7 @@ describe('Prerender Audit', () => {
         scrapeJobId: 'scrape-job-999',
         auditedAt: '2025-01-01T00:00:00.000Z',
         auditResult: {
+          scrapeForbidden: true,
           results: [
             { url: 'https://example.com/page1', error: false, needsPrerender: true },
             { url: 'https://example.com/page2', error: true, needsPrerender: false, scrapeError: { statusCode: 403, message: 'Forbidden' } },
@@ -7159,7 +7163,7 @@ describe('Prerender Audit', () => {
       expect(page2.scrapedAt).to.equal('2025-01-01T00:00:00.000Z'); // preserved
     });
 
-    it('should set scrapeForbiddenSince when auditResult sets domain sticky bot block', async () => {
+    it('should set scrapeForbiddenSince when auditResult has scrapeForbidden and scrapeForbiddenSince', async () => {
       const auditUrl = 'https://example.com';
       const since = '2025-02-01T12:00:00.000Z';
       const auditData = {
@@ -7167,9 +7171,8 @@ describe('Prerender Audit', () => {
         auditedAt: '2025-02-01T00:00:00.000Z',
         auditResult: {
           results: [],
-          scrapeForbidden: false,
-          domainStickyBotBlock: true,
-          domainStickyBotBlockSince: since,
+          scrapeForbidden: true,
+          scrapeForbiddenSince: since,
         },
       };
 
@@ -7272,6 +7275,7 @@ describe('Prerender Audit', () => {
         siteId: 'test-site-id',
         auditedAt: '2025-02-01T00:00:00.000Z',
         auditResult: {
+          scrapeForbidden: false,
           results: [
             { url: 'https://example.com/new-page', error: false, needsPrerender: true },
           ],
@@ -7773,7 +7777,7 @@ describe('Prerender Audit', () => {
       };
       const result = await getScrapeJobStats(null, [], 5, context);
       expect(result).to.deep.equal({
-        urlsSubmittedForScraping: 5, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [], submittedUrlSet: null,
+        urlsSubmittedForScraping: 5, scrapeForbiddenCount: 0, missingPages: [], submittedUrlSet: null,
       });
       expect(context.dataAccess.ScrapeUrl.allByScrapeJobId).to.not.have.been.called;
     });
@@ -7787,7 +7791,7 @@ describe('Prerender Audit', () => {
       };
       const result = await getScrapeJobStats('job-1', [], 5, context);
       expect(result).to.deep.equal({
-        urlsSubmittedForScraping: 5, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [], submittedUrlSet: null,
+        urlsSubmittedForScraping: 5, scrapeForbiddenCount: 0, missingPages: [], submittedUrlSet: null,
       });
     });
 
@@ -7809,7 +7813,6 @@ describe('Prerender Audit', () => {
       const result = await getScrapeJobStats('job-1', comparisonResults, 2, context);
       expect(result.urlsSubmittedForScraping).to.equal(2);
       expect(result.scrapeForbiddenCount).to.equal(0);
-      expect(result.scrapeForbidden).to.equal(false);
       expect(result.missingPages).to.deep.equal([]);
       expect(result.submittedUrlSet).to.be.instanceOf(Set);
       expect(result.submittedUrlSet.has('https://example.com/page1')).to.be.true;
@@ -7840,7 +7843,6 @@ describe('Prerender Audit', () => {
       // 1 COMPLETE-status non-403 + 1 FAILED-status 403 → scrapeForbiddenCount=1, not all forbidden
       expect(result.urlsSubmittedForScraping).to.equal(2);
       expect(result.scrapeForbiddenCount).to.equal(1);
-      expect(result.scrapeForbidden).to.equal(false);
       expect(result.missingPages).to.deep.equal([{
         url: 'https://example.com/forbidden',
         scrapingStatus: 'failed',
@@ -7874,7 +7876,6 @@ describe('Prerender Audit', () => {
       };
       const result = await getScrapeJobStatsMocked('job-1', comparisonResults, 1, context);
       expect(result.scrapeForbiddenCount).to.equal(2);
-      expect(result.scrapeForbidden).to.equal(true);
     });
 
     it('should not count FAILED-status URL whose scrape.json is not 403', async () => {
@@ -7899,7 +7900,6 @@ describe('Prerender Audit', () => {
       const result = await getScrapeJobStatsMocked('job-1', comparisonResults, 1, context);
       expect(result.urlsSubmittedForScraping).to.equal(2);
       expect(result.scrapeForbiddenCount).to.equal(0);
-      expect(result.scrapeForbidden).to.equal(false);
       expect(result.missingPages).to.deep.equal([{
         url: 'https://example.com/error500',
         scrapingStatus: 'failed',
@@ -7930,9 +7930,8 @@ describe('Prerender Audit', () => {
       };
       const result = await getScrapeJobStatsMocked('job-1', comparisonResults, 1, context);
       // Denominator = 1 (only page1 with hasScrapeMetadata). Missing has no metadata → excluded.
-      // scrapeForbiddenCount=1, totalUrlsWithScrapeInfo=1 → scrapeForbidden=true
+      // scrapeForbiddenCount=1
       expect(result.scrapeForbiddenCount).to.equal(1);
-      expect(result.scrapeForbidden).to.equal(true);
       expect(result.missingPages).to.deep.equal([{
         url: 'https://example.com/missing',
         scrapingStatus: 'failed',
@@ -7950,7 +7949,7 @@ describe('Prerender Audit', () => {
       };
       const result = await getScrapeJobStats('job-1', [], 3, context);
       expect(result).to.deep.equal({
-        urlsSubmittedForScraping: 3, scrapeForbiddenCount: 0, scrapeForbidden: false, missingPages: [], submittedUrlSet: null,
+        urlsSubmittedForScraping: 3, scrapeForbiddenCount: 0, missingPages: [], submittedUrlSet: null,
       });
       expect(context.log.warn).to.have.been.calledWith(sinon.match('Failed to fetch ScrapeUrl stats'));
     });
@@ -7969,7 +7968,7 @@ describe('Prerender Audit', () => {
       ];
       const result = await getScrapeJobStats('job-1', comparisonResults, 2, context);
       expect(result).to.deep.equal({
-        urlsSubmittedForScraping: 2, scrapeForbiddenCount: 2, scrapeForbidden: true, missingPages: [], submittedUrlSet: null,
+        urlsSubmittedForScraping: 2, scrapeForbiddenCount: 2, missingPages: [], submittedUrlSet: null,
       });
       expect(context.log.warn).to.have.been.calledWith(sinon.match('Failed to fetch ScrapeUrl stats'));
     });
@@ -8043,6 +8042,9 @@ describe('Prerender Audit', () => {
       const mockHandlerWithOppty = await esmock('../../../src/prerender/handler.js', {
         '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
         '../../../src/common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
+        '@adobe/spacecat-shared-utils': {
+          detectBotBlocker: sandbox.stub().resolves({ crawlable: false, confidence: 1, type: 'cloudflare' }),
+        },
       });
 
       const context = {
