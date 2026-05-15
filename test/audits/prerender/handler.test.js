@@ -61,8 +61,9 @@ describe('Prerender Audit', () => {
   describe('Import Top Pages', () => {
     it('should build a top-pages import job payload', async () => {
       const context = {
-        site: { getId: () => 'test-site-id' },
+        site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
         finalUrl: 'https://example.com',
+        log: { debug: sandbox.stub() },
       };
       const res = await importTopPages(context);
       expect(res).to.deep.equal({
@@ -70,13 +71,15 @@ describe('Prerender Audit', () => {
         siteId: 'test-site-id',
         auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
         fullAuditRef: 'scrapes/test-site-id/',
+        auditContext: { generatePrompts: false },
       });
     });
 
     it('should preserve explicit auditContext URLs in the top-pages payload', async () => {
       const context = {
-        site: { getId: () => 'test-site-id' },
+        site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
         finalUrl: 'https://example.com',
+        log: { debug: sandbox.stub() },
         auditContext: {
           urls: [
             'https://example.com/page-1',
@@ -95,8 +98,37 @@ describe('Prerender Audit', () => {
             'https://example.com/page-1',
             'https://example.com/page-2',
           ],
+          generatePrompts: false,
         },
       });
+    });
+
+    it('should forward generatePrompts:true from data string into auditContext', async () => {
+      const context = {
+        site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+        finalUrl: 'https://example.com',
+        log: { debug: sandbox.stub() },
+        data: JSON.stringify({ generatePrompts: true }),
+      };
+      const res = await importTopPages(context);
+      expect(res).to.deep.equal({
+        type: 'top-pages',
+        siteId: 'test-site-id',
+        auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
+        fullAuditRef: 'scrapes/test-site-id/',
+        auditContext: { generatePrompts: true },
+      });
+    });
+
+    it('should default generatePrompts to false when data is malformed JSON', async () => {
+      const context = {
+        site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+        finalUrl: 'https://example.com',
+        log: { debug: sandbox.stub() },
+        data: '{invalid-json',
+      };
+      const res = await importTopPages(context);
+      expect(res.auditContext).to.deep.equal({ generatePrompts: false });
     });
   });
   describe('HTML Analysis', () => {
@@ -1245,6 +1277,26 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           auditContext: { scrapeJobId: 'test-job-id' },
           data: '{invalid-json',
+        };
+
+        const result = await processContentAndGenerateOpportunities(context);
+        expect(result.status).to.equal('complete');
+      });
+
+      it('should read generatePrompts from auditContext when data is absent', async () => {
+        const context = {
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
+          },
+          log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub(), debug: sandbox.stub() },
+          scrapeResultPaths: new Map(),
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id', generatePrompts: true },
         };
 
         const result = await processContentAndGenerateOpportunities(context);

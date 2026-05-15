@@ -840,6 +840,20 @@ export async function importTopPages(context) {
     return handleAiOnlyMode(context);
   }
 
+  // DEBUG: log context.data to confirm what the Slack command delivers at Step 1
+  log.info(`${LOG_PREFIX} [DEBUG] Step 1 context.data type=${typeof data} value=${JSON.stringify(data)} baseUrl=${site.getBaseURL()}`);
+
+  // Extract generatePrompts so it can be forwarded to downstream steps via auditContext.
+  // context.data is only populated on the SQS message that triggers Step 1 (the original
+  // Slack command payload) — it is NOT automatically forwarded to Steps 2 and 3.
+  let generatePromptsFlag = false;
+  try {
+    const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
+    generatePromptsFlag = !!parsedData?.generatePrompts;
+  } catch {
+    // Non-JSON data — graceful degradation, flag stays false
+  }
+
   const s3BucketPath = `scrapes/${site.getId()}/`;
   return {
     type: 'top-pages',
@@ -850,9 +864,14 @@ export async function importTopPages(context) {
       ? {
         auditContext: {
           urls: auditContext.urls,
+          generatePrompts: generatePromptsFlag,
         },
       }
-      : {}),
+      : {
+        auditContext: {
+          generatePrompts: generatePromptsFlag,
+        },
+      }),
   };
 }
 
@@ -902,6 +921,8 @@ export async function submitForScraping(context) {
         pageLoadTimeout: 20000,
         storagePrefix: AUDIT_TYPE,
       },
+      // Forward generatePrompts so it survives in auditContext for Step 3
+      auditContext: { generatePrompts: !!auditContext?.generatePrompts },
     };
   }
 
@@ -997,6 +1018,8 @@ export async function submitForScraping(context) {
       pageLoadTimeout: 20000,
       storagePrefix: AUDIT_TYPE,
     },
+    // Forward generatePrompts so it survives in auditContext for Step 3
+    auditContext: { generatePrompts: !!auditContext?.generatePrompts },
   };
 }
 
@@ -1582,15 +1605,21 @@ export async function processContentAndGenerateOpportunities(context) {
   const startTime = process.hrtime();
   const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
 
-  // Read generatePrompts from data — same source as handleAiOnlyMode.
-  // The Slack keyword generatePrompts:true lands here via context.data.
-  let generatePrompts = false;
+  // Read generatePrompts from auditContext (forwarded from Step 1 via the step return value)
+  // or fall back to context.data (populated only on the SQS message that triggers each step,
+  // so context.data is empty on Steps 2 and 3 for normal Slack-triggered runs).
+  const generatePromptsFromAuditContext = !!auditContext?.generatePrompts;
+  let generatePromptsFromData = false;
   try {
     const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
-    generatePrompts = !!parsedData?.generatePrompts;
+    generatePromptsFromData = !!parsedData?.generatePrompts;
   } catch {
     // Non-JSON data — graceful degradation, flag stays false
   }
+  const generatePrompts = generatePromptsFromAuditContext || generatePromptsFromData;
+
+  // DEBUG: log context.data and resolved generatePrompts to diagnose flag forwarding across steps
+  log.debug(`${LOG_PREFIX} [DEBUG] Step 3 context.data type=${typeof data} value=${JSON.stringify(data)} auditContext.generatePrompts=${generatePromptsFromAuditContext} generatePrompts=${generatePrompts} baseUrl=${site.getBaseURL()}`);
 
   // Diagnostic: detect non-NEW suggestions with edgeDeployed before syncing.
   // Runs unconditionally so audits with no prerender findings still catch pre-existing issues.
