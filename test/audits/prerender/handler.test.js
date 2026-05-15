@@ -316,91 +316,6 @@ describe('Prerender Audit', () => {
         expect(result.maxScrapeAge).to.equal(0);
       });
 
-      it('should fallback to base URL when no URLs found', async () => {
-        const mockSiteTopPage = {
-          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
-        };
-
-        const context = {
-          site: {
-            getId: () => 'test-site-id',
-            getBaseURL: () => 'https://example.com',
-            getConfig: () => ({ getIncludedURLs: () => [] }),
-          },
-          dataAccess: {
-            SiteTopPage: mockSiteTopPage,
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
-            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          },
-          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-          env: {
-            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-            AUDIT_JOBS_QUEUE_URL: 'https://sqs.test.com/test-queue',
-          },
-          auditContext: {
-            next: 'process-content-and-generate-opportunities',
-            auditId: 'test-audit-id',
-            auditType: 'prerender',
-          },
-        };
-
-        const result = await submitForScraping(context);
-
-        // Validate essential fields without requiring strict deep equality
-        expect(result.siteId).to.equal('test-site-id');
-        expect(result.processingType).to.equal('prerender');
-        expect(result.maxScrapeAge).to.equal(0);
-        expect(result.options).to.deep.equal({
-          pageLoadTimeout: 20000,
-          storagePrefix: 'prerender',
-        });
-        expect(result.urls).to.deep.equal([{ url: 'https://example.com' }]);
-      });
-
-      it('should use overrideBaseURL as fallback URL when no URLs found', async function () {
-        this.timeout(5000);
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '@adobe/spacecat-shared-utils': {
-            detectBotBlocker: sandbox.stub().resolves({ crawlable: true, confidence: 0 }),
-          },
-          '../../../src/prerender/utils/utils.js': {
-            isPaidLLMOCustomer: sandbox.stub().resolves(false),
-          },
-        }, {
-          '../../../src/utils/agentic-urls.js': {
-            getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
-            getPreferredBaseUrl: (site) => {
-              const override = site.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL;
-              return override || site.getBaseURL();
-            },
-          },
-        });
-
-        const context = {
-          site: {
-            getId: () => 'test-site-id',
-            getBaseURL: () => 'https://main--example--adobecom.hlx.page',
-            getConfig: () => ({
-              getIncludedURLs: () => [],
-              getFetchConfig: () => ({ overrideBaseURL: 'https://www.override.com' }),
-            }),
-          },
-          dataAccess: {
-            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
-            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          },
-          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-          env: {},
-          auditContext: { next: 'process-content-and-generate-opportunities', auditId: 'test-audit-id', auditType: 'prerender' },
-        };
-
-        const result = await mockHandler.submitForScraping(context);
-        expect(result.urls).to.deep.equal([{ url: 'https://www.override.com' }]);
-      });
-
       it('should use explicit auditContext URLs when provided', async () => {
         const mockSiteTopPage = {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
@@ -565,7 +480,7 @@ describe('Prerender Audit', () => {
         expect(result.urls[0].url).to.equal('https://example.com/fallback-organic');
       });
 
-      it('should warn and fall back to base URL when top agentic fetch throws', async () => {
+      it('should warn when top agentic fetch throws and return empty URLs', async () => {
         const warn = sandbox.stub();
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/agentic-urls.js': {
@@ -592,7 +507,7 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         });
 
-        expect(result.urls).to.deep.equal([{ url: 'https://example.com' }]);
+        expect(result.urls).to.deep.equal([]);
         expect(warn).to.have.been.calledWith(sinon.match(/Failed to fetch agentic URLs: athena unavailable/));
       });
 
@@ -920,8 +835,8 @@ describe('Prerender Audit', () => {
 
         const result = await mockHandler.submitForScraping(context);
 
-        expect(result.auditContext?.skippedReason).to.equal(undefined);
-        expect(result.urls).to.deep.equal([{ url: 'https://prefer.example' }]);
+        expect(result.auditContext?.domainBlocked).to.be.undefined;
+        expect(result.urls).to.deep.equal([]);
       });
 
       it('still scrapes when status.json has scrapeForbidden but missing scrapeForbiddenSince', async function () {
@@ -1078,7 +993,7 @@ describe('Prerender Audit', () => {
 
         const result = await mockHandler.submitForScraping(context);
 
-        expect(result.urls).to.deep.equal([{ url: 'https://prefer.example' }]);
+        expect(result.urls).to.deep.equal([]);
       });
 
       describe('daily batching', () => {
@@ -5703,8 +5618,7 @@ describe('Prerender Audit', () => {
 
         const result = await submitForScraping(context);
 
-        expect(result.urls).to.have.length(1);
-        expect(result.urls[0].url).to.equal('https://example.com');
+        expect(result.urls).to.deep.equal([]);
       });
 
       it('should handle undefined getIncludedURLs', async () => {
@@ -5730,8 +5644,7 @@ describe('Prerender Audit', () => {
 
         const result = await submitForScraping(context);
 
-        expect(result.urls).to.have.length(1);
-        expect(result.urls[0].url).to.equal('https://example.com');
+        expect(result.urls).to.deep.equal([]);
       });
     });
 
@@ -8140,6 +8053,9 @@ describe('Prerender Audit', () => {
 
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+        '@adobe/spacecat-shared-utils': {
+          detectBotBlocker: sandbox.stub().resolves({ crawlable: true, confidence: 0 }),
+        },
       });
 
       const context = {

@@ -1049,13 +1049,6 @@ export async function submitForScraping(context) {
     baseUrl=${site.getBaseURL()},
     siteId=${siteId}`);
 
-  if (finalUrls.length === 0) {
-    // Fallback to base URL if no URLs found
-    const baseURL = getPreferredBaseUrl(site, context);
-    log.info(`${LOG_PREFIX} No URLs found, falling back to baseUrl=${baseURL}, siteId=${site.getId()}`);
-    finalUrls.push(baseURL);
-  }
-
   return {
     urls: finalUrls.map((url) => ({ url })),
     siteId,
