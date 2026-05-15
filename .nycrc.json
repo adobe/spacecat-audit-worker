@@ -13,7 +13,6 @@
   ],
   "exclude": [
     "src/index-local.js",
-    "src/coverage/**/*.js",
-    "src/prerender/**/*.js"
+    "src/coverage/**/*.js"
   ]
 }
