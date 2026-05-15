@@ -2718,7 +2718,7 @@ describe('Canonical URL Tests', () => {
         expect(suggestionWithExplanation.data).to.have.property('suggestion');
       });
 
-      it('should return success when no canonical issues detected', async () => {
+      it('should return success when no canonical issues detected and no existing opportunity', async () => {
         const scrapedContent = {
           url: 'https://example.com/page1',
           finalUrl: 'https://example.com/page1',
@@ -2735,6 +2735,7 @@ describe('Canonical URL Tests', () => {
         };
 
         const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+        const allBySiteIdAndStatusStub = sinon.stub().resolves([]);
 
         const testContext = {
           ...context,
@@ -2745,6 +2746,12 @@ describe('Canonical URL Tests', () => {
           ]),
           audit: {
             getId: () => 'test-audit-id',
+          },
+          dataAccess: {
+            ...context.dataAccess,
+            Opportunity: {
+              allBySiteIdAndStatus: allBySiteIdAndStatusStub,
+            },
           },
         };
 
@@ -2769,6 +2776,149 @@ describe('Canonical URL Tests', () => {
             message: 'No canonical issues detected',
           },
         });
+        expect(allBySiteIdAndStatusStub).to.have.been.calledOnce;
+      });
+
+      it('should resolve existing NEW opportunity and mark suggestions OUTDATED when no issues detected', async () => {
+        const scrapedContent = {
+          url: 'https://example.com/page1',
+          finalUrl: 'https://example.com/page1',
+          isPreview: false,
+          scrapeResult: {
+            canonical: {
+              exists: true,
+              count: 1,
+              href: 'https://example.com/page1',
+              inHead: true,
+            },
+            rawBody: createValidRawBody('<html><head><link rel="canonical" href="https://example.com/page1"></head><body><p>Content for testing canonical URL validation.</p></body></html>'),
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const mockSuggestions = [{ getId: () => 'suggestion-1' }];
+        const mockOpportunity = {
+          getId: sinon.stub().returns('oppty-id-1'),
+          getType: sinon.stub().returns('canonical'),
+          setStatus: sinon.stub(),
+          getSuggestions: sinon.stub().resolves(mockSuggestions),
+          setUpdatedBy: sinon.stub(),
+          save: sinon.stub().resolves(),
+        };
+        const bulkUpdateStatusStub = sinon.stub().resolves();
+        const allBySiteIdAndStatusStub = sinon.stub().resolves([mockOpportunity]);
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/page1', 'scrapes/job-id/page1/scrape.json'],
+          ]),
+          audit: {
+            getId: () => 'test-audit-id',
+          },
+          dataAccess: {
+            ...context.dataAccess,
+            Opportunity: {
+              allBySiteIdAndStatus: allBySiteIdAndStatusStub,
+            },
+            Suggestion: {
+              bulkUpdateStatus: bulkUpdateStatusStub,
+            },
+          },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': {
+              getObjectFromKey: mockGetObjectFromKey,
+            },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result).to.deep.equal({
+          fullAuditRef: 'https://example.com',
+          auditResult: {
+            status: 'success',
+            message: 'No canonical issues detected',
+          },
+        });
+        expect(mockOpportunity.setStatus).to.have.been.calledOnce;
+        expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
+        expect(bulkUpdateStatusStub).to.have.been.calledOnceWith(mockSuggestions, 'OUTDATED');
+        expect(mockOpportunity.setUpdatedBy).to.have.been.calledOnceWith('system');
+        expect(mockOpportunity.save).to.have.been.calledOnce;
+      });
+
+      it('should log error and still return success when opportunity lookup fails on no-issues path', async () => {
+        const scrapedContent = {
+          url: 'https://example.com/page1',
+          finalUrl: 'https://example.com/page1',
+          isPreview: false,
+          scrapeResult: {
+            canonical: {
+              exists: true,
+              count: 1,
+              href: 'https://example.com/page1',
+              inHead: true,
+            },
+            rawBody: createValidRawBody('<html><head><link rel="canonical" href="https://example.com/page1"></head><body><p>Content for testing canonical URL validation.</p></body></html>'),
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+        const allBySiteIdAndStatusStub = sinon.stub().rejects(new Error('DB connection error'));
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/page1', 'scrapes/job-id/page1/scrape.json'],
+          ]),
+          audit: {
+            getId: () => 'test-audit-id',
+          },
+          dataAccess: {
+            ...context.dataAccess,
+            Opportunity: {
+              allBySiteIdAndStatus: allBySiteIdAndStatusStub,
+            },
+          },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': {
+              getObjectFromKey: mockGetObjectFromKey,
+            },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result).to.deep.equal({
+          fullAuditRef: 'https://example.com',
+          auditResult: {
+            status: 'success',
+            message: 'No canonical issues detected',
+          },
+        });
+        expect(context.log.error).to.have.been.calledWith(
+          '[canonical] Failed to resolve opportunity for https://example.com: DB connection error',
+        );
       });
 
       it('should skip page when statusCode is 4xx (avoids false canonical-tag-missing on error responses)', async function () {
