@@ -924,6 +924,96 @@ describe('Prerender Audit', () => {
         expect(result.urls).to.deep.equal([{ url: 'https://prefer.example' }]);
       });
 
+      it('still scrapes when status.json has scrapeForbidden but missing scrapeForbiddenSince', async function () {
+        this.timeout(5000);
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-utils': {
+            detectBotBlocker: sandbox.stub().resolves({ crawlable: true, confidence: 0 }),
+          },
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
+            getPreferredBaseUrl: () => 'https://prefer.example',
+          },
+        });
+        const statusKey = 'prerender/scrapes/no-since-site/status.json';
+        const s3Send = sandbox.stub().callsFake((cmd) => {
+          if (cmd.constructor.name === 'GetObjectCommand' && cmd.input.Key === statusKey) {
+            return {
+              Body: {
+                transformToString: () => Promise.resolve(JSON.stringify({
+                  scrapeForbidden: true,
+                  // scrapeForbiddenSince intentionally absent
+                })),
+              },
+            };
+          }
+          return Promise.reject(new Error(`unexpected S3 command ${cmd.constructor.name}`));
+        });
+        const context = {
+          site: {
+            getId: () => 'no-since-site',
+            getBaseURL: () => 'https://prefer.example',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+          },
+          s3Client: { send: s3Send },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+
+        expect(result.auditContext?.domainBlocked).to.be.undefined;
+      });
+
+      it('still scrapes when status.json scrapeForbiddenSince is an invalid date', async function () {
+        this.timeout(5000);
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-utils': {
+            detectBotBlocker: sandbox.stub().resolves({ crawlable: true, confidence: 0 }),
+          },
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
+            getPreferredBaseUrl: () => 'https://prefer.example',
+          },
+        });
+        const statusKey = 'prerender/scrapes/bad-date-site/status.json';
+        const s3Send = sandbox.stub().callsFake((cmd) => {
+          if (cmd.constructor.name === 'GetObjectCommand' && cmd.input.Key === statusKey) {
+            return {
+              Body: {
+                transformToString: () => Promise.resolve(JSON.stringify({
+                  scrapeForbidden: true,
+                  scrapeForbiddenSince: 'not-a-valid-date',
+                })),
+              },
+            };
+          }
+          return Promise.reject(new Error(`unexpected S3 command ${cmd.constructor.name}`));
+        });
+        const context = {
+          site: {
+            getId: () => 'bad-date-site',
+            getBaseURL: () => 'https://prefer.example',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: {
+            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
+          },
+          s3Client: { send: s3Send },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+
+        expect(result.auditContext?.domainBlocked).to.be.undefined;
+      });
+
       it('Slack-triggered runs bypass sticky status.json and still submit URLs', async function () {
         this.timeout(5000);
         const detectBotBlocker = sandbox.stub().resolves({ crawlable: false, confidence: 1, type: 'cloudflare' });
@@ -2041,6 +2131,58 @@ describe('Prerender Audit', () => {
         expect(convertToOpportunityStub.firstCall.args[0]).to.equal('https://example.com'); // auditUrl
       });
     });
+
+      it('should not set scrapeForbidden when detectBotBlocker throws', async function () {
+        this.timeout(5000);
+        const convertToOpportunityStub = sandbox.stub().resolves();
+        const getObjectFromKeyStub = sandbox.stub();
+        getObjectFromKeyStub.resolves(null);
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: convertToOpportunityStub,
+          },
+          '../../../src/utils/s3-utils.js': {
+            getObjectFromKey: getObjectFromKeyStub,
+          },
+          '@adobe/spacecat-shared-utils': {
+            detectBotBlocker: sandbox.stub().rejects(new Error('probe timeout')),
+          },
+        });
+
+        const scrapeMetadata = {
+          url: 'https://example.com/page1',
+          status: 'FAILED',
+          error: { message: 'HTTP 403', statusCode: 403, type: 'HttpError' },
+        };
+        getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata);
+
+        const log = {
+          info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(),
+        };
+        const context = {
+          site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+                { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
+              ]),
+            },
+            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
+          },
+          log,
+          s3Client: { send: sandbox.stub().resolves({}) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(result.status).to.equal('complete');
+        expect(result.auditResult.scrapeForbidden).to.be.false;
+        expect(log.warn).to.have.been.calledWithMatch(/detectBotBlocker failed after high 403 ratio/);
+      });
 
     describe('createScrapeForbiddenOpportunity', () => {
       it('should create opportunity without suggestions when scraping is forbidden', async () => {
