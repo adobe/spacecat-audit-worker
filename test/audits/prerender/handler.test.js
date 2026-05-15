@@ -63,7 +63,7 @@ describe('Prerender Audit', () => {
       const context = {
         site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
         finalUrl: 'https://example.com',
-        log: { debug: sandbox.stub() },
+        log: { debug: sandbox.stub(), info: sandbox.stub() },
       };
       const res = await importTopPages(context);
       expect(res).to.deep.equal({
@@ -79,7 +79,7 @@ describe('Prerender Audit', () => {
       const context = {
         site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
         finalUrl: 'https://example.com',
-        log: { debug: sandbox.stub() },
+        log: { debug: sandbox.stub(), info: sandbox.stub() },
         auditContext: {
           urls: [
             'https://example.com/page-1',
@@ -107,7 +107,7 @@ describe('Prerender Audit', () => {
       const context = {
         site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
         finalUrl: 'https://example.com',
-        log: { debug: sandbox.stub() },
+        log: { debug: sandbox.stub(), info: sandbox.stub() },
         data: JSON.stringify({ generatePrompts: true }),
       };
       const res = await importTopPages(context);
@@ -124,7 +124,7 @@ describe('Prerender Audit', () => {
       const context = {
         site: { getId: () => 'test-site-id', getBaseURL: () => 'https://example.com' },
         finalUrl: 'https://example.com',
-        log: { debug: sandbox.stub() },
+        log: { debug: sandbox.stub(), info: sandbox.stub() },
         data: '{invalid-json',
       };
       const res = await importTopPages(context);
