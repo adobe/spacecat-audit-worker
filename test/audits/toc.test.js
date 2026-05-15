@@ -3031,6 +3031,32 @@ describe('TOC (Table of Contents) Audit', () => {
         const result = extractTocData($, getHeadingSelector);
         expect(result[0].selector).to.equal('h1#main');
       });
+      it('excludes headings inside .form-step containers', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<h1 id="title">Get Your Quote</h1>'
+          + '<div class="form-step"><h2>Step 1: Personal Details</h2></div>'
+          + '<div class="form-step"><h2>Step 2: Coverage Options</h2></div>'
+          + '<h2 id="sec">Why Choose Us</h2>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Get Your Quote', 'Why Choose Us']);
+      });
+      it('deduplicates headings with identical normalised text', () => {
+        const $ = cheerioLoad(
+          '<body>'
+          + '<h1 id="a">Coverage Options</h1>'
+          + '<h2 id="b">Section One</h2>'
+          + '<h2 id="c">Coverage Options</h2>'
+          + '<h2 id="d">Section Two</h2>'
+          + '</body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(3);
+        expect(result.map((r) => r.text)).to.deep.equal(['Coverage Options', 'Section One', 'Section Two']);
+      });
     });
 
     describe('tocArrayToHast', () => {
