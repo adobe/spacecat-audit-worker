@@ -12,4 +12,4 @@
 
 export const AUDIT_TYPE = 'semantic-value-visibility';
 export const GUIDANCE_TYPE = 'guidance:semantic-value-visibility';
-export const OPPORTUNITY_TYPE = 'semantic-value-visibility';
+export const OPPORTUNITY_TYPE = 'generic-autofix-edge';

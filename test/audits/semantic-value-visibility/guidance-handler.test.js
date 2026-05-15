@@ -316,7 +316,7 @@ describe('Semantic Value Visibility Guidance Handler', () => {
     it('should mark stale opportunity as RESOLVED when no new suggestions', async () => {
       const staleOpportunity = {
         getId: sinon.stub().returns('stale-oppty-123'),
-        getType: sinon.stub().returns('semantic-value-visibility'),
+        getType: sinon.stub().returns('generic-autofix-edge'),
         setStatus: sinon.stub(),
         setUpdatedBy: sinon.stub(),
         save: sinon.stub().resolves(),
