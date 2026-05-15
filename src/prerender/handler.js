@@ -52,7 +52,12 @@ const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`
 
 const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
 
-/** CDN bot blockers that qualify for proactive skip (aligned with content-scraper). */
+/** Skip re-scraping when status.json records a confirmed sticky block within this window. */
+const DOMAIN_STICKY_BOT_SKIP_MS = 3 * 24 * 60 * 60 * 1000;
+const STICKY_BOT_MIN_URLS = 3;
+const STICKY_BOT_FORBIDDEN_RATIO = 0.5;
+
+/** CDN bot blockers (aligned with content-scraper detectBotProtection). */
 const KNOWN_BOT_BLOCKER_TYPES = ['cloudflare', 'imperva', 'akamai', 'fastly', 'cloudfront'];
 
 /**
@@ -63,6 +68,40 @@ function isKnownBotBlockerResult({ crawlable, confidence, type }) {
   return !crawlable
     && confidence >= 0.99
     && KNOWN_BOT_BLOCKER_TYPES.includes(type);
+}
+
+/**
+ * @param {string} siteId
+ * @param {Object} context
+ * @returns {Promise<boolean>}
+ */
+async function shouldSkipScrapeForStickyBotBlock(siteId, context) {
+  const { s3Client, env, log } = context;
+  const bucketName = env?.S3_SCRAPER_BUCKET_NAME;
+  if (!bucketName || !s3Client) {
+    return false;
+  }
+  const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
+  try {
+    const existing = await s3Client.send(new GetObjectCommand({
+      Bucket: bucketName,
+      Key: statusKey,
+    }));
+    const status = JSON.parse(await existing.Body.transformToString());
+    if (!status.scrapeForbidden || !status.scrapeForbiddenSince) {
+      return false;
+    }
+    const sinceMs = Date.parse(status.scrapeForbiddenSince);
+    if (Number.isNaN(sinceMs)) {
+      return false;
+    }
+    return (Date.now() - sinceMs) < DOMAIN_STICKY_BOT_SKIP_MS;
+  } catch (e) {
+    if (e.name !== 'NoSuchKey') {
+      log.warn(`${LOG_PREFIX} Could not read status.json for sticky bot skip: ${e.message}. siteId=${siteId}`);
+    }
+    return false;
+  }
 }
 
 /**
@@ -887,6 +926,8 @@ export async function submitForScraping(context) {
   }
 
   const siteId = site.getId();
+  const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
+
   if (Array.isArray(auditContext?.urls) && auditContext.urls.length > 0) {
     const preferredBase = getPreferredBaseUrl(site, context);
     const rebasedCsvUrls = auditContext.urls.map((url) => rebaseUrl(url, preferredBase, log));
@@ -915,35 +956,24 @@ export async function submitForScraping(context) {
     };
   }
 
+  // Sticky domain bot-block from status.json (Slack runs bypass so operators can force a re-scrape)
+  if (!isSlackTriggered && await shouldSkipScrapeForStickyBotBlock(siteId, context)) {
+    log.info(`${LOG_PREFIX} Sticky scrapeForbidden within ${DOMAIN_STICKY_BOT_SKIP_MS / 86400000}d window, skipping siteId=${siteId}, baseUrl=${site.getBaseURL()}`);
+    return {
+      urls: [],
+      siteId,
+      processingType: AUDIT_TYPE,
+      maxScrapeAge: 0,
+      options: { pageLoadTimeout: 20000, storagePrefix: AUDIT_TYPE },
+      auditContext: { skippedReason: 'domainBlocked' },
+    };
+  }
+
   const topPagesUrls = await getTopOrganicUrlsFromSeo(context);
   const preferredBase = getPreferredBaseUrl(site, context);
   const rebasedTopPagesUrls = topPagesUrls.map((url) => rebaseUrl(url, preferredBase, log));
   const rebasedIncludedURLs = ((await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE)) || [])
     .map((url) => rebaseUrl(url, preferredBase, log));
-
-  // When triggered from Slack, skip agentic sources and daily batching
-  const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
-
-  // Proactive bot-block check before expensive URL fetches (not applicable for Slack)
-  if (!isSlackTriggered && site.getBaseURL()) {
-    try {
-      const botBlockResult = await detectBotBlocker({ baseUrl: site.getBaseURL() });
-      if (isKnownBotBlockerResult(botBlockResult)) {
-        const { confidence, type } = botBlockResult;
-        log.info(`${LOG_PREFIX} Domain blocked (type=${type}, confidence=${confidence}), skipping siteId=${siteId}, baseUrl=${site.getBaseURL()}`);
-        return {
-          urls: [],
-          siteId,
-          processingType: AUDIT_TYPE,
-          maxScrapeAge: 0,
-          options: { pageLoadTimeout: 20000, storagePrefix: AUDIT_TYPE },
-          auditContext: { skippedReason: 'domainBlocked' },
-        };
-      }
-    } catch (e) {
-      log.warn(`${LOG_PREFIX} Bot block detection failed: ${e.message}. baseUrl=${site.getBaseURL()} - proceeding`);
-    }
-  }
 
   let finalUrls;
   let filteredCount;
@@ -1388,6 +1418,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     auditedAt,
     scrapeJobId,
     submittedUrlSet,
+    domainBlockedSkip,
   } = auditData;
 
   try {
@@ -1470,6 +1501,22 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     const latestScrapeForbidden = auditResult.scrapeForbidden
       ?? currentPages.some((p) => p.scrapeError?.statusCode === 403);
 
+    let statusScrapeForbidden = latestScrapeForbidden;
+    let statusScrapeForbiddenSince = existingStatus.scrapeForbiddenSince ?? null;
+
+    if (domainBlockedSkip) {
+      statusScrapeForbidden = !!existingStatus.scrapeForbidden;
+      statusScrapeForbiddenSince = existingStatus.scrapeForbiddenSince ?? null;
+    } else if (auditResult.domainStickyBotBlock !== undefined) {
+      if (auditResult.domainStickyBotBlock) {
+        statusScrapeForbidden = true;
+        statusScrapeForbiddenSince = auditResult.domainStickyBotBlockSince || scrapedAt;
+      } else {
+        statusScrapeForbiddenSince = null;
+        statusScrapeForbidden = latestScrapeForbidden;
+      }
+    }
+
     const statusSummary = {
       baseUrl: auditUrl,
       siteId,
@@ -1480,8 +1527,10 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       urlsSubmittedForScraping,
       urlsScrapedSuccessfully,
       scrapingErrorRate,
-      scrapeForbidden: latestScrapeForbidden,
+      scrapeForbidden: statusScrapeForbidden,
       scrapeForbiddenCount,
+      ...(statusScrapeForbiddenSince != null
+        && { scrapeForbiddenSince: statusScrapeForbiddenSince }),
       lastAuditSuccess: auditResult.lastAuditSuccess !== false,
       pages: mergedPages,
     };
@@ -1727,6 +1776,37 @@ export async function processContentAndGenerateOpportunities(context) {
 
     log.info(`${LOG_PREFIX} Scrape analysis for baseUrl=${site.getBaseURL()}, siteId=${siteId}. scrapeForbidden=${scrapeForbidden}, scrapeForbiddenCount=${scrapeForbiddenCount}, totalUrlsChecked=${comparisonResults.length}, isPaidLLMOCustomer=${isPaid}`);
 
+    let domainStickyBotBlock;
+    let domainStickyBotBlockSince;
+    if (!isSlackTriggered && !isDomainBlocked) {
+      const hasSuccessfulScrape = successfulComparisons.length > 0;
+      if (hasSuccessfulScrape) {
+        domainStickyBotBlock = false;
+        domainStickyBotBlockSince = null;
+      } else if (urlsSubmittedForScraping >= STICKY_BOT_MIN_URLS && site.getBaseURL()) {
+        const ratio403 = scrapeForbiddenCount / urlsSubmittedForScraping;
+        if (ratio403 >= STICKY_BOT_FORBIDDEN_RATIO) {
+          try {
+            const probe = await detectBotBlocker({ baseUrl: site.getBaseURL(), log });
+            if (isKnownBotBlockerResult(probe)) {
+              domainStickyBotBlock = true;
+              domainStickyBotBlockSince = new Date().toISOString();
+            } else {
+              domainStickyBotBlock = false;
+              domainStickyBotBlockSince = null;
+            }
+          } catch (e) {
+            log.warn(`${LOG_PREFIX} detectBotBlocker failed after high 403 share: ${e.message}. baseUrl=${site.getBaseURL()}`);
+            domainStickyBotBlock = false;
+            domainStickyBotBlockSince = null;
+          }
+        } else {
+          domainStickyBotBlock = false;
+          domainStickyBotBlockSince = null;
+        }
+      }
+    }
+
     // Remove internal tracking fields from results before storing
     // eslint-disable-next-line
     const cleanResults = comparisonResults.map(({ hasScrapeMetadata, scrapeForbidden, ...result }) => result);
@@ -1760,6 +1840,10 @@ export async function processContentAndGenerateOpportunities(context) {
       scrapeForbiddenCount,
       lastAuditSuccess: true,
     };
+    if (domainStickyBotBlock !== undefined) {
+      auditResult.domainStickyBotBlock = domainStickyBotBlock;
+      auditResult.domainStickyBotBlockSince = domainStickyBotBlockSince;
+    }
 
     log.info(`${LOG_PREFIX} Scraping metrics for baseUrl=${site.getBaseURL()}, siteId=${siteId}. urlsSubmittedForScraping=${urlsSubmittedForScraping}, urlsScrapedSuccessfully=${successfulComparisons.length}, scrapeForbiddenCount=${scrapeForbiddenCount}, scrapingErrorRate=${scrapingErrorRate}%`);
 
@@ -1844,6 +1928,7 @@ export async function processContentAndGenerateOpportunities(context) {
       auditResult,
       scrapeJobId,
       submittedUrlSet,
+      domainBlockedSkip: isDomainBlocked,
     };
 
     // Upload status summary to S3 (post-processing)

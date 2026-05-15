@@ -831,60 +831,81 @@ describe('Prerender Audit', () => {
         expect(submittedUrls).to.include('https://www.override.com/included');
       });
 
-      it('returns domainBlocked result for known CDN bot blocker at confidence >= 0.99', async function () {
+      it('returns domainBlocked when status.json has scrapeForbidden within 3d window', async function () {
         this.timeout(5000);
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-utils': {
-            detectBotBlocker: sandbox.stub().resolves({
-              crawlable: false, confidence: 0.99, type: 'cloudflare',
-            }),
+            detectBotBlocker: sandbox.stub().resolves({ crawlable: true, confidence: 0 }),
           },
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
           },
         });
-
+        const statusKey = 'prerender/scrapes/sticky-site-id/status.json';
+        const s3Send = sandbox.stub().callsFake((cmd) => {
+          if (cmd.constructor.name === 'GetObjectCommand' && cmd.input.Key === statusKey) {
+            return {
+              Body: {
+                transformToString: () => Promise.resolve(JSON.stringify({
+                  scrapeForbidden: true,
+                  scrapeForbiddenSince: new Date(Date.now() - 86400000).toISOString(),
+                })),
+              },
+            };
+          }
+          return Promise.reject(new Error(`unexpected S3 command ${cmd.constructor.name}`));
+        });
         const log = { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() };
         const context = {
           site: {
-            getId: () => 'test-site-id',
-            getBaseURL: () => 'https://blocked-domain.com',
+            getId: () => 'sticky-site-id',
+            getBaseURL: () => 'https://blocked.example',
             getConfig: () => ({ getIncludedURLs: () => [] }),
           },
           dataAccess: {
             SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
             PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
           },
+          s3Client: { send: s3Send },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           log,
-          env: {},
         };
 
         const result = await mockHandler.submitForScraping(context);
 
         expect(result.urls).to.deep.equal([]);
-        expect(result.siteId).to.equal('test-site-id');
-        expect(result.processingType).to.equal('prerender');
-        expect(result.maxScrapeAge).to.equal(0);
         expect(result.auditContext).to.deep.include({ skippedReason: 'domainBlocked' });
-        expect(log.info).to.have.been.calledWithMatch(/Domain blocked.*type=cloudflare.*confidence=0\.99/);
+        expect(log.info).to.have.been.calledWithMatch(/Sticky scrapeForbidden within 3d window/);
       });
 
-      it('does not skip when detectBotBlocker confidence >= 0.99 but type is not a known CDN', async function () {
+      it('still scrapes when status.json scrapeForbidden is outside 3d window', async function () {
         this.timeout(5000);
-        const detectBotBlocker = sandbox.stub().resolves({
-          crawlable: false, confidence: 0.99, type: 'redirect-limit-exceeded',
-        });
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '@adobe/spacecat-shared-utils': { detectBotBlocker },
+          '@adobe/spacecat-shared-utils': {
+            detectBotBlocker: sandbox.stub().resolves({ crawlable: true, confidence: 0 }),
+          },
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
             getPreferredBaseUrl: () => 'https://prefer.example',
           },
         });
-
+        const statusKey = 'prerender/scrapes/old-sticky-site/status.json';
+        const s3Send = sandbox.stub().callsFake((cmd) => {
+          if (cmd.constructor.name === 'GetObjectCommand' && cmd.input.Key === statusKey) {
+            return {
+              Body: {
+                transformToString: () => Promise.resolve(JSON.stringify({
+                  scrapeForbidden: true,
+                  scrapeForbiddenSince: new Date(Date.now() - 4 * 86400000).toISOString(),
+                })),
+              },
+            };
+          }
+          return Promise.reject(new Error(`unexpected S3 command ${cmd.constructor.name}`));
+        });
         const context = {
           site: {
-            getId: () => 'site-redirect-loop',
+            getId: () => 'old-sticky-site',
             getBaseURL: () => 'https://example.com',
             getConfig: () => ({ getIncludedURLs: () => [] }),
           },
@@ -892,122 +913,24 @@ describe('Prerender Audit', () => {
             SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
             PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
           },
+          s3Client: { send: s3Send },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-          env: {},
         };
 
         const result = await mockHandler.submitForScraping(context);
 
-        expect(detectBotBlocker).to.have.been.calledOnce;
         expect(result.auditContext?.skippedReason).to.equal(undefined);
         expect(result.urls).to.deep.equal([{ url: 'https://prefer.example' }]);
       });
 
-      it('does not skip when detectBotBlocker confidence is below 0.99 (branch coverage)', async function () {
+      it('Slack-triggered runs bypass sticky status.json and still submit URLs', async function () {
         this.timeout(5000);
-        const detectBotBlocker = sandbox.stub().resolves({ crawlable: false, confidence: 0.95 });
+        const detectBotBlocker = sandbox.stub().resolves({ crawlable: false, confidence: 1, type: 'cloudflare' });
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-utils': { detectBotBlocker },
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
-            getPreferredBaseUrl: () => 'https://prefer.example',
-          },
-        });
-
-        const context = {
-          site: {
-            getId: () => 'site-low-confidence',
-            getBaseURL: () => 'https://example.com',
-            getConfig: () => ({ getIncludedURLs: () => [] }),
-          },
-          dataAccess: {
-            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
-          },
-          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-          env: {},
-        };
-
-        const result = await mockHandler.submitForScraping(context);
-
-        expect(detectBotBlocker).to.have.been.calledOnce;
-        expect(result.skippedReason).to.equal(undefined);
-        expect(result.urls).to.deep.equal([{ url: 'https://prefer.example' }]);
-      });
-
-      it('does not skip when detectBotBlocker reports crawlable (branch coverage)', async function () {
-        this.timeout(5000);
-        const detectBotBlocker = sandbox.stub().resolves({ crawlable: true, confidence: 1 });
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '@adobe/spacecat-shared-utils': { detectBotBlocker },
-          '../../../src/utils/agentic-urls.js': {
-            getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
-            getPreferredBaseUrl: () => 'https://prefer.example',
-          },
-        });
-
-        const context = {
-          site: {
-            getId: () => 'site-crawlable',
-            getBaseURL: () => 'https://example.com',
-            getConfig: () => ({ getIncludedURLs: () => [] }),
-          },
-          dataAccess: {
-            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
-          },
-          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-          env: {},
-        };
-
-        const result = await mockHandler.submitForScraping(context);
-
-        expect(detectBotBlocker).to.have.been.calledOnce;
-        expect(result.skippedReason).to.equal(undefined);
-        expect(result.urls).to.deep.equal([{ url: 'https://prefer.example' }]);
-      });
-
-      it('skips detectBotBlocker when site base URL is falsy (branch coverage)', async function () {
-        this.timeout(5000);
-        const detectBotBlocker = sandbox.stub().resolves({ crawlable: false, confidence: 1 });
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '@adobe/spacecat-shared-utils': { detectBotBlocker },
-          '../../../src/utils/agentic-urls.js': {
-            getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
-            getPreferredBaseUrl: () => 'https://from-final-url.example',
-          },
-        });
-
-        const context = {
-          site: {
-            getId: () => 'site-no-base',
-            getBaseURL: () => null,
-            getConfig: () => ({ getIncludedURLs: () => [] }),
-          },
-          dataAccess: {
-            SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
-            PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
-          },
-          finalUrl: 'https://from-final-url.example',
-          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
-          env: {},
-        };
-
-        const result = await mockHandler.submitForScraping(context);
-
-        expect(detectBotBlocker).to.not.have.been.called;
-        expect(result.skippedReason).to.equal(undefined);
-        expect(result.urls).to.deep.equal([{ url: 'https://from-final-url.example' }]);
-      });
-
-      it('skips detectBotBlocker for Slack-triggered runs (branch coverage)', async function () {
-        this.timeout(5000);
-        const detectBotBlocker = sandbox.stub().resolves({ crawlable: false, confidence: 1 });
-        const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '@adobe/spacecat-shared-utils': { detectBotBlocker },
-          '../../../src/utils/agentic-urls.js': {
-            getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
-            getPreferredBaseUrl: () => 'https://slack.example',
           },
         });
 
@@ -1033,30 +956,30 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.submitForScraping(context);
 
         expect(detectBotBlocker).to.not.have.been.called;
-        expect(result.skippedReason).to.equal(undefined);
         expect(result.urls.map((u) => u.url)).to.include('https://slack.example/page');
       });
 
-      it('proceeds with scraping when detectBotBlocker throws (malformed URL guard)', async function () {
+      it('proceeds when status.json is missing (NoSuchKey)', async function () {
         this.timeout(5000);
-        const detectBotBlockerStub = sandbox.stub().rejects(new Error('Invalid baseUrl'));
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '@adobe/spacecat-shared-utils': { detectBotBlocker: detectBotBlockerStub },
+          '@adobe/spacecat-shared-utils': {
+            detectBotBlocker: sandbox.stub().resolves({ crawlable: true, confidence: 0 }),
+          },
           '../../../src/utils/agentic-urls.js': {
             getTopAgenticLiveUrlsFromAthena: sandbox.stub().resolves([]),
+            getPreferredBaseUrl: () => 'https://prefer.example',
           },
         });
 
         const context = {
           site: {
-            getId: () => 'test-site-id',
-            getBaseURL: () => 'https://',
+            getId: () => 'nosuch-site',
+            getBaseURL: () => 'https://example.com',
             getConfig: () => ({ getIncludedURLs: () => [] }),
           },
           dataAccess: {
             SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
             PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
-            Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
           },
           s3Client: { send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) },
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
@@ -1065,9 +988,7 @@ describe('Prerender Audit', () => {
 
         const result = await mockHandler.submitForScraping(context);
 
-        expect(detectBotBlockerStub).to.have.been.calledOnce;
-        expect(context.log.warn).to.have.been.calledWithMatch(/Bot block detection failed/);
-        expect(result).to.have.property('urls');
+        expect(result.urls).to.deep.equal([{ url: 'https://prefer.example' }]);
       });
 
       describe('daily batching', () => {
@@ -7236,6 +7157,69 @@ describe('Prerender Audit', () => {
       expect(page1.scrapedAt).to.equal('2025-02-01T00:00:00.000Z');
       expect(page1.needsPrerender).to.equal(true);
       expect(page2.scrapedAt).to.equal('2025-01-01T00:00:00.000Z'); // preserved
+    });
+
+    it('should set scrapeForbiddenSince when auditResult sets domain sticky bot block', async () => {
+      const auditUrl = 'https://example.com';
+      const since = '2025-02-01T12:00:00.000Z';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-02-01T00:00:00.000Z',
+        auditResult: {
+          results: [],
+          scrapeForbidden: false,
+          domainStickyBotBlock: true,
+          domainStickyBotBlockSince: since,
+        },
+      };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.resolve({
+            Body: { transformToString: () => Promise.resolve(JSON.stringify({ pages: [] })) },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+      expect(uploadedData.scrapeForbidden).to.equal(true);
+      expect(uploadedData.scrapeForbiddenSince).to.equal(since);
+    });
+
+    it('should preserve scrapeForbidden fields from existing status when domainBlockedSkip', async () => {
+      const auditUrl = 'https://example.com';
+      const existingStatus = {
+        scrapeForbidden: true,
+        scrapeForbiddenSince: '2025-01-10T00:00:00.000Z',
+        pages: [{ url: 'https://example.com/p', scrapingStatus: 'success' }],
+      };
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-02-01T00:00:00.000Z',
+        domainBlockedSkip: true,
+        auditResult: {
+          results: [],
+          scrapeForbidden: true,
+        },
+      };
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'GetObjectCommand') {
+          return Promise.resolve({
+            Body: { transformToString: () => Promise.resolve(JSON.stringify(existingStatus)) },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
+      expect(uploadedData.scrapeForbidden).to.equal(true);
+      expect(uploadedData.scrapeForbiddenSince).to.equal('2025-01-10T00:00:00.000Z');
     });
 
     it('should merge status pages by pathname so www and non-www variants do not duplicate', async () => {
