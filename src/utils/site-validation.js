@@ -45,6 +45,7 @@ export async function checkSiteRequiresValidation(site, context, auditType) {
   // Internal/demo orgs bypass suggestion validation regardless of PAID tier
   const rawExcludedOrgs = process.env.ASO_PLG_EXCLUDED_ORGS;
   log?.info?.(`[site-validation] siteId=${siteId} ASO_PLG_EXCLUDED_ORGS=${rawExcludedOrgs ?? '(not set)'}`);
+  log?.info?.(`${process.env.ASO_PLG_EXCLUDED_ORGS} `);
 
   if (rawExcludedOrgs) {
     const excludedOrgIds = rawExcludedOrgs.split(',')
