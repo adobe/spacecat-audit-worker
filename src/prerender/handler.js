@@ -1582,6 +1582,16 @@ export async function processContentAndGenerateOpportunities(context) {
   const startTime = process.hrtime();
   const isSlackTriggered = !!(auditContext?.slackContext?.channelId);
 
+  // Read generatePrompts from data — same source as handleAiOnlyMode.
+  // The Slack keyword generatePrompts:true lands here via context.data.
+  let generatePrompts = false;
+  try {
+    const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
+    generatePrompts = !!parsedData?.generatePrompts;
+  } catch {
+    // Non-JSON data — graceful degradation, flag stays false
+  }
+
   // Diagnostic: detect non-NEW suggestions with edgeDeployed before syncing.
   // Runs unconditionally so audits with no prerender findings still catch pre-existing issues.
   await detectWrongEdgeDeployedStatus(dataAccess, siteId, site.getBaseURL(), log);
@@ -1730,6 +1740,7 @@ export async function processContentAndGenerateOpportunities(context) {
         opportunity,
         context,
         auditRunCandidates,
+        generatePrompts,
       );
       /* c8 ignore next 12 */
     } else if (scrapeForbidden) {
