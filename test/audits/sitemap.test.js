@@ -45,8 +45,9 @@ import {
   urlLooksLike404Page,
   formatUrlProbeErrorDetail,
   pathnameKey,
+  suggestedUrlMatchesCanonicalUrlWithoutSuffix,
+  extractCanonicalHrefFromHtml,
 } from '../../src/sitemap/common.js';
-import { extractCanonicalHrefFromHtml } from '../../src/sitemap/common.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
 import { DATA_SOURCES } from '../../src/common/constants.js';
@@ -2514,6 +2515,32 @@ describe('filterValidUrls with redirect handling', () => {
     ]);
   });
 
+  it('uses canonical href when terminal pathname extends canonical by dot suffix (e.g. .page)', async () => {
+    const probed = 'https://example.com/r-dot';
+    const terminal = 'https://example.com/support/contact-us.page';
+    const canonicalClean = 'https://example.com/support/contact-us';
+    const html = `<!DOCTYPE html><html><head><link rel="canonical" href="${canonicalClean}" /></head><body></body></html>`;
+    const log = { debug: sandbox.spy() };
+
+    nock('https://example.com')
+      .head('/r-dot')
+      .reply(301, '', { Location: terminal });
+    nock('https://example.com').head('/support/contact-us.page').reply(200);
+    nock('https://example.com')
+      .get('/support/contact-us.page')
+      .reply(200, html, { 'Content-Type': 'text/html' });
+
+    const result = await filterValidUrls([probed], log);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: probed,
+        statusCode: 301,
+        urlsSuggested: canonicalClean,
+      },
+    ]);
+    expect(log.debug).to.have.been.calledWith(sinon.match(/terminal path extends canonical by dot suffix/));
+  });
+
   it('GET for canonical uses non-HTML response without changing redirect notOk', async () => {
     const probed = 'https://example.com/r-json';
     const terminal = 'https://example.com/data.json';
@@ -2723,6 +2750,88 @@ describe('pathnameKey', () => {
 
   it('returns original string when URL parsing fails', () => {
     expect(pathnameKey('not-a-valid-url')).to.equal('not-a-valid-url');
+  });
+});
+
+describe('suggestedUrlMatchesCanonicalUrlWithoutSuffix', () => {
+  it('returns true when terminal path is canonical path plus dot suffix (e.g. .page)', () => {
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://www.ups.com/us/en/support/contact-us.page',
+      'https://www.ups.com/us/en/support/contact-us',
+    )).to.equal(true);
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://Example.COM/a/b.html',
+      'https://example.com/a/b',
+    )).to.equal(true);
+  });
+
+  it('returns true when trailing slashes normalize to the same dot-suffix relationship', () => {
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://example.com/dir/name.page/',
+      'https://example.com/dir/name/',
+    )).to.equal(true);
+  });
+
+  it('returns false when extra segment would be another path level', () => {
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://example.com/foo/bar',
+      'https://example.com/foo',
+    )).to.equal(false);
+  });
+
+  it('returns false when suggested pathname does not start with canonical pathname', () => {
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://example.com/a/c.page',
+      'https://example.com/a/b',
+    )).to.equal(false);
+  });
+
+  it('returns false when dot-suffix segment contains a slash', () => {
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://example.com/can./more',
+      'https://example.com/can',
+    )).to.equal(false);
+  });
+
+  it('returns false when rest is only a dot (no suffix segment)', () => {
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://example.com/foo.',
+      'https://example.com/foo',
+    )).to.equal(false);
+  });
+
+  it('returns false when paths share a string prefix but not a dot boundary (e.g. /blog vs /blogging)', () => {
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://example.com/blogging',
+      'https://example.com/blog',
+    )).to.equal(false);
+  });
+
+  it('returns false for invalid URLs, mismatched host, or mismatched protocol', () => {
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix('', 'https://example.com/a')).to.equal(false);
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'not-a-url',
+      'https://example.com/a',
+    )).to.equal(false);
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://example.com/a.page',
+      'not-a-url',
+    )).to.equal(false);
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://other.com/a.page',
+      'https://example.com/a',
+    )).to.equal(false);
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'http://example.com/a.page',
+      'https://example.com/a',
+    )).to.equal(false);
+  });
+
+  it('returns false when paths are identical', () => {
+    expect(suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+      'https://example.com/p',
+      'https://example.com/p',
+    )).to.equal(false);
   });
 });
 
