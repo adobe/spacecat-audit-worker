@@ -337,9 +337,77 @@ export function pathnameKey(urlString) {
 }
 
 /**
+ * Returns true if the canonical URL is a better match than the suggested URL.
+ * The canonical URL must match the suggested URL except for the canonical can lack a suffix.
+ *
+ * Examples of true:
+ * * https://www.example.com/my-stuff.page  and  https://www.example.com/my-stuff
+ * * https://www.example.com/my-stuff.html  and  https://www.example.com/my-stuff
+ *
+ * Examples of false:
+ * * https://www.example.com/my-stuff.page  and  https://www.example.com/my-stuffing
+ * * https://www.example.com/foo/bar        and  https://www.example.com/foo
+ *
+ * @param {string} suggestedUrl - What we think we want to suggest
+ * @param {string} canonicalUrl - Absolute canonical href from HTML page
+ * @returns {boolean}
+ */
+export function suggestedUrlMatchesCanonicalUrlWithoutSuffix(
+  suggestedUrl,
+  canonicalUrl,
+) {
+  let s;
+  let c;
+  try {
+    s = new URL(suggestedUrl);
+    c = new URL(canonicalUrl);
+  } catch {
+    return false;
+  }
+
+  if (s.protocol !== c.protocol) {
+    return false;
+  }
+  if (s.hostname.toLowerCase() !== c.hostname.toLowerCase()) {
+    return false;
+  }
+
+  const normalizePathname = (pathname) => {
+    let p = pathname;
+    if (p.length > 1 && p.endsWith('/')) {
+      p = p.slice(0, -1);
+    }
+    return p;
+  };
+
+  const sp = normalizePathname(s.pathname);
+  const cp = normalizePathname(c.pathname);
+
+  if (sp.length <= cp.length) {
+    return false;
+  }
+  if (!sp.startsWith(cp)) {
+    return false;
+  }
+
+  const rest = sp.slice(cp.length);
+  if (!rest.startsWith('.')) {
+    return false; // since we are looking for a suffix on the suggested URL
+  }
+  const afterDot = rest.slice(1);
+  if (afterDot.length === 0 || afterDot.includes('/')) {
+    return false;
+  }
+
+  return true; // the canonical URL can be used in place of the suggested URL
+}
+
+/**
  * Typically after a redirect {@code notOk} decision, GET the document and refine using
  * {@code rel="canonical"}. Promotes to {@code ok} when canonical matches the probed URL;
- * otherwise may replace {@code urlsSuggested} when canonical matches the suggested URL's path.
+ * otherwise may replace {@code urlsSuggested} when canonical matches the suggested URL's path
+ * (exact pathname) or extends it with a dot-suffix segment per
+ * {@link suggestedUrlMatchesCanonicalUrlWithoutSuffix}.
  *
  * @param {object} params
  * @param {string} params.documentUrl - URL to GET so we can extract its canonical href
@@ -396,10 +464,22 @@ async function refineSuggestedUrlWithItsCanonicalUrl({
   if (
     typeof suggestedUrl === 'string'
     && suggestedUrl.length > 0
-    && (pathnameKey(suggestedUrl) === pathnameKey(canonicalUrl))
+    && (pathnameKey(suggestedUrl) === pathnameKey(canonicalUrl)) // ignore query parms
   ) {
     log?.debug(
       `Sitemap: suggesting the canonical URL ${canonicalUrl} (replacing suggested ${suggestedUrl}) for probed ${probedUrl}.`,
+    );
+    return { ...notOkPayload, urlsSuggested: canonicalUrl };
+  }
+
+  // if the canonical URL is a reasonably shorter form of our suggested URL, use the canonical URL
+  if (
+    typeof suggestedUrl === 'string'
+    && suggestedUrl.length > 0
+    && suggestedUrlMatchesCanonicalUrlWithoutSuffix(suggestedUrl, canonicalUrl)
+  ) {
+    log?.debug(
+      `Sitemap: suggesting the canonical URL ${canonicalUrl} (terminal path extends canonical by dot suffix; replacing ${suggestedUrl}) for probed ${probedUrl}.`,
     );
     return { ...notOkPayload, urlsSuggested: canonicalUrl };
   }
