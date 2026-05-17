@@ -3050,6 +3050,20 @@ describe('TOC (Table of Contents) Audit', () => {
         expect(ul.children[0].children[0].properties['data-selector']).to.equal('h1#main');
         expect(ul.children[0].children[0].children[0].value).to.equal('Title');
       });
+
+      it('filters out items with empty or whitespace-only text', () => {
+        const tocData = [
+          { text: 'Valid Heading', level: 1, selector: 'h1#valid' },
+          { text: '', level: 1, selector: 'h1#empty' },
+          { text: '   ', level: 2, selector: 'h2#whitespace' },
+          { text: 'Another Valid', level: 2, selector: 'h2#also-valid' },
+        ];
+        const hast = tocArrayToHast(tocData);
+        const ul = hast.children[0].children[0];
+        expect(ul.children).to.have.lengthOf(2);
+        expect(ul.children[0].children[0].children[0].value).to.equal('Valid Heading');
+        expect(ul.children[1].children[0].children[0].value).to.equal('Another Valid');
+      });
     });
 
     describe('determineTocPlacement', () => {

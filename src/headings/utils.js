@@ -335,26 +335,28 @@ export function extractTocData($, getHeadingSelectorFn) {
  */
 export function tocArrayToHast(tocData) {
   // children for <ul>
-  const liNodes = tocData.map((item) => {
-    const isSub = Number(item.level) === 2;
+  const liNodes = tocData
+    .filter((item) => item.text && item.text.trim())
+    .map((item) => {
+      const isSub = Number(item.level) === 2;
 
-    return {
-      type: 'element',
-      tagName: 'li',
-      properties: isSub ? { className: ['toc-sub'] } : {},
-      children: [
-        {
-          type: 'element',
-          tagName: 'a',
-          properties: {
-            href: '#',
-            'data-selector': item.selector,
+      return {
+        type: 'element',
+        tagName: 'li',
+        properties: isSub ? { className: ['toc-sub'] } : {},
+        children: [
+          {
+            type: 'element',
+            tagName: 'a',
+            properties: {
+              href: '#',
+              'data-selector': item.selector,
+            },
+            children: [{ type: 'text', value: item.text }],
           },
-          children: [{ type: 'text', value: item.text }],
-        },
-      ],
-    };
-  });
+        ],
+      };
+    });
 
   const ul = {
     type: 'element',
