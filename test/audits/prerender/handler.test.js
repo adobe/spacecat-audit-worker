@@ -1828,13 +1828,15 @@ describe('Prerender Audit', () => {
         const serverHtml = '<html><body><h1>Title</h1></body></html>';
         const clientHtml = '<html><body><h1>Title</h1><p>Significant additional content here</p><div>More dynamic content loaded by JavaScript</div><p>Even more substantial content that greatly increases the word count to trigger prerender detection</p></body></html>';
 
+        const noSuchKey = Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' });
         const mockS3Client = {
           send: sandbox.stub()
-            .onFirstCall().resolves({
+            .onFirstCall().rejects(noSuchKey) // readSiteStatusJson (status.json) in fallback path
+            .onSecondCall().resolves({
               ContentType: 'text/html',
               Body: { transformToString: () => Promise.resolve(serverHtml) }
             })
-            .onSecondCall().resolves({
+            .onThirdCall().resolves({
               ContentType: 'text/html',
               Body: { transformToString: () => Promise.resolve(clientHtml) }
             }),

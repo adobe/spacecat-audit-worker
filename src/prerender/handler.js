@@ -1650,14 +1650,20 @@ export async function processContentAndGenerateOpportunities(context) {
           agenticUrls,
           rebasedFallbackIncludedURLs,
         );
-        urlsToCheck = filteredUrls;
+        const statusData = await readSiteStatusJson(siteId, context);
+        const edgeDeployedPathnames = getEdgeDeployedPathnames(statusData);
+        urlsToCheck = edgeDeployedPathnames.size > 0
+          ? filteredUrls.filter((u) => !edgeDeployedPathnames.has(normalizePathname(u)))
+          : filteredUrls;
 
         /* c8 ignore stop */
+        const edgeDeployedFilteredCount = filteredUrls.length - urlsToCheck.length;
         const msg = `Fallback for baseUrl=${site.getBaseURL()}, siteId=${siteId}. `
           + `Using agenticURLs=${agenticUrls.length}, `
           + `topPages=${rebasedFallbackOrganicUrls.length}, `
           + `includedURLs=${rebasedFallbackIncludedURLs.length}, `
           + `filteredOutUrls=${filteredCount}, `
+          + `edgeDeployedFiltered=${edgeDeployedFilteredCount}, `
           + `total=${urlsToCheck.length}`;
         log.info(`${LOG_PREFIX} ${msg}`);
       }
