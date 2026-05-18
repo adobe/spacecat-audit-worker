@@ -88,8 +88,10 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
   ).length > 1;
 
   const totalClusters = clusterResults.length;
+  const misalignedScores = new Set(['poor', 'fair']);
   const misalignedClusters = clusterResults.filter(
-    (c) => c.analysisStatus !== 'failed' && c.recommendation,
+    (c) => c.analysisStatus !== 'failed' && c.recommendation
+      && misalignedScores.has(c.overallAlignmentScore),
   ).length;
   const totalMisalignedSpend = clusterResults.reduce(
     (sum, c) => sum + (c.clusterMisalignedSpend || 0),
