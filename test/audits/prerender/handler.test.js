@@ -1239,21 +1239,17 @@ describe('Prerender Audit', () => {
           expect(resultUrls).to.include('https://example.com/valid');
         });
 
-        describe('deployed/covered URL filtering', () => {
-          const makeOpportunity = (suggestions) => ({
-            getType: () => 'prerender',
-            getSuggestions: sandbox.stub().resolves(suggestions),
-          });
-          const makeSuggestion = (url, data = {}) => ({
-            getStatus: () => 'NEW',
-            getData: () => ({ url, ...data }),
-          });
-          const makeDomainWideSuggestion = (edgeDeployed) => ({
-            getStatus: () => 'NEW',
-            getData: () => ({ isDomainWide: true, ...(edgeDeployed && { edgeDeployed }) }),
+        describe('edge-deployed URL filtering', () => {
+          const makeS3WithStatus = (pages = []) => ({
+            send: async (cmd) => {
+              if (cmd.constructor?.name === 'GetObjectCommand') {
+                return { Body: { transformToString: async () => JSON.stringify({ pages }) } };
+              }
+              return Promise.reject(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' }));
+            },
           });
 
-          it('filters organic URLs whose suggestion has edgeDeployed set', async () => {
+          it('filters organic URLs where isDeployedAtEdge is true in status.json', async () => {
             const deployedUrl = 'https://example.com/deployed-page';
             const freshUrl = 'https://example.com/fresh-page';
             const mockHandler = await makeHandlerWithAgentic([]);
@@ -1267,12 +1263,8 @@ describe('Prerender Audit', () => {
                   ]),
                 },
                 PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
-                Opportunity: {
-                  allBySiteIdAndStatus: sandbox.stub().resolves([
-                    makeOpportunity([makeSuggestion(deployedUrl, { edgeDeployed: 1234567890 })]),
-                  ]),
-                },
               },
+              s3Client: makeS3WithStatus([{ url: deployedUrl, isDeployedAtEdge: true }]),
             };
 
             const result = await mockHandler.submitForScraping(context);
@@ -1281,7 +1273,7 @@ describe('Prerender Audit', () => {
             expect(resultUrls).to.include(freshUrl);
           });
 
-          it('filters agentic URLs whose suggestion has edgeDeployed set', async () => {
+          it('filters agentic URLs where isDeployedAtEdge is true in status.json', async () => {
             const deployedUrl = 'https://example.com/deployed-agentic';
             const freshUrl = 'https://example.com/fresh-agentic';
             const mockHandler = await makeHandlerWithAgentic([deployedUrl, freshUrl]);
@@ -1290,12 +1282,8 @@ describe('Prerender Audit', () => {
               dataAccess: {
                 SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
                 PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
-                Opportunity: {
-                  allBySiteIdAndStatus: sandbox.stub().resolves([
-                    makeOpportunity([makeSuggestion(deployedUrl, { edgeDeployed: 1234567890 })]),
-                  ]),
-                },
               },
+              s3Client: makeS3WithStatus([{ url: deployedUrl, isDeployedAtEdge: true }]),
             };
 
             const result = await mockHandler.submitForScraping(context);
@@ -1304,64 +1292,25 @@ describe('Prerender Audit', () => {
             expect(resultUrls).to.include(freshUrl);
           });
 
-          it('filters URLs with coveredByDomainWide when domain-wide suggestion has edgeDeployed', async () => {
-            const coveredUrl = 'https://example.com/covered-page';
-            const freshUrl = 'https://example.com/fresh-page';
-            const domainWide = makeDomainWideSuggestion(1234567890);
-            const covered = makeSuggestion(coveredUrl, { coveredByDomainWide: 'dw-id-123' });
-            const fresh = makeSuggestion(freshUrl);
+          it('does not filter URLs where isDeployedAtEdge is false', async () => {
+            const url = 'https://example.com/not-deployed';
             const mockHandler = await makeHandlerWithAgentic([]);
             const context = {
               ...makeContext([]),
               dataAccess: {
                 SiteTopPage: {
-                  allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-                    { getUrl: () => coveredUrl },
-                    { getUrl: () => freshUrl },
-                  ]),
+                  allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => url }]),
                 },
                 PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
-                Opportunity: {
-                  allBySiteIdAndStatus: sandbox.stub().resolves([
-                    makeOpportunity([domainWide, covered, fresh]),
-                  ]),
-                },
               },
+              s3Client: makeS3WithStatus([{ url, isDeployedAtEdge: false }]),
             };
 
             const result = await mockHandler.submitForScraping(context);
-            const resultUrls = result.urls.map((u) => u.url);
-            expect(resultUrls).to.not.include(coveredUrl);
-            expect(resultUrls).to.include(freshUrl);
+            expect(result.urls.map((u) => u.url)).to.include(url);
           });
 
-          it('does NOT filter coveredByDomainWide URLs when domain-wide suggestion is not deployed', async () => {
-            const coveredUrl = 'https://example.com/covered-page';
-            const domainWide = makeDomainWideSuggestion(null);
-            const covered = makeSuggestion(coveredUrl, { coveredByDomainWide: 'dw-id-123' });
-            const mockHandler = await makeHandlerWithAgentic([]);
-            const context = {
-              ...makeContext([]),
-              dataAccess: {
-                SiteTopPage: {
-                  allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-                    { getUrl: () => coveredUrl },
-                  ]),
-                },
-                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
-                Opportunity: {
-                  allBySiteIdAndStatus: sandbox.stub().resolves([
-                    makeOpportunity([domainWide, covered]),
-                  ]),
-                },
-              },
-            };
-
-            const result = await mockHandler.submitForScraping(context);
-            expect(result.urls.map((u) => u.url)).to.include(coveredUrl);
-          });
-
-          it('does not filter any URLs when Opportunity is absent from dataAccess', async () => {
+          it('does not filter any URLs when status.json is missing (NoSuchKey)', async () => {
             const url = 'https://example.com/some-page';
             const mockHandler = await makeHandlerWithAgentic([]);
             const context = {
@@ -1372,36 +1321,15 @@ describe('Prerender Audit', () => {
                 },
                 PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
               },
+              // makeContext default s3Client already throws NoSuchKey
             };
 
             const result = await mockHandler.submitForScraping(context);
             expect(result.urls.map((u) => u.url)).to.include(url);
           });
 
-          it('does not filter any URLs when no prerender opportunity exists', async () => {
+          it('logs a warning and does not filter when status.json read fails', async () => {
             const url = 'https://example.com/some-page';
-            const mockHandler = await makeHandlerWithAgentic([]);
-            const context = {
-              ...makeContext([]),
-              dataAccess: {
-                SiteTopPage: {
-                  allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => url }]),
-                },
-                PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
-                Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-              },
-            };
-
-            const result = await mockHandler.submitForScraping(context);
-            expect(result.urls.map((u) => u.url)).to.include(url);
-          });
-
-          it('logs a warning and does not filter when getSuggestions throws', async () => {
-            const url = 'https://example.com/some-page';
-            const brokenOpportunity = {
-              getType: () => 'prerender',
-              getSuggestions: sandbox.stub().rejects(new Error('DB error')),
-            };
             const mockHandler = await makeHandlerWithAgentic([]);
             const log = { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() };
             const context = {
@@ -1412,45 +1340,37 @@ describe('Prerender Audit', () => {
                   allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => url }]),
                 },
                 PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
-                Opportunity: {
-                  allBySiteIdAndStatus: sandbox.stub().resolves([brokenOpportunity]),
-                },
               },
+              s3Client: { send: sandbox.stub().rejects(new Error('S3 read error')) },
             };
 
             const result = await mockHandler.submitForScraping(context);
             expect(result.urls.map((u) => u.url)).to.include(url);
-            expect(log.warn).to.have.been.calledWithMatch(/deployed\/covered/i);
+            expect(log.warn).to.have.been.calledWithMatch(/Could not read status\.json/);
           });
 
-          it('skips suggestions with malformed URLs without throwing', async () => {
+          it('skips pages with malformed URLs without throwing', async () => {
             const validUrl = 'https://example.com/valid-page';
             const mockHandler = await makeHandlerWithAgentic([]);
             const context = {
               ...makeContext([]),
               dataAccess: {
                 SiteTopPage: {
-                  allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-                    { getUrl: () => validUrl },
-                  ]),
+                  allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => validUrl }]),
                 },
                 PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
-                Opportunity: {
-                  allBySiteIdAndStatus: sandbox.stub().resolves([
-                    makeOpportunity([
-                      { getStatus: () => 'NEW', getData: () => ({ url: 'not-a-url', edgeDeployed: 1 }) },
-                      makeSuggestion(validUrl, { edgeDeployed: 1234567890 }),
-                    ]),
-                  ]),
-                },
               },
+              s3Client: makeS3WithStatus([
+                { url: 'not-a-url', isDeployedAtEdge: true },
+                { url: validUrl, isDeployedAtEdge: true },
+              ]),
             };
 
             const result = await mockHandler.submitForScraping(context);
             expect(result.urls.map((u) => u.url)).to.not.include(validUrl);
           });
 
-          it('handles root-pathname suggestion URLs (pathname === "/")', async () => {
+          it('handles root-pathname page URLs (pathname === "/")', async () => {
             const rootUrl = 'https://example.com/';
             const freshUrl = 'https://example.com/other-page';
             const mockHandler = await makeHandlerWithAgentic([]);
@@ -1464,12 +1384,8 @@ describe('Prerender Audit', () => {
                   ]),
                 },
                 PageCitability: { allByIndexKeys: sandbox.stub().resolves([]) },
-                Opportunity: {
-                  allBySiteIdAndStatus: sandbox.stub().resolves([
-                    makeOpportunity([makeSuggestion(rootUrl, { edgeDeployed: 1234567890 })]),
-                  ]),
-                },
               },
+              s3Client: makeS3WithStatus([{ url: rootUrl, isDeployedAtEdge: true }]),
             };
 
             const result = await mockHandler.submitForScraping(context);
@@ -7405,7 +7321,7 @@ describe('Prerender Audit', () => {
 
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
-      expect(context.log.warn).to.have.been.calledWith(sinon.match(/Could not read existing status\.json.*starting fresh/));
+      expect(context.log.warn).to.have.been.calledWith(sinon.match(/Could not read status\.json/));
       const uploadedData = JSON.parse(getPutCall(mockS3Client.send).args[0].input.Body);
       expect(uploadedData.pages).to.have.lengthOf(1);
     });

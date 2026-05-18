@@ -54,19 +54,29 @@ const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
 
 /**
  * Reads and parses the site's status.json from S3.
- * Throws on any error, including NoSuchKey — callers are responsible for handling.
+ * Returns {} when S3 is not configured, the file does not exist, or any read error occurs.
+ * Logs a warning for unexpected errors (non-NoSuchKey).
  * @param {string} siteId
  * @param {Object} context
  * @returns {Promise<Object>}
  */
 async function readSiteStatusJson(siteId, context) {
-  const { s3Client, env } = context;
-  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  const { s3Client, env, log } = context;
+  if (!env?.S3_SCRAPER_BUCKET_NAME || !s3Client) {
+    return {};
+  }
   const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
-  const response = await s3Client.send(
-    new GetObjectCommand({ Bucket: bucketName, Key: statusKey }),
-  );
-  return JSON.parse(await response.Body.transformToString());
+  try {
+    const response = await s3Client.send(
+      new GetObjectCommand({ Bucket: env.S3_SCRAPER_BUCKET_NAME, Key: statusKey }),
+    );
+    return JSON.parse(await response.Body.transformToString());
+  } catch (e) {
+    if (e.name !== 'NoSuchKey') {
+      log?.warn?.(`${LOG_PREFIX} Could not read status.json: ${e.message}. siteId=${siteId}`);
+    }
+    return {};
+  }
 }
 
 /** Skip re-scraping when status.json records a confirmed sticky block within this window. */
@@ -91,27 +101,15 @@ function isKnownBotBlockerResult({ crawlable, confidence, type }) {
  * @param {Object} context
  * @returns {Promise<boolean>}
  */
-async function shouldSkipScrapeForStickyBotBlock(siteId, context) {
-  const { s3Client, env, log } = context;
-  if (!env.S3_SCRAPER_BUCKET_NAME || !s3Client) {
+function isStickyBotBlocked(status) {
+  if (!status.scrapeForbidden || !status.scrapeForbiddenSince) {
     return false;
   }
-  try {
-    const status = await readSiteStatusJson(siteId, context);
-    if (!status.scrapeForbidden || !status.scrapeForbiddenSince) {
-      return false;
-    }
-    const sinceMs = Date.parse(status.scrapeForbiddenSince);
-    if (Number.isNaN(sinceMs)) {
-      return false;
-    }
-    return (Date.now() - sinceMs) < DOMAIN_STICKY_BOT_SKIP_MS;
-  } catch (e) {
-    if (e.name !== 'NoSuchKey') {
-      log.warn(`${LOG_PREFIX} Could not read status.json for sticky bot skip: ${e.message}. siteId=${siteId}`);
-    }
+  const sinceMs = Date.parse(status.scrapeForbiddenSince);
+  if (Number.isNaN(sinceMs)) {
     return false;
   }
+  return (Date.now() - sinceMs) < DOMAIN_STICKY_BOT_SKIP_MS;
 }
 
 /**
@@ -359,38 +357,18 @@ async function getRecentlyProcessedPathnames(context, siteId) {
  * @param {string} siteId - Site identifier
  * @returns {Promise<Set<string>>}
  */
-async function getDeployedOrCoveredPathnames(context, siteId) {
-  const { dataAccess, log } = context;
-  try {
-    const opportunities = await dataAccess?.Opportunity?.allBySiteIdAndStatus?.(siteId, 'NEW') ?? [];
-    const opportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE) ?? null;
-    if (!opportunity) {
-      return new Set();
+function getEdgeDeployedPathnames(status) {
+  const pages = Array.isArray(status.pages) ? status.pages : [];
+  const pathnames = new Set();
+  for (const p of pages) {
+    if (p.isDeployedAtEdge && p.url) {
+      try {
+        const { pathname } = new URL(p.url);
+        pathnames.add(pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname);
+      } catch { /* skip malformed URLs */ }
     }
-
-    const suggestions = await opportunity.getSuggestions();
-    const domainWideDeployed = !!suggestions.find((s) => {
-      const d = s.getData();
-      return s.getStatus() === Suggestion.STATUSES.NEW
-        && isDomainWideSuggestionData(d) && !!d?.edgeDeployed;
-    });
-
-    const pathnames = new Set();
-    for (const s of suggestions) {
-      const data = s.getData();
-      if (s.getStatus() === Suggestion.STATUSES.NEW && data?.url
-        && (data.edgeDeployed || (data.coveredByDomainWide && domainWideDeployed))) {
-        try {
-          const { pathname } = new URL(data.url);
-          pathnames.add(pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname);
-        } catch { /* skip malformed URLs */ }
-      }
-    }
-    return pathnames;
-  } catch (e) {
-    log?.warn?.(`${LOG_PREFIX} Failed to load deployed/covered pathnames: ${e.message}. siteId=${siteId}`);
-    return new Set();
   }
+  return pathnames;
 }
 
 /**
@@ -582,26 +560,14 @@ function getModeFromData(data) {
  */
 async function fetchLatestScrapeJobId(siteId, context) {
   const { log } = context;
-
-  try {
-    log.info(`${LOG_PREFIX} ai-only: Fetching status.json for siteId=${siteId}`);
-    const statusData = await readSiteStatusJson(siteId, context);
-
-    if (statusData.scrapeJobId) {
-      log.info(`${LOG_PREFIX} ai-only: Found scrapeJobId: ${statusData.scrapeJobId}`);
-      return statusData.scrapeJobId;
-    }
-
-    log.warn(`${LOG_PREFIX} ai-only: No scrapeJobId found in status.json`);
-    return null;
-  } catch (error) {
-    if (error.name === 'NoSuchKey') {
-      log.warn(`${LOG_PREFIX} ai-only: status.json not found for siteId=${siteId}`);
-    } else {
-      log.error(`${LOG_PREFIX} ai-only: Error fetching status.json: ${error.message}`);
-    }
-    return null;
+  log.info(`${LOG_PREFIX} ai-only: Fetching status.json for siteId=${siteId}`);
+  const statusData = await readSiteStatusJson(siteId, context);
+  if (statusData.scrapeJobId) {
+    log.info(`${LOG_PREFIX} ai-only: Found scrapeJobId: ${statusData.scrapeJobId}`);
+    return statusData.scrapeJobId;
   }
+  log.warn(`${LOG_PREFIX} ai-only: No scrapeJobId found in status.json`);
+  return null;
 }
 
 /**
@@ -956,8 +922,10 @@ export async function submitForScraping(context) {
     };
   }
 
+  const siteStatus = await readSiteStatusJson(siteId, context);
+
   // Sticky domain bot-block from status.json (Slack runs bypass so operators can force a re-scrape)
-  if (!isSlackTriggered && await shouldSkipScrapeForStickyBotBlock(siteId, context)) {
+  if (!isSlackTriggered && isStickyBotBlocked(siteStatus)) {
     log.info(`${LOG_PREFIX} Sticky scrapeForbidden within ${DOMAIN_STICKY_BOT_SKIP_MS / 86400000}d window, skipping siteId=${siteId}, baseUrl=${site.getBaseURL()}`);
     return {
       urls: [],
@@ -983,7 +951,7 @@ export async function submitForScraping(context) {
   let currentIncludedUrls;
   let isFirstRunOfCycle;
   let agenticNewThisCycle = 0;
-  let deployedOrCoveredPathnames = new Set();
+  let edgeDeployedPathnames = new Set();
 
   if (isSlackTriggered) {
     ({ urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls([
@@ -1000,17 +968,17 @@ export async function submitForScraping(context) {
 
     // Daily batching: filter URLs recently processed within the rolling recent window
     const recentPathnames = await getRecentlyProcessedPathnames(context, siteId);
-    deployedOrCoveredPathnames = await getDeployedOrCoveredPathnames(context, siteId);
+    edgeDeployedPathnames = getEdgeDeployedPathnames(siteStatus);
 
     const filteredOrganicUrls = rebasedTopPagesUrls
       .filter((url) => isNotRecentUrl(url, recentPathnames))
-      .filter((url) => !deployedOrCoveredPathnames.has(normalizePathname(url)));
+      .filter((url) => !edgeDeployedPathnames.has(normalizePathname(url)));
     const filteredIncludedURLs = rebasedIncludedURLs
       .filter((url) => isNotRecentUrl(url, recentPathnames))
-      .filter((url) => !deployedOrCoveredPathnames.has(normalizePathname(url)));
+      .filter((url) => !edgeDeployedPathnames.has(normalizePathname(url)));
     const filteredAgenticUrls = agenticUrls
       .filter((url) => isNotRecentUrl(url, recentPathnames))
-      .filter((url) => !deployedOrCoveredPathnames.has(normalizePathname(url)));
+      .filter((url) => !edgeDeployedPathnames.has(normalizePathname(url)));
 
     const hasRecentOrganic = filteredOrganicUrls.length !== topPagesUrls.length;
     isFirstRunOfCycle = !hasRecentOrganic;
@@ -1045,7 +1013,7 @@ export async function submitForScraping(context) {
     currentIncludedUrls=${currentIncludedUrls},
     isFirstRunOfCycle=${isFirstRunOfCycle},
     agenticNewThisCycle=${agenticNewThisCycle},
-    deployedOrCoveredUrls=${deployedOrCoveredPathnames.size},
+    edgeDeployedUrls=${edgeDeployedPathnames.size},
     baseUrl=${site.getBaseURL()},
     siteId=${siteId}`);
 
@@ -1425,16 +1393,8 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
 
     // Read existing status.json before building currentPages so we can look up prior scrapeJobIds.
     // Pages from the current run overwrite any prior entry for the same URL.
-    let existingStatus = {};
-    let existingPages = [];
-    try {
-      existingStatus = await readSiteStatusJson(siteId, context);
-      existingPages = Array.isArray(existingStatus.pages) ? existingStatus.pages : [];
-    } catch (e) {
-      if (e.name !== 'NoSuchKey') {
-        log.warn(`${LOG_PREFIX} Could not read existing status.json for siteId=${siteId}, baseUrl=${auditUrl}: ${e.message} — starting fresh`);
-      }
-    }
+    const existingStatus = await readSiteStatusJson(siteId, context);
+    const existingPages = Array.isArray(existingStatus.pages) ? existingStatus.pages : [];
 
     const existingPageMap = new Map(existingPages.map((p) => [normalizePathname(p.url), p]));
 
