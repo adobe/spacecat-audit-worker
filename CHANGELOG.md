@@ -1,3 +1,15 @@
+# [1.444.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.443.1...v1.444.0) (2026-05-18)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2524](https://github.com/adobe/spacecat-audit-worker/issues/2524)) ([ce81e0f](https://github.com/adobe/spacecat-audit-worker/commit/ce81e0f9ae5b10e2eaa0a5c4acc0fd19d41e4696))
+
+
+### Features
+
+* **semantic-value-visibility:** use generic-autofix-edge as opportunity type ([#2520](https://github.com/adobe/spacecat-audit-worker/issues/2520)) ([fb0fbeb](https://github.com/adobe/spacecat-audit-worker/commit/fb0fbeb8cdcf0daefe9c77dd3272deebdf8d7b07))
+
 ## [1.443.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.443.0...v1.443.1) (2026-05-18)
 
 
