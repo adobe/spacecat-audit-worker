@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { gunzipSync } from 'node:zlib';
 import { load as cheerioLoad } from 'cheerio';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import {
@@ -20,6 +21,14 @@ import {
   extractDomainAndProtocol,
   getUrlWithoutPath,
 } from '../support/utils.js';
+
+// Skip sub-sitemaps that don't carry page URLs (image/video/news manifests).
+// Common patterns:
+//   /sitemap_image_1.xml         (separator: underscore)
+//   /en_us.image.5.xml           (separator: dot)
+//   /sitemaps/weekly-video/...   (separator: hyphen)
+//   /sitemaps/48-hr-news.xml.gz  (separator: hyphen)
+const NON_PAGE_SITEMAP_RE = /(?:^|[/_.-])(?:images?|img|videos?|news)(?:[/_.-]|\.xml|$)/i;
 
 // ----- performance tuning constants ------------------------------------------
 
@@ -880,12 +889,37 @@ export function isSitemapContentValid(sitemapContent) {
 }
 
 /**
+ * Fetch a `.xml.gz` sitemap (or any gzipped XML) and inflate it.
+ * Returns the same shape as `fetchContent`: { payload, type }.
+ */
+async function fetchGzippedSitemap(targetUrl) {
+  const response = await fetch(targetUrl, {
+    method: 'GET',
+    timeout: SITEMAP_GET_TIMEOUT_MS,
+  });
+  if (!response.ok) {
+    throw new Error(`Fetch error for ${targetUrl} Status: ${response.status}`);
+  }
+  const buf = Buffer.from(await response.arrayBuffer());
+  return {
+    payload: gunzipSync(buf).toString('utf8'),
+    type: response.headers.get('content-type'),
+  };
+}
+
+/**
  * Checks sitemap validity and existence
  */
 export async function checkSitemap(sitemapUrl, log) {
   try {
     log?.debug(`Sitemap: Fetching sitemap URL: ${sitemapUrl}`);
-    const sitemapContent = await fetchContent(sitemapUrl);
+    // Some sitemap indexes reference .xml.gz children (common on news / sports /
+    // commerce sites). The default text-based fetchContent garbles the gzip
+    // bytes; fall through to a buffer + gunzip path for those.
+    const isGzipped = /\.gz(?:\?.*)?$/i.test(sitemapUrl);
+    const sitemapContent = isGzipped
+      ? await fetchGzippedSitemap(sitemapUrl)
+      : await fetchContent(sitemapUrl);
     log?.info(`Sitemap: Successfully fetched sitemap URL: ${sitemapUrl} with content type: ${sitemapContent.type}`);
     const isValidFormat = isSitemapContentValid(sitemapContent);
     const isSitemapIndex = isValidFormat && sitemapContent.payload.includes('</sitemapindex>');
@@ -915,26 +949,54 @@ export async function checkSitemap(sitemapUrl, log) {
 }
 
 /**
- * Retrieves base URL pages from sitemaps with improved error handling
+ * Retrieves base URL pages from sitemaps with improved error handling.
+ *
+ * @param {string} inputUrl
+ * @param {string[]} initialUrls
+ * @param {object} log
+ * @param {object} [opts]
+ * @param {number} [opts.maxPages] when set, stop discovering further
+ *   sub-sitemaps once this many page URLs have been collected. Useful for
+ *   multi-locale mega-sites (e.g. hm.com publishes thousands of sub-sitemaps);
+ *   the existing sitemap audit pages the full set, but lighter callers
+ *   (category derivation) only need a representative sample.
  */
-export async function getBaseUrlPagesFromSitemaps(inputUrl, initialUrls, log) {
+export async function getBaseUrlPagesFromSitemaps(inputUrl, initialUrls, log, opts = {}) {
+  const { maxPages } = opts;
   // Strip subpath to get domain-only URL for sitemap.xml matching
   const baseUrl = getUrlWithoutPath(inputUrl);
   const baseUrlVariant = toggleWWW(baseUrl);
   const pagesBySitemap = {};
+  // Wrap counter in an object so processOne's closure captures a stable
+  // reference (avoids no-loop-func warning).
+  const counter = { totalPages: 0 };
   let sitemapsToProcess = [...initialUrls];
   const processedSitemaps = new Set();
 
   /* c8 ignore next */
   log?.info(`Sitemap: Starting to process ${sitemapsToProcess.length} initial sitemap URLs for ${inputUrl}`);
   while (sitemapsToProcess.length > 0) {
+    if (maxPages && counter.totalPages >= maxPages) {
+      log?.info(`Sitemap: reached maxPages=${maxPages} (collected ${counter.totalPages}); stopping sub-sitemap discovery for ${inputUrl}`);
+      break;
+    }
     const sitemapsFromIndexes = [];
 
     const processOne = async (sitemapUrl) => {
       if (processedSitemaps.has(sitemapUrl)) {
         return;
       }
+      if (maxPages && counter.totalPages >= maxPages) {
+        return;
+      }
       processedSitemaps.add(sitemapUrl);
+      // Skip image/video/news sub-sitemaps: they don't carry page URLs
+      // and on multi-locale e-commerce sites (hm.com et al) they explode
+      // into thousands of fetches that all return 403 or empty.
+      if (NON_PAGE_SITEMAP_RE.test(sitemapUrl)) {
+        log?.debug(`Sitemap: Skipping non-page sitemap: ${sitemapUrl}`);
+        return;
+      }
       /* c8 ignore next */
       log?.debug(`Sitemap: Processing sitemap URL: ${sitemapUrl} for ${inputUrl}`);
 
@@ -959,6 +1021,7 @@ export async function getBaseUrlPagesFromSitemaps(inputUrl, initialUrls, log) {
           );
           if (pages.length > 0) {
             pagesBySitemap[sitemapUrl] = pages;
+            counter.totalPages += pages.length;
           }
         }
       }
@@ -966,6 +1029,9 @@ export async function getBaseUrlPagesFromSitemaps(inputUrl, initialUrls, log) {
 
     // Process sitemap.xml files in batches with delay between batches
     for (let i = 0; i < sitemapsToProcess.length; i += SITEMAP_XML_BATCH_SIZE) {
+      if (maxPages && counter.totalPages >= maxPages) {
+        break;
+      }
       const chunk = sitemapsToProcess.slice(i, i + SITEMAP_XML_BATCH_SIZE);
       // eslint-disable-next-line no-await-in-loop
       await Promise.all(chunk.map(processOne));
@@ -981,7 +1047,7 @@ export async function getBaseUrlPagesFromSitemaps(inputUrl, initialUrls, log) {
   return pagesBySitemap;
 }
 
-export async function getSitemapUrls(inputUrl, log) {
+export async function getSitemapUrls(inputUrl, log, opts = {}) {
   const parsedUrl = extractDomainAndProtocol(inputUrl);
   if (!parsedUrl) {
     /* c8 ignore next */
@@ -1040,7 +1106,12 @@ export async function getSitemapUrls(inputUrl, log) {
 
   // Extract and validate page URLs from our validated sitemap URLs:
   //   getBaseUrlPagesFromSitemaps filters sitemaps by domain, then filters page URLs by full path
-  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, sitemapUrls.ok, log);
+  const extractedPaths = await getBaseUrlPagesFromSitemaps(
+    inputUrl,
+    sitemapUrls.ok,
+    log,
+    opts,
+  );
   log?.info(`Sitemap: Extracted ${Object.keys(extractedPaths).length} sitemap URLs for ${inputUrl}`);
   log?.info(`Sitemap: Extracted ${Object.values(extractedPaths).reduce((sum, pages) => sum + pages.length, 0)} page URLs from sitemaps for ${inputUrl}`);
 

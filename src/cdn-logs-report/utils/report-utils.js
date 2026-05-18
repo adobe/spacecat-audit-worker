@@ -146,7 +146,13 @@ const DEFAULT_INTENT_CATEGORIES = new Set([
 ]);
 
 /**
- * Fetches config categories from the latest LLMO config
+ * Fetches config categories from the latest LLMO config.
+ *
+ * @deprecated since LLMO-4748. Agentic URL category derivation no longer
+ * reads the customer's LLMO config — categories are derived purely from
+ * the site's own URL structure (sitemap clustering with CDN-log fallback).
+ * This helper is preserved temporarily because tests still reference it;
+ * remove in a follow-up cleanup once those tests are migrated.
  */
 export async function getConfigCategories(site, context) {
   const { log, s3Client, env } = context;

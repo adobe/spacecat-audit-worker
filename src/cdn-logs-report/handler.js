@@ -15,7 +15,6 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import {
   loadSql,
   generateReportingPeriods,
-  getConfigCategories,
 } from './utils/report-utils.js';
 import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
 import {
@@ -108,8 +107,12 @@ async function runCdnLogsReport(url, context, site, auditContext) {
         } else if (!hasExistingPatterns || auditContext?.categoriesUpdated) {
           log.info('Agentic URL classification rules not found or stale, generating DB rules...');
           const periods = generateReportingPeriods(new Date(), weekOffsets[0]);
-          const configCategories = await getConfigCategories(site, context);
 
+          // LLMO-4748: pattern generation no longer reads the customer's LLMO
+          // config categories. Categories are now derived purely from the
+          // site's own structure (sitemap clustering with CDN-log fallback).
+          // The `auditContext.categoriesUpdated` trigger is retained as a
+          // general "force a refresh" signal.
           const generatedPatterns = await generatePatternsWorkbook({
             site,
             context,
@@ -119,7 +122,6 @@ async function runCdnLogsReport(url, context, site, auditContext) {
               tableName: reportConfig.tableName,
             },
             periods,
-            configCategories,
             existingPatterns,
           });
           if (generatedPatterns) {
