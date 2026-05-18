@@ -58,10 +58,8 @@ function createS3MockForCdnType(cdnType, options = {}) {
     },
     imperva: {
       logSample: null,
-      keyPath: `${orgId}_raw_byocdn-imperva/somefile.log`,
-      // underscore-layout prefix used for both provider discovery and raw data check
-      prefix: `${orgId}_raw_byocdn-imperva/`,
-      underscoreLayout: true,
+      keyPath: `${orgId}/raw/byocdn-imperva/somefile.log`,
+      prefix: `${orgId}/raw/byocdn-imperva/`,
     },
   };
 
@@ -78,17 +76,6 @@ function createS3MockForCdnType(cdnType, options = {}) {
       const { Prefix = '' } = command.input || {};
       if (Prefix.includes('aggregated')) {
         return Promise.resolve({ Contents: [] });
-      }
-      if (config.underscoreLayout) {
-        // Slash-layout listing (getBucketInfo first call) returns no providers;
-        // underscore-layout listing and raw data check both use the underscore prefix.
-        if (Prefix.endsWith('/raw/')) {
-          return Promise.resolve({ Contents: [], CommonPrefixes: [] });
-        }
-        return Promise.resolve({
-          Contents: [{ Key: config.keyPath }],
-          CommonPrefixes: [{ Prefix: config.prefix }],
-        });
       }
       return Promise.resolve({
         Contents: [{ Key: config.keyPath }],
@@ -584,6 +571,14 @@ describe('CDN Analysis Handler', () => {
         null,
         900,
       );
+
+      const reportCall = context.sqs.sendMessage.getCalls()
+        .find((call) => call.args[1].type === 'cdn-logs-report');
+      expect(reportCall.args[1].auditContext).to.deep.equal({
+        weekOffset: computeWeekOffset(2025, 6, 14),
+        refreshAgenticDailyExport: true,
+        triggeredBy: 'byocdn-other',
+      });
     });
 
     it('byocdn-other sub-audit processes logs normally without scanning', async () => {

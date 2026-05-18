@@ -21,7 +21,7 @@ import { weeklyBreakdownQueries } from './utils/query-builder.js';
 const CDN_REFERRAL_CSV_COLUMNS = [
   'traffic_date', 'host', 'url_path', 'trf_platform', 'device', 'region',
   'pageviews', 'referrer', 'utm_source', 'utm_medium', 'tracking_param',
-  'trf_type', 'trf_channel', 'cdn_provider', 'updated_by',
+  'trf_type', 'trf_channel', 'updated_by',
 ];
 
 function escapeCsvValue(value) {
@@ -52,7 +52,7 @@ export function getPreviousUtcDate(referenceDate = new Date()) {
 
 function getCsvKey(siteId, trafficDate) {
   const [year, month, day] = trafficDate.split('-');
-  return `aggregated-referral-llmo-daily-csvs/${siteId}/${year}/${month}/${day}/data.csv`;
+  return `referral-traffic-cdn-daily-export/csvs/${siteId}/${year}/${month}/${day}/data.csv`;
 }
 
 async function ensureAthenaDatabase(athenaClient, databaseName) {
@@ -100,18 +100,17 @@ export function mapToReferralCsvRows(rawRows, site, trafficDate) {
         grouped.set(key, {
           traffic_date: normalizedDate,
           host: effectiveHost,
-          url_path: urlPath,
+          url_path: urlPath || '/',
           trf_platform: normalizedVendor,
           device,
           region,
           pageviews,
-          referrer: '',
-          utm_source: '',
-          utm_medium: '',
-          tracking_param: '',
+          referrer: referrer ?? null,
+          utm_source: utm_source ?? null,
+          utm_medium: utm_medium ?? null,
+          tracking_param: tracking_param ?? null,
           trf_type: 'earned',
           trf_channel: 'llm',
-          cdn_provider: '',
           updated_by: 'spacecat:cdn',
         });
       }
@@ -153,7 +152,10 @@ export async function runDailyReferralExport({
   const { log } = context;
   const trafficDateObj = getPreviousUtcDate(referenceDate);
   const trafficDate = trafficDateObj.toISOString().split('T')[0];
-  const { bucket } = s3Config;
+  const bucket = context.env?.S3_IMPORTER_BUCKET_NAME;
+  if (!bucket) {
+    throw new Error('S3_IMPORTER_BUCKET_NAME must be provided for referral daily export');
+  }
   const siteId = site.getId();
 
   const queueUrl = await getAnalyticsQueueUrl(context);
@@ -241,6 +243,7 @@ export async function runDailyReferralExport({
     siteId,
     trafficDate,
     rowCount: rows.length,
+    batchId: dedupId,
     csvUri,
   };
 }

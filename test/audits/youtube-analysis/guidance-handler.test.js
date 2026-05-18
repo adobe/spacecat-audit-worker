@@ -15,6 +15,8 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
+// Use the REAL applyScopeToOpportunity (see cited-analysis test for rationale).
+import { applyScopeToOpportunity as realApplyScopeToOpportunity } from '../../../src/utils/brand-resolver.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
@@ -27,10 +29,11 @@ describe('YouTube Analysis Guidance Handler', () => {
   let mockAudit;
   let mockOpportunity;
   let guidanceHandler;
-  let mockFetch;
+  let mockFetchAnalysis;
   let mockConvertToOpportunity;
   let mockSyncSuggestions;
   let mockPostMessageOptional;
+  let resolveBrandResultForSiteStub;
 
   const siteId = 'test-site-id';
   const auditId = 'test-audit-id';
@@ -77,17 +80,20 @@ describe('YouTube Analysis Guidance Handler', () => {
       getData: sandbox.stub().returns({}),
       setData: sandbox.stub(),
       setStatus: sandbox.stub(),
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
       save: sandbox.stub().resolves(),
     };
 
-    mockFetch = sandbox.stub();
+    mockFetchAnalysis = sandbox.stub();
     mockConvertToOpportunity = sandbox.stub().resolves(mockOpportunity);
     mockSyncSuggestions = sandbox.stub().resolves();
     mockPostMessageOptional = sandbox.stub().resolves({ success: true });
+    resolveBrandResultForSiteStub = sandbox.stub().resolves({ brand: null, resolved: true });
 
     guidanceHandler = await esmock('../../../src/youtube-analysis/guidance-handler.js', {
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: mockFetch,
+      '../../../src/utils/analysis-fetch.js': {
+        fetchAnalysisFromPresignedUrl: mockFetchAnalysis,
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: mockSyncSuggestions,
@@ -97,6 +103,10 @@ describe('YouTube Analysis Guidance Handler', () => {
       },
       '../../../src/utils/slack-utils.js': {
         postMessageOptional: mockPostMessageOptional,
+      },
+      '../../../src/utils/brand-resolver.js': {
+        resolveBrandResultForSite: resolveBrandResultForSiteStub,
+        applyScopeToOpportunity: realApplyScopeToOpportunity,
       },
     });
 
@@ -141,11 +151,8 @@ describe('YouTube Analysis Guidance Handler', () => {
 
   describe('Presigned URL Handling', () => {
     it('should fetch analysis data from presigned URL when provided', async () => {
-      const presignedUrl = 'https://s3.example.com/analysis.json';
-      mockFetch.resolves({
-        ok: true,
-        json: sandbox.stub().resolves(mockAnalysisData),
-      });
+      const presignedUrl = 'https://s3.amazonaws.com/bucket/analysis.json';
+      mockFetchAnalysis.resolves(mockAnalysisData);
 
       const message = {
         siteId,
@@ -158,17 +165,13 @@ describe('YouTube Analysis Guidance Handler', () => {
 
       const response = await guidanceHandler.default(message, context);
 
-      expect(mockFetch).to.have.been.calledWith(presignedUrl);
+      expect(mockFetchAnalysis).to.have.been.calledWith(presignedUrl, sinon.match.object);
       expect(response.status).to.equal(200);
     });
 
     it('should return badRequest when presigned URL fetch fails', async () => {
-      const presignedUrl = 'https://s3.example.com/analysis.json';
-      mockFetch.resolves({
-        ok: false,
-        status: 404,
-        statusText: 'Not Found',
-      });
+      const presignedUrl = 'https://s3.amazonaws.com/bucket/analysis.json';
+      mockFetchAnalysis.rejects(new Error('[YouTube] analysis fetch failed: 404 Not Found'));
 
       const message = {
         siteId,
@@ -183,13 +186,33 @@ describe('YouTube Analysis Guidance Handler', () => {
 
       expect(response.status).to.equal(400);
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Failed to fetch analysis data/),
+        sinon.match(/Error fetching from presigned URL/),
+      );
+    });
+
+    it('should return badRequest when presigned URL hostname is not allowlisted (SSRF guard)', async () => {
+      mockFetchAnalysis.rejects(new Error('presignedUrl hostname is not an allowlisted S3 hostname: internal.example'));
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          presignedUrl: 'https://internal.example/analysis.json',
+          companyName: 'Example Corp',
+        },
+      };
+
+      const response = await guidanceHandler.default(message, context);
+
+      expect(response.status).to.equal(400);
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/hostname is not an allowlisted/),
       );
     });
 
     it('should return badRequest when presigned URL fetch throws error', async () => {
-      const presignedUrl = 'https://s3.example.com/analysis.json';
-      mockFetch.rejects(new Error('Network error'));
+      const presignedUrl = 'https://s3.amazonaws.com/bucket/analysis.json';
+      mockFetchAnalysis.rejects(new Error('Network error'));
 
       const message = {
         siteId,
@@ -222,7 +245,7 @@ describe('YouTube Analysis Guidance Handler', () => {
 
       const response = await guidanceHandler.default(message, context);
 
-      expect(mockFetch).to.not.have.been.called;
+      expect(mockFetchAnalysis).to.not.have.been.called;
       expect(response.status).to.equal(200);
     });
 
@@ -664,11 +687,8 @@ describe('YouTube Analysis Guidance Handler', () => {
 
   describe('Complete Flow', () => {
     it('should handle complete successful flow with presigned URL', async () => {
-      const presignedUrl = 'https://s3.example.com/analysis.json';
-      mockFetch.resolves({
-        ok: true,
-        json: sandbox.stub().resolves(mockAnalysisData),
-      });
+      const presignedUrl = 'https://s3.amazonaws.com/bucket/analysis.json';
+      mockFetchAnalysis.resolves(mockAnalysisData);
 
       const message = {
         siteId,
@@ -681,7 +701,7 @@ describe('YouTube Analysis Guidance Handler', () => {
 
       const response = await guidanceHandler.default(message, context);
 
-      expect(mockFetch).to.have.been.calledWith(presignedUrl);
+      expect(mockFetchAnalysis).to.have.been.calledWith(presignedUrl, sinon.match.object);
       expect(context.dataAccess.Site.findById).to.have.been.calledWith(siteId);
       expect(context.dataAccess.Audit.findById).to.have.been.calledWith(auditId);
       expect(mockConvertToOpportunity).to.have.been.calledOnce;
@@ -691,6 +711,134 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(/Successfully processed YouTube analysis/),
       );
+    });
+  });
+
+  describe('Message logging', () => {
+    it('should NOT log inbound brandId from message (trust boundary)', async () => {
+      const message = {
+        siteId,
+        auditId,
+        brandId: 'brand-uuid-123',
+        data: {
+          companyName: 'Test',
+          analysis: {
+            suggestions: [],
+          },
+        },
+      };
+
+      await guidanceHandler.default(message, context);
+
+      const infoCalls = context.log.info.getCalls();
+      const found = infoCalls.find((c) => /brandId: brand-uuid-123/.test(String(c.args[0])));
+      expect(found, 'inbound brandId should not be logged from message').to.equal(undefined);
+    });
+  });
+
+  describe('Brand scope', () => {
+    it('should set scope when brand is resolved server-side', async () => {
+      resolveBrandResultForSiteStub.resolves({ brand: { brandId: 'brand-uuid-123' }, resolved: true });
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Test Corp',
+          analysis: {
+            suggestions: [{ id: 's1', type: 'CONTENT_UPDATE', rank: 1 }],
+          },
+        },
+      };
+
+      await guidanceHandler.default(message, context);
+
+      expect(mockOpportunity.setScopeType).to.have.been.calledWith('brand');
+      expect(mockOpportunity.setScopeId).to.have.been.calledWith('brand-uuid-123');
+    });
+
+    it('should clear scope (null) when no brand is resolved AND resolution succeeded', async () => {
+      resolveBrandResultForSiteStub.resolves({ brand: null, resolved: true });
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Test Corp',
+          analysis: {
+            suggestions: [{ id: 's1', type: 'CONTENT_UPDATE', rank: 1 }],
+          },
+        },
+      };
+
+      await guidanceHandler.default(message, context);
+
+      expect(mockOpportunity.setScopeType).to.have.been.calledWith(null);
+      expect(mockOpportunity.setScopeId).to.have.been.calledWith(null);
+    });
+
+    it('should PRESERVE existing scope when PostgREST resolution fails (transient outage)', async () => {
+      resolveBrandResultForSiteStub.resolves({ brand: null, resolved: false });
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Test Corp',
+          analysis: {
+            suggestions: [{ id: 's1', type: 'CONTENT_UPDATE', rank: 1 }],
+          },
+        },
+      };
+
+      await guidanceHandler.default(message, context);
+
+      expect(mockOpportunity.setScopeType).to.not.have.been.called;
+      expect(mockOpportunity.setScopeId).to.not.have.been.called;
+    });
+
+    it('should rollback scopeType when setScopeId throws (partial-write rollback)', async () => {
+      resolveBrandResultForSiteStub.resolves({ brand: { brandId: 'brand-uuid-123' }, resolved: true });
+      mockOpportunity.setScopeId.throws(new Error('invalid uuid'));
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Test Corp',
+          analysis: {
+            suggestions: [{ id: 's1', type: 'CONTENT_UPDATE', rank: 1 }],
+          },
+        },
+      };
+
+      await guidanceHandler.default(message, context);
+
+      expect(mockOpportunity.setScopeType).to.have.been.calledTwice;
+      expect(mockOpportunity.setScopeType.firstCall).to.have.been.calledWith('brand');
+      expect(mockOpportunity.setScopeType.secondCall).to.have.been.calledWith(null);
+    });
+
+    it('should ignore inbound brandId from message and use server-side resolved brand', async () => {
+      resolveBrandResultForSiteStub.resolves({ brand: { brandId: 'current-uuid' }, resolved: true });
+
+      const message = {
+        siteId,
+        auditId,
+        brandId: 'stale-uuid',
+        data: {
+          companyName: 'Test Corp',
+          analysis: {
+            suggestions: [{ id: 's1', type: 'CONTENT_UPDATE', rank: 1 }],
+          },
+        },
+      };
+
+      await guidanceHandler.default(message, context);
+
+      expect(resolveBrandResultForSiteStub).to.have.been.called;
+      expect(mockOpportunity.setScopeId).to.have.been.calledWith('current-uuid');
+      expect(mockOpportunity.setScopeId).not.to.have.been.calledWith('stale-uuid');
     });
   });
 });

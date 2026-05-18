@@ -34,11 +34,12 @@ describe('Geo Brand Presence Refresh Handler', () => {
   let getLastNumberOfWeeksStub;
   let refreshGeoBrandPresenceSheetsHandler;
   let createLLMOSharepointClientStub;
-  let readFromSharePointStub;
+  let readFromSharePointWithRetryStub;
   let uploadExcelToDrsStub;
   let publishBrandPresenceAnalyzeStub;
   let drsClientStub;
   let drsCreateFromStub;
+  let resolveBrandIdForSiteStub;
 
   // last 4 weeks used across most tests
   const LAST_4_WEEKS = [
@@ -53,7 +54,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
 
     getLastNumberOfWeeksStub = sandbox.stub().returns(LAST_4_WEEKS);
     createLLMOSharepointClientStub = sandbox.stub();
-    readFromSharePointStub = sandbox.stub();
+    readFromSharePointWithRetryStub = sandbox.stub();
 
     uploadExcelToDrsStub = sandbox.stub().resolves('s3://drs-bucket/external/spacecat/test-site-123/job-id/source.xlsx');
     publishBrandPresenceAnalyzeStub = sandbox.stub().resolves('spacecat-job-123');
@@ -65,6 +66,10 @@ describe('Geo Brand Presence Refresh Handler', () => {
     };
 
     drsCreateFromStub = sandbox.stub().returns(drsClientStub);
+
+    // Default: brand resolver returns null (v1 / brandalf-migration / no active brand).
+    // Tests that need a non-null brandId override per-test.
+    resolveBrandIdForSiteStub = sandbox.stub().resolves(null);
 
     log = {
       info: sandbox.stub(),
@@ -105,7 +110,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
     };
 
     createLLMOSharepointClientStub.resolves(sharepointClient);
-    readFromSharePointStub.callsFake(async (filename) => {
+    readFromSharePointWithRetryStub.callsFake(async (filename) => {
       if (filename === 'query-index.xlsx') {
         return createMockQueryIndexExcel([]);
       }
@@ -121,7 +126,10 @@ describe('Geo Brand Presence Refresh Handler', () => {
       },
       '../../src/utils/report-uploader.js': {
         createLLMOSharepointClient: createLLMOSharepointClientStub,
-        readFromSharePoint: readFromSharePointStub,
+        readFromSharePointWithRetry: readFromSharePointWithRetryStub,
+      },
+      '../../src/utils/brand-resolver.js': {
+        resolveBrandIdForSite: resolveBrandIdForSiteStub,
       },
     });
 
@@ -141,7 +149,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
   }
 
   function withSheets(paths) {
-    readFromSharePointStub.callsFake(async (filename) => {
+    readFromSharePointWithRetryStub.callsFake(async (filename) => {
       if (filename === 'query-index.xlsx') return createMockQueryIndexExcel(paths);
       return Buffer.from('mock-sheet-data');
     });
@@ -174,7 +182,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
       );
     });
 
-    it('calls publishBrandPresenceAnalyze with correct args including jobId, brand, imsOrgId', async () => {
+    it('calls publishBrandPresenceAnalyze with correct args including jobId, brand, imsOrgId, brandId', async () => {
       withSheets([SHEET_W45]);
 
       await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
@@ -191,7 +199,66 @@ describe('Geo Brand Presence Refresh Handler', () => {
         runFrequency: 'weekly',
         brand: 'test-brand',
         imsOrgId: 'test-ims-org-id',
+        brandId: null,
       });
+    });
+
+    it('forwards brandId resolved from spacecat-api-service to publishBrandPresenceAnalyze (v2 org)', async () => {
+      withSheets([SHEET_W45]);
+      resolveBrandIdForSiteStub.resolves('brand-uuid-42');
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      expect(resolveBrandIdForSiteStub).to.have.been.calledOnceWith(
+        'test-org-id',
+        'test-site-123',
+        context.env,
+        log,
+      );
+      expect(publishBrandPresenceAnalyzeStub).to.have.been.calledOnce;
+      expect(publishBrandPresenceAnalyzeStub.firstCall.args[1]).to.include({
+        brandId: 'brand-uuid-42',
+      });
+    });
+
+    it('passes brandId=null when resolver returns null (v1 org / no active brand)', async () => {
+      withSheets([SHEET_W45]);
+      resolveBrandIdForSiteStub.resolves(null);
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      expect(publishBrandPresenceAnalyzeStub.firstCall.args[1]).to.include({ brandId: null });
+    });
+
+    it('propagates resolver errors with original message so DLQ shows the real cause', async () => {
+      withSheets([SHEET_W45]);
+      const cause = new Error('SpaceCat 503');
+      resolveBrandIdForSiteStub.rejects(cause);
+
+      // Brand resolution runs BEFORE the S3 metadata write and outside the
+      // outer try/catch, so the original `[BrandResolver]` message is preserved
+      // for DLQ triage rather than being rewrapped as "Failed to create S3
+      // folder".
+      await expect(refreshGeoBrandPresenceSheetsHandler(MESSAGE, context))
+        .to.be.rejectedWith(/SpaceCat 503/);
+      expect(publishBrandPresenceAnalyzeStub).to.not.have.been.called;
+      // Metadata write must NOT fire when the resolver fails — otherwise we'd
+      // litter S3 with orphaned metadata.json files (one per SQS retry).
+      expect(s3Client.send).to.not.have.been.called;
+    });
+
+    it('skips brand resolution and logs warning when site has no organizationId', async () => {
+      withSheets([SHEET_W45]);
+      site.getOrganizationId = () => null;
+
+      await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      expect(resolveBrandIdForSiteStub).to.not.have.been.called;
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/has no organizationId/),
+        sinon.match.any,
+      );
+      expect(publishBrandPresenceAnalyzeStub.firstCall.args[1]).to.include({ brandId: null });
     });
 
     it('normalizes hyphenated providers to underscores before publishing to DRS', async () => {
@@ -234,6 +301,34 @@ describe('Geo Brand Presence Refresh Handler', () => {
 
       expect(log.error).to.have.been.calledWith(sinon.match(/DRS triggerBrandPresenceAnalyze failed/), sinon.match.any);
       expect(uploadExcelToDrsStub).to.have.been.calledTwice;
+    });
+
+    it('records failed sheet and still processes sibling sheet when XLSX retry exhausted', async () => {
+      readFromSharePointWithRetryStub.callsFake(async (filename) => {
+        if (filename === 'query-index.xlsx') return createMockQueryIndexExcel([SHEET_W45, SHEET_W46]);
+        if (filename.includes('brandpresence-chatgpt')) {
+          throw new Error('SharePoint returned non-XLSX content after 3 attempts -- aborting S3 upload');
+        }
+        return Buffer.from('mock-sheet-data');
+      });
+
+      const result = await refreshGeoBrandPresenceSheetsHandler(MESSAGE, context);
+
+      // Handler resolves (does not throw out of Promise.allSettled)
+      expect(result.status).to.equal(200);
+      // Sibling sheet (gemini) still reaches DRS
+      expect(uploadExcelToDrsStub).to.have.been.calledOnce;
+      // Failed chatgpt sheet is recorded in S3 with a failure-record Key
+      expect(s3Client.send).to.have.been.calledWith(
+        sinon.match.has('input', sinon.match.has('Key', sinon.match(/brandpresence-chatgpt.*\.metadata\.json$/))),
+      );
+      // Retry-exhaustion rejection is logged by the results-processing loop
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/%s:Failed to process sheet/),
+        sinon.match.any,
+        sinon.match(/brandpresence-chatgpt/),
+        sinon.match(/non-XLSX content after 3 attempts/),
+      );
     });
 
     it('returns internalServerError when DRS S3 is not configured', async () => {
@@ -329,7 +424,7 @@ describe('Geo Brand Presence Refresh Handler', () => {
     });
 
     it('throws when SharePoint query-index fetch fails', async () => {
-      readFromSharePointStub.rejects(new Error('SharePoint unavailable'));
+      readFromSharePointWithRetryStub.rejects(new Error('SharePoint unavailable'));
 
       await expect(refreshGeoBrandPresenceSheetsHandler(MESSAGE, context))
         .to.be.rejectedWith(/Failed to read query-index from SharePoint/);

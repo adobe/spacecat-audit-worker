@@ -10,7 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
+import { createInternalLinksConfigResolver } from './config.js';
 import { createInternalLinksStepLogger } from './logging.js';
+import { isCrossLocalePDP404RumPair } from './scope-utils.js';
 
 const RUM_VALIDATION_CONCURRENCY = 10;
 
@@ -101,10 +103,24 @@ export function createInternalLinksRumSteps({
         log.info(`Filtered out ${internal404Links.length - scopedInternal404Links.length} RUM links outside the audit scope before validation`);
       }
 
-      log.info(`Validating ${scopedInternal404Links.length} scoped links (target + referring page)...`);
+      const configResolver = createInternalLinksConfigResolver(site, context.env ?? {});
+      const excludeCrossLocalePDP = configResolver.getExcludeCrossLocalePDP();
+
+      const rumLinksForValidation = scopedInternal404Links.filter(
+        (link) => !excludeCrossLocalePDP
+          || !isCrossLocalePDP404RumPair(link.url_from, link.url_to),
+      );
+
+      if (excludeCrossLocalePDP && rumLinksForValidation.length < scopedInternal404Links.length) {
+        log.info(
+          `Filtered out ${scopedInternal404Links.length - rumLinksForValidation.length} cross-locale 404 RUM PDP links before validation`,
+        );
+      }
+
+      log.info(`Validating ${rumLinksForValidation.length} scoped links (target + referring page)...`);
 
       const accessibilitySettled = await mapSettledInBatches(
-        scopedInternal404Links,
+        rumLinksForValidation,
         RUM_VALIDATION_CONCURRENCY,
         async (link) => {
           const [targetSettled, referringSettled] = await Promise.allSettled([

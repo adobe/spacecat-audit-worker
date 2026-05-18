@@ -15,10 +15,9 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import {
   loadSql,
   generateReportingPeriods,
-  fetchRemotePatterns,
-  queryIndexHasPatternsFile,
   getConfigCategories,
 } from './utils/report-utils.js';
+import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
 import {
   pathHasData,
   getS3Config,
@@ -29,9 +28,7 @@ import { wwwUrlResolver } from '../common/base-audit.js';
 import { createLLMOSharepointClient, bulkPublishToAdminHlx } from '../utils/report-uploader.js';
 import { getConfigs } from './constants/report-configs.js';
 import { generatePatternsWorkbook } from './patterns/patterns-uploader.js';
-import {
-  runDailyAgenticExport,
-} from './agentic-daily-export.js';
+import { runAgenticDbExports } from './utils/agentic-db-export.js';
 import {
   runDailyReferralExport,
 } from './referral-daily-export.js';
@@ -39,7 +36,9 @@ import {
 async function runCdnLogsReport(url, context, site, auditContext) {
   const { log } = context;
   const isDailyDateRun = Boolean(auditContext?.date);
-  const isWeeklyOnlyRun = auditContext?.weekOffset !== undefined;
+  const isWeeklyOnlyRun = auditContext?.weekOffset !== undefined
+    && auditContext?.weekOffset !== null;
+  const isCategoriesUpdateRun = auditContext?.categoriesUpdated === true;
 
   const awsRuntime = getCdnAwsRuntime(site, context);
   const { s3Client } = awsRuntime;
@@ -65,6 +64,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
 
   const results = [];
   const reportsToPublish = [];
+  let agenticReportHasData = false;
   if (!isDailyDateRun) {
     for (const reportConfig of reportConfigs) {
       // eslint-disable-next-line no-await-in-loop
@@ -72,6 +72,10 @@ async function runCdnLogsReport(url, context, site, auditContext) {
         log.info(`No data found for ${reportConfig.name} report - skipping`);
         // eslint-disable-next-line no-continue
         continue;
+      }
+
+      if (reportConfig.name === 'agentic') {
+        agenticReportHasData = true;
       }
 
       if (results.length === 0) {
@@ -85,7 +89,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
       // If weekOffset is not provided, run for both week 0 and -1 on Monday and
       // on non-Monday, run for current week. Otherwise, run for the provided weekOffset
       let weekOffsets;
-      if (auditContext?.weekOffset !== undefined) {
+      if (auditContext?.weekOffset !== undefined && auditContext?.weekOffset !== null) {
         weekOffsets = [auditContext.weekOffset];
       } else if (isMonday) {
         weekOffsets = [-1, 0];
@@ -93,25 +97,20 @@ async function runCdnLogsReport(url, context, site, auditContext) {
         weekOffsets = [0];
       }
 
+      let existingPatterns;
       if (reportConfig.name === 'agentic') {
-        const dataFolder = site.getConfig()?.getLlmoDataFolder();
-        const existingPatterns = await fetchRemotePatterns(site, log);
-        const queryIndexPatternsExists = !existingPatterns
-          ? await queryIndexHasPatternsFile(site, log)
-          : false;
+        existingPatterns = await fetchAgenticUrlClassificationRules(site, context);
+        const hasExistingPatterns = (existingPatterns?.pagePatterns?.length || 0) > 0
+          && (existingPatterns?.topicPatterns?.length || 0) > 0;
 
-        const shouldSkipGeneration = existingPatterns?.error
-          || queryIndexPatternsExists?.error
-          || (!existingPatterns && queryIndexPatternsExists);
-
-        if (shouldSkipGeneration) {
-          log.info(`Skipping fresh patterns generation for ${dataFolder}`);
-        } else if (!existingPatterns || auditContext?.categoriesUpdated) {
-          log.info('Patterns not found, generating patterns workbook...');
+        if (existingPatterns?.error) {
+          log.info(`Skipping fresh patterns generation for ${siteId}; DB rule fetch failed`);
+        } else if (!hasExistingPatterns || auditContext?.categoriesUpdated) {
+          log.info('Agentic URL classification rules not found or stale, generating DB rules...');
           const periods = generateReportingPeriods(new Date(), weekOffsets[0]);
           const configCategories = await getConfigCategories(site, context);
 
-          await generatePatternsWorkbook({
+          const generatedPatterns = await generatePatternsWorkbook({
             site,
             context,
             athenaClient,
@@ -120,10 +119,12 @@ async function runCdnLogsReport(url, context, site, auditContext) {
               tableName: reportConfig.tableName,
             },
             periods,
-            sharepointClient,
             configCategories,
             existingPatterns,
           });
+          if (generatedPatterns) {
+            existingPatterns = await fetchAgenticUrlClassificationRules(site, context);
+          }
         }
       }
 
@@ -140,6 +141,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
           sharepointClient,
           weekOffset,
           context,
+          ...(reportConfig.name === 'agentic' ? { remotePatterns: existingPatterns } : {}),
         });
 
         if (result.success && result.uploadResult) {
@@ -158,33 +160,19 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     }
   }
 
-  let dailyAgenticExport;
-  let dailyReferralExport;
-  if (!isWeeklyOnlyRun) {
-    if (!agenticReportConfig) {
-      log.debug(`Skipping daily agentic export for ${siteId}: agentic report config not found`);
-    } else {
-      try {
-        dailyAgenticExport = await runDailyAgenticExport({
-          athenaClient,
-          s3Client,
-          s3Config,
-          site,
-          context,
-          reportConfig: agenticReportConfig,
-          ...(auditContext?.date ? { referenceDate: new Date(auditContext.date) } : {}),
-        });
-      } catch (error) {
-        context.log.error(`Failed daily agentic export for site ${siteId}: ${error.message}`, error);
-        dailyAgenticExport = {
-          enabled: true,
-          success: false,
-          siteId,
-          error: error.message,
-        };
-      }
-    }
+  const agenticDbExportResult = await runAgenticDbExports({
+    athenaClient,
+    s3Client,
+    s3Config,
+    site,
+    context,
+    agenticReportConfig,
+    auditContext,
+    agenticReportHasData,
+  });
 
+  let dailyReferralExport;
+  if (!isWeeklyOnlyRun && !isCategoriesUpdateRun) {
     if (!referralReportConfig) {
       log.debug(`Skipping daily referral export for ${siteId}: referral report config not found`);
     } else {
@@ -219,9 +207,23 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     }
   }
 
+  const auditResult = [...results];
+  if (agenticDbExportResult.dailyAgenticExport?.batchId) {
+    auditResult.push({
+      name: 'agentic-db-export',
+      batchId: agenticDbExportResult.dailyAgenticExport.batchId,
+    });
+  }
+  if (dailyReferralExport?.batchId) {
+    auditResult.push({
+      name: 'referral-db-export',
+      batchId: dailyReferralExport.batchId,
+    });
+  }
+
   return {
-    auditResult: results,
-    dailyAgenticExport,
+    ...agenticDbExportResult,
+    auditResult,
     dailyReferralExport,
     fullAuditRef: `${site.getConfig()?.getLlmoDataFolder()}`,
   };

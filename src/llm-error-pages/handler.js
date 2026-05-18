@@ -188,6 +188,7 @@ export async function runAuditAndSendToMystique(context) {
           llmProviders: getAllLlmProviders(),
           siteFilters,
           site,
+          context,
         });
 
         log.info('[LLM-ERROR-PAGES] Executing query...');
