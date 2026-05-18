@@ -16,11 +16,15 @@ import { isWithinAuditScope } from './subpath-filter.js';
 import { isLinkInaccessible } from './helpers.js';
 import { limitConcurrency, sleep } from '../support/utils.js';
 import { buildBrokenLinkKey, getUrlCacheKey } from './link-key.js';
+import { normalizeExcludedElementClasses } from './config.js';
+import { PAGES_PER_BATCH } from './constants.js';
 import {
   createInternalLinksAuditLogger,
   isInternalLinksContextLogger,
 } from './logging.js';
 import { isSharedInternalResource } from './scope-utils.js';
+
+export { PAGES_PER_BATCH };
 
 const AUDIT_TYPE = 'broken-internal-links';
 
@@ -38,8 +42,6 @@ const DEFAULT_SCRAPE_FETCH_DELAY_MS = 50;
 const DEFAULT_LINK_CHECK_BATCH_SIZE = 10;
 const DEFAULT_MAX_CONCURRENT_LINK_CHECKS = 5;
 const DEFAULT_LINK_CHECK_DELAY_MS = 300;
-
-export const PAGES_PER_BATCH = 10;
 
 const parsePositiveInt = (value, fallback) => {
   const parsed = Number.parseInt(value, 10);
@@ -172,6 +174,34 @@ function resolveUrlCandidates(rawValue, pageUrl) {
     .map((entry) => normalizeDetectedUrlCandidate(entry))
     .filter((entry) => entry && !entry.startsWith('data:') && !entry.startsWith('#'))
     .map((entry) => stripAbsoluteUrlHash(new URL(entry, pageUrl).toString()));
+}
+
+/**
+ * Removes subtrees rooted at elements whose `class` contains an excluded token.
+ * Deepest nodes are removed first so nested excluded wrappers are safe.
+ * Mutates the document behind `$`; the callable `$` is unchanged.
+ */
+function filterExcludedElements($, excludedElementClasses) {
+  if (!excludedElementClasses?.length) {
+    return;
+  }
+  const excludedClassSet = new Set(excludedElementClasses);
+  const toRemove = [];
+
+  $('[class]').each((_, el) => {
+    const classAttr = $(el).attr('class');
+    if (!classAttr) {
+      return;
+    }
+    const hasExcluded = classAttr.split(/\s+/).filter(Boolean).some((c) => excludedClassSet.has(c));
+    if (hasExcluded) {
+      toRemove.push(el);
+    }
+  });
+  toRemove.sort((a, b) => $(b).parents().length - $(a).parents().length);
+  for (const el of toRemove) {
+    $(el).remove();
+  }
 }
 
 function pushResolvedReference({
@@ -861,6 +891,11 @@ export async function detectBrokenLinksFromCrawlBatch({
       }
 
       const $ = cheerioLoad(html);
+      const excludedElementClasses = normalizeExcludedElementClasses(
+        internalLinksConfig.excludedElementClasses,
+      );
+
+      filterExcludedElements($, excludedElementClasses);
       const internalLinks = extractInternalLinks($, pageUrl, baseHostname, log);
       const assetReferences = extractAssetReferences($, pageUrl, baseHostname, log);
 

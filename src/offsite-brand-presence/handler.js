@@ -244,12 +244,14 @@ function normalizeUrl(parsed, domain) {
 /**
  * Classifies a URL into its matching offsite domain (if any) and normalizes it.
  * Returns domain info for all valid URLs — offsite domains get their matched key,
- * other URLs get domain: null.
+ * other URLs get domain: null. Filters out URLs belonging to the client's own site.
  *
  * @param {string} rawUrl - The raw URL string to classify and normalize
+ * @param {string} [siteHostname] - The client site's hostname (www-stripped); URLs
+ *   matching this hostname or any subdomain of it are excluded
  * @returns {{ url: string, domain: string|null } | null} Normalized URL with domain, or null
  */
-function classifyAndNormalize(rawUrl) {
+function classifyAndNormalize(rawUrl, siteHostname) {
   let parsed;
   try {
     parsed = new URL(rawUrl);
@@ -259,6 +261,13 @@ function classifyAndNormalize(rawUrl) {
   }
 
   const { hostname } = parsed;
+
+  if (siteHostname) {
+    const bare = hostname.replace(/^www\./, '');
+    if (bare === siteHostname || bare.endsWith(`.${siteHostname}`)) {
+      return null;
+    }
+  }
   for (const domain of Object.keys(OFFSITE_DOMAINS)) {
     if (hostname === domain || hostname.endsWith(`.${domain}`)) {
       if (domain === 'youtube.com' && !YOUTUBE_URL_REGEX.test(rawUrl)) {
@@ -316,8 +325,9 @@ function trackTopicUrl(topicMap, topicName, url, category, prompt) {
  * @param {Map<string, {count: number, domain: string|null}>} allUrls - Global URL map (mutated)
  * @param {Map<string, {category: string, urlMap: Map}>} topicMap - Topic map (mutated)
  * @param {object} log - Logger instance
+ * @param {string} [siteHostname] - Client site hostname to exclude
  */
-function extractUrlsAndTopics(data, allUrls, topicMap, log) {
+function extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname) {
   const rows = data.data;
   for (const row of rows) {
     const sources = row.Sources?.trim();
@@ -339,7 +349,7 @@ function extractUrlsAndTopics(data, allUrls, topicMap, log) {
         continue;
       }
 
-      const result = classifyAndNormalize(trimmed);
+      const result = classifyAndNormalize(trimmed, siteHostname);
       if (!result) {
         // eslint-disable-next-line no-continue
         continue;
@@ -600,9 +610,10 @@ async function triggerDrsScraping(urlsByDomain, siteId, context) {
  * @param {string[]} matchedFiles - File paths to fetch
  * @param {object} env - Environment variables
  * @param {object} log - Logger instance
+ * @param {string} [siteHostname] - Client site hostname to exclude
  * @returns {Promise<{allUrls: Map, topicMap: Map}>} Unified URL map and topic map
  */
-async function fetchAndAggregateData(siteId, matchedFiles, env, log) {
+async function fetchAndAggregateData(siteId, matchedFiles, env, log, siteHostname) {
   const allUrls = new Map();
   const topicMap = new Map();
 
@@ -615,7 +626,7 @@ async function fetchAndAggregateData(siteId, matchedFiles, env, log) {
         continue;
       }
 
-      extractUrlsAndTopics(data, allUrls, topicMap, log);
+      extractUrlsAndTopics(data, allUrls, topicMap, log, siteHostname);
     } catch (err) {
       log.error(`${LOG_PREFIX} Error fetching brand presence file ${filePath}: ${err.message}`);
     }
@@ -680,6 +691,12 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const { channelId, threadTs } = slackContext || {};
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
+  let siteHostname;
+  try {
+    siteHostname = new URL(baseURL).hostname.replace(/^www\./, '');
+  } catch {
+    log.warn(`${LOG_PREFIX} Could not parse baseURL "${baseURL}", skipping site URL filter`);
+  }
 
   log.info(`${LOG_PREFIX} Starting audit for site: ${siteId} (${baseURL})`);
 
@@ -714,7 +731,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for weeks ${weekLabels}`);
 
   // Fetch all matched files and collect source URLs + topic associations
-  const { allUrls } = await fetchAndAggregateData(siteId, matchedFiles, env, log);
+  const { allUrls } = await fetchAndAggregateData(siteId, matchedFiles, env, log, siteHostname);
   log.info(`${LOG_PREFIX} Total unique source URLs found: ${allUrls.size}`);
 
   // Compute per-domain counts for audit result

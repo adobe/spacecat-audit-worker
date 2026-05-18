@@ -57,7 +57,7 @@ WITH SERDEPROPERTIES (
 LOCATION '{{rawLocation}}'
 TBLPROPERTIES (
   'schema_version'            = '1',
-  'skip.header.line.count'    = '4',
+  'skip.header.line.count'    = '11',
   'projection.enabled'        = 'false',
   'has_encrypted_data'        = 'false'
 );
