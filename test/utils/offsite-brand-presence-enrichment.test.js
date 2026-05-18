@@ -563,6 +563,37 @@ describe('offsite-brand-presence-enrichment', () => {
       const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log });
       expect(result[0].urls[0].subPrompts.sort()).to.deep.equal(['a', 'b']);
     });
+
+    it('excludes URLs matching the site own hostname when site is provided', async () => {
+      const fakeSite = { getBaseURL: () => 'https://www.example.com' };
+      setupQueryIndexAndData([makeBrandPresenceRow({
+        Sources: 'https://example.com/page;https://www.reddit.com/r/other',
+        Topics: 'T',
+        Category: 'C',
+        Prompt: 'P',
+      })]);
+
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log }, fakeSite);
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].urls).to.have.lengthOf(1);
+      expect(result[0].urls[0].url).to.include('reddit.com');
+    });
+
+    it('logs a warning and skips site filter when baseURL is unparseable', async () => {
+      const fakeSite = { getBaseURL: () => 'not-a-valid-url' };
+      setupQueryIndexAndData([makeBrandPresenceRow({
+        Sources: 'https://www.reddit.com/r/test',
+        Topics: 'T',
+        Category: 'C',
+        Prompt: 'P',
+      })]);
+
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { env, log }, fakeSite);
+
+      expect(result).to.have.lengthOf(1);
+      expect(log.warn).to.have.been.calledWithMatch(/Could not parse baseURL/);
+    });
   });
 
   describe('getPreviousWeeks', () => {
