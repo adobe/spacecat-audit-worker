@@ -433,8 +433,9 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
       expect(suggestionsArg).to.be.an('array').with.lengthOf(2);
-      // CWV suggestions include jiraLink (empty until user saves URL in UI)
-      suggestionsArg.forEach((s) => expect(s.data).to.have.property('jiraLink', ''));
+      // CWV suggestions include jiraLink (null until user saves URL in UI; schema
+      // rejects empty string so we default to null).
+      suggestionsArg.forEach((s) => expect(s.data).to.have.property('jiraLink', null));
     });
 
     it('handles audit result with only group entries for maxConfidenceForUrls coverage', async () => {
@@ -477,7 +478,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
       expect(suggestionsArg).to.have.lengthOf(1);
       expect(suggestionsArg[0].data.type).to.equal('group');
-      expect(suggestionsArg[0].data).to.have.property('jiraLink', '');
+      expect(suggestionsArg[0].data).to.have.property('jiraLink', null);
     });
     it('creating a new opportunity object fails', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
@@ -728,6 +729,268 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
       // Verify that SQS sendMessage was called once (only for the suggestion without guidance)
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    });
+  });
+});
+
+describe('shouldSendAutoSuggestForSuggestion — per-issue status gating', () => {
+  let shouldSendAutoSuggestForSuggestion;
+
+  before(async () => {
+    ({ shouldSendAutoSuggestForSuggestion } = await import('../../src/cwv/auto-suggest.js'));
+  });
+
+  const stub = (suggestionStatus, issues) => ({
+    getStatus: () => suggestionStatus,
+    getData: () => ({ issues }),
+  });
+
+  it('returns false when suggestion status is not NEW', () => {
+    expect(shouldSendAutoSuggestForSuggestion(stub('APPROVED', [{ type: 'lcp' }]))).to.be.false;
+    expect(shouldSendAutoSuggestForSuggestion(stub('OUTDATED', [{ type: 'lcp' }]))).to.be.false;
+    expect(shouldSendAutoSuggestForSuggestion(stub('FIXED', []))).to.be.false;
+  });
+
+  it('returns true when suggestion is NEW with no issues yet (creation path)', () => {
+    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', []))).to.be.true;
+  });
+
+  it('returns true when a NEW issue has empty value', () => {
+    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', [
+      { type: 'lcp', status: 'NEW', value: '' },
+    ]))).to.be.true;
+  });
+
+  it('returns true when an issue lacks an explicit status (legacy data) and has empty value', () => {
+    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', [
+      { type: 'lcp', value: '' },
+    ]))).to.be.true;
+  });
+
+  it('returns false when all NEW issues already have non-empty guidance', () => {
+    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', [
+      { type: 'lcp', status: 'NEW', value: '# LCP guidance...' },
+      { type: 'cls', status: 'NEW', value: '# CLS guidance...' },
+    ]))).to.be.false;
+  });
+
+  it('skips OUTDATED issues — does not re-fire Mystique for resolved metrics', () => {
+    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', [
+      { type: 'lcp', status: 'OUTDATED', value: '' }, // resolved, ignore
+    ]))).to.be.false;
+  });
+
+  it('skips APPROVED/REJECTED/SKIPPED/FIXED/IN_PROGRESS/ERROR issues — customer/system intent recorded', () => {
+    const nonNewStatuses = ['APPROVED', 'REJECTED', 'SKIPPED', 'FIXED', 'IN_PROGRESS', 'ERROR'];
+    nonNewStatuses.forEach((status) => {
+      const result = shouldSendAutoSuggestForSuggestion(stub('NEW', [
+        { type: 'lcp', status, value: '' },
+      ]));
+      expect(result, `expected false for status=${status}`).to.be.false;
+    });
+  });
+
+  it('fires when at least one NEW issue is missing guidance, even if siblings are APPROVED', () => {
+    expect(shouldSendAutoSuggestForSuggestion(stub('NEW', [
+      { type: 'lcp', status: 'APPROVED', value: '# LCP guidance...' }, // ignore
+      { type: 'cls', status: 'NEW', value: '' }, // needs guidance → fire
+    ]))).to.be.true;
+  });
+});
+
+describe('Per-issue OUTDATED merge helpers', () => {
+  // Imported lazily to keep the existing top-level imports unchanged.
+  let isMetricFailing;
+  let applyPerIssueOutdated;
+  let mergeCwvData;
+
+  before(async () => {
+    ({ isMetricFailing, applyPerIssueOutdated, mergeCwvData } = await import('../../src/cwv/opportunity-sync.js'));
+  });
+
+  // LCP threshold is 2500ms, CLS 0.1, INP 200ms (see kpi-metrics.js).
+  const entryFailingLcp = {
+    metrics: [{ deviceType: 'mobile', lcp: 4500, cls: 0.05, inp: 100 }],
+  };
+  const entryAllPassing = {
+    metrics: [{ deviceType: 'mobile', lcp: 1800, cls: 0.05, inp: 100 }],
+  };
+  const entryFailingClsAndInp = {
+    metrics: [{ deviceType: 'mobile', lcp: 1800, cls: 0.3, inp: 350 }],
+  };
+
+  describe('isMetricFailing', () => {
+    it('returns true when metric exceeds threshold on any device', () => {
+      expect(isMetricFailing(entryFailingLcp, 'lcp')).to.be.true;
+    });
+
+    it('returns false when metric is below threshold on every device', () => {
+      expect(isMetricFailing(entryAllPassing, 'lcp')).to.be.false;
+    });
+
+    it('returns false when metric values are null/undefined (no data = passing)', () => {
+      const entry = { metrics: [{ deviceType: 'mobile', lcp: null, cls: undefined }] };
+      expect(isMetricFailing(entry, 'lcp')).to.be.false;
+      expect(isMetricFailing(entry, 'cls')).to.be.false;
+    });
+
+    it('returns false on malformed input (no metrics array)', () => {
+      expect(isMetricFailing(null, 'lcp')).to.be.false;
+      expect(isMetricFailing({}, 'lcp')).to.be.false;
+      expect(isMetricFailing({ metrics: 'not-an-array' }, 'lcp')).to.be.false;
+    });
+  });
+
+  describe('applyPerIssueOutdated', () => {
+    it('marks issue OUTDATED when its metric type no longer fails', () => {
+      const existing = [
+        { id: 'a', type: 'lcp', status: 'NEW', value: 'lcp guidance' },
+      ];
+      const result = applyPerIssueOutdated(existing, entryAllPassing);
+      expect(result[0].status).to.equal('OUTDATED');
+      // Other fields preserved
+      expect(result[0].id).to.equal('a');
+      expect(result[0].value).to.equal('lcp guidance');
+    });
+
+    it('keeps issue NEW when its metric type still fails', () => {
+      const existing = [
+        { id: 'a', type: 'lcp', status: 'NEW', value: 'lcp guidance' },
+      ];
+      const result = applyPerIssueOutdated(existing, entryFailingLcp);
+      expect(result[0].status).to.equal('NEW');
+    });
+
+    it('marks only the resolved metric OUTDATED; others stay NEW', () => {
+      const existing = [
+        { id: 'a', type: 'lcp', status: 'NEW' },
+        { id: 'b', type: 'cls', status: 'NEW' },
+        { id: 'c', type: 'inp', status: 'NEW' },
+      ];
+      // Only CLS and INP fail now — LCP resolved
+      const result = applyPerIssueOutdated(existing, entryFailingClsAndInp);
+      expect(result[0].status).to.equal('OUTDATED'); // lcp resolved
+      expect(result[1].status).to.equal('NEW'); // cls still failing
+      expect(result[2].status).to.equal('NEW'); // inp still failing
+    });
+
+    it('preserves APPROVED status when metric resolves (skip list)', () => {
+      const existing = [{ id: 'a', type: 'lcp', status: 'APPROVED' }];
+      const result = applyPerIssueOutdated(existing, entryAllPassing);
+      expect(result[0].status).to.equal('APPROVED');
+    });
+
+    it('preserves FIXED, REJECTED, SKIPPED, IN_PROGRESS, ERROR, OUTDATED in skip list', () => {
+      const statuses = ['FIXED', 'REJECTED', 'SKIPPED', 'IN_PROGRESS', 'ERROR', 'OUTDATED'];
+      statuses.forEach((status) => {
+        const existing = [{ id: 'a', type: 'lcp', status }];
+        const result = applyPerIssueOutdated(existing, entryAllPassing);
+        expect(result[0].status, `expected ${status} preserved`).to.equal(status);
+      });
+    });
+
+    it('leaves legacy issues without a type field untouched', () => {
+      const existing = [{ value: 'markdown only, no type', status: 'NEW' }];
+      const result = applyPerIssueOutdated(existing, entryAllPassing);
+      expect(result[0]).to.deep.equal({ value: 'markdown only, no type', status: 'NEW' });
+    });
+
+    it('marks NEW issue OUTDATED even when status field is missing (defaults to OUTDATED on resolve)', () => {
+      const existing = [{ id: 'a', type: 'lcp' }]; // no status field
+      const result = applyPerIssueOutdated(existing, entryAllPassing);
+      expect(result[0].status).to.equal('OUTDATED');
+    });
+
+    it('returns empty array for empty input', () => {
+      expect(applyPerIssueOutdated([], entryAllPassing)).to.deep.equal([]);
+    });
+
+    it('returns the input unchanged when not an array', () => {
+      expect(applyPerIssueOutdated(undefined, entryAllPassing)).to.deep.equal([]);
+      expect(applyPerIssueOutdated(null, entryAllPassing)).to.deep.equal([]);
+    });
+
+    it('does not mutate the input array or its issues', () => {
+      const existing = [{ id: 'a', type: 'lcp', status: 'NEW' }];
+      const before = JSON.stringify(existing);
+      applyPerIssueOutdated(existing, entryAllPassing);
+      expect(JSON.stringify(existing)).to.equal(before);
+    });
+  });
+
+  describe('mergeCwvData', () => {
+    it('shallow-merges new data over existing (default behaviour preserved when no issues)', () => {
+      const existing = { url: 'x', metrics: [{ deviceType: 'mobile', lcp: 5000 }], pageviews: 100 };
+      const newItem = { url: 'x', metrics: [{ deviceType: 'mobile', lcp: 3000 }], pageviews: 200 };
+      const result = mergeCwvData(existing, newItem);
+      expect(result).to.deep.equal({
+        url: 'x',
+        metrics: [{ deviceType: 'mobile', lcp: 3000 }],
+        pageviews: 200,
+      });
+      // No `issues` key introduced when existing didn't have one
+      expect(result).to.not.have.property('issues');
+    });
+
+    it('does not add an `issues` key when existing has an empty issues array', () => {
+      const existing = { url: 'x', metrics: [{ lcp: 5000 }], issues: [] };
+      const newItem = { url: 'x', metrics: [{ lcp: 3000 }] };
+      const result = mergeCwvData(existing, newItem);
+      // issues comes from the spread of existing (empty array), and we don't re-write it
+      expect(result.issues).to.deep.equal([]);
+    });
+
+    it('self-heals legacy jiraLink="" to null (stops the schema validation warning)', () => {
+      const existing = {
+        url: 'x',
+        metrics: [{ deviceType: 'mobile', lcp: 5000 }],
+        jiraLink: '', // legacy bad value
+      };
+      const newItem = { url: 'x', metrics: [{ deviceType: 'mobile', lcp: 5000 }] };
+      const result = mergeCwvData(existing, newItem);
+      expect(result.jiraLink).to.equal(null);
+    });
+
+    it('preserves a valid jiraLink URI on re-merge', () => {
+      const existing = {
+        url: 'x',
+        metrics: [{ deviceType: 'mobile', lcp: 5000 }],
+        jiraLink: 'https://jira.example.com/browse/CWV-123',
+      };
+      const newItem = { url: 'x', metrics: [{ deviceType: 'mobile', lcp: 5000 }] };
+      const result = mergeCwvData(existing, newItem);
+      expect(result.jiraLink).to.equal('https://jira.example.com/browse/CWV-123');
+    });
+
+    it('preserves an already-null jiraLink on re-merge', () => {
+      const existing = {
+        url: 'x',
+        metrics: [{ deviceType: 'mobile', lcp: 5000 }],
+        jiraLink: null,
+      };
+      const newItem = { url: 'x', metrics: [{ deviceType: 'mobile', lcp: 5000 }] };
+      const result = mergeCwvData(existing, newItem);
+      expect(result.jiraLink).to.equal(null);
+    });
+
+    it('marks resolved-metric issues OUTDATED on re-merge', () => {
+      const existing = {
+        url: 'x',
+        metrics: [{ deviceType: 'mobile', lcp: 4500, cls: 0.3 }],
+        issues: [
+          { id: 'a', type: 'lcp', status: 'NEW' },
+          { id: 'b', type: 'cls', status: 'NEW' },
+        ],
+      };
+      const newItem = {
+        url: 'x',
+        metrics: [{ deviceType: 'mobile', lcp: 1800, cls: 0.3 }], // lcp resolved, cls still failing
+      };
+      const result = mergeCwvData(existing, newItem);
+      expect(result.issues[0].status).to.equal('OUTDATED'); // lcp
+      expect(result.issues[1].status).to.equal('NEW'); // cls
+      // metrics overwritten by new data
+      expect(result.metrics[0].lcp).to.equal(1800);
     });
   });
 });
