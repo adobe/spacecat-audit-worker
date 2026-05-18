@@ -1,3 +1,10 @@
+## [1.444.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.444.0...v1.444.1) (2026-05-18)
+
+
+### Bug Fixes
+
+* exclude static-asset URLs from audit query ([#2527](https://github.com/adobe/spacecat-audit-worker/issues/2527)) ([02def40](https://github.com/adobe/spacecat-audit-worker/commit/02def405067703ad42dd709c2af88c2907a04875))
+
 # [1.444.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.443.1...v1.444.0) (2026-05-18)
 
 
